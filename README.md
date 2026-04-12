@@ -91,3 +91,7 @@ Possíveis evoluções:
 - Dashboard de indicadores de segurança
 Autor
 Projeto acadêmico voltado à digitalização da gestão de EPIs em ambientes industriais.
+
+Sugestões:
+
+Bruno Franzosi - O trabalho se destaca bastante por trazer um problema real e aplicável dentro da indústria, o que torna a proposta muito relevante. A solução está bem alinhada com a realidade operacional. Como melhoria, poderia incluir um pequeno cenário de uso (exemplo prático do sistema funcionando no dia a dia), o que deixaria ainda mais tangível.
