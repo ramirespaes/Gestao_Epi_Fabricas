@@ -1,10 +1,15 @@
-# RFC: Request for Comments — Projeto de Portfólio
+# 🦺 RFC: Request for Comments — Projeto de Portfólio
+
+![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-yellow)
+![Categoria](https://img.shields.io/badge/Linha%20de%20Projeto-Web-blue)
+![Tema](https://img.shields.io/badge/Tema-Gest%C3%A3o%20de%20EPIs-green)
+![Normas](https://img.shields.io/badge/Base%20Normativa-NR--01%20%7C%20NR--06-red)
 
 **Engenharia de Software – Católica SC**
 
 ---
 
-# Identificação
+# 🔵 Identificação
 
 - **Título do Projeto:** Sistema de Gestão de EPIs em Ambientes Industriais
 - **Linha de Projeto (Direction):** Web
@@ -12,9 +17,12 @@
 - **Data da Proposta:** Abril/2026
 - **Versão:** 1.0
 
+> [!IMPORTANT]
+> Este projeto foi concebido para digitalizar e automatizar a gestão de EPIs em ambientes industriais, com foco em rastreabilidade, conformidade legal e eficiência operacional.
+
 ---
 
-# 1. Visão do Produto e Impacto (O Problema)
+# 🟢 1. Visão do Produto e Impacto (O Problema)
 
 ## 1.1 Contexto e Problema
 
@@ -37,7 +45,8 @@ Esse modelo apresenta limitações estruturais relevantes, impactando diretament
 - Falta de controle eficiente de estoque, resultando em atrasos na reposição ou excesso de materiais;
 - Baixa rastreabilidade das entregas, dificultando a comprovação em auditorias trabalhistas.
 
-Esses fatores tornam o processo suscetível a falhas e aumentam o risco de não conformidade com as Normas Regulamentadoras.
+> [!WARNING]
+> O processo manual aumenta significativamente o risco de falhas operacionais e de não conformidade com requisitos legais aplicáveis à gestão de EPIs.
 
 ---
 
@@ -64,6 +73,9 @@ Esse cenário gera uma série de limitações operacionais e riscos, tais como:
 - auditorias lentas e baseadas em conferência manual.
 
 Como consequência, o processo atual apresenta baixa eficiência, alto retrabalho e risco de não conformidade com as exigências legais.
+
+> [!CAUTION]
+> A ausência de controle digital compromete a rastreabilidade, a confiabilidade dos registros e a velocidade de resposta em auditorias internas e externas.
 
 ---
 
@@ -109,6 +121,9 @@ O sistema proposto permitirá:
 
 Essa transformação permitirá maior eficiência operacional, redução de erros e aderência às exigências normativas aplicáveis.
 
+> [!TIP]
+> A informatização do processo não apenas reduz retrabalho, mas também fortalece o atendimento às exigências normativas e auditoriais.
+
 ---
 
 ## 1.1.3 Objetivo da Solução Proposta
@@ -149,6 +164,9 @@ Complementarmente, a NR-01 determina que documentos digitais devem garantir:
 Também exige que tais documentos estejam disponíveis para acesso da fiscalização do trabalho.
 
 Outro ponto relevante é que a seleção dos EPIs deve estar vinculada ao Programa de Gerenciamento de Riscos (PGR), reforçando a necessidade de integração entre gestão operacional e gestão de riscos ocupacionais.
+
+> [!IMPORTANT]
+> A aderência às NR-01 e NR-06 é um dos pilares centrais da solução proposta, não apenas do ponto de vista técnico, mas também jurídico e operacional.
 
 ---
 
@@ -261,40 +279,34 @@ Desenvolver um sistema digital de gestão de Equipamentos de Proteção Individu
 
 ## 1.6 Métricas de Sucesso (KPIs)
 
-O sucesso do sistema será medido por indicadores objetivos relacionados à eficiência operacional, conformidade legal e adoção pelos usuários.
-
 ### Cobertura do Registro
-
 - 100% das entregas de EPIs registradas digitalmente no sistema.
 
 ### Redução de Erros Operacionais
-
 - Redução significativa de inconsistências em registros (assinaturas ausentes, datas incorretas, uso de CA inválido).
 
 ### Rastreabilidade
-
 - Disponibilidade de histórico completo de fornecimento por trabalhador em menos de 30 segundos.
 
 ### Eficiência de Auditoria
-
 - Redução do tempo de auditoria em, no mínimo, 70% em relação ao processo manual.
 
 ### Controle de Estoque
-
 - Diminuição de ocorrências de ruptura de estoque;
 - Redução de compras emergenciais não planejadas.
 
 ### Conformidade Legal
-
 - 100% dos registros disponíveis para apresentação à fiscalização, conforme exigências da NR-01.
 
 ### Adoção do Sistema
-
 - Utilização ativa por todos os perfis (Trabalhador, Supervisor e SST) nos primeiros 60 dias após implantação.
+
+> [!NOTE]
+> Recomenda-se manter estes indicadores visíveis também no README do repositório, pois eles demonstram claramente o valor do projeto.
 
 ---
 
-# 2. Análise de Soluções Existentes (Benchmark)
+# 🟠 2. Análise de Soluções Existentes (Benchmark)
 
 ## 2.1 GAP Sistemas – Gestão de EPIs
 
@@ -331,16 +343,17 @@ Além disso, integra-se com outros módulos como gestão de treinamentos, tercei
 
 ### Limitações Identificadas
 
-Apesar de ser uma solução robusta, apresenta limitações importantes quando comparada ao sistema proposto neste projeto:
-
 - Não evidencia claramente um fluxo estruturado de solicitação → aprovação → entrega (workflow completo);
 - Não demonstra integração direta com o PGR para definição automática de EPIs por risco;
 - Não detalha regras avançadas de controle, como:
   - bloqueio por frequência de retirada;
   - controle por comportamento (extravio recorrente);
 - Foco mais amplo em SSMA pode reduzir a profundidade específica na gestão de EPIs;
-- Não há detalhamento explícito sobre requisitos jurídicos de documentos digitais conforme exigências da NR-01 (integridade, irretratabilidade, etc.);
+- Não há detalhamento explícito sobre requisitos jurídicos de documentos digitais conforme exigências da NR-01;
 - Pouca evidência de controle completo do ciclo decisório (antes da entrega).
+
+> [!WARNING]
+> Apesar de robusta, a solução não evidencia com clareza toda a lógica decisória do processo de fornecimento de EPI.
 
 ---
 
@@ -407,102 +420,12 @@ O sistema proposto neste projeto se diferencia por:
 - Focar na experiência do usuário operacional, reduzindo fricção no processo;
 - Atuar não apenas como sistema de registro, mas como ferramenta de decisão e prevenção.
 
----
-
-## 2.5 Benner – ERP para Gestão Empresarial / RH
-
-**Link:** https://www.benner.com.br/erp-para-gestao-de-recursos-humanos
-
-### Descrição da Solução
-
-A Benner oferece um ERP completo voltado à gestão empresarial, incluindo módulos de Recursos Humanos, suprimentos, logística, saúde e gestão corporativa.
-
-O sistema é caracterizado por:
-
-- integração entre múltiplas áreas da empresa;
-- centralização de dados em um único ambiente;
-- automação de processos administrativos;
-- dashboards e indicadores em tempo real;
-- controle de estoque e suprimentos;
-- gestão de pessoas (RH) com visão estratégica.
-
-Trata-se de uma solução robusta, amplamente utilizada por grandes empresas, com foco em governança, eficiência e tomada de decisão baseada em dados.
-
-### Espaço para comparação visual
-
-Não foram identificadas imagens disponíveis da interface do sistema no site oficial da Benner para fins de comparação visual.
-
-### Pontos Fortes
-
-- Plataforma altamente integrada (ERP completo);
-- Forte capacidade de centralização e análise de dados;
-- Automação de processos corporativos;
-- Escalabilidade para grandes operações;
-- Controle eficiente de estoque e suprimentos;
-- Alto nível de compliance e governança empresarial.
-
-### Limitações Identificadas
-
-Apesar de sua robustez, o ERP da Benner apresenta limitações relevantes quando analisado sob a ótica específica da gestão de EPIs:
-
-- Não é especializado em Segurança do Trabalho ou gestão de EPIs;
-- Não contempla nativamente o fluxo operacional completo de fornecimento de EPI (solicitação → aprovação → entrega);
-- Ausência de vínculo direto com o PGR para definição automática de EPIs por risco;
-- Não evidencia controle detalhado de CA (Certificado de Aprovação);
-- Não possui foco na geração automatizada de ficha de EPI com validade jurídica conforme NR-06;
-- Interface e lógica voltadas para gestão administrativa, não operação de campo;
-- Dependência de customizações para atender requisitos específicos de SST.
+> [!IMPORTANT]
+> O principal diferencial do projeto está na combinação entre profundidade técnica de SST, workflow completo e aderência normativa.
 
 ---
 
-## 2.6 Comparação Atualizada das Soluções
-
-| Solução | Tipo | Pontos Fortes | Limitações | Diferencial vs. Projeto |
-|---------|------|---------------|------------|--------------------------|
-| GAP Sistemas | SST especializado | Controle de EPI, rastreabilidade, assinatura digital | Falta de workflow completo e integração profunda com PGR | Parcialmente aderente |
-| RSData | SST integrado | Integração com saúde e riscos | Menos foco operacional | Mais gerencial |
-| Benner ERP | ERP corporativo | Integração total, BI, controle empresarial | Não especializado em EPI | Muito genérico para SST |
-
----
-
-## 2.7 Análise Estratégica
-
-A inclusão do ERP da Benner evidencia um ponto crítico de mercado:
-
-Existem dois tipos de soluções:
-
-### 1. Sistemas especializados em SST
-
-- Foco técnico
-- Boa aderência normativa
-- Limitados em integração e inteligência
-
-### 2. ERPs corporativos
-
-- Alta integração
-- Forte capacidade analítica
-- Pouca profundidade operacional em SST
-
----
-
-## 2.8 Posicionamento do Projeto
-
-O sistema proposto neste projeto se posiciona como uma solução híbrida e estratégica, unindo:
-
-- Profundidade técnica de SST;
-- Fluxo operacional completo;
-- Integração com gestão de riscos (PGR);
-- Capacidade de análise e decisão.
-
-Ou seja:
-
-- Não é apenas um sistema de EPI;
-- Não é apenas um ERP;
-- É um sistema especializado com inteligência operacional.
-
----
-
-# 3. Proposta de Solução
+# 🟣 3. Proposta de Solução
 
 ## 3.1 Visão Geral da Solução
 
@@ -565,8 +488,6 @@ Armazena:
 
 ## 3.3 Fluxo de Funcionamento do Sistema
 
-O funcionamento do sistema será estruturado em etapas sequenciais:
-
 ### 1. Solicitação de EPI
 
 - Trabalhador acessa o sistema;
@@ -620,3 +541,44 @@ O sistema gera automaticamente o registro contendo:
   - estoque baixo;
   - CA a vencer;
   - excesso de consumo.
+
+---
+
+# 📋 Parecer do Comitê de Avaliação
+
+> [!NOTE]
+> Esta seção deverá ser preenchida pelos entrevistados/avaliadores durante a etapa de avaliação do projeto.
+
+## Avaliador 1
+
+**Nome:** __________________________  
+**Status:** [ ] Aprovado  [ ] Ajustar  
+
+**Observações:**  
+____________________________________________________  
+____________________________________________________  
+____________________________________________________  
+
+---
+
+## Avaliador 2
+
+**Nome:** __________________________  
+**Status:** [ ] Aprovado  [ ] Ajustar  
+
+**Observações:**  
+____________________________________________________  
+____________________________________________________  
+____________________________________________________  
+
+---
+
+## Avaliador 3
+
+**Nome:** __________________________  
+**Status:** [ ] Aprovado  [ ] Ajustar  
+
+**Observações:**  
+____________________________________________________  
+____________________________________________________  
+____________________________________________________  
