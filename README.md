@@ -95,3 +95,5 @@ Projeto acadêmico voltado à digitalização da gestão de EPIs em ambientes in
 Sugestões:
 
 Bruno Franzosi - O trabalho se destaca bastante por trazer um problema real e aplicável dentro da indústria, o que torna a proposta muito relevante. A solução está bem alinhada com a realidade operacional. Como melhoria, poderia incluir um pequeno cenário de uso (exemplo prático do sistema funcionando no dia a dia), o que deixaria ainda mais tangível.
+
+Bruno Luis Pereira - O trabalho está muito bem estruturado e organizado, facilitando bastante o entendimento do problema e da solução proposta. A divisão entre contexto, benchmark e proposta ficou clara e lógica. Como sugestão de melhoria, talvez valha incluir um diagrama visual simples do fluxo do sistema para complementar a explicação textual.
