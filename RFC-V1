@@ -1,262 +1,714 @@
+<div align="center">
+
 # 🦺 RFC-V1 — Sistema de Gestão de EPIs em Ambientes Industriais
 
+### Digitalização, rastreabilidade e conformidade na gestão de EPIs em ambientes industriais
 
+![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-yellow)
+![Projeto](https://img.shields.io/badge/Projeto-RFC--V1-blue)
+![Tema](https://img.shields.io/badge/Tema-Gest%C3%A3o%20de%20EPIs-green)
+![Normas](https://img.shields.io/badge/Normas-NR--01%20%7C%20NR--06-red)
+![Tipo](https://img.shields.io/badge/Tipo-Sistema%20Web-purple)
+![Foco](https://img.shields.io/badge/Foco-Rastreabilidade%20%26%20Conformidade-orange)
+
+### 🏭 Projeto aplicado à realidade industrial  
+### 🔐 Foco em conformidade normativa  
+### 📊 Estruturado para rastreabilidade e auditoria
+
+</div>
+
+---
+
+> [!IMPORTANT]
+> Este projeto foi concebido para digitalizar e automatizar a gestão de Equipamentos de Proteção Individual (EPIs) em ambientes industriais, com foco em rastreabilidade, conformidade legal, eficiência operacional e apoio a auditorias.
+
+---
+
+## 🚀 Navegação Rápida
+
+- [📌 Identificação](#-identificação)
+- [🟢 1. Visão do Produto e Impacto (O Problema)](#-1-visão-do-produto-e-impacto-o-problema)
+- [⚖️ 1.2 Base Normativa e Justificativa Legal](#-12-base-normativa-e-justificativa-legal)
+- [👥 1.4 Público-Alvo](#-14-público-alvo)
+- [🎯 1.5 Objetivos do Projeto](#-15-objetivos-do-projeto)
+- [📈 1.6 Métricas de Sucesso (KPIs)](#-16-métricas-de-sucesso-kpis)
+- [🟠 2. Análise de Soluções Existentes (Benchmark)](#-2-análise-de-soluções-existentes-benchmark)
+- [🟣 3. Proposta de Solução](#-3-proposta-de-solução)
+- [📋 Parecer do Comitê de Avaliação](#-parecer-do-comitê-de-avaliação)
+
+---
+
+## 🧭 Resumo Executivo
+
+| Item | Descrição |
+|------|-----------|
+| **Tipo de Projeto** | Sistema web para gestão de EPIs |
+| **Problema Central** | Processo manual, baixa rastreabilidade e risco de não conformidade |
+| **Objetivo Principal** | Automatizar e centralizar o ciclo de fornecimento de EPIs |
+| **Base Normativa** | NR-01, NR-06 e integração com PGR |
+| **Público-Alvo** | Trabalhadores, supervisores, SST, compras e auditores |
+| **Principal Diferencial** | Workflow completo com foco operacional, rastreabilidade e aderência normativa |
+
+---
 
 ## 📌 Identificação
 
-- **Título do Projeto:** Sistema de Gestão de EPIs em Ambientes Industriais  
-- **Linha de Projeto (Direction):** Web  
-- **Autor:** Ramires Paes  
-- **Data da Proposta:** Abril/2026  
-- **Versão:** 1.0  
-
-> [!IMPORTANT]
-> Este projeto foi concebido para digitalizar e automatizar a gestão de EPIs em ambientes industriais, com foco em rastreabilidade, conformidade legal e eficiência operacional.
+- **📛 Título do Projeto:** Sistema de Gestão de EPIs em Ambientes Industriais  
+- **🌐 Linha de Projeto (Direction):** Web  
+- **👤 Autor:** Ramires Paes  
+- **📅 Data da Proposta:** 12/04/2026  
+- **🧾 Versão:** 1.0
 
 ---
 
 # 🟢 1. Visão do Produto e Impacto (O Problema)
 
-## 1.1 Contexto e Problema
+## 1.1 📍 Contexto e Problema
 
-Atualmente, o processo de gestão de Equipamentos de Proteção Individual (EPIs) em ambientes industriais ocorre de forma predominantemente manual, envolvendo múltiplas etapas operacionais e registros físicos.
+Atualmente, o processo de gestão de Equipamentos de Proteção Individual (EPIs) em ambientes industriais, como na Cobresul, ocorre de forma predominantemente manual, envolvendo múltiplas etapas operacionais e registros físicos.
 
-### Fluxo Atual
+O fluxo atual funciona da seguinte forma:
 
-1. Solicitação manual pelo trabalhador  
-2. Aprovação do supervisor  
-3. Encaminhamento ao SST  
-4. Entrega do EPI  
-5. Registro manual em ficha física  
-6. Auditorias presenciais  
+1. O trabalhador preenche manualmente uma guia de solicitação de EPI e coleta a assinatura do supervisor;
+2. O documento é encaminhado ao setor de Segurança do Trabalho (SST);
+3. A equipe de SST realiza a separação do EPI, efetua a entrega e registra manualmente as informações em ficha física, incluindo data, quantidade, descrição e número do Certificado de Aprovação (CA), além de coletar nova assinatura do trabalhador;
+4. Periodicamente, a equipe de SST realiza auditorias presenciais para verificação das fichas, identificando inconsistências, atrasos e necessidades de reposição.
 
-### Principais Problemas
+Esse modelo apresenta limitações estruturais relevantes, impactando diretamente a eficiência operacional e a conformidade legal.
 
-- Retrabalho operacional elevado  
-- Risco de inconsistências  
-- Auditorias lentas  
-- Falta de controle de estoque  
-- Baixa rastreabilidade  
+### 🚨 Principais problemas identificados
+
+- Elevado retrabalho operacional, devido ao preenchimento manual em múltiplas etapas;
+- Risco de inconsistências nos registros (datas incorretas, ausência de assinatura, uso de CA vencido);
+- Auditorias lentas e reativas, baseadas em conferência manual de documentos físicos;
+- Falta de controle eficiente de estoque, resultando em atrasos na reposição ou excesso de materiais;
+- Baixa rastreabilidade das entregas, dificultando a comprovação em auditorias trabalhistas.
+
+Esses fatores tornam o processo suscetível a falhas e aumentam o risco de não conformidade com as Normas Regulamentadoras.
+
+---
+
+## 1.1.1 ⚙️ Situação Atual e Dificuldades Operacionais
+
+Dessa forma, a solução proposta visa transformar a gestão de EPIs em um processo mais seguro, eficiente e alinhado às exigências das normas regulamentadoras.
+
+- reduzir erros operacionais e aumentar a eficiência do processo.
+- disponibilizar relatórios para auditoria de forma rápida e precisa;
+- assegurar que todas as entregas estejam devidamente assinadas;
+- monitorar vencimentos de EPIs e gerar alertas automáticos;
+- permitir o controle de estoque em tempo real;
+- garantir o registro automático e confiável das entregas de EPIs;
+- substituir o processo manual por um fluxo digital integrado;
+
+O sistema proposto tem como finalidade:
+
+Diante das dificuldades identificadas, o objetivo deste projeto é desenvolver um sistema digital capaz de automatizar e centralizar a gestão de EPIs, garantindo maior controle, rastreabilidade e conformidade normativa.
+
+---
+
+## 1.1.2 🏭 Problema Atual da Empresa
+
+Atualmente, a gestão de Equipamentos de Proteção Individual (EPIs) na organização é realizada de forma totalmente manual, abrangendo desde o processo de solicitação até o controle e auditoria das informações.
+
+O registro de fornecimento de EPIs é feito por meio de fichas físicas, preenchidas manualmente no momento da entrega. Esse processo inclui a anotação de dados como descrição do equipamento, quantidade, data de entrega e coleta de assinatura do trabalhador, sem o suporte de sistemas informatizados.
+
+Da mesma forma, o controle de estoque dos EPIs também ocorre de forma manual, dificultando a visualização em tempo real da quantidade disponível, bem como a identificação de necessidades de reposição.
+
+Outro ponto crítico está relacionado ao monitoramento de validade dos EPIs, incluindo:
+
+- vencimento do Certificado de Aprovação (CA);
+- validade de lotes (quando aplicável);
+- necessidade de substituição periódica dos equipamentos.
+
+Atualmente, essa verificação depende de controles paralelos e conferências manuais, o que aumenta significativamente o risco de falhas.
+
+Além disso, a conferência das fichas de EPI — especialmente quanto à presença de assinaturas e consistência das informações — é realizada de forma reativa, geralmente durante auditorias internas, o que compromete a agilidade na identificação de não conformidades.
+
+### ❗ Principais dificuldades identificadas
+
+- Dependência total de processos manuais;
+- Alto risco de inconsistências nos registros (falta de assinatura, dados incompletos);
+- Dificuldade no controle de validade dos EPIs;
+- Ausência de visibilidade em tempo real do estoque;
+- Processo de auditoria lento e pouco eficiente;
+- Falta de rastreabilidade estruturada das entregas.
+
+### 💡 Oportunidade de Melhoria
+
+Diante desse cenário, identifica-se a necessidade de implementação de um sistema informatizado capaz de centralizar e automatizar a gestão dos EPIs.
+
+O sistema proposto permitirá:
+
+- controle digital das fichas de EPI;
+- registro automático das entregas;
+- monitoramento de estoque em tempo real;
+- alertas de vencimento de EPIs;
+- verificação de pendências (como ausência de assinatura);
+- melhoria na rastreabilidade e na conformidade dos processos.
+
+Essa transformação permitirá maior eficiência operacional, redução de erros e aderência às exigências normativas aplicáveis.
+
+---
+
+## 1.1.3 🎯 Objetivo da Solução Proposta
+
+Como consequência, o processo atual apresenta baixa eficiência, alto retrabalho e risco de não conformidade com as exigências legais.
+
+- auditorias lentas e baseadas em conferência manual.
+- dificuldade na rastreabilidade das entregas;
+- elevado risco de erro humano nos registros;
+- atraso na reposição de materiais;
+- falta de visibilidade sobre a quantidade disponível em estoque;
+- possibilidade de utilização de EPIs com validade vencida (CA ou lote);
+- dificuldade em garantir que todas as fichas estejam corretamente assinadas;
+
+Esse cenário gera uma série de limitações operacionais e riscos, tais como:
+
+- monitoramento de vencimento de EPIs realizado por conferência manual.
+- controle de estoque sem atualização em tempo real;
+- verificação de assinaturas de forma não sistematizada;
+- controle de entrega realizado manualmente;
+- preenchimento de fichas de EPI em papel;
+
+Toda a gestão é realizada de forma manual, abrangendo:
+
+Atualmente, a empresa enfrenta dificuldades significativas na gestão de Equipamentos de Proteção Individual (EPIs), devido à ausência de um sistema informatizado que centralize e automatize os processos.
+
+---
+
+## 1.2 ⚖️ Base Normativa e Justificativa Legal
+
+A necessidade de modernização do processo é diretamente suportada pelas exigências das Normas Regulamentadoras.
+
+A NR-06 estabelece que o fornecimento de EPI deve ser devidamente registrado, podendo ser realizado por meio de sistema eletrônico, desde que permita a extração de relatórios para fins de auditoria.
+
+Além disso, a norma permite o uso de meios eletrônicos, incluindo registros biométricos, como forma válida de comprovação da entrega.
+
+Complementarmente, a NR-01 determina que documentos digitais devem garantir:
+
+- Autenticidade
+- Integridade
+- Disponibilidade
+- Rastreabilidade
+- Irretratabilidade
+- Privacidade
+
+Também exige que tais documentos estejam disponíveis para acesso da fiscalização do trabalho.
+
+Outro ponto relevante é que a seleção dos EPIs deve estar vinculada ao Programa de Gerenciamento de Riscos (PGR), reforçando a necessidade de integração entre gestão operacional e gestão de riscos ocupacionais.
+
+> [!IMPORTANT]
+> A aderência às NR-01 e NR-06 é um dos pilares centrais da solução proposta, não apenas do ponto de vista técnico, mas também jurídico e operacional.
+
+---
+
+## 1.3 🚀 Oportunidade de Solução
+
+Diante desse cenário, observa-se uma clara oportunidade para desenvolvimento de um sistema digital que substitua o modelo manual atual.
+
+A ausência de uma solução integrada que contemple:
+
+- solicitação digital de EPI
+- controle automatizado de estoque
+- geração automática de ficha de entrega
+- assinatura digital válida
+- rastreabilidade completa
+- relatórios auditáveis
+
+representa um gap significativo no processo atual.
+
+A implementação de um sistema informatizado permite não apenas a digitalização do fluxo, mas também a elevação do nível de controle, confiabilidade dos dados e aderência às exigências legais.
+
+---
+
+## 1.4 👥 Público-Alvo
+
+O sistema de gestão de EPIs será utilizado por diferentes perfis de usuários dentro do ambiente industrial, cada um com responsabilidades específicas e níveis distintos de acesso.
+
+### 👷 Trabalhador (Colaborador Operacional)
+
+Responsável por solicitar EPIs conforme necessidade operacional (troca por desgaste, extravio, admissão ou atividade específica).
+
+Interage com o sistema de forma simples, via interface web, aplicativo ou terminal (kiosk).
+
+**Nível técnico:** básico.
+
+### 🧑‍💼 Supervisor / Líder de Área
+
+Responsável por analisar e aprovar as solicitações de EPI realizadas pelos trabalhadores.
+
+Pode ajustar quantidades, negar solicitações e registrar justificativas, garantindo controle sobre o consumo e aderência às atividades executadas.
+
+**Nível técnico:** médio.
+
+### 🦺 Segurança do Trabalho (SST / SESMT)
+
+Responsável pela gestão completa do processo de fornecimento de EPIs.
+
+Atua nas seguintes frentes:
+
+- validação técnica dos EPIs;
+- controle de estoque;
+- entrega dos equipamentos;
+- geração e gestão das fichas de EPI;
+- auditoria e conformidade com normas regulamentadoras.
+
+Possui acesso completo ao sistema, incluindo relatórios e trilhas de auditoria.
+
+**Nível técnico:** médio-alto.
+
+### 📦 Compras / Suprimentos
+
+Responsável pelo reabastecimento do estoque de EPIs com base nos dados gerados pelo sistema (consumo, estoque mínimo, alertas).
+
+Atua de forma integrada ao controle de estoque, garantindo disponibilidade contínua dos equipamentos.
+
+**Nível técnico:** médio.
+
+### 🔎 Auditor / Fiscalização
+
+Perfil voltado à consulta e verificação das informações para fins de auditoria interna ou fiscalização externa.
+
+Possui acesso a:
+
+- relatórios;
+- histórico de entregas;
+- documentos digitais (fichas de EPI);
+- evidências de assinatura e rastreabilidade.
+
+Esse perfil é fundamental para atendimento às exigências da NR-01.
+
+### 🤖 Sistema (Automação)
+
+Perfil não humano responsável por executar ações automáticas, como:
+
+- geração de alertas (estoque mínimo, CA a vencer);
+- criação automática de registros;
+- consolidação de dados para relatórios;
+- registro de logs e trilhas de auditoria.
+
+---
+
+## 1.5 🎯 Objetivos do Projeto
+
+### 🧭 Objetivo Geral
+
+Desenvolver um sistema digital de gestão de Equipamentos de Proteção Individual (EPIs) que centralize, automatize e controle todo o ciclo de fornecimento, garantindo rastreabilidade, conformidade legal e eficiência operacional, substituindo o modelo manual atualmente utilizado.
+
+### ✅ Objetivos Específicos
+
+- Digitalizar o processo de solicitação e aprovação de EPIs pelos trabalhadores e supervisores;
+- Implementar controle automatizado de estoque com alertas de reposição e validade;
+- Garantir que apenas EPIs com Certificado de Aprovação (CA) válido sejam disponibilizados, conforme exigência da NR-06;
+- Gerar automaticamente a ficha de EPI com todos os dados obrigatórios no momento da entrega;
+- Implementar assinatura eletrônica ou digital para validação da entrega do EPI;
+- Criar trilha de auditoria completa (logs) garantindo rastreabilidade das ações;
+- Disponibilizar relatórios gerenciais e operacionais para suporte à tomada de decisão;
+- Integrar regras de fornecimento com base no Programa de Gerenciamento de Riscos (PGR);
+- Permitir exportação de dados e documentos para atendimento à fiscalização do trabalho.
+
+---
+
+## 1.6 📈 Métricas de Sucesso (KPIs)
+
+O sucesso do sistema será medido por indicadores objetivos relacionados à eficiência operacional, conformidade legal e adoção pelos usuários.
+
+### 📌 Cobertura do Registro
+- 100% das entregas de EPIs registradas digitalmente no sistema.
+
+### 📌 Redução de Erros Operacionais
+- Redução significativa de inconsistências em registros (assinaturas ausentes, datas incorretas, uso de CA inválido).
+
+### 📌 Rastreabilidade
+- Disponibilidade de histórico completo de fornecimento por trabalhador em menos de 30 segundos.
+
+### 📌 Eficiência de Auditoria
+- Redução do tempo de auditoria em, no mínimo, 70% em relação ao processo manual.
+
+### 📌 Controle de Estoque
+- Diminuição de ocorrências de ruptura de estoque;
+- Redução de compras emergenciais não planejadas.
+
+### 📌 Conformidade Legal
+- 100% dos registros disponíveis para apresentação à fiscalização, conforme exigências da NR-01.
+
+### 📌 Adoção do Sistema
+- Utilização ativa por todos os perfis (Trabalhador, Supervisor e SST) nos primeiros 60 dias após implantação.
+
+---
+
+# 🟠 2. Análise de Soluções Existentes (Benchmark)
+
+## 2.1 🧩 GAP Sistemas – Gestão de EPIs
+
+**🔗 Link:** Acessar solução de Gestão de EPIs
+
+### 📝 Descrição da Solução
+
+A plataforma GAP Sistemas oferece um módulo específico para gestão de EPIs dentro de um ecossistema maior de soluções em Saúde e Segurança do Trabalho (SSMA).
+
+O sistema permite:
+
+- controle de estoque em tempo real;
+- monitoramento da validade do Certificado de Aprovação (CA);
+- definição de EPIs obrigatórios por função;
+- histórico completo de entregas por colaborador;
+- assinatura eletrônica e reconhecimento facial na entrega;
+- funcionamento offline com sincronização posterior;
+- rastreabilidade completa das entregas.
+
+Além disso, integra-se com outros módulos como gestão de treinamentos, terceiros e permissões de trabalho, formando uma plataforma mais ampla de SST.
+
+### 📷 Espaço para comparação visual
+
+![Figura – Interface do sistema GAP](https://raw.githubusercontent.com/ramirespaes/Gestao_Epi_Fabricas/main/IMAGEN/Figura%20%E2%80%93%20Interface%20do%20sistema%20GAP.png)
+
+**Figura – Interface do sistema GAP**
+
+### ✅ Pontos Fortes
+
+- Plataforma completa de SSMA (não apenas EPI);
+- Forte foco em rastreabilidade e auditoria;
+- Uso de tecnologias avançadas (ex: reconhecimento facial);
+- Controle automatizado de validade de CA;
+- Interface voltada para operação em campo (inclusive offline);
+- Estrutura já consolidada no mercado.
+
+### ⚠️ Limitações Identificadas
+
+Apesar de ser uma solução robusta, apresenta limitações importantes quando comparada ao sistema proposto neste projeto:
+
+- Não evidencia claramente um fluxo estruturado de solicitação → aprovação → entrega (workflow completo);
+- Não demonstra integração direta com o PGR para definição automática de EPIs por risco;
+- Não detalha regras avançadas de controle, como:
+  - bloqueio por frequência de retirada;
+  - controle por comportamento (extravio recorrente);
+- Foco mais amplo em SSMA pode reduzir a profundidade específica na gestão de EPIs;
+- Não há detalhamento explícito sobre requisitos jurídicos de documentos digitais conforme exigências da NR-01 (integridade, irretratabilidade, etc.);
+- Pouca evidência de controle completo do ciclo decisório (antes da entrega).
 
 > [!WARNING]
-> O processo manual aumenta significativamente o risco de falhas operacionais e de não conformidade com normas regulamentadoras.
+> Apesar de robusta, a solução não evidencia com clareza toda a lógica decisória do processo de fornecimento de EPI.
 
 ---
 
-## 1.1.1 Problema Atual da Empresa
+## 2.2 🧩 RSData
 
-Toda a gestão de EPIs é realizada de forma manual, abrangendo:
+### 📝 Descrição da Solução
 
-- fichas em papel  
-- controle manual de entrega  
-- verificação manual de assinaturas  
-- controle de estoque sem atualização em tempo real  
-- monitoramento manual de validade  
+A RSData oferece um sistema integrado de gestão de segurança do trabalho, incluindo módulo de gestão de EPIs.
 
-### Impactos
+### ⚙️ Funcionalidades
 
-- uso potencial de EPI vencido  
-- falta de rastreabilidade  
-- atraso na reposição  
-- erros humanos  
+- controle de uso de EPIs;
+- monitoramento de validade;
+- integração com gestão de riscos;
+- gestão de treinamentos e saúde ocupacional.
 
-> [!CAUTION]
-> A ausência de controle digital compromete auditorias e confiabilidade dos dados.
+### 📷 Espaço para comparação visual
 
----
+![Figura – Interface do sistema RSData](https://raw.githubusercontent.com/ramirespaes/Gestao_Epi_Fabricas/main/IMAGEN/Figura%20%E2%80%93%20Interface%20do%20sistema%20RSData%20.png)
 
-## 1.1.2 Situação Atual e Dificuldades Operacionais
+**Figura – Interface do sistema RSData**
 
-O controle atual depende de registros físicos e verificações manuais.
+### ✅ Pontos Fortes
 
-### Dificuldades
+- Forte integração com gestão de riscos ocupacionais;
+- Plataforma consolidada no mercado;
+- Integração com saúde ocupacional e compliance;
+- Visão sistêmica da segurança do trabalho.
 
-- Dependência total de processos manuais  
-- Falta de visibilidade de estoque  
-- Controle de validade ineficiente  
-- Auditorias reativas  
+### ⚠️ Limitações Identificadas
 
-### Oportunidade
-
-- Digitalização do processo  
-- Automação de registros  
-- Monitoramento em tempo real  
-- Alertas automáticos  
-
-> [!TIP]
-> A informatização reduz retrabalho e aumenta a eficiência operacional.
+- Interface e fluxo mais voltados para gestão administrativa do que operação diária;
+- Não evidencia claramente automação completa do processo de entrega;
+- Pouco foco em experiência do usuário operacional (trabalhador);
+- Não detalha mecanismos de assinatura digital robusta;
+- Ausência de evidência de controle fino de estoque em tempo real.
 
 ---
 
-## 1.1.3 Objetivo da Solução
+## 2.3 📊 Comparação Geral das Soluções
 
-Desenvolver um sistema digital para:
-
-- automatizar a gestão de EPIs  
-- garantir rastreabilidade  
-- assegurar conformidade legal  
-- melhorar eficiência operacional  
+| Solução | Pontos Fortes | Limitações | Diferencial vs. Projeto |
+|---------|---------------|------------|--------------------------|
+| GAP Sistemas | Rastreabilidade, assinatura digital, controle de CA | Falta de workflow completo e integração profunda com PGR | Não cobre toda a lógica decisória do processo |
+| RSData | Integração com SST e riscos | Foco mais gerencial que operacional | Menor foco na execução prática da entrega |
 
 ---
 
-# ⚖️ 2. Base Normativa
+## 2.4 ⭐ Diferencial do Projeto Proposto
 
-## NR-06
-- Registro obrigatório  
-- Permite sistema eletrônico  
-- Permite assinatura digital  
+A análise das soluções existentes demonstra que, embora existam sistemas consolidados no mercado, nenhum atende integralmente às necessidades operacionais e legais de forma integrada.
 
-## NR-01
-- Autenticidade  
-- Integridade  
-- Rastreabilidade  
-- Privacidade  
+O sistema proposto neste projeto se diferencia por:
+
+- Implementar um fluxo completo e estruturado:
+  - solicitação → aprovação → entrega → registro → auditoria;
+- Integrar diretamente com o PGR, garantindo coerência entre risco e fornecimento;
+- Garantir conformidade jurídica completa com:
+  - NR-06
+  - NR-01
+- Implementar controle inteligente de uso de EPIs:
+  - frequência de retirada;
+  - padrões de consumo;
+  - alertas de comportamento;
+- Fornecer rastreabilidade total com trilha de auditoria detalhada;
+- Focar na experiência do usuário operacional, reduzindo fricção no processo;
+- Atuar não apenas como sistema de registro, mas como ferramenta de decisão e prevenção.
 
 > [!IMPORTANT]
-> A aderência às normas é essencial para validade jurídica do sistema.
+> O principal diferencial do projeto está na combinação entre profundidade técnica de SST, workflow completo e aderência normativa.
 
 ---
 
-# 🟠 3. Benchmark
+## 2.5 🧩 Benner – ERP para Gestão Empresarial / RH
 
-## GAP Sistemas
+**🔗 Link:** https://www.benner.com.br/erp-para-gestao-de-recursos-humanos
 
-### 📷 Interface
+### 📝 Descrição da Solução
 
-![GAP](https://raw.githubusercontent.com/ramirespaes/Gestao_Epi_Fabricas/main/IMAGEN/Figura%20%E2%80%93%20Interface%20do%20sistema%20GAP.png)
+A Benner oferece um ERP completo voltado à gestão empresarial, incluindo módulos de Recursos Humanos, suprimentos, logística, saúde e gestão corporativa.
 
-### Pontos Fortes
-- rastreabilidade  
-- assinatura digital  
-- controle de CA  
+O sistema é caracterizado por:
 
-### Limitações
-- workflow incompleto  
-- baixa integração com PGR  
+- integração entre múltiplas áreas da empresa;
+- centralização de dados em um único ambiente;
+- automação de processos administrativos;
+- dashboards e indicadores em tempo real;
+- controle de estoque e suprimentos;
+- gestão de pessoas (RH) com visão estratégica.
 
----
+Trata-se de uma solução robusta, amplamente utilizada por grandes empresas, com foco em governança, eficiência e tomada de decisão baseada em dados.
 
-## RSData
+### 📷 Espaço para comparação visual
 
-### 📷 Interface
+Não foram identificadas imagens disponíveis da interface do sistema no site oficial da Benner para fins de comparação visual.
 
-![RSData](https://raw.githubusercontent.com/ramirespaes/Gestao_Epi_Fabricas/main/IMAGEN/Figura%20%E2%80%93%20Interface%20do%20sistema%20RSData%20.png)
+### ✅ Pontos Fortes
 
-### Pontos Fortes
-- integração com riscos  
-- sistema consolidado  
+- Plataforma altamente integrada (ERP completo);
+- Forte capacidade de centralização e análise de dados;
+- Automação de processos corporativos;
+- Escalabilidade para grandes operações;
+- Controle eficiente de estoque e suprimentos;
+- Alto nível de compliance e governança empresarial.
 
-### Limitações
-- foco gerencial  
-- pouca operação prática  
+### ⚠️ Limitações Identificadas
 
----
+Apesar de sua robustez, o ERP da Benner apresenta limitações relevantes quando analisado sob a ótica específica da gestão de EPIs:
 
-## Comparação
-
-| Sistema | Força | Limitação |
-|--------|------|----------|
-| GAP | Rastreabilidade | Workflow incompleto |
-| RSData | Integração SST | Pouco operacional |
-
----
-
-## Diferencial do Projeto
-
-- fluxo completo  
-- integração com PGR  
-- conformidade NR-01 e NR-06  
-- rastreabilidade total  
-
-> [!IMPORTANT]
-> O sistema atua como ferramenta de decisão, não apenas registro.
+- Não é especializado em Segurança do Trabalho ou gestão de EPIs;
+- Não contempla nativamente o fluxo operacional completo de fornecimento de EPI (solicitação → aprovação → entrega);
+- Ausência de vínculo direto com o PGR para definição automática de EPIs por risco;
+- Não evidencia controle detalhado de CA (Certificado de Aprovação);
+- Não possui foco na geração automatizada de ficha de EPI com validade jurídica conforme NR-06;
+- Interface e lógica voltadas para gestão administrativa, não operação de campo;
+- Dependência de customizações para atender requisitos específicos de SST.
 
 ---
 
-# 🟣 4. Proposta de Solução
+## 2.6 📊 Comparação Atualizada das Soluções
 
-## Visão Geral
-
-Sistema web com:
-
-- digitalização  
-- automação  
-- rastreabilidade  
+| Solução | Tipo | Pontos Fortes | Limitações | Diferencial vs. Projeto |
+|---------|------|---------------|------------|--------------------------|
+| GAP Sistemas | SST especializado | Controle de EPI, rastreabilidade, assinatura digital | Falta de workflow completo e integração profunda com PGR | Parcialmente aderente |
+| RSData | SST integrado | Integração com saúde e riscos | Menos foco operacional | Mais gerencial |
+| Benner ERP | ERP corporativo | Integração total, BI, controle empresarial | Não especializado em EPI | Muito genérico para SST |
 
 ---
 
-## Arquitetura
+## 2.7 🧠 Análise Estratégica
 
-### Frontend
-- interface web  
+A inclusão do ERP da Benner evidencia um ponto crítico de mercado:
 
-### Backend
-- regras de negócio  
+Existem dois tipos de soluções:
 
-### Banco de Dados
-- EPIs  
-- entregas  
-- logs  
+### 1. Sistemas especializados em SST
 
-### Segurança
-- controle de acesso  
+- Foco técnico
+- Boa aderência normativa
+- Limitados em integração e inteligência
 
----
+### 2. ERPs corporativos
 
-## Fluxo do Sistema
-
-
+- Alta integração
+- Forte capacidade analítica
+- Pouca profundidade operacional em SST
 
 ---
 
-# 📈 5. KPIs
+## 2.8 🎯 Posicionamento do Projeto
 
-- 100% registros digitais  
-- redução de erros  
-- auditoria mais rápida  
-- controle de estoque eficiente  
+O sistema proposto neste projeto se posiciona como uma solução híbrida e estratégica, unindo:
 
-> [!NOTE]
-> KPIs demonstram valor real do projeto.
+- Profundidade técnica de SST
+- Fluxo operacional completo
+- Integração com gestão de riscos (PGR)
+- Capacidade de análise e decisão
+
+Ou seja:
+
+- Não é apenas um sistema de EPI
+- Não é apenas um ERP
+- É um sistema especializado com inteligência operacional
 
 ---
 
-# 👥 6. Público-Alvo
+# 🟣 3. Proposta de Solução
 
-- trabalhadores  
-- supervisores  
-- SST  
-- compras  
-- auditores  
+## 3.1 🧠 Visão Geral da Solução
+
+O sistema proposto consiste em uma plataforma web para gestão integrada de Equipamentos de Proteção Individual (EPIs), com foco na digitalização completa do fluxo operacional, rastreabilidade das informações e conformidade com requisitos legais.
+
+A solução será acessível por diferentes perfis de usuários (trabalhador, supervisor, SST e auditor), garantindo controle centralizado e automação dos processos.
+
+O sistema atuará como uma camada inteligente de gestão, substituindo registros manuais e integrando informações operacionais, de estoque e de conformidade normativa.
+
+---
+
+## 3.2 🏗️ Arquitetura da Solução
+
+A arquitetura do sistema será baseada em modelo cliente-servidor web, podendo evoluir para uma arquitetura em camadas (layered architecture).
+
+### 🖥️ Frontend (Interface do Usuário)
+
+- Aplicação web responsiva (desktop/tablet/kiosk);
+- Interface simplificada para trabalhadores;
+- Painéis gerenciais para SST e supervisores;
+- Formulários de solicitação e aprovação.
+
+### ⚙️ Backend (Lógica de Negócio)
+
+Responsável por:
+
+- regras de fornecimento de EPIs;
+- validação de CA;
+- controle de fluxo (workflow);
+- geração automática de ficha de EPI;
+- gestão de usuários e permissões;
+- regras vinculadas ao PGR.
+
+### 🗄️ Banco de Dados
+
+Armazena:
+
+- cadastro de trabalhadores;
+- catálogo de EPIs (com histórico de CA);
+- registros de entrega;
+- assinaturas eletrônicas;
+- logs e trilha de auditoria;
+- dados de estoque.
+
+### 🔐 Módulo de Autenticação e Segurança
+
+- controle de acesso por perfil;
+- autenticação por login/senha;
+- possibilidade de evolução para biometria ou assinatura digital ICP.
+
+### 📊 Módulo de Relatórios
+
+- geração de relatórios em PDF/Excel;
+- dashboards operacionais;
+- exportação para auditorias.
+
+---
+
+## 3.3 🔄 Fluxo de Funcionamento do Sistema
+
+O funcionamento do sistema será estruturado em etapas sequenciais:
+
+### 1. Solicitação de EPI
+
+- Trabalhador acessa o sistema;
+- Seleciona o EPI necessário;
+- Informa o motivo da solicitação;
+- Sistema sugere EPIs com base na função (integração com PGR).
+
+### 2. Aprovação do Supervisor
+
+- Supervisor recebe a solicitação;
+- Pode:
+  - aprovar;
+  - negar;
+  - ajustar quantidade;
+- Todas as ações ficam registradas (log).
+
+### 3. Separação e Entrega (SST)
+
+- SST recebe solicitações aprovadas;
+- Verifica disponibilidade em estoque;
+- Realiza a baixa do EPI no sistema;
+- Efetua a entrega ao trabalhador.
+
+### 4. Geração Automática da Ficha de EPI
+
+O sistema gera automaticamente o registro contendo:
+
+- dados do trabalhador;
+- descrição do EPI;
+- número do CA;
+- data e hora;
+- responsável pela entrega.
+
+### 5. Assinatura Eletrônica
+
+- Trabalhador confirma recebimento;
+- SST valida entrega;
+- Sistema registra evidências (data, hora, usuário, dispositivo).
+- Atendendo às exigências da NR-06.
+
+### 6. Armazenamento e Auditoria
+
+- Registro armazenado digitalmente;
+- Disponível para consulta e exportação;
+- Atende requisitos da NR-01.
+
+### 7. Relatórios e Monitoramento
+
+- SST acessa dashboards;
+- Sistema gera alertas automáticos:
+  - estoque baixo;
+  - CA a vencer;
+  - excesso de consumo.
 
 ---
 
 # 📋 Parecer do Comitê de Avaliação
 
+> [!NOTE]
+> Esta seção deverá ser preenchida pelos entrevistados/avaliadores durante a etapa de avaliação do projeto.
 
-> Esta seção deverá ser preenchida pelos avaliadores do projeto.
+## 👤 Avaliador 1
 
-## Avaliador 1
-Nome: __________________________  
-Status: [ ] Aprovado  [ ] Ajustar  
+**Nome:** __________________________  
+**Status:** [ ] Aprovado  [ ] Ajustar  
 
-Observações:  
-____________________________________  
-
----
-
-## Avaliador 2
-Nome: __________________________  
-Status: [ ] Aprovado  [ ] Ajustar  
-
-Observações:  
-____________________________________  
+**Observações:**  
+____________________________________________________  
+____________________________________________________  
+____________________________________________________  
 
 ---
 
-## Avaliador 3
-Nome: __________________________  
-Status: [ ] Aprovado  [ ] Ajustar  
+## 👤 Avaliador 2
 
-Observações:  
-____________________________________  
+**Nome:** __________________________  
+**Status:** [ ] Aprovado  [ ] Ajustar  
+
+**Observações:**  
+____________________________________________________  
+____________________________________________________  
+____________________________________________________  
+
+---
+
+## 👤 Avaliador 3
+
+**Nome:** __________________________  
+**Status:** [ ] Aprovado  [ ] Ajustar  
+
+**Observações:**  
+____________________________________________________  
+____________________________________________________  
+____________________________________________________  
