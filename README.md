@@ -97,3 +97,7 @@ Sugestões:
 Bruno Franzosi - O trabalho se destaca bastante por trazer um problema real e aplicável dentro da indústria, o que torna a proposta muito relevante. A solução está bem alinhada com a realidade operacional. Como melhoria, poderia incluir um pequeno cenário de uso (exemplo prático do sistema funcionando no dia a dia), o que deixaria ainda mais tangível.
 
 Bruno Luis Pereira - O trabalho está muito bem estruturado e organizado, facilitando bastante o entendimento do problema e da solução proposta. A divisão entre contexto, benchmark e proposta ficou clara e lógica. Como sugestão de melhoria, talvez valha incluir um diagrama visual simples do fluxo do sistema para complementar a explicação textual.
+
+Comentários: 
+
+Bruno Franzosi: A proposta do sistema é muito interessante, pois está diretamente ligada a uma necessidade comum em ambientes industriais. O trabalho mostra que a digitalização da gestão de EPIs pode trazer benefícios importantes, como maior controle, padronização dos registros e facilidade na consulta de informações. É um projeto com aplicação prática e grande utilidade para a rotina da Segurança do Trabalho.
