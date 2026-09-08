@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Suporte — Gestão de EPIs</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+  <link rel="stylesheet" href="../css/main.css">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<div id="loginScreen" style="position:fixed;inset:0;z-index:10000;
+       background:var(--surface);display:flex;align-items:center;justify-content:center;
+       padding:20px">
+
+    <div style="width:100%;max-width:400px">
+
+      <!-- Logo -->
+      <div style="text-align:center;margin-bottom:28px">
+        <div style="width:64px;height:64px;border-radius:20px;background:#1a3a6b;
+                    display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
+          <span class="material-symbols-outlined" style="font-size:32px;color:#fff">safety_check</span>
+        </div>
+        <h1 style="font-size:20px;font-weight:700;margin:0">Gestão de EPIs</h1>
+        <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Cobresul Metais LTDA</p>
+      </div>
+
+      <!-- ── PAINEL 1: LOGIN ────────────────────────────────────────────── -->
+      <section class="card" id="loginPanel">
+        <div class="form-grid" style="margin-bottom:4px">
+          <div class="field full">
+            <label for="loginEmail">E-mail corporativo</label>
+            <input id="loginEmail" class="input" type="email" placeholder="seu.nome@cobresul.com.br" autocomplete="username">
+          </div>
+          <div class="field full">
+            <label for="loginPassword">Senha</label>
+            <input id="loginPassword" class="input" type="password" placeholder="••••••••" autocomplete="current-password"
+                   onkeydown="if(event.key==='Enter') doLogin()">
+          </div>
+        </div>
+
+        <div id="loginError" style="display:none;margin-bottom:10px">
+          <div class="notice" style="background:rgba(255,59,48,0.06);color:#FF3B30;border-color:rgba(255,59,48,0.2)">
+            E-mail ou senha incorretos.
+          </div>
+        </div>
+
+        <button class="filled-btn" style="width:100%;height:48px" onclick="doLogin()">
+          <span class="material-symbols-outlined">login</span>Entrar
+        </button>
+
+        <!-- Login biométrico -->
+        <button class="outlined-btn" id="biometricLoginBtn" style="width:100%;height:48px;margin-top:10px;display:none"
+                onclick="loginWithBiometrics()">
+          <span class="material-symbols-outlined">fingerprint</span>Entrar com biometria
+        </button>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
+          <button type="button" onclick="showLoginPanel('recoverPanel')"
+                  style="background:none;border:none;color:#007AFF;font-size:12px;cursor:pointer;padding:0">
+            Esqueci minha senha
+          </button>
+          <button type="button" onclick="showLoginPanel('biometricSetupPanel')"
+                  style="background:none;border:none;color:#007AFF;font-size:12px;cursor:pointer;padding:0">
+            Configurar biometria
+          </button>
+        </div>
+      </section>
+
+      <!-- ── PAINEL 2: RECUPERAÇÃO DE SENHA ─────────────────────────────── -->
+      <section class="card" id="recoverPanel" style="display:none">
+        <div class="card-header">
+          <div class="card-title">
+            <div class="card-icon" style="background:rgba(255,149,0,0.1);color:#FF9500">mail</div>
+            <div>
+              <h2>Recuperar senha</h2>
+              <p>Informe seu e-mail corporativo para receber o código de verificação.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Etapa 1: pedir e-mail -->
+        <div id="recoverStep1">
+          <div class="field full">
+            <label for="recoverEmail">E-mail corporativo</label>
+            <input id="recoverEmail" class="input" type="email" placeholder="seu.nome@cobresul.com.br">
+          </div>
+          <button class="filled-btn" style="width:100%;height:46px;margin-top:12px" onclick="sendRecoveryCode()">
+            <span class="material-symbols-outlined">send</span>Enviar código
+          </button>
+        </div>
+
+        <!-- Etapa 2: código + nova senha -->
+        <div id="recoverStep2" style="display:none">
+          <div class="notice" style="margin-bottom:12px">
+            Código enviado para <strong id="recoverEmailDisplay"></strong>.
+            <span style="display:block;margin-top:4px;font-size:11px">(Simulação: o código aparece no console do navegador — F12)</span>
+          </div>
+          <div class="field full">
+            <label for="recoverCode">Código de verificação</label>
+            <input id="recoverCode" class="input" type="text" maxlength="6" placeholder="000000">
+          </div>
+          <div class="field full">
+            <label for="recoverNewPassword">Nova senha</label>
+            <input id="recoverNewPassword" class="input" type="password" placeholder="Mínimo 8 caracteres">
+          </div>
+          <button class="filled-btn" style="width:100%;height:46px;margin-top:8px" onclick="confirmPasswordReset()">
+            <span class="material-symbols-outlined">check</span>Redefinir senha
+          </button>
+        </div>
+
+        <button type="button" onclick="showLoginPanel('loginPanel')"
+                style="background:none;border:none;color:#007AFF;font-size:12px;cursor:pointer;padding:0;margin-top:14px">
+          ← Voltar ao login
+        </button>
+      </section>
+
+      <!-- ── PAINEL 3: CONFIGURAR BIOMETRIA ─────────────────────────────── -->
+      <section class="card" id="biometricSetupPanel" style="display:none">
+        <div class="card-header">
+          <div class="card-title">
+            <div class="card-icon" style="background:rgba(0,122,255,0.1);color:#007AFF">fingerprint</div>
+            <div>
+              <h2>Configurar login biométrico</h2>
+              <p>Use Touch ID, Face ID, Windows Hello ou leitor de digital para entrar sem senha.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="field full">
+            <label for="biometricEmail">E-mail corporativo</label>
+            <input id="biometricEmail" class="input" type="email" placeholder="seu.nome@cobresul.com.br">
+          </div>
+          <div class="field full">
+            <label for="biometricPassword">Senha (confirmação)</label>
+            <input id="biometricPassword" class="input" type="password" placeholder="••••••••">
+          </div>
+        </div>
+
+        <div id="biometricUnsupported" style="display:none;margin-top:8px">
+          <div class="notice" style="background:rgba(255,59,48,0.06);color:#FF3B30;border-color:rgba(255,59,48,0.2)">
+            Este navegador/dispositivo não tem suporte a biometria (WebAuthn).
+          </div>
+        </div>
+
+        <button class="filled-btn" style="width:100%;height:46px;margin-top:8px" onclick="registerBiometrics()">
+          <span class="material-symbols-outlined">fingerprint</span>Cadastrar biometria deste dispositivo
+        </button>
+
+        <button type="button" onclick="showLoginPanel('loginPanel')"
+                style="background:none;border:none;color:#007AFF;font-size:12px;cursor:pointer;padding:0;margin-top:14px">
+          ← Voltar ao login
+        </button>
+      </section>
+
+      <p style="text-align:center;font-size:11px;color:var(--on-surface-variant);margin-top:20px">
+        Acesso restrito a colaboradores autorizados · NR-06 / NR-01 / LGPD
+      </p>
+    </div>
+  </div>
+
+<div class="mobile-overlay" onclick="closeMobileMenu()"></div>
+<div class="mobile-topbar">
+    <div class="mobile-topbar-icon">safety_check</div>
+    <span class="mobile-topbar-title">Gestão de EPIs</span>
+  </div>
+  <button class="mobile-global-menu" type="button" onclick="toggleSidebar()" aria-label="Abrir menu">
+    <svg width="20" height="14" viewBox="0 0 20 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <line x1="0" y1="1"  x2="20" y2="1"  stroke="#1C1C1E" stroke-width="1.8" stroke-linecap="round"/>
+      <line x1="0" y1="7"  x2="20" y2="7"  stroke="#1C1C1E" stroke-width="1.8" stroke-linecap="round"/>
+      <line x1="0" y1="13" x2="20" y2="13" stroke="#1C1C1E" stroke-width="1.8" stroke-linecap="round"/>
+    </svg>
+  </button>
+  <div class="layout">
+<aside class="sidebar">
+      <div class="brand">
+        <div class="brand-left">
+          <div class="brand-badge">security</div>
+          <div>
+            <div class="brand-title">Gestão de EPIs</div>
+            <div class="brand-sub" style="font-size:11px;color:var(--on-surface-variant);margin-top:2px;">v1.0</div>
+          </div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <div class="nav-section">Visão geral</div>
+        <a class="active" data-page="dashboard" href="javascript:void(0)" onclick="showView('dashboardView'); setActiveNav(this); return false;"><div class="nav-icon blue">dashboard</div>Dashboard</a>
+        <a data-page="reports" href="javascript:void(0)" onclick="showView('reportsView'); setActiveNav(this); return false;"><div class="nav-icon indigo">analytics</div>Relatórios</a>
+        <a data-page="operations" href="javascript:void(0)" onclick="showView('operationsView'); setActiveNav(this); return false;"><div class="nav-icon gray">receipt_long</div>Operações</a>
+        <div class="nav-section">Estoque</div>
+        <a data-page="materials" href="javascript:void(0)" onclick="showView('materialsView'); setActiveNav(this); return false;"><div class="nav-icon teal">inventory_2</div>Materiais</a>
+        <a data-page="eligibilityRules" href="javascript:void(0)" onclick="showView('eligibilityRulesView'); setActiveNav(this); return false;"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor</a>
+        <a data-page="purchases" href="javascript:void(0)" onclick="showView('purchasesView'); setActiveNav(this); return false;"><div class="nav-icon orange">shopping_cart</div>Compras / Entradas</a>
+        <a data-page="stockValidity" href="javascript:void(0)" onclick="showView('stockValidityView'); setActiveNav(this); return false;"><div class="nav-icon red">event_busy</div>Validade do Estoque</a>
+        <a data-page="availableItems" href="javascript:void(0)" onclick="showView('availableItemsView'); setActiveNav(this); return false;"><div class="nav-icon green">checklist</div>Itens Disponíveis</a>
+        <div class="nav-section">Entregas</div>
+        <a data-page="deliveredItems" href="javascript:void(0)" onclick="showView('deliveredItemsView'); setActiveNav(this); return false;"><div class="nav-icon green">inventory</div>EPIs Entregues</a>
+        <a data-page="epiFicha" href="javascript:void(0)" onclick="showView('epiFichaView'); setActiveNav(this); return false;"><div class="nav-icon brown">description</div>Ficha de EPI</a>
+        <a data-page="employeeHistory" href="javascript:void(0)" onclick="showView('employeeHistoryView'); setActiveNav(this); return false;"><div class="nav-icon blue">history</div>Histórico de Funcionários</a>
+        <div class="nav-section">Solicitações</div>
+        <a data-page="self-service" href="javascript:void(0)" onclick="showView('selfServiceView'); setActiveNav(this); return false;"><div class="nav-icon blue">badge</div>Autoatendimento (Totem)</a>
+        <a data-page="request" href="javascript:void(0)" onclick="showView('requestView'); setActiveNav(this); return false;"><div class="nav-icon blue">assignment</div>Pedido de EPI</a>
+        <a data-page="supervisorApproval" href="javascript:void(0)" onclick="showView('supervisorApprovalView'); setActiveNav(this); return false;"><div class="nav-icon orange">fact_check</div>Aprovação do Supervisor</a>
+        <a data-page="stockRequests" href="javascript:void(0)" onclick="showView('stockRequestsView'); setActiveNav(this); return false;"><div class="nav-icon red">playlist_add_check_circle</div>Sem Estoque</a>
+        <div class="nav-section">Administração</div>
+        <a data-page="importEmployees" href="javascript:void(0)" onclick="showView('importEmployeesView'); setActiveNav(this); return false;"><div class="nav-icon green">upload_file</div>Importar Funcionários</a>
+        <a data-page="newUser" href="javascript:void(0)" onclick="showView('newUserView'); setActiveNav(this); return false;"><div class="nav-icon green">person_add</div>Novo Usuário</a>
+        <a data-page="userAdmin" href="javascript:void(0)" onclick="showView('userAdminView'); setActiveNav(this); return false;"><div class="nav-icon indigo">group</div>Administração de Usuários</a>
+        <a data-page="config" href="javascript:void(0)" onclick="showView('configView'); setActiveNav(this); return false;"><div class="nav-icon gray">settings</div>Configurações</a>
+        <a data-page="support" href="javascript:void(0)" onclick="showView('supportView'); setActiveNav(this); return false;"><div class="nav-icon teal">support_agent</div>Suporte</a>
+        <a data-page="emailsGestao" href="javascript:void(0)" onclick="showView('emailsGestaoView'); setActiveNav(this); return false;"><div class="nav-icon blue">mark_email_read</div>Gestão de E-mails</a>
+        <a data-page="lgpd" href="javascript:void(0)" onclick="showView('lgpdView'); setActiveNav(this); return false;"><div class="nav-icon indigo">privacy_tip</div>Privacidade / LGPD</a>
+      </nav>
+    </aside>
+
+    <main class="content">
+<section id="supportView" class="view active">
+        <div class="page-actions">
+          <div>
+            <h2 style="font-family:var(--font-brand);font-size:22px;line-height:1.1;letter-spacing:-0.4px;font-weight:500">Suporte</h2>
+            <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Central de ajuda para dúvidas do sistema, abertura de chamados e contatos de apoio.</p>
+          </div>
+          <span class="badge role-admin">Ajuda e atendimento</span>
+        </div>
+
+        <section class="grid">
+          <div class="stack">
+            <section class="card">
+              <div class="card-header">
+                <div class="card-title">
+                  <div class="card-icon">support_agent</div>
+                  <div>
+                    <h2>Canais de suporte</h2>
+                    <p>Escolha o canal adequado conforme o tipo de necessidade.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="switch-list">
+                <div class="switch-row">
+                  <div class="switch-text">
+                    <strong>Suporte do sistema</strong>
+                    <span>E-mail: suporte@empresa.com · Atendimento para erros, lentidão ou falhas operacionais.</span>
+                  </div>
+                  <button class="mini-btn" type="button" onclick="openSupportModal('sistema')">Abrir chamado</button>
+                </div>
+                <div class="switch-row">
+                  <div class="switch-text">
+                    <strong>Almoxarifado / estoque</strong>
+                    <span>E-mail: almoxarifado@empresa.com · Dúvidas sobre saldo, entrega e reposição de materiais.</span>
+                  </div>
+                  <button class="mini-btn" type="button" onclick="openSupportModal('almoxarifado')">Solicitar apoio</button>
+                </div>
+                <div class="switch-row">
+                  <div class="switch-text">
+                    <strong>SST</strong>
+                    <span>E-mail: sst@empresa.com · Tratativas sobre validade de uso, troca e exigência de EPI.</span>
+                  </div>
+                  <button class="mini-btn" type="button" onclick="openSupportModal('sst')">Contatar SST</button>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div class="stack">
+            <section class="card">
+              <div class="card-header">
+                <div class="card-title">
+                  <div class="card-icon">help</div>
+                  <div>
+                    <h2>Dúvidas frequentes</h2>
+                    <p>Respostas rápidas para os fluxos mais comuns do sistema.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="switch-list">
+                <div class="switch-row"><div class="switch-text"><strong>Como solicitar um EPI?</strong><span>Acesse Pedido de EPI, selecione o item, tamanho e quantidade, depois envie a solicitação.</span></div></div>
+                <div class="switch-row"><div class="switch-text"><strong>O que acontece se não tiver estoque?</strong><span>O pedido entra em Solicitações sem Estoque e aguarda compra ou reposição.</span></div></div>
+                <div class="switch-row"><div class="switch-text"><strong>Onde vejo o histórico do colaborador?</strong><span>Na página Histórico de Funcionários, buscando por nome, matrícula ou CPF.</span></div></div>
+              </div>
+            </section>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+<!-- ═══ MODAL: ATIVAR MODO QUIOSQUE ═══════════════════════════════ -->
+      <div class="modal-overlay" id="kioskActivateModal" onclick="closeKioskActivateModal(event)">
+        <div class="modal-card" style="width:min(100%,420px)" onclick="event.stopPropagation()">
+          <div class="modal-header">
+            <div class="modal-title">
+              <div class="card-icon" style="background:rgba(0,122,255,0.1);color:#007AFF">lock</div>
+              <div>
+                <h2 style="font-family:var(--font-brand);font-size:17px;font-weight:500">Ativar Modo Quiosque</h2>
+                <p style="font-size:12px;color:var(--on-surface-variant);margin-top:2px">A sidebar e a navegação serão bloqueadas. Só será possível desbloquear com a senha de administrador.</p>
+              </div>
+            </div>
+            <button class="modal-close" onclick="closeKioskActivateModal()">close</button>
+          </div>
+          <div class="field full" style="margin-top:8px">
+            <label>Defina a senha de desbloqueio</label>
+            <input id="kioskPassword" class="input" type="password" placeholder="Mínimo 4 dígitos" autocomplete="new-password">
+          </div>
+          <div class="notice" style="margin-top:10px;background:rgba(255,149,0,0.06);color:#C07000;border-color:rgba(255,149,0,0.2)">
+            Guarde esta senha. Ela será exigida para sair do modo quiosque neste dispositivo.
+          </div>
+          <div class="footer-actions">
+            <button class="outlined-btn" onclick="closeKioskActivateModal()">Cancelar</button>
+            <button class="filled-btn" onclick="activateKioskMode()">
+              <span class="material-symbols-outlined">lock</span>Ativar agora
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ OVERLAY: MODO QUIOSQUE ATIVO (bloqueia tudo) ═══════════════ -->
+      <div id="kioskLockOverlay" style="display:none;position:fixed;inset:0;z-index:9999;
+           background:var(--surface);align-items:center;justify-content:center;flex-direction:column;gap:16px">
+        <div style="width:72px;height:72px;border-radius:22px;background:rgba(0,122,255,0.1);
+                    display:flex;align-items:center;justify-content:center">
+          <span class="material-symbols-outlined" style="font-size:36px;color:#007AFF">lock</span>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:16px;font-weight:600">Modo Quiosque Ativo</div>
+          <div style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">
+            Este dispositivo está em modo de autoatendimento.<br>Digite a senha de administrador para liberar.
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="kioskUnlockInput" class="input" type="password" placeholder="Senha de desbloqueio"
+                 style="width:220px" onkeydown="if(event.key==='Enter') unlockKioskMode()">
+          <button class="filled-btn" onclick="unlockKioskMode()">
+            <span class="material-symbols-outlined">lock_open</span>Desbloquear
+          </button>
+        </div>
+        <div id="kioskUnlockError" style="display:none;color:#FF3B30;font-size:12px">Senha incorreta.</div>
+      </div>
+
+<script src="../js/db-api.js"></script>
+<script src="../js/main.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    // init
+    var navLink = document.querySelector('.nav a[data-page="support"]');
+    if (navLink && typeof setActiveNav === 'function') setActiveNav(navLink);
+    document.querySelectorAll('.nav a[data-page]').forEach(function(a) {
+      var page = a.getAttribute('data-page');
+      var fileMap = {
+        'self-service':'self-service.html','dashboard':'dashboard.html','config':'config.html',
+        'supervisorApproval':'supervisor-approval.html','request':'request.html',
+        'stockRequests':'stock-requests.html','userAdmin':'user-admin.html',
+        'operations':'operations.html','eligibilityRules':'eligibility-rules.html',
+        'materials':'materials.html','purchases':'purchases.html',
+        'stockValidity':'stock-validity.html','availableItems':'available-items.html',
+        'epiFicha':'epi-ficha.html','deliveredItems':'delivered-items.html',
+        'reports':'reports.html','employeeHistory':'employee-history.html',
+        'newUser':'new-user.html','support':'support.html',
+        'importEmployees':'import-employees.html','lgpd':'lgpd.html','emailsGestao':'emails-gestao.html'
+      };
+      if (fileMap[page]) {
+        a.setAttribute('href', fileMap[page]);
+        a.removeAttribute('onclick');
+      }
+    });
+  });
+</script>
+</body>
+</html>

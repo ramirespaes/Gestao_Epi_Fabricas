@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Administração de Usuários — Gestão de EPIs</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+  <link rel="stylesheet" href="../css/main.css">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<div id="loginScreen" style="position:fixed;inset:0;z-index:10000;
+       background:var(--surface);display:flex;align-items:center;justify-content:center;
+       padding:20px">
+
+    <div style="width:100%;max-width:400px">
+
+      <!-- Logo -->
+      <div style="text-align:center;margin-bottom:28px">
+        <div style="width:64px;height:64px;border-radius:20px;background:#1a3a6b;
+                    display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
+          <span class="material-symbols-outlined" style="font-size:32px;color:#fff">safety_check</span>
+        </div>
+        <h1 style="font-size:20px;font-weight:700;margin:0">Gestão de EPIs</h1>
+        <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Cobresul Metais LTDA</p>
+      </div>
+
+      <!-- ── PAINEL 1: LOGIN ────────────────────────────────────────────── -->
+      <section class="card" id="loginPanel">
+        <div class="form-grid" style="margin-bottom:4px">
+          <div class="field full">
+            <label for="loginEmail">E-mail corporativo</label>
+            <input id="loginEmail" class="input" type="email" placeholder="seu.nome@cobresul.com.br" autocomplete="username">
+          </div>
+          <div class="field full">
+            <label for="loginPassword">Senha</label>
+            <input id="loginPassword" class="input" type="password" placeholder="••••••••" autocomplete="current-password"
+                   onkeydown="if(event.key==='Enter') doLogin()">
+          </div>
+        </div>
+
+        <div id="loginError" style="display:none;margin-bottom:10px">
+          <div class="notice" style="background:rgba(255,59,48,0.06);color:#FF3B30;border-color:rgba(255,59,48,0.2)">
+            E-mail ou senha incorretos.
+          </div>
+        </div>
+
+        <button class="filled-btn" style="width:100%;height:48px" onclick="doLogin()">
+          <span class="material-symbols-outlined">login</span>Entrar
+        </button>
+
+        <!-- Login biométrico -->
+        <button class="outlined-btn" id="biometricLoginBtn" style="width:100%;height:48px;margin-top:10px;display:none"
+                onclick="loginWithBiometrics()">
+          <span class="material-symbols-outlined">fingerprint</span>Entrar com biometria
+        </button>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
+          <button type="button" onclick="showLoginPanel('recoverPanel')"
+                  style="background:none;border:none;color:#007AFF;font-size:12px;cursor:pointer;padding:0">
+            Esqueci minha senha
+          </button>
+          <button type="button" onclick="showLoginPanel('biometricSetupPanel')"
+                  style="background:none;border:none;color:#007AFF;font-size:12px;cursor:pointer;padding:0">
+            Configurar biometria
+          </button>
+        </div>
+      </section>
+
+      <!-- ── PAINEL 2: RECUPERAÇÃO DE SENHA ─────────────────────────────── -->
+      <section class="card" id="recoverPanel" style="display:none">
+        <div class="card-header">
+          <div class="card-title">
+            <div class="card-icon" style="background:rgba(255,149,0,0.1);color:#FF9500">mail</div>
+            <div>
+              <h2>Recuperar senha</h2>
+              <p>Informe seu e-mail corporativo para receber o código de verificação.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Etapa 1: pedir e-mail -->
+        <div id="recoverStep1">
+          <div class="field full">
+            <label for="recoverEmail">E-mail corporativo</label>
+            <input id="recoverEmail" class="input" type="email" placeholder="seu.nome@cobresul.com.br">
+          </div>
+          <button class="filled-btn" style="width:100%;height:46px;margin-top:12px" onclick="sendRecoveryCode()">
+            <span class="material-symbols-outlined">send</span>Enviar código
+          </button>
+        </div>
+
+        <!-- Etapa 2: código + nova senha -->
+        <div id="recoverStep2" style="display:none">
+          <div class="notice" style="margin-bottom:12px">
+            Código enviado para <strong id="recoverEmailDisplay"></strong>.
+            <span style="display:block;margin-top:4px;font-size:11px">(Simulação: o código aparece no console do navegador — F12)</span>
+          </div>
+          <div class="field full">
+            <label for="recoverCode">Código de verificação</label>
+            <input id="recoverCode" class="input" type="text" maxlength="6" placeholder="000000">
+          </div>
+          <div class="field full">
+            <label for="recoverNewPassword">Nova senha</label>
+            <input id="recoverNewPassword" class="input" type="password" placeholder="Mínimo 8 caracteres">
+          </div>
+          <button class="filled-btn" style="width:100%;height:46px;margin-top:8px" onclick="confirmPasswordReset()">
+            <span class="material-symbols-outlined">check</span>Redefinir senha
+          </button>
+        </div>
+
+        <button type="button" onclick="showLoginPanel('loginPanel')"
+                style="background:none;border:none;color:#007AFF;font-size:12px;cursor:pointer;padding:0;margin-top:14px">
+          ← Voltar ao login
+        </button>
+      </section>
+
+      <!-- ── PAINEL 3: CONFIGURAR BIOMETRIA ─────────────────────────────── -->
+      <section class="card" id="biometricSetupPanel" style="display:none">
+        <div class="card-header">
+          <div class="card-title">
+            <div class="card-icon" style="background:rgba(0,122,255,0.1);color:#007AFF">fingerprint</div>
+            <div>
+              <h2>Configurar login biométrico</h2>
+              <p>Use Touch ID, Face ID, Windows Hello ou leitor de digital para entrar sem senha.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="field full">
+            <label for="biometricEmail">E-mail corporativo</label>
+            <input id="biometricEmail" class="input" type="email" placeholder="seu.nome@cobresul.com.br">
+          </div>
+          <div class="field full">
+            <label for="biometricPassword">Senha (confirmação)</label>
+            <input id="biometricPassword" class="input" type="password" placeholder="••••••••">
+          </div>
+        </div>
+
+        <div id="biometricUnsupported" style="display:none;margin-top:8px">
+          <div class="notice" style="background:rgba(255,59,48,0.06);color:#FF3B30;border-color:rgba(255,59,48,0.2)">
+            Este navegador/dispositivo não tem suporte a biometria (WebAuthn).
+          </div>
+        </div>
+
+        <button class="filled-btn" style="width:100%;height:46px;margin-top:8px" onclick="registerBiometrics()">
+          <span class="material-symbols-outlined">fingerprint</span>Cadastrar biometria deste dispositivo
+        </button>
+
+        <button type="button" onclick="showLoginPanel('loginPanel')"
+                style="background:none;border:none;color:#007AFF;font-size:12px;cursor:pointer;padding:0;margin-top:14px">
+          ← Voltar ao login
+        </button>
+      </section>
+
+      <p style="text-align:center;font-size:11px;color:var(--on-surface-variant);margin-top:20px">
+        Acesso restrito a colaboradores autorizados · NR-06 / NR-01 / LGPD
+      </p>
+    </div>
+  </div>
+
+<div class="mobile-overlay" onclick="closeMobileMenu()"></div>
+<div class="mobile-topbar">
+    <div class="mobile-topbar-icon">safety_check</div>
+    <span class="mobile-topbar-title">Gestão de EPIs</span>
+  </div>
+  <button class="mobile-global-menu" type="button" onclick="toggleSidebar()" aria-label="Abrir menu">
+    <svg width="20" height="14" viewBox="0 0 20 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <line x1="0" y1="1"  x2="20" y2="1"  stroke="#1C1C1E" stroke-width="1.8" stroke-linecap="round"/>
+      <line x1="0" y1="7"  x2="20" y2="7"  stroke="#1C1C1E" stroke-width="1.8" stroke-linecap="round"/>
+      <line x1="0" y1="13" x2="20" y2="13" stroke="#1C1C1E" stroke-width="1.8" stroke-linecap="round"/>
+    </svg>
+  </button>
+  <div class="layout">
+<aside class="sidebar">
+      <div class="brand">
+        <div class="brand-left">
+          <div class="brand-badge">security</div>
+          <div>
+            <div class="brand-title">Gestão de EPIs</div>
+            <div class="brand-sub" style="font-size:11px;color:var(--on-surface-variant);margin-top:2px;">v1.0</div>
+          </div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <div class="nav-section">Visão geral</div>
+        <a class="active" data-page="dashboard" href="javascript:void(0)" onclick="showView('dashboardView'); setActiveNav(this); return false;"><div class="nav-icon blue">dashboard</div>Dashboard</a>
+        <a data-page="reports" href="javascript:void(0)" onclick="showView('reportsView'); setActiveNav(this); return false;"><div class="nav-icon indigo">analytics</div>Relatórios</a>
+        <a data-page="operations" href="javascript:void(0)" onclick="showView('operationsView'); setActiveNav(this); return false;"><div class="nav-icon gray">receipt_long</div>Operações</a>
+        <div class="nav-section">Estoque</div>
+        <a data-page="materials" href="javascript:void(0)" onclick="showView('materialsView'); setActiveNav(this); return false;"><div class="nav-icon teal">inventory_2</div>Materiais</a>
+        <a data-page="eligibilityRules" href="javascript:void(0)" onclick="showView('eligibilityRulesView'); setActiveNav(this); return false;"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor</a>
+        <a data-page="purchases" href="javascript:void(0)" onclick="showView('purchasesView'); setActiveNav(this); return false;"><div class="nav-icon orange">shopping_cart</div>Compras / Entradas</a>
+        <a data-page="stockValidity" href="javascript:void(0)" onclick="showView('stockValidityView'); setActiveNav(this); return false;"><div class="nav-icon red">event_busy</div>Validade do Estoque</a>
+        <a data-page="availableItems" href="javascript:void(0)" onclick="showView('availableItemsView'); setActiveNav(this); return false;"><div class="nav-icon green">checklist</div>Itens Disponíveis</a>
+        <div class="nav-section">Entregas</div>
+        <a data-page="deliveredItems" href="javascript:void(0)" onclick="showView('deliveredItemsView'); setActiveNav(this); return false;"><div class="nav-icon green">inventory</div>EPIs Entregues</a>
+        <a data-page="epiFicha" href="javascript:void(0)" onclick="showView('epiFichaView'); setActiveNav(this); return false;"><div class="nav-icon brown">description</div>Ficha de EPI</a>
+        <a data-page="employeeHistory" href="javascript:void(0)" onclick="showView('employeeHistoryView'); setActiveNav(this); return false;"><div class="nav-icon blue">history</div>Histórico de Funcionários</a>
+        <div class="nav-section">Solicitações</div>
+        <a data-page="self-service" href="javascript:void(0)" onclick="showView('selfServiceView'); setActiveNav(this); return false;"><div class="nav-icon blue">badge</div>Autoatendimento (Totem)</a>
+        <a data-page="request" href="javascript:void(0)" onclick="showView('requestView'); setActiveNav(this); return false;"><div class="nav-icon blue">assignment</div>Pedido de EPI</a>
+        <a data-page="supervisorApproval" href="javascript:void(0)" onclick="showView('supervisorApprovalView'); setActiveNav(this); return false;"><div class="nav-icon orange">fact_check</div>Aprovação do Supervisor</a>
+        <a data-page="stockRequests" href="javascript:void(0)" onclick="showView('stockRequestsView'); setActiveNav(this); return false;"><div class="nav-icon red">playlist_add_check_circle</div>Sem Estoque</a>
+        <div class="nav-section">Administração</div>
+        <a data-page="importEmployees" href="javascript:void(0)" onclick="showView('importEmployeesView'); setActiveNav(this); return false;"><div class="nav-icon green">upload_file</div>Importar Funcionários</a>
+        <a data-page="newUser" href="javascript:void(0)" onclick="showView('newUserView'); setActiveNav(this); return false;"><div class="nav-icon green">person_add</div>Novo Usuário</a>
+        <a data-page="userAdmin" href="javascript:void(0)" onclick="showView('userAdminView'); setActiveNav(this); return false;"><div class="nav-icon indigo">group</div>Administração de Usuários</a>
+        <a data-page="config" href="javascript:void(0)" onclick="showView('configView'); setActiveNav(this); return false;"><div class="nav-icon gray">settings</div>Configurações</a>
+        <a data-page="support" href="javascript:void(0)" onclick="showView('supportView'); setActiveNav(this); return false;"><div class="nav-icon teal">support_agent</div>Suporte</a>
+        <a data-page="emailsGestao" href="javascript:void(0)" onclick="showView('emailsGestaoView'); setActiveNav(this); return false;"><div class="nav-icon blue">mark_email_read</div>Gestão de E-mails</a>
+        <a data-page="lgpd" href="javascript:void(0)" onclick="showView('lgpdView'); setActiveNav(this); return false;"><div class="nav-icon indigo">privacy_tip</div>Privacidade / LGPD</a>
+      </nav>
+    </aside>
+
+    <main class="content">
+<section id="userAdminView" class="view active">
+        <div class="page-actions">
+          <div>
+            <h2 style="font-family:var(--font-brand);font-size:22px;line-height:1.1;letter-spacing:-0.4px;font-weight:500">Administração de Usuários</h2>
+            <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Página separada para perfis, permissões, status e ações administrativas.</p>
+          </div>
+
+        </div>
+
+        <section class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <div class="card-icon">admin_panel_settings</div>
+              <div>
+                <h2>Acesso por perfil</h2>
+                <p>O Master define quais páginas cada perfil pode acessar dentro do sistema.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="group-section-title">Grupos de acesso</div>
+          <div class="filters-grid" style="margin-bottom:18px">
+            <div class="field">
+              <label for="menuPreviewRole">Prévia do menu sanduíche</label>
+              <select id="menuPreviewRole" class="select" onchange="setMenuPreviewRole(this.value)">
+                <option value="Master">Master</option>
+                <option value="Administrador">Administrador</option>
+                <option value="Supervisor">Supervisor</option>
+                <option value="Usuário">Usuário</option>
+              </select>
+              <div class="helper">Quando uma página estiver desativada para o perfil, ela desaparece do menu sanduíche na prévia.</div>
+            </div>
+          </div>
+          <div class="group-section-sub">O Master pode ajustar visualmente quais páginas cada perfil consegue acessar.</div>
+
+          <div class="access-grid">
+            <div class="access-role-card">
+              <div class="group-toolbar">
+                <div>
+                  <h3>Grupo Master</h3>
+                  <p>Acesso total ao sistema e gestão das permissões dos demais grupos.</p>
+                </div>
+                <span class="group-badge">Total</span>
+              </div>
+              <div class="access-page-list">
+                <div class="access-page-item"><div class="access-page-meta"><strong>Configurações</strong><span>Conta, aparência e parâmetros gerais</span></div><button class="switch active" type="button" data-role="Master" data-page="config" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Administração de Usuários</strong><span>Perfis, status, permissões e gestão</span></div><button class="switch active" type="button" data-role="Master" data-page="userAdmin" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Suporte</strong><span>Ajuda rápida, contatos e abertura de chamado</span></div><button class="switch active" type="button" data-role="Master" data-page="support" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Operações</strong><span>Logs e auditoria do sistema</span></div><button class="switch active" type="button"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Relatórios</strong><span>Indicadores de estoque e reposição</span></div><button class="switch active" type="button"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Materiais</strong><span>Cadastro de materiais e EPIs</span></div><button class="switch active" type="button"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Novo Usuário</strong><span>Cadastro de novas contas</span></div><button class="switch active" type="button"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Pedido de EPI</strong><span>Solicitações e acompanhamento</span></div><button class="switch active" type="button" data-role="Master" data-page="request" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Compras / Entradas</strong><span>Registro de compras e entradas de estoque</span></div><button class="switch active" type="button" data-role="Master" data-page="purchases" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Validade do Estoque</strong><span>Controle de validade dos itens em estoque</span></div><button class="switch active" type="button" data-role="Master" data-page="stockValidity" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Itens Disponíveis</strong><span>Consulta por tipo, tamanho e quantidade</span></div><button class="switch active" type="button" data-role="Master" data-page="availableItems" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>EPIs Entregues</strong><span>Lista e filtro de entregas realizadas</span></div><button class="switch active" type="button" data-role="Master" data-page="deliveredItems" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Histórico de Funcionários</strong><span>Rastreabilidade completa por colaborador</span></div><button class="switch active" type="button" data-role="Master" data-page="employeeHistory" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Solicitações sem Estoque</strong><span>Pendências, compra e finalização</span></div><button class="switch active" type="button" data-role="Master" data-page="stockRequests" onclick="toggleRolePermission(this)"></button></div>
+              </div>
+            </div>
+
+            <div class="access-role-card">
+              <div class="group-toolbar">
+                <div>
+                  <h3>Grupo Administrador</h3>
+                  <p>Gerencia cadastros e acompanha o fluxo operacional.</p>
+                </div>
+                <span class="group-badge">Operacional</span>
+              </div>
+              <div class="access-page-list">
+                <div class="access-page-item"><div class="access-page-meta"><strong>Relatórios</strong><span>Consulta indicadores e saldo</span></div><button class="switch active" type="button" data-role="Administrador" data-page="reports" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Materiais</strong><span>Cadastro e atualização de itens</span></div><button class="switch active" type="button" data-role="Administrador" data-page="materials" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Operações</strong><span>Consulta logs do sistema</span></div><button class="switch active" type="button" data-role="Administrador" data-page="operations" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Pedido de EPI</strong><span>Acompanha pedidos e atendimento</span></div><button class="switch active" type="button" data-role="Administrador" data-page="request" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Compras / Entradas</strong><span>Registro de novas entradas no estoque</span></div><button class="switch active" type="button" data-role="Administrador" data-page="purchases" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Validade do Estoque</strong><span>Consulta de vencimentos do estoque</span></div><button class="switch active" type="button" data-role="Administrador" data-page="stockValidity" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Itens Disponíveis</strong><span>Saldo por tipo, tamanho e quantidade</span></div><button class="switch active" type="button" data-role="Administrador" data-page="availableItems" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>EPIs Entregues</strong><span>Consulta e rastreio das entregas</span></div><button class="switch active" type="button" data-role="Administrador" data-page="deliveredItems" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Histórico de Funcionários</strong><span>Consulta individual por colaborador</span></div><button class="switch active" type="button" data-role="Administrador" data-page="employeeHistory" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Solicitações sem Estoque</strong><span>Tratativa de pendências de estoque</span></div><button class="switch active" type="button" data-role="Administrador" data-page="stockRequests" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Novo Usuário</strong><span>Cadastro de contas</span></div><button class="switch" type="button" data-role="Administrador" data-page="newUser" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Administração de Usuários</strong><span>Gestão completa de perfis</span></div><button class="switch" type="button" data-role="Administrador" data-page="userAdmin" onclick="toggleRolePermission(this)"></button></div>
+              </div>
+            </div>
+
+            <div class="access-role-card">
+              <div class="group-toolbar">
+                <div>
+                  <h3>Grupo Supervisor</h3>
+                  <p>Acompanha equipe, pedidos e consultas operacionais.</p>
+                </div>
+                <span class="group-badge">Supervisão</span>
+              </div>
+              <div class="access-page-list">
+                <div class="access-page-item"><div class="access-page-meta"><strong>Pedido de EPI</strong><span>Solicitar e acompanhar itens da equipe</span></div><button class="switch active" type="button" data-role="Supervisor" data-page="request" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Relatórios</strong><span>Consulta de saldos e alertas</span></div><button class="switch active" type="button" data-role="Supervisor" data-page="reports" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Itens Disponíveis</strong><span>Consulta rápida de saldo disponível</span></div><button class="switch active" type="button" data-role="Supervisor" data-page="availableItems" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>EPIs Entregues</strong><span>Consulta das entregas por item</span></div><button class="switch active" type="button" data-role="Supervisor" data-page="deliveredItems" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Histórico de Funcionários</strong><span>Consulta individual por colaborador</span></div><button class="switch active" type="button" data-role="Supervisor" data-page="employeeHistory" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Solicitações sem Estoque</strong><span>Pendências da equipe e tratativas</span></div><button class="switch active" type="button" data-role="Supervisor" data-page="stockRequests" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Materiais</strong><span>Cadastro de materiais</span></div><button class="switch" type="button" data-role="Supervisor" data-page="materials" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Administração de Usuários</strong><span>Gestão de contas</span></div><button class="switch" type="button" data-role="Supervisor" data-page="userAdmin" onclick="toggleRolePermission(this)"></button></div>
+              </div>
+            </div>
+
+            <div class="access-role-card">
+              <div class="group-toolbar">
+                <div>
+                  <h3>Grupo Usuário Final</h3>
+                  <p>Acessa somente solicitação e consulta dos EPIs necessários.</p>
+                </div>
+                <span class="group-badge">Restrito</span>
+              </div>
+              <div class="access-page-list">
+                <div class="access-page-item"><div class="access-page-meta"><strong>Pedido de EPI</strong><span>Solicitar, acompanhar e ver EPIs obrigatórios</span></div><button class="switch active" type="button" data-role="Usuário" data-page="request" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Histórico de Funcionários</strong><span>Histórico individual do colaborador</span></div><button class="switch active" type="button" data-role="Usuário" data-page="employeeHistory" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Solicitações sem Estoque</strong><span>Acompanhamento das pendências do próprio pedido</span></div><button class="switch active" type="button" data-role="Usuário" data-page="stockRequests" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Relatórios</strong><span>Indicadores internos</span></div><button class="switch" type="button" data-role="Usuário" data-page="reports" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Materiais</strong><span>Cadastro de itens</span></div><button class="switch" type="button" data-role="Usuário" data-page="materials" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Operações</strong><span>Logs e auditoria</span></div><button class="switch" type="button" data-role="Usuário" data-page="operations" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Administração de Usuários</strong><span>Permissões e contas</span></div><button class="switch" type="button" data-role="Usuário" data-page="userAdmin" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>Itens Disponíveis</strong><span>Consulta simples do que existe em estoque</span></div><button class="switch" type="button" data-role="Usuário" data-page="availableItems" onclick="toggleRolePermission(this)"></button></div>
+                <div class="access-page-item"><div class="access-page-meta"><strong>EPIs Entregues</strong><span>Histórico geral de entregas</span></div><button class="switch" type="button" data-role="Usuário" data-page="deliveredItems" onclick="toggleRolePermission(this)"></button></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <div class="card-icon">group</div>
+              <div>
+                <h2>Gerenciamento de contas</h2>
+                <p>Área visível para perfis autorizados, com edição de conta e desativação por Master.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Usuário</th>
+                  <th>E-mail</th>
+                  <th>Tipo de conta</th>
+                  <th>Status</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr data-user-id="LF" data-user-name="Luis Freitas" data-user-email="luis.freitas@empresa.com" data-user-role="Master" data-user-status="Ativo" data-user-matricula="MAT-000128">
+                  <td>
+                    <div class="user-cell">
+                      <div class="avatar">LF</div>
+                      <div>
+                        <strong class="js-user-name">Luis Freitas</strong><br>
+                        <span class="js-user-matricula" style="font-size:12px;color:var(--on-surface-variant)">Matrícula MAT-000128</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="js-user-email">luis.freitas@empresa.com</td>
+                  <td class="js-user-role"><span class="badge role-master">Master</span></td>
+                  <td class="js-user-status"><span class="badge status-active">Ativo</span></td>
+                  <td>
+                    <div class="inline-actions">
+                      <button class="mini-btn" type="button" onclick="openUserEditModal('LF')">Editar</button>
+                      <button class="mini-btn" type="button" onclick="openPermissionsModal('LF')">Permissões</button>
+                      <button class="mini-btn" type="button" onclick="toggleUserStatus('LF')">Desativar</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr data-user-id="TA" data-user-name="Tainara Alves" data-user-email="tainara@empresa.com" data-user-role="Administrador" data-user-status="Ativo" data-user-matricula="MAT-000142">
+                  <td>
+                    <div class="user-cell">
+                      <div class="avatar">TA</div>
+                      <div>
+                        <strong class="js-user-name">Tainara Alves</strong><br>
+                        <span class="js-user-matricula" style="font-size:12px;color:var(--on-surface-variant)">Matrícula MAT-000142</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="js-user-email">tainara@empresa.com</td>
+                  <td class="js-user-role"><span class="badge role-admin">Administrador</span></td>
+                  <td class="js-user-status"><span class="badge status-active">Ativo</span></td>
+                  <td>
+                    <div class="inline-actions">
+                      <button class="mini-btn" type="button" onclick="openUserEditModal('TA')">Editar</button>
+                      <button class="mini-btn" type="button" onclick="openPermissionsModal('TA')">Permissões</button>
+                      <button class="mini-btn" type="button" onclick="toggleUserStatus('TA')">Desativar</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr data-user-id="FS" data-user-name="Fábio Santos" data-user-email="fabio.santos@empresa.com" data-user-role="Supervisor" data-user-status="Inativo" data-user-matricula="MAT-000166">
+                  <td>
+                    <div class="user-cell">
+                      <div class="avatar">FS</div>
+                      <div>
+                        <strong class="js-user-name">Fábio Santos</strong><br>
+                        <span class="js-user-matricula" style="font-size:12px;color:var(--on-surface-variant)">Matrícula MAT-000166</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="js-user-email">fabio.santos@empresa.com</td>
+                  <td class="js-user-role"><span class="badge role-supervisor">Supervisor</span></td>
+                  <td class="js-user-status"><span class="badge status-inactive">Inativo</span></td>
+                  <td>
+                    <div class="inline-actions">
+                      <button class="mini-btn" type="button" onclick="openUserEditModal('FS')">Editar</button>
+                      <button class="mini-btn" type="button" onclick="toggleUserStatus('FS')">Reativar</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr data-user-id="MS" data-user-name="Marcos Silva" data-user-email="marcos.silva@empresa.com" data-user-role="Usuário" data-user-status="Ativo" data-user-matricula="MAT-000171">
+                  <td>
+                    <div class="user-cell">
+                      <div class="avatar">MS</div>
+                      <div>
+                        <strong class="js-user-name">Marcos Silva</strong><br>
+                        <span class="js-user-matricula" style="font-size:12px;color:var(--on-surface-variant)">Matrícula MAT-000171</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="js-user-email">marcos.silva@empresa.com</td>
+                  <td class="js-user-role"><span class="badge role-user">Usuário</span></td>
+                  <td class="js-user-status"><span class="badge status-active">Ativo</span></td>
+                  <td>
+                    <div class="inline-actions">
+                      <button class="mini-btn" type="button" onclick="openUserEditModal('MS')">Editar</button>
+                      <button class="mini-btn" type="button" onclick="toggleUserStatus('MS')">Desativar</button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      
+        <!-- PAINEL: PERMISSÕES DE AÇÃO -->
+        <section class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <div class="card-icon" style="background:rgba(255,149,0,0.10);color:#FF9500">shield_lock</div>
+              <div>
+                <h2>Permissões de ação por perfil</h2>
+                <p>O que cada perfil pode fazer dentro das páginas do sistema.</p>
+              </div>
+            </div>
+            <span class="badge role-master">Somente Master</span>
+          </div>
+
+          <div class="notice" style="margin-bottom:16px">
+            Estas permissões controlam botões de <strong>adicionar, editar e excluir</strong> dentro das páginas — independente do acesso à página. Apenas o perfil <strong>Master</strong> pode alterar estas configurações.
+          </div>
+
+          <div id="actionPermsPanel">
+            <div style="background:var(--surface);border:0.5px solid var(--outline-variant);border-radius:14px;overflow:hidden;margin-bottom:10px">
+              <div style="padding:12px 16px;background:var(--surface-container-highest);display:flex;align-items:center;gap:8px;border-bottom:0.5px solid var(--outline-variant)">
+                <span class="material-symbols-outlined" style="font-size:18px;color:#5856D6">rule_settings</span>
+                <strong style="font-size:13px">Regras Função / Setor / PGR</strong>
+              </div>
+              <div style="display:grid;grid-template-columns:160px 1fr 1fr 1fr">
+                <div style="padding:10px 14px;background:var(--surface-container);font-size:12px;font-weight:500;color:var(--on-surface-variant);border-right:0.5px solid var(--outline-variant)">Perfil</div><div style="padding:10px 14px;background:var(--surface-container);font-size:12px;font-weight:500;color:var(--on-surface-variant);border-right:0.5px solid var(--outline-variant);text-align:center">Adicionar</div><div style="padding:10px 14px;background:var(--surface-container);font-size:12px;font-weight:500;color:var(--on-surface-variant);border-right:0.5px solid var(--outline-variant);text-align:center">Editar</div><div style="padding:10px 14px;background:var(--surface-container);font-size:12px;font-weight:500;color:var(--on-surface-variant);border-right:0.5px solid var(--outline-variant);text-align:center">Excluir</div>
+                <div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-master" style="font-size:10px">Master</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-rules-add-master" data-action="rules:add" data-role="Master" onclick="toggleActionPerm(this)" disabled title="Master sempre tem acesso total"></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-rules-edit-master" data-action="rules:edit" data-role="Master" onclick="toggleActionPerm(this)" disabled title="Master sempre tem acesso total"></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-rules-delete-master" data-action="rules:delete" data-role="Master" onclick="toggleActionPerm(this)" disabled title="Master sempre tem acesso total"></button></div></div><div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-admin" style="font-size:10px">Administrador</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-rules-add-administrador" data-action="rules:add" data-role="Administrador" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-rules-edit-administrador" data-action="rules:edit" data-role="Administrador" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-rules-delete-administrador" data-action="rules:delete" data-role="Administrador" onclick="toggleActionPerm(this)" ></button></div></div><div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-supervisor" style="font-size:10px">Supervisor</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-rules-add-supervisor" data-action="rules:add" data-role="Supervisor" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-rules-edit-supervisor" data-action="rules:edit" data-role="Supervisor" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-rules-delete-supervisor" data-action="rules:delete" data-role="Supervisor" onclick="toggleActionPerm(this)" ></button></div></div><div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-user" style="font-size:10px">Usuário</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-rules-add-usuário" data-action="rules:add" data-role="Usuário" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-rules-edit-usuário" data-action="rules:edit" data-role="Usuário" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-rules-delete-usuário" data-action="rules:delete" data-role="Usuário" onclick="toggleActionPerm(this)" ></button></div></div>
+              </div>
+            </div>
+            <div style="background:var(--surface);border:0.5px solid var(--outline-variant);border-radius:14px;overflow:hidden;margin-bottom:10px">
+              <div style="padding:12px 16px;background:var(--surface-container-highest);display:flex;align-items:center;gap:8px;border-bottom:0.5px solid var(--outline-variant)">
+                <span class="material-symbols-outlined" style="font-size:18px;color:#5AC8FA">inventory_2</span>
+                <strong style="font-size:13px">Materiais e Estoque</strong>
+              </div>
+              <div style="display:grid;grid-template-columns:160px 1fr 1fr 1fr 1fr">
+                <div style="padding:10px 14px;background:var(--surface-container);font-size:12px;font-weight:500;color:var(--on-surface-variant);border-right:0.5px solid var(--outline-variant)">Perfil</div><div style="padding:10px 14px;background:var(--surface-container);font-size:12px;font-weight:500;color:var(--on-surface-variant);border-right:0.5px solid var(--outline-variant);text-align:center">Adicionar</div><div style="padding:10px 14px;background:var(--surface-container);font-size:12px;font-weight:500;color:var(--on-surface-variant);border-right:0.5px solid var(--outline-variant);text-align:center">Editar</div><div style="padding:10px 14px;background:var(--surface-container);font-size:12px;font-weight:500;color:var(--on-surface-variant);border-right:0.5px solid var(--outline-variant);text-align:center">Excluir</div><div style="padding:10px 14px;background:var(--surface-container);font-size:12px;font-weight:500;color:var(--on-surface-variant);border-right:0.5px solid var(--outline-variant);text-align:center">Ajustar estoque</div>
+                <div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-master" style="font-size:10px">Master</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-materials-add-master" data-action="materials:add" data-role="Master" onclick="toggleActionPerm(this)" disabled title="Master sempre tem acesso total"></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-materials-edit-master" data-action="materials:edit" data-role="Master" onclick="toggleActionPerm(this)" disabled title="Master sempre tem acesso total"></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-materials-delete-master" data-action="materials:delete" data-role="Master" onclick="toggleActionPerm(this)" disabled title="Master sempre tem acesso total"></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-stock-edit-master" data-action="stock:edit" data-role="Master" onclick="toggleActionPerm(this)" disabled title="Master sempre tem acesso total"></button></div></div><div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-admin" style="font-size:10px">Administrador</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-materials-add-administrador" data-action="materials:add" data-role="Administrador" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-materials-edit-administrador" data-action="materials:edit" data-role="Administrador" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-materials-delete-administrador" data-action="materials:delete" data-role="Administrador" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-stock-edit-administrador" data-action="stock:edit" data-role="Administrador" onclick="toggleActionPerm(this)" ></button></div></div><div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-supervisor" style="font-size:10px">Supervisor</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-materials-add-supervisor" data-action="materials:add" data-role="Supervisor" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-materials-edit-supervisor" data-action="materials:edit" data-role="Supervisor" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-materials-delete-supervisor" data-action="materials:delete" data-role="Supervisor" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-stock-edit-supervisor" data-action="stock:edit" data-role="Supervisor" onclick="toggleActionPerm(this)" ></button></div></div><div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-user" style="font-size:10px">Usuário</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-materials-add-usuário" data-action="materials:add" data-role="Usuário" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-materials-edit-usuário" data-action="materials:edit" data-role="Usuário" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-materials-delete-usuário" data-action="materials:delete" data-role="Usuário" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-stock-edit-usuário" data-action="stock:edit" data-role="Usuário" onclick="toggleActionPerm(this)" ></button></div></div>
+              </div>
+            </div>
+            <div style="background:var(--surface);border:0.5px solid var(--outline-variant);border-radius:14px;overflow:hidden;margin-bottom:10px">
+              <div style="padding:12px 16px;background:var(--surface-container-highest);display:flex;align-items:center;gap:8px;border-bottom:0.5px solid var(--outline-variant)">
+                <span class="material-symbols-outlined" style="font-size:18px;color:#FF9500">shopping_cart</span>
+                <strong style="font-size:13px">Compras / Entradas</strong>
+              </div>
+              <div style="display:grid;grid-template-columns:160px 1fr 1fr">
+                <div style="padding:10px 14px;background:var(--surface-container);font-size:12px;font-weight:500;color:var(--on-surface-variant);border-right:0.5px solid var(--outline-variant)">Perfil</div><div style="padding:10px 14px;background:var(--surface-container);font-size:12px;font-weight:500;color:var(--on-surface-variant);border-right:0.5px solid var(--outline-variant);text-align:center">Registrar</div><div style="padding:10px 14px;background:var(--surface-container);font-size:12px;font-weight:500;color:var(--on-surface-variant);border-right:0.5px solid var(--outline-variant);text-align:center">Editar</div>
+                <div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-master" style="font-size:10px">Master</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-purchases-add-master" data-action="purchases:add" data-role="Master" onclick="toggleActionPerm(this)" disabled title="Master sempre tem acesso total"></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-purchases-edit-master" data-action="purchases:edit" data-role="Master" onclick="toggleActionPerm(this)" disabled title="Master sempre tem acesso total"></button></div></div><div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-admin" style="font-size:10px">Administrador</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-purchases-add-administrador" data-action="purchases:add" data-role="Administrador" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-purchases-edit-administrador" data-action="purchases:edit" data-role="Administrador" onclick="toggleActionPerm(this)" ></button></div></div><div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-supervisor" style="font-size:10px">Supervisor</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-purchases-add-supervisor" data-action="purchases:add" data-role="Supervisor" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-purchases-edit-supervisor" data-action="purchases:edit" data-role="Supervisor" onclick="toggleActionPerm(this)" ></button></div></div><div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-user" style="font-size:10px">Usuário</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-purchases-add-usuário" data-action="purchases:add" data-role="Usuário" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-purchases-edit-usuário" data-action="purchases:edit" data-role="Usuário" onclick="toggleActionPerm(this)" ></button></div></div>
+              </div>
+            </div>
+            <div style="background:var(--surface);border:0.5px solid var(--outline-variant);border-radius:14px;overflow:hidden;margin-bottom:10px">
+              <div style="padding:12px 16px;background:var(--surface-container-highest);display:flex;align-items:center;gap:8px;border-bottom:0.5px solid var(--outline-variant)">
+                <span class="material-symbols-outlined" style="font-size:18px;color:#34C759">inventory</span>
+                <strong style="font-size:13px">Entregas de EPIs</strong>
+              </div>
+              <div style="display:grid;grid-template-columns:160px 1fr 1fr">
+                <div style="padding:10px 14px;background:var(--surface-container);font-size:12px;font-weight:500;color:var(--on-surface-variant);border-right:0.5px solid var(--outline-variant)">Perfil</div><div style="padding:10px 14px;background:var(--surface-container);font-size:12px;font-weight:500;color:var(--on-surface-variant);border-right:0.5px solid var(--outline-variant);text-align:center">Registrar entrega</div><div style="padding:10px 14px;background:var(--surface-container);font-size:12px;font-weight:500;color:var(--on-surface-variant);border-right:0.5px solid var(--outline-variant);text-align:center">Registrar devolução</div>
+                <div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-master" style="font-size:10px">Master</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-epis-deliver-master" data-action="epis:deliver" data-role="Master" onclick="toggleActionPerm(this)" disabled title="Master sempre tem acesso total"></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-epis-return-master" data-action="epis:return" data-role="Master" onclick="toggleActionPerm(this)" disabled title="Master sempre tem acesso total"></button></div></div><div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-admin" style="font-size:10px">Administrador</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-epis-deliver-administrador" data-action="epis:deliver" data-role="Administrador" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-epis-return-administrador" data-action="epis:return" data-role="Administrador" onclick="toggleActionPerm(this)" ></button></div></div><div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-supervisor" style="font-size:10px">Supervisor</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-epis-deliver-supervisor" data-action="epis:deliver" data-role="Supervisor" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-epis-return-supervisor" data-action="epis:return" data-role="Supervisor" onclick="toggleActionPerm(this)" ></button></div></div><div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-user" style="font-size:10px">Usuário</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-epis-deliver-usuário" data-action="epis:deliver" data-role="Usuário" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-epis-return-usuário" data-action="epis:return" data-role="Usuário" onclick="toggleActionPerm(this)" ></button></div></div>
+              </div>
+            </div>
+            <div style="background:var(--surface);border:0.5px solid var(--outline-variant);border-radius:14px;overflow:hidden;margin-bottom:10px">
+              <div style="padding:12px 16px;background:var(--surface-container-highest);display:flex;align-items:center;gap:8px;border-bottom:0.5px solid var(--outline-variant)">
+                <span class="material-symbols-outlined" style="font-size:18px;color:#FF9500">fact_check</span>
+                <strong style="font-size:13px">Solicitações</strong>
+              </div>
+              <div style="display:grid;grid-template-columns:160px 1fr 1fr">
+                <div style="padding:10px 14px;background:var(--surface-container);font-size:12px;font-weight:500;color:var(--on-surface-variant);border-right:0.5px solid var(--outline-variant)">Perfil</div><div style="padding:10px 14px;background:var(--surface-container);font-size:12px;font-weight:500;color:var(--on-surface-variant);border-right:0.5px solid var(--outline-variant);text-align:center">Aprovar</div><div style="padding:10px 14px;background:var(--surface-container);font-size:12px;font-weight:500;color:var(--on-surface-variant);border-right:0.5px solid var(--outline-variant);text-align:center">Reprovar</div>
+                <div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-master" style="font-size:10px">Master</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-requests-approve-master" data-action="requests:approve" data-role="Master" onclick="toggleActionPerm(this)" disabled title="Master sempre tem acesso total"></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-requests-reject-master" data-action="requests:reject" data-role="Master" onclick="toggleActionPerm(this)" disabled title="Master sempre tem acesso total"></button></div></div><div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-admin" style="font-size:10px">Administrador</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-requests-approve-administrador" data-action="requests:approve" data-role="Administrador" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-requests-reject-administrador" data-action="requests:reject" data-role="Administrador" onclick="toggleActionPerm(this)" ></button></div></div><div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-supervisor" style="font-size:10px">Supervisor</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-requests-approve-supervisor" data-action="requests:approve" data-role="Supervisor" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-requests-reject-supervisor" data-action="requests:reject" data-role="Supervisor" onclick="toggleActionPerm(this)" ></button></div></div><div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-user" style="font-size:10px">Usuário</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-requests-approve-usuário" data-action="requests:approve" data-role="Usuário" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-requests-reject-usuário" data-action="requests:reject" data-role="Usuário" onclick="toggleActionPerm(this)" ></button></div></div>
+              </div>
+            </div>
+            <div style="background:var(--surface);border:0.5px solid var(--outline-variant);border-radius:14px;overflow:hidden;margin-bottom:10px">
+              <div style="padding:12px 16px;background:var(--surface-container-highest);display:flex;align-items:center;gap:8px;border-bottom:0.5px solid var(--outline-variant)">
+                <span class="material-symbols-outlined" style="font-size:18px;color:#007AFF">group</span>
+                <strong style="font-size:13px">Usuários</strong>
+              </div>
+              <div style="display:grid;grid-template-columns:160px 1fr 1fr 1fr">
+                <div style="padding:10px 14px;background:var(--surface-container);font-size:12px;font-weight:500;color:var(--on-surface-variant);border-right:0.5px solid var(--outline-variant)">Perfil</div><div style="padding:10px 14px;background:var(--surface-container);font-size:12px;font-weight:500;color:var(--on-surface-variant);border-right:0.5px solid var(--outline-variant);text-align:center">Cadastrar</div><div style="padding:10px 14px;background:var(--surface-container);font-size:12px;font-weight:500;color:var(--on-surface-variant);border-right:0.5px solid var(--outline-variant);text-align:center">Editar</div><div style="padding:10px 14px;background:var(--surface-container);font-size:12px;font-weight:500;color:var(--on-surface-variant);border-right:0.5px solid var(--outline-variant);text-align:center">Desativar</div>
+                <div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-master" style="font-size:10px">Master</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-users-add-master" data-action="users:add" data-role="Master" onclick="toggleActionPerm(this)" disabled title="Master sempre tem acesso total"></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-users-edit-master" data-action="users:edit" data-role="Master" onclick="toggleActionPerm(this)" disabled title="Master sempre tem acesso total"></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-users-deactivate-master" data-action="users:deactivate" data-role="Master" onclick="toggleActionPerm(this)" disabled title="Master sempre tem acesso total"></button></div></div><div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-admin" style="font-size:10px">Administrador</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-users-add-administrador" data-action="users:add" data-role="Administrador" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-users-edit-administrador" data-action="users:edit" data-role="Administrador" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-users-deactivate-administrador" data-action="users:deactivate" data-role="Administrador" onclick="toggleActionPerm(this)" ></button></div></div><div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-supervisor" style="font-size:10px">Supervisor</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-users-add-supervisor" data-action="users:add" data-role="Supervisor" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-users-edit-supervisor" data-action="users:edit" data-role="Supervisor" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-users-deactivate-supervisor" data-action="users:deactivate" data-role="Supervisor" onclick="toggleActionPerm(this)" ></button></div></div><div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-user" style="font-size:10px">Usuário</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-users-add-usuário" data-action="users:add" data-role="Usuário" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-users-edit-usuário" data-action="users:edit" data-role="Usuário" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-users-deactivate-usuário" data-action="users:deactivate" data-role="Usuário" onclick="toggleActionPerm(this)" ></button></div></div>
+              </div>
+            </div>
+            <div style="background:var(--surface);border:0.5px solid var(--outline-variant);border-radius:14px;overflow:hidden;margin-bottom:10px">
+              <div style="padding:12px 16px;background:var(--surface-container-highest);display:flex;align-items:center;gap:8px;border-bottom:0.5px solid var(--outline-variant)">
+                <span class="material-symbols-outlined" style="font-size:18px;color:#8E8E93">upload_file</span>
+                <strong style="font-size:13px">Importação e Relatórios</strong>
+              </div>
+              <div style="display:grid;grid-template-columns:160px 1fr 1fr">
+                <div style="padding:10px 14px;background:var(--surface-container);font-size:12px;font-weight:500;color:var(--on-surface-variant);border-right:0.5px solid var(--outline-variant)">Perfil</div><div style="padding:10px 14px;background:var(--surface-container);font-size:12px;font-weight:500;color:var(--on-surface-variant);border-right:0.5px solid var(--outline-variant);text-align:center">Importar func.</div><div style="padding:10px 14px;background:var(--surface-container);font-size:12px;font-weight:500;color:var(--on-surface-variant);border-right:0.5px solid var(--outline-variant);text-align:center">Exportar relatórios</div>
+                <div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-master" style="font-size:10px">Master</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-import-employees-master" data-action="import:employees" data-role="Master" onclick="toggleActionPerm(this)" disabled title="Master sempre tem acesso total"></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-reports-export-master" data-action="reports:export" data-role="Master" onclick="toggleActionPerm(this)" disabled title="Master sempre tem acesso total"></button></div></div><div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-admin" style="font-size:10px">Administrador</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-import-employees-administrador" data-action="import:employees" data-role="Administrador" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-reports-export-administrador" data-action="reports:export" data-role="Administrador" onclick="toggleActionPerm(this)" ></button></div></div><div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-supervisor" style="font-size:10px">Supervisor</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-import-employees-supervisor" data-action="import:employees" data-role="Supervisor" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-reports-export-supervisor" data-action="reports:export" data-role="Supervisor" onclick="toggleActionPerm(this)" ></button></div></div><div style="display:contents"><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;align-items:center"><span class="badge role-user" style="font-size:10px">Usuário</span></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-import-employees-usuário" data-action="import:employees" data-role="Usuário" onclick="toggleActionPerm(this)" ></button></div><div style="padding:10px 14px;border-top:0.5px solid var(--outline-variant);border-right:0.5px solid var(--outline-variant);display:flex;justify-content:center;align-items:center"><button class="switch active" id="aperm-reports-export-usuário" data-action="reports:export" data-role="Usuário" onclick="toggleActionPerm(this)" ></button></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="footer-actions" style="margin-top:14px">
+            <button class="filled-btn" onclick="saveActionPerms()">
+              <span class="material-symbols-outlined">save</span>Salvar permissões de ação
+            </button>
+          </div>
+        </section>
+</section>
+    </main>
+  </div>
+
+<!-- ═══ MODAL: ATIVAR MODO QUIOSQUE ═══════════════════════════════ -->
+      <div class="modal-overlay" id="kioskActivateModal" onclick="closeKioskActivateModal(event)">
+        <div class="modal-card" style="width:min(100%,420px)" onclick="event.stopPropagation()">
+          <div class="modal-header">
+            <div class="modal-title">
+              <div class="card-icon" style="background:rgba(0,122,255,0.1);color:#007AFF">lock</div>
+              <div>
+                <h2 style="font-family:var(--font-brand);font-size:17px;font-weight:500">Ativar Modo Quiosque</h2>
+                <p style="font-size:12px;color:var(--on-surface-variant);margin-top:2px">A sidebar e a navegação serão bloqueadas. Só será possível desbloquear com a senha de administrador.</p>
+              </div>
+            </div>
+            <button class="modal-close" onclick="closeKioskActivateModal()">close</button>
+          </div>
+          <div class="field full" style="margin-top:8px">
+            <label>Defina a senha de desbloqueio</label>
+            <input id="kioskPassword" class="input" type="password" placeholder="Mínimo 4 dígitos" autocomplete="new-password">
+          </div>
+          <div class="notice" style="margin-top:10px;background:rgba(255,149,0,0.06);color:#C07000;border-color:rgba(255,149,0,0.2)">
+            Guarde esta senha. Ela será exigida para sair do modo quiosque neste dispositivo.
+          </div>
+          <div class="footer-actions">
+            <button class="outlined-btn" onclick="closeKioskActivateModal()">Cancelar</button>
+            <button class="filled-btn" onclick="activateKioskMode()">
+              <span class="material-symbols-outlined">lock</span>Ativar agora
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ OVERLAY: MODO QUIOSQUE ATIVO (bloqueia tudo) ═══════════════ -->
+      <div id="kioskLockOverlay" style="display:none;position:fixed;inset:0;z-index:9999;
+           background:var(--surface);align-items:center;justify-content:center;flex-direction:column;gap:16px">
+        <div style="width:72px;height:72px;border-radius:22px;background:rgba(0,122,255,0.1);
+                    display:flex;align-items:center;justify-content:center">
+          <span class="material-symbols-outlined" style="font-size:36px;color:#007AFF">lock</span>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:16px;font-weight:600">Modo Quiosque Ativo</div>
+          <div style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">
+            Este dispositivo está em modo de autoatendimento.<br>Digite a senha de administrador para liberar.
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="kioskUnlockInput" class="input" type="password" placeholder="Senha de desbloqueio"
+                 style="width:220px" onkeydown="if(event.key==='Enter') unlockKioskMode()">
+          <button class="filled-btn" onclick="unlockKioskMode()">
+            <span class="material-symbols-outlined">lock_open</span>Desbloquear
+          </button>
+        </div>
+        <div id="kioskUnlockError" style="display:none;color:#FF3B30;font-size:12px">Senha incorreta.</div>
+      </div>
+
+<script src="../js/db-api.js"></script>
+<script src="../js/main.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    // init
+    var navLink = document.querySelector('.nav a[data-page="userAdmin"]');
+    if (navLink && typeof setActiveNav === 'function') setActiveNav(navLink);
+    document.querySelectorAll('.nav a[data-page]').forEach(function(a) {
+      var page = a.getAttribute('data-page');
+      var fileMap = {
+        'self-service':'self-service.html','dashboard':'dashboard.html','config':'config.html',
+        'supervisorApproval':'supervisor-approval.html','request':'request.html',
+        'stockRequests':'stock-requests.html','userAdmin':'user-admin.html',
+        'operations':'operations.html','eligibilityRules':'eligibility-rules.html',
+        'materials':'materials.html','purchases':'purchases.html',
+        'stockValidity':'stock-validity.html','availableItems':'available-items.html',
+        'epiFicha':'epi-ficha.html','deliveredItems':'delivered-items.html',
+        'reports':'reports.html','employeeHistory':'employee-history.html',
+        'newUser':'new-user.html','support':'support.html',
+        'importEmployees':'import-employees.html','lgpd':'lgpd.html','emailsGestao':'emails-gestao.html'
+      };
+      if (fileMap[page]) {
+        a.setAttribute('href', fileMap[page]);
+        a.removeAttribute('onclick');
+      }
+    });
+  });
+</script>
+</body>
+</html>
