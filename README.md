@@ -1,103 +1,109 @@
-EPI Management System
-Sobre o Projeto
-Este projeto tem como objetivo digitalizar o processo de solicitação, aprovação e entrega de Equipamentos de Proteção Individual (EPI) em ambientes industriais.
+> ⚠️ **Este é apenas o núcleo (Parte 1) do projeto.**
+> As 22 páginas (`pages/*.html`) vêm na **Parte 2**, separada para facilitar
+> os commits no Git. Depois de commitar esta Parte 1, adicione os arquivos
+> da Parte 2 dentro da pasta `pages/` (que aqui está vazia, só com `.gitkeep`).
 
-A solução busca melhorar:
-- Rastreabilidade das entregas
-- Controle de estoque
-- Conformidade com normas de segurança do trabalho
-- Eficiência operacional da área de SST
-Problema
-Em muitas empresas, o processo ainda ocorre manualmente:
+---
 
-1. Trabalhador solicita o EPI em formulário
-2. Supervisor aprova
-3. Segurança do Trabalho separa o equipamento
-4. Entrega é registrada em ficha física
-5. Auditorias são feitas manualmente
+# Gestão de EPIs — Sistema Completo (Cobresul)
 
-Isso gera problemas como:
-- Retrabalho administrativo
-- Risco de erro humano
-- Falta de rastreabilidade
-- Dificuldade em auditorias
-- Controle ineficiente de estoque
-Objetivo
-Criar um sistema que permita:
+Pacote completo: login + recuperação de senha + biometria + autoatendimento
+(totem) + modo quiosque + 21 telas do sistema, todas interligadas pelo
+mesmo banco de dados simulado (request/response real).
 
-- Solicitação digital de EPIs
-- Aprovação por supervisor
-- Registro automático da entrega
-- Assinatura eletrônica do trabalhador
-- Controle de estoque
-- Geração de relatórios auditáveis
-Funcionalidades
-Cadastro de EPIs
-- Descrição do equipamento
-- Fabricante
-- Número do CA
-- Validade do CA
+## Estrutura
 
-Solicitação de EPI
-- Trabalhador solicita o EPI
-- Sistema envia para aprovação do supervisor
+```
+epi_final/
+├── index.html               ← redireciona para pages/dashboard.html
+│
+├── js/
+│   ├── db-api.js            ← "Banco de dados" (localStorage) + API simulada
+│   └── main.js               ← Toda a lógica das telas, login, quiosque etc.
+│
+├── css/
+│   └── main.css               ← Estilos do sistema
+│
+└── pages/                    ← 22 páginas HTML (uma por tela)
+    ├── self-service.html     ← Totem: identificação por CPF + nascimento
+    ├── dashboard.html
+    ├── materials.html
+    ├── purchases.html
+    ├── epi-ficha.html
+    ├── employee-history.html
+    ├── reports.html
+    ├── config.html            ← Modo Quiosque fica aqui
+    └── ... (22 no total)
+```
 
-Aprovação
-- Supervisor aprova ou rejeita a solicitação
+## Como rodar
 
-Entrega
-- SST registra a entrega
-- Sistema gera automaticamente a ficha de EPI
+1. Abra a pasta `epi_final` no VS Code
+2. Instale a extensão **Live Server**
+3. Clique direito em `index.html` → **Open with Live Server**
 
-Controle de Estoque
-- Registro de entrada e saída
-- Alertas de estoque mínimo
+> Login biométrico (WebAuthn) só funciona em `https://` ou `localhost` —
+> com Live Server local funciona normalmente.
 
-Relatórios
-- Histórico de EPIs por trabalhador
-- Entregas por período
-- Consumo por setor
-Tecnologias Sugeridas
-Backend
-- Node.js
-- Express
-- PostgreSQL
+## 1. Tela de Login
 
-Frontend
-- React
-- TypeScript
-- TailwindCSS
+Toda página abre primeiro na tela de login (cobre o sistema até autenticar).
 
-Infraestrutura
-- Docker
-- REST API
-- JWT Authentication
-Conformidade Normativa
-O sistema foi projetado considerando:
+| Perfil | E-mail | Senha |
+|---|---|---|
+| Master | luis.freitas@cobresul.com.br | Master@2026 |
+| Admin | tainara.alves@cobresul.com.br | Admin@2026 |
+| Supervisor | fabio.santos@cobresul.com.br | Super@2026 |
+| Usuário | marcos.silva@cobresul.com.br | User@2026 |
 
-- NR-06 — Equipamento de Proteção Individual
-- NR-01 — Gestão de documentos digitais
+**Recuperação de senha:** clique em "Esqueci minha senha" → e-mail → o código
+de 6 dígitos aparece no **Console do navegador (F12)** (simulando envio por
+e-mail) → digite o código + nova senha.
 
-Essas normas permitem que o registro de entrega de EPI seja realizado por sistema eletrônico,
-desde que seja possível gerar relatórios e manter a rastreabilidade das informações.
-Roadmap
-Possíveis evoluções:
+**Login biométrico:** clique em "Configurar biometria" → e-mail + senha →
+o navegador pede Touch ID / Face ID / Windows Hello nativamente. Da próxima
+vez, o botão "Entrar com biometria" aparece na tela de login.
 
-- Autenticação biométrica
-- Assinatura digital ICP-Brasil
-- Integração com ERP
-- Integração com PGR
-- Alertas inteligentes de reposição
-- Dashboard de indicadores de segurança
-Autor
-Projeto acadêmico voltado à digitalização da gestão de EPIs em ambientes industriais.
+## 2. Autoatendimento (Totem)
 
-Sugestões:
+Tela `self-service.html` — funcionário identifica-se com **CPF + data de
+nascimento** (sem senha de sistema), e é levado à tela de Pedido de EPI com
+os dados já preenchidos.
 
-Bruno Franzosi - O trabalho se destaca bastante por trazer um problema real e aplicável dentro da indústria, o que torna a proposta muito relevante. A solução está bem alinhada com a realidade operacional. Como melhoria, poderia incluir um pequeno cenário de uso (exemplo prático do sistema funcionando no dia a dia), o que deixaria ainda mais tangível.
+**CPFs de teste:**
 
-Bruno Luis Pereira - O trabalho está muito bem estruturado e organizado, facilitando bastante o entendimento do problema e da solução proposta. A divisão entre contexto, benchmark e proposta ficou clara e lógica. Como sugestão de melhoria, talvez valha incluir um diagrama visual simples do fluxo do sistema para complementar a explicação textual.
+| Funcionário | CPF | Nascimento |
+|---|---|---|
+| Marcos Silva | 123.456.789-45 | 15/03/1990 |
+| João Pereira | 234.567.890-56 | 22/07/1988 |
+| Ana Souza | 345.678.901-67 | 30/11/1995 |
 
-Comentários: 
+A sessão tem **timeout de 60 segundos de inatividade** (sai automaticamente)
+e botão **"Concluir e Sair"** para encerrar manualmente.
 
-Bruno Franzosi: A proposta do sistema é muito interessante, pois está diretamente ligada a uma necessidade comum em ambientes industriais. O trabalho mostra que a digitalização da gestão de EPIs pode trazer benefícios importantes, como maior controle, padronização dos registros e facilidade na consulta de informações. É um projeto com aplicação prática e grande utilidade para a rotina da Segurança do Trabalho.
+## 3. Modo Quiosque
+
+Em `config.html`, card "Modo Quiosque": ative com uma senha de administrador.
+Isso bloqueia toda a navegação do dispositivo — só "Autoatendimento" e
+"Pedido de EPI" continuam acessíveis. Útil para deixar o computador/totem
+disponível no chão de fábrica sem risco de acesso indevido a outras telas.
+O bloqueio persiste mesmo recarregando a página; só sai com a senha definida.
+
+## Como tudo fica interligado
+
+Todas as 22 páginas carregam o mesmo `js/db-api.js`, que usa `localStorage`
+como "banco de dados" — compartilhado entre todas as páginas da mesma pasta.
+Qualquer ação em uma tela (aprovar pedido, registrar compra, assinar ficha)
+reflete instantaneamente nas outras.
+
+Abra o **Console (F12)** em qualquer página para ver os logs de cada
+"requisição" sendo feita, como em uma API real:
+
+```js
+const res = await EpiAPI.request('POST', '/solicitacoes/3/aprovar', { aprovado_por: 1 });
+console.log(res);
+// { status: 200, ok: true, data: {...}, message: 'Solicitação aprovada' }
+```
+
+Ver o banco inteiro: `EpiAPI._db()` no console.
+Resetar para os dados de exemplo: `EpiAPI._reset()`.
