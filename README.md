@@ -1,49 +1,35 @@
-# Parte 2 — Páginas (22 views)
+# Gestão de EPIs
 
-Esta pasta contém as 22 páginas HTML do sistema Gestão de EPIs.
+Sistema para gestão de Equipamentos de Proteção Individual (EPIs), com frontend web e backend separados por responsabilidade.
 
-⚠️ **Depende da Parte 1** (núcleo: `css/main.css`, `js/db-api.js`, `js/main.js`).
+## Estrutura do projeto
 
-## Como usar
-
-1. Primeiro faça o commit/merge da **Parte 1** (núcleo) no seu repositório.
-2. Copie a pasta `pages/` desta Parte 2 para dentro da raiz do projeto,
-   no mesmo nível de `css/` e `js/` (que vieram da Parte 1).
-3. Estrutura final esperada:
-
+```text
+gestao-epi/
+├── backend/                # API, banco de dados, migrations e regras de negócio
+├── frontend/               # Interface web
+│   ├── IMAGEN/             # Imagens utilizadas na documentação/interface
+│   ├── css/
+│   │   └── main.css
+│   ├── js/
+│   │   ├── db-api.js
+│   │   └── main.js
+│   ├── pages/              # Páginas HTML do sistema
+│   └── index.html
+├── RFC-V1                  # Especificação funcional do sistema
+├── RFC-V1.md.docx
+├── README.md
+└── .gitignore
 ```
-seu-projeto/
-├── index.html      ← da Parte 1
-├── css/main.css     ← da Parte 1
-├── js/db-api.js     ← da Parte 1
-├── js/main.js       ← da Parte 1
-└── pages/           ← esta Parte 2 (22 arquivos)
-    ├── dashboard.html
-    ├── materials.html
-    └── ... (mais 20 arquivos)
-```
 
-## Páginas incluídas (22)
+## Frontend
 
-- self-service.html (Autoatendimento / Totem)
-- dashboard.html
-- config.html
-- supervisor-approval.html
-- request.html
-- stock-requests.html
-- user-admin.html
-- operations.html
-- eligibility-rules.html
-- materials.html
-- purchases.html
-- stock-validity.html
-- available-items.html
-- epi-ficha.html
-- delivered-items.html
-- reports.html
-- employee-history.html
-- new-user.html
-- support.html
-- import-employees.html
-- lgpd.html
-- emails-gestao.html
+O frontend está localizado integralmente em `frontend/`.
+
+O ponto de entrada da aplicação é `frontend/index.html`.
+
+A estrutura interna utiliza caminhos relativos entre `index.html`, `pages/`, `css/` e `js/`.
+
+## Backend
+
+O backend está localizado integralmente em `backend/` e concentra a API, configuração do servidor, acesso ao PostgreSQL, migrations e regras de negócio.
