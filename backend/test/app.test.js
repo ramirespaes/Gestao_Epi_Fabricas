@@ -1,6 +1,6 @@
 'use strict';
 
-const { describe, test, mock } = require('node:test');
+const { describe, test, beforeEach, afterEach, mock } = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
 const { criarAppTeste } = require('./helpers/app-teste');
@@ -83,5 +83,53 @@ describe('módulos de src', () => {
     for (const modulo of modulos) {
       assert.doesNotThrow(() => require(modulo), path.relative(raiz, modulo));
     }
+  });
+});
+
+describe('app.js: payload e Content-Type dentro de /api', () => {
+  const app = require('../src/app');
+  const CORPO = 'CORPO_SENTINELA_9f3a';
+  const SENSIVEIS = [CORPO, 'text/plain', 'iso-8859-1', 'request entity', 'unsupported'];
+  const corpoComBytes = (bytes) => `{"senha":"${'a'.repeat(bytes - 12)}"}`;
+  let logErro;
+  beforeEach(() => { logErro = mock.method(console, 'error', () => {}); });
+  afterEach(() => mock.restoreAll());
+
+  test('JSON válido de 32768 bytes atravessa o parser e chega ao roteamento (404 da rota inexistente)', async () => {
+    const corpo = corpoComBytes(32768);
+    assert.equal(Buffer.byteLength(corpo), 32768);
+    const r = await request(app).post('/api/health').set('content-type', 'application/json').send(corpo);
+    assert.equal(r.status, 404);
+  });
+
+  test('JSON de 32769 bytes responde 413 PAYLOAD_MUITO_GRANDE antes do roteamento, sem log', async () => {
+    const corpo = corpoComBytes(32769);
+    const r = await request(app).post('/api/health').set('content-type', 'application/json').send(corpo);
+    assert.deepEqual([r.status, r.body], [413, { status: 'error', codigo: 'PAYLOAD_MUITO_GRANDE', message: 'Corpo da requisição excede o tamanho máximo permitido' }]);
+    assert.equal(logErro.mock.callCount(), 0);
+  });
+
+  test('text/plain com corpo responde 415 TIPO_CONTEUDO_NAO_SUPORTADO antes do roteamento', async () => {
+    const r = await request(app).post('/api/health').set('content-type', 'text/plain').send(CORPO);
+    assert.deepEqual([r.status, r.body.codigo], [415, 'TIPO_CONTEUDO_NAO_SUPORTADO']);
+    assertSemSensiveis(r.text, SENSIVEIS, 'resposta 415');
+    assert.equal(logErro.mock.callCount(), 0);
+  });
+
+  test('JSON válido declarado como UTF-16 responde 415 CODIFICACAO_NAO_SUPORTADA, sem charset nem corpo na resposta e sem log', async () => {
+    const json = `{"senha":"${CORPO}"}`;
+    const r = await request(app).post('/api/health').set('content-type', 'application/json; charset=utf-16').set('cookie', 'gepi_sessao=COOKIE_SENTINELA').serialize((bytes) => bytes).send(Buffer.from(json, 'utf16le'));
+    assert.deepEqual([r.status, r.body], [415, { status: 'error', codigo: 'CODIFICACAO_NAO_SUPORTADA', message: 'Charset ou codificação do corpo não suportados: envie JSON em UTF-8 sem compressão' }]);
+    assertSemSensiveis(r.text, [...SENSIVEIS, 'utf-16', 'COOKIE_SENTINELA'], 'resposta 415 utf-16');
+    assert.equal(logErro.mock.callCount(), 0);
+  });
+
+  test('charset iso-8859-1 e corpo gzip respondem 415 CODIFICACAO_NAO_SUPORTADA, sem log', async () => {
+    const charset = await request(app).post('/api/health').set('content-type', 'application/json; charset=iso-8859-1').send(Buffer.from(`{"senha":"${CORPO}"}`, 'latin1'));
+    assert.deepEqual([charset.status, charset.body.codigo], [415, 'CODIFICACAO_NAO_SUPORTADA']);
+    const gzip = await request(app).post('/api/health').set('content-type', 'application/json').set('content-encoding', 'gzip').send(require('node:zlib').gzipSync(`{"senha":"${CORPO}"}`));
+    assert.deepEqual([gzip.status, gzip.body.codigo], [415, 'CODIFICACAO_NAO_SUPORTADA']);
+    assertSemSensiveis(charset.text + gzip.text, SENSIVEIS, 'respostas 415');
+    assert.equal(logErro.mock.callCount(), 0);
   });
 });

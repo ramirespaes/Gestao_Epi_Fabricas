@@ -157,15 +157,19 @@ describe('delegação e 404', () => {
     assert.deepEqual(logs, []);
   });
 
-  test('metadados de rota só quando disponíveis; status inteiro e type seguro entram', () => {
-    const res = { headersSent: false, status() { return this; }, json() {}, set() {} };
-    const erro = new Error('x');
-    erro.status = 413;
-    erro.type = 'entity.too.large';
+  test('erro inesperado com status inteiro e type seguro: 500 genérico e log só com esses metadados', () => {
+    // type sintético: não é de biblioteca e não tem tradução específica.
+    const res = { headersSent: false, status(codigo) { this.codigo = codigo; return this; }, json(corpo) { this.corpo = corpo; }, set() {} };
+    const erro = new Error('mensagem interna com ' + SENHA);
+    erro.status = 400;
+    erro.type = 'teste.erro.inesperado';
+    erro.body = 'CORPO_SENTINELA';
     errorHandler(erro, { method: 'post inválido', route: { path: 42 } }, res, () => {});
+    assert.deepEqual([res.codigo, res.corpo], [500, CORPO_500]);
     assert.equal(logs.length, 1);
-    assert.ok(logs[0].includes('"status":413') && logs[0].includes('"tipo":"entity.too.large"'));
+    assert.ok(logs[0].includes('"status":400') && logs[0].includes('"tipo":"teste.erro.inesperado"'));
     assert.equal(logs[0].includes('metodo') || logs[0].includes('rota'), false);
+    assertSemSensiveis(logs[0], [SENHA, 'CORPO_SENTINELA', 'mensagem interna', '"message"', '"stack"', '"body"'], 'log');
   });
 
   test('notFoundHandler e health inalterados', async () => {
@@ -173,5 +177,61 @@ describe('delegação e 404', () => {
     assert.deepEqual([r.status, r.body], [404, { status: 'error', message: 'Rota não encontrada: GET /nao-existe' }]);
     assert.equal(typeof notFoundHandler, 'function');
     assert.deepEqual(logs, []);
+  });
+});
+
+describe('erros do body-parser traduzidos para respostas fixas', () => {
+  // Reproduz só os campos observados nos erros reais do body-parser 2.3:
+  // type, status, expose e, conforme o caso, length/limit, charset, encoding.
+  const LENGTH = 987654321;
+  const MENSAGEM_LIB = 'MENSAGEM_BIBLIOTECA_SENTINELA_2f8a';
+  const CHARSET = 'CHARSET_SENTINELA_3c7d';
+  const ENCODING = 'ENCODING_SENTINELA_8e4b';
+  const erroBodyParser = (type, status, extras = {}) => Object.assign(new Error(MENSAGEM_LIB), { type, status, statusCode: status, expose: true, ...extras });
+  const responder = (erro) => {
+    const res = { headersSent: false, status(codigo) { this.codigo = codigo; return this; }, json(corpo) { this.corpo = corpo; }, set() {} };
+    errorHandler(erro, { method: 'POST', route: { path: '/api/eco' } }, res, () => { throw new Error('não deve delegar'); });
+    return res;
+  };
+  const semVazamento = (res, rotulo) => {
+    const texto = JSON.stringify(res.corpo);
+    assertSemSensiveis(texto, [MENSAGEM_LIB, CHARSET, ENCODING, String(LENGTH)], `resposta ${rotulo}`);
+    assert.deepEqual(Object.keys(res.corpo).sort(), ['codigo', 'message', 'status'], rotulo);
+    assert.deepEqual(logs, [], `${rotulo} não deve logar`);
+  };
+
+  test('entity.too.large: 413 PAYLOAD_MUITO_GRANDE sem length, limit ou mensagem da biblioteca', () => {
+    const res = responder(erroBodyParser('entity.too.large', 413, { length: LENGTH, limit: 32768 }));
+    assert.equal(res.codigo, 413);
+    assert.deepEqual(res.corpo, { status: 'error', codigo: 'PAYLOAD_MUITO_GRANDE', message: 'Corpo da requisição excede o tamanho máximo permitido' });
+    semVazamento(res, '413');
+  });
+
+  test('charset.unsupported: 415 CODIFICACAO_NAO_SUPORTADA sem o charset recebido', () => {
+    const res = responder(erroBodyParser('charset.unsupported', 415, { charset: CHARSET }));
+    assert.equal(res.codigo, 415);
+    assert.deepEqual(res.corpo, { status: 'error', codigo: 'CODIFICACAO_NAO_SUPORTADA', message: 'Charset ou codificação do corpo não suportados: envie JSON em UTF-8 sem compressão' });
+    semVazamento(res, '415 charset');
+  });
+
+  test('encoding.unsupported: 415 CODIFICACAO_NAO_SUPORTADA sem o encoding recebido', () => {
+    const res = responder(erroBodyParser('encoding.unsupported', 415, { encoding: ENCODING }));
+    assert.equal(res.codigo, 415);
+    assert.equal(res.corpo.codigo, 'CODIFICACAO_NAO_SUPORTADA');
+    semVazamento(res, '415 encoding');
+  });
+
+  test('entity.parse.failed continua 400 JSON_INVALIDO (regressão)', () => {
+    const res = responder(Object.assign(erroBodyParser('entity.parse.failed', 400), { body: 'CORPO_SENTINELA' }));
+    assert.equal(res.codigo, 400);
+    assert.deepEqual(res.corpo, { status: 'error', codigo: 'JSON_INVALIDO', message: 'JSON inválido' });
+    assert.deepEqual(logs, []);
+  });
+
+  test('erro com status 4xx mas sem type conhecido continua 500 genérico', () => {
+    const res = responder(Object.assign(new Error(MENSAGEM_LIB), { status: 400, expose: true }));
+    assert.equal(res.codigo, 500);
+    assert.equal(res.corpo.codigo, 'ERRO_INTERNO');
+    assertSemSensiveis(JSON.stringify(res.corpo), [MENSAGEM_LIB], 'resposta');
   });
 });

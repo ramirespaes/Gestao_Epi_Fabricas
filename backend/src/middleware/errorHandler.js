@@ -12,6 +12,17 @@ const CORPO_JSON_INVALIDO = Object.freeze({
 
 const MENSAGEM_INTERNA = 'Erro interno do servidor';
 
+// Demais erros do body-parser comprovadamente emitidos (type), traduzidos
+// para HttpError público com corpo fixo. NUNCA usar err.message, err.body,
+// err.length, err.limit, err.charset ou err.encoding. São provocáveis pelo
+// cliente: seguem o ramo 4xx e não geram log.
+const MENSAGEM_CODIFICACAO = 'Charset ou codificação do corpo não suportados: envie JSON em UTF-8 sem compressão';
+const TRADUCOES_BODY_PARSER = Object.freeze({
+  'entity.too.large': () => new HttpError(413, 'PAYLOAD_MUITO_GRANDE', 'Corpo da requisição excede o tamanho máximo permitido'),
+  'charset.unsupported': () => new HttpError(415, 'CODIFICACAO_NAO_SUPORTADA', MENSAGEM_CODIFICACAO),
+  'encoding.unsupported': () => new HttpError(415, 'CODIFICACAO_NAO_SUPORTADA', MENSAGEM_CODIFICACAO),
+});
+
 // Metadados de log de erro interno: SOMENTE valores com formato controlado.
 // Nunca message, stack, cause.message, propriedades extras (ex.: err.body do
 // body-parser, err.detail do pg) nem qualquer dado da requisição. Sem
@@ -82,16 +93,19 @@ function errorHandler(err, req, res, next) {
     return;
   }
 
-  if (HttpError.ehHttpError(err)) {
-    if (err.headers) {
-      res.set(err.headers);
+  const traduzir = err && typeof err.type === 'string' ? TRADUCOES_BODY_PARSER[err.type] : undefined;
+  const erro = traduzir ? traduzir() : err;
+
+  if (HttpError.ehHttpError(erro)) {
+    if (erro.headers) {
+      res.set(erro.headers);
     }
-    if (err.expose) {
-      res.status(err.status).json(err.corpoResposta());
+    if (erro.expose) {
+      res.status(erro.status).json(erro.corpoResposta());
       return;
     }
-    console.error('[error]', descreverErroParaLog(err, req));
-    res.status(err.status).json({ status: 'error', codigo: err.codigo, message: MENSAGEM_INTERNA });
+    console.error('[error]', descreverErroParaLog(erro, req));
+    res.status(erro.status).json({ status: 'error', codigo: erro.codigo, message: MENSAGEM_INTERNA });
     return;
   }
 
