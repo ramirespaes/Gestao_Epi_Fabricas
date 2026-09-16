@@ -190,3 +190,59 @@ describe('app.js: cabeçalhos HTTP de segurança', () => {
     assert.equal('cache-control' in r.headers, false);
   });
 });
+
+describe('app.js: CORS restrito ao namespace /api', () => {
+  const app = require('../src/app');
+  const PERMITIDA = 'http://localhost:5500';
+  const cors = (r) => Object.fromEntries(Object.entries(r.headers).filter(([k]) => k.startsWith('access-control-')));
+
+  test('origem permitida recebe a própria origem e credentials; nunca *', async () => {
+    const r = await request(app).get('/api/health').set('Origin', PERMITIDA);
+    assert.equal(r.status, 200);
+    assert.equal(r.headers['access-control-allow-origin'], PERMITIDA);
+    assert.equal(r.headers['access-control-allow-credentials'], 'true');
+    assert.ok(String(r.headers.vary || '').includes('Origin'));
+  });
+
+  test('origem estranha, Origin: null e ausência de Origin não recebem cabeçalhos CORS', async () => {
+    for (const origem of ['http://mal.test', 'null', undefined]) {
+      const req = request(app).get('/api/health');
+      const r = origem === undefined ? await req : await req.set('Origin', origem);
+      assert.equal(r.status, 200, String(origem));
+      assert.deepEqual(cors(r), {}, String(origem));
+      assert.notEqual(r.headers['access-control-allow-origin'], '*');
+    }
+  });
+
+  test('preflight permitido: 204, métodos e headers restritos, Max-Age 600, Helmet presente, sem no-store', async () => {
+    const r = await request(app).options('/api/health').set('Origin', PERMITIDA).set('Access-Control-Request-Method', 'POST').set('Access-Control-Request-Headers', 'content-type');
+    assert.equal(r.status, 204);
+    assert.equal(r.headers['access-control-allow-origin'], PERMITIDA);
+    assert.deepEqual(r.headers['access-control-allow-methods'].split(',').map((m) => m.trim()).sort(), ['GET', 'HEAD', 'PATCH', 'POST']);
+    assert.equal(r.headers['access-control-allow-headers'], 'Content-Type');
+    assert.equal(r.headers['access-control-max-age'], '600');
+    assert.equal(r.headers['x-frame-options'], 'DENY');
+    assert.equal('cache-control' in r.headers, false);
+  });
+
+  test('415 e 404 dentro de /api com origem permitida mantêm cabeçalhos CORS e no-store', async () => {
+    const tipoErrado = await request(app).post('/api/health').set('Origin', PERMITIDA).set('content-type', 'text/plain').send('x');
+    assert.equal(tipoErrado.status, 415);
+    assert.equal(tipoErrado.headers['access-control-allow-origin'], PERMITIDA);
+    assert.equal(tipoErrado.headers['cache-control'], 'no-store');
+    const naoEncontrado = await request(app).get('/api/inexistente').set('Origin', PERMITIDA);
+    assert.equal(naoEncontrado.status, 404);
+    assert.equal(naoEncontrado.headers['access-control-allow-origin'], PERMITIDA);
+    assert.equal(naoEncontrado.headers['cache-control'], 'no-store');
+  });
+
+  test('GET /fora com origem permitida: sem CORS, sem no-store, com Helmet', async () => {
+    const r = await request(app).get('/fora').set('Origin', PERMITIDA);
+    assert.equal(r.status, 404);
+    assert.equal('access-control-allow-origin' in r.headers, false);
+    assert.equal('access-control-allow-credentials' in r.headers, false);
+    assert.equal('cache-control' in r.headers, false);
+    assert.equal(r.headers['x-frame-options'], 'DENY');
+    assert.equal(String(r.headers.vary || '').split(',').map((v) => v.trim()).includes('Origin'), false, 'Vary não deve conter Origin fora de /api');
+  });
+});
