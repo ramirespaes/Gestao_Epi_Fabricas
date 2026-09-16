@@ -133,3 +133,60 @@ describe('app.js: payload e Content-Type dentro de /api', () => {
     assert.equal(logErro.mock.callCount(), 0);
   });
 });
+
+describe('app.js: cabeçalhos HTTP de segurança', () => {
+  const app = require('../src/app');
+  const ESPERADOS = {
+    'x-frame-options': 'DENY',
+    'referrer-policy': 'no-referrer',
+    'x-content-type-options': 'nosniff',
+    'cross-origin-opener-policy': 'same-origin',
+    'cross-origin-resource-policy': 'same-origin',
+    'origin-agent-cluster': '?1',
+    'x-permitted-cross-domain-policies': 'none',
+    'x-dns-prefetch-control': 'off',
+    'x-download-options': 'noopen',
+    'x-xss-protection': '0',
+  };
+  const CSP_ESPERADA = new Set(["default-src 'none'", "frame-ancestors 'none'", "base-uri 'none'", "form-action 'none'"]);
+  const diretivasCsp = (valor) => new Set(String(valor).split(';').map((d) => d.trim().replace(/\s+/g, ' ')).filter((d) => d !== ''));
+  const conferir = (headers, rotulo) => {
+    for (const [nome, valor] of Object.entries(ESPERADOS)) {
+      assert.equal(headers[nome], valor, `${rotulo}: ${nome}`);
+    }
+    assert.deepEqual(diretivasCsp(headers['content-security-policy']), CSP_ESPERADA, `${rotulo}: CSP`);
+    assert.equal('cross-origin-embedder-policy' in headers, false, `${rotulo}: COEP`);
+    assert.equal('strict-transport-security' in headers, false, `${rotulo}: HSTS ausente fora de production`);
+  };
+  test('X-Powered-By ausente em qualquer resposta (app.disable)', async () => {
+    for (const caminho of ['/api/health', '/api/inexistente', '/fora']) {
+      const r = await request(app).get(caminho);
+      assert.equal('x-powered-by' in r.headers, false, caminho);
+    }
+  });
+
+  test('GET /api/health: cabeçalhos de segurança com valores exatos e Cache-Control: no-store', async () => {
+    const r = await request(app).get('/api/health');
+    assert.equal(r.status, 200);
+    conferir(r.headers, '/api/health');
+    assert.equal(r.headers['cache-control'], 'no-store');
+  });
+
+  test('respostas de erro dentro de /api (404 e 415) mantêm os cabeçalhos e no-store', async () => {
+    const naoEncontrado = await request(app).get('/api/inexistente');
+    assert.equal(naoEncontrado.status, 404);
+    conferir(naoEncontrado.headers, '404 em /api');
+    assert.equal(naoEncontrado.headers['cache-control'], 'no-store');
+    const tipoErrado = await request(app).post('/api/health').set('content-type', 'text/plain').send('x');
+    assert.equal(tipoErrado.status, 415);
+    conferir(tipoErrado.headers, '415 em /api');
+    assert.equal(tipoErrado.headers['cache-control'], 'no-store');
+  });
+
+  test('fora de /api: cabeçalhos de segurança presentes, sem Cache-Control automático', async () => {
+    const r = await request(app).get('/fora');
+    assert.equal(r.status, 404);
+    conferir(r.headers, '/fora');
+    assert.equal('cache-control' in r.headers, false);
+  });
+});
