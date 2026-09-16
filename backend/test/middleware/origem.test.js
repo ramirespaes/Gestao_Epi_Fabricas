@@ -42,8 +42,11 @@ const esperar403 = (r, codigo, rotulo) => {
 };
 
 // Envio com cabeçalhos repetidos: o Supertest não repete, o http.request sim.
+// O bind informa 127.0.0.1 porque o cliente abaixo conecta por esse endereço:
+// listen(0) sem host abre :: em dual-stack e pode receber uma porta já ocupada
+// especificamente em IPv4 por outro processo, que passaria a responder.
 const enviarComRepetidos = (metodo, caminho, headers) => new Promise((resolve) => {
-  const servidor = app.listen(0, () => {
+  const servidor = app.listen(0, '127.0.0.1', () => {
     const req = http.request({ host: '127.0.0.1', port: servidor.address().port, method: metodo, path: caminho, headers }, (res) => {
       let texto = '';
       res.on('data', (parte) => { texto += parte; });
