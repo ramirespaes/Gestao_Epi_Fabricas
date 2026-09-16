@@ -352,3 +352,55 @@ describe('app.js: rate limit por IP no namespace /api', () => {
     assert.ok('ratelimit' in r.headers, 'passou pelo limitador');
   });
 });
+
+describe('app.js: integração do pipeline de segurança', () => {
+  // Regressão do pipeline já implementado nas Subetapas 1 a 7: comprova a
+  // precedência entre camadas e a preservação de cabeçalhos nas respostas de
+  // erro. Não introduz comportamento novo.
+  const app = require('../src/app');
+  const PERMITIDA = 'http://localhost:5500';
+  const MALICIOSA = 'http://mal.test';
+  const corsDe = (resposta) => Object.fromEntries(Object.entries(resposta.headers).filter(([nome]) => nome.startsWith('access-control-')));
+  let logErro;
+  beforeEach(() => { logErro = mock.method(console, 'error', () => {}); });
+  afterEach(() => mock.restoreAll());
+
+  test('preflight de origem não permitida não recebe cabeçalhos CORS nem 403', async () => {
+    const r = await request(app).options('/api/health').set('Origin', MALICIOSA).set('Access-Control-Request-Method', 'POST');
+    assert.deepEqual(corsDe(r), {}, 'nenhum Access-Control-* para origem fora da allowlist');
+    assert.notEqual(r.status, 403);
+    assert.notEqual(r.body.codigo, 'ORIGEM_NAO_PERMITIDA');
+    // OPTIONS é método seguro: não é barrado pela verificação de origem, então
+    // o preflight não permitido atravessa o CORS e alcança o limitador.
+    assert.ok('ratelimit' in r.headers, 'preflight não permitido não termina no CORS');
+    assert.equal(r.headers['cache-control'], 'no-store');
+    assert.equal(r.headers['x-frame-options'], 'DENY');
+    assert.equal(logErro.mock.callCount(), 0);
+  });
+
+  test('413 integrado: payload acima do limite preserva CORS, no-store, Helmet e RateLimit', async () => {
+    const corpo = JSON.stringify({ senha: 'a'.repeat(40000) });
+    assert.ok(Buffer.byteLength(corpo) > 32768);
+    const r = await request(app).post('/api/health').set('Origin', PERMITIDA).set('content-type', 'application/json').send(corpo);
+    assert.deepEqual([r.status, r.body.codigo], [413, 'PAYLOAD_MUITO_GRANDE']);
+    assert.equal(r.headers['access-control-allow-origin'], PERMITIDA);
+    assert.equal(r.headers['access-control-allow-credentials'], 'true');
+    assert.equal(r.headers['cache-control'], 'no-store');
+    assert.equal(r.headers['x-frame-options'], 'DENY');
+    assert.ok('ratelimit' in r.headers, 'a cota foi consumida antes do parser');
+    assert.equal('retry-after' in r.headers, false);
+    assert.equal(logErro.mock.callCount(), 0);
+  });
+
+  test('400 integrado: JSON malformado preserva CORS, no-store, Helmet e RateLimit', async () => {
+    const r = await request(app).post('/api/health').set('Origin', PERMITIDA).set('content-type', 'application/json').send('{"senha": ');
+    assert.deepEqual([r.status, r.body.codigo], [400, 'JSON_INVALIDO']);
+    assert.equal(r.headers['access-control-allow-origin'], PERMITIDA);
+    assert.equal(r.headers['access-control-allow-credentials'], 'true');
+    assert.equal(r.headers['cache-control'], 'no-store');
+    assert.equal(r.headers['x-frame-options'], 'DENY');
+    assert.ok('ratelimit' in r.headers);
+    assert.equal('retry-after' in r.headers, false);
+    assert.equal(logErro.mock.callCount(), 0);
+  });
+});
