@@ -98,19 +98,19 @@ describe('app.js: payload e Content-Type dentro de /api', () => {
   test('JSON válido de 32768 bytes atravessa o parser e chega ao roteamento (404 da rota inexistente)', async () => {
     const corpo = corpoComBytes(32768);
     assert.equal(Buffer.byteLength(corpo), 32768);
-    const r = await request(app).post('/api/health').set('content-type', 'application/json').send(corpo);
+    const r = await request(app).post('/api/health').set('Origin', 'http://localhost:5500').set('content-type', 'application/json').send(corpo);
     assert.equal(r.status, 404);
   });
 
   test('JSON de 32769 bytes responde 413 PAYLOAD_MUITO_GRANDE antes do roteamento, sem log', async () => {
     const corpo = corpoComBytes(32769);
-    const r = await request(app).post('/api/health').set('content-type', 'application/json').send(corpo);
+    const r = await request(app).post('/api/health').set('Origin', 'http://localhost:5500').set('content-type', 'application/json').send(corpo);
     assert.deepEqual([r.status, r.body], [413, { status: 'error', codigo: 'PAYLOAD_MUITO_GRANDE', message: 'Corpo da requisição excede o tamanho máximo permitido' }]);
     assert.equal(logErro.mock.callCount(), 0);
   });
 
   test('text/plain com corpo responde 415 TIPO_CONTEUDO_NAO_SUPORTADO antes do roteamento', async () => {
-    const r = await request(app).post('/api/health').set('content-type', 'text/plain').send(CORPO);
+    const r = await request(app).post('/api/health').set('Origin', 'http://localhost:5500').set('content-type', 'text/plain').send(CORPO);
     assert.deepEqual([r.status, r.body.codigo], [415, 'TIPO_CONTEUDO_NAO_SUPORTADO']);
     assertSemSensiveis(r.text, SENSIVEIS, 'resposta 415');
     assert.equal(logErro.mock.callCount(), 0);
@@ -118,16 +118,16 @@ describe('app.js: payload e Content-Type dentro de /api', () => {
 
   test('JSON válido declarado como UTF-16 responde 415 CODIFICACAO_NAO_SUPORTADA, sem charset nem corpo na resposta e sem log', async () => {
     const json = `{"senha":"${CORPO}"}`;
-    const r = await request(app).post('/api/health').set('content-type', 'application/json; charset=utf-16').set('cookie', 'gepi_sessao=COOKIE_SENTINELA').serialize((bytes) => bytes).send(Buffer.from(json, 'utf16le'));
+    const r = await request(app).post('/api/health').set('Origin', 'http://localhost:5500').set('content-type', 'application/json; charset=utf-16').set('cookie', 'gepi_sessao=COOKIE_SENTINELA').serialize((bytes) => bytes).send(Buffer.from(json, 'utf16le'));
     assert.deepEqual([r.status, r.body], [415, { status: 'error', codigo: 'CODIFICACAO_NAO_SUPORTADA', message: 'Charset ou codificação do corpo não suportados: envie JSON em UTF-8 sem compressão' }]);
     assertSemSensiveis(r.text, [...SENSIVEIS, 'utf-16', 'COOKIE_SENTINELA'], 'resposta 415 utf-16');
     assert.equal(logErro.mock.callCount(), 0);
   });
 
   test('charset iso-8859-1 e corpo gzip respondem 415 CODIFICACAO_NAO_SUPORTADA, sem log', async () => {
-    const charset = await request(app).post('/api/health').set('content-type', 'application/json; charset=iso-8859-1').send(Buffer.from(`{"senha":"${CORPO}"}`, 'latin1'));
+    const charset = await request(app).post('/api/health').set('Origin', 'http://localhost:5500').set('content-type', 'application/json; charset=iso-8859-1').send(Buffer.from(`{"senha":"${CORPO}"}`, 'latin1'));
     assert.deepEqual([charset.status, charset.body.codigo], [415, 'CODIFICACAO_NAO_SUPORTADA']);
-    const gzip = await request(app).post('/api/health').set('content-type', 'application/json').set('content-encoding', 'gzip').send(require('node:zlib').gzipSync(`{"senha":"${CORPO}"}`));
+    const gzip = await request(app).post('/api/health').set('Origin', 'http://localhost:5500').set('content-type', 'application/json').set('content-encoding', 'gzip').send(require('node:zlib').gzipSync(`{"senha":"${CORPO}"}`));
     assert.deepEqual([gzip.status, gzip.body.codigo], [415, 'CODIFICACAO_NAO_SUPORTADA']);
     assertSemSensiveis(charset.text + gzip.text, SENSIVEIS, 'respostas 415');
     assert.equal(logErro.mock.callCount(), 0);
@@ -177,7 +177,7 @@ describe('app.js: cabeçalhos HTTP de segurança', () => {
     assert.equal(naoEncontrado.status, 404);
     conferir(naoEncontrado.headers, '404 em /api');
     assert.equal(naoEncontrado.headers['cache-control'], 'no-store');
-    const tipoErrado = await request(app).post('/api/health').set('content-type', 'text/plain').send('x');
+    const tipoErrado = await request(app).post('/api/health').set('Origin', 'http://localhost:5500').set('content-type', 'text/plain').send('x');
     assert.equal(tipoErrado.status, 415);
     conferir(tipoErrado.headers, '415 em /api');
     assert.equal(tipoErrado.headers['cache-control'], 'no-store');
@@ -244,5 +244,68 @@ describe('app.js: CORS restrito ao namespace /api', () => {
     assert.equal('cache-control' in r.headers, false);
     assert.equal(r.headers['x-frame-options'], 'DENY');
     assert.equal(String(r.headers.vary || '').split(',').map((v) => v.trim()).includes('Origin'), false, 'Vary não deve conter Origin fora de /api');
+  });
+});
+
+describe('app.js: verificação de origem em métodos inseguros', () => {
+  const app = require('../src/app');
+  const PERMITIDA = 'http://localhost:5500';
+  const MALICIOSA = 'http://mal.test';
+  const CORPO = 'CORPO_SENTINELA_5b2a';
+  const SENSIVEIS = [MALICIOSA, CORPO, 'text/plain', 'mal.test'];
+  let logErro;
+  beforeEach(() => { logErro = mock.method(console, 'error', () => {}); });
+  afterEach(() => mock.restoreAll());
+
+  test('POST com origem não permitida: 403 ORIGEM_NAO_PERMITIDA, sem CORS, com no-store e sem log', async () => {
+    const r = await request(app).post('/api/health').set('Origin', MALICIOSA).set('content-type', 'application/json').send({ a: 1 });
+    assert.deepEqual([r.status, r.body], [403, { status: 'error', codigo: 'ORIGEM_NAO_PERMITIDA', message: 'Origem da requisição não permitida' }]);
+    assert.equal('access-control-allow-origin' in r.headers, false);
+    assert.equal(r.headers['cache-control'], 'no-store');
+    assertSemSensiveis(r.text, SENSIVEIS, 'resposta 403');
+    assert.equal(logErro.mock.callCount(), 0);
+  });
+
+  test('POST sem Origin nem Referer: 403 ORIGEM_AUSENTE', async () => {
+    const r = await request(app).post('/api/health').set('content-type', 'application/json').send({ a: 1 });
+    assert.deepEqual([r.status, r.body.codigo], [403, 'ORIGEM_AUSENTE']);
+  });
+
+  test('verificação de origem ocorre ANTES de Content-Type: text/plain com origem inválida dá 403, não 415', async () => {
+    const naoPermitida = await request(app).post('/api/health').set('Origin', MALICIOSA).set('content-type', 'text/plain').send(CORPO);
+    assert.deepEqual([naoPermitida.status, naoPermitida.body.codigo], [403, 'ORIGEM_NAO_PERMITIDA']);
+    assert.equal(naoPermitida.headers['cache-control'], 'no-store');
+    assert.equal('access-control-allow-origin' in naoPermitida.headers, false);
+    assertSemSensiveis(naoPermitida.text, SENSIVEIS, 'resposta 403 antes do 415');
+
+    const semOrigem = await request(app).post('/api/health').set('content-type', 'text/plain').send(CORPO);
+    assert.deepEqual([semOrigem.status, semOrigem.body.codigo], [403, 'ORIGEM_AUSENTE']);
+    assertSemSensiveis(semOrigem.text, SENSIVEIS, 'resposta 403 sem origem');
+    assert.equal(logErro.mock.callCount(), 0);
+  });
+
+  test('POST com origem permitida atravessa a verificação e chega à camada seguinte', async () => {
+    const r = await request(app).post('/api/health').set('Origin', PERMITIDA).set('content-type', 'application/json').send({ a: 1 });
+    assert.equal(r.status, 404);
+    assert.equal(r.headers['access-control-allow-origin'], PERMITIDA);
+  });
+
+  test('POST sem Origin e com Referer de origem permitida chega à camada seguinte', async () => {
+    const r = await request(app).post('/api/health').set('Referer', `${PERMITIDA}/app/login?x=1`).set('content-type', 'application/json').send({ a: 1 });
+    assert.equal(r.status, 404);
+  });
+
+  test('métodos seguros não são bloqueados por origem não permitida', async () => {
+    const r = await request(app).get('/api/health').set('Origin', MALICIOSA);
+    assert.deepEqual([r.status, r.body], [200, { status: 'ok', service: 'gestao-epi-api' }]);
+    assert.equal('access-control-allow-origin' in r.headers, false);
+    const preflight = await request(app).options('/api/health').set('Origin', PERMITIDA).set('Access-Control-Request-Method', 'POST');
+    assert.equal(preflight.status, 204);
+  });
+
+  test('POST fora de /api não recebe a política de origem', async () => {
+    const r = await request(app).post('/fora');
+    assert.equal(r.status, 404);
+    assert.notEqual(r.body.codigo, 'ORIGEM_AUSENTE');
   });
 });
