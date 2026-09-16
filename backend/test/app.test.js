@@ -309,3 +309,46 @@ describe('app.js: verificação de origem em métodos inseguros', () => {
     assert.notEqual(r.body.codigo, 'ORIGEM_AUSENTE');
   });
 });
+
+describe('app.js: rate limit por IP no namespace /api', () => {
+  const app = require('../src/app');
+  const PERMITIDA = 'http://localhost:5500';
+  const parametros = (valor) => Object.fromEntries(String(valor).split(';').slice(1).map((parte) => {
+    const [nome, conteudo] = parte.split('=');
+    return [nome.trim(), (conteudo ?? '').trim()];
+  }));
+
+  test('GET /api/health traz RateLimit e RateLimit-Policy no formato draft-8, sem legados', async () => {
+    const r = await request(app).get('/api/health');
+    assert.equal(r.status, 200);
+    const rateLimit = parametros(r.headers.ratelimit);
+    assert.ok(/^[0-9]+$/.test(rateLimit.r ?? ''), 'RateLimit deve trazer r=');
+    assert.ok(/^[0-9]+$/.test(rateLimit.t ?? ''), 'RateLimit deve trazer t=');
+    const policy = parametros(r.headers['ratelimit-policy']);
+    assert.ok(/^[0-9]+$/.test(policy.q ?? ''), 'RateLimit-Policy deve trazer q=');
+    assert.equal(policy.w, '60');
+    for (const legado of ['x-ratelimit-limit', 'x-ratelimit-remaining', 'x-ratelimit-reset']) {
+      assert.equal(legado in r.headers, false, legado);
+    }
+    assert.equal('retry-after' in r.headers, false);
+  });
+
+  test('GET /fora não recebe cabeçalhos de rate limit', async () => {
+    const r = await request(app).get('/fora');
+    assert.equal(r.status, 404);
+    assert.equal('ratelimit' in r.headers, false);
+    assert.equal('ratelimit-policy' in r.headers, false);
+  });
+
+  test('POST com origem inválida é rejeitado antes do limitador: 403 sem cabeçalhos de rate limit', async () => {
+    const r = await request(app).post('/api/health').set('Origin', 'http://mal.test').set('content-type', 'application/json').send({ a: 1 });
+    assert.deepEqual([r.status, r.body.codigo], [403, 'ORIGEM_NAO_PERMITIDA']);
+    assert.equal('ratelimit' in r.headers, false, 'verificarOrigem vem antes de limitadorGeral');
+  });
+
+  test('requisição legítima com origem permitida atravessa o limitador', async () => {
+    const r = await request(app).post('/api/health').set('Origin', PERMITIDA).set('content-type', 'application/json').send({ a: 1 });
+    assert.equal(r.status, 404, 'chega ao roteamento');
+    assert.ok('ratelimit' in r.headers, 'passou pelo limitador');
+  });
+});

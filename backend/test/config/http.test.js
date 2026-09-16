@@ -24,8 +24,14 @@ const PADRAO_DEV = {
 };
 
 describe('configuração HTTP carregada do ambiente de teste', () => {
-  test('ambiente test com padrões, congelada em todos os níveis', () => {
-    assert.deepEqual(httpConfig, { ...PADRAO_DEV, ambiente: 'test' });
+  test('reflete exatamente o ambiente da suíte: limites elevados do setup e demais padrões', () => {
+    // test/setup.js eleva os limites de rate limit para isolar o MemoryStore
+    // do app real; os defaults reais seguem cobertos por carregarConfigHttp.
+    assert.deepEqual(httpConfig, {
+      ...PADRAO_DEV,
+      ambiente: 'test',
+      rateLimit: { geral: { limite: 100000, janelaSegundos: 60 }, autenticacao: { limite: 100000, janelaSegundos: 60 } },
+    });
     assert.equal(JSON_LIMITE, '32kb');
     for (const objeto of [httpConfig, httpConfig.cors, httpConfig.cors.origens, httpConfig.proxy, httpConfig.rateLimit, httpConfig.rateLimit.geral, httpConfig.rateLimit.autenticacao]) {
       assert.equal(Object.isFrozen(objeto), true);
