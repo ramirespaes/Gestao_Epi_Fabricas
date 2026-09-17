@@ -1,0 +1,22 @@
+{
+  "algoritmo": "sha256",
+  "migrations": {
+    "000_create_function_set_atualizado_em.sql": "413e510f1407cb95fba2aeb6dee0a9ffe56c6ea3e707137dcebf941299db9d75",
+    "001_create_empresas.sql": "32fe660386a817ff664ae7099734272bc23da52c14b8d46873b4bef121021462",
+    "002_create_perfis.sql": "7c578361638ddac8274eacc57960b3c1bf34962f7737f6be0871086638ccd543",
+    "003_create_acoes.sql": "608904aaa77bee7c5a96ad55dcd95e5365b8f60f1dcb1b180d9e66ef26f385dd",
+    "004_create_grupos_homogeneos_exposicao.sql": "deeee32722ae1f5b28ed81dd9d65699198c75cd9a56a24da0450aae8b4561bdd",
+    "005_create_usuarios.sql": "3a02353621958fd4b4b0f70331674cfdde8b96465c53dadbae5b209003ee56dd",
+    "006_create_funcionarios.sql": "c298288976a066b24ecfa615e445a7ba8fb19c35502f6e7115904406645ac20c",
+    "007_create_materiais.sql": "12ace0aee65203791b426e5bf1f7b8a5152c63d823143bac563ec3b0a73a389f",
+    "008_create_estoque_tamanhos.sql": "f551568620e2c186654b319b34bb50cc53481a59bbbc6b2e06dade44fa4cfac5",
+    "009_create_permissoes_recurso.sql": "65d1141d68c308de03979fb55ebaac822fdd3df95953c3484513e19253d9e9c0",
+    "010_create_permissoes_acao.sql": "81b7ed68d16d0970d84b430b2c5202c925f09d500e3cbc16d0b09602bae7587a",
+    "011_create_usuario_bloqueios.sql": "a4f9e0cff11be13a1b2ddf9dd6ecb46798108e8f4726432b8b42a77816359606",
+    "012_create_logs_auditoria.sql": "6d1946711c77c4dd0a5e95f2a9e81752a16627c4b346e3337666ca8df355aec0",
+    "013_create_sessoes.sql": "186dd4e90bce6b432ec5bb1c8fe428e42f1ba8ce746ba62e49022eeba0678470",
+    "014_alter_logs_auditoria_add_dados.sql": "c3f4261a448a6cc639cef86eefd9a8f2c1a3008a2d99d8493aa93e2029820601",
+    "015_create_login_tentativas.sql": "9c30d1299f6fb0fc33c0466c9f139606a840a7eca0f08aee1de9a0c85841564e",
+    "016_alter_empresas_cnpj_alfanumerico.sql": "b3e85ea93ca569ce6c9109246dee4f09c673b6ff8985fb4dfef682dd5af4a72d"
+  }
+}
