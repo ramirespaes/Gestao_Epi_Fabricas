@@ -62,7 +62,15 @@ const assinaturaPublic = async (cliente) => {
   return rows[0];
 };
 
+const contarPgmigrationsEmPublic = async (cliente) => {
+  const { rows } = await cliente.query(
+    "SELECT count(*)::int AS total FROM pg_tables WHERE schemaname = 'public' AND tablename = 'pgmigrations'",
+  );
+  return rows[0].total;
+};
+
 let publicAntes = null;
+let pgmigrationsEmPublicAntes = null;
 
 describe('linha de base do schema public', () => {
   let contexto;
@@ -73,6 +81,7 @@ describe('linha de base do schema public', () => {
     publicAntes = await assinaturaPublic(contexto.cliente);
     assert.notEqual(publicAntes, null);
     assert.match(publicAntes.tabelas, /empresas/, 'a linha de base deve enxergar o public real');
+    pgmigrationsEmPublicAntes = await contarPgmigrationsEmPublic(contexto.cliente);
   });
 });
 
@@ -87,8 +96,12 @@ describe('aplicação das migrations reais em schema vazio', () => {
     await aplicarMigrations({ schema: contexto.schema, diretorio: DIRETORIO_REAL });
 
     assert.equal(await existe(contexto.cliente, 'pgmigrations'), true);
+    // Filtrada pelo schema do ensaio: a mesma tabela pode existir em outros
+    // schemas do banco, inclusive em public, sem que isso diga nada sobre este
+    // teste.
     const { rows } = await contexto.cliente.query(
-      "SELECT table_schema FROM information_schema.tables WHERE table_name = 'pgmigrations'",
+      "SELECT table_schema FROM information_schema.tables WHERE table_name = 'pgmigrations' AND table_schema = $1",
+      [contexto.schema],
     );
     assert.deepEqual(rows.map((linha) => linha.table_schema), [contexto.schema]);
   });
@@ -303,10 +316,12 @@ describe('isolamento do schema public', () => {
     assert.deepEqual(publicDepois, publicAntes);
   });
 
-  test('nenhuma tabela pgmigrations foi criada em public', async () => {
-    const { rows } = await contexto.cliente.query(
-      "SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'pgmigrations'",
-    );
-    assert.equal(rows.length, 0);
+  // A tabela de controle pode existir legitimamente em public, porque o banco
+  // de desenvolvimento passou a ser gerido pelo runner. O que os ensaios não
+  // podem fazer é criá-la ou removê-la de lá, então o contrato é a ausência de
+  // mudança, e não a ausência da tabela.
+  test('os ensaios não criam nem removem pgmigrations em public', async () => {
+    assert.notEqual(pgmigrationsEmPublicAntes, null, 'a linha de base precisa ter sido capturada');
+    assert.equal(await contarPgmigrationsEmPublic(contexto.cliente), pgmigrationsEmPublicAntes);
   });
 });
