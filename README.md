@@ -45,6 +45,69 @@ Migrations já incorporadas ao histórico não são alteradas retroativamente. Q
 
 A migration `016_alter_empresas_cnpj_alfanumerico.sql` altera a constraint estrutural de `empresas.cnpj` para aceitar 12 posições `[0-9A-Z]` seguidas de 2 dígitos numéricos. Ela substitui apenas a expressão da constraint e preserva o nome dela, o tipo `VARCHAR(14)`, o `NOT NULL` da coluna, a UNIQUE e a chave primária. A constraint verifica somente o formato. A conferência dos dígitos verificadores não é responsabilidade do banco.
 
+### Configuração de acesso
+
+O backend exige um servidor PostgreSQL 16 acessível e um banco de dados cujo proprietário seja o usuário informado na configuração, com permissão para criar objetos no schema `public`.
+
+O acesso é configurado por cinco variáveis de ambiente, lidas de `backend/.env`:
+
+| Variável | Conteúdo |
+|---|---|
+| `DB_HOST` | endereço do servidor |
+| `DB_PORT` | porta do servidor |
+| `DB_NAME` | nome do banco de dados |
+| `DB_USER` | usuário de conexão, que deve ser o proprietário do banco |
+| `DB_PASSWORD` | senha do usuário |
+
+O arquivo `backend/.env.example` lista todas as variáveis do projeto e não contém valores reais. O `.env` não é versionado, e nenhuma credencial deve ser escrita em código, em documentação ou em argumento de linha de comando.
+
+### Preparação de um ambiente novo
+
+A sequência abaixo parte de um banco vazio e recém-criado.
+
+```bash
+cd backend
+npm ci                       # instala as dependências a partir do package-lock.json
+cp .env.example .env         # preencher as variáveis, inclusive as cinco de banco
+npm run db:migrate:verificar # confere a integridade dos arquivos de migration
+npm run db:migrate:status    # mostra o que está aplicado e o que está pendente
+npm run db:migrate           # aplica as migrations pendentes
+```
+
+Em um banco vazio, a primeira execução de `npm run db:migrate:status` apresenta as 17 migrations como pendentes e pode terminar com código de saída 2. Esse código sinaliza pendência, não erro de configuração, e é o resultado esperado antes da primeira aplicação.
+
+Ao final da sequência, `npm run db:migrate:status` deve relatar 17 migrations aplicadas, nenhuma pendente e código de saída 0.
+
+### Comandos de migration
+
+Os três comandos têm propósitos distintos e são executados nessa ordem.
+
+```bash
+npm run db:migrate:verificar # compara os arquivos .sql com o manifesto SHA-256, sem acessar o banco
+npm run db:migrate:status    # leitura apenas: aplicadas, pendentes e divergências
+npm run db:migrate           # aplica as pendentes em ordem crescente de prefixo
+```
+
+A aplicação é feita pelo `node-pg-migrate`, com verificação de ordem, transação única para o lote e advisory lock que impede duas execuções simultâneas no mesmo banco. Se uma migration falhar, o lote inteiro é revertido e nenhuma das seguintes é tentada.
+
+O histórico fica registrado na tabela `pgmigrations`, criada e mantida pela ferramenta. Ela é a fonte de verdade sobre o que já foi aplicado.
+
+### Integridade das migrations
+
+As migrations de `000` a `016` são protegidas por um manifesto de checksums SHA-256 em `backend/migrations/checksums.json`. O `npm run db:migrate:verificar` recalcula o digest de cada arquivo e o compara com o registro, detectando alteração de conteúdo, remoção e renomeação.
+
+Uma migration já aplicada não deve ser alterada. O manifesto só aceita registro automático de migration nova, e recusa qualquer atualização que encubra mudança em arquivo histórico. Correções de estrutura entram sempre em uma migration nova.
+
+Para manter os digests estáveis entre plataformas, o `.gitattributes` da raiz fixa os arquivos `.sql` em fim de linha LF.
+
+### Baseline
+
+O baseline registra migrations como aplicadas sem executar o SQL delas. Existe apenas para bancos cuja estrutura foi criada antes do controle de migrations, e não faz parte da instalação normal.
+
+Por isso o comando exige confirmação explícita, recusa banco vazio e recusa banco que já tenha histórico registrado. Em uma instalação nova, o caminho correto é sempre `npm run db:migrate`.
+
+O sinalizador de confirmação registra a intenção de quem executa, e não comprova que a estrutura do banco corresponde ao conjunto de migrations. Essa equivalência precisa ser verificada antes, por auditoria do catálogo do PostgreSQL, comparando tabelas, colunas, constraints, índices, funções e gatilhos com o que as migrations declaram. Sem essa auditoria, o baseline pode registrar como aplicadas migrations cujo efeito não está presente no banco.
+
 ## Testes e cobertura do backend
 
 O backend usa o runner nativo `node:test` com `node:assert/strict`, e `supertest` para os testes HTTP. A cobertura é medida pela instrumentação nativa do Node 24, sem biblioteca adicional.
@@ -77,7 +140,9 @@ Cada execução:
 - aplica ali apenas as migrations necessárias ao caso testado;
 - remove o schema com `DROP SCHEMA ... CASCADE` ao final, inclusive quando o teste falha.
 
-O schema `public` nunca é lido nem escrito, e nenhuma migration é aplicada nele. As credenciais vêm exclusivamente do ambiente e não aparecem no código nem na saída dos testes.
+As migrations dos ensaios são aplicadas exclusivamente em schemas temporários. Os testes podem consultar o estado do schema `public` para comprovar o isolamento, comparando a estrutura antes e depois da execução, mas não modificam seus objetos nem seus dados. As credenciais vêm exclusivamente do ambiente e não aparecem no código nem na saída dos testes.
+
+Os arquivos de integração são executados em série, com `--test-concurrency=1`. O motivo é o advisory lock do runner de migrations, que tem alcance de banco inteiro e permite apenas uma execução por vez. Em paralelo, um arquivo bloquearia o outro. A serialização reflete essa restrição real da ferramenta e não contorna nenhuma falha intermitente.
 
 ### Requisito de cobertura
 
@@ -102,22 +167,22 @@ Resultado validado na última execução de `npm run test:ci`:
 
 | Métrica | Valor |
 |---|---|
-| Testes | 290 |
-| Aprovados | 290 |
+| Testes | 310 |
+| Aprovados | 310 |
 | Falhas | 0 |
-| Linhas | 99,57% |
-| Ramos | 97,34% |
-| Funções | 99,29% |
+| Linhas | 99,60% |
+| Ramos | 97,42% |
+| Funções | 99,37% |
 
 Resultado validado na última execução de `npm run test:integracao`:
 
 | Métrica | Valor |
 |---|---|
-| Testes | 14 |
-| Aprovados | 14 |
+| Testes | 45 |
+| Aprovados | 45 |
 | Falhas | 0 |
 
-Os 14 testes de integração são uma suíte separada e não devem ser somados aos 290 da suíte padrão. Eles não participam da medição de cobertura, então a linha de cobertura acima se refere apenas aos 290.
+Os 45 testes de integração são uma suíte separada e não devem ser somados aos 310 da suíte padrão. Eles não participam da medição de cobertura, então a linha de cobertura acima se refere apenas aos 310.
 
 Esses percentuais representam o estado atual e vão variar conforme novos módulos forem adicionados. O requisito permanente continua sendo no mínimo 75% de linhas no backend.
 
