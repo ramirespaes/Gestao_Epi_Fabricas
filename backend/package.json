@@ -10,8 +10,11 @@
     "test:cobertura": "node --require ./test/setup.js --test --experimental-test-coverage --test-coverage-include=\"src/**\" --test-coverage-exclude=\"src/server.js\" \"test/**/*.test.js\"",
     "pretest:ci": "node -e \"require('node:fs').mkdirSync('coverage', { recursive: true })\"",
     "test:ci": "node --require ./test/setup.js --test --experimental-test-coverage --test-coverage-include=\"src/**\" --test-coverage-exclude=\"src/server.js\" --test-coverage-lines=75 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info \"test/**/*.test.js\"",
-    "test:integracao": "node --require dotenv/config --require ./test/setup.js --test \"test/integracao/**/*.integration.js\"",
-    "db:migrate:verificar": "node scripts/verificar-checksums.js"
+    "test:integracao": "node --require dotenv/config --require ./test/setup.js --test --test-concurrency=1 \"test/integracao/**/*.integration.js\"",
+    "db:migrate:verificar": "node scripts/verificar-checksums.js",
+    "db:migrate": "node --require dotenv/config scripts/migrate-cli.js aplicar",
+    "db:migrate:status": "node --require dotenv/config scripts/migrate-cli.js status",
+    "db:migrate:baseline": "node --require dotenv/config scripts/migrate-cli.js baseline"
   },
   "keywords": [],
   "author": "",

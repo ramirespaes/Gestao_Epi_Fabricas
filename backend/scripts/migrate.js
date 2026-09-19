@@ -48,6 +48,8 @@ const TABELA_CONTROLE = 'pgmigrations';
 // explícito, e não ser descartado em silêncio como se não existisse.
 const IGNORAR_NAO_SQL = '(?!.*\\.sql$).*';
 
+const identificadorDe = (nomeDeArquivo) => nomeDeArquivo.replace(/\.sql$/, '');
+
 function criarCliente() {
   return new Client({
     host: process.env.DB_HOST,
@@ -115,4 +117,69 @@ async function aplicarMigrations({ schema, diretorio, baseline = false }) {
   }
 }
 
-module.exports = { aplicarMigrations };
+/**
+ * Lê o estado das migrations de um schema, sem alterar nada.
+ *
+ * Somente SELECT: não cria a tabela de controle, não aplica migration e não
+ * escreve em lugar algum. A ausência da tabela de controle é informação, não
+ * motivo para criá-la.
+ *
+ * Um schema que já tem tabelas e não tem a tabela de controle é um banco
+ * migrado antes do controle existir. Isso é reportado em schemaTemObjetos, e
+ * quem decide o que fazer com essa informação é quem chama. A presença de
+ * tabelas nunca prova que todas as migrations foram aplicadas.
+ *
+ * @param {object} opcoes
+ * @param {string} opcoes.schema
+ * @param {string} opcoes.diretorio
+ * @returns {Promise<{controleExiste: boolean, schemaTemObjetos: boolean,
+ *   aplicadas: string[], pendentes: string[], semArquivo: string[]}>}
+ */
+async function inspecionarMigrations({ schema, diretorio }) {
+  if (typeof schema !== 'string' || !FORMATO_SCHEMA.test(schema)) {
+    throw new TypeError('nome de schema inválido');
+  }
+  if (typeof diretorio !== 'string' || diretorio.length === 0) {
+    throw new TypeError('diretório de migrations inválido');
+  }
+
+  const arquivos = listarMigrations(diretorio).map((migration) => identificadorDe(migration.nome));
+  const cliente = criarCliente();
+  await cliente.connect();
+
+  try {
+    const controle = await cliente.query('SELECT to_regclass($1) IS NOT NULL AS existe', [
+      `${schema}.${TABELA_CONTROLE}`,
+    ]);
+    const controleExiste = controle.rows[0].existe;
+
+    const objetos = await cliente.query(
+      'SELECT count(*)::int AS total FROM pg_tables WHERE schemaname = $1 AND tablename <> $2',
+      [schema, TABELA_CONTROLE],
+    );
+    const schemaTemObjetos = objetos.rows[0].total > 0;
+
+    let registradas = [];
+    if (controleExiste) {
+      const { rows } = await cliente.query(
+        `SELECT name FROM "${schema}"."${TABELA_CONTROLE}" ORDER BY id`,
+      );
+      registradas = rows.map((linha) => linha.name);
+    }
+
+    const conjuntoArquivos = new Set(arquivos);
+    const conjuntoRegistradas = new Set(registradas);
+
+    return {
+      controleExiste,
+      schemaTemObjetos,
+      aplicadas: registradas.filter((nome) => conjuntoArquivos.has(nome)),
+      semArquivo: registradas.filter((nome) => !conjuntoArquivos.has(nome)),
+      pendentes: arquivos.filter((nome) => !conjuntoRegistradas.has(nome)),
+    };
+  } finally {
+    await cliente.end();
+  }
+}
+
+module.exports = { aplicarMigrations, inspecionarMigrations, identificadorDe };
