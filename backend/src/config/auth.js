@@ -1,6 +1,7 @@
 'use strict';
 
 const { z } = require('zod');
+const { inteiroDeAmbiente, booleanoDeAmbiente, validarAmbiente, congelarProfundo } = require('./ambiente');
 
 /**
  * Configuração da autenticação, lida e validada UMA vez na subida do
@@ -56,12 +57,24 @@ const OPCOES = Object.freeze({
   SESSAO_COOKIE_SAMESITE: ['strict', 'lax', 'none'],
 });
 
+// Únicas mensagens custom que podem sair em erro de configuração (allowlist
+// exigida por config/ambiente.js). Todas são literais deste módulo.
+const MENSAGENS = Object.freeze({
+  SEGREDO_HEX: 'deve conter apenas caracteres hexadecimais',
+  SEGREDO_MINIMO: `mínimo ${HMAC_SECRET_HEX_MINIMO} caracteres hexadecimais (${HMAC_SECRET_BYTES_MINIMO} bytes)`,
+  SEGREDO_PAR: 'quantidade de caracteres hexadecimais deve ser par',
+  INATIVIDADE: 'não pode ser maior que SESSAO_EXPIRACAO_MINUTOS',
+  NIVEL2_FALHAS: 'deve ser maior que LOGIN_COOLDOWN_NIVEL1_FALHAS',
+  NIVEL2_JANELA: 'deve ser maior ou igual a LOGIN_COOLDOWN_NIVEL1_JANELA_MINUTOS',
+  SECURE_PRODUCAO: 'não pode ser false em produção',
+  SAMESITE_NONE: 'SameSite=None exige cookie Secure',
+  PREFIXO_SECURE: 'prefixo __Secure- exige cookie Secure',
+  PREFIXO_HOST: 'prefixo __Host- exige cookie Secure',
+});
+
 const COOKIE_NOME_FORMATO = /^(__Host-|__Secure-)?[A-Za-z0-9_-]{1,64}$/;
 const COOKIE_NOME_PADRAO = 'gepi_sessao';
 const HEX = /^[0-9a-fA-F]+$/;
-
-const inteiro = ({ min, max, padrao }) =>
-  z.coerce.number().int().min(min).max(max).default(padrao);
 
 const esquema = z
   .object({
@@ -71,59 +84,55 @@ const esquema = z
     // Três regras, sem fallback em nenhum ambiente.
     LOGIN_COOLDOWN_HMAC_SECRET: z
       .string()
-      .refine((v) => HEX.test(v), 'deve conter apenas caracteres hexadecimais')
-      .refine(
-        (v) => v.length >= HMAC_SECRET_HEX_MINIMO,
-        `mínimo ${HMAC_SECRET_HEX_MINIMO} caracteres hexadecimais (${HMAC_SECRET_BYTES_MINIMO} bytes)`,
-      )
-      .refine((v) => v.length % 2 === 0, 'quantidade de caracteres hexadecimais deve ser par'),
+      .refine((v) => HEX.test(v), MENSAGENS.SEGREDO_HEX)
+      .refine((v) => v.length >= HMAC_SECRET_HEX_MINIMO, MENSAGENS.SEGREDO_MINIMO)
+      .refine((v) => v.length % 2 === 0, MENSAGENS.SEGREDO_PAR),
 
     SESSAO_COOKIE_NOME: z.string().regex(COOKIE_NOME_FORMATO).default(COOKIE_NOME_PADRAO),
-    // z.coerce.boolean() trataria 'false' como true; por isso enum explícito.
-    SESSAO_COOKIE_SECURE: z.enum(OPCOES.SESSAO_COOKIE_SECURE).transform((v) => v === 'true').optional(),
+    SESSAO_COOKIE_SECURE: booleanoDeAmbiente.optional(),
     SESSAO_COOKIE_SAMESITE: z.enum(OPCOES.SESSAO_COOKIE_SAMESITE).default('lax'),
-    SESSAO_EXPIRACAO_MINUTOS: inteiro(INTEIROS.SESSAO_EXPIRACAO_MINUTOS),
-    SESSAO_INATIVIDADE_MINUTOS: inteiro(INTEIROS.SESSAO_INATIVIDADE_MINUTOS),
+    SESSAO_EXPIRACAO_MINUTOS: inteiroDeAmbiente(INTEIROS.SESSAO_EXPIRACAO_MINUTOS),
+    SESSAO_INATIVIDADE_MINUTOS: inteiroDeAmbiente(INTEIROS.SESSAO_INATIVIDADE_MINUTOS),
 
-    ARGON2_MEMORY_KIB: inteiro(INTEIROS.ARGON2_MEMORY_KIB),
-    ARGON2_TIME_COST: inteiro(INTEIROS.ARGON2_TIME_COST),
-    ARGON2_PARALLELISM: inteiro(INTEIROS.ARGON2_PARALLELISM),
+    ARGON2_MEMORY_KIB: inteiroDeAmbiente(INTEIROS.ARGON2_MEMORY_KIB),
+    ARGON2_TIME_COST: inteiroDeAmbiente(INTEIROS.ARGON2_TIME_COST),
+    ARGON2_PARALLELISM: inteiroDeAmbiente(INTEIROS.ARGON2_PARALLELISM),
 
     // Limiares do cooldown (migration 015): falhas dentro da janela -> bloqueio pela duração.
-    LOGIN_COOLDOWN_NIVEL1_FALHAS: inteiro(INTEIROS.LOGIN_COOLDOWN_NIVEL1_FALHAS),
-    LOGIN_COOLDOWN_NIVEL1_JANELA_MINUTOS: inteiro(INTEIROS.LOGIN_COOLDOWN_NIVEL1_JANELA_MINUTOS),
-    LOGIN_COOLDOWN_NIVEL1_DURACAO_MINUTOS: inteiro(INTEIROS.LOGIN_COOLDOWN_NIVEL1_DURACAO_MINUTOS),
-    LOGIN_COOLDOWN_NIVEL2_FALHAS: inteiro(INTEIROS.LOGIN_COOLDOWN_NIVEL2_FALHAS),
-    LOGIN_COOLDOWN_NIVEL2_JANELA_MINUTOS: inteiro(INTEIROS.LOGIN_COOLDOWN_NIVEL2_JANELA_MINUTOS),
-    LOGIN_COOLDOWN_NIVEL2_DURACAO_MINUTOS: inteiro(INTEIROS.LOGIN_COOLDOWN_NIVEL2_DURACAO_MINUTOS),
-    LOGIN_TENTATIVAS_RETENCAO_DIAS: inteiro(INTEIROS.LOGIN_TENTATIVAS_RETENCAO_DIAS),
+    LOGIN_COOLDOWN_NIVEL1_FALHAS: inteiroDeAmbiente(INTEIROS.LOGIN_COOLDOWN_NIVEL1_FALHAS),
+    LOGIN_COOLDOWN_NIVEL1_JANELA_MINUTOS: inteiroDeAmbiente(INTEIROS.LOGIN_COOLDOWN_NIVEL1_JANELA_MINUTOS),
+    LOGIN_COOLDOWN_NIVEL1_DURACAO_MINUTOS: inteiroDeAmbiente(INTEIROS.LOGIN_COOLDOWN_NIVEL1_DURACAO_MINUTOS),
+    LOGIN_COOLDOWN_NIVEL2_FALHAS: inteiroDeAmbiente(INTEIROS.LOGIN_COOLDOWN_NIVEL2_FALHAS),
+    LOGIN_COOLDOWN_NIVEL2_JANELA_MINUTOS: inteiroDeAmbiente(INTEIROS.LOGIN_COOLDOWN_NIVEL2_JANELA_MINUTOS),
+    LOGIN_COOLDOWN_NIVEL2_DURACAO_MINUTOS: inteiroDeAmbiente(INTEIROS.LOGIN_COOLDOWN_NIVEL2_DURACAO_MINUTOS),
+    LOGIN_TENTATIVAS_RETENCAO_DIAS: inteiroDeAmbiente(INTEIROS.LOGIN_TENTATIVAS_RETENCAO_DIAS),
   })
   .refine((e) => e.SESSAO_INATIVIDADE_MINUTOS <= e.SESSAO_EXPIRACAO_MINUTOS, {
-    message: 'não pode ser maior que SESSAO_EXPIRACAO_MINUTOS',
+    message: MENSAGENS.INATIVIDADE,
     path: ['SESSAO_INATIVIDADE_MINUTOS'],
   })
   .refine((e) => e.LOGIN_COOLDOWN_NIVEL2_FALHAS > e.LOGIN_COOLDOWN_NIVEL1_FALHAS, {
-    message: 'deve ser maior que LOGIN_COOLDOWN_NIVEL1_FALHAS',
+    message: MENSAGENS.NIVEL2_FALHAS,
     path: ['LOGIN_COOLDOWN_NIVEL2_FALHAS'],
   })
   .refine((e) => e.LOGIN_COOLDOWN_NIVEL2_JANELA_MINUTOS >= e.LOGIN_COOLDOWN_NIVEL1_JANELA_MINUTOS, {
-    message: 'deve ser maior ou igual a LOGIN_COOLDOWN_NIVEL1_JANELA_MINUTOS',
+    message: MENSAGENS.NIVEL2_JANELA,
     path: ['LOGIN_COOLDOWN_NIVEL2_JANELA_MINUTOS'],
   })
   .refine((e) => !(e.NODE_ENV === 'production' && e.SESSAO_COOKIE_SECURE === false), {
-    message: 'não pode ser false em produção',
+    message: MENSAGENS.SECURE_PRODUCAO,
     path: ['SESSAO_COOKIE_SECURE'],
   })
   .refine((e) => !(e.SESSAO_COOKIE_SAMESITE === 'none' && !cookieSecureEfetivo(e)), {
-    message: 'SameSite=None exige cookie Secure',
+    message: MENSAGENS.SAMESITE_NONE,
     path: ['SESSAO_COOKIE_SAMESITE'],
   })
   .refine((e) => !(e.SESSAO_COOKIE_NOME.startsWith('__Secure-') && !cookieSecureEfetivo(e)), {
-    message: 'prefixo __Secure- exige cookie Secure',
+    message: MENSAGENS.PREFIXO_SECURE,
     path: ['SESSAO_COOKIE_NOME'],
   })
   .refine((e) => !(e.SESSAO_COOKIE_NOME.startsWith('__Host-') && !cookieSecureEfetivo(e)), {
-    message: 'prefixo __Host- exige cookie Secure',
+    message: MENSAGENS.PREFIXO_HOST,
     path: ['SESSAO_COOKIE_NOME'],
   });
 
@@ -131,76 +140,20 @@ function cookieSecureEfetivo(e) {
   return e.SESSAO_COOKIE_SECURE ?? e.NODE_ENV === 'production';
 }
 
-const VARIAVEIS_CONHECIDAS = new Set(Object.keys(esquema.shape));
-
-// Variável vazia ou só com espaços conta como não definida (cai no padrão
-// ou em "obrigatória").
-function somenteDefinidas(origem) {
-  const saida = {};
-  for (const [chave, valor] of Object.entries(origem)) {
-    if (typeof valor === 'string' && valor.trim() !== '') {
-      saida[chave] = valor.trim();
-    }
-  }
-  return saida;
-}
-
-/**
- * Converte uma issue do Zod em "NOME_DA_VARIAVEL: regra", usando SOMENTE o
- * nome conhecido da variável e textos fixos deste módulo. Não serializa a
- * issue, não usa input e nunca inclui o valor recebido. Mensagens de
- * refinamentos (code 'custom') são as strings fixas definidas acima.
- */
-function descreverProblema(issue) {
-  const nome = VARIAVEIS_CONHECIDAS.has(issue.path[0]) ? issue.path[0] : 'configuracao';
-  const limites = INTEIROS[nome];
-  let regra;
-  switch (issue.code) {
-    case 'invalid_type':
-      regra = nome === 'LOGIN_COOLDOWN_HMAC_SECRET'
-        ? 'obrigatória'
-        : (limites ? 'deve ser um número inteiro' : 'ausente ou tipo inválido');
-      break;
-    case 'too_small':
-      regra = limites ? `abaixo do mínimo permitido (${limites.min})` : 'abaixo do mínimo permitido';
-      break;
-    case 'too_big':
-      regra = limites ? `acima do máximo permitido (${limites.max})` : 'acima do máximo permitido';
-      break;
-    case 'invalid_format':
-      regra = 'formato inválido';
-      break;
-    case 'invalid_value':
-      regra = OPCOES[nome] ? `deve ser um de: ${OPCOES[nome].join(', ')}` : 'valor fora das opções permitidas';
-      break;
-    case 'custom':
-      regra = issue.message;
-      break;
-    default:
-      regra = 'valor inválido';
-  }
-  return `${nome}: ${regra}`;
-}
-
-function congelarProfundo(valor) {
-  if (valor === null || typeof valor !== 'object') {
-    return valor;
-  }
-  for (const item of Object.values(valor)) {
-    congelarProfundo(item);
-  }
-  return Object.freeze(valor);
-}
+const VARIAVEIS_CONHECIDAS = Object.keys(esquema.shape);
 
 // Valida o ambiente e separa a configuração pública do segredo.
 function analisarConfigAuth(origem) {
-  const resultado = esquema.safeParse(somenteDefinidas(origem));
-  if (!resultado.success) {
-    const problemas = resultado.error.issues.map(descreverProblema);
-    throw new Error(`Configuração de autenticação inválida:\n  - ${problemas.join('\n  - ')}`);
-  }
-
-  const e = resultado.data;
+  const e = validarAmbiente({
+    esquema,
+    origem,
+    titulo: 'Configuração de autenticação',
+    conhecidas: VARIAVEIS_CONHECIDAS,
+    inteiros: INTEIROS,
+    opcoes: OPCOES,
+    obrigatorias: ['LOGIN_COOLDOWN_HMAC_SECRET'],
+    mensagensPermitidas: Object.values(MENSAGENS),
+  });
 
   const config = congelarProfundo({
     ambiente: e.NODE_ENV,

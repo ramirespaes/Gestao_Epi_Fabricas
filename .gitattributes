@@ -1,0 +1,7 @@
+# Arquivos SQL sempre em LF, no repositório e na cópia de trabalho.
+#
+# O manifesto backend/migrations/checksums.json calcula o SHA-256 sobre os
+# bytes de cada migration. Uma conversão automática de fim de linha em outra
+# plataforma mudaria esses bytes e invalidaria todos os digests de uma vez,
+# fazendo a verificação acusar alteração onde não houve nenhuma.
+*.sql text eol=lf

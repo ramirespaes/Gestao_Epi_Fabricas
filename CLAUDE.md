@@ -340,7 +340,18 @@ Antes de propor SQL, considerar:
 
 Não executar migration no banco real sem autorização explícita.
 
-Testes de migration podem ser realizados em instância PostgreSQL descartável claramente isolada do banco do projeto.
+Testes de migration devem observar o seguinte contrato:
+
+- utilizar PostgreSQL real, nunca simulação ou dublê do banco;
+- operar, a cada execução, em schema temporário exclusivo criado pela própria suíte;
+- manter o `search_path` restrito a esse schema temporário;
+- garantir o cleanup com `DROP SCHEMA ... CASCADE`, inclusive quando o teste falha;
+- nunca aplicar migrations de teste no schema `public`;
+- obter credenciais exclusivamente do ambiente.
+
+Esse contrato não depende de qual instância é usada e deve valer tanto no ambiente local quanto em integração contínua.
+
+Aplicar uma migration ao schema `public` de qualquer banco continua exigindo autorização explícita, separada da autorização para criá-la.
 
 ---
 
@@ -357,6 +368,10 @@ Não alterar migrations antigas somente para:
 - refatorar SQL já aplicado.
 
 Se uma estrutura já aplicada precisar mudar, criar nova migration, salvo decisão explícita em contrário.
+
+Atualmente existem migrations versionadas de `000` a `016`, que devem ser executadas em ordem crescente de prefixo.
+
+Estar versionada não significa estar aplicada: o conjunto descreve o histórico do repositório, não o estado de nenhum banco. Depois de incorporadas ao histórico, essas migrations devem ser preservadas.
 
 ---
 
@@ -870,7 +885,10 @@ Testar conforme aplicável:
 - tentativa de acesso sem permissão;
 - CSRF;
 - CORS;
-- limites de payload.
+- limites de payload;
+- migrations.
+
+Testes de migration devem rodar contra PostgreSQL real, sempre isolados em schema temporário exclusivo, conforme o contrato da seção 11. Nunca aplicar migrations de teste no schema `public`.
 
 Não adaptar a implementação apenas para fazer teste passar se isso enfraquecer segurança ou arquitetura.
 
@@ -1049,6 +1067,12 @@ Normalizações relevantes incluem:
 - identificadores utilizados no cooldown.
 
 A mesma entrada deve gerar a mesma representação normalizada em qualquer ponto do sistema.
+
+O CNPJ canônico possui 14 posições. As 12 primeiras aceitam `0-9` e `A-Z`. As duas últimas são numéricas.
+
+A aplicação normaliza letras para maiúsculas antes de qualquer comparação ou persistência. O banco persiste somente a representação canônica e recusa minúsculas, de modo que exista uma única forma armazenada.
+
+A migration `016_alter_empresas_cnpj_alfanumerico.sql` implementa a restrição estrutural correspondente em `empresas.cnpj`. Ela verifica apenas o formato. A conferência dos dígitos verificadores é responsabilidade da aplicação, não da constraint.
 
 ---
 
