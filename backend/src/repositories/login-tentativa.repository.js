@@ -40,6 +40,25 @@ const { chaveCooldownTemFormatoValido } = require('../security/cooldown');
  * continua sendo o filtro da janela de tempo (`criado_em > desde`), papel
  * diferente do de ordenar tentativas entre si.
  *
+ * RELÓGIO: `now()` do PostgreSQL representa o INÍCIO da transação, não o
+ * instante em que uma consulta roda de fato — problema real aqui, porque a
+ * transação que grava uma tentativa pode ficar esperando o advisory lock da
+ * mesma chave por um tempo desconhecido antes de continuar (ver nota acima).
+ * Se `now()` fosse usado, uma transação que esperou muito pelo lock geraria
+ * `criado_em` e compararia `cooldown_ate` contra um instante congelado bem
+ * anterior ao momento real de execução — encurtando cooldowns na gravação
+ * (`registrarAtivacaoCooldown` recebe `cooldownAte` já calculado pelo
+ * chamador a partir do relógio real do banco) e fazendo `buscarCooldownVigente`
+ * julgar como vigente um cooldown já vencido de fato. Por isso este módulo
+ * usa `clock_timestamp()` (reavaliado a cada chamada, nunca congelado pela
+ * transação) tanto para `criado_em` em `registrarTentativa` e
+ * `registrarAtivacaoCooldown` quanto para a comparação em
+ * `buscarCooldownVigente`. `contarFalhasRecentes` não chama nenhuma das
+ * duas funções: sua fronteira de tempo (`desde`) chega sempre como parâmetro
+ * do chamador, que é responsável por obtê-la de `clock_timestamp()` próximo
+ * do uso, não de um valor capturado muito antes de operações lentas como a
+ * verificação Argon2id.
+ *
  * Essa garantia de ordem por `id` depende de que as operações da mesma
  * chave sejam serializadas: é isso que o advisory lock descrito em
  * `src/security/cooldown.js` (derivarAdvisoryLock64) e em CLAUDE.md (seção
@@ -149,8 +168,8 @@ async function registrarTentativa(executor, {
   }
 
   const { rows } = await executor.query(
-    `INSERT INTO login_tentativas (chave_cooldown, empresa_id, usuario_id, sucesso, motivo, ip, dispositivo)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO login_tentativas (chave_cooldown, empresa_id, usuario_id, sucesso, motivo, ip, dispositivo, criado_em)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, clock_timestamp())
      RETURNING id`,
     [chaveCooldown, empresaIdNormalizado, usuarioIdNormalizado, sucesso, motivoFinal, ip, dispositivo],
   );
@@ -179,8 +198,8 @@ async function registrarAtivacaoCooldown(executor, {
   exigirData(cooldownAte, 'cooldownAte');
 
   const { rows } = await executor.query(
-    `INSERT INTO login_tentativas (chave_cooldown, empresa_id, usuario_id, sucesso, motivo, cooldown_ate, ip, dispositivo)
-     VALUES ($1, $2, $3, false, $4, $5, $6, $7)
+    `INSERT INTO login_tentativas (chave_cooldown, empresa_id, usuario_id, sucesso, motivo, cooldown_ate, ip, dispositivo, criado_em)
+     VALUES ($1, $2, $3, false, $4, $5, $6, $7, clock_timestamp())
      RETURNING id`,
     [chaveCooldown, empresaIdNormalizado, usuarioIdNormalizado, MOTIVO_COOLDOWN_ATIVADO, cooldownAte, ip, dispositivo],
   );
@@ -190,8 +209,12 @@ async function registrarAtivacaoCooldown(executor, {
 
 /**
  * Existe cooldown em vigor agora para esta chave? A condição `cooldown_ate
- * > now()` está na consulta, não em código que decide depois — uma
- * ativação já vencida simplesmente não é encontrada.
+ * > clock_timestamp()` está na consulta, não em código que decide depois —
+ * uma ativação já vencida simplesmente não é encontrada. Usa
+ * `clock_timestamp()`, não `now()`: esta consulta pode rodar depois de uma
+ * espera pelo advisory lock da mesma chave, e `now()` ficaria congelado no
+ * início da transação, anterior a essa espera (ver nota de RELÓGIO no topo
+ * do arquivo).
  *
  * @param {{query: Function}} executor
  * @param {string} chaveCooldown
@@ -205,7 +228,7 @@ async function buscarCooldownVigente(executor, chaveCooldown) {
        FROM login_tentativas
       WHERE chave_cooldown = $1
         AND cooldown_ate IS NOT NULL
-        AND cooldown_ate > now()
+        AND cooldown_ate > clock_timestamp()
       ORDER BY cooldown_ate DESC
       LIMIT 1`,
     [chaveCooldown],

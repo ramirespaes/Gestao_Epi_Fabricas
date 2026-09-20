@@ -51,6 +51,10 @@ describe('registrarTentativa', () => {
     assert.equal(id, ID_BIGINT, 'o identificador BIGINT não pode ser convertido para Number');
     const { texto, valores } = executor.chamadas[0];
     assert.match(texto, /insert\s+into\s+login_tentativas/i);
+    // criado_em vem de clock_timestamp() escrito no próprio SQL, não de um
+    // parâmetro novo: a assinatura pública da função não muda.
+    assert.match(texto, /criado_em/i);
+    assert.match(texto, /clock_timestamp\(\)/i);
     assert.deepEqual(valores, [CHAVE, EMPRESA, USUARIO, true, null, null, null]);
     assert.equal(texto.includes(CHAVE), false, 'a chave não pode ser concatenada no SQL');
   });
@@ -177,6 +181,8 @@ describe('registrarAtivacaoCooldown', () => {
     assert.equal(id, ID_BIGINT);
     const { texto, valores } = executor.chamadas[0];
     assert.match(texto, /insert\s+into\s+login_tentativas/i);
+    assert.match(texto, /criado_em/i);
+    assert.match(texto, /clock_timestamp\(\)/i);
     assert.deepEqual(valores, [CHAVE, null, null, MOTIVO_COOLDOWN_ATIVADO, cooldownAte, null, null]);
     assert.match(texto, /false/i, 'sucesso deve ser gravado como false diretamente no SQL, não como parâmetro sobrescrevível');
   });
@@ -257,7 +263,8 @@ describe('buscarCooldownVigente', () => {
     const { texto, valores } = executor.chamadas[0];
     assert.deepEqual(valores, [CHAVE]);
     assert.match(texto, /cooldown_ate\s+is\s+not\s+null/i);
-    assert.match(texto, /cooldown_ate\s*>\s*now\(\)/i, 'cooldown vencido não pode ser considerado vigente');
+    assert.match(texto, /cooldown_ate\s*>\s*clock_timestamp\(\)/i, 'cooldown vencido não pode ser considerado vigente');
+    assert.equal(/cooldown_ate\s*>\s*now\(\)/i.test(texto), false, 'now() fica congelado no início da transação; a comparação precisa refletir o instante real, mesmo após espera por advisory lock');
     assert.match(texto, /order\s+by\s+cooldown_ate\s+desc/i);
     assert.match(texto, /limit\s+1/i);
     assert.equal(texto.includes(CHAVE), false, 'a chave não pode ser concatenada no SQL');

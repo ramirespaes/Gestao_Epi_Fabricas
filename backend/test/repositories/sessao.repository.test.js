@@ -82,6 +82,13 @@ describe('criar', () => {
     assert.equal(valores[2], HASH);
     assert.equal(valores[3], expiraEm);
     assert.equal(texto.includes(HASH), false, 'o hash não pode ser concatenado no SQL');
+    // criado_em e ultimo_uso_em vêm de clock_timestamp() escrito no próprio
+    // SQL, não de parâmetros novos: a assinatura pública não muda, e o
+    // valor não fica preso ao início da transação (ver docstring de criar).
+    assert.match(texto, /criado_em/i);
+    assert.match(texto, /ultimo_uso_em/i);
+    assert.match(texto, /clock_timestamp\(\)/i);
+    assert.equal(valores.length, 7, 'nenhum parâmetro novo deve ser exigido do chamador');
   });
 
   test('recusa entrada inválida antes de consultar', async () => {

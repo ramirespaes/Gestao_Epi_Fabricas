@@ -3,7 +3,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-const { Client } = require('pg');
+const { Client, Pool } = require('pg');
 
 /**
  * Schema temporário para testes de migration em PostgreSQL real.
@@ -89,4 +89,89 @@ async function inserirEmpresa(cliente, cnpj, nome = 'Empresa Teste') {
   }
 }
 
-module.exports = { abrirSchemaTemporario, inserirEmpresa, migrationExiste, conteudoDaMigration };
+/**
+ * Igual a abrirSchemaTemporario, mas devolve também um Pool real (não um
+ * Client único), necessário para testes de concorrência onde duas conexões
+ * distintas precisam disputar o mesmo advisory lock ao mesmo tempo — um
+ * Client único não permite duas transações sobrepostas.
+ *
+ * O search_path é fixado via `options: '-c search_path=<schema>'` no
+ * construtor do Pool: é um parâmetro de conexão aplicado pelo PostgreSQL a
+ * CADA conexão física que o Pool abrir, não só à primeira, diferente de rodar
+ * `SET search_path` manualmente depois de cada connect().
+ *
+ * encerrar() fecha o Pool inteiro (pool.end(), aguardando todas as conexões
+ * em uso) antes de remover o schema pelo cliente administrativo herdado de
+ * abrirSchemaTemporario — nessa ordem, nenhuma conexão do pool pode estar
+ * ativa quando o DROP SCHEMA roda. Se a criação do próprio Pool falhar, a
+ * conexão administrativa e o schema já criados são limpos antes de propagar
+ * o erro.
+ */
+async function abrirPoolTemporario(prefixosDeMigration) {
+  const base = await abrirSchemaTemporario(prefixosDeMigration);
+
+  let pool;
+  try {
+    pool = new Pool({
+      host: process.env.DB_HOST,
+      port: Number(process.env.DB_PORT),
+      database: process.env.DB_NAME,
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      options: `-c search_path=${base.schema}`,
+      connectionTimeoutMillis: 8000,
+    });
+    // Falha cedo, antes de devolver ao chamador, se a configuração do Pool
+    // estiver incorreta (credenciais, host, etc.).
+    await pool.query('SELECT 1');
+  } catch (erro) {
+    if (pool) {
+      await pool.end();
+    }
+    await base.encerrar();
+    throw erro;
+  }
+
+  const encerrar = async () => {
+    try {
+      await pool.end();
+    } finally {
+      await base.encerrar();
+    }
+  };
+
+  return { pool, schema: base.schema, encerrar };
+}
+
+/**
+ * Aguarda deterministicamente até que o backend PostgreSQL de PID `pid`
+ * apareça bloqueado esperando um lock (wait_event_type = 'Lock') em
+ * pg_stat_activity. Usado para confirmar, antes de prosseguir num teste de
+ * concorrência, que uma segunda conexão já está de fato esperando um
+ * advisory lock detido por outra — coordenação explícita sobre um fato
+ * observável no próprio banco, não uma espera arbitrária torcendo pelo
+ * tempo certo. O intervalo entre verificações é curto (10ms) porque a
+ * condição normalmente já é verdadeira em poucos milissegundos.
+ */
+async function aguardarEsperaPeloLock(clienteAdmin, pid, { tentativas = 200, intervaloMs = 10 } = {}) {
+  for (let i = 0; i < tentativas; i += 1) {
+    const { rows } = await clienteAdmin.query(
+      'SELECT wait_event_type FROM pg_stat_activity WHERE pid = $1',
+      [pid],
+    );
+    if (rows[0]?.wait_event_type === 'Lock') {
+      return;
+    }
+    await new Promise((resolve) => { setTimeout(resolve, intervaloMs); });
+  }
+  throw new Error('conexão não chegou a aguardar o advisory lock dentro do tempo esperado');
+}
+
+module.exports = {
+  abrirSchemaTemporario,
+  abrirPoolTemporario,
+  aguardarEsperaPeloLock,
+  inserirEmpresa,
+  migrationExiste,
+  conteudoDaMigration,
+};
