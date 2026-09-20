@@ -26,6 +26,25 @@
 /* db-api.js carregado via <script src="js/db-api.js"> */
 
 
+    /* ── Montagem segura de HTML ─────────────────────────────────────────────
+       Valor digitado pelo usuário ou vindo de arquivo externo nunca pode ser
+       interpretado como marcação. Onde o valor é o conteúdo inteiro de um
+       elemento, usa-se textContent. Onde ele precisa entrar em marcação
+       estrutural montada por template, passa por textoSeguro(), que codifica
+       os caracteres com significado em HTML em vez de removê-los: a exibição
+       preserva o que a pessoa escreveu e nada vira tag ou atributo.
+       O & é codificado primeiro, senão as demais substituições seriam
+       codificadas de novo e apareceriam literais na tela.                    */
+    function textoSeguro(valor) {
+      if (valor === null || valor === undefined) return '';
+      return String(valor)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     function toggleSidebar(){
       document.body.classList.toggle('mobile-menu-open');
     }
@@ -1067,7 +1086,7 @@
         <div class="import-stat"><span>Total de linhas</span><strong>${total}</strong></div>
         <div class="import-stat ok"><span>Válidos</span><strong>${okCount}</strong></div>
         <div class="import-stat err"><span>Com erro</span><strong>${errCount}</strong></div>
-        <div class="import-stat"><span>Arquivo</span><strong style="font-size:13px;margin-top:8px">${filename}</strong></div>
+        <div class="import-stat"><span>Arquivo</span><strong style="font-size:13px;margin-top:8px">${textoSeguro(filename)}</strong></div>
       `;
 
       // Erros
@@ -1079,7 +1098,7 @@
             <strong><span class="material-symbols-outlined" style="font-size:16px;vertical-align:-3px">error</span>
             ${errors.length} problema${errors.length !== 1 ? 's' : ''} encontrado${errors.length !== 1 ? 's' : ''}</strong>
             ${errors.map(e => `<div class="import-error-item">
-              <span class="material-symbols-outlined" style="font-size:14px;color:#FF3B30;flex-shrink:0">arrow_right</span>${e}
+              <span class="material-symbols-outlined" style="font-size:14px;color:#FF3B30;flex-shrink:0">arrow_right</span>${textoSeguro(e)}
             </div>`).join('')}
           </div>`;
       } else {
@@ -1089,17 +1108,17 @@
       // Tabela
       const tbody = document.getElementById('importPreviewBody');
       tbody.innerHTML = rows.map((row, i) => `
-        <tr class="import-row-${row._status}">
+        <tr class="import-row-${textoSeguro(row._status)}">
           <td>${i + 1}</td>
-          <td><strong>${row.nome || '—'}</strong></td>
-          <td>${row.setor || '—'}</td>
-          <td>${row.telefone || '—'}</td>
-          <td>${row.cpf || '—'}</td>
-          <td>${row.matricula || '—'}</td>
-          <td>${row.nascimento || '—'}</td>
-          <td>${row.contratacao || '—'}</td>
-          <td>${row.cargo || '—'}</td>
-          <td><span class="import-row-badge ${row._status}">${row._status === 'ok' ? 'Válido' : 'Erro'}</span></td>
+          <td><strong>${textoSeguro(row.nome) || '—'}</strong></td>
+          <td>${textoSeguro(row.setor) || '—'}</td>
+          <td>${textoSeguro(row.telefone) || '—'}</td>
+          <td>${textoSeguro(row.cpf) || '—'}</td>
+          <td>${textoSeguro(row.matricula) || '—'}</td>
+          <td>${textoSeguro(row.nascimento) || '—'}</td>
+          <td>${textoSeguro(row.contratacao) || '—'}</td>
+          <td>${textoSeguro(row.cargo) || '—'}</td>
+          <td><span class="import-row-badge ${textoSeguro(row._status)}">${row._status === 'ok' ? 'Válido' : 'Erro'}</span></td>
         </tr>`).join('');
 
       // Desabilita confirmar se há erros
@@ -1194,19 +1213,20 @@
 
       tbody.innerHTML = data.map(r => {
         const epiTags = r.epis.split(/[·,]/).map(e => e.trim()).filter(Boolean)
-          .map(e => `<span class="rule-epi-tag">${e}</span>`).join('');
-        const origemTag = r.origem ? `<span class="rule-origem-tag"><span class="material-symbols-outlined" style="font-size:13px">gavel</span>${r.origem}</span>` : '—';
+          .map(e => `<span class="rule-epi-tag">${textoSeguro(e)}</span>`).join('');
+        const origemTag = r.origem ? `<span class="rule-origem-tag"><span class="material-symbols-outlined" style="font-size:13px">gavel</span>${textoSeguro(r.origem)}</span>` : '—';
+        const idRegra = Number(r.id);
         return `
-          <tr data-rule-id="${r.id}">
-            <td><strong>${r.setor}</strong></td>
-            <td>${r.funcao}</td>
+          <tr data-rule-id="${idRegra}">
+            <td><strong>${textoSeguro(r.setor)}</strong></td>
+            <td>${textoSeguro(r.funcao)}</td>
             <td style="min-width:200px">${epiTags}</td>
-            <td style="font-size:13px;color:var(--on-surface-variant)">${r.criterio || '—'}</td>
+            <td style="font-size:13px;color:var(--on-surface-variant)">${textoSeguro(r.criterio) || '—'}</td>
             <td>${origemTag}</td>
             <td>
               <div class="inline-actions">
-                ${canDo('rules:edit') ? `<button class="mini-btn" type="button" onclick="editRule(${r.id})"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:-2px">edit</span> Editar</button>` : ''}
-                ${canDo('rules:delete') ? `<button class="mini-btn" type="button" style="color:var(--error);border-color:rgba(255,59,48,0.25)" onclick="deleteRulePrompt(${r.id})"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:-2px">delete</span> Excluir</button>` : ''}
+                ${canDo('rules:edit') ? `<button class="mini-btn" type="button" onclick="editRule(${idRegra})"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:-2px">edit</span> Editar</button>` : ''}
+                ${canDo('rules:delete') ? `<button class="mini-btn" type="button" style="color:var(--error);border-color:rgba(255,59,48,0.25)" onclick="deleteRulePrompt(${idRegra})"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:-2px">delete</span> Excluir</button>` : ''}
                 ${(!canDo('rules:edit') && !canDo('rules:delete')) ? '<span style="font-size:12px;color:var(--on-surface-variant)">Somente leitura</span>' : ''}
               </div>
             </td>
@@ -1432,10 +1452,10 @@
       }
       el.innerHTML = titularRequests.map(function(r) {
         return '<div class="request-item" style="margin-bottom:8px">' +
-          '<div class="request-meta"><strong>' + r.nome + ' · ' + r.mat + '</strong>' +
-          '<span>' + r.direito + '</span>' +
-          '<span>Aberta em ' + r.data + ' · Prazo: ' + r.prazo + '</span></div>' +
-          '<span class="badge status-active">' + r.status + '</span></div>';
+          '<div class="request-meta"><strong>' + textoSeguro(r.nome) + ' · ' + textoSeguro(r.mat) + '</strong>' +
+          '<span>' + textoSeguro(r.direito) + '</span>' +
+          '<span>Aberta em ' + textoSeguro(r.data) + ' · Prazo: ' + textoSeguro(r.prazo) + '</span></div>' +
+          '<span class="badge status-active">' + textoSeguro(r.status) + '</span></div>';
       }).join('');
     }
 
@@ -1513,17 +1533,18 @@
       var el = document.getElementById('emailTemplatesGrid');
       if (!el) return;
       el.innerHTML = emailTemplates.map(function(t) {
-        return '<div class="email-template-card' + (t.ativo ? '' : ' inactive') + '" onclick="emailToggleTemplate(' + t.id + ')">' +
+        var idModelo = Number(t.id);
+        return '<div class="email-template-card' + (t.ativo ? '' : ' inactive') + '" onclick="emailToggleTemplate(' + idModelo + ')">' +
           '<div class="email-template-top">' +
-            '<div class="email-template-icon" style="background:' + t.bg + ';color:' + t.color + '">' + t.icon + '</div>' +
+            '<div class="email-template-icon" style="background:' + textoSeguro(t.bg) + ';color:' + textoSeguro(t.color) + '">' + textoSeguro(t.icon) + '</div>' +
             '<div style="flex:1;min-width:0">' +
-              '<div class="email-template-name">' + t.nome + '</div>' +
+              '<div class="email-template-name">' + textoSeguro(t.nome) + '</div>' +
             '</div>' +
-            '<button class="switch ' + (t.ativo ? 'active' : '') + '" type="button" onclick="event.stopPropagation();emailToggleTemplate(' + t.id + ')"></button>' +
+            '<button class="switch ' + (t.ativo ? 'active' : '') + '" type="button" onclick="event.stopPropagation();emailToggleTemplate(' + idModelo + ')"></button>' +
           '</div>' +
-          '<div class="email-template-desc">' + t.desc + '</div>' +
+          '<div class="email-template-desc">' + textoSeguro(t.desc) + '</div>' +
           '<div class="email-template-meta">' +
-            '<span style="font-size:11px;color:var(--on-surface-variant)">' + t.total + ' enviados · último ' + t.ultima + '</span>' +
+            '<span style="font-size:11px;color:var(--on-surface-variant)">' + textoSeguro(t.total) + ' enviados · último ' + textoSeguro(t.ultima) + '</span>' +
           '</div>' +
         '</div>';
       }).join('');
@@ -2288,7 +2309,11 @@
     }
 
     function tmplPreview() {
-      var assunto = document.getElementById('tmplAssunto').value || '—';
+      // O assunto é codificado antes de qualquer substituição: o que a pessoa
+      // digitou vira texto, e só o destaque das variáveis do modelo, gerado
+      // aqui, permanece como marcação. Os marcadores {{...}} não contêm
+      // caracteres codificáveis, então continuam sendo encontrados.
+      var assunto = textoSeguro(document.getElementById('tmplAssunto').value || '—');
       var corpo   = document.getElementById('tmplCorpo').value   || '—';
       // Replace vars with sample values
       var samples = {
@@ -2305,7 +2330,7 @@
         '{{link_sistema}}':           'https://sistema.empresa.com',
       };
       Object.entries(samples).forEach(function(kv) {
-        assunto = assunto.split(kv[0]).join('<em style="color:var(--primary)">'+kv[1]+'</em>');
+        assunto = assunto.split(kv[0]).join('<em style="color:var(--primary)">'+textoSeguro(kv[1])+'</em>');
         corpo   = corpo.split(kv[0]).join(kv[1]);
       });
       document.getElementById('tmplPreviewAssunto').innerHTML = assunto;
