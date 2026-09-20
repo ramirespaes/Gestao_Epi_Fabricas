@@ -416,3 +416,74 @@ describe('app.js: integração do pipeline de segurança', () => {
     assert.equal(logErro.mock.callCount(), 0);
   });
 });
+
+describe('app.js: GET /api/auth/me e POST /api/auth/logout montadas e protegidas', () => {
+  const app = require('../src/app');
+  const PERMITIDA = 'http://localhost:5500';
+  const MALICIOSA = 'http://mal.test';
+
+  // Nenhum destes testes envolve cookie válido: buscarContextoSessao
+  // encerra antes de qualquer consulta ao PostgreSQL (cookie ausente),
+  // então nenhuma sessão real é criada, lida ou revogada no banco.
+
+  let logErro;
+  beforeEach(() => { logErro = mock.method(console, 'error', () => {}); });
+  afterEach(() => mock.restoreAll());
+
+  const conferirCabecalhosGlobais = (headers, rotulo) => {
+    assert.equal(headers['x-frame-options'], 'DENY', `${rotulo}: Helmet`);
+    assert.equal(headers['cache-control'], 'no-store', `${rotulo}: no-store`);
+    assert.equal('x-powered-by' in headers, false, `${rotulo}: x-powered-by`);
+  };
+
+  test('GET /api/auth/me sem cookie: 401 SESSAO_INVALIDA, não 404', async () => {
+    const r = await request(app).get('/api/auth/me');
+    assert.deepEqual([r.status, r.body], [401, { status: 'error', codigo: 'SESSAO_INVALIDA', message: 'Sessão inválida ou expirada' }]);
+    conferirCabecalhosGlobais(r.headers, 'GET /me sem cookie');
+  });
+
+  test('GET /api/auth/me não exige corpo JSON nem Content-Type', async () => {
+    const r = await request(app).get('/api/auth/me');
+    assert.notEqual(r.status, 415);
+    assert.notEqual(r.body.codigo, 'TIPO_CONTEUDO_NAO_SUPORTADO');
+  });
+
+  test('POST /api/auth/logout sem cookie, com origem permitida: 200 e Set-Cookie de remoção', async () => {
+    const r = await request(app).post('/api/auth/logout').set('Origin', PERMITIDA);
+    assert.deepEqual([r.status, r.body], [200, { status: 'ok' }]);
+    assert.ok(Array.isArray(r.headers['set-cookie']) && r.headers['set-cookie'].length === 1);
+    assert.match(r.headers['set-cookie'][0], /Max-Age=0/);
+    assert.equal(r.headers['access-control-allow-origin'], PERMITIDA);
+    conferirCabecalhosGlobais(r.headers, 'POST /logout sem cookie, origem permitida');
+    assert.equal(logErro.mock.callCount(), 0);
+  });
+
+  test('POST /api/auth/logout sem corpo não exige Content-Type application/json', async () => {
+    const r = await request(app).post('/api/auth/logout').set('Origin', PERMITIDA);
+    assert.notEqual(r.status, 415);
+    assert.notEqual(r.body.codigo, 'TIPO_CONTEUDO_NAO_SUPORTADO');
+    assert.equal(r.status, 200);
+  });
+
+  test('POST /api/auth/logout com origem não permitida: 403 ORIGEM_NAO_PERMITIDA, sem executar o controller nem emitir cookie', async () => {
+    const r = await request(app).post('/api/auth/logout').set('Origin', MALICIOSA);
+    assert.deepEqual([r.status, r.body], [403, { status: 'error', codigo: 'ORIGEM_NAO_PERMITIDA', message: 'Origem da requisição não permitida' }]);
+    assert.equal(r.headers['set-cookie'], undefined, 'origem inválida não pode alcançar o controller nem emitir o cookie de remoção');
+    assert.equal('access-control-allow-origin' in r.headers, false);
+    conferirCabecalhosGlobais(r.headers, 'POST /logout origem não permitida');
+    assert.equal(logErro.mock.callCount(), 0);
+  });
+
+  test('POST /api/auth/logout sem Origin nem Referer: 403 ORIGEM_AUSENTE, sem executar o controller nem emitir cookie', async () => {
+    const r = await request(app).post('/api/auth/logout');
+    assert.deepEqual([r.status, r.body.codigo], [403, 'ORIGEM_AUSENTE']);
+    assert.equal(r.headers['set-cookie'], undefined, 'sem origem, o controller não pode ter sido alcançado');
+    conferirCabecalhosGlobais(r.headers, 'POST /logout sem origem');
+  });
+
+  test('POST /api/auth/login permanece montada e funcionando (validação já coberta em "app.js")', async () => {
+    const r = await request(app).post('/api/auth/login').set('Origin', PERMITIDA).set('Content-Type', 'application/json').send({});
+    assert.equal(r.status, 400);
+    assert.equal(r.body.codigo, 'VALIDACAO');
+  });
+});
