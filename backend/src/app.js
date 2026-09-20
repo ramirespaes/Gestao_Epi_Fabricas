@@ -2,6 +2,7 @@ const express = require('express');
 
 const { httpConfig } = require('./config/http');
 const healthRoutes = require('./routes/health.routes');
+const { authRoutes } = require('./routes/auth.routes');
 const { cabecalhosSeguranca, semCache } = require('./middleware/cabecalhos');
 const { corsApi } = require('./middleware/cors');
 const { exigirJson, parserJson } = require('./middleware/conteudo');
@@ -31,7 +32,13 @@ app.use(cabecalhosSeguranca);
 // limite por IP, política de conteúdo (exige application/json quando há corpo
 // em POST/PUT/PATCH e interpreta JSON com o limite do projeto) e rotas. Fora
 // de /api nada disso se aplica.
-app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeral, exigirJson, parserJson, healthRoutes);
+//
+// authRoutes soma, só na própria rota de login, o limitadorAutenticacao
+// (mais estrito que limitadorGeral) e a validação Zod do corpo — ver
+// src/routes/auth.routes.js. Nenhuma configuração de CORS, CSRF, rate limit
+// geral, cookie ou PostgreSQL muda aqui: authRoutes só se soma à mesma
+// cadeia já existente, no mesmo prefixo /api.
+app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeral, exigirJson, parserJson, healthRoutes, authRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

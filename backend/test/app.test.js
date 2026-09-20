@@ -22,16 +22,28 @@ describe('infraestrutura de testes', () => {
 describe('app.js', () => {
   const app = require('../src/app');
 
-  test('carrega sem importar a configuração de autenticação', () => {
+  test('carrega o app e, por causa da rota de autenticação, também a configuração de auth', () => {
     const carregados = Object.keys(require.cache);
-    assert.equal(carregados.some((caminho) => caminho.endsWith('/src/config/auth.js')), false);
     assert.equal(carregados.some((caminho) => caminho.endsWith('/src/app.js')), true);
+    assert.equal(carregados.some((caminho) => caminho.endsWith('/src/config/auth.js')), true);
   });
 
   test('GET /api/health responde 200 com identificação do serviço', async () => {
     const resposta = await request(app).get('/api/health');
     assert.equal(resposta.status, 200);
     assert.deepEqual(resposta.body, { status: 'ok', service: 'gestao-epi-api' });
+  });
+
+  test('POST /api/auth/login está montada: dados inválidos retornam 400 de validação, não 404', async () => {
+    const resposta = await request(app)
+      .post('/api/auth/login')
+      .set('Origin', 'http://localhost:5500')
+      .set('Content-Type', 'application/json')
+      .send({});
+
+    assert.equal(resposta.status, 400);
+    assert.equal(resposta.body.status, 'error');
+    assert.equal(resposta.body.codigo, 'VALIDACAO');
   });
 
   test('rota inexistente responde 404 em JSON', async () => {
