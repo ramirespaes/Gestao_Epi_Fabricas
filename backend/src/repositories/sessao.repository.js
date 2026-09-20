@@ -93,6 +93,18 @@ function exigirInatividade(minutos) {
  * O vínculo com a empresa não é informativo: a chave estrangeira composta
  * recusa a inserção se o usuário pertencer a outra contratante.
  *
+ * `criado_em` e `ultimo_uso_em` usam `clock_timestamp()` explicitamente, em
+ * vez do `DEFAULT now()` da migration 013: `now()` representa o início da
+ * transação, e a chamada a `criar()` pode acontecer bem depois disso —
+ * depois de esperar um advisory lock e de uma verificação Argon2id, ambos
+ * de duração variável (ver `src/repositories/login-tentativa.repository.js`,
+ * nota de RELÓGIO). `clock_timestamp()` reflete o instante real da própria
+ * inserção, para que `ultimo_uso_em` represente de fato o início do uso da
+ * sessão, não um instante anterior congelado pela transação. `expira_em`
+ * continua vindo do chamador (parâmetro `expiraEm`), que deve calculá-lo a
+ * partir de um `clock_timestamp()` obtido próximo deste chamado, pelo mesmo
+ * motivo.
+ *
  * @param {{query: Function}} executor
  * @param {{empresaId: number, usuarioId: number, tokenHash: string, expiraEm: Date,
  *          autenticadoVia?: string, ip?: string|null, dispositivo?: string|null}} dados
@@ -112,8 +124,8 @@ async function criar(executor, { empresaId, usuarioId, tokenHash, expiraEm, aute
   }
 
   const { rows } = await executor.query(
-    `INSERT INTO sessoes (empresa_id, usuario_id, token_hash, expira_em, autenticado_via, ip, dispositivo)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO sessoes (empresa_id, usuario_id, token_hash, expira_em, autenticado_via, ip, dispositivo, criado_em, ultimo_uso_em)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, clock_timestamp(), clock_timestamp())
      RETURNING id`,
     [empresaId, usuarioId, tokenHash, expiraEm, autenticadoVia, ip, dispositivo],
   );
