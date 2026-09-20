@@ -10,6 +10,8 @@ const { criarAuthRoutes } = require('../../src/routes/auth.routes');
 const { criarAuthController } = require('../../src/controllers/auth.controller');
 const { criarLimitador } = require('../../src/middleware/rate-limit');
 const loginService = require('../../src/services/login.service');
+const sessaoRepo = require('../../src/repositories/sessao.repository');
+const { serializarRemocaoCookieSessao } = require('../../src/security/cookie');
 const { gerarTokenSessao } = require('../../src/security/token');
 const { HttpError } = require('../../src/errors/HttpError');
 const { authConfig } = require('../../src/config/auth');
@@ -44,9 +46,17 @@ const RESULTADO_SUCESSO = Object.freeze({
 
 const LIMITADOR_GENEROSO = () => criarLimitador({ limite: 1000, janelaSegundos: 60 });
 
-function montarApp({ pool = {}, limitador = LIMITADOR_GENEROSO() } = {}) {
+// Middleware de sessão padrão dos testes de login: sempre rejeita. Nenhum
+// teste de POST /api/auth/login toca /api/auth/me, então este padrão nunca
+// é exercitado por eles — só precisa existir para que criarAuthRoutes
+// consiga montar a rota /me sem receber undefined como handler.
+const EXIGIR_SESSAO_REJEITA_PADRAO = (req, res, next) => {
+  next(HttpError.unauthorized('SESSAO_INVALIDA', 'Sessão inválida ou expirada'));
+};
+
+function montarApp({ pool = {}, limitador = LIMITADOR_GENEROSO(), exigirSessao = EXIGIR_SESSAO_REJEITA_PADRAO } = {}) {
   const controller = criarAuthController({ pool });
-  const routes = criarAuthRoutes({ controller, limitador });
+  const routes = criarAuthRoutes({ controller, limitador, exigirSessao });
   return criarAppTeste((app) => app.use('/api', routes));
 }
 
@@ -191,5 +201,204 @@ describe('POST /api/auth/login', () => {
     assert.equal(resposta.headers['set-cookie'], undefined);
     assertSemSensiveis(JSON.stringify(resposta.body), [SENHA, TOKEN], 'resposta 500');
     assertSemSensiveis(JSON.stringify(logs), [SENHA, TOKEN], 'log do erro inesperado');
+  });
+});
+
+describe('GET /api/auth/me', () => {
+  test('middleware rejeita (sessão ausente/inválida): 401, controller.me nunca chamado', async (t) => {
+    const controller = criarAuthController({ pool: {} });
+    const me = t.mock.method(controller, 'me', async (req, res) => res.status(200).json({ status: 'ok' }));
+    const exigirSessaoRejeitando = (req, res, next) => {
+      next(HttpError.unauthorized('SESSAO_INVALIDA', 'Sessão inválida ou expirada'));
+    };
+    const routes = criarAuthRoutes({ controller, limitador: LIMITADOR_GENEROSO(), exigirSessao: exigirSessaoRejeitando });
+    const app = criarAppTeste((a) => a.use('/api', routes));
+
+    const resposta = await request(app).get('/api/auth/me');
+
+    assert.equal(resposta.status, 401);
+    assert.deepEqual(resposta.body, { status: 'error', codigo: 'SESSAO_INVALIDA', message: 'Sessão inválida ou expirada' });
+    assert.equal(me.mock.calls.length, 0, 'a rota não pode alcançar o controller quando o middleware rejeita');
+  });
+
+  test('middleware aprova a sessão: 200 com usuario/empresa, controller.me chamado exatamente uma vez', async (t) => {
+    const controller = criarAuthController({ pool: {} });
+    const me = t.mock.method(controller, 'me'); // sem implementação própria: preserva o comportamento real
+    const exigirSessaoAprovando = (req, res, next) => {
+      req.usuario = RESULTADO_SUCESSO.usuario;
+      req.empresa = RESULTADO_SUCESSO.empresa;
+      req.sessao = RESULTADO_SUCESSO.sessao;
+      next();
+    };
+    const routes = criarAuthRoutes({ controller, limitador: LIMITADOR_GENEROSO(), exigirSessao: exigirSessaoAprovando });
+    const app = criarAppTeste((a) => a.use('/api', routes));
+
+    const resposta = await request(app).get('/api/auth/me');
+
+    assert.equal(resposta.status, 200);
+    assert.deepEqual(Object.keys(resposta.body).sort(), ['empresa', 'status', 'usuario']);
+    assert.deepEqual(resposta.body.usuario, RESULTADO_SUCESSO.usuario);
+    assert.deepEqual(resposta.body.empresa, RESULTADO_SUCESSO.empresa);
+    assert.equal(me.mock.calls.length, 1);
+  });
+
+  test('resposta de /me nunca contém token, token_hash, senha_hash ou o objeto sessao', async () => {
+    const controller = criarAuthController({ pool: {} });
+    const exigirSessaoAprovando = (req, res, next) => {
+      req.usuario = RESULTADO_SUCESSO.usuario;
+      req.empresa = RESULTADO_SUCESSO.empresa;
+      req.sessao = RESULTADO_SUCESSO.sessao;
+      next();
+    };
+    const routes = criarAuthRoutes({ controller, limitador: LIMITADOR_GENEROSO(), exigirSessao: exigirSessaoAprovando });
+    const app = criarAppTeste((a) => a.use('/api', routes));
+
+    const resposta = await request(app).get('/api/auth/me');
+
+    assert.equal('token' in resposta.body, false);
+    assert.equal('sessao' in resposta.body, false);
+    assertSemSensiveis(JSON.stringify(resposta.body), [TOKEN], 'corpo de /me');
+  });
+
+  test('não exige corpo JSON nem schema de login', async () => {
+    const controller = criarAuthController({ pool: {} });
+    const exigirSessaoAprovando = (req, res, next) => {
+      req.usuario = RESULTADO_SUCESSO.usuario;
+      req.empresa = RESULTADO_SUCESSO.empresa;
+      next();
+    };
+    const routes = criarAuthRoutes({ controller, limitador: LIMITADOR_GENEROSO(), exigirSessao: exigirSessaoAprovando });
+    const app = criarAppTeste((a) => a.use('/api', routes));
+
+    const resposta = await request(app).get('/api/auth/me');
+
+    assert.equal(resposta.status, 200);
+  });
+});
+
+describe('POST /api/auth/logout', () => {
+  function cookieValido(token) {
+    return `${authConfig.sessao.cookieNome}=${token}`;
+  }
+
+  // Aqui buscarContextoSessao roda de verdade (não é mockado): o que se
+  // mocka é o repositório que ele consulta por baixo — mesma peça já
+  // exercitada isoladamente no middleware (Etapa 1). Isso prova a extração
+  // real do cookie por HTTP, não apenas a reação do controller a um
+  // contexto fabricado à mão.
+
+  test('sem cookie: 200, cookie de remoção emitido, repositório nunca consultado', async (t) => {
+    const buscar = t.mock.method(sessaoRepo, 'buscarValidaPorHash', async () => null);
+    const revogar = t.mock.method(sessaoRepo, 'revogar', async () => true);
+
+    const resposta = await request(montarApp()).post('/api/auth/logout');
+
+    assert.equal(resposta.status, 200);
+    assert.deepEqual(resposta.body, { status: 'ok' });
+    assert.equal(resposta.headers['set-cookie'][0], serializarRemocaoCookieSessao());
+    assert.equal(buscar.mock.calls.length, 0);
+    assert.equal(revogar.mock.calls.length, 0);
+  });
+
+  test('cookie duplicado (mesmo nome duas vezes): 200, cookie de remoção emitido, repositório nunca consultado', async (t) => {
+    const buscar = t.mock.method(sessaoRepo, 'buscarValidaPorHash', async () => null);
+
+    const resposta = await request(montarApp())
+      .post('/api/auth/logout')
+      .set('Cookie', `${cookieValido(gerarTokenSessao())}; ${cookieValido(gerarTokenSessao())}`);
+
+    assert.equal(resposta.status, 200);
+    assert.equal(resposta.headers['set-cookie'][0], serializarRemocaoCookieSessao());
+    assert.equal(buscar.mock.calls.length, 0);
+  });
+
+  test('cookie com formato inválido: 200, cookie de remoção emitido, repositório nunca consultado', async (t) => {
+    const buscar = t.mock.method(sessaoRepo, 'buscarValidaPorHash', async () => null);
+
+    const resposta = await request(montarApp())
+      .post('/api/auth/logout')
+      .set('Cookie', `${authConfig.sessao.cookieNome}=nao-eh-um-token-valido`);
+
+    assert.equal(resposta.status, 200);
+    assert.equal(resposta.headers['set-cookie'][0], serializarRemocaoCookieSessao());
+    assert.equal(buscar.mock.calls.length, 0);
+  });
+
+  test('sessão inexistente, expirada ou já revogada (buscarValidaPorHash devolve null): 200, revogar nunca chamado', async (t) => {
+    t.mock.method(sessaoRepo, 'buscarValidaPorHash', async () => null);
+    const revogar = t.mock.method(sessaoRepo, 'revogar', async () => true);
+
+    const resposta = await request(montarApp())
+      .post('/api/auth/logout')
+      .set('Cookie', cookieValido(TOKEN));
+
+    assert.equal(resposta.status, 200);
+    assert.equal(resposta.headers['set-cookie'][0], serializarRemocaoCookieSessao());
+    assert.equal(revogar.mock.calls.length, 0);
+  });
+
+  test('sessão válida: 200, revogar chamado com empresaId/sessaoId do contexto e motivo LOGOUT', async (t) => {
+    t.mock.method(sessaoRepo, 'buscarValidaPorHash', async () => ({
+      sessao: RESULTADO_SUCESSO.sessao, usuario: RESULTADO_SUCESSO.usuario, empresa: RESULTADO_SUCESSO.empresa,
+    }));
+    const revogar = t.mock.method(sessaoRepo, 'revogar', async () => true);
+
+    const resposta = await request(montarApp())
+      .post('/api/auth/logout')
+      .set('Cookie', cookieValido(TOKEN));
+
+    assert.equal(resposta.status, 200);
+    assert.deepEqual(resposta.body, { status: 'ok' });
+    assert.equal(resposta.headers['set-cookie'][0], serializarRemocaoCookieSessao());
+    assert.equal(revogar.mock.calls.length, 1);
+    assert.equal(revogar.mock.calls[0].arguments[1], RESULTADO_SUCESSO.empresa.id);
+    assert.equal(revogar.mock.calls[0].arguments[2], RESULTADO_SUCESSO.sessao.id);
+    assert.equal(revogar.mock.calls[0].arguments[3], 'LOGOUT');
+  });
+
+  test('duas chamadas consecutivas com o mesmo cookie: ambas 200, revoga só na primeira', async (t) => {
+    let jaRevogada = false;
+    t.mock.method(sessaoRepo, 'buscarValidaPorHash', async () => (jaRevogada
+      ? null
+      : { sessao: RESULTADO_SUCESSO.sessao, usuario: RESULTADO_SUCESSO.usuario, empresa: RESULTADO_SUCESSO.empresa }));
+    const revogar = t.mock.method(sessaoRepo, 'revogar', async () => { jaRevogada = true; return true; });
+    const app = montarApp();
+
+    const primeira = await request(app).post('/api/auth/logout').set('Cookie', cookieValido(TOKEN));
+    const segunda = await request(app).post('/api/auth/logout').set('Cookie', cookieValido(TOKEN));
+
+    assert.equal(primeira.status, 200);
+    assert.equal(segunda.status, 200);
+    assert.equal(revogar.mock.calls.length, 1);
+  });
+
+  test('erro inesperado do repositório: 500 genérico, sem Set-Cookie, sem vazamento de dados sensíveis', async (t) => {
+    const logs = [];
+    t.mock.method(console, 'error', (...args) => { logs.push(args); });
+    t.mock.method(sessaoRepo, 'buscarValidaPorHash', async () => { throw new Error(`falha de conexão com token ${TOKEN}`); });
+
+    const resposta = await request(montarApp())
+      .post('/api/auth/logout')
+      .set('Cookie', cookieValido(TOKEN));
+
+    assert.equal(resposta.status, 500);
+    assert.deepEqual(resposta.body, { status: 'error', codigo: 'ERRO_INTERNO', message: 'Erro interno do servidor' });
+    assert.equal(resposta.headers['set-cookie'], undefined);
+    assertSemSensiveis(JSON.stringify(resposta.body), [TOKEN], 'resposta 500');
+    assertSemSensiveis(JSON.stringify(logs), [TOKEN], 'log do erro inesperado');
+  });
+
+  test('resposta de sucesso nunca contém token, token_hash ou dados internos da sessão', async (t) => {
+    t.mock.method(sessaoRepo, 'buscarValidaPorHash', async () => ({
+      sessao: RESULTADO_SUCESSO.sessao, usuario: RESULTADO_SUCESSO.usuario, empresa: RESULTADO_SUCESSO.empresa,
+    }));
+    t.mock.method(sessaoRepo, 'revogar', async () => true);
+
+    const resposta = await request(montarApp())
+      .post('/api/auth/logout')
+      .set('Cookie', cookieValido(TOKEN));
+
+    assert.deepEqual(resposta.body, { status: 'ok' });
+    assertSemSensiveis(JSON.stringify(resposta.body), [TOKEN], 'corpo de logout');
   });
 });
