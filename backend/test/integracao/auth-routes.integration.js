@@ -9,6 +9,7 @@ const { abrirPoolTemporario, inserirEmpresa } = require('./helpers/schema-tempor
 const { criarAppTeste } = require('../helpers/app-teste');
 const { criarAuthController } = require('../../src/controllers/auth.controller');
 const { criarAuthRoutes } = require('../../src/routes/auth.routes');
+const { criarExigirSessao } = require('../../src/middleware/autenticacao');
 const { criarLimitador } = require('../../src/middleware/rate-limit');
 const { gerarHashSenha } = require('../../src/security/password');
 const { authConfig } = require('../../src/config/auth');
@@ -54,6 +55,15 @@ const inserirUsuario = async (cliente, empresaId, email, nome, hash, extra = {})
   return rows[0].id;
 };
 
+const daquiAMinutos = (minutos) => new Date(Date.now() + minutos * 60_000);
+
+/** Extrai "nome=valor" do único Set-Cookie de uma resposta. */
+function extrairCookie(resposta) {
+  const cookies = resposta.headers['set-cookie'];
+  assert.ok(Array.isArray(cookies) && cookies.length === 1, 'esperado exatamente um Set-Cookie');
+  return cookies[0].split(';')[0];
+}
+
 describe('POST /api/auth/login com PostgreSQL real', () => {
   let contexto;
   let app;
@@ -67,12 +77,16 @@ describe('POST /api/auth/login com PostgreSQL real', () => {
     contexto = await abrirPoolTemporario(['000', '001', '002', '005', '013', '015']);
 
     const controller = criarAuthController({ pool: contexto.pool });
+    // MESMO pool temporário do controller — não o pool global, e nenhuma
+    // substituição feita depois de importar os módulos: tudo construído
+    // explicitamente aqui, uma única vez.
+    const exigirSessaoTeste = criarExigirSessao({ pool: contexto.pool });
     // Limite generoso, exclusivo deste arquivo: não pode interferir na
     // validação do cooldown persistente do serviço (Teste 4), que é o
     // mecanismo real sob teste. Mesmo padrão de isolamento por
     // criarLimitador() já usado em test/middleware/rate-limit.test.js.
     const limitador = criarLimitador({ limite: 1000, janelaSegundos: 60 });
-    const routes = criarAuthRoutes({ controller, limitador });
+    const routes = criarAuthRoutes({ controller, limitador, exigirSessao: exigirSessaoTeste });
     app = criarAppTeste((a) => a.use('/api', routes));
 
     const cliente = await contexto.pool.connect();
@@ -243,5 +257,178 @@ describe('POST /api/auth/login com PostgreSQL real', () => {
       'SELECT count(*)::int AS total FROM sessoes WHERE usuario_id = (SELECT id FROM usuarios WHERE email = $1)', [email],
     );
     assert.equal(sessoesUsuario[0].total, 0, 'nenhuma sessão pode ter sido criada durante o bloqueio, mesmo com a senha correta');
+  });
+
+  describe('Ciclo completo login -> /me -> logout -> /me, com PostgreSQL real (Incremento 7)', () => {
+    /** Cria empresa e usuário ativos, isolados por CNPJ próprio de cada cenário. */
+    async function prepararIdentidade(cnpj, email) {
+      const cliente = await contexto.pool.connect();
+      try {
+        assert.equal(await inserirEmpresa(cliente, cnpj, `Empresa ${cnpj}`), 'ok');
+        const { rows } = await cliente.query('SELECT id FROM empresas WHERE cnpj = $1', [cnpj]);
+        const usuarioId = await inserirUsuario(cliente, rows[0].id, email, `Usuário ${email}`, HASH_SENHA_CORRETA);
+        return { empresaId: rows[0].id, usuarioId };
+      } finally {
+        cliente.release();
+      }
+    }
+
+    test('cenário 1 — login, /me com o cookie recebido: dados corretos, sem token, hash bate no PostgreSQL', async () => {
+      const cnpj = '90000001000101';
+      const email = 'cenario1@demo.safeworkengenharia.com.br';
+      const { empresaId, usuarioId } = await prepararIdentidade(cnpj, email);
+
+      const login = await request(app).post('/api/auth/login').send({ cnpj, email, senha: SENHA_CORRETA });
+      assert.equal(login.status, 200);
+      assert.match(login.headers['set-cookie'][0], /HttpOnly/i);
+      const cookie = extrairCookie(login);
+      const token = cookie.split('=')[1];
+
+      const me = await request(app).get('/api/auth/me').set('Cookie', cookie);
+      assert.equal(me.status, 200);
+      assert.deepEqual(Object.keys(me.body).sort(), ['empresa', 'status', 'usuario']);
+      assert.equal(me.body.usuario.id, usuarioId);
+      assert.equal(me.body.empresa.id, empresaId);
+      assert.equal('token' in me.body, false);
+      assert.equal(JSON.stringify(me.body).includes('token_hash'), false);
+      assert.equal(JSON.stringify(me.body).includes(token), false, 'token em claro não pode aparecer no corpo de /me');
+
+      const hashEsperado = crypto.createHash('sha256').update(token, 'utf8').digest('hex');
+      const { rows } = await contexto.pool.query(
+        'SELECT token_hash FROM sessoes WHERE usuario_id = $1 ORDER BY id DESC LIMIT 1', [usuarioId],
+      );
+      assert.equal(rows[0].token_hash, hashEsperado, 'a sessão localizada deve corresponder ao SHA-256 do token recebido no login');
+    });
+
+    test('cenário 2 — /me sem cookie: 401 SESSAO_INVALIDA, nenhuma identidade devolvida', async () => {
+      const resposta = await request(app).get('/api/auth/me');
+
+      assert.equal(resposta.status, 401);
+      assert.deepEqual(resposta.body, { status: 'error', codigo: 'SESSAO_INVALIDA', message: 'Sessão inválida ou expirada' });
+      assert.equal('usuario' in resposta.body, false);
+      assert.equal('empresa' in resposta.body, false);
+    });
+
+    test('cenário 3 — /me atualiza ultimo_uso_em no PostgreSQL (preparação determinística, sem depender de milissegundos)', async () => {
+      const cnpj = '90000003000103';
+      const email = 'cenario3@demo.safeworkengenharia.com.br';
+      await prepararIdentidade(cnpj, email);
+
+      const login = await request(app).post('/api/auth/login').send({ cnpj, email, senha: SENHA_CORRETA });
+      const cookie = extrairCookie(login);
+      const tokenHash = crypto.createHash('sha256').update(cookie.split('=')[1], 'utf8').digest('hex');
+
+      // Empurra ultimo_uso_em 10 minutos para o passado (ainda dentro da
+      // janela de inatividade) — uma diferença grande e conhecida, para que
+      // "avançou" não dependa de milissegundos de execução do teste.
+      const antigo = daquiAMinutos(-10);
+      await contexto.pool.query('UPDATE sessoes SET ultimo_uso_em = $1 WHERE token_hash = $2', [antigo, tokenHash]);
+
+      const me = await request(app).get('/api/auth/me').set('Cookie', cookie);
+      assert.equal(me.status, 200);
+
+      const { rows } = await contexto.pool.query('SELECT ultimo_uso_em FROM sessoes WHERE token_hash = $1', [tokenHash]);
+      assert.ok(
+        rows[0].ultimo_uso_em.getTime() > antigo.getTime() + 9 * 60_000,
+        'ultimo_uso_em deveria ter avançado bem além do valor antigo preparado (folga de 9 min elimina qualquer instabilidade de relógio)',
+      );
+    });
+
+    test('cenário 4 — sessão fora da janela de inatividade: 401, não revive, ultimo_uso_em não é renovado', async () => {
+      const cnpj = '90000004000104';
+      const email = 'cenario4@demo.safeworkengenharia.com.br';
+      await prepararIdentidade(cnpj, email);
+
+      const login = await request(app).post('/api/auth/login').send({ cnpj, email, senha: SENHA_CORRETA });
+      const cookie = extrairCookie(login);
+      const tokenHash = crypto.createHash('sha256').update(cookie.split('=')[1], 'utf8').digest('hex');
+
+      const foraDaJanela = daquiAMinutos(-(authConfig.sessao.inatividadeMinutos + 5));
+      await contexto.pool.query('UPDATE sessoes SET ultimo_uso_em = $1 WHERE token_hash = $2', [foraDaJanela, tokenHash]);
+
+      const primeira = await request(app).get('/api/auth/me').set('Cookie', cookie);
+      assert.equal(primeira.status, 401);
+      assert.equal(primeira.body.codigo, 'SESSAO_INVALIDA');
+
+      const { rows } = await contexto.pool.query('SELECT ultimo_uso_em FROM sessoes WHERE token_hash = $1', [tokenHash]);
+      assert.deepEqual(rows[0].ultimo_uso_em, foraDaJanela, 'ultimo_uso_em não pode ter sido renovado numa sessão vencida por inatividade');
+
+      const segunda = await request(app).get('/api/auth/me').set('Cookie', cookie);
+      assert.equal(segunda.status, 401, 'a sessão não pode voltar a ficar válida numa segunda tentativa');
+    });
+
+    test('cenário 5 — logout real: revoga no PostgreSQL, cookie antigo deixa de servir para /me', async () => {
+      const cnpj = '90000005000105';
+      const email = 'cenario5@demo.safeworkengenharia.com.br';
+      await prepararIdentidade(cnpj, email);
+
+      const login = await request(app).post('/api/auth/login').send({ cnpj, email, senha: SENHA_CORRETA });
+      const cookie = extrairCookie(login);
+      const tokenHash = crypto.createHash('sha256').update(cookie.split('=')[1], 'utf8').digest('hex');
+
+      const logout = await request(app).post('/api/auth/logout').set('Cookie', cookie);
+      assert.equal(logout.status, 200);
+      assert.deepEqual(logout.body, { status: 'ok' });
+      assert.match(logout.headers['set-cookie'][0], /Max-Age=0/);
+
+      const { rows } = await contexto.pool.query(
+        'SELECT revogada_em, motivo_revogacao FROM sessoes WHERE token_hash = $1', [tokenHash],
+      );
+      assert.notEqual(rows[0].revogada_em, null, 'revogada_em deve estar preenchida após o logout');
+      assert.equal(rows[0].motivo_revogacao, 'LOGOUT');
+
+      const meDepois = await request(app).get('/api/auth/me').set('Cookie', cookie);
+      assert.equal(meDepois.status, 401);
+      assert.equal(meDepois.body.codigo, 'SESSAO_INVALIDA');
+    });
+
+    test('cenário 6 — logout chamado duas vezes com o mesmo cookie: ambas 200, revogação persistida uma única vez', async () => {
+      const cnpj = '90000006000106';
+      const email = 'cenario6@demo.safeworkengenharia.com.br';
+      const { usuarioId } = await prepararIdentidade(cnpj, email);
+
+      const login = await request(app).post('/api/auth/login').send({ cnpj, email, senha: SENHA_CORRETA });
+      const cookie = extrairCookie(login);
+
+      const primeira = await request(app).post('/api/auth/logout').set('Cookie', cookie);
+      const segunda = await request(app).post('/api/auth/logout').set('Cookie', cookie);
+
+      assert.equal(primeira.status, 200);
+      assert.equal(segunda.status, 200);
+
+      const { rows } = await contexto.pool.query(
+        'SELECT count(*)::int AS total FROM sessoes WHERE usuario_id = $1 AND revogada_em IS NOT NULL', [usuarioId],
+      );
+      assert.equal(rows[0].total, 1, 'só existe uma sessão para este usuário, e ela deve estar revogada uma única vez — nenhuma sessão adicional foi afetada');
+    });
+
+    test('cenário 7 — isolamento multiempresa: revogar a sessão de A não afeta a de B; IDs no corpo são ignorados', async () => {
+      const cnpjA = '90000007000107';
+      const emailA = 'cenario7a@demo.safeworkengenharia.com.br';
+      const cnpjB = '90000007000108';
+      const emailB = 'cenario7b@demo.safeworkengenharia.com.br';
+      const { empresaId: empresaIdB } = await prepararIdentidade(cnpjB, emailB);
+      await prepararIdentidade(cnpjA, emailA);
+
+      const loginA = await request(app).post('/api/auth/login').send({ cnpj: cnpjA, email: emailA, senha: SENHA_CORRETA });
+      const loginB = await request(app).post('/api/auth/login').send({ cnpj: cnpjB, email: emailB, senha: SENHA_CORRETA });
+      const cookieA = extrairCookie(loginA);
+      const cookieB = extrairCookie(loginB);
+
+      // /logout não tem corpo algum na sua definição de rota (sem
+      // validar()) — ainda assim, mesmo enviando campos arbitrários, o
+      // único vetor de identidade é o cookie: não há como o corpo indicar
+      // "revogue a sessão de outra empresa".
+      const logoutA = await request(app).post('/api/auth/logout').set('Cookie', cookieA).send({ empresaId: empresaIdB, sessaoId: 999999 });
+      assert.equal(logoutA.status, 200);
+
+      const meA = await request(app).get('/api/auth/me').set('Cookie', cookieA);
+      assert.equal(meA.status, 401, 'a sessão de A foi corretamente revogada');
+
+      const meB = await request(app).get('/api/auth/me').set('Cookie', cookieB);
+      assert.equal(meB.status, 200, 'a sessão de B não pode ter sido afetada pelo logout de A, mesmo com empresaId de B enviado no corpo');
+      assert.equal(meB.body.empresa.id, empresaIdB);
+      assert.equal(meB.body.empresa.cnpj, cnpjB);
+    });
   });
 });

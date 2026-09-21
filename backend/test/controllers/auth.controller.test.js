@@ -8,6 +8,9 @@ const { criarAppTeste } = require('../helpers/app-teste');
 const { assertSemSensiveis } = require('../helpers/sensiveis');
 const { criarAuthController, authController } = require('../../src/controllers/auth.controller');
 const loginService = require('../../src/services/login.service');
+const autenticacaoMiddleware = require('../../src/middleware/autenticacao');
+const sessaoRepo = require('../../src/repositories/sessao.repository');
+const { serializarRemocaoCookieSessao } = require('../../src/security/cookie');
 const { gerarTokenSessao } = require('../../src/security/token');
 const { HttpError } = require('../../src/errors/HttpError');
 const { authConfig } = require('../../src/config/auth');
@@ -162,8 +165,159 @@ describe('criarAuthController', () => {
   });
 });
 
+describe('criarAuthController.me', () => {
+  function montarAppMe(controller) {
+    return criarAppTeste((app) => app.get('/me', (req, res, next) => {
+      req.usuario = RESULTADO_SUCESSO.usuario;
+      req.empresa = RESULTADO_SUCESSO.empresa;
+      req.sessao = RESULTADO_SUCESSO.sessao;
+      next();
+    }, controller.me));
+  }
+
+  test('responde 200 com status/usuario/empresa vindos exclusivamente de req.usuario/req.empresa', async () => {
+    const controller = criarAuthController({ pool: {} });
+
+    const resposta = await request(montarAppMe(controller)).get('/me');
+
+    assert.equal(resposta.status, 200);
+    assert.deepEqual(Object.keys(resposta.body).sort(), ['empresa', 'status', 'usuario']);
+    assert.equal(resposta.body.status, 'ok');
+    assert.deepEqual(resposta.body.usuario, RESULTADO_SUCESSO.usuario);
+    assert.deepEqual(resposta.body.empresa, RESULTADO_SUCESSO.empresa);
+  });
+
+  test('não consulta o banco nem chama loginService.autenticar: usa só o que o middleware já populou', async (t) => {
+    const autenticar = t.mock.method(loginService, 'autenticar', async () => RESULTADO_SUCESSO);
+    const controller = criarAuthController({ pool: {} });
+
+    await request(montarAppMe(controller)).get('/me');
+
+    assert.equal(autenticar.mock.calls.length, 0, 'me() não deve consultar o serviço de login nem o banco de novo');
+  });
+
+  test('corpo de /me nunca contém token nem o objeto sessao, mesmo que req.sessao exista', async () => {
+    const controller = criarAuthController({ pool: {} });
+
+    const resposta = await request(montarAppMe(controller)).get('/me');
+
+    assert.equal('token' in resposta.body, false);
+    assert.equal('sessao' in resposta.body, false);
+    assertSemSensiveis(JSON.stringify(resposta.body), [TOKEN], 'corpo de /me');
+  });
+});
+
+describe('criarAuthController.logout', () => {
+  const CONTEXTO_SESSAO_VALIDA = Object.freeze({
+    sessao: RESULTADO_SUCESSO.sessao,
+    usuario: RESULTADO_SUCESSO.usuario,
+    empresa: RESULTADO_SUCESSO.empresa,
+  });
+
+  function montarAppLogout(controller) {
+    return criarAppTeste((app) => app.post('/logout', controller.logout));
+  }
+
+  test('sessão válida: revoga com empresaId/sessaoId do contexto e motivo LOGOUT, usa o pool injetado, remove o cookie, 200', async (t) => {
+    const buscarContexto = t.mock.method(autenticacaoMiddleware, 'buscarContextoSessao', async () => CONTEXTO_SESSAO_VALIDA);
+    const revogar = t.mock.method(sessaoRepo, 'revogar', async () => true);
+    const poolFalso = { marcador: 'pool-de-teste' };
+    const controller = criarAuthController({ pool: poolFalso });
+
+    const resposta = await request(montarAppLogout(controller)).post('/logout');
+
+    assert.equal(resposta.status, 200);
+    assert.deepEqual(resposta.body, { status: 'ok' });
+    assert.ok(Array.isArray(resposta.headers['set-cookie']) && resposta.headers['set-cookie'].length === 1);
+    assert.equal(resposta.headers['set-cookie'][0], serializarRemocaoCookieSessao());
+
+    assert.equal(buscarContexto.mock.calls[0].arguments[0], poolFalso, 'deve usar o pool injetado, nunca o pool global');
+    assert.equal(revogar.mock.calls.length, 1);
+    assert.equal(revogar.mock.calls[0].arguments[0], poolFalso);
+    assert.equal(revogar.mock.calls[0].arguments[1], CONTEXTO_SESSAO_VALIDA.empresa.id, 'empresaId deve vir do contexto validado, nunca do cliente');
+    assert.equal(revogar.mock.calls[0].arguments[2], CONTEXTO_SESSAO_VALIDA.sessao.id, 'sessaoId deve vir do contexto validado, nunca do cliente');
+    assert.equal(revogar.mock.calls[0].arguments[3], 'LOGOUT');
+  });
+
+  test('sem contexto de sessão (cookie ausente, malformado, duplicado ou sessão já inválida): revogar nunca chamado, cookie removido, 200', async (t) => {
+    t.mock.method(autenticacaoMiddleware, 'buscarContextoSessao', async () => null);
+    const revogar = t.mock.method(sessaoRepo, 'revogar', async () => true);
+    const controller = criarAuthController({ pool: {} });
+
+    const resposta = await request(montarAppLogout(controller)).post('/logout');
+
+    assert.equal(resposta.status, 200);
+    assert.deepEqual(resposta.body, { status: 'ok' });
+    assert.equal(resposta.headers['set-cookie'][0], serializarRemocaoCookieSessao());
+    assert.equal(revogar.mock.calls.length, 0, 'não há empresaId/sessaoId para revogar sem um contexto válido');
+  });
+
+  test('revogar devolve false (sessão deixou de estar ativa entre a consulta e a revogação): idempotente, ainda 200', async (t) => {
+    t.mock.method(autenticacaoMiddleware, 'buscarContextoSessao', async () => CONTEXTO_SESSAO_VALIDA);
+    t.mock.method(sessaoRepo, 'revogar', async () => false);
+    const controller = criarAuthController({ pool: {} });
+
+    const resposta = await request(montarAppLogout(controller)).post('/logout');
+
+    assert.equal(resposta.status, 200);
+    assert.deepEqual(resposta.body, { status: 'ok' }, 'não afirma uma nova revogação, só conclui de forma idempotente');
+    assert.equal(resposta.headers['set-cookie'][0], serializarRemocaoCookieSessao());
+  });
+
+  test('duas chamadas consecutivas de logout: ambas 200, a segunda sem nada para revogar', async (t) => {
+    let primeiraChamada = true;
+    t.mock.method(autenticacaoMiddleware, 'buscarContextoSessao', async () => (primeiraChamada ? CONTEXTO_SESSAO_VALIDA : null));
+    const revogar = t.mock.method(sessaoRepo, 'revogar', async () => true);
+    const controller = criarAuthController({ pool: {} });
+    const app = montarAppLogout(controller);
+
+    const primeira = await request(app).post('/logout');
+    primeiraChamada = false;
+    const segunda = await request(app).post('/logout');
+
+    assert.equal(primeira.status, 200);
+    assert.equal(segunda.status, 200);
+    assert.equal(revogar.mock.calls.length, 1, 'só a primeira chamada tinha algo real para revogar');
+  });
+
+  test('erro inesperado ao consultar a sessão: 500, sem Set-Cookie, sem afirmar sucesso', async (t) => {
+    const logs = [];
+    t.mock.method(console, 'error', (...args) => { logs.push(args); });
+    t.mock.method(autenticacaoMiddleware, 'buscarContextoSessao', async () => { throw new Error(`falha de conexão com token ${TOKEN}`); });
+    const revogar = t.mock.method(sessaoRepo, 'revogar', async () => true);
+    const controller = criarAuthController({ pool: {} });
+
+    const resposta = await request(montarAppLogout(controller)).post('/logout');
+
+    assert.equal(resposta.status, 500);
+    assert.deepEqual(resposta.body, { status: 'error', codigo: 'ERRO_INTERNO', message: 'Erro interno do servidor' });
+    assert.equal(resposta.headers['set-cookie'], undefined, 'não pode remover o cookie afirmando um logout que não aconteceu');
+    assert.equal(revogar.mock.calls.length, 0);
+    assertSemSensiveis(JSON.stringify(resposta.body), [TOKEN], 'resposta 500');
+    assertSemSensiveis(JSON.stringify(logs), [TOKEN], 'log do erro inesperado');
+  });
+
+  test('erro inesperado ao revogar: 500, sem Set-Cookie, sem afirmar sucesso', async (t) => {
+    const logs = [];
+    t.mock.method(console, 'error', (...args) => { logs.push(args); });
+    t.mock.method(autenticacaoMiddleware, 'buscarContextoSessao', async () => CONTEXTO_SESSAO_VALIDA);
+    t.mock.method(sessaoRepo, 'revogar', async () => { throw new Error(`falha ao revogar, token ${TOKEN}`); });
+    const controller = criarAuthController({ pool: {} });
+
+    const resposta = await request(montarAppLogout(controller)).post('/logout');
+
+    assert.equal(resposta.status, 500);
+    assert.deepEqual(resposta.body, { status: 'error', codigo: 'ERRO_INTERNO', message: 'Erro interno do servidor' });
+    assert.equal(resposta.headers['set-cookie'], undefined, 'não pode remover o cookie afirmando uma revogação que falhou');
+    assertSemSensiveis(JSON.stringify(resposta.body), [TOKEN], 'resposta 500');
+    assertSemSensiveis(JSON.stringify(logs), [TOKEN], 'log do erro inesperado');
+  });
+});
+
 describe('authController (instância padrão)', () => {
   test('existe e usa o pool real de config/database.js', () => {
     assert.equal(typeof authController.login, 'function');
+    assert.equal(typeof authController.me, 'function');
+    assert.equal(typeof authController.logout, 'function');
   });
 });

@@ -1,7 +1,9 @@
 'use strict';
 
 const loginService = require('../services/login.service');
-const { serializarCookieSessao } = require('../security/cookie');
+const sessaoRepo = require('../repositories/sessao.repository');
+const autenticacaoMiddleware = require('../middleware/autenticacao');
+const { serializarCookieSessao, serializarRemocaoCookieSessao } = require('../security/cookie');
 const { pool } = require('../config/database');
 
 /**
@@ -31,6 +33,22 @@ const { pool } = require('../config/database');
 
 function criarAuthController({ pool: poolInjetado }) {
   return {
+    /**
+     * Devolve a identidade autenticada. Usa exclusivamente req.usuario e
+     * req.empresa, já populados pelo middleware exigirSessao após validar
+     * o cookie no PostgreSQL — nenhuma nova consulta é feita aqui, e nada
+     * vindo de body/params/query influencia a resposta. req.sessao existe
+     * mas nunca é incluído no corpo: o cliente não precisa do id interno
+     * da sessão.
+     */
+    async me(req, res) {
+      res.status(200).json({
+        status: 'ok',
+        usuario: req.usuario,
+        empresa: req.empresa,
+      });
+    },
+
     async login(req, res) {
       const { cnpj, email, senha } = req.validado.body;
 
@@ -48,6 +66,37 @@ function criarAuthController({ pool: poolInjetado }) {
         usuario: resultado.usuario,
         empresa: resultado.empresa,
       });
+    },
+
+    /**
+     * Encerra a sessão atual. Idempotente por natureza: cookie ausente,
+     * duplicado, malformado, ou sessão já inexistente/expirada/revogada
+     * não são erro — o objetivo do cliente (não ter mais um cookie
+     * utilizável) é alcançado de qualquer forma. Não fica atrás do
+     * middleware exigirSessao (que rejeitaria com 401 exatamente esses
+     * casos): usa buscarContextoSessao diretamente, que só devolve null
+     * para essas causas já conhecidas.
+     *
+     * empresaId e sessaoId usados em revogar() vêm exclusivamente do
+     * contexto validado no PostgreSQL — nunca de body, query ou headers.
+     *
+     * Uma falha REAL (buscarContextoSessao ou revogar rejeitam, não
+     * devolvem null/false) propaga sem tratamento: nem Set-Cookie nem
+     * corpo de sucesso chegam a ser produzidos, e o errorHandler decide
+     * o 500 — a resposta nunca afirma uma revogação que não aconteceu.
+     * O retorno de revogar() (true/false) não é examinado: mesmo false
+     * (a sessão deixou de estar ativa entre a consulta e a revogação) é
+     * uma conclusão idempotente, não um erro.
+     */
+    async logout(req, res) {
+      const contexto = await autenticacaoMiddleware.buscarContextoSessao(poolInjetado, req);
+
+      if (contexto !== null) {
+        await sessaoRepo.revogar(poolInjetado, contexto.empresa.id, contexto.sessao.id, 'LOGOUT');
+      }
+
+      res.append('Set-Cookie', serializarRemocaoCookieSessao());
+      res.status(200).json({ status: 'ok' });
     },
   };
 }
