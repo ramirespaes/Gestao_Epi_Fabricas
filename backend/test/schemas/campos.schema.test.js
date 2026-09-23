@@ -31,7 +31,7 @@ const rejeita = (schema, entrada, codigo) => {
 
 describe('exports e limites', () => {
   test('API pública e limites técnicos', () => {
-    assert.deepEqual(Object.keys(c).sort(), ['LIMITES', 'booleanoQuery', 'cnpj', 'cnpjComDigitosVerificadores', 'codigoCatalogo', 'email', 'idParametro', 'inteiroQuery', 'paginacaoQuery', 'senhaEntrada', 'textoCurto'].sort());
+    assert.deepEqual(Object.keys(c).sort(), ['LIMITES', 'booleanoQuery', 'cnpj', 'cnpjComDigitosVerificadores', 'codigoCatalogo', 'email', 'idCorpo', 'idParametro', 'inteiroQuery', 'paginacaoQuery', 'senhaEntrada', 'textoCurto'].sort());
     assert.deepEqual(c.LIMITES, { CNPJ_ENTRADA_MAXIMO: 32, EMAIL_ENTRADA_MAXIMO: 200, SENHA_ENTRADA_MAXIMO: 1024, ID_MAXIMO: 2147483647, PAGINA_MAXIMA: 10000, LIMITE_MAXIMO: 100, LIMITE_PADRAO: 20 });
   });
 });
@@ -120,6 +120,25 @@ describe('idParametro', () => {
     }
     rejeita(c.idParametro, 1, 'invalid_type');
     rejeita(c.idParametro, null, 'invalid_type');
+  });
+});
+
+describe('idCorpo', () => {
+  test('aceita somente número inteiro positivo dentro do teto de int4, sem transformar o valor', () => {
+    aceita(c.idCorpo, 1, 1);
+    aceita(c.idCorpo, 42, 42);
+    aceita(c.idCorpo, 2147483647, 2147483647);
+  });
+
+  test('rejeita zero, negativo, não inteiro e acima do teto com ID_INVALIDO; tipo errado (inclusive NaN/Infinity) com invalid_type', () => {
+    for (const ruim of [0, -1, 1.5, 2147483648]) {
+      rejeita(c.idCorpo, ruim, 'ID_INVALIDO');
+    }
+    // NaN e Infinity já são recusados pelo z.number() de base, antes do
+    // transform: nunca chegam à regra ID_INVALIDO.
+    for (const ruim of ['1', null, true, NaN, Infinity]) {
+      rejeita(c.idCorpo, ruim, 'invalid_type');
+    }
   });
 });
 

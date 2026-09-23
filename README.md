@@ -2,6 +2,18 @@
 
 Sistema para gestão de Equipamentos de Proteção Individual (EPIs), com frontend web e backend separados por responsabilidade.
 
+## Estado do projeto
+
+O desenvolvimento está organizado em 11 incrementos.
+
+| Incremento | Situação |
+|---|---|
+| 1 a 7 | Incorporados à `main` |
+| 8 — RBAC (perfis, grupos de acesso, permissões, autorizações individuais e delegação) | Implementação técnica concluída até a Subetapa 3V, incluindo o complemento de consulta de destinatários de delegação; ainda em processo de versionamento e encerramento no Git — **não incorporado à `main`** |
+| 9 a 11 | Ainda previstos, sem implementação iniciada |
+
+O Incremento 8 existe integralmente na branch `feature/bloco-08-incremento-08`. Sua incorporação à `main` depende da conclusão do fluxo de commits, push, Pull Request e merge, ainda não realizado. As seções de RBAC, API HTTP e as migrations `017`–`024` abaixo descrevem esse incremento pelo estado do código na working tree dessa branch, não pelo conteúdo atual de `main`.
+
 ## Estrutura do projeto
 
 ```text
@@ -31,13 +43,90 @@ O ponto de entrada da aplicação é `frontend/index.html`.
 
 A estrutura interna utiliza caminhos relativos entre `index.html`, `pages/`, `css/` e `js/`.
 
+### Frontend legado
+
+As 21 páginas originais em `frontend/pages/`, `frontend/js/db-api.js` (simulador de API em `localStorage`) e `frontend/js/main.js` (RBAC replicado localmente para a demonstração) permanecem preservados e funcionando exatamente como antes. Nenhuma delas foi migrada para a API HTTP real — as duas camadas coexistem sem se tocar.
+
+### Frontend administrativo HTTP (Incremento 8)
+
+Quatro páginas novas em `frontend/pages/` consomem a API HTTP real, com autenticação por sessão e cookie `HttpOnly` (nunca `localStorage`):
+
+| Página | Função |
+|---|---|
+| `grupos-acesso.html` | Cadastro, listagem, edição, inativação e reativação de grupos de acesso |
+| `grupo-permissoes.html` | Configuração das permissões de cada grupo, por recurso e por ação |
+| `grupo-usuarios.html` | Vinculação e desvinculação de usuários aos grupos |
+| `autorizacoes-individuais.html` | Consulta, concessão, delegação e revogação de autorizações individuais |
+
+Seis módulos JavaScript em `frontend/js/` dão suporte a essas páginas: `api-http.js` e `auth-session.js` (fundação HTTP e sessão) mais um módulo por página (`grupos-acesso.js`, `grupo-permissoes.js`, `grupo-usuarios.js`, `autorizacoes-individuais.js`).
+
 ## Backend
 
 O backend está localizado integralmente em `backend/` e concentra a API, configuração do servidor, acesso ao PostgreSQL 16, as migrations em `backend/migrations/` e as regras de negócio.
 
+### Arquitetura em camadas
+
+```text
+route/controller
+    ↓
+service
+    ↓
+repository
+    ↓
+PostgreSQL
+```
+
+- **routes** (`backend/src/routes/`) conectam caminho, middlewares (sessão, validação Zod) e o controller — não decidem autorização.
+- **controllers** (`backend/src/controllers/`) traduzem a requisição HTTP em chamada de serviço e o resultado em resposta; `empresaId`/`usuarioId` vêm exclusivamente da sessão autenticada, nunca do corpo da requisição.
+- **services** (`backend/src/services/`) coordenam regra de negócio, autoridade e transações.
+- **repositories** (`backend/src/repositories/`) só executam SQL parametrizado; recebem o executor (pool ou cliente de transação) por parâmetro, nunca importam o pool global.
+- **schemas** (`backend/src/schemas/`), com Zod, validam formato de entrada antes do controller.
+- **middleware de autorização** (`backend/src/middleware/autorizacao.js`) decide, a cada requisição, a cadeia perfil → grupo → exceção individual — descrita na próxima seção.
+
+## RBAC (Incremento 8)
+
+Controle de acesso baseado em papéis, com quatro camadas de decisão, sempre verificadas no servidor (o frontend pode ocultar controles conforme perfil, mas nunca é a autoridade final):
+
+1. **Perfil** — `MASTER`, `ADMINISTRADOR`, `SUPERVISOR`, `USUARIO`. Relido do banco a cada requisição, nunca confiado ao cliente.
+2. **Grupo de acesso** — grupos personalizados por empresa (ex.: Almoxarifado, Gerência), com permissão configurável por **recurso** (visualizar/criar/editar/excluir) e por **ação**, em três estados: conceder, negar ou herdar do perfil. Negar é sempre uma decisão explícita, nunca confundida com ausência de opinião do grupo.
+3. **Exceção individual por recurso** — mesma semântica de três estados, mas por usuário, sobre um recurso específico.
+4. **Autorização individual por ação** — concessão pontual de uma ação a um usuário, independente de perfil ou grupo, com:
+   - **concessão direta**, restrita ao perfil `MASTER`;
+   - **delegação**, para quem recebeu uma autorização própria marcada como repassável (`pode_delegar`) — repassar exige que a autorização de origem ainda esteja valendo para quem delega (concessão + vínculo com a SST quando a ação exige + ausência de bloqueio individual). **Poder executar uma ação não implica poder delegá-la**: as duas autoridades são independentes;
+   - **revogação**, por quem concedeu a autorização ou pelo `MASTER`; revogar uma autorização que serviu de origem para outras remove as delegadas dela, mas nunca autorizações concedidas por outro caminho.
+
+### Autoridade administrativa granular
+
+Além do `MASTER`, um `ADMINISTRADOR` pode receber, por autorização individual, o direito de administrar grupos, permissões de grupo ou vínculos de usuário — sem qualquer autoridade de administração concedida implicitamente por perfil.
+
+Preservados em toda a extensão do RBAC: **isolamento multiempresa** (nenhuma consulta ou escrita alcança dado de outra empresa — o identificador de empresa vem sempre da sessão) e **auditoria transacional** (toda escrita administrativa é registrada em `logs_auditoria`, na mesma transação da alteração; consultas não geram registro de auditoria).
+
+Adiados para depois do encerramento do Incremento 8: página de acesso negado com indicação de quem pode conceder a autorização, botão de solicitação de acesso, notificações de pedidos, e o workflow de CI/CD mencionado na seção de testes.
+
+## API HTTP
+
+A API do Incremento 8 soma **23 endpoints**, em **20 caminhos distintos** (três caminhos aceitam dois métodos HTTP cada), distribuídos em **10 arquivos de rota** (`backend/src/routes/`), todos montados na mesma cadeia `/api` de `backend/src/app.js`, com CORS restrito, verificação de origem, rate limit e validação de conteúdo aplicados uma única vez para todas as rotas.
+
+| Arquivo de rota | Endpoints |
+|---|---|
+| `health.routes.js` | Verificação de disponibilidade |
+| `auth.routes.js` | Login, sessão atual, logout |
+| `grupo-acesso.routes.js` | Cadastro, listagem, edição, inativação e reativação de grupos |
+| `grupo-permissao.routes.js` | Consulta e configuração das permissões de um grupo, por recurso e por ação |
+| `grupo-usuario.routes.js` | Consulta de vinculados, vinculação/transferência e desvinculação |
+| `autorizacao-individual.routes.js` | Concessão direta, delegação e revogação de autorização individual |
+| `catalogo.routes.js` | Catálogo real das ações administráveis |
+| `usuario-consulta.routes.js` | Consulta administrativa de usuários da empresa |
+| `autorizacao-consulta.routes.js` | Consulta das autorizações individuais de um usuário |
+| `delegacao-destinatarios.routes.js` | `GET /api/delegacao/destinatarios` — a quem um usuário com autorização repassável pode delegar, sem exigir a autoridade administrativa de vínculos de grupo |
+
+`health` é pública, sem exigência de sessão. O login (`POST /api/auth/login`) também é público — é o próprio ponto de entrada da autenticação. O logout aceita chamada sem sessão válida, por comportamento idempotente. As demais rotas — todas as administrativas do RBAC — exigem sessão autenticada; nenhuma decide autorização por si mesma, apenas autenticação. A autoridade administrativa é sempre resolvida na camada de serviço, relendo o estado do banco a cada chamada.
+
 ## Banco de dados e migrations
 
-O banco do projeto é PostgreSQL 16. As migrations ficam em `backend/migrations/` e existem hoje arquivos versionados de `000` a `016`, que devem ser executados em ordem crescente de prefixo.
+O banco do projeto é PostgreSQL 16. As migrations ficam em `backend/migrations/` e existem hoje arquivos versionados de `000` a `024` (25 no total), que devem ser executados em ordem crescente de prefixo.
+
+As migrations `000` a `016` já estão incorporadas à `main` e aplicadas ao banco principal. As migrations `017` a `024` pertencem ao Incremento 8 (estrutura de SST, autorizações individuais e delegação, grupos de acesso e suas permissões, e as ações administrativas granulares) e **ainda não foram aplicadas ao banco principal** — foram validadas apenas em schemas temporários pela suíte de integração (ver seção de testes). A existência dos arquivos `.sql` no repositório não significa que a estrutura já exista no `public` de nenhum banco além dos schemas de teste.
 
 Versionar uma migration não significa que ela já foi aplicada. O schema `public` de um banco só passa a ter a estrutura depois de uma execução explícita e autorizada. Criar a migration e aplicá-la são decisões separadas.
 
@@ -74,9 +163,9 @@ npm run db:migrate:status    # mostra o que está aplicado e o que está pendent
 npm run db:migrate           # aplica as migrations pendentes
 ```
 
-Em um banco vazio, a primeira execução de `npm run db:migrate:status` apresenta as 17 migrations como pendentes e pode terminar com código de saída 2. Esse código sinaliza pendência, não erro de configuração, e é o resultado esperado antes da primeira aplicação.
+Em um banco vazio, a partir de `main`, a primeira execução de `npm run db:migrate:status` apresenta as 17 migrations como pendentes e pode terminar com código de saída 2. Esse código sinaliza pendência, não erro de configuração, e é o resultado esperado antes da primeira aplicação. Ao final da sequência, `npm run db:migrate:status` deve relatar 17 migrations aplicadas, nenhuma pendente e código de saída 0.
 
-Ao final da sequência, `npm run db:migrate:status` deve relatar 17 migrations aplicadas, nenhuma pendente e código de saída 0.
+Na branch `feature/bloco-08-incremento-08` — ainda não incorporada à `main` — o mesmo diretório contém 25 arquivos (`000` a `024`); rodar os mesmos comandos ali aplicaria também as 8 migrations do Incremento 8 a esse banco. Isso não foi feito no banco principal em nenhum momento do desenvolvimento do Incremento 8.
 
 ### Comandos de migration
 
@@ -94,7 +183,7 @@ O histórico fica registrado na tabela `pgmigrations`, criada e mantida pela fer
 
 ### Integridade das migrations
 
-As migrations de `000` a `016` são protegidas por um manifesto de checksums SHA-256 em `backend/migrations/checksums.json`. O `npm run db:migrate:verificar` recalcula o digest de cada arquivo e o compara com o registro, detectando alteração de conteúdo, remoção e renomeação.
+As migrations de `000` a `024` são protegidas por um manifesto de checksums SHA-256 em `backend/migrations/checksums.json` (25 entradas, todas íntegras na última verificação). O `npm run db:migrate:verificar` recalcula o digest de cada arquivo e o compara com o registro, detectando alteração de conteúdo, remoção e renomeação.
 
 Uma migration já aplicada não deve ser alterada. O manifesto só aceita registro automático de migration nova, e recusa qualquer atualização que encubra mudança em arquivo histórico. Correções de estrutura entram sempre em uma migration nova.
 
@@ -112,9 +201,9 @@ O sinalizador de confirmação registra a intenção de quem executa, e não com
 
 O backend usa o runner nativo `node:test` com `node:assert/strict`, e `supertest` para os testes HTTP. A cobertura é medida pela instrumentação nativa do Node 24, sem biblioteca adicional.
 
-Atualmente existem testes permanentes para a fundação da autenticação (Bloco 5: configuração, normalização, senha, política de senha, token de sessão, cooldown e erros HTTP), para a camada de validação de entrada (Bloco 6: schemas Zod, middleware de validação e tratamento de erros) e para a segurança HTTP (Bloco 7: cabeçalhos, CORS, verificação de origem, política de conteúdo, limite de payload, rate limit e cookies).
+Atualmente existem testes permanentes para a fundação da autenticação (Bloco 5: configuração, normalização, senha, política de senha, token de sessão, cooldown e erros HTTP), para a camada de validação de entrada (Bloco 6: schemas Zod, middleware de validação e tratamento de erros) e para a segurança HTTP (Bloco 7: cabeçalhos, CORS, verificação de origem, política de conteúdo, limite de payload, rate limit e cookies). O Incremento 8 acrescentou a suíte completa do RBAC — repositories, services, controllers, rotas e middleware de autorização.
 
-Além dessa suíte padrão existe uma suíte separada de integração, que valida migrations contra um PostgreSQL real e não roda junto com `npm test`.
+Além dessa suíte padrão existe uma suíte separada de integração, que valida migrations contra um PostgreSQL real e não roda junto com `npm test`. O Incremento 8 também criou uma suíte de testes de frontend própria (`frontend/test/`, runner nativo `node:test`), inexistente até então — ver "Estado atual" abaixo.
 
 ### Comandos oficiais
 
@@ -153,7 +242,7 @@ A cobertura mínima obrigatória do projeto é:
 
 O backend já aplica o limiar de 75% em `npm run test:ci`, que termina com código de saída diferente de zero quando qualquer teste falha ou quando a cobertura de linhas fica abaixo do mínimo. O pipeline de integração contínua deverá executar `npm ci` e `npm run test:ci`, e qualquer uma dessas duas condições deve bloquear o CI. O workflow do GitHub Actions será criado em etapa própria.
 
-A meta obrigatória de 25% de cobertura do frontend será implementada em etapa própria, antes da entrega acadêmica. O frontend ainda não possui infraestrutura de testes.
+O frontend passou a ter suíte de testes própria no Incremento 8 (`frontend/package.json`, runner nativo `node:test`, sem dependências externas — ver "Estado atual" abaixo), mas ainda sem instrumentação de cobertura. A meta obrigatória de 25% de cobertura do frontend permanece pendente de medição, a ser implementada em etapa própria antes da entrega acadêmica.
 
 ### Escopo da cobertura
 
@@ -163,7 +252,7 @@ Os testes `.integration.js` não entram no cálculo da cobertura. A medição ac
 
 ### Estado atual
 
-Resultado validado na última execução de `npm run test:ci`:
+**Backend, fim do Incremento 7** — última medição de cobertura, por `npm run test:ci`:
 
 | Métrica | Valor |
 |---|---|
@@ -174,17 +263,24 @@ Resultado validado na última execução de `npm run test:ci`:
 | Ramos | 97,42% |
 | Funções | 99,37% |
 
-Resultado validado na última execução de `npm run test:integracao`:
-
-| Métrica | Valor |
+| Métrica (integração) | Valor |
 |---|---|
 | Testes | 45 |
 | Aprovados | 45 |
 | Falhas | 0 |
 
-Os 45 testes de integração são uma suíte separada e não devem ser somados aos 310 da suíte padrão. Eles não participam da medição de cobertura, então a linha de cobertura acima se refere apenas aos 310.
+**Backend e frontend, Incremento 8** — resultado da validação registrada em 22/09/2026 (execução direta de `npm test` e `npm run test:integracao` no backend, `npm test` no frontend, e `node scripts/verificar-checksums.js`; números apenas documentados aqui, não reexecutados nesta atualização do README):
 
-Esses percentuais representam o estado atual e vão variar conforme novos módulos forem adicionados. O requisito permanente continua sendo no mínimo 75% de linhas no backend.
+| Suíte | Testes | Aprovados | Falhas |
+|---|---:|---:|---:|
+| Backend — unitário (`npm test`) | 978 | 978 | 0 |
+| Backend — integração PostgreSQL (`npm run test:integracao`) | 716 | 716 | 0 |
+| Frontend (`npm test`, dentro de `frontend/`) | 301 | 301 | 0 |
+| Checksums das migrations | 25 | 25 íntegras | — |
+
+Os 978 testes unitários do backend substituem os 310 anteriores (o Incremento 8 soma às suítes de autenticação/validação/segurança já existentes toda a suíte do RBAC). **A cobertura de linhas/ramos/funções não foi remedida para esse total** — a tabela de percentuais acima permanece a última disponível, referente aos 310 testes do fim do Incremento 7. Confirmar o percentual para os 978 testes atuais, com `npm run test:ci`, é uma pendência em aberto. Da mesma forma, os 716 testes de integração e os 25 checksums substituem, por serem mais recentes, os números de 45 testes e 17 migrations do estado anterior.
+
+O requisito permanente continua sendo no mínimo 75% de linhas no backend.
 
 ### Histórico e adoção de TDD
 

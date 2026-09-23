@@ -17,6 +17,14 @@
     "013_create_sessoes.sql": "186dd4e90bce6b432ec5bb1c8fe428e42f1ba8ce746ba62e49022eeba0678470",
     "014_alter_logs_auditoria_add_dados.sql": "c3f4261a448a6cc639cef86eefd9a8f2c1a3008a2d99d8493aa93e2029820601",
     "015_create_login_tentativas.sql": "9c30d1299f6fb0fc33c0466c9f139606a840a7eca0f08aee1de9a0c85841564e",
-    "016_alter_empresas_cnpj_alfanumerico.sql": "b3e85ea93ca569ce6c9109246dee4f09c673b6ff8985fb4dfef682dd5af4a72d"
+    "016_alter_empresas_cnpj_alfanumerico.sql": "b3e85ea93ca569ce6c9109246dee4f09c673b6ff8985fb4dfef682dd5af4a72d",
+    "017_alter_acoes_add_autorizacao_flags.sql": "f30a00a3c738ccc0405a8ffebbdb57a67f0c41a6827564504657eb00484364d8",
+    "018_create_vinculo_sst.sql": "46f4a55e7c81de6436593b78e2fdddcaacc8ce3dd19b17c187db93c0b176c939",
+    "019_create_usuario_autorizacoes.sql": "623f42cf484fdbdebfcc07f01c9b03411fd872004593c2d0814070a2fc7dc0cf",
+    "020_create_grupos_acesso.sql": "de13d6b7790393d119f414b0487777509dff78718bb0711f572c3e89c95ffe10",
+    "021_create_grupo_permissoes.sql": "774066b960e8cf26d90b068f3f1b8cbdf9107097830810a341f29887b432540c",
+    "022_create_usuario_permissoes_recurso.sql": "5cfa80a50cf3f4c3219846134b01ad1630adbef8c29305f74720756c33173647",
+    "023_alter_usuario_autorizacoes_add_delegacao.sql": "ec556b536e219a14f43a861677473beea8f1d6a605e15105b6ca6e6e724c1710",
+    "024_insert_acoes_administrativas_grupos.sql": "2d92088fb2b99ccc799fc4802ba0d3bd784018918a39ace86cd763bb80b9e642"
   }
 }

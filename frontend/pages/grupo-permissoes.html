@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Permissões do Grupo — Gestão de EPIs</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+  <link rel="stylesheet" href="../css/main.css">
+</head>
+<!--
+  Permissões dos Grupos de Acesso (Bloco 8, Incremento 8, Etapa 5A,
+  Subetapa 3T).
+
+  Segunda página ligada ao backend real. Usa a fundação da 3R
+  (js/api-http.js + js/auth-session.js), os contratos da 3N, a listagem
+  de grupos da 3S (js/grupos-acesso.js) e o catálogo de ações da própria
+  3T. Não carrega js/db-api.js nem js/main.js: o protótipo em
+  localStorage e as 21 páginas antigas continuam intactos.
+
+  O QUE ESTA TELA CONFIGURA, em uma frase: o que um GRUPO acrescenta ou
+  tira em relação ao perfil de cada pessoa. Por isso todo controle tem
+  três estados, e não dois — "herdar do perfil" é um estado legítimo e é
+  o padrão.
+
+  Aceita ?grupo=<id> na URL para abrir já num grupo (é assim que o link
+  da tela de grupos chega aqui). O identificador não é autoridade
+  nenhuma: o backend revalida empresa, sessão e autoridade a cada
+  requisição, e devolve 403/404 se não for o caso.
+-->
+<body>
+
+<!-- ══ LOGIN REAL ══ Mesma razão da tela de grupos: o login legado
+     valida senha contra o localStorage e não emite sessão no servidor. -->
+<div id="telaLogin" style="position:fixed;inset:0;z-index:10000;background:var(--surface);
+     display:flex;align-items:center;justify-content:center;padding:20px">
+  <div style="width:100%;max-width:400px">
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="width:64px;height:64px;border-radius:20px;background:#1a3a6b;
+                  display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
+        <span class="material-symbols-outlined" style="font-size:32px;color:#fff">lock_person</span>
+      </div>
+      <h1 style="font-size:20px;font-weight:700;margin:0">Permissões de Grupo</h1>
+      <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Autenticação no servidor</p>
+    </div>
+
+    <section class="card">
+      <form id="formLogin" autocomplete="on">
+        <div class="form-grid" style="margin-bottom:4px">
+          <div class="field full">
+            <label for="loginCnpj">CNPJ da empresa</label>
+            <input id="loginCnpj" name="cnpj" class="input" type="text" inputmode="text"
+                   placeholder="00.000.000/0000-00" autocomplete="organization" required>
+          </div>
+          <div class="field full">
+            <label for="loginEmail">E-mail corporativo</label>
+            <input id="loginEmail" name="email" class="input" type="email"
+                   placeholder="seu.nome@empresa.com.br" autocomplete="username" required>
+          </div>
+          <div class="field full">
+            <label for="loginSenha">Senha</label>
+            <input id="loginSenha" name="senha" class="input" type="password"
+                   placeholder="••••••••" autocomplete="current-password" required>
+          </div>
+        </div>
+
+        <div id="erroLogin" style="display:none;margin-bottom:10px">
+          <div class="notice" style="background:var(--error-container);color:var(--error);border-color:rgba(255,59,48,0.2)"></div>
+        </div>
+
+        <button type="submit" id="botaoEntrar" class="filled-btn" style="width:100%;height:48px">
+          <span class="material-symbols-outlined">login</span>Entrar
+        </button>
+      </form>
+
+      <div class="preview-note" style="margin-top:16px">
+        Esta tela autentica no backend e recebe um cookie de sessão HttpOnly.
+        Nada é guardado no navegador: nem senha, nem token, nem sessão.
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-left">
+        <div class="brand-badge">security</div>
+        <div>
+          <div class="brand-title">Gestão de EPIs</div>
+          <div class="brand-sub" style="font-size:11px;color:var(--on-surface-variant);margin-top:2px;">Acessos</div>
+        </div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-section">Administração</div>
+      <a href="grupos-acesso.html"><div class="nav-icon indigo">groups</div>Grupos de Acesso</a>
+      <a class="active" href="javascript:void(0)"><div class="nav-icon indigo">lock_person</div>Permissões do Grupo</a>
+      <!-- Subetapa 3U: quem está em cada grupo. -->
+      <a href="grupo-usuarios.html"><div class="nav-icon indigo">group_add</div>Integrantes do Grupo</a>
+      <!-- Subetapa 3V: autorizações individuais e delegações. -->
+      <a href="autorizacoes-individuais.html"><div class="nav-icon indigo">verified_user</div>Autorizações Individuais</a>
+      <div class="nav-section">Sistema</div>
+      <a href="dashboard.html"><div class="nav-icon blue">dashboard</div>Voltar ao sistema</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <div class="page-actions">
+      <div>
+        <h2 style="font-family:var(--font-brand);font-size:22px;line-height:1.1;letter-spacing:-0.4px;font-weight:500">Permissões do Grupo</h2>
+        <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">
+          Cada permissão pode <strong>permitir</strong>, <strong>negar</strong> ou <strong>herdar do perfil</strong>.
+          Negar não é o mesmo que herdar: negar tira um acesso que o perfil daria.
+        </p>
+      </div>
+      <div class="inline-actions">
+        <span id="identidade" style="font-size:13px;color:var(--on-surface-variant);align-self:center"></span>
+        <button id="botaoSair" class="outlined-btn"><span class="material-symbols-outlined">logout</span>Sair</button>
+      </div>
+    </div>
+
+    <div id="aviso" style="display:none;margin-bottom:18px"></div>
+
+    <section class="card" style="margin-bottom:18px">
+      <div class="card-header">
+        <div class="card-title">
+          <div class="card-icon">groups</div>
+          <div>
+            <h2>Grupo</h2>
+            <p style="font-size:12px;color:var(--on-surface-variant);margin-top:2px">
+              Escolha o grupo cujas permissões você quer ver ou ajustar.
+            </p>
+          </div>
+        </div>
+      </div>
+      <div class="filters-grid">
+        <div class="field full">
+          <label for="seletorGrupo">Grupo de acesso</label>
+          <select id="seletorGrupo" class="select">
+            <option value="">Selecione…</option>
+          </select>
+        </div>
+        <div class="filters-actions">
+          <button id="botaoRecarregar" class="outlined-btn">
+            <span class="material-symbols-outlined">refresh</span>Recarregar
+          </button>
+        </div>
+      </div>
+      <div id="avisoGrupoInativo" style="display:none;margin-top:12px">
+        <div class="notice">
+          Este grupo está <strong>inativo</strong>. Enquanto estiver assim, o que ele
+          <strong>permite</strong> não vale para ninguém — mas o que ele <strong>nega</strong> continua valendo.
+          As configurações abaixo ficam guardadas e voltam a valer quando o grupo for reativado.
+        </div>
+      </div>
+    </section>
+
+    <section class="card" style="margin-bottom:18px">
+      <div class="card-header">
+        <div class="card-title">
+          <div class="card-icon">grid_view</div>
+          <div>
+            <h2>Páginas e módulos</h2>
+            <p style="font-size:12px;color:var(--on-surface-variant);margin-top:2px">
+              Visualizar, criar, editar e excluir são independentes: mexer em uma não altera as outras.
+            </p>
+          </div>
+        </div>
+      </div>
+      <div id="listaRecursos"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <div class="card-icon">bolt</div>
+          <div>
+            <h2>Ações do sistema</h2>
+            <p style="font-size:12px;color:var(--on-surface-variant);margin-top:2px">
+              Só ações do tipo “alternativa” aceitam permitir ou negar por grupo. As demais só podem herdar do perfil.
+            </p>
+          </div>
+        </div>
+      </div>
+      <div id="listaAcoes"></div>
+    </section>
+  </main>
+</div>
+
+<script src="../js/api-http.js"></script>
+<script src="../js/auth-session.js"></script>
+<script src="../js/grupos-acesso.js"></script>
+<script src="../js/grupo-permissoes.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  EpiHttp.configurar({ baseUrl: 'http://localhost:3000/api' });
+
+  var mensagens = EpiGrupoPermissoes.mensagens;
+  var render = EpiGrupoPermissoes.render;
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  // ── adaptador de DOM ───────────────────────────────────────────────
+  // Este arquivo não tem mais sequência assíncrona nenhuma: só lê e
+  // escreve no DOM. Toda a ordem das requisições — e a guarda contra
+  // resposta fora de ordem — vive em js/grupo-permissoes.js, onde pode
+  // ser testada sem navegador (correção pós-auditoria da 3T).
+  var ui = {
+    renderRecursos: function (html) { $('listaRecursos').innerHTML = html; },
+    renderAcoes: function (html) { $('listaAcoes').innerHTML = html; },
+
+    aviso: function (texto, tipo) {
+      var caixa = $('aviso');
+      if (!texto) { caixa.style.display = 'none'; caixa.innerHTML = ''; return; }
+      caixa.innerHTML = tipo === 'erro'
+        ? render.falha(texto)
+        : '<div class="notice" style="background:var(--success-container,#e8f5e9);color:var(--success);border-color:rgba(52,199,89,0.2)">'
+          + render.escaparHtml(texto) + '</div>';
+      caixa.style.display = 'block';
+    },
+
+    grupoInativo: function (inativo) {
+      $('avisoGrupoInativo').style.display = inativo ? 'block' : 'none';
+    },
+
+    sessaoExpirada: function (mensagem) {
+      $('telaLogin').style.display = 'flex';
+      ui.aviso('', null);
+      erroLogin(mensagem);
+    },
+  };
+
+  var controlador = EpiGrupoPermissoes.criarControlador({ ui: ui });
+
+  function erroLogin(texto) {
+    var caixa = $('erroLogin');
+    if (!texto) { caixa.style.display = 'none'; return; }
+    caixa.querySelector('.notice').textContent = texto;
+    caixa.style.display = 'block';
+  }
+
+  // ── seleção de grupo ───────────────────────────────────────────────
+  async function carregarGrupos() {
+    var resposta = await EpiGrupos.acoes.listar({});
+    if (!resposta.ok) {
+      if (EpiGrupos.mensagens.exigeNovoLogin(resposta)) {
+        ui.sessaoExpirada(EpiGrupos.mensagens.deErro(resposta));
+        return;
+      }
+      ui.aviso(EpiGrupos.mensagens.deErro(resposta), 'erro');
+      return;
+    }
+
+    var grupos = resposta.dados.grupos || [];
+    var seletor = $('seletorGrupo');
+    seletor.innerHTML = '<option value="">Selecione…</option>'
+      + grupos.map(function (g) {
+        return '<option value="' + render.escaparHtml(g.id) + '" data-ativo="' + (g.ativo ? 'true' : 'false') + '">'
+          + render.escaparHtml(g.nome) + (g.ativo ? '' : ' (inativo)') + '</option>';
+      }).join('');
+
+    // ?grupo=<id> só pré-seleciona; quem decide o que pode é o backend.
+    var pedido = new URLSearchParams(window.location.search).get('grupo');
+    if (pedido && seletor.querySelector('option[value="' + CSS.escape(pedido) + '"]')) {
+      seletor.value = pedido;
+      await selecionarDoSeletor();
+    }
+  }
+
+  /** Lê o seletor e entrega ao controlador — que cuida da ordem. */
+  function selecionarDoSeletor() {
+    var seletor = $('seletorGrupo');
+    var escolhida = seletor.options[seletor.selectedIndex];
+    return controlador.selecionar(seletor.value === '' ? null : seletor.value, {
+      nome: escolhida ? escolhida.textContent.trim() : '',
+      inativo: !!escolhida && escolhida.getAttribute('data-ativo') === 'false',
+    });
+  }
+
+  /** Lê os quatro <select> de uma linha de recurso. */
+  function lerLinhaRecurso(linha) {
+    var valores = {};
+    EpiGrupoPermissoes.OPERACOES.forEach(function (operacao) {
+      var campo = linha.querySelector('[data-campo="' + operacao + '"]');
+      if (campo) valores[operacao] = render.paraValor(campo.value);
+    });
+    return valores;
+  }
+
+  // ── gravação ───────────────────────────────────────────────────────
+  async function salvarRecurso(recurso, botao) {
+    botao.disabled = true;
+    try {
+      await controlador.salvarRecurso(recurso, lerLinhaRecurso(botao.closest('tr')));
+    } finally {
+      // O botão pode ter sido recriado por uma troca de grupo no meio do
+      // caminho; nesse caso não há o que reabilitar.
+      if (botao.isConnected) botao.disabled = false;
+    }
+  }
+
+  async function salvarAcao(codigo, botao) {
+    var campo = botao.closest('tr').querySelector('[data-campo="permitido"]');
+    botao.disabled = true;
+    try {
+      await controlador.salvarAcao(codigo, render.paraValor(campo.value));
+    } finally {
+      if (botao.isConnected) botao.disabled = false;
+    }
+  }
+
+  // ── sessão ─────────────────────────────────────────────────────────
+  async function entrar(evento) {
+    evento.preventDefault();
+    erroLogin('');
+    $('botaoEntrar').disabled = true;
+    try {
+      var r = await EpiAuth.entrar({
+        cnpj: $('loginCnpj').value.trim(),
+        email: $('loginEmail').value.trim(),
+        senha: $('loginSenha').value,
+      });
+      if (!r.ok) {
+        erroLogin(r.resposta.status === 401 ? EpiAuth.MENSAGEM_CREDENCIAIS : mensagens.deErro(r.resposta));
+        return;
+      }
+      $('loginSenha').value = '';   // a senha não fica nem no campo
+      await iniciarSessao(r.identidade);
+    } finally {
+      $('botaoEntrar').disabled = false;
+    }
+  }
+
+  async function iniciarSessao(identidade) {
+    $('telaLogin').style.display = 'none';
+    // Só para exibição — quem autoriza é o backend, a cada requisição.
+    $('identidade').textContent = identidade.usuario.nome + ' · ' + identidade.empresa.nome;
+    controlador.mostrarSemGrupo();
+    await carregarGrupos();
+  }
+
+  async function sair() {
+    // Encerrar ANTES do logout: o que estiver em voo já nasce obsoleto e
+    // não vai escrever nada na tela depois que ela for limpa.
+    controlador.encerrar();
+    await EpiAuth.sair();
+    $('identidade').textContent = '';
+    $('seletorGrupo').innerHTML = '<option value="">Selecione…</option>';
+    $('listaRecursos').innerHTML = '';
+    $('listaAcoes').innerHTML = '';
+    $('telaLogin').style.display = 'flex';
+  }
+
+  // ── eventos ────────────────────────────────────────────────────────
+  $('formLogin').addEventListener('submit', entrar);
+  $('botaoSair').addEventListener('click', sair);
+  $('seletorGrupo').addEventListener('change', selecionarDoSeletor);
+  $('botaoRecarregar').addEventListener('click', function () { controlador.recarregar(); });
+
+  // Delegação: as tabelas são recriadas a cada troca de grupo.
+  $('listaRecursos').addEventListener('click', function (evento) {
+    var botao = evento.target.closest('[data-acao="salvar-recurso"]');
+    if (botao) salvarRecurso(botao.getAttribute('data-recurso'), botao);
+  });
+
+  $('listaAcoes').addEventListener('click', function (evento) {
+    var botao = evento.target.closest('[data-acao="salvar-acao"]');
+    if (botao) salvarAcao(botao.getAttribute('data-acao-codigo'), botao);
+  });
+
+  // O cookie sobrevive ao F5, mas o JavaScript não consegue lê-lo: a
+  // única forma de saber se há sessão é perguntar ao servidor.
+  (async function () {
+    var sessao = await EpiAuth.sessaoAtual();
+    if (sessao.autenticado) await iniciarSessao(sessao.identidade);
+  })();
+})();
+</script>
+</body>
+</html>

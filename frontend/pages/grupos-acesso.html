@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grupos de Acesso — Gestão de EPIs</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+  <link rel="stylesheet" href="../css/main.css">
+</head>
+<!--
+  Gestão dos Grupos de Acesso (Bloco 8, Incremento 8, Etapa 5A, Subetapa 3S).
+
+  Primeira página do sistema ligada ao BACKEND REAL. Usa exclusivamente a
+  fundação da 3R (js/api-http.js + js/auth-session.js) e os contratos da
+  3M, com sessão por cookie HttpOnly. Não carrega js/db-api.js nem
+  js/main.js: o protótipo em localStorage e todas as páginas antigas
+  seguem funcionando exatamente como antes, sem nenhuma interferência —
+  as duas sessões não se encontram em lugar nenhum.
+
+  A barra lateral liga esta página à de permissões (Subetapa 3T) e ao
+  sistema legado. O caminho inverso — acrescentar estas telas ao menu das
+  21 páginas antigas — exigiria editá-las, e nenhuma subetapa autorizou
+  isso até aqui.
+-->
+<body>
+
+<!-- ══ LOGIN REAL ══ Existe porque o login legado (js/main.js) valida a
+     senha contra o localStorage e nunca emite sessão no servidor: sem
+     este, toda chamada às rotas da 3M receberia 401. -->
+<div id="telaLogin" style="position:fixed;inset:0;z-index:10000;background:var(--surface);
+     display:flex;align-items:center;justify-content:center;padding:20px">
+  <div style="width:100%;max-width:400px">
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="width:64px;height:64px;border-radius:20px;background:#1a3a6b;
+                  display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
+        <span class="material-symbols-outlined" style="font-size:32px;color:#fff">security</span>
+      </div>
+      <h1 style="font-size:20px;font-weight:700;margin:0">Gestão de Acessos</h1>
+      <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Autenticação no servidor</p>
+    </div>
+
+    <section class="card">
+      <form id="formLogin" autocomplete="on">
+        <div class="form-grid" style="margin-bottom:4px">
+          <div class="field full">
+            <label for="loginCnpj">CNPJ da empresa</label>
+            <input id="loginCnpj" name="cnpj" class="input" type="text" inputmode="text"
+                   placeholder="00.000.000/0000-00" autocomplete="organization" required>
+          </div>
+          <div class="field full">
+            <label for="loginEmail">E-mail corporativo</label>
+            <input id="loginEmail" name="email" class="input" type="email"
+                   placeholder="seu.nome@empresa.com.br" autocomplete="username" required>
+          </div>
+          <div class="field full">
+            <label for="loginSenha">Senha</label>
+            <input id="loginSenha" name="senha" class="input" type="password"
+                   placeholder="••••••••" autocomplete="current-password" required>
+          </div>
+        </div>
+
+        <div id="erroLogin" style="display:none;margin-bottom:10px">
+          <div class="notice" style="background:var(--error-container);color:var(--error);border-color:rgba(255,59,48,0.2)"></div>
+        </div>
+
+        <button type="submit" id="botaoEntrar" class="filled-btn" style="width:100%;height:48px">
+          <span class="material-symbols-outlined">login</span>Entrar
+        </button>
+      </form>
+
+      <div class="preview-note" style="margin-top:16px">
+        Esta tela autentica no backend e recebe um cookie de sessão HttpOnly.
+        Nada é guardado no navegador: nem senha, nem token, nem sessão.
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-left">
+        <div class="brand-badge">security</div>
+        <div>
+          <div class="brand-title">Gestão de EPIs</div>
+          <div class="brand-sub" style="font-size:11px;color:var(--on-surface-variant);margin-top:2px;">Acessos</div>
+        </div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-section">Administração</div>
+      <a class="active" href="javascript:void(0)"><div class="nav-icon indigo">groups</div>Grupos de Acesso</a>
+      <!-- Subetapa 3T: a configuração das permissões é outra tela. O link
+           é só navegação — ela revalida sessão e autoridade no backend. -->
+      <a href="grupo-permissoes.html"><div class="nav-icon indigo">lock_person</div>Permissões do Grupo</a>
+      <!-- Subetapa 3U: quem está em cada grupo. Link é só navegação —
+           a tela revalida sessão e autoridade no backend. -->
+      <a href="grupo-usuarios.html"><div class="nav-icon indigo">group_add</div>Integrantes do Grupo</a>
+      <!-- Subetapa 3V: autorizações individuais e delegações. -->
+      <a href="autorizacoes-individuais.html"><div class="nav-icon indigo">verified_user</div>Autorizações Individuais</a>
+      <div class="nav-section">Sistema</div>
+      <a href="dashboard.html"><div class="nav-icon blue">dashboard</div>Voltar ao sistema</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <div class="page-actions">
+      <div>
+        <h2 style="font-family:var(--font-brand);font-size:22px;line-height:1.1;letter-spacing:-0.4px;font-weight:500">Grupos de Acesso</h2>
+        <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">
+          Grupos personalizados da empresa. O nome é apenas um rótulo: ele não cria permissões nem vínculo de SST.
+        </p>
+      </div>
+      <div class="inline-actions">
+        <span id="identidade" style="font-size:13px;color:var(--on-surface-variant);align-self:center"></span>
+        <button id="botaoNovo" class="filled-btn"><span class="material-symbols-outlined">add</span>Novo grupo</button>
+        <button id="botaoSair" class="outlined-btn"><span class="material-symbols-outlined">logout</span>Sair</button>
+      </div>
+    </div>
+
+    <div id="aviso" style="display:none;margin-bottom:18px"></div>
+
+    <section class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <div class="card-icon">groups</div>
+          <div>
+            <h2>Grupos da empresa</h2>
+            <p>Grupos inativos continuam existindo: suas negações seguem valendo e suas concessões ficam suspensas.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="filters-grid" style="margin-bottom:18px">
+        <div class="field">
+          <label for="filtroSituacao">Situação</label>
+          <select id="filtroSituacao" class="select">
+            <option value="">Todos</option>
+            <option value="true">Somente ativos</option>
+            <option value="false">Somente inativos</option>
+          </select>
+        </div>
+        <div class="filters-actions">
+          <button id="botaoAtualizar" class="outlined-btn"><span class="material-symbols-outlined">refresh</span>Atualizar</button>
+        </div>
+      </div>
+
+      <div id="lista"></div>
+    </section>
+  </main>
+</div>
+
+<!-- ══ MODAL: criar / editar ══ -->
+<div class="modal-overlay" id="modalGrupo">
+  <div class="modal-card">
+    <div class="modal-header">
+      <div class="modal-title">
+        <div class="card-icon">groups</div>
+        <div>
+          <h2 id="modalTitulo" style="font-size:18px">Novo grupo</h2>
+          <p style="font-size:13px;color:var(--on-surface-variant)">Nome e descrição. A situação é alterada pelas ações da lista.</p>
+        </div>
+      </div>
+      <button class="modal-close" data-fechar="modalGrupo">close</button>
+    </div>
+
+    <form id="formGrupo">
+      <div class="form-grid">
+        <div class="field full">
+          <label for="campoNome">Nome</label>
+          <input id="campoNome" class="input" type="text" maxlength="100" required placeholder="Ex.: Almoxarifado">
+        </div>
+        <div class="field full">
+          <label for="campoDescricao">Descrição (opcional)</label>
+          <input id="campoDescricao" class="input" type="text" maxlength="500" placeholder="Para que serve este grupo">
+        </div>
+      </div>
+
+      <div id="erroFormulario" style="display:none;margin:10px 0"></div>
+
+      <div class="footer-actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px">
+        <button type="button" class="outlined-btn" data-fechar="modalGrupo">Cancelar</button>
+        <button type="submit" id="botaoSalvar" class="filled-btn"><span class="material-symbols-outlined">save</span>Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ══ MODAL: confirmação de inativação ══ -->
+<div class="modal-overlay" id="modalConfirmar">
+  <div class="modal-card" style="max-width:460px">
+    <div class="modal-header">
+      <div class="modal-title">
+        <div class="card-icon" style="background:var(--error-container);color:var(--error)">warning</div>
+        <div>
+          <h2 id="confirmarTitulo" style="font-size:18px">Inativar grupo</h2>
+          <p id="confirmarTexto" style="font-size:13px;color:var(--on-surface-variant)"></p>
+        </div>
+      </div>
+      <button class="modal-close" data-fechar="modalConfirmar">close</button>
+    </div>
+    <div class="preview-note">
+      Nada é excluído: o grupo continua existindo, com suas permissões e seus usuários vinculados.
+    </div>
+    <div class="footer-actions" style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px">
+      <button type="button" class="outlined-btn" data-fechar="modalConfirmar">Cancelar</button>
+      <button type="button" id="botaoConfirmar" class="filled-btn">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/api-http.js"></script>
+<script src="../js/auth-session.js"></script>
+<script src="../js/grupos-acesso.js"></script>
+<script>
+/*
+  Ligação com o DOM — deliberadamente fina. Toda a lógica (chamadas à API,
+  tradução de erro e montagem de HTML escapado) vive em js/grupos-acesso.js,
+  que é testado sem navegador. Aqui só há eventos, exibição e foco.
+*/
+(function () {
+  'use strict';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var acoes = EpiGrupos.acoes, mensagens = EpiGrupos.mensagens, render = EpiGrupos.render;
+
+  // O backend do projeto sobe em :3000 (PORT do .env.example). Servir esta
+  // página em http://localhost:5500 (a origem já presente na allowlist de
+  // CORS_ORIGIN) é o que permite o cookie de sessão funcionar — sob
+  // file:// o navegador não o envia.
+  EpiHttp.configurar({ baseUrl: 'http://localhost:3000/api' });
+
+  var grupoEmEdicao = null;   // null = criação
+  var confirmacaoPendente = null;
+
+  function mostrarAviso(texto, tipo) {
+    var caixa = $('aviso');
+    if (!texto) { caixa.style.display = 'none'; caixa.innerHTML = ''; return; }
+    var cor = tipo === 'erro'
+      ? 'background:var(--error-container);color:var(--error);border-color:rgba(255,59,48,0.2)'
+      : 'background:var(--success-container);color:#1A7A35;border-color:rgba(52,199,89,0.2)';
+    caixa.innerHTML = '<div class="notice" style="' + cor + '">' + render.escaparHtml(texto) + '</div>';
+    caixa.style.display = 'block';
+  }
+
+  function abrir(id) { $(id).classList.add('open'); }
+  function fechar(id) { $(id).classList.remove('open'); }
+
+  /** Qualquer 401 devolve a pessoa ao login: a sessão acabou no servidor. */
+  function tratarSessao(resposta) {
+    if (!mensagens.exigeNovoLogin(resposta)) return false;
+    $('telaLogin').style.display = 'flex';
+    mostrarAviso('', null);
+    erroLogin(mensagens.deErro(resposta));
+    return true;
+  }
+
+  function erroLogin(texto) {
+    var caixa = $('erroLogin');
+    if (!texto) { caixa.style.display = 'none'; return; }
+    caixa.querySelector('.notice').textContent = texto;
+    caixa.style.display = 'block';
+  }
+
+  // ── listagem ───────────────────────────────────────────────────────
+  async function carregarLista() {
+    var alvo = $('lista');
+    alvo.innerHTML = render.carregando();
+
+    var filtro = $('filtroSituacao').value;
+    var resposta = await acoes.listar(filtro === '' ? {} : { ativo: filtro === 'true' });
+
+    if (!resposta.ok) {
+      if (tratarSessao(resposta)) return;
+      alvo.innerHTML = render.falha(mensagens.deErro(resposta));
+      return;
+    }
+
+    var grupos = resposta.dados.grupos || [];
+    alvo.innerHTML = grupos.length === 0 ? render.vazia() : render.tabela(grupos);
+  }
+
+  // ── criar / editar ─────────────────────────────────────────────────
+  function abrirCriacao() {
+    grupoEmEdicao = null;
+    $('modalTitulo').textContent = 'Novo grupo';
+    $('campoNome').value = '';
+    $('campoDescricao').value = '';
+    $('erroFormulario').style.display = 'none';
+    abrir('modalGrupo');
+    $('campoNome').focus();
+  }
+
+  async function abrirEdicao(id) {
+    var resposta = await acoes.buscar(id);
+    if (!resposta.ok) {
+      if (tratarSessao(resposta)) return;
+      mostrarAviso(mensagens.deErro(resposta), 'erro');
+      return;
+    }
+    grupoEmEdicao = resposta.dados.grupo;
+    $('modalTitulo').textContent = 'Editar grupo';
+    $('campoNome').value = grupoEmEdicao.nome;
+    $('campoDescricao').value = grupoEmEdicao.descricao || '';
+    $('erroFormulario').style.display = 'none';
+    abrir('modalGrupo');
+    $('campoNome').focus();
+  }
+
+  async function salvar(evento) {
+    evento.preventDefault();
+    var nome = $('campoNome').value.trim();
+    var descricao = $('campoDescricao').value.trim();
+    var caixaErro = $('erroFormulario');
+    caixaErro.style.display = 'none';
+    $('botaoSalvar').disabled = true;
+
+    try {
+      var resposta = grupoEmEdicao === null
+        ? await acoes.criar({ nome: nome, descricao: descricao })
+        : await acoes.alterar(grupoEmEdicao.id, { nome: nome, descricao: descricao });
+
+      if (!resposta.ok) {
+        if (tratarSessao(resposta)) { fechar('modalGrupo'); return; }
+        caixaErro.innerHTML = render.falha(mensagens.deErro(resposta));
+        caixaErro.style.display = 'block';
+        return;
+      }
+
+      fechar('modalGrupo');
+      mostrarAviso(mensagens.deSucesso(grupoEmEdicao === null ? 'criar' : 'alterar', resposta.dados.grupo), 'ok');
+      await carregarLista();
+    } finally {
+      $('botaoSalvar').disabled = false;
+    }
+  }
+
+  // ── inativar / reativar ────────────────────────────────────────────
+  function pedirConfirmacao(id, ativo) {
+    confirmacaoPendente = { id: id, inativar: ativo };
+    $('confirmarTitulo').textContent = ativo ? 'Inativar grupo' : 'Reativar grupo';
+    $('confirmarTexto').textContent = ativo
+      ? 'As concessões deste grupo deixam de valer enquanto ele estiver inativo. As negações continuam valendo.'
+      : 'As concessões deste grupo voltam a valer para quem estiver vinculado a ele.';
+    $('botaoConfirmar').textContent = ativo ? 'Inativar' : 'Reativar';
+    abrir('modalConfirmar');
+  }
+
+  async function confirmar() {
+    if (!confirmacaoPendente) return;
+    var pendente = confirmacaoPendente;
+    confirmacaoPendente = null;
+    fechar('modalConfirmar');
+
+    var resposta = pendente.inativar ? await acoes.inativar(pendente.id) : await acoes.reativar(pendente.id);
+    if (!resposta.ok) {
+      if (tratarSessao(resposta)) return;
+      mostrarAviso(mensagens.deErro(resposta), 'erro');
+      return;
+    }
+
+    mostrarAviso(mensagens.deSucesso(pendente.inativar ? 'inativar' : 'reativar', resposta.dados.grupo), 'ok');
+    await carregarLista();
+  }
+
+  // ── sessão ─────────────────────────────────────────────────────────
+  async function entrar(evento) {
+    evento.preventDefault();
+    erroLogin('');
+    $('botaoEntrar').disabled = true;
+    try {
+      var r = await EpiAuth.entrar({
+        cnpj: $('loginCnpj').value.trim(),
+        email: $('loginEmail').value.trim(),
+        senha: $('loginSenha').value,
+      });
+      if (!r.ok) {
+        erroLogin(r.resposta.status === 401 ? EpiAuth.MENSAGEM_CREDENCIAIS : mensagens.deErro(r.resposta));
+        return;
+      }
+      $('loginSenha').value = '';   // a senha não fica nem no campo
+      await iniciarSessao(r.identidade);
+    } finally {
+      $('botaoEntrar').disabled = false;
+    }
+  }
+
+  async function iniciarSessao(identidade) {
+    $('telaLogin').style.display = 'none';
+    // Só para exibição — quem autoriza é o backend, a cada requisição.
+    $('identidade').textContent = identidade.usuario.nome + ' · ' + identidade.empresa.nome;
+    await carregarLista();
+  }
+
+  async function sair() {
+    await EpiAuth.sair();
+    $('identidade').textContent = '';
+    $('lista').innerHTML = '';
+    mostrarAviso('', null);
+    $('telaLogin').style.display = 'flex';
+  }
+
+  // ── eventos ────────────────────────────────────────────────────────
+  $('formLogin').addEventListener('submit', entrar);
+  $('formGrupo').addEventListener('submit', salvar);
+  $('botaoNovo').addEventListener('click', abrirCriacao);
+  $('botaoSair').addEventListener('click', sair);
+  $('botaoAtualizar').addEventListener('click', carregarLista);
+  $('filtroSituacao').addEventListener('change', carregarLista);
+  $('botaoConfirmar').addEventListener('click', confirmar);
+
+  document.querySelectorAll('[data-fechar]').forEach(function (botao) {
+    botao.addEventListener('click', function () { fechar(botao.getAttribute('data-fechar')); });
+  });
+
+  // Delegação: as linhas são recriadas a cada atualização da lista.
+  $('lista').addEventListener('click', function (evento) {
+    var botao = evento.target.closest('[data-acao]');
+    if (!botao) return;
+    var id = Number(botao.getAttribute('data-id'));
+    var acao = botao.getAttribute('data-acao');
+    if (acao === 'editar') return abrirEdicao(id);
+    if (acao === 'inativar') return pedirConfirmacao(id, true);
+    if (acao === 'reativar') return pedirConfirmacao(id, false);
+  });
+
+  // O cookie sobrevive ao F5, mas o JavaScript não consegue lê-lo: a
+  // única forma de saber se há sessão é perguntar ao servidor.
+  (async function () {
+    var sessao = await EpiAuth.sessaoAtual();
+    if (sessao.autenticado) await iniciarSessao(sessao.identidade);
+  })();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Integrantes do Grupo — Gestão de EPIs</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+  <link rel="stylesheet" href="../css/main.css">
+</head>
+<!--
+  Integrantes dos Grupos de Acesso (Bloco 8, Incremento 8, Etapa 5A,
+  Subetapa 3U).
+
+  Terceira página ligada ao backend real. Usa a fundação da 3R
+  (js/api-http.js + js/auth-session.js), a listagem de grupos da 3S
+  (js/grupos-acesso.js), os contratos da 3O e a consulta de usuários
+  criada nesta subetapa. Não carrega js/db-api.js nem js/main.js: o
+  protótipo em localStorage e as 21 páginas antigas continuam intactos.
+
+  O QUE ESTA TELA FAZ: diz quem está em cada grupo, e deixa colocar e
+  tirar pessoas. Não cria, não altera e não exclui usuário nenhum — a
+  única escrita é sobre o vínculo (usuarios.grupo_acesso_id).
+
+  Aceita ?grupo=<id> na URL, como a tela de permissões. O identificador
+  não é autoridade nenhuma: o backend revalida empresa, sessão e
+  autoridade a cada requisição.
+
+  Toda a sequência assíncrona vive em js/grupo-usuarios.js, com a guarda
+  de geração aprendida na correção da 3T — aqui aplicada desde o início,
+  e não depois de uma auditoria. Este arquivo só lê e escreve no DOM.
+-->
+<body>
+
+<!-- ══ LOGIN REAL ══ Mesma razão das telas anteriores: o login legado
+     valida senha contra o localStorage e não emite sessão no servidor. -->
+<div id="telaLogin" style="position:fixed;inset:0;z-index:10000;background:var(--surface);
+     display:flex;align-items:center;justify-content:center;padding:20px">
+  <div style="width:100%;max-width:400px">
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="width:64px;height:64px;border-radius:20px;background:#1a3a6b;
+                  display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
+        <span class="material-symbols-outlined" style="font-size:32px;color:#fff">group_add</span>
+      </div>
+      <h1 style="font-size:20px;font-weight:700;margin:0">Integrantes do Grupo</h1>
+      <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Autenticação no servidor</p>
+    </div>
+
+    <section class="card">
+      <form id="formLogin" autocomplete="on">
+        <div class="form-grid" style="margin-bottom:4px">
+          <div class="field full">
+            <label for="loginCnpj">CNPJ da empresa</label>
+            <input id="loginCnpj" name="cnpj" class="input" type="text" inputmode="text"
+                   placeholder="00.000.000/0000-00" autocomplete="organization" required>
+          </div>
+          <div class="field full">
+            <label for="loginEmail">E-mail corporativo</label>
+            <input id="loginEmail" name="email" class="input" type="email"
+                   placeholder="seu.nome@empresa.com.br" autocomplete="username" required>
+          </div>
+          <div class="field full">
+            <label for="loginSenha">Senha</label>
+            <input id="loginSenha" name="senha" class="input" type="password"
+                   placeholder="••••••••" autocomplete="current-password" required>
+          </div>
+        </div>
+
+        <div id="erroLogin" style="display:none;margin-bottom:10px">
+          <div class="notice" style="background:var(--error-container);color:var(--error);border-color:rgba(255,59,48,0.2)"></div>
+        </div>
+
+        <button type="submit" id="botaoEntrar" class="filled-btn" style="width:100%;height:48px">
+          <span class="material-symbols-outlined">login</span>Entrar
+        </button>
+      </form>
+
+      <div class="preview-note" style="margin-top:16px">
+        Esta tela autentica no backend e recebe um cookie de sessão HttpOnly.
+        Nada é guardado no navegador: nem senha, nem token, nem sessão.
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-left">
+        <div class="brand-badge">security</div>
+        <div>
+          <div class="brand-title">Gestão de EPIs</div>
+          <div class="brand-sub" style="font-size:11px;color:var(--on-surface-variant);margin-top:2px;">Acessos</div>
+        </div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-section">Administração</div>
+      <a href="grupos-acesso.html"><div class="nav-icon indigo">groups</div>Grupos de Acesso</a>
+      <a href="grupo-permissoes.html"><div class="nav-icon indigo">lock_person</div>Permissões do Grupo</a>
+      <a class="active" href="javascript:void(0)"><div class="nav-icon indigo">group_add</div>Integrantes do Grupo</a>
+      <!-- Subetapa 3V: autorizações individuais e delegações. -->
+      <a href="autorizacoes-individuais.html"><div class="nav-icon indigo">verified_user</div>Autorizações Individuais</a>
+      <div class="nav-section">Sistema</div>
+      <a href="dashboard.html"><div class="nav-icon blue">dashboard</div>Voltar ao sistema</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <div class="page-actions">
+      <div>
+        <h2 style="font-family:var(--font-brand);font-size:22px;line-height:1.1;letter-spacing:-0.4px;font-weight:500">Integrantes do Grupo</h2>
+        <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">
+          Cada pessoa pertence a <strong>um grupo por vez</strong>. Incluir alguém que já está em outro grupo
+          transfere essa pessoa. Retirar não exclui ninguém do sistema.
+        </p>
+      </div>
+      <div class="inline-actions">
+        <span id="identidade" style="font-size:13px;color:var(--on-surface-variant);align-self:center"></span>
+        <button id="botaoSair" class="outlined-btn"><span class="material-symbols-outlined">logout</span>Sair</button>
+      </div>
+    </div>
+
+    <div id="aviso" style="display:none;margin-bottom:18px"></div>
+
+    <section class="card" style="margin-bottom:18px">
+      <div class="card-header">
+        <div class="card-title">
+          <div class="card-icon">groups</div>
+          <div>
+            <h2>Grupo</h2>
+            <p style="font-size:12px;color:var(--on-surface-variant);margin-top:2px">
+              Escolha o grupo cujos integrantes você quer ver ou ajustar.
+            </p>
+          </div>
+        </div>
+      </div>
+      <div class="filters-grid">
+        <div class="field full">
+          <label for="seletorGrupo">Grupo de acesso</label>
+          <select id="seletorGrupo" class="select">
+            <option value="">Selecione…</option>
+          </select>
+        </div>
+        <div class="filters-actions">
+          <button id="botaoRecarregar" class="outlined-btn">
+            <span class="material-symbols-outlined">refresh</span>Recarregar
+          </button>
+        </div>
+      </div>
+      <div id="avisoGrupoInativo" style="display:none;margin-top:12px">
+        <div class="notice">
+          Este grupo está <strong>inativo</strong>. Enquanto estiver assim, ele
+          <strong>não aceita novos integrantes</strong> — reative-o na tela de grupos para incluir alguém.
+          Quem já está no grupo continua listado, e ainda pode ser retirado.
+        </div>
+      </div>
+    </section>
+
+    <section class="card" style="margin-bottom:18px">
+      <div class="card-header">
+        <div class="card-title">
+          <div class="card-icon">how_to_reg</div>
+          <div>
+            <h2>Quem está neste grupo</h2>
+            <p style="font-size:12px;color:var(--on-surface-variant);margin-top:2px">
+              Retirar devolve a pessoa ao que o perfil dela permite, sem excluí-la do sistema.
+            </p>
+          </div>
+        </div>
+      </div>
+      <div id="listaVinculados"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <div class="card-icon">person_search</div>
+          <div>
+            <h2>Pessoas da empresa</h2>
+            <p style="font-size:12px;color:var(--on-surface-variant);margin-top:2px">
+              Pesquise por nome ou e-mail. O e-mail aparece apenas para diferenciar pessoas de mesmo nome.
+            </p>
+          </div>
+        </div>
+      </div>
+      <div class="filters-grid">
+        <div class="field">
+          <label for="campoBusca">Pesquisar</label>
+          <input id="campoBusca" class="input" type="search" placeholder="Nome ou e-mail" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="filtroVinculo">Situação</label>
+          <select id="filtroVinculo" class="select">
+            <option value="todos">Todas as pessoas</option>
+            <option value="sem_grupo">Somente quem não está em nenhum grupo</option>
+            <option value="com_grupo">Somente quem já está em algum grupo</option>
+          </select>
+        </div>
+      </div>
+      <div id="resumoBusca" class="preview-note" style="display:none;margin-bottom:12px"></div>
+      <div id="listaDisponiveis"></div>
+      <!-- Controles de página (correção pós-auditoria da 3U). O HTML é
+           montado pelo módulo; aqui só existe o lugar onde ele entra. -->
+      <div id="paginacao"></div>
+    </section>
+  </main>
+</div>
+
+<!-- Confirmação: usada tanto para retirar quanto para transferir. -->
+<div class="modal-overlay" id="modalConfirmar">
+  <div class="modal-card">
+    <div class="modal-header">
+      <div class="modal-title" id="confirmarTitulo">Confirmar</div>
+      <button class="modal-close" data-fechar="modalConfirmar">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+    <p id="confirmarTexto" style="font-size:13px;color:var(--on-surface-variant);line-height:1.5"></p>
+    <div class="inline-actions" style="justify-content:flex-end;margin-top:18px">
+      <button class="outlined-btn" data-fechar="modalConfirmar">Cancelar</button>
+      <button class="filled-btn" id="botaoConfirmar">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/api-http.js"></script>
+<script src="../js/auth-session.js"></script>
+<script src="../js/grupos-acesso.js"></script>
+<script src="../js/grupo-usuarios.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  EpiHttp.configurar({ baseUrl: 'http://localhost:3000/api' });
+
+  var mensagens = EpiGrupoUsuarios.mensagens;
+  var render = EpiGrupoUsuarios.render;
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  // ── adaptador de DOM ───────────────────────────────────────────────
+  // Nenhuma sequência assíncrona vive aqui: só leitura e escrita do DOM.
+  // O agrupamento da digitação (debounce) também mudou de lugar na
+  // correção pós-auditoria — mora no controlador, junto da guarda que
+  // ele precisa acionar na tecla, e não 300 ms depois.
+  var ui = {
+    renderVinculados: function (html) { $('listaVinculados').innerHTML = html; },
+    renderDisponiveis: function (html) { $('listaDisponiveis').innerHTML = html; },
+    paginacao: function (html) { $('paginacao').innerHTML = html; },
+
+    resumo: function (texto) {
+      var caixa = $('resumoBusca');
+      if (!texto) { caixa.style.display = 'none'; caixa.textContent = ''; return; }
+      caixa.textContent = texto;
+      caixa.style.display = 'block';
+    },
+
+    aviso: function (texto, tipo) {
+      var caixa = $('aviso');
+      if (!texto) { caixa.style.display = 'none'; caixa.innerHTML = ''; return; }
+      caixa.innerHTML = tipo === 'erro'
+        ? render.falha(texto)
+        : '<div class="notice" style="background:var(--success-container,#e8f5e9);color:var(--success);border-color:rgba(52,199,89,0.2)">'
+          + render.escaparHtml(texto) + '</div>';
+      caixa.style.display = 'block';
+    },
+
+    grupoInativo: function (inativo) {
+      $('avisoGrupoInativo').style.display = inativo ? 'block' : 'none';
+    },
+
+    sessaoExpirada: function (mensagem) {
+      $('telaLogin').style.display = 'flex';
+      ui.aviso('', null);
+      fecharConfirmacao();
+      erroLogin(mensagem);
+    },
+  };
+
+  var controlador = EpiGrupoUsuarios.criarControlador({ ui: ui });
+
+  // O PEDIDO é a confirmação congelada: quem, para onde e sob qual
+  // contexto. Guardar apenas o id do usuário — como era antes da
+  // correção — deixava a execução usar o grupo que estivesse
+  // selecionado NA HORA DO CLIQUE, e não o que a pessoa leu no diálogo.
+  var pedidoPendente = null;
+
+  function erroLogin(texto) {
+    var caixa = $('erroLogin');
+    if (!texto) { caixa.style.display = 'none'; return; }
+    caixa.querySelector('.notice').textContent = texto;
+    caixa.style.display = 'block';
+  }
+
+  function abrir(id) { $(id).classList.add('open'); }
+  function fechar(id) { $(id).classList.remove('open'); }
+
+  function fecharConfirmacao() {
+    pedidoPendente = null;
+    fechar('modalConfirmar');
+  }
+
+  /** Nome legível de uma pessoa a partir da linha da tabela. */
+  function nomeNaLinha(botao) {
+    var celula = botao.closest('tr').querySelector('strong');
+    return celula ? celula.textContent : 'A pessoa';
+  }
+
+  // ── seleção de grupo ───────────────────────────────────────────────
+  async function carregarGrupos() {
+    var resposta = await EpiGrupos.acoes.listar({});
+    if (!resposta.ok) {
+      if (EpiGrupos.mensagens.exigeNovoLogin(resposta)) {
+        ui.sessaoExpirada(EpiGrupos.mensagens.deErro(resposta));
+        return;
+      }
+      ui.aviso(EpiGrupos.mensagens.deErro(resposta), 'erro');
+      return;
+    }
+
+    var grupos = resposta.dados.grupos || [];
+    controlador.definirNomesDeGrupo(grupos);
+
+    var seletor = $('seletorGrupo');
+    seletor.innerHTML = '<option value="">Selecione…</option>'
+      + grupos.map(function (g) {
+        return '<option value="' + render.escaparHtml(g.id) + '" data-ativo="' + (g.ativo ? 'true' : 'false') + '">'
+          + render.escaparHtml(g.nome) + (g.ativo ? '' : ' (inativo)') + '</option>';
+      }).join('');
+
+    var pedido = new URLSearchParams(window.location.search).get('grupo');
+    if (pedido && seletor.querySelector('option[value="' + CSS.escape(pedido) + '"]')) {
+      seletor.value = pedido;
+      await selecionarDoSeletor();
+    }
+  }
+
+  function selecionarDoSeletor() {
+    // Trocar de grupo invalida qualquer confirmação aberta. O
+    // controlador recusaria a execução de qualquer forma; fechar o
+    // diálogo é para a pessoa não ficar olhando um texto que já não vale.
+    fecharConfirmacao();
+
+    var seletor = $('seletorGrupo');
+    var escolhida = seletor.options[seletor.selectedIndex];
+    return controlador.selecionar(seletor.value === '' ? null : seletor.value, {
+      nome: escolhida ? escolhida.textContent.trim() : '',
+      inativo: !!escolhida && escolhida.getAttribute('data-ativo') === 'false',
+    });
+  }
+
+  var filtroDaTela = function () {
+    return { busca: $('campoBusca').value, vinculo: $('filtroVinculo').value };
+  };
+
+  // ── vincular / desvincular ─────────────────────────────────────────
+  function pedirVinculo(usuarioId, nome, botao) {
+    // O grupo atual da pessoa vem de um ATRIBUTO DE DADOS, não do texto
+    // da célula: interpretar texto de interface para decidir se é
+    // transferência era frágil (pendência registrada na 3U).
+    var grupoAtualDoUsuario = botao.closest('tr').getAttribute('data-grupo-atual');
+    var estaEmOutroGrupo = grupoAtualDoUsuario !== ''
+      && Number(grupoAtualDoUsuario) !== controlador.grupoAtual();
+
+    // Inclusão simples não precisa de confirmação: o clique e a chamada
+    // acontecem no mesmo passo, sem janela para o contexto mudar.
+    if (!estaEmOutroGrupo) {
+      controlador.vincular(usuarioId, nome);
+      return;
+    }
+
+    var pedido = controlador.prepararVinculo(usuarioId, nome);
+    if (!pedido) return;
+    pedidoPendente = pedido;
+
+    $('confirmarTitulo').textContent = 'Transferir de grupo';
+    $('confirmarTexto').textContent = mensagens.confirmacaoDeTransferencia(
+      nome, controlador.nomeDeGrupo(Number(grupoAtualDoUsuario)), pedido.nomeDoGrupo,
+    );
+    $('botaoConfirmar').textContent = 'Transferir';
+    abrir('modalConfirmar');
+  }
+
+  function pedirDesvinculo(usuarioId, nome) {
+    var pedido = controlador.prepararDesvinculo(usuarioId, nome);
+    if (!pedido) return;
+    pedidoPendente = pedido;
+
+    $('confirmarTitulo').textContent = 'Retirar do grupo';
+    $('confirmarTexto').textContent = mensagens.confirmacaoDeDesvinculo(nome, pedido.nomeDoGrupo);
+    $('botaoConfirmar').textContent = 'Retirar';
+    abrir('modalConfirmar');
+  }
+
+  async function confirmar() {
+    if (!pedidoPendente) return;
+    var pedido = pedidoPendente;
+    pedidoPendente = null;
+    fechar('modalConfirmar');
+
+    $('botaoConfirmar').disabled = true;
+    try {
+      // Quem decide se o pedido ainda vale é o controlador: se o grupo
+      // mudou desde a abertura, nada é enviado.
+      await controlador.confirmar(pedido);
+    } finally {
+      $('botaoConfirmar').disabled = false;
+    }
+  }
+
+  // ── sessão ─────────────────────────────────────────────────────────
+  async function entrar(evento) {
+    evento.preventDefault();
+    erroLogin('');
+    $('botaoEntrar').disabled = true;
+    try {
+      var r = await EpiAuth.entrar({
+        cnpj: $('loginCnpj').value.trim(),
+        email: $('loginEmail').value.trim(),
+        senha: $('loginSenha').value,
+      });
+      if (!r.ok) {
+        erroLogin(r.resposta.status === 401 ? EpiAuth.MENSAGEM_CREDENCIAIS : mensagens.deErro(r.resposta));
+        return;
+      }
+      $('loginSenha').value = '';   // a senha não fica nem no campo
+      await iniciarSessao(r.identidade);
+    } finally {
+      $('botaoEntrar').disabled = false;
+    }
+  }
+
+  async function iniciarSessao(identidade) {
+    $('telaLogin').style.display = 'none';
+    // Só para exibição — quem autoriza é o backend, a cada requisição.
+    $('identidade').textContent = identidade.usuario.nome + ' · ' + identidade.empresa.nome;
+    controlador.mostrarSemGrupo();
+    await carregarGrupos();
+  }
+
+  async function sair() {
+    // Encerrar ANTES do logout: o que estiver em voo já nasce obsoleto,
+    // inclusive uma digitação ainda em agrupamento.
+    fecharConfirmacao();
+    controlador.encerrar();
+    await EpiAuth.sair();
+    $('identidade').textContent = '';
+    $('seletorGrupo').innerHTML = '<option value="">Selecione…</option>';
+    $('campoBusca').value = '';
+    $('filtroVinculo').value = 'todos';
+    $('listaVinculados').innerHTML = '';
+    $('listaDisponiveis').innerHTML = '';
+    $('telaLogin').style.display = 'flex';
+  }
+
+  // ── eventos ────────────────────────────────────────────────────────
+  $('formLogin').addEventListener('submit', entrar);
+  $('botaoSair').addEventListener('click', sair);
+  $('seletorGrupo').addEventListener('change', selecionarDoSeletor);
+  $('botaoRecarregar').addEventListener('click', function () {
+    fecharConfirmacao();
+    controlador.recarregar();
+  });
+
+  // digitar() invalida na TECLA e agrupa as requisições internamente.
+  $('campoBusca').addEventListener('input', function () { controlador.digitar(filtroDaTela()); });
+  $('filtroVinculo').addEventListener('change', function () { controlador.buscar(filtroDaTela()); });
+
+  $('botaoConfirmar').addEventListener('click', confirmar);
+
+  document.querySelectorAll('[data-fechar]').forEach(function (botao) {
+    botao.addEventListener('click', function () {
+      pedidoPendente = null;
+      fechar(botao.getAttribute('data-fechar'));
+    });
+  });
+
+  // Delegação: as tabelas são recriadas a cada carga.
+  $('listaVinculados').addEventListener('click', function (evento) {
+    var botao = evento.target.closest('[data-acao="desvincular"]');
+    if (botao) pedirDesvinculo(Number(botao.getAttribute('data-usuario')), nomeNaLinha(botao));
+  });
+
+  $('listaDisponiveis').addEventListener('click', function (evento) {
+    var botao = evento.target.closest('[data-acao="vincular"]');
+    if (botao) pedirVinculo(Number(botao.getAttribute('data-usuario')), nomeNaLinha(botao), botao);
+  });
+
+  $('paginacao').addEventListener('click', function (evento) {
+    var botao = evento.target.closest('[data-acao]');
+    if (!botao || botao.disabled) return;
+    fecharConfirmacao();
+    if (botao.getAttribute('data-acao') === 'pagina-proxima') controlador.proximaPagina();
+    if (botao.getAttribute('data-acao') === 'pagina-anterior') controlador.paginaAnterior();
+  });
+
+  // O cookie sobrevive ao F5, mas o JavaScript não consegue lê-lo: a
+  // única forma de saber se há sessão é perguntar ao servidor.
+  (async function () {
+    var sessao = await EpiAuth.sessaoAtual();
+    if (sessao.autenticado) await iniciarSessao(sessao.identidade);
+  })();
+})();
+</script>
+</body>
+</html>

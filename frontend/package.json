@@ -1,0 +1,11 @@
+{
+  "name": "gestao-epi-frontend",
+  "version": "1.0.0",
+  "description": "Interface web do sistema de Gestão de EPIs",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test \"test/**/*.test.js\""
+  },
+  "license": "UNLICENSED"
+}
