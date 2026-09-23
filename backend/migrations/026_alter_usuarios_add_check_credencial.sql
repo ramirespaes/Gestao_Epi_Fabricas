@@ -1,0 +1,36 @@
+-- usuarios: garante que uma conta do modelo anterior (identidade_id NULO)
+-- nunca fique sem NENHUMA credencial própria (Autenticação Global —
+-- correção da Subetapa 1, 23/09/2026).
+--
+-- A migration 025 tornou usuarios.email e usuarios.senha_hash opcionais,
+-- para que uma conta vinculada a uma identidade global não precise mais
+-- duplicar credencial ali. Isso abriu, sem querer, uma TERCEIRA
+-- possibilidade nunca pretendida: identidade_id NULO e email/senha_hash
+-- TAMBÉM nulos — uma conta sem identidade global e sem credencial própria,
+-- inautenticável por qualquer via, que o banco permitiria criar em
+-- silêncio (bastaria a aplicação esquecer de preencher os dois campos numa
+-- conta do modelo antigo).
+--
+-- Esta CHECK fecha exatamente essa lacuna, sem reabrir a 025 (já registrada
+-- no manifesto de checksums — corrigir aqui, numa migration nova, em vez de
+-- reescrever a 025, preserva a mesma disciplina de "migration histórica é
+-- imutável" que o projeto já aplica a 000-024, agora também às migrations
+-- desta própria iniciativa assim que registradas):
+--
+--   identidade_id preenchido            -> email e senha_hash podem ser
+--                                           NULL (a credencial mora em
+--                                           identidades) — nada muda aqui
+--                                           para o modelo novo;
+--   identidade_id NULO (modelo anterior) -> email e senha_hash continuam
+--                                           OBRIGATÓRIOS, os dois juntos —
+--                                           nunca só um dos dois (isso
+--                                           seria uma conta meio-migrada,
+--                                           sem contrato em nenhum modelo).
+--
+-- Dados existentes satisfazem esta CHECK automaticamente: toda linha criada
+-- antes da 025 já tinha email/senha_hash preenchidos (eram NOT NULL até
+-- então); toda linha criada pela 025 em diante só fica com os dois nulos
+-- quando identidade_id também está preenchido. ADD CONSTRAINT valida o que
+-- já existe sem risco de rejeitar dado vivo.
+ALTER TABLE usuarios ADD CONSTRAINT chk_usuarios_credencial_por_modelo
+  CHECK (identidade_id IS NOT NULL OR (email IS NOT NULL AND senha_hash IS NOT NULL));
