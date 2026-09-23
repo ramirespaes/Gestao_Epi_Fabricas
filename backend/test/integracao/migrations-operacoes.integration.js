@@ -23,7 +23,7 @@ const { executarComando, SAIDAS } = require('../../scripts/migrate-cli');
  * quando já existe histórico registrado.
  *
  * As migrations usadas aqui são sintéticas, em diretório temporário com
- * manifesto próprio. Os arquivos reais 000 a 016 não são lidos nem tocados.
+ * manifesto próprio. Os arquivos reais 000 a 023 não são lidos nem tocados.
  */
 
 const ALFA = 'CREATE TABLE alfa (id INTEGER PRIMARY KEY);\n';

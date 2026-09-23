@@ -18,12 +18,12 @@ const { aplicarMigrations } = require('../../scripts/migrate');
  * capturada antes e depois de todos os ensaios.
  *
  * Os cenários que precisam de migration inválida ou de ordem artificial usam
- * diretório temporário com migrations sintéticas. Os arquivos reais 000 a 016
+ * diretório temporário com migrations sintéticas. Os arquivos reais 000 a 023
  * nunca são modificados: eles só são lidos, no cenário de aplicação completa.
  */
 
 const DIRETORIO_REAL = path.join(__dirname, '..', '..', 'migrations');
-const TOTAL_MIGRATIONS_REAIS = 17;
+const TOTAL_MIGRATIONS_REAIS = 25;
 
 const criarDiretorio = (arquivos) => {
   const diretorio = fs.mkdtempSync(path.join(os.tmpdir(), 'gestao-epi-migrations-'));
@@ -106,7 +106,7 @@ describe('aplicação das migrations reais em schema vazio', () => {
     assert.deepEqual(rows.map((linha) => linha.table_schema), [contexto.schema]);
   });
 
-  test('aplica e registra as 17 migrations em ordem crescente', async () => {
+  test('aplica e registra as 25 migrations em ordem crescente', async () => {
     const registradas = await nomesRegistrados(contexto.cliente);
 
     assert.equal(registradas.length, TOTAL_MIGRATIONS_REAIS);
@@ -222,7 +222,7 @@ describe('baseline: registro sem execução', () => {
   before(async () => { contexto = await abrirSchemaTemporario([]); });
   after(async () => { if (contexto) await contexto.encerrar(); });
 
-  test('o baseline registra as 17 sem executar o SQL', async () => {
+  test('o baseline registra as 25 sem executar o SQL', async () => {
     // Estrutura já aplicada, e depois a tabela de controle é descartada para
     // simular um banco anterior ao runner. Se o baseline executasse o SQL, o
     // primeiro CREATE TABLE falharia porque o objeto já existe.
