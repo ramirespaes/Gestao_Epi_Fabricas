@@ -11,6 +11,10 @@ const { catalogoRoutes } = require('./routes/catalogo.routes');
 const { usuarioConsultaRoutes } = require('./routes/usuario-consulta.routes');
 const { autorizacaoConsultaRoutes } = require('./routes/autorizacao-consulta.routes');
 const { delegacaoDestinatariosRoutes } = require('./routes/delegacao-destinatarios.routes');
+const { materialRoutes } = require('./routes/material.routes');
+const { estoqueRoutes } = require('./routes/estoque.routes');
+const { grupoHomogeneoExposicaoRoutes } = require('./routes/grupo-homogeneo-exposicao.routes');
+const { funcionarioRoutes } = require('./routes/funcionario.routes');
 const { cabecalhosSeguranca, semCache } = require('./middleware/cabecalhos');
 const { corsApi } = require('./middleware/cors');
 const { exigirJson, parserJson } = require('./middleware/conteudo');
@@ -54,7 +58,18 @@ app.use(cabecalhosSeguranca);
 // a autorização de cada operação continua sendo decidida no serviço
 // correspondente, que relê o perfil do banco a cada chamada. Nenhuma
 // segunda aplicação Express, nenhum servidor paralelo.
-app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeral, exigirJson, parserJson, healthRoutes, authRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes);
+//
+// materialRoutes e estoqueRoutes (Bloco 9, Etapa A) entram na MESMA
+// cadeia, pela mesma razão — mas, diferente das rotas acima, sua
+// autorização é decidida ANTES do controller, pelo middleware de permissão
+// por recurso/ação já existente desde o Bloco 8
+// (criarExigirPermissaoRecurso/criarExigirPermissaoAcao,
+// src/middleware/autorizacao.js), montado dentro das próprias fábricas de
+// rota. Nenhuma configuração nova aqui.
+//
+// grupoHomogeneoExposicaoRoutes e funcionarioRoutes (Bloco 9, Etapa B):
+// mesmo mecanismo da Etapa A, recursos 'employeeGroups' e 'employeeHistory'.
+app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeral, exigirJson, parserJson, healthRoutes, authRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, estoqueRoutes, grupoHomogeneoExposicaoRoutes, funcionarioRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

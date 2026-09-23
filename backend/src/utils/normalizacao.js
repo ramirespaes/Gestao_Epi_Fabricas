@@ -95,6 +95,49 @@ function cnpjTemDigitosVerificadoresValidos(cnpjNormalizado) {
 }
 
 /**
+ * CPF (Bloco 9, Etapa B — funcionarios.cpf VARCHAR(11), CHECK '^[0-9]{11}$',
+ * migration 006). Mesma separação do CNPJ: normalizarCpf valida só a
+ * ESTRUTURA (11 dígitos, removendo '.', '-' e espaços externos);
+ * cpfTemDigitosVerificadoresValidos valida o módulo 11 sobre a saída
+ * normalizada e recusa as sequências de um único dígito repetido
+ * ('00000000000' … '99999999999'), que passam no módulo 11 mas não são CPFs.
+ */
+const CPF_TAMANHO = 11;
+const CPF_FORMATACAO = /[.-]/g;
+const CPF_FORMATO_ARMAZENADO = /^[0-9]{11}$/;
+const CPF_DIGITO_REPETIDO = /^(\d)\1{10}$/;
+
+function normalizarCpf(valor) {
+  if (typeof valor !== 'string') {
+    return null;
+  }
+  const semFormatacao = valor.trim().replace(CPF_FORMATACAO, '');
+  return CPF_FORMATO_ARMAZENADO.test(semFormatacao) ? semFormatacao : null;
+}
+
+function calcularDigitoVerificadorCpf(digitos, pesoInicial) {
+  let soma = 0;
+  for (let i = 0; i < digitos.length; i += 1) {
+    soma += Number(digitos[i]) * (pesoInicial - i);
+  }
+  const resto = soma % 11;
+  return resto < 2 ? 0 : 11 - resto;
+}
+
+/** Valida os DV de um CPF JÁ normalizado; false para qualquer outra entrada. */
+function cpfTemDigitosVerificadoresValidos(cpfNormalizado) {
+  if (typeof cpfNormalizado !== 'string' || normalizarCpf(cpfNormalizado) !== cpfNormalizado) {
+    return false;
+  }
+  if (CPF_DIGITO_REPETIDO.test(cpfNormalizado)) {
+    return false;
+  }
+  const dv1 = calcularDigitoVerificadorCpf(cpfNormalizado.slice(0, 9), 10);
+  const dv2 = calcularDigitoVerificadorCpf(cpfNormalizado.slice(0, 10), 11);
+  return Number(cpfNormalizado[9]) === dv1 && Number(cpfNormalizado[10]) === dv2;
+}
+
+/**
  * '  Luis@Empresa.com ' -> 'luis@empresa.com'; senão null.
  */
 function normalizarEmail(valor) {
@@ -113,8 +156,11 @@ function normalizarEmail(valor) {
 
 module.exports = {
   CNPJ_TAMANHO,
+  CPF_TAMANHO,
   EMAIL_TAMANHO_MAXIMO,
   normalizarCnpj,
   cnpjTemDigitosVerificadoresValidos,
+  normalizarCpf,
+  cpfTemDigitosVerificadoresValidos,
   normalizarEmail,
 };

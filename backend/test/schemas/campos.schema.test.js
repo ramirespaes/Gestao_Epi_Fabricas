@@ -31,8 +31,15 @@ const rejeita = (schema, entrada, codigo) => {
 
 describe('exports e limites', () => {
   test('API pública e limites técnicos', () => {
-    assert.deepEqual(Object.keys(c).sort(), ['LIMITES', 'booleanoQuery', 'cnpj', 'cnpjComDigitosVerificadores', 'codigoCatalogo', 'email', 'idCorpo', 'idParametro', 'inteiroQuery', 'paginacaoQuery', 'senhaEntrada', 'textoCurto'].sort());
-    assert.deepEqual(c.LIMITES, { CNPJ_ENTRADA_MAXIMO: 32, EMAIL_ENTRADA_MAXIMO: 200, SENHA_ENTRADA_MAXIMO: 1024, ID_MAXIMO: 2147483647, PAGINA_MAXIMA: 10000, LIMITE_MAXIMO: 100, LIMITE_PADRAO: 20 });
+    // cpf, cpfComDigitosVerificadores e dataCalendario: Bloco 9, Etapa B.
+    assert.deepEqual(Object.keys(c).sort(), ['LIMITES', 'booleanoQuery', 'cnpj', 'cnpjComDigitosVerificadores', 'codigoCatalogo', 'cpf', 'cpfComDigitosVerificadores', 'dataCalendario', 'email', 'idCorpo', 'idParametro', 'inteiroQuery', 'paginacaoQuery', 'senhaEntrada', 'textoCurto'].sort());
+    assert.deepEqual(c.LIMITES, {
+      CNPJ_ENTRADA_MAXIMO: 32, CPF_ENTRADA_MAXIMO: 32, EMAIL_ENTRADA_MAXIMO: 200, SENHA_ENTRADA_MAXIMO: 1024, ID_MAXIMO: 2147483647,
+      // INTEGER_MAXIMO acrescentado no Bloco 9, Etapa A (correção pós-auditoria de 23/09/2026):
+      // mesmo teto de ID_MAXIMO, usado por prazoUsoDias/estoqueMinimo/quantidade (colunas INTEGER).
+      INTEGER_MAXIMO: 2147483647,
+      PAGINA_MAXIMA: 10000, LIMITE_MAXIMO: 100, LIMITE_PADRAO: 20,
+    });
   });
 });
 

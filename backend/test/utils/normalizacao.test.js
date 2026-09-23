@@ -101,3 +101,60 @@ describe('normalizarEmail', () => {
     assert.equal(normalizarEmail(normalizarEmail('  Luis@Empresa.com ')), 'luis@empresa.com');
   });
 });
+
+describe('normalizarCpf (Bloco 9, Etapa B)', () => {
+  const { normalizarCpf, cpfTemDigitosVerificadoresValidos, CPF_TAMANHO } = require('../../src/utils/normalizacao');
+
+  test('constante exportada reflete o contrato do banco (funcionarios.cpf VARCHAR(11), CHECK só dígitos)', () => {
+    assert.equal(CPF_TAMANHO, 11);
+  });
+
+  test('com e sem máscara e espaços externos, sai só com os 11 dígitos', () => {
+    assert.equal(normalizarCpf('529.982.247-25'), '52998224725');
+    assert.equal(normalizarCpf('52998224725'), '52998224725');
+    assert.equal(normalizarCpf('  529.982.247-25  '), '52998224725');
+  });
+
+  test('só estrutura: DV inválido ainda normaliza', () => {
+    assert.equal(normalizarCpf('529.982.247-26'), '52998224726');
+  });
+
+  test('rejeições estruturais devolvem null', () => {
+    for (const ruim of ['5299822472', '529982247251', '529 982 247 25', '52998224725x', '529.982.247_25', 'ABCDEFGHIJK', '', '   ', '..-']) {
+      assert.equal(normalizarCpf(ruim), null, JSON.stringify(ruim));
+    }
+    assert.equal(normalizarCpf(null), null);
+    assert.equal(normalizarCpf(undefined), null);
+    assert.equal(normalizarCpf(52998224725), null);
+  });
+
+  test('é idempotente', () => {
+    assert.equal(normalizarCpf(normalizarCpf('529.982.247-25')), '52998224725');
+  });
+});
+
+describe('cpfTemDigitosVerificadoresValidos (Bloco 9, Etapa B)', () => {
+  const { cpfTemDigitosVerificadoresValidos } = require('../../src/utils/normalizacao');
+
+  test('aceita DV correto', () => {
+    assert.equal(cpfTemDigitosVerificadoresValidos('52998224725'), true);
+    assert.equal(cpfTemDigitosVerificadoresValidos('11144477735'), true);
+  });
+
+  test('rejeita DV incorreto', () => {
+    assert.equal(cpfTemDigitosVerificadoresValidos('52998224726'), false);
+    assert.equal(cpfTemDigitosVerificadoresValidos('11144477736'), false);
+  });
+
+  test('rejeita sequências de um único dígito repetido, mesmo que passem no módulo 11', () => {
+    for (const d of '0123456789') {
+      assert.equal(cpfTemDigitosVerificadoresValidos(d.repeat(11)), false, d.repeat(11));
+    }
+  });
+
+  test('entrada não normalizada devolve false sem normalizar', () => {
+    assert.equal(cpfTemDigitosVerificadoresValidos('529.982.247-25'), false);
+    assert.equal(cpfTemDigitosVerificadoresValidos(null), false);
+    assert.equal(cpfTemDigitosVerificadoresValidos(52998224725), false);
+  });
+});
