@@ -87,6 +87,21 @@ const idParametro = z.string().transform((valor, ctx) => {
   return Number(valor);
 });
 
+/**
+ * Identificador em CORPO JSON (nunca em params/query, que chegam como
+ * string e usam `idParametro`): número inteiro positivo, mesmo teto de
+ * `idParametro` (SERIAL/int4) e o mesmo código de erro (`ID_INVALIDO`),
+ * para que um identificador malformado produza o mesmo vocabulário de
+ * erro esteja ele numa URL ou num corpo. Tipo errado (string, float,
+ * booleano) já é recusado pelo `z.number()` de base, com o
+ * `invalid_type` nativo do Zod, antes de chegar a este transform.
+ */
+const idCorpo = z.number().transform((valor, ctx) => (
+  Number.isInteger(valor) && valor > 0 && valor <= LIMITES.ID_MAXIMO
+    ? valor
+    : issue(ctx, 'ID_INVALIDO', 'Identificador inválido')
+));
+
 function inteiroQuery(minimo, maximo) {
   return z.string().transform((valor, ctx) => {
     if (!INTEIRO_TEXTO.test(valor)) {
@@ -135,6 +150,7 @@ module.exports = {
   email,
   senhaEntrada,
   idParametro,
+  idCorpo,
   inteiroQuery,
   booleanoQuery,
   paginacaoQuery,

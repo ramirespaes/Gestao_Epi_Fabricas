@@ -3,6 +3,14 @@ const express = require('express');
 const { httpConfig } = require('./config/http');
 const healthRoutes = require('./routes/health.routes');
 const { authRoutes } = require('./routes/auth.routes');
+const { grupoAcessoRoutes } = require('./routes/grupo-acesso.routes');
+const { grupoPermissaoRoutes } = require('./routes/grupo-permissao.routes');
+const { grupoUsuarioRoutes } = require('./routes/grupo-usuario.routes');
+const { autorizacaoIndividualRoutes } = require('./routes/autorizacao-individual.routes');
+const { catalogoRoutes } = require('./routes/catalogo.routes');
+const { usuarioConsultaRoutes } = require('./routes/usuario-consulta.routes');
+const { autorizacaoConsultaRoutes } = require('./routes/autorizacao-consulta.routes');
+const { delegacaoDestinatariosRoutes } = require('./routes/delegacao-destinatarios.routes');
 const { cabecalhosSeguranca, semCache } = require('./middleware/cabecalhos');
 const { corsApi } = require('./middleware/cors');
 const { exigirJson, parserJson } = require('./middleware/conteudo');
@@ -38,7 +46,15 @@ app.use(cabecalhosSeguranca);
 // src/routes/auth.routes.js. Nenhuma configuração de CORS, CSRF, rate limit
 // geral, cookie ou PostgreSQL muda aqui: authRoutes só se soma à mesma
 // cadeia já existente, no mesmo prefixo /api.
-app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeral, exigirJson, parserJson, healthRoutes, authRoutes);
+//
+// grupoAcessoRoutes (Subetapa 3M), grupoPermissaoRoutes (Subetapa 3N),
+// grupoUsuarioRoutes (Subetapa 3O) e autorizacaoIndividualRoutes
+// (Subetapa 3P) entram na MESMA cadeia, pelo mesmo prefixo, sem
+// reconfigurar nada: todas as suas rotas exigem sessão (exigirSessao) e
+// a autorização de cada operação continua sendo decidida no serviço
+// correspondente, que relê o perfil do banco a cada chamada. Nenhuma
+// segunda aplicação Express, nenhum servidor paralelo.
+app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeral, exigirJson, parserJson, healthRoutes, authRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
