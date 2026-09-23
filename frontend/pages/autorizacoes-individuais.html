@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Autorizações Individuais — Gestão de EPIs</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+  <link rel="stylesheet" href="../css/main.css">
+</head>
+<!--
+  Autorizações Individuais e Delegações (Bloco 8, Incremento 8, Etapa 5A,
+  Subetapa 3V).
+
+  Quarta página ligada ao backend real. Usa a fundação da 3R
+  (js/api-http.js + js/auth-session.js), a consulta de pessoas da 3U, o
+  catálogo da 3T, os contratos da 3P e a consulta criada nesta subetapa.
+  Não carrega js/db-api.js nem js/main.js: o protótipo em localStorage
+  e as 21 páginas antigas continuam intactos.
+
+  O QUE ESTA TELA FAZ: mostra as autorizações individuais de uma pessoa,
+  deixa o Master conceder direto, deixa quem tem autorização repassável
+  delegar, e deixa revogar o que se tem autoridade para revogar. As
+  regras são as da 3I — a tela só as apresenta; quem decide é o backend.
+
+  Toda a sequência assíncrona vive em js/autorizacoes-individuais.js,
+  com as DUAS guardas que este bloco aprendeu a ter (chegada fora de
+  ordem e partida atrasada). Este arquivo só lê e escreve no DOM.
+-->
+<body>
+
+<div id="telaLogin" style="position:fixed;inset:0;z-index:10000;background:var(--surface);
+     display:flex;align-items:center;justify-content:center;padding:20px">
+  <div style="width:100%;max-width:400px">
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="width:64px;height:64px;border-radius:20px;background:#1a3a6b;
+                  display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
+        <span class="material-symbols-outlined" style="font-size:32px;color:#fff">verified_user</span>
+      </div>
+      <h1 style="font-size:20px;font-weight:700;margin:0">Autorizações Individuais</h1>
+      <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Autenticação no servidor</p>
+    </div>
+
+    <section class="card">
+      <form id="formLogin" autocomplete="on">
+        <div class="form-grid" style="margin-bottom:4px">
+          <div class="field full">
+            <label for="loginCnpj">CNPJ da empresa</label>
+            <input id="loginCnpj" name="cnpj" class="input" type="text" inputmode="text"
+                   placeholder="00.000.000/0000-00" autocomplete="organization" required>
+          </div>
+          <div class="field full">
+            <label for="loginEmail">E-mail corporativo</label>
+            <input id="loginEmail" name="email" class="input" type="email"
+                   placeholder="seu.nome@empresa.com.br" autocomplete="username" required>
+          </div>
+          <div class="field full">
+            <label for="loginSenha">Senha</label>
+            <input id="loginSenha" name="senha" class="input" type="password"
+                   placeholder="••••••••" autocomplete="current-password" required>
+          </div>
+        </div>
+
+        <div id="erroLogin" style="display:none;margin-bottom:10px">
+          <div class="notice" style="background:var(--error-container);color:var(--error);border-color:rgba(255,59,48,0.2)"></div>
+        </div>
+
+        <button type="submit" id="botaoEntrar" class="filled-btn" style="width:100%;height:48px">
+          <span class="material-symbols-outlined">login</span>Entrar
+        </button>
+      </form>
+
+      <div class="preview-note" style="margin-top:16px">
+        Esta tela autentica no backend e recebe um cookie de sessão HttpOnly.
+        Nada é guardado no navegador: nem senha, nem token, nem sessão.
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-left">
+        <div class="brand-badge">security</div>
+        <div>
+          <div class="brand-title">Gestão de EPIs</div>
+          <div class="brand-sub" style="font-size:11px;color:var(--on-surface-variant);margin-top:2px;">Acessos</div>
+        </div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-section">Administração</div>
+      <a href="grupos-acesso.html"><div class="nav-icon indigo">groups</div>Grupos de Acesso</a>
+      <a href="grupo-permissoes.html"><div class="nav-icon indigo">lock_person</div>Permissões do Grupo</a>
+      <a href="grupo-usuarios.html"><div class="nav-icon indigo">group_add</div>Integrantes do Grupo</a>
+      <a class="active" href="javascript:void(0)"><div class="nav-icon indigo">verified_user</div>Autorizações Individuais</a>
+      <div class="nav-section">Sistema</div>
+      <a href="dashboard.html"><div class="nav-icon blue">dashboard</div>Voltar ao sistema</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <div class="page-actions">
+      <div>
+        <h2 style="font-family:var(--font-brand);font-size:22px;line-height:1.1;letter-spacing:-0.4px;font-weight:500">Autorizações Individuais</h2>
+        <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">
+          Uma autorização individual permite a uma pessoa uma <strong>ação específica</strong>, independentemente do
+          perfil e do grupo. Só o Master concede do zero; quem recebeu uma autorização <strong>repassável</strong> pode
+          repassá-la. Revogar uma autorização repassada remove também as que nasceram dela.
+        </p>
+      </div>
+      <div class="inline-actions">
+        <span id="identidade" style="font-size:13px;color:var(--on-surface-variant);align-self:center"></span>
+        <button id="botaoSair" class="outlined-btn"><span class="material-symbols-outlined">logout</span>Sair</button>
+      </div>
+    </div>
+
+    <div id="aviso" style="display:none;margin-bottom:18px"></div>
+
+    <section class="card" style="margin-bottom:18px">
+      <div class="card-header">
+        <div class="card-title">
+          <div class="card-icon">person_search</div>
+          <div>
+            <h2>Pessoa</h2>
+            <p style="font-size:12px;color:var(--on-surface-variant);margin-top:2px">
+              Pesquise e escolha a pessoa cujas autorizações você quer ver ou ajustar.
+            </p>
+          </div>
+        </div>
+      </div>
+      <div class="filters-grid">
+        <div class="field full">
+          <label for="campoBusca">Pesquisar pessoa</label>
+          <input id="campoBusca" class="input" type="search" placeholder="Nome ou e-mail" autocomplete="off">
+        </div>
+      </div>
+      <div id="listaPessoas" style="margin-top:12px"></div>
+      <div id="pessoaSelecionada" class="preview-note" style="display:none;margin-top:12px"></div>
+    </section>
+
+    <section class="card" style="margin-bottom:18px">
+      <div class="card-header">
+        <div class="card-title">
+          <div class="card-icon">verified_user</div>
+          <div>
+            <h2>Autorizações desta pessoa</h2>
+            <p id="escopo" style="font-size:12px;color:var(--on-surface-variant);margin-top:2px"></p>
+          </div>
+        </div>
+        <button id="botaoRecarregar" class="outlined-btn">
+          <span class="material-symbols-outlined">refresh</span>Recarregar
+        </button>
+      </div>
+      <div id="listaAutorizacoes"></div>
+    </section>
+
+    <section class="card" id="cartaoConceder" style="margin-bottom:18px;display:none">
+      <div class="card-header">
+        <div class="card-title">
+          <div class="card-icon">add_moderator</div>
+          <div>
+            <h2>Conceder autorização direta</h2>
+            <p style="font-size:12px;color:var(--on-surface-variant);margin-top:2px">
+              Só o perfil Master concede do zero. A ação vem do catálogo real; ações que não usam autorização
+              individual não aparecem.
+            </p>
+          </div>
+        </div>
+      </div>
+      <form id="formConceder">
+        <div class="form-grid">
+          <div class="field full">
+            <label for="campoAcao">Ação</label>
+            <select id="campoAcao" class="select" required><option value="">Selecione…</option></select>
+          </div>
+          <div class="field">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input id="campoPodeDelegarConceder" type="checkbox"> Permitir que a pessoa repasse esta autorização
+            </label>
+          </div>
+          <div class="field full">
+            <label for="campoMotivoConceder">Motivo (opcional)</label>
+            <input id="campoMotivoConceder" class="input" type="text" maxlength="500" placeholder="Por que esta pessoa precisa desta autorização">
+          </div>
+        </div>
+        <div class="inline-actions" style="justify-content:flex-end;margin-top:12px">
+          <button type="submit" id="botaoConceder" class="filled-btn">
+            <span class="material-symbols-outlined">add_moderator</span>Conceder
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card" id="cartaoDelegar">
+      <div class="card-header">
+        <div class="card-title">
+          <div class="card-icon">forward_to_inbox</div>
+          <div>
+            <h2>Repassar uma autorização minha</h2>
+            <p style="font-size:12px;color:var(--on-surface-variant);margin-top:2px">
+              Você só pode repassar uma autorização que recebeu marcada como repassável — e que esteja valendo
+              para você agora. A ação repassada é a mesma da origem.
+            </p>
+          </div>
+        </div>
+      </div>
+      <div id="avisoDelegacao" class="preview-note" style="display:none;margin-bottom:12px"></div>
+      <form id="formDelegar">
+        <div class="form-grid">
+          <div class="field full">
+            <label for="campoOrigem">Autorização minha a repassar</label>
+            <select id="campoOrigem" class="select" required><option value="">Selecione…</option></select>
+          </div>
+          <div class="field">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input id="campoPodeDelegarDelegar" type="checkbox"> Permitir que a pessoa repasse adiante
+            </label>
+          </div>
+          <div class="field full">
+            <label for="campoMotivoDelegar">Motivo (opcional)</label>
+            <input id="campoMotivoDelegar" class="input" type="text" maxlength="500" placeholder="Por que esta pessoa precisa desta autorização">
+          </div>
+        </div>
+        <div class="inline-actions" style="justify-content:flex-end;margin-top:12px">
+          <button type="submit" id="botaoDelegar" class="filled-btn">
+            <span class="material-symbols-outlined">forward_to_inbox</span>Repassar
+          </button>
+        </div>
+      </form>
+    </section>
+  </main>
+</div>
+
+<div class="modal-overlay" id="modalConfirmar">
+  <div class="modal-card">
+    <div class="modal-header">
+      <div class="modal-title" id="confirmarTitulo">Confirmar</div>
+      <button class="modal-close" data-fechar="modalConfirmar">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+    <p id="confirmarTexto" style="font-size:13px;color:var(--on-surface-variant);line-height:1.5"></p>
+    <div class="field full" id="campoMotivoRevogarWrap" style="margin-top:12px">
+      <label for="campoMotivoRevogar">Motivo (opcional)</label>
+      <input id="campoMotivoRevogar" class="input" type="text" maxlength="500" placeholder="Por que esta autorização está sendo revogada">
+    </div>
+    <div class="inline-actions" style="justify-content:flex-end;margin-top:18px">
+      <button class="outlined-btn" data-fechar="modalConfirmar">Cancelar</button>
+      <button class="filled-btn" id="botaoConfirmar">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/api-http.js"></script>
+<script src="../js/auth-session.js"></script>
+<script src="../js/autorizacoes-individuais.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  EpiHttp.configurar({ baseUrl: 'http://localhost:3000/api' });
+
+  var mensagens = EpiAutorizacoes.mensagens;
+  var render = EpiAutorizacoes.render;
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  // ── adaptador de DOM ───────────────────────────────────────────────
+  // Nenhuma sequência assíncrona vive aqui: só leitura e escrita do DOM.
+  var ui = {
+    renderAutorizacoes: function (html) { $('listaAutorizacoes').innerHTML = html; },
+
+    /** A lista de pessoas: HTML pronto, ou uma lista de pessoas para montar. */
+    renderPessoas: function (valor, total) {
+      var alvo = $('listaPessoas');
+      if (typeof valor === 'string') { alvo.innerHTML = valor; return; }
+      if (!valor.length) { alvo.innerHTML = render.vazia('Nenhuma pessoa encontrada.'); return; }
+      alvo.innerHTML = '<div class="table-wrap"><table><tbody>'
+        + valor.map(function (p) {
+          return '<tr data-usuario="' + render.escaparHtml(p.id) + '" data-nome="' + render.escaparHtml(p.nome) + '">'
+            + '<td><strong>' + render.escaparHtml(p.nome) + '</strong>'
+            + '<div style="font-size:11px;color:var(--on-surface-variant)">' + render.escaparHtml(p.email) + '</div></td>'
+            // A consulta de destinatários (não-MASTER) não traz perfil —
+            // de propósito, é a projeção mínima. A célula só existe
+            // quando há o que mostrar.
+            + (p.perfil !== undefined ? '<td>' + render.escaparHtml(p.perfil) + '</td>' : '')
+            + '<td class="inline-actions"><button class="mini-btn" data-acao="selecionar">Ver autorizações</button></td>'
+            + '</tr>';
+        }).join('')
+        + '</tbody></table></div>'
+        + (total > valor.length
+          ? '<div class="preview-note" style="margin-top:8px">Mostrando ' + valor.length + ' de ' + total + '. Refine a pesquisa.</div>'
+          : '');
+    },
+
+    aviso: function (texto, tipo) {
+      var caixa = $('aviso');
+      if (!texto) { caixa.style.display = 'none'; caixa.innerHTML = ''; return; }
+      caixa.innerHTML = tipo === 'erro'
+        ? render.falha(texto)
+        : '<div class="notice" style="background:var(--success-container,#e8f5e9);color:var(--success);border-color:rgba(52,199,89,0.2)">'
+          + render.escaparHtml(texto) + '</div>';
+      caixa.style.display = 'block';
+    },
+
+    escopo: function (texto) { $('escopo').textContent = texto || ''; },
+
+    origens: function (html, quantas) {
+      $('campoOrigem').innerHTML = html;
+      $('botaoDelegar').disabled = quantas === 0;
+    },
+
+    acoesConcediveis: function (html, temAlguma) {
+      $('campoAcao').innerHTML = html;
+      $('botaoConceder').disabled = !temAlguma;
+    },
+
+    podeConcederDireta: function (pode) {
+      $('cartaoConceder').style.display = pode ? '' : 'none';
+    },
+
+    avisoDelegacao: function (texto) {
+      var caixa = $('avisoDelegacao');
+      if (!texto) { caixa.style.display = 'none'; caixa.textContent = ''; return; }
+      caixa.textContent = texto;
+      caixa.style.display = 'block';
+    },
+
+    usuarioSelecionado: function (nome) {
+      var caixa = $('pessoaSelecionada');
+      if (!nome) { caixa.style.display = 'none'; caixa.textContent = ''; return; }
+      caixa.textContent = 'Pessoa selecionada: ' + nome;
+      caixa.style.display = 'block';
+    },
+
+    sessaoExpirada: function (mensagem) {
+      $('telaLogin').style.display = 'flex';
+      ui.aviso('', null);
+      fecharConfirmacao();
+      erroLogin(mensagem);
+    },
+  };
+
+  var controlador = EpiAutorizacoes.criarControlador({ ui: ui });
+  var pedidoPendente = null;
+
+  function erroLogin(texto) {
+    var caixa = $('erroLogin');
+    if (!texto) { caixa.style.display = 'none'; return; }
+    caixa.querySelector('.notice').textContent = texto;
+    caixa.style.display = 'block';
+  }
+
+  function abrir(id) { $(id).classList.add('open'); }
+  function fechar(id) { $(id).classList.remove('open'); }
+  function fecharConfirmacao() { pedidoPendente = null; fechar('modalConfirmar'); }
+
+  // ── pessoa ─────────────────────────────────────────────────────────
+  function selecionarPessoa(linha) {
+    fecharConfirmacao();
+    controlador.selecionar({
+      id: Number(linha.getAttribute('data-usuario')),
+      nome: linha.getAttribute('data-nome'),
+    });
+  }
+
+  // ── conceder / delegar / revogar ───────────────────────────────────
+  function conceder(evento) {
+    evento.preventDefault();
+    var campo = $('campoAcao');
+    var opcao = campo.options[campo.selectedIndex];
+    if (!campo.value) return;
+
+    var pedido = controlador.prepararConcessao({
+      acaoCodigo: campo.value,
+      acaoNome: opcao ? opcao.textContent.replace(/ \(exige SST\)$/, '') : campo.value,
+      podeDelegar: $('campoPodeDelegarConceder').checked,
+      motivo: $('campoMotivoConceder').value,
+    });
+    if (!pedido) { ui.aviso('Selecione uma pessoa antes de conceder.', 'erro'); return; }
+
+    pedidoPendente = pedido;
+    $('confirmarTitulo').textContent = 'Conceder autorização';
+    $('confirmarTexto').textContent = 'Conceder “' + pedido.acaoNome + '” a ' + pedido.usuarioNome
+      + (pedido.podeDelegar ? ', com permissão para repassar.' : '.');
+    $('campoMotivoRevogarWrap').style.display = 'none';
+    $('botaoConfirmar').textContent = 'Conceder';
+    abrir('modalConfirmar');
+  }
+
+  function delegar(evento) {
+    evento.preventDefault();
+    var campo = $('campoOrigem');
+    if (!campo.value) return;
+
+    var pedido = controlador.prepararDelegacao({
+      origemId: Number(campo.value),
+      podeDelegar: $('campoPodeDelegarDelegar').checked,
+      motivo: $('campoMotivoDelegar').value,
+    });
+    if (!pedido) { ui.aviso('Selecione uma pessoa e uma autorização sua para repassar.', 'erro'); return; }
+
+    pedidoPendente = pedido;
+    $('confirmarTitulo').textContent = 'Repassar autorização';
+    $('confirmarTexto').textContent = 'Repassar “' + pedido.acaoNome + '” para ' + pedido.usuarioNome
+      + (pedido.podeDelegar ? ', com permissão para repassar adiante.' : '.')
+      + ' Se você perder esta autorização, o repasse cai junto.';
+    $('campoMotivoRevogarWrap').style.display = 'none';
+    $('botaoConfirmar').textContent = 'Repassar';
+    abrir('modalConfirmar');
+  }
+
+  function pedirRevogacao(autorizacaoId) {
+    var pedido = controlador.prepararRevogacao(autorizacaoId);
+    if (!pedido) return;
+
+    pedidoPendente = pedido;
+    var alvo = controlador.autorizacoes().filter(function (a) { return a.id === pedido.autorizacaoId; })[0];
+    $('confirmarTitulo').textContent = 'Revogar autorização';
+    $('confirmarTexto').textContent = mensagens.confirmacaoDeRevogacao(alvo);
+    $('campoMotivoRevogar').value = '';
+    $('campoMotivoRevogarWrap').style.display = '';
+    $('botaoConfirmar').textContent = 'Revogar';
+    abrir('modalConfirmar');
+  }
+
+  async function confirmar() {
+    if (!pedidoPendente) return;
+    var pedido = pedidoPendente;
+    pedidoPendente = null;
+    fechar('modalConfirmar');
+
+    // O motivo da revogação é lido do diálogo e viaja num pedido novo,
+    // igualmente congelado, sem alterar o original.
+    if (pedido.tipo === 'REVOGACAO') {
+      pedido = Object.freeze(Object.assign({}, pedido, { motivo: $('campoMotivoRevogar').value || null }));
+    }
+
+    $('botaoConfirmar').disabled = true;
+    try {
+      var resultado = await controlador.confirmar(pedido);
+      if (resultado.status === 'ok') {
+        $('campoMotivoConceder').value = '';
+        $('campoMotivoDelegar').value = '';
+        $('campoPodeDelegarConceder').checked = false;
+        $('campoPodeDelegarDelegar').checked = false;
+      }
+    } finally {
+      $('botaoConfirmar').disabled = false;
+    }
+  }
+
+  // ── sessão ─────────────────────────────────────────────────────────
+  async function entrar(evento) {
+    evento.preventDefault();
+    erroLogin('');
+    $('botaoEntrar').disabled = true;
+    try {
+      var r = await EpiAuth.entrar({
+        cnpj: $('loginCnpj').value.trim(),
+        email: $('loginEmail').value.trim(),
+        senha: $('loginSenha').value,
+      });
+      if (!r.ok) {
+        erroLogin(r.resposta.status === 401 ? EpiAuth.MENSAGEM_CREDENCIAIS : mensagens.deErro(r.resposta));
+        return;
+      }
+      $('loginSenha').value = '';
+      await iniciarSessao(r.identidade);
+    } finally {
+      $('botaoEntrar').disabled = false;
+    }
+  }
+
+  async function iniciarSessao(identidade) {
+    $('telaLogin').style.display = 'none';
+    $('identidade').textContent = identidade.usuario.nome + ' · ' + identidade.empresa.nome;
+    // A identidade (id e perfil) só serve para a tela decidir O QUE
+    // MOSTRAR. Quem decide o que pode continua sendo o backend.
+    await controlador.iniciar({ id: identidade.usuario.id, perfil: identidade.usuario.perfil });
+    controlador.buscarPessoas('');
+  }
+
+  async function sair() {
+    fecharConfirmacao();
+    controlador.encerrar();
+    await EpiAuth.sair();
+    $('identidade').textContent = '';
+    $('campoBusca').value = '';
+    $('listaPessoas').innerHTML = '';
+    $('listaAutorizacoes').innerHTML = '';
+    $('telaLogin').style.display = 'flex';
+  }
+
+  // ── eventos ────────────────────────────────────────────────────────
+  $('formLogin').addEventListener('submit', entrar);
+  $('botaoSair').addEventListener('click', sair);
+  $('botaoRecarregar').addEventListener('click', function () { fecharConfirmacao(); controlador.recarregar(); });
+  $('campoBusca').addEventListener('input', function () { controlador.digitar($('campoBusca').value); });
+  $('formConceder').addEventListener('submit', conceder);
+  $('formDelegar').addEventListener('submit', delegar);
+  $('botaoConfirmar').addEventListener('click', confirmar);
+
+  document.querySelectorAll('[data-fechar]').forEach(function (botao) {
+    botao.addEventListener('click', function () { fecharConfirmacao(); });
+  });
+
+  $('listaPessoas').addEventListener('click', function (evento) {
+    var botao = evento.target.closest('[data-acao="selecionar"]');
+    if (botao) selecionarPessoa(botao.closest('tr'));
+  });
+
+  $('listaAutorizacoes').addEventListener('click', function (evento) {
+    var botao = evento.target.closest('[data-acao="revogar"]');
+    if (botao) pedirRevogacao(Number(botao.getAttribute('data-autorizacao')));
+  });
+
+  (async function () {
+    var sessao = await EpiAuth.sessaoAtual();
+    if (sessao.autenticado) await iniciarSessao(sessao.identidade);
+  })();
+})();
+</script>
+</body>
+</html>
