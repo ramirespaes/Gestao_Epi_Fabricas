@@ -31,6 +31,8 @@ const PADRAO = {
   sessao: { cookieNome: 'gepi_sessao', cookieNomeAdmin: 'gepi_sessao_admin', cookieSecure: false, cookieSameSite: 'lax', expiracaoMinutos: 720, inatividadeMinutos: 30 },
   argon2: { memoryKib: 65536, timeCost: 3, parallelism: 1, hashLength: 32 },
   cooldown: { niveis: [{ falhas: 5, janelaMinutos: 15, duracaoMinutos: 15 }, { falhas: 10, janelaMinutos: 60, duracaoMinutos: 60 }], retencaoDias: 30 },
+  // Pacote 3 — validade do convite do MASTER.
+  conviteMaster: { expiracaoMinutos: 4320 },
 };
 
 describe('configuração carregada do ambiente de teste', () => {

@@ -5,6 +5,8 @@ const healthRoutes = require('./routes/health.routes');
 const { authRoutes } = require('./routes/auth.routes');
 const { authPlataformaRoutes } = require('./routes/auth-plataforma.routes');
 const { painelPlataformaRoutes } = require('./routes/painel-plataforma.routes');
+const { empresaCadastroRoutes } = require('./routes/empresa-cadastro.routes');
+const { conviteMasterRoutes } = require('./routes/convite-master.routes');
 const { grupoAcessoRoutes } = require('./routes/grupo-acesso.routes');
 const { grupoPermissaoRoutes } = require('./routes/grupo-permissao.routes');
 const { grupoUsuarioRoutes } = require('./routes/grupo-usuario.routes');
@@ -71,6 +73,12 @@ app.use(
   parserJson,
   authPlataformaRoutes,
   painelPlataformaRoutes,
+  // Pacote 3: cadastro de empresas e convite do MASTER — mesma cadeia,
+  // mesmas allowlists. As rotas administrativas exigem sessão do Painel
+  // Privado dentro das próprias fábricas; as duas rotas públicas de aceite
+  // de convite (posse do token como autoridade) não exigem sessão alguma.
+  empresaCadastroRoutes,
+  conviteMasterRoutes,
   notFoundHandler,
 );
 

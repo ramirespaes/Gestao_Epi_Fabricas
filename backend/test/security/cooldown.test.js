@@ -9,6 +9,7 @@ const {
   CHAVE_COOLDOWN_TAMANHO,
   gerarChaveCooldown,
   gerarChaveCooldownPlataforma,
+  gerarChaveCooldownConvite,
   chaveCooldownTemFormatoValido,
   derivarAdvisoryLock64,
   idCorrelacaoCooldown,
@@ -143,6 +144,33 @@ describe('gerarChaveCooldownPlataforma (correção final do Pacote 2 — cooldow
   test('reaproveita as MESMAS derivações de advisory lock e correlação, sem duplicar lógica', () => {
     assert.match(derivarAdvisoryLock64(chave), /^-?[0-9]+$/);
     assert.equal(idCorrelacaoCooldown(chave), chave.slice(0, 16));
+  });
+});
+
+describe('gerarChaveCooldownConvite (Pacote 3 — aceite de convite do MASTER)', () => {
+  const TOKEN = 'Zm9ybWF0b2Jhc2U2NHVybGRldG9rZW5jb21fNDNjaGFy'.slice(0, 43);
+  const chave = gerarChaveCooldownConvite(TOKEN);
+
+  test('HMAC-SHA-256 sobre CONVITE_MASTER + 0x0A + token, 64 hex; rótulo separa dos outros dois contextos', () => {
+    assert.equal(chave, hmac(`CONVITE_MASTER\n${TOKEN}`));
+    assert.match(chave, HEX64);
+    assert.equal(chaveCooldownTemFormatoValido(chave), true);
+    assert.notEqual(chave, hmac(`PLATAFORMA\n${TOKEN}`));
+  });
+
+  test('determinística; tokens diferentes geram chaves diferentes', () => {
+    assert.equal(gerarChaveCooldownConvite(TOKEN), chave);
+    assert.notEqual(gerarChaveCooldownConvite(`${TOKEN.slice(0, 42)}x`), chave);
+  });
+
+  test('exige o formato canônico do token (43 chars base64url): TypeError fixo, sem o valor', () => {
+    for (const ruim of ['abc', `${TOKEN}=`, TOKEN.slice(0, 42), null, 123, undefined, `${TOKEN}a`]) {
+      assert.throws(() => gerarChaveCooldownConvite(ruim), { name: 'TypeError', message: 'token de convite com formato inválido' });
+    }
+  });
+
+  test('a chave não contém o token nem o segredo', () => {
+    assertSemSensiveis(chave, [TOKEN.slice(0, 12), SEGREDO_HEX.slice(0, 12)], 'chave de convite');
   });
 });
 

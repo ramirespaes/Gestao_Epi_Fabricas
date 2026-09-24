@@ -55,6 +55,10 @@ const limitadorAutenticacao = criarLimitador(httpConfig.rateLimit.autenticacao);
 // cota do Painel Privado, e vice-versa.
 const limitadorPlataformaGeral = criarLimitador(httpConfig.rateLimit.geral);
 const limitadorPlataformaAutenticacao = criarLimitador(httpConfig.rateLimit.autenticacao);
+// Pacote 3 — rotas PÚBLICAS de aceite de convite do MASTER (sem sessão):
+// instância própria, mesmos parâmetros do limite de autenticação. Camada
+// complementar ao cooldown persistente por token (convite-master.service.js).
+const limitadorPlataformaConvite = criarLimitador(httpConfig.rateLimit.autenticacao);
 
 module.exports = {
   criarLimitador,
@@ -62,4 +66,5 @@ module.exports = {
   limitadorAutenticacao,
   limitadorPlataformaGeral,
   limitadorPlataformaAutenticacao,
+  limitadorPlataformaConvite,
 };

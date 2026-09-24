@@ -32,6 +32,9 @@
     "028_create_sessoes_plataforma.sql": "410b30e9fdf348af0914a5df942170f1fb49545c2a6bc1ec0a9a83c084f57e5f",
     "029_create_logs_auditoria_plataforma.sql": "44f9ece03a5bfc8b0477fa68ea7ef59b65d640ec29eefcae42996fad745de989",
     "030_create_login_tentativas_plataforma.sql": "eb8f1f34eb95f7c1338e5a639f79173561f92b87f1dcbf30dd8189cd9797841f",
-    "031_alter_plataforma_add_constraints_integridade.sql": "de452607097d8ed2e5c0f6f0359d3164a14a7d3eb9399dde05ce9d51bda3993d"
+    "031_alter_plataforma_add_constraints_integridade.sql": "de452607097d8ed2e5c0f6f0359d3164a14a7d3eb9399dde05ce9d51bda3993d",
+    "032_alter_empresas_add_cadastro_completo.sql": "1c0caf10be04a50561b8a008970fafc7c55fa63dde9559b5b7dd10788995057f",
+    "033_create_convites_master.sql": "332cd602070d7a50c71ac3d30b0feeadde7b509215efbeafbc85fc4722209618",
+    "034_create_convite_master_tentativas.sql": "3f841124cbb0b614310f54c27b58e0db68d0dccee8999ef3e228fb8503f1452c"
   }
 }
