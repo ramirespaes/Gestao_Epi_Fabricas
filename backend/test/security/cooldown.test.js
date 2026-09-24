@@ -8,6 +8,7 @@ const { spawnSync } = require('node:child_process');
 const {
   CHAVE_COOLDOWN_TAMANHO,
   gerarChaveCooldown,
+  gerarChaveCooldownPlataforma,
   chaveCooldownTemFormatoValido,
   derivarAdvisoryLock64,
   idCorrelacaoCooldown,
@@ -93,6 +94,55 @@ describe('gerarChaveCooldown', () => {
         return true;
       });
     }
+  });
+});
+
+describe('gerarChaveCooldownPlataforma (correção final do Pacote 2 — cooldown do Painel Privado)', () => {
+  const chave = gerarChaveCooldownPlataforma('admin@safework.com.br');
+
+  test('HMAC-SHA-256 sobre o rótulo PLATAFORMA + 0x0A + email, em 64 hex minúsculos', () => {
+    assert.equal(chave, hmac('PLATAFORMA\nadmin@safework.com.br'));
+    assert.equal(chave.length, CHAVE_COOLDOWN_TAMANHO);
+    assert.match(chave, HEX64);
+    assert.equal(chaveCooldownTemFormatoValido(chave), true);
+  });
+
+  test('a mesma entrada produz sempre a mesma chave; normalização de e-mail se aplica (espaço, caixa)', () => {
+    for (let i = 0; i < 20; i += 1) {
+      assert.equal(gerarChaveCooldownPlataforma('admin@safework.com.br'), chave);
+    }
+    assert.equal(gerarChaveCooldownPlataforma('  Admin@SafeWork.com.br  '), chave);
+  });
+
+  test('NUNCA colide com a chave do cliente para o mesmo e-mail — domínios separados por rótulo', () => {
+    const chaveCliente = gerarChaveCooldown('12345678000195', 'admin@safework.com.br');
+    assert.notEqual(chave, chaveCliente);
+    // Mesmo se um CNPJ (impossível na prática — CNPJ tem 14 posições fixas)
+    // pudesse coincidir com o literal 'PLATAFORMA', o separador 0x0A e a
+    // igualdade byte a byte do restante da mensagem HMAC evitam qualquer
+    // ambiguidade: são mensagens de tamanho e composição estruturalmente
+    // diferentes.
+    assert.notEqual(gerarChaveCooldownPlataforma('outro@empresa.com'), chave);
+  });
+
+  test('e-mail não normalizável: TypeError fixo, sem o valor', () => {
+    for (const ruim of ['semarroba.com', 'josé@empresa.com', null, 12345, undefined]) {
+      assert.throws(() => gerarChaveCooldownPlataforma(ruim), (erro) => {
+        assert.ok(erro instanceof TypeError);
+        assert.equal(erro.message, 'e-mail não normalizável');
+        return true;
+      });
+    }
+  });
+
+  test('só a cópia do segredo é zerada; a chave não contém o e-mail nem o segredo', () => {
+    assert.equal(obterLoginCooldownHmacSecret().toString('hex'), SEGREDO_HEX);
+    assertSemSensiveis(chave, ['admin', 'safework', SEGREDO_HEX.slice(0, 12)], 'chave de plataforma');
+  });
+
+  test('reaproveita as MESMAS derivações de advisory lock e correlação, sem duplicar lógica', () => {
+    assert.match(derivarAdvisoryLock64(chave), /^-?[0-9]+$/);
+    assert.equal(idCorrelacaoCooldown(chave), chave.slice(0, 16));
   });
 });
 

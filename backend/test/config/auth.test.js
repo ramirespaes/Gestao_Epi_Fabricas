@@ -28,7 +28,7 @@ const erroDe = (env) => {
 
 const PADRAO = {
   ambiente: 'development',
-  sessao: { cookieNome: 'gepi_sessao', cookieSecure: false, cookieSameSite: 'lax', expiracaoMinutos: 720, inatividadeMinutos: 30 },
+  sessao: { cookieNome: 'gepi_sessao', cookieNomeAdmin: 'gepi_sessao_admin', cookieSecure: false, cookieSameSite: 'lax', expiracaoMinutos: 720, inatividadeMinutos: 30 },
   argon2: { memoryKib: 65536, timeCost: 3, parallelism: 1, hashLength: 32 },
   cooldown: { niveis: [{ falhas: 5, janelaMinutos: 15, duracaoMinutos: 15 }, { falhas: 10, janelaMinutos: 60, duracaoMinutos: 60 }], retencaoDias: 30 },
 };
@@ -111,6 +111,43 @@ describe('carregarConfigAuth com ambiente artificial', () => {
     assert.equal(erroDe({ ...base, SESSAO_COOKIE_NOME: '__Host-gepi', NODE_ENV: 'production' }), null);
     assert.equal(carregarConfigAuth({ ...base, NODE_ENV: 'production' }).sessao.cookieSecure, true);
     assert.match(erroDe({ ...base, NODE_ENV: 'production', SESSAO_COOKIE_SECURE: 'false' }), /SESSAO_COOKIE_SECURE: não pode ser false em produção/);
+  });
+
+  test('cookie administrativo: nome próprio, distinto do empresarial, mesmos prefixos', () => {
+    // Autenticação Global — Pacote 2: SESSAO_ADMIN_COOKIE_NOME é o cookie do
+    // Painel Privado. Precisa ter formato válido, nunca coincidir com
+    // SESSAO_COOKIE_NOME (garante isolamento entre os dois contextos por
+    // construção) e seguir as mesmas regras de prefixo __Secure-/__Host-.
+    assert.equal(carregarConfigAuth(base).sessao.cookieNomeAdmin, 'gepi_sessao_admin');
+    assert.match(erroDe({ ...base, SESSAO_ADMIN_COOKIE_NOME: 'a b' }), /SESSAO_ADMIN_COOKIE_NOME: formato inválido/);
+    assert.match(
+      erroDe({ ...base, SESSAO_ADMIN_COOKIE_NOME: 'gepi_sessao' }),
+      /SESSAO_ADMIN_COOKIE_NOME: não pode ser igual a SESSAO_COOKIE_NOME/,
+    );
+    assert.match(
+      erroDe({ ...base, SESSAO_COOKIE_NOME: 'gepi_admin', SESSAO_ADMIN_COOKIE_NOME: 'gepi_admin' }),
+      /SESSAO_ADMIN_COOKIE_NOME: não pode ser igual a SESSAO_COOKIE_NOME/,
+    );
+    assert.match(
+      erroDe({ ...base, SESSAO_ADMIN_COOKIE_NOME: '__Host-gepi_admin' }),
+      /SESSAO_ADMIN_COOKIE_NOME: prefixo __Host- exige cookie Secure/,
+    );
+    assert.match(
+      erroDe({ ...base, SESSAO_ADMIN_COOKIE_NOME: '__Secure-gepi_admin' }),
+      /SESSAO_ADMIN_COOKIE_NOME: prefixo __Secure- exige cookie Secure/,
+    );
+    assert.equal(
+      erroDe({ ...base, SESSAO_ADMIN_COOKIE_NOME: '__Host-gepi_admin', SESSAO_COOKIE_SECURE: 'true' }),
+      null,
+    );
+    assert.equal(
+      erroDe({ ...base, SESSAO_ADMIN_COOKIE_NOME: '__Host-gepi_admin', NODE_ENV: 'production' }),
+      null,
+    );
+    assert.equal(
+      carregarConfigAuth({ ...base, SESSAO_ADMIN_COOKIE_NOME: 'painel_privado_sessao' }).sessao.cookieNomeAdmin,
+      'painel_privado_sessao',
+    );
   });
 
   test('regras cruzadas de sessão e cooldown', () => {

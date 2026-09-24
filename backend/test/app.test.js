@@ -487,3 +487,95 @@ describe('app.js: GET /api/auth/me e POST /api/auth/logout montadas e protegidas
     assert.equal(r.body.codigo, 'VALIDACAO');
   });
 });
+
+describe('app.js: namespace /api/plataforma (Autenticação Global — Pacote 2), isolado de /api', () => {
+  // Nenhum destes testes usa cookie válido nem toca o PostgreSQL: cobre
+  // exclusivamente a MONTAGEM em app.js — allowlist própria de CORS/Origin,
+  // cookie próprio, e que /api/plataforma nunca cai na cadeia /api do
+  // cliente (nem o contrário). O fluxo completo com PostgreSQL real está em
+  // test/integracao/auth-plataforma-routes.integration.js.
+  const app = require('../src/app');
+  const PERMITIDA_CLIENTE = 'http://localhost:5500';
+  const PERMITIDA_PLATAFORMA = 'http://localhost:5501';
+  const { authConfig } = require('../src/config/auth');
+
+  test('POST /api/plataforma/auth/login está montada: corpo inválido dá 400 de validação, não 404', async () => {
+    const r = await request(app)
+      .post('/api/plataforma/auth/login')
+      .set('Origin', PERMITIDA_PLATAFORMA)
+      .set('Content-Type', 'application/json')
+      .send({});
+    assert.equal(r.status, 400);
+    assert.equal(r.body.codigo, 'VALIDACAO');
+  });
+
+  test('a rota da plataforma rejeita cnpj no corpo: schema strictObject, sem CNPJ nenhum', async () => {
+    const r = await request(app)
+      .post('/api/plataforma/auth/login')
+      .set('Origin', PERMITIDA_PLATAFORMA)
+      .set('Content-Type', 'application/json')
+      .send({ email: 'admin@safework.com.br', senha: 'qualquer-coisa-12345', cnpj: '11222333000181' });
+    assert.equal(r.status, 400);
+    assert.equal(r.body.codigo, 'VALIDACAO');
+  });
+
+  test('GET /api/plataforma/painel sem cookie: 401 SESSAO_INVALIDA, não 404', async () => {
+    const r = await request(app).get('/api/plataforma/painel');
+    assert.deepEqual(r.body, { status: 'error', codigo: 'SESSAO_INVALIDA', message: 'Sessão inválida ou expirada' });
+  });
+
+  test('POST /api/plataforma/auth/logout sem cookie, com a origem DA PLATAFORMA: 200 e Set-Cookie de remoção com o nome administrativo', async () => {
+    const r = await request(app).post('/api/plataforma/auth/logout').set('Origin', PERMITIDA_PLATAFORMA);
+    assert.deepEqual([r.status, r.body], [200, { status: 'ok' }]);
+    assert.ok(Array.isArray(r.headers['set-cookie']) && r.headers['set-cookie'].length === 1);
+    assert.match(r.headers['set-cookie'][0], new RegExp(`^${authConfig.sessao.cookieNomeAdmin}=;`));
+    assert.match(r.headers['set-cookie'][0], /Max-Age=0/);
+  });
+
+  test('a origem do CLIENTE não é aceita pelo CORS da plataforma, e vice-versa', async () => {
+    const comOrigemCliente = await request(app).post('/api/plataforma/auth/logout').set('Origin', PERMITIDA_CLIENTE);
+    assert.equal('access-control-allow-origin' in comOrigemCliente.headers, false);
+
+    const comOrigemPlataforma = await request(app).post('/api/auth/logout').set('Origin', PERMITIDA_PLATAFORMA);
+    assert.equal('access-control-allow-origin' in comOrigemPlataforma.headers, false);
+  });
+
+  test('POST com a origem do CLIENTE é recusado pela verificação de Origin da plataforma: 403, nenhum cookie emitido', async () => {
+    const r = await request(app).post('/api/plataforma/auth/logout').set('Origin', PERMITIDA_CLIENTE);
+    assert.deepEqual([r.status, r.body.codigo], [403, 'ORIGEM_NAO_PERMITIDA']);
+    assert.equal(r.headers['set-cookie'], undefined);
+  });
+
+  test('POST com a origem da PLATAFORMA é recusado pela verificação de Origin do cliente: 403, nenhum cookie emitido', async () => {
+    const r = await request(app).post('/api/auth/logout').set('Origin', PERMITIDA_PLATAFORMA);
+    assert.deepEqual([r.status, r.body.codigo], [403, 'ORIGEM_NAO_PERMITIDA']);
+    assert.equal(r.headers['set-cookie'], undefined);
+  });
+
+  test('rota inexistente sob /api/plataforma responde 404 pelo notFoundHandler PRÓPRIO da cadeia, sem cair em /api', async () => {
+    const r = await request(app).get('/api/plataforma/nao-existe').set('Origin', PERMITIDA_PLATAFORMA);
+    assert.equal(r.status, 404);
+    assert.equal(r.body.status, 'error');
+    assert.match(r.body.message, /^Rota não encontrada: GET \/api\/plataforma\/nao-existe/);
+  });
+
+  test('GET /api/health continua respondendo normalmente: a cadeia /api/plataforma não intercepta /api/health', async () => {
+    const r = await request(app).get('/api/health');
+    assert.deepEqual([r.status, r.body], [200, { status: 'ok', service: 'gestao-epi-api' }]);
+  });
+
+  test('o rate limit da plataforma é uma cota PRÓPRIA, separada da cota geral do cliente', async () => {
+    const restante = (resposta) => Number(String(resposta.headers.ratelimit).split(';').map((p) => p.trim()).find((p) => p.startsWith('r=')).slice(2));
+
+    const clienteAntes = restante(await request(app).get('/api/health'));
+
+    // Três requisições à plataforma: se consumissem a MESMA cota do cliente,
+    // o próximo /api/health cairia 4 unidades (1 dele + 3 da plataforma), não 1.
+    await request(app).get('/api/plataforma/painel').set('Origin', PERMITIDA_PLATAFORMA);
+    await request(app).get('/api/plataforma/painel').set('Origin', PERMITIDA_PLATAFORMA);
+    await request(app).get('/api/plataforma/painel').set('Origin', PERMITIDA_PLATAFORMA);
+
+    const clienteDepois = restante(await request(app).get('/api/health'));
+    assert.equal(clienteAntes - clienteDepois, 1, 'consumir a cota da plataforma não pode afetar a cota do cliente');
+  });
+});

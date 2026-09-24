@@ -27,6 +27,11 @@
     "023_alter_usuario_autorizacoes_add_delegacao.sql": "ec556b536e219a14f43a861677473beea8f1d6a605e15105b6ca6e6e724c1710",
     "024_insert_acoes_administrativas_grupos.sql": "2d92088fb2b99ccc799fc4802ba0d3bd784018918a39ace86cd763bb80b9e642",
     "025_create_identidades.sql": "e9e0d1e12710164a503087a049d6e987a09827d2ff2696426548133887a1794c",
-    "026_alter_usuarios_add_check_credencial.sql": "83cddc91219f6f3bacd9856a8da7350f7c412f68ca744a6526e38f0fb64d02dd"
+    "026_alter_usuarios_add_check_credencial.sql": "83cddc91219f6f3bacd9856a8da7350f7c412f68ca744a6526e38f0fb64d02dd",
+    "027_create_administradores_plataforma.sql": "adbb46d5c35427d1af8a383c8b1b6a91a749f8dfbc57c54be662d94b747369e3",
+    "028_create_sessoes_plataforma.sql": "410b30e9fdf348af0914a5df942170f1fb49545c2a6bc1ec0a9a83c084f57e5f",
+    "029_create_logs_auditoria_plataforma.sql": "44f9ece03a5bfc8b0477fa68ea7ef59b65d640ec29eefcae42996fad745de989",
+    "030_create_login_tentativas_plataforma.sql": "eb8f1f34eb95f7c1338e5a639f79173561f92b87f1dcbf30dd8189cd9797841f",
+    "031_alter_plataforma_add_constraints_integridade.sql": "de452607097d8ed2e5c0f6f0359d3164a14a7d3eb9399dde05ce9d51bda3993d"
   }
 }

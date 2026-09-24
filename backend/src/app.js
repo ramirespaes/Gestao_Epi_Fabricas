@@ -3,6 +3,8 @@ const express = require('express');
 const { httpConfig } = require('./config/http');
 const healthRoutes = require('./routes/health.routes');
 const { authRoutes } = require('./routes/auth.routes');
+const { authPlataformaRoutes } = require('./routes/auth-plataforma.routes');
+const { painelPlataformaRoutes } = require('./routes/painel-plataforma.routes');
 const { grupoAcessoRoutes } = require('./routes/grupo-acesso.routes');
 const { grupoPermissaoRoutes } = require('./routes/grupo-permissao.routes');
 const { grupoUsuarioRoutes } = require('./routes/grupo-usuario.routes');
@@ -16,11 +18,12 @@ const { estoqueRoutes } = require('./routes/estoque.routes');
 const { grupoHomogeneoExposicaoRoutes } = require('./routes/grupo-homogeneo-exposicao.routes');
 const { funcionarioRoutes } = require('./routes/funcionario.routes');
 const { cabecalhosSeguranca, semCache } = require('./middleware/cabecalhos');
-const { corsApi } = require('./middleware/cors');
+const { corsApi, corsPlataforma } = require('./middleware/cors');
 const { exigirJson, parserJson } = require('./middleware/conteudo');
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
-const { verificarOrigem } = require('./middleware/origem');
-const { limitadorGeral } = require('./middleware/rate-limit');
+const { verificarOrigem, verificarOrigemPlataforma } = require('./middleware/origem');
+const { verificarHostPlataforma } = require('./middleware/host-plataforma');
+const { limitadorGeral, limitadorPlataformaGeral } = require('./middleware/rate-limit');
 
 const app = express();
 
@@ -37,6 +40,39 @@ app.disable('x-powered-by');
 
 // Cabeçalhos de segurança em toda resposta, inclusive erros e 404.
 app.use(cabecalhosSeguranca);
+
+// Namespace /api/plataforma (Autenticação Global — Pacote 2): cadeia
+// COMPLETAMENTE separada da cadeia /api abaixo — CORS, verificação de
+// origem, validação de Host e rate limit próprios, com allowlists
+// exclusivas do Painel Privado (httpConfig.plataforma.*), nunca
+// compartilhadas com o cliente. Precisa ser montada ANTES de app.use('/api',
+// ...): /api/plataforma é um sub-caminho de /api, então se a cadeia geral
+// viesse primeiro, uma requisição para /api/plataforma/auth/login passaria
+// pelo CORS/Origin do CLIENTE antes de qualquer coisa (e seria rejeitada,
+// porque a origem do Painel Privado não está na allowlist do cliente).
+// Termina com seu PRÓPRIO notFoundHandler: um caminho não encontrado sob
+// /api/plataforma nunca cai para a cadeia /api geral (ver
+// src/middleware/autenticacao-plataforma.js e host-plataforma.js).
+//
+// verificarHostPlataforma é defesa em profundidade, no-op enquanto
+// PLATAFORMA_HOST não estiver definido (sem subdomínio real ainda) — a
+// defesa real, quando os dois portais forem subdomínios do mesmo domínio
+// registrável (SameSite não os distingue), é a allowlist de CORS/Origin
+// específica desta cadeia, mais o nome de cookie diferente do cliente
+// (ver adendo v2.1, seção 3).
+app.use(
+  '/api/plataforma',
+  corsPlataforma,
+  semCache,
+  verificarOrigemPlataforma,
+  verificarHostPlataforma,
+  limitadorPlataformaGeral,
+  exigirJson,
+  parserJson,
+  authPlataformaRoutes,
+  painelPlataformaRoutes,
+  notFoundHandler,
+);
 
 // Namespace /api: CORS com allowlist (preflight permitido termina aqui, com
 // Max-Age e sem no-store), sem cache, verificação de origem em métodos que

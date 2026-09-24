@@ -70,10 +70,12 @@ const MENSAGENS = Object.freeze({
   SAMESITE_NONE: 'SameSite=None exige cookie Secure',
   PREFIXO_SECURE: 'prefixo __Secure- exige cookie Secure',
   PREFIXO_HOST: 'prefixo __Host- exige cookie Secure',
+  NOME_ADMIN_IGUAL: 'não pode ser igual a SESSAO_COOKIE_NOME',
 });
 
 const COOKIE_NOME_FORMATO = /^(__Host-|__Secure-)?[A-Za-z0-9_-]{1,64}$/;
 const COOKIE_NOME_PADRAO = 'gepi_sessao';
+const COOKIE_NOME_ADMIN_PADRAO = 'gepi_sessao_admin';
 const HEX = /^[0-9a-fA-F]+$/;
 
 const esquema = z
@@ -89,6 +91,14 @@ const esquema = z
       .refine((v) => v.length % 2 === 0, MENSAGENS.SEGREDO_PAR),
 
     SESSAO_COOKIE_NOME: z.string().regex(COOKIE_NOME_FORMATO).default(COOKIE_NOME_PADRAO),
+    // Cookie do Painel Privado da plataforma (Autenticação Global — Pacote
+    // 2): nome PRÓPRIO, nunca o mesmo do cookie empresarial — é o que
+    // garante, por construção, que um cookie nunca autentica no contexto do
+    // outro, mesmo que ambos um dia sejam servidos por um único processo
+    // (adendo v2.1, seção 3). Reaproveita Secure/SameSite/expiração do
+    // cookie empresarial — mesma política de sessão, arquitetura já
+    // aprovada, só o nome muda.
+    SESSAO_ADMIN_COOKIE_NOME: z.string().regex(COOKIE_NOME_FORMATO).default(COOKIE_NOME_ADMIN_PADRAO),
     SESSAO_COOKIE_SECURE: booleanoDeAmbiente.optional(),
     SESSAO_COOKIE_SAMESITE: z.enum(OPCOES.SESSAO_COOKIE_SAMESITE).default('lax'),
     SESSAO_EXPIRACAO_MINUTOS: inteiroDeAmbiente(INTEIROS.SESSAO_EXPIRACAO_MINUTOS),
@@ -134,6 +144,18 @@ const esquema = z
   .refine((e) => !(e.SESSAO_COOKIE_NOME.startsWith('__Host-') && !cookieSecureEfetivo(e)), {
     message: MENSAGENS.PREFIXO_HOST,
     path: ['SESSAO_COOKIE_NOME'],
+  })
+  .refine((e) => e.SESSAO_ADMIN_COOKIE_NOME !== e.SESSAO_COOKIE_NOME, {
+    message: MENSAGENS.NOME_ADMIN_IGUAL,
+    path: ['SESSAO_ADMIN_COOKIE_NOME'],
+  })
+  .refine((e) => !(e.SESSAO_ADMIN_COOKIE_NOME.startsWith('__Secure-') && !cookieSecureEfetivo(e)), {
+    message: MENSAGENS.PREFIXO_SECURE,
+    path: ['SESSAO_ADMIN_COOKIE_NOME'],
+  })
+  .refine((e) => !(e.SESSAO_ADMIN_COOKIE_NOME.startsWith('__Host-') && !cookieSecureEfetivo(e)), {
+    message: MENSAGENS.PREFIXO_HOST,
+    path: ['SESSAO_ADMIN_COOKIE_NOME'],
   });
 
 function cookieSecureEfetivo(e) {
@@ -159,6 +181,7 @@ function analisarConfigAuth(origem) {
     ambiente: e.NODE_ENV,
     sessao: {
       cookieNome: e.SESSAO_COOKIE_NOME,
+      cookieNomeAdmin: e.SESSAO_ADMIN_COOKIE_NOME,
       cookieSecure: cookieSecureEfetivo(e),
       cookieSameSite: e.SESSAO_COOKIE_SAMESITE,
       expiracaoMinutos: e.SESSAO_EXPIRACAO_MINUTOS,
