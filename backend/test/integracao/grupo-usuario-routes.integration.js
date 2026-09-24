@@ -47,7 +47,7 @@ const { authConfig } = require('../../src/config/auth');
 // PROVAR que vincular/desvincular não toca nenhum dos dois — só é
 // demonstrável com as tabelas realmente presentes. 022: exceções
 // individuais de recurso, pela mesma razão.
-const MIGRATIONS = ['000', '001', '002', '003', '004', '005', '006', '009', '010', '011', '012', '013', '014', '015', '016', '017', '018', '019', '020', '021', '022', '023'];
+const MIGRATIONS = ['000', '001', '002', '003', '004', '005', '025', '006', '009', '010', '011', '012', '013', '014', '015', '016', '017', '018', '019', '020', '021', '022', '023'];
 
 const SENHA = 'senha-correta-do-teste-3o-2026';
 let HASH_SENHA;

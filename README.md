@@ -60,6 +60,33 @@ Quatro páginas novas em `frontend/pages/` consomem a API HTTP real, com autenti
 
 Seis módulos JavaScript em `frontend/js/` dão suporte a essas páginas: `api-http.js` e `auth-session.js` (fundação HTTP e sessão) mais um módulo por página (`grupos-acesso.js`, `grupo-permissoes.js`, `grupo-usuarios.js`, `autorizacoes-individuais.js`).
 
+### Portal do Cliente (Autenticação Global — Pacote 4)
+
+`frontend/portal/` é a entrada dos clientes: login **somente por e-mail e senha** (identidade global), seleção de empresa e ambiente inicial autenticado. Usa o backend real, sessões no PostgreSQL e cookies `HttpOnly`; nada de sessão é guardado no navegador.
+
+| Página | Função |
+|---|---|
+| `portal/index.html` | Login (e-mail, senha, Entrar) |
+| `portal/empresas.html` | "Selecione sua empresa" (e troca de empresa); mensagem própria quando não há empresa ativa vinculada |
+| `portal/inicio.html` | Usuário, perfil e empresa ativa; **TROCAR DE EMPRESA**, **Sair da empresa** e **Sair**; módulos já integrados e módulos em integração |
+
+Fluxo: uma empresa autorizada → entra direto; duas ou mais → escolhe; nenhuma → sem acesso operacional. Três cookies distintos: `gepi_sessao_global` (identidade; não dá acesso operacional), `gepi_sessao` (empresa selecionada; o mesmo que o RBAC sempre usou) e `gepi_sessao_admin` (Painel Privado). O login legado por CNPJ recusa vínculos ligados a uma identidade global — há uma única credencial válida por pessoa.
+
+Módulos de `frontend/pages/` ainda baseados em `localStorage` não são apresentados como dados da empresa; sua integração é o Bloco 9 — Etapa C.
+
+Em desenvolvimento, sirva `frontend/` em `http://localhost:5500` (Portal: `/portal/`) e em `http://localhost:5501` (Painel Privado: `/painel-privado/`), com o backend em `http://localhost:3000` — cada portal só é aceito pela allowlist de CORS/Origin do seu próprio namespace.
+
+### Conexão futura da página institucional
+
+`frontend/institucional/` já prevê os dois botões de acesso (`linkEmpresas`, `linkAdmin`), alimentados pelo objeto `PORTAIS` do próprio arquivo; com os valores vazios, a página mostra um aviso em vez de navegar. Quando os subdomínios estiverem publicados (não estão hoje), a conexão será apenas preencher, com autorização específica para alterar aquela página:
+
+| Botão | Valor de `PORTAIS` | Destino previsto |
+|---|---|---|
+| Acesso Empresas | `empresas` | Portal do Cliente em `app.safeworkengenharia.com.br` (caminho final conforme a publicação, por exemplo `/portal/`) |
+| Acesso Restrito | `restrito` | Painel Privado em `admin.safeworkengenharia.com.br` (por exemplo `/painel-privado/`) |
+
+Pré-requisitos antes de preencher: API servida sob `/api` (cliente) e `/api/plataforma` (Painel) na mesma origem de cada portal; `CORS_ORIGIN` e `PLATAFORMA_CORS_ORIGIN` com as origens `https://` reais (disjuntas); `PLATAFORMA_HOST` definido; cookies `Secure`.
+
 ## Backend
 
 O backend está localizado integralmente em `backend/` e concentra a API, configuração do servidor, acesso ao PostgreSQL 16, as migrations em `backend/migrations/` e as regras de negócio.

@@ -174,6 +174,30 @@ describe('gerarChaveCooldownConvite (Pacote 3 — aceite de convite do MASTER)',
   });
 });
 
+describe('gerarChaveCooldownGlobal (Pacote 4 — login global do Portal do Cliente)', () => {
+  const { gerarChaveCooldownGlobal } = require('../../src/security/cooldown');
+  const chave = gerarChaveCooldownGlobal('  Pessoa@Exemplo-Cliente.com.br ');
+
+  test('HMAC-SHA-256 sobre IDENTIDADE_GLOBAL + 0x0A + e-mail normalizado, 64 hex; rótulo separa dos outros três contextos', () => {
+    assert.equal(chave, hmac('IDENTIDADE_GLOBAL\npessoa@exemplo-cliente.com.br'));
+    assert.match(chave, HEX64);
+    assert.equal(chaveCooldownTemFormatoValido(chave), true);
+    assert.notEqual(chave, hmac('PLATAFORMA\npessoa@exemplo-cliente.com.br'));
+    assert.notEqual(chave, gerarChaveCooldownPlataforma('pessoa@exemplo-cliente.com.br'), 'mesmo e-mail como administrador tem contador próprio');
+  });
+
+  test('determinística e normalizada; e-mail não normalizável: TypeError fixo, sem o valor', () => {
+    assert.equal(gerarChaveCooldownGlobal('pessoa@exemplo-cliente.com.br'), chave);
+    for (const ruim of ['', 'sem-arroba', null, 42]) {
+      assert.throws(() => gerarChaveCooldownGlobal(ruim), { name: 'TypeError', message: 'e-mail não normalizável' });
+    }
+  });
+
+  test('a chave não contém o e-mail nem o segredo', () => {
+    assertSemSensiveis(chave, ['pessoa@exemplo', SEGREDO_HEX.slice(0, 12)], 'chave global');
+  });
+});
+
 describe('derivarAdvisoryLock64', () => {
   const resto = 'a'.repeat(48);
   const lock = (hex16) => derivarAdvisoryLock64(hex16 + resto);

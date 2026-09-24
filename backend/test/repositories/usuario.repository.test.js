@@ -327,7 +327,7 @@ describe('buscarCredencialPorEmail', () => {
     assert.match(executor.chamadas[0].texto, /senha_hash/i);
     assert.deepEqual(
       Object.keys(credencial).sort(),
-      [...CAMPOS_PUBLICOS, 'senha_hash'].sort(),
+      [...CAMPOS_PUBLICOS, 'senha_hash', 'identidade_id'].sort(),
       'traz os campos públicos mais o hash, e nada além',
     );
   });
@@ -562,5 +562,52 @@ describe('listarDaEmpresa', () => {
     const executor = { query: async () => { throw new Error('falha ao consultar usuarios'); } };
 
     await assert.rejects(() => listarDaEmpresa(executor, EMPRESA_A, {}), /falha ao consultar/);
+  });
+});
+
+describe('vínculos de uma identidade global (Pacote 4)', () => {
+  const { listarVinculosAtivosDaIdentidade, buscarVinculoAtivoDaIdentidade } = require('../../src/repositories/usuario.repository');
+  const linha = { usuario_id: 70, usuario_nome: 'Pessoa', usuario_perfil: 'MASTER', empresa_id: 3, empresa_nome: 'Empresa A', empresa_cnpj: '11222333000181' };
+
+  test('listar: vínculo ativo + empresa ativa NA consulta, parametrizado, sem credencial, ordenado', async () => {
+    const executor = executorFalso([linha]);
+    const r = await listarVinculosAtivosDaIdentidade(executor, 9);
+    assert.deepEqual(r, [{ usuarioId: 70, nome: 'Pessoa', perfil: 'MASTER', empresa: { id: 3, nome: 'Empresa A', cnpj: '11222333000181' } }]);
+    const { texto, valores } = executor.chamadas[0];
+    assert.match(texto, /u\.identidade_id\s*=\s*\$1/i);
+    assert.match(texto, /u\.ativo/i);
+    assert.match(texto, /e\.ativo/i);
+    assert.match(texto, /order\s+by/i);
+    assert.doesNotMatch(texto, /senha_hash/i);
+    assert.deepEqual(valores, [9]);
+  });
+
+  test('buscar: exige o par (identidade, empresa) e as duas atividades; null quando não há', async () => {
+    const executor = executorFalso([linha]);
+    assert.equal((await buscarVinculoAtivoDaIdentidade(executor, 9, 3)).usuarioId, 70);
+    const { texto, valores } = executor.chamadas[0];
+    assert.match(texto, /u\.identidade_id\s*=\s*\$1/i);
+    assert.match(texto, /e\.id\s*=\s*\$2/i);
+    assert.match(texto, /u\.ativo/i);
+    assert.match(texto, /e\.ativo/i);
+    assert.doesNotMatch(texto, /senha_hash/i);
+    assert.deepEqual(valores, [9, 3]);
+    assert.equal(await buscarVinculoAtivoDaIdentidade(executorFalso([]), 9, 3), null);
+  });
+
+  test('recusa identificadores inválidos antes de consultar', async () => {
+    const executor = executorFalso([]);
+    await assert.rejects(() => listarVinculosAtivosDaIdentidade(executor, '9'), /identidade/i);
+    await assert.rejects(() => buscarVinculoAtivoDaIdentidade(executor, 9, 0), /empresa/i);
+    await assert.rejects(() => buscarVinculoAtivoDaIdentidade(executor, 0, 3), /identidade/i);
+    assert.equal(executor.chamadas.length, 0);
+  });
+
+  test('buscarCredencialPorEmail devolve identidade_id (null no modelo anterior) para o login legado recusar o modelo global', async () => {
+    const { buscarCredencialPorEmail: buscar } = require('../../src/repositories/usuario.repository');
+    const r = await buscar(executorFalso([linhaUsuario({ senha_hash: HASH })]), EMPRESA_A, EMAIL);
+    assert.equal(r.identidade_id, null);
+    const g = await buscar(executorFalso([linhaUsuario({ senha_hash: null, identidade_id: 12 })]), EMPRESA_A, EMAIL);
+    assert.equal(g.identidade_id, 12);
   });
 });

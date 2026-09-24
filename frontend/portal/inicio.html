@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>Início — SafeWork</title>
+  <link rel="stylesheet" href="portal.css">
+</head>
+<body>
+  <header class="topo">
+    <div class="identificacao">
+      <strong id="empresa-nome">SafeWork — Gestão de EPIs</strong>
+      <span id="empresa-cnpj"></span>
+    </div>
+    <nav id="acoes" class="oculto">
+      <button type="button" id="botao-trocar" class="oculto">TROCAR DE EMPRESA</button>
+      <button type="button" id="botao-sair-empresa">Sair da empresa</button>
+      <button type="button" id="botao-sair">Sair</button>
+    </nav>
+  </header>
+
+  <main class="conteudo">
+    <p id="carregando">Carregando...</p>
+    <div id="mensagem" class="mensagem" role="alert" aria-live="polite"></div>
+
+    <div id="conteudo" class="oculto">
+      <section class="bloco">
+        <h2>Acesso confirmado</h2>
+        <p>Usuário: <strong id="usuario-nome"></strong> (<span id="usuario-email"></span>)</p>
+        <p>Perfil nesta empresa: <strong id="usuario-perfil"></strong></p>
+        <p>Empresa ativa: <strong id="empresa-ativa"></strong></p>
+      </section>
+
+      <section class="bloco">
+        <h2>Módulos já integrados ao servidor</h2>
+        <p>Usam a sessão desta empresa e as permissões do seu perfil, verificadas no servidor a cada operação.</p>
+        <div class="modulos">
+          <a href="../pages/grupos-acesso.html">Grupos de acesso</a>
+          <a href="../pages/grupo-permissoes.html">Permissões dos grupos</a>
+          <a href="../pages/grupo-usuarios.html">Usuários dos grupos</a>
+          <a href="../pages/autorizacoes-individuais.html">Autorizações individuais</a>
+        </div>
+      </section>
+
+      <section class="bloco">
+        <h2>Em integração</h2>
+        <p>Os módulos operacionais abaixo ainda não estão ligados ao banco de dados desta empresa. Serão disponibilizados aqui a partir do Bloco 9 — Etapa C, sem dados de demonstração.</p>
+        <div class="modulos">
+          <div>Materiais e EPIs<br><span class="etiqueta">Bloco 9 — Etapa C</span></div>
+          <div>Estoque<br><span class="etiqueta">Bloco 9 — Etapa C</span></div>
+          <div>Funcionários e GHE<br><span class="etiqueta">Bloco 9 — Etapa C</span></div>
+          <div>Entregas e fichas de EPI<br><span class="etiqueta">Etapas seguintes</span></div>
+          <div>Solicitações e aprovações<br><span class="etiqueta">Etapas seguintes</span></div>
+          <div>Relatórios<br><span class="etiqueta">Etapas seguintes</span></div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="../js/api-http.js"></script>
+  <script src="../js/portal-cliente.js"></script>
+  <script src="config.js"></script>
+  <script src="inicio.js"></script>
+</body>
+</html>

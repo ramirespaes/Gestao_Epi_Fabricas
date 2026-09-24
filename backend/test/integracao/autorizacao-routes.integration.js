@@ -187,7 +187,7 @@ describe('autenticação + RBAC (recurso e ação) com PostgreSQL real', () => {
   before(async () => {
     HASH_SENHA_CORRETA = await gerarHashSenha(SENHA_CORRETA);
 
-    contexto = await abrirPoolTemporario(['000', '001', '002', '003', '005', '009', '010', '011', '013', '015', '016', '017', '018', '019', '020', '021', '022']);
+    contexto = await abrirPoolTemporario(['000', '001', '002', '003', '005', '025', '009', '010', '011', '013', '015', '016', '017', '018', '019', '020', '021', '022']);
 
     const controller = criarAuthController({ pool: contexto.pool });
     const exigirSessaoTeste = criarExigirSessao({ pool: contexto.pool });

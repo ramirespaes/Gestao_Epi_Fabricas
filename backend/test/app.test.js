@@ -594,3 +594,71 @@ describe('app.js: namespace /api/plataforma (Autenticação Global — Pacote 2)
     assert.equal(clienteAntes - clienteDepois, 1, 'consumir a cota da plataforma não pode afetar a cota do cliente');
   });
 });
+
+describe('app.js: rotas de autenticação GLOBAL do Portal do Cliente (Pacote 4) na cadeia /api', () => {
+  // Nenhum destes testes usa cookie válido nem toca o PostgreSQL: cobre a
+  // MONTAGEM — cadeia /api do cliente (CORS/Origin do CLIENTE, nunca da
+  // plataforma), validação, cookies de remoção com os nomes certos. O fluxo
+  // completo está em test/integracao/auth-global-routes.integration.js.
+  const app = require('../src/app');
+  const { authConfig } = require('../src/config/auth');
+  const PERMITIDA_CLIENTE = 'http://localhost:5500';
+  const PERMITIDA_PLATAFORMA = 'http://localhost:5501';
+
+  let logErro;
+  beforeEach(() => { logErro = mock.method(console, 'error', () => {}); });
+  afterEach(() => mock.restoreAll());
+
+  test('POST /api/auth/global/login está montada: corpo vazio dá 400 de validação, não 404; cnpj é recusado', async () => {
+    const vazio = await request(app).post('/api/auth/global/login').set('Origin', PERMITIDA_CLIENTE).set('Content-Type', 'application/json').send({});
+    assert.deepEqual([vazio.status, vazio.body.codigo], [400, 'VALIDACAO']);
+    const comCnpj = await request(app).post('/api/auth/global/login').set('Origin', PERMITIDA_CLIENTE).set('Content-Type', 'application/json')
+      .send({ email: 'p@x.com', senha: 'uma-senha-qualquer-123', cnpj: '11222333000181' });
+    assert.deepEqual([comCnpj.status, comCnpj.body.codigo], [400, 'VALIDACAO']);
+  });
+
+  test('CSRF/Origin: POST sem Origin dá 403 ORIGEM_AUSENTE; Origin estranha e Origin DA PLATAFORMA dão 403 ORIGEM_NAO_PERMITIDA (allowlists disjuntas)', async () => {
+    const semOrigem = await request(app).post('/api/auth/global/login').set('Content-Type', 'application/json').send({});
+    assert.deepEqual([semOrigem.status, semOrigem.body.codigo], [403, 'ORIGEM_AUSENTE']);
+    const estranha = await request(app).post('/api/auth/global/login').set('Origin', 'http://mal.test').set('Content-Type', 'application/json').send({});
+    assert.deepEqual([estranha.status, estranha.body.codigo], [403, 'ORIGEM_NAO_PERMITIDA']);
+    const plataforma = await request(app).post('/api/auth/global/login').set('Origin', PERMITIDA_PLATAFORMA).set('Content-Type', 'application/json').send({});
+    assert.deepEqual([plataforma.status, plataforma.body.codigo], [403, 'ORIGEM_NAO_PERMITIDA']);
+    assert.equal('access-control-allow-origin' in plataforma.headers, false, 'CORS do cliente não reconhece a origem do Painel Privado');
+    assert.equal(logErro.mock.calls.length, 0);
+  });
+
+  test('CORS: a origem do cliente recebe a própria origem com credentials', async () => {
+    const r = await request(app).get('/api/auth/global/me').set('Origin', PERMITIDA_CLIENTE);
+    assert.equal(r.headers['access-control-allow-origin'], PERMITIDA_CLIENTE);
+    assert.equal(r.headers['access-control-allow-credentials'], 'true');
+  });
+
+  test('GET /api/auth/global/me e POST .../empresas/:id/selecionar sem cookie: 401 SESSAO_INVALIDA, não 404', async () => {
+    const me = await request(app).get('/api/auth/global/me');
+    assert.deepEqual(me.body, { status: 'error', codigo: 'SESSAO_INVALIDA', message: 'Sessão inválida ou expirada' });
+    const sel = await request(app).post('/api/auth/global/empresas/1/selecionar').set('Origin', PERMITIDA_CLIENTE);
+    assert.deepEqual([sel.status, sel.body.codigo], [401, 'SESSAO_INVALIDA']);
+  });
+
+  test('o cookie ADMINISTRATIVO nunca autentica no Portal: GET /api/auth/global/me com gepi_sessao_admin dá 401 sem consultar sessão global', async () => {
+    const r = await request(app).get('/api/auth/global/me').set('Cookie', `${authConfig.sessao.cookieNomeAdmin}=Zm9ybWF0b2Jhc2U2NHVybGRldG9rZW5jb21fNDNjaGFy`);
+    assert.deepEqual([r.status, r.body.codigo], [401, 'SESSAO_INVALIDA']);
+  });
+
+  test('POST /api/auth/global/logout sem cookie, com origem do cliente: 200 e remoção dos DOIS cookies (global e empresarial), nunca o administrativo', async () => {
+    const r = await request(app).post('/api/auth/global/logout').set('Origin', PERMITIDA_CLIENTE);
+    assert.deepEqual([r.status, r.body], [200, { status: 'ok' }]);
+    const cookies = r.headers['set-cookie'];
+    assert.equal(cookies.length, 2);
+    const nomes = cookies.map((c) => c.split('=')[0]).sort();
+    assert.deepEqual(nomes, [authConfig.sessao.cookieNome, authConfig.sessao.cookieNomeGlobal].sort());
+    for (const c of cookies) assert.match(c, /Max-Age=0/);
+    assert.equal(cookies.some((c) => c.startsWith(`${authConfig.sessao.cookieNomeAdmin}=`)), false);
+  });
+
+  test('as rotas globais NÃO existem no namespace da plataforma', async () => {
+    const r = await request(app).post('/api/plataforma/auth/global/login').set('Origin', PERMITIDA_PLATAFORMA).set('Content-Type', 'application/json').send({});
+    assert.equal(r.status, 404);
+  });
+});

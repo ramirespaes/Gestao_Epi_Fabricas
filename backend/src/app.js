@@ -3,6 +3,7 @@ const express = require('express');
 const { httpConfig } = require('./config/http');
 const healthRoutes = require('./routes/health.routes');
 const { authRoutes } = require('./routes/auth.routes');
+const { authGlobalRoutes } = require('./routes/auth-global.routes');
 const { authPlataformaRoutes } = require('./routes/auth-plataforma.routes');
 const { painelPlataformaRoutes } = require('./routes/painel-plataforma.routes');
 const { empresaCadastroRoutes } = require('./routes/empresa-cadastro.routes');
@@ -113,7 +114,14 @@ app.use(
 //
 // grupoHomogeneoExposicaoRoutes e funcionarioRoutes (Bloco 9, Etapa B):
 // mesmo mecanismo da Etapa A, recursos 'employeeGroups' e 'employeeHistory'.
-app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeral, exigirJson, parserJson, healthRoutes, authRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, estoqueRoutes, grupoHomogeneoExposicaoRoutes, funcionarioRoutes);
+//
+// authGlobalRoutes (Autenticação Global — Pacote 4): login global por
+// e-mail+senha, seleção/troca de empresa e "sair completamente" do Portal
+// do Cliente — MESMA cadeia, mesmas allowlists do cliente (nunca as da
+// plataforma). Emite o cookie global (nome próprio) e, ao selecionar
+// empresa, o MESMO cookie empresarial que exigirSessao já lê: nenhuma
+// rota de negócio muda.
+app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeral, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, estoqueRoutes, grupoHomogeneoExposicaoRoutes, funcionarioRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

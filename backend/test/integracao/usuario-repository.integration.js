@@ -48,7 +48,7 @@ describe('repositório de usuários em PostgreSQL real', () => {
   let usuarioB;
 
   before(async () => {
-    contexto = await abrirSchemaTemporario(['000', '001', '002', '005', '016']);
+    contexto = await abrirSchemaTemporario(['000', '001', '002', '005', '025', '016']);
     assert.equal(await inserirEmpresa(contexto.cliente, CNPJ_A, 'Empresa A'), 'ok');
     assert.equal(await inserirEmpresa(contexto.cliente, CNPJ_B, 'Empresa B'), 'ok');
 

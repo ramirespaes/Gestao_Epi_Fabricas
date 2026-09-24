@@ -28,7 +28,7 @@ const erroDe = (env) => {
 
 const PADRAO = {
   ambiente: 'development',
-  sessao: { cookieNome: 'gepi_sessao', cookieNomeAdmin: 'gepi_sessao_admin', cookieSecure: false, cookieSameSite: 'lax', expiracaoMinutos: 720, inatividadeMinutos: 30 },
+  sessao: { cookieNome: 'gepi_sessao', cookieNomeAdmin: 'gepi_sessao_admin', cookieNomeGlobal: 'gepi_sessao_global', cookieSecure: false, cookieSameSite: 'lax', expiracaoMinutos: 720, inatividadeMinutos: 30 },
   argon2: { memoryKib: 65536, timeCost: 3, parallelism: 1, hashLength: 32 },
   cooldown: { niveis: [{ falhas: 5, janelaMinutos: 15, duracaoMinutos: 15 }, { falhas: 10, janelaMinutos: 60, duracaoMinutos: 60 }], retencaoDias: 30 },
   // Pacote 3 — validade do convite do MASTER.
@@ -150,6 +150,30 @@ describe('carregarConfigAuth com ambiente artificial', () => {
       carregarConfigAuth({ ...base, SESSAO_ADMIN_COOKIE_NOME: 'painel_privado_sessao' }).sessao.cookieNomeAdmin,
       'painel_privado_sessao',
     );
+  });
+
+  test('cookie global (Pacote 4): nome próprio, distinto do empresarial E do administrativo, mesmos prefixos', () => {
+    assert.equal(carregarConfigAuth(base).sessao.cookieNomeGlobal, 'gepi_sessao_global');
+    assert.match(erroDe({ ...base, SESSAO_GLOBAL_COOKIE_NOME: 'a b' }), /SESSAO_GLOBAL_COOKIE_NOME: formato inválido/);
+    assert.match(
+      erroDe({ ...base, SESSAO_GLOBAL_COOKIE_NOME: 'gepi_sessao' }),
+      /SESSAO_GLOBAL_COOKIE_NOME: não pode ser igual a SESSAO_COOKIE_NOME/,
+    );
+    assert.match(
+      erroDe({ ...base, SESSAO_GLOBAL_COOKIE_NOME: 'gepi_sessao_admin' }),
+      /SESSAO_GLOBAL_COOKIE_NOME: não pode ser igual a SESSAO_ADMIN_COOKIE_NOME/,
+    );
+    assert.match(
+      erroDe({ ...base, SESSAO_ADMIN_COOKIE_NOME: 'x_admin', SESSAO_GLOBAL_COOKIE_NOME: 'x_admin' }),
+      /SESSAO_GLOBAL_COOKIE_NOME: não pode ser igual a SESSAO_ADMIN_COOKIE_NOME/,
+    );
+    assert.match(erroDe({ ...base, SESSAO_GLOBAL_COOKIE_NOME: '__Host-gepi_global' }), /SESSAO_GLOBAL_COOKIE_NOME: prefixo __Host- exige cookie Secure/);
+    assert.match(erroDe({ ...base, SESSAO_GLOBAL_COOKIE_NOME: '__Secure-gepi_global' }), /SESSAO_GLOBAL_COOKIE_NOME: prefixo __Secure- exige cookie Secure/);
+    assert.equal(erroDe({ ...base, SESSAO_GLOBAL_COOKIE_NOME: '__Host-gepi_global', SESSAO_COOKIE_SECURE: 'true' }), null);
+    assert.equal(carregarConfigAuth({ ...base, SESSAO_GLOBAL_COOKIE_NOME: 'portal_sessao_global' }).sessao.cookieNomeGlobal, 'portal_sessao_global');
+    // Os três nomes são distintos dois a dois na configuração padrão.
+    const { sessao } = carregarConfigAuth(base);
+    assert.equal(new Set([sessao.cookieNome, sessao.cookieNomeAdmin, sessao.cookieNomeGlobal]).size, 3);
   });
 
   test('regras cruzadas de sessão e cooldown', () => {

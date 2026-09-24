@@ -1,0 +1,46 @@
+/* Portal do Cliente — SafeWork (Pacote 4). Estilo próprio, sem dependência externa. */
+:root {
+  --fundo: #f4f6f9; --cartao: #ffffff; --texto: #1c2430; --suave: #5b6675; --borda: #d9dee6;
+  --primaria: #1a3a6b; --primaria-texto: #ffffff; --erro: #b3261e; --erro-fundo: #fdecea; --info-fundo: #eaf1fb;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--fundo); color: var(--texto); }
+.centro { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+.cartao { background: var(--cartao); border: 1px solid var(--borda); border-radius: 12px; padding: 28px; width: 100%; max-width: 420px; box-shadow: 0 4px 18px rgba(20, 30, 50, 0.06); }
+.cartao.largo { max-width: 560px; }
+.marca { text-align: center; margin-bottom: 22px; }
+.marca strong { display: block; font-size: 1.15rem; color: var(--primaria); }
+.marca span { font-size: 0.85rem; color: var(--suave); }
+h1 { font-size: 1.1rem; margin: 0 0 16px; }
+label { display: block; font-size: 0.85rem; margin: 0 0 4px; }
+input { width: 100%; padding: 10px; margin-bottom: 14px; border: 1px solid var(--borda); border-radius: 6px; font-size: 0.95rem; }
+button { font: inherit; cursor: pointer; }
+.botao { width: 100%; padding: 11px; border: none; border-radius: 6px; background: var(--primaria); color: var(--primaria-texto); font-size: 0.95rem; }
+.botao:disabled { opacity: 0.6; cursor: default; }
+.botao.secundario { background: transparent; color: var(--primaria); border: 1px solid var(--primaria); }
+.mensagem { min-height: 1.2rem; font-size: 0.88rem; margin-bottom: 12px; }
+.mensagem.erro { color: var(--erro); background: var(--erro-fundo); padding: 8px 10px; border-radius: 6px; }
+.mensagem.info { background: var(--info-fundo); padding: 8px 10px; border-radius: 6px; }
+.mensagem:empty { padding: 0; background: none; }
+ul.empresas { list-style: none; margin: 0 0 16px; padding: 0; }
+ul.empresas li { margin-bottom: 8px; }
+button.empresa { width: 100%; text-align: left; padding: 12px 14px; border: 1px solid var(--borda); border-radius: 8px; background: #fff; }
+button.empresa:hover, button.empresa:focus { border-color: var(--primaria); outline: none; }
+button.empresa.atual { border-color: var(--primaria); background: var(--info-fundo); }
+.empresa-nome { display: block; font-weight: 600; }
+.empresa-detalhe { display: block; font-size: 0.8rem; color: var(--suave); margin-top: 2px; }
+header.topo { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; padding: 14px 22px; background: var(--primaria); color: #fff; }
+header.topo .identificacao { font-size: 0.9rem; }
+header.topo .identificacao strong { display: block; font-size: 1rem; }
+header.topo nav { display: flex; gap: 8px; flex-wrap: wrap; }
+header.topo nav button { background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.35); border-radius: 6px; padding: 7px 12px; font-size: 0.85rem; }
+main.conteudo { max-width: 920px; margin: 0 auto; padding: 22px; }
+section.bloco { background: var(--cartao); border: 1px solid var(--borda); border-radius: 10px; padding: 18px 20px; margin-bottom: 16px; }
+section.bloco h2 { font-size: 1rem; margin: 0 0 10px; }
+section.bloco p { margin: 6px 0; font-size: 0.92rem; }
+.modulos { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.modulos a, .modulos div { display: block; padding: 12px; border: 1px solid var(--borda); border-radius: 8px; text-decoration: none; color: var(--texto); font-size: 0.9rem; }
+.modulos a:hover { border-color: var(--primaria); }
+.modulos div { color: var(--suave); background: #fafbfc; }
+.etiqueta { display: inline-block; font-size: 0.72rem; padding: 2px 7px; border-radius: 10px; background: var(--info-fundo); color: var(--primaria); margin-top: 6px; }
+.oculto { display: none !important; }

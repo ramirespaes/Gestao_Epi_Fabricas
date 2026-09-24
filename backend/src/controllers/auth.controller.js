@@ -42,9 +42,12 @@ function criarAuthController({ pool: poolInjetado }) {
      * da sessão.
      */
     async me(req, res) {
+      // identidadeId (Pacote 4) é contexto interno da sessão; o corpo
+      // público de /auth/me permanece exatamente o de antes.
+      const { identidadeId, ...usuario } = req.usuario;
       res.status(200).json({
         status: 'ok',
-        usuario: req.usuario,
+        usuario,
         empresa: req.empresa,
       });
     },

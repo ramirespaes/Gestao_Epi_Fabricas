@@ -36,7 +36,7 @@ const { authConfig } = require('../../src/config/auth');
  * sessões de verdade, validadas no PostgreSQL.
  */
 
-const MIGRATIONS = ['000', '001', '002', '003', '005', '009', '010', '011', '012', '013', '014', '015', '016', '017', '018', '019', '020', '021', '023'];
+const MIGRATIONS = ['000', '001', '002', '003', '005', '025', '009', '010', '011', '012', '013', '014', '015', '016', '017', '018', '019', '020', '021', '023'];
 
 const SENHA = 'senha-correta-do-teste-3n-2026';
 let HASH_SENHA;

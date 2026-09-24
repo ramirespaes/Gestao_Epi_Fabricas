@@ -43,7 +43,7 @@ const FORMATO_MOTIVO = /^[A-Z_]{1,30}$/;
 const FORMATO_ID_SESSAO = /^[1-9][0-9]*$/;
 
 const CAMPOS_SESSAO = Object.freeze([
-  'usuario_nome', 'usuario_email', 'usuario_perfil', 'empresa_nome', 'empresa_cnpj',
+  'usuario_nome', 'usuario_email', 'usuario_perfil', 'usuario_identidade_id', 'empresa_nome', 'empresa_cnpj',
 ]);
 
 function exigirEmpresa(empresaId) {
@@ -105,14 +105,23 @@ function exigirInatividade(minutos) {
  * partir de um `clock_timestamp()` obtido próximo deste chamado, pelo mesmo
  * motivo.
  *
+ * `sessaoGlobalId` (Pacote 4, migration 037): de qual sessão global esta
+ * sessão empresarial nasceu — informado SÓ pelo serviço de seleção de
+ * empresa. Ausente/null (login legado por CNPJ, chamadores anteriores ao
+ * Pacote 4), a coluna nem entra no INSERT: assinatura e SQL de antes
+ * permanecem idênticos para quem não a usa.
+ *
  * @param {{query: Function}} executor
  * @param {{empresaId: number, usuarioId: number, tokenHash: string, expiraEm: Date,
- *          autenticadoVia?: string, ip?: string|null, dispositivo?: string|null}} dados
+ *          autenticadoVia?: string, ip?: string|null, dispositivo?: string|null,
+ *          sessaoGlobalId?: string|null}} dados
  * @returns {Promise<string>} o identificador da sessão, como string decimal
  *   canônica — o mesmo formato devolvido pelo driver `pg` para a coluna
  *   BIGINT, preservado sem conversão para Number.
  */
-async function criar(executor, { empresaId, usuarioId, tokenHash, expiraEm, autenticadoVia = 'SENHA', ip = null, dispositivo = null }) {
+async function criar(executor, {
+  empresaId, usuarioId, tokenHash, expiraEm, autenticadoVia = 'SENHA', ip = null, dispositivo = null, sessaoGlobalId = null,
+}) {
   exigirEmpresa(empresaId);
   exigirUsuario(usuarioId);
   exigirHash(tokenHash);
@@ -122,13 +131,23 @@ async function criar(executor, { empresaId, usuarioId, tokenHash, expiraEm, aute
   if (typeof autenticadoVia !== 'string' || !FORMATO_AUTENTICADO_VIA.test(autenticadoVia)) {
     throw new TypeError('forma de autenticação inválida');
   }
+  if (sessaoGlobalId !== null && (typeof sessaoGlobalId !== 'string' || !FORMATO_ID_SESSAO.test(sessaoGlobalId))) {
+    throw new TypeError('identificador de sessão global inválido');
+  }
 
-  const { rows } = await executor.query(
-    `INSERT INTO sessoes (empresa_id, usuario_id, token_hash, expira_em, autenticado_via, ip, dispositivo, criado_em, ultimo_uso_em)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, clock_timestamp(), clock_timestamp())
-     RETURNING id`,
-    [empresaId, usuarioId, tokenHash, expiraEm, autenticadoVia, ip, dispositivo],
-  );
+  const { rows } = sessaoGlobalId === null
+    ? await executor.query(
+      `INSERT INTO sessoes (empresa_id, usuario_id, token_hash, expira_em, autenticado_via, ip, dispositivo, criado_em, ultimo_uso_em)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, clock_timestamp(), clock_timestamp())
+       RETURNING id`,
+      [empresaId, usuarioId, tokenHash, expiraEm, autenticadoVia, ip, dispositivo],
+    )
+    : await executor.query(
+      `INSERT INTO sessoes (empresa_id, usuario_id, token_hash, expira_em, autenticado_via, ip, dispositivo, sessao_global_id, criado_em, ultimo_uso_em)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, clock_timestamp(), clock_timestamp())
+       RETURNING id`,
+      [empresaId, usuarioId, tokenHash, expiraEm, autenticadoVia, ip, dispositivo, sessaoGlobalId],
+    );
 
   return rows[0].id;
 }
@@ -136,6 +155,18 @@ async function criar(executor, { empresaId, usuarioId, tokenHash, expiraEm, aute
 /**
  * Recupera o contexto autenticado a partir do hash do token, apenas se a
  * sessão for válida sob todos os critérios.
+ *
+ * IDENTIDADE GLOBAL (Pacote 4, adendo v2.1 §1.4 e §4.1): `LEFT JOIN
+ * identidades` — LEFT, não INNER, porque `usuarios.identidade_id` é
+ * nulável (vínculo do modelo anterior não tem identidade e não pode ser
+ * derrubado por essa checagem). Duas consequências:
+ *   - `usuario.email` passa a vir de `identidades.email` quando o vínculo
+ *     tem identidade (a fonte de verdade do e-mail), e de `usuarios.email`
+ *     só para o modelo anterior — COALESCE(i.email, u.email);
+ *   - uma identidade INATIVA derruba, na próxima requisição, TODAS as
+ *     sessões empresariais dela, em todas as empresas —
+ *     `(u.identidade_id IS NULL OR i.ativo)` entra no filtro, junto de
+ *     usuarios.ativo e empresas.ativo, nunca em código posterior.
  *
  * @param {{query: Function}} executor
  * @param {string} tokenHash
@@ -151,17 +182,20 @@ async function buscarValidaPorHash(executor, tokenHash, inatividadeMinutos) {
 
   const { rows } = await executor.query(
     `SELECT s.id, s.empresa_id, s.usuario_id, s.criado_em, s.expira_em, s.ultimo_uso_em,
-            u.nome AS usuario_nome, u.email AS usuario_email, u.perfil AS usuario_perfil,
+            u.nome AS usuario_nome, COALESCE(i.email, u.email) AS usuario_email, u.perfil AS usuario_perfil,
+            u.identidade_id AS usuario_identidade_id,
             e.nome AS empresa_nome, e.cnpj AS empresa_cnpj
        FROM sessoes s
        JOIN usuarios u ON u.empresa_id = s.empresa_id AND u.id = s.usuario_id
        JOIN empresas e ON e.id = s.empresa_id
+       LEFT JOIN identidades i ON i.id = u.identidade_id
       WHERE s.token_hash = $1
         AND s.revogada_em IS NULL
         AND s.expira_em > now()
         AND s.ultimo_uso_em > now() - ($2 * INTERVAL '1 minute')
         AND u.ativo
-        AND e.ativo`,
+        AND e.ativo
+        AND (u.identidade_id IS NULL OR i.ativo)`,
     [tokenHash, inatividadeMinutos],
   );
 
@@ -182,6 +216,7 @@ async function buscarValidaPorHash(executor, tokenHash, inatividadeMinutos) {
       nome: linha.usuario_nome,
       email: linha.usuario_email,
       perfil: linha.usuario_perfil,
+      identidadeId: linha.usuario_identidade_id ?? null,
     },
     empresa: {
       id: linha.empresa_id,
@@ -262,11 +297,34 @@ async function revogarDoUsuario(executor, empresaId, usuarioId, motivo) {
   return rowCount;
 }
 
+/**
+ * Revoga todas as sessões empresariais ainda ativas que NASCERAM da sessão
+ * global indicada (sessoes.sessao_global_id, migration 037) — troca de
+ * empresa e "sair completamente" (Pacote 4). Devolve quantas foram
+ * atingidas. Sem filtro de empresa de propósito: a sessão global pertence
+ * à pessoa, e suas sessões empresariais podem estar em empresas
+ * diferentes; o identificador da sessão global vem sempre do cookie
+ * validado no PostgreSQL, nunca do cliente.
+ */
+async function revogarDaSessaoGlobal(executor, sessaoGlobalId, motivo) {
+  exigirSessao(sessaoGlobalId);
+  exigirMotivo(motivo);
+
+  const { rowCount } = await executor.query(
+    `UPDATE sessoes SET revogada_em = now(), motivo_revogacao = $2
+      WHERE sessao_global_id = $1 AND revogada_em IS NULL`,
+    [sessaoGlobalId, motivo],
+  );
+
+  return rowCount;
+}
+
 module.exports = {
   criar,
   buscarValidaPorHash,
   registrarUso,
   revogar,
   revogarDoUsuario,
+  revogarDaSessaoGlobal,
   CAMPOS_SESSAO,
 };

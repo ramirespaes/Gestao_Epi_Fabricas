@@ -321,3 +321,14 @@ describe('authController (instância padrão)', () => {
     assert.equal(typeof authController.logout, 'function');
   });
 });
+
+describe('me — corpo público estável (Pacote 4)', () => {
+  test('identidadeId do contexto interno da sessão nunca sai no corpo de /auth/me', async () => {
+    const { criarAuthController } = require('../../src/controllers/auth.controller');
+    const controller = criarAuthController({ pool: {} });
+    let corpo;
+    const res = { status() { return this; }, json(c) { corpo = c; return this; } };
+    await controller.me({ usuario: { id: 1, nome: 'n', email: 'e@x.com', perfil: 'MASTER', identidadeId: 9 }, empresa: { id: 3 } }, res);
+    assert.deepEqual(corpo, { status: 'ok', usuario: { id: 1, nome: 'n', email: 'e@x.com', perfil: 'MASTER' }, empresa: { id: 3 } });
+  });
+});

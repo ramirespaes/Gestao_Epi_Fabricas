@@ -63,7 +63,7 @@ describe('Painel Privado da plataforma — HTTP completo com PostgreSQL real', (
   let administradorId;
 
   before(async () => {
-    contexto = await abrirPoolTemporario(['000', '001', '002', '005', '012', '013', '014', '015', '027', '028', '029', '030', '031']);
+    contexto = await abrirPoolTemporario(['000', '001', '002', '005', '025', '012', '013', '014', '015', '027', '028', '029', '030', '031']);
 
     // Rotas do CLIENTE, no mesmo app, para o cenário de isolamento de cookie.
     const authController = criarAuthController({ pool: contexto.pool });
