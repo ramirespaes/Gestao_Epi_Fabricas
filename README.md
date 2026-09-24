@@ -60,6 +60,8 @@ Quatro páginas novas em `frontend/pages/` consomem a API HTTP real, com autenti
 
 Seis módulos JavaScript em `frontend/js/` dão suporte a essas páginas: `api-http.js` e `auth-session.js` (fundação HTTP e sessão) mais um módulo por página (`grupos-acesso.js`, `grupo-permissoes.js`, `grupo-usuarios.js`, `autorizacoes-individuais.js`).
 
+**Desde o Bloco 9, Etapa C, Parte C0**, essas quatro páginas não têm mais login próprio (o formulário por CNPJ foi removido) nem carregam `auth-session.js`. A sessão é a do Portal do Cliente, confirmada no servidor pelo módulo comum `js/sessao-empresarial.js` (`GET /api/auth/me`). Sem sessão válida, a pessoa é levada ao Portal. "Sair" encerra as sessões global e empresarial; "Trocar de empresa" leva à seleção do Portal. O módulo também remove os rastros do protótipo que poderiam se passar por sessão (a chave `epi-session-user` e o parâmetro `?_s=`), sem tocar no banco simulado das páginas ainda não integradas. As páginas continuam sem `db-api.js` e `main.js`.
+
 ### Portal do Cliente (Autenticação Global — Pacote 4)
 
 `frontend/portal/` é a entrada dos clientes: login **somente por e-mail e senha** (identidade global), seleção de empresa e ambiente inicial autenticado. Usa o backend real, sessões no PostgreSQL e cookies `HttpOnly`; nada de sessão é guardado no navegador.
