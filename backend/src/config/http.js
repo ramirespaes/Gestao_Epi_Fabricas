@@ -21,10 +21,29 @@ const { inteiroDeAmbiente, validarAmbiente, congelarProfundo } = require('./ambi
  *
  * JSON_LIMITE é contrato da API (não variável): 32 KiB cobre três senhas de
  * 1024 unidades UTF-16 mesmo com escapes Unicode no JSON.
+ *
+ * NAMESPACE DA PLATAFORMA (Autenticação Global — Pacote 2): PLATAFORMA_CORS_ORIGIN
+ * é uma allowlist SEPARADA de CORS_ORIGIN, exclusiva das rotas /api/plataforma —
+ * nunca compartilhada com a allowlist do cliente, mesma disciplina de
+ * isolamento do adendo v2.1 (seção 3): um script rodando na origem do
+ * cliente nunca é uma origem aceita para o Painel Privado, e vice-versa.
+ * Mesma validação de CORS_ORIGIN (canônica, sem curinga, https em produção),
+ * função reaproveitada (campoCorsOrigin), não reescrita. Em dev/test, o
+ * padrão é uma origem DIFERENTE da do cliente (5501, não 5500) — mesmo sem
+ * subdomínio real ainda configurado, os dois portais já são tratados como
+ * origens distintas desde o desenvolvimento.
+ *
+ * PLATAFORMA_HOST é OPCIONAL: quando ausente (padrão em dev/test), a
+ * validação de Host das rotas de plataforma não recusa nada — não há
+ * subdomínio real ainda. Quando definido (produção, quando admin.<domínio>
+ * existir), só esse host exato passa a ser aceito por essas rotas — ver
+ * src/middleware/host-plataforma.js.
  */
 
 const JSON_LIMITE = '32kb';
 const ORIGEM_PADRAO_DEV = 'http://localhost:5500';
+const ORIGEM_PADRAO_DEV_PLATAFORMA = 'http://localhost:5501';
+const HOSTNAME_FORMATO = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
 
 const INTEIROS = Object.freeze({
   TRUST_PROXY_HOPS: { min: 0, max: 10, padrao: 0 },
@@ -45,6 +64,13 @@ const MENSAGENS = Object.freeze({
   CURINGA: 'curinga * não é permitido',
   ORIGEM_CANONICA: 'cada item deve ser uma origem canônica scheme://host[:port]',
   HTTPS_PRODUCAO: 'em production toda origem exige https',
+  HOST_FORMATO: 'deve ser um hostname válido, sem porta, esquema ou path',
+  // Correção final do Pacote 2 (rodada de ajustes pontuais, item 2):
+  // CORS_ORIGIN (cliente) e PLATAFORMA_CORS_ORIGIN (Painel Privado) são
+  // allowlists que precisam permanecer disjuntas por construção — uma
+  // origem presente nas duas anularia o isolamento entre os dois portais
+  // (a mesma origem passaria no CORS/Origin de ambos os namespaces).
+  SOBREPOSICAO_ORIGENS: 'não pode compartilhar nenhuma origem com CORS_ORIGIN',
 });
 
 // Devolve a origem canônica ou null. Nunca inclui o valor em mensagens.
@@ -67,15 +93,18 @@ function origemCanonica(texto) {
 
 // Campo CORS_ORIGIN validado de forma independente das demais variáveis,
 // para que todos os problemas sejam listados juntos. O esquema é montado por
-// chamada porque a regra depende de NODE_ENV.
-function campoCorsOrigin(producao) {
+// chamada porque a regra depende de NODE_ENV. `padraoDev` parametriza o
+// default fora de produção — CORS_ORIGIN e PLATAFORMA_CORS_ORIGIN usam a
+// mesma função, com defaults DIFERENTES, para que os dois portais já
+// nasçam como origens distintas mesmo em desenvolvimento.
+function campoCorsOrigin(producao, padraoDev) {
   return z.string().optional().transform((entrada, ctx) => {
     const problema = (message) => {
       ctx.addIssue({ code: 'custom', message });
       return z.NEVER;
     };
     if (entrada === undefined) {
-      return producao ? problema(MENSAGENS.OBRIGATORIA_PRODUCAO) : [ORIGEM_PADRAO_DEV];
+      return producao ? problema(MENSAGENS.OBRIGATORIA_PRODUCAO) : [padraoDev];
     }
     const origens = [];
     for (const item of entrada.split(',').map((s) => s.trim()).filter((s) => s !== '')) {
@@ -97,16 +126,57 @@ function campoCorsOrigin(producao) {
   });
 }
 
+// PLATAFORMA_HOST: OBRIGATÓRIO em production (correção final do Pacote 2,
+// rodada de ajustes pontuais, item 3) — em produção, o Painel Privado
+// SEMPRE tem um subdomínio próprio (admin.<domínio>, adendo v2.1), e a
+// validação de Host é a defesa em profundidade que depende dele existir;
+// deixá-la sem efeito em produção por uma variável esquecida seria
+// silencioso. Em development/test continua opcional: sem subdomínio real
+// ainda, não há o que validar. Quando presente (em qualquer ambiente),
+// precisa ser um hostname sintaticamente válido, sem porta, esquema, path
+// ou credenciais (é comparado contra req.hostname, que o Express já
+// entrega sem porta).
+function campoPlataformaHost(producao) {
+  return z.string().optional().transform((entrada, ctx) => {
+    if (entrada === undefined) {
+      if (producao) {
+        ctx.addIssue({ code: 'custom', message: MENSAGENS.OBRIGATORIA_PRODUCAO });
+        return z.NEVER;
+      }
+      return null;
+    }
+    if (!HOSTNAME_FORMATO.test(entrada)) {
+      ctx.addIssue({ code: 'custom', message: MENSAGENS.HOST_FORMATO });
+      return z.NEVER;
+    }
+    return entrada;
+  });
+}
+
 function criarEsquema(producao) {
   return z.object({
     NODE_ENV: z.enum(OPCOES.NODE_ENV).default('development'),
-    CORS_ORIGIN: campoCorsOrigin(producao),
+    CORS_ORIGIN: campoCorsOrigin(producao, ORIGEM_PADRAO_DEV),
+    PLATAFORMA_CORS_ORIGIN: campoCorsOrigin(producao, ORIGEM_PADRAO_DEV_PLATAFORMA),
+    PLATAFORMA_HOST: campoPlataformaHost(producao),
     TRUST_PROXY_HOPS: inteiroDeAmbiente(INTEIROS.TRUST_PROXY_HOPS),
     RATE_LIMIT_GERAL_LIMITE: inteiroDeAmbiente(INTEIROS.RATE_LIMIT_GERAL_LIMITE),
     RATE_LIMIT_GERAL_JANELA_SEGUNDOS: inteiroDeAmbiente(INTEIROS.RATE_LIMIT_GERAL_JANELA_SEGUNDOS),
     RATE_LIMIT_AUTH_LIMITE: inteiroDeAmbiente(INTEIROS.RATE_LIMIT_AUTH_LIMITE),
     RATE_LIMIT_AUTH_JANELA_SEGUNDOS: inteiroDeAmbiente(INTEIROS.RATE_LIMIT_AUTH_JANELA_SEGUNDOS),
-  });
+  })
+    // Correção final do Pacote 2, item 2: as duas allowlists de origem
+    // precisam permanecer disjuntas — uma sobreposição anularia o
+    // isolamento entre o namespace do cliente e o do Painel Privado.
+    // Comparação feita depois que campoCorsOrigin já canonizou e
+    // deduplicou cada lista, então a igualdade é sempre entre origens
+    // exatas (scheme://host[:port]), nunca strings brutas.
+    .superRefine((e, ctx) => {
+      const origensDoCliente = new Set(e.CORS_ORIGIN);
+      if (e.PLATAFORMA_CORS_ORIGIN.some((origem) => origensDoCliente.has(origem))) {
+        ctx.addIssue({ code: 'custom', path: ['PLATAFORMA_CORS_ORIGIN'], message: MENSAGENS.SOBREPOSICAO_ORIGENS });
+      }
+    });
 }
 
 const VARIAVEIS_CONHECIDAS = Object.keys(criarEsquema(false).shape);
@@ -125,6 +195,7 @@ function carregarConfigHttp(origem = process.env) {
   return congelarProfundo({
     ambiente: e.NODE_ENV,
     cors: { origens: e.CORS_ORIGIN },
+    plataforma: { corsOrigens: e.PLATAFORMA_CORS_ORIGIN, host: e.PLATAFORMA_HOST },
     proxy: { hops: e.TRUST_PROXY_HOPS },
     rateLimit: {
       geral: { limite: e.RATE_LIMIT_GERAL_LIMITE, janelaSegundos: e.RATE_LIMIT_GERAL_JANELA_SEGUNDOS },

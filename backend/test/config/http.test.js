@@ -17,6 +17,7 @@ const erroDe = (env) => {
 const PADRAO_DEV = {
   ambiente: 'development',
   cors: { origens: ['http://localhost:5500'] },
+  plataforma: { corsOrigens: ['http://localhost:5501'], host: null },
   proxy: { hops: 0 },
   rateLimit: { geral: { limite: 120, janelaSegundos: 60 }, autenticacao: { limite: 20, janelaSegundos: 60 } },
   hstsAtivo: false,
@@ -45,7 +46,15 @@ describe('carregarConfigHttp: CORS_ORIGIN', () => {
     assert.deepEqual(carregarConfigHttp({}), PADRAO_DEV);
     assert.deepEqual(carregarConfigHttp({ NODE_ENV: 'test' }).cors.origens, ['http://localhost:5500']);
     assert.match(erroDe({ NODE_ENV: 'production' }), /CORS_ORIGIN: obrigatória em production/);
-    assert.deepEqual(carregarConfigHttp({ NODE_ENV: 'production', CORS_ORIGIN: 'https://app.empresa.com.br' }).cors.origens, ['https://app.empresa.com.br']);
+    assert.deepEqual(
+      carregarConfigHttp({
+        NODE_ENV: 'production',
+        CORS_ORIGIN: 'https://app.empresa.com.br',
+        PLATAFORMA_CORS_ORIGIN: 'https://admin.empresa.com.br',
+        PLATAFORMA_HOST: 'admin.empresa.com.br',
+      }).cors.origens,
+      ['https://app.empresa.com.br'],
+    );
   });
 
   test('lista separada por vírgula, canonizada e sem duplicatas', () => {
@@ -72,9 +81,21 @@ describe('carregarConfigHttp: CORS_ORIGIN', () => {
 
   test('em production toda origem exige https, inclusive localhost e loopback', () => {
     for (const ruim of ['http://app.example.com', 'http://localhost:5500', 'http://127.0.0.1:5500', 'http://[::1]:5500', 'https://app.example.com,http://localhost:5500']) {
-      assert.match(erroDe({ NODE_ENV: 'production', CORS_ORIGIN: ruim }), /CORS_ORIGIN: em production toda origem exige https/, ruim);
+      assert.match(
+        erroDe({ NODE_ENV: 'production', CORS_ORIGIN: ruim, PLATAFORMA_CORS_ORIGIN: 'https://admin.example.com', PLATAFORMA_HOST: 'admin.example.com' }),
+        /CORS_ORIGIN: em production toda origem exige https/,
+        ruim,
+      );
     }
-    assert.deepEqual(carregarConfigHttp({ NODE_ENV: 'production', CORS_ORIGIN: 'https://app.example.com,https://app.example.com:8443' }).cors.origens, ['https://app.example.com', 'https://app.example.com:8443']);
+    assert.deepEqual(
+      carregarConfigHttp({
+        NODE_ENV: 'production',
+        CORS_ORIGIN: 'https://app.example.com,https://app.example.com:8443',
+        PLATAFORMA_CORS_ORIGIN: 'https://admin.example.com',
+        PLATAFORMA_HOST: 'admin.example.com',
+      }).cors.origens,
+      ['https://app.example.com', 'https://app.example.com:8443'],
+    );
   });
 
   test('em development e test http continua permitido, com o padrão localhost:5500', () => {
@@ -113,7 +134,15 @@ describe('carregarConfigHttp: proxy, rate limit, HSTS', () => {
   });
 
   test('HSTS ativo somente em production; NODE_ENV validado', () => {
-    assert.equal(carregarConfigHttp({ NODE_ENV: 'production', CORS_ORIGIN: 'https://app.empresa.com.br' }).hstsAtivo, true);
+    assert.equal(
+      carregarConfigHttp({
+        NODE_ENV: 'production',
+        CORS_ORIGIN: 'https://app.empresa.com.br',
+        PLATAFORMA_CORS_ORIGIN: 'https://admin.empresa.com.br',
+        PLATAFORMA_HOST: 'admin.empresa.com.br',
+      }).hstsAtivo,
+      true,
+    );
     assert.equal(carregarConfigHttp({ NODE_ENV: 'development' }).hstsAtivo, false);
     assert.equal(carregarConfigHttp({ NODE_ENV: 'test' }).hstsAtivo, false);
     assert.match(erroDe({ NODE_ENV: 'staging' }), /NODE_ENV: deve ser um de: development, test, production/);
@@ -124,5 +153,70 @@ describe('carregarConfigHttp: proxy, rate limit, HSTS', () => {
     assert.match(mensagem, /CORS_ORIGIN: obrigatória em production/);
     assert.match(mensagem, /TRUST_PROXY_HOPS: deve ser um número inteiro/);
     assertSemSensiveis(mensagem, ['valorQualquer'], 'erro combinado');
+  });
+});
+
+describe('carregarConfigHttp: isolamento entre CORS_ORIGIN e PLATAFORMA_CORS_ORIGIN (correção final do Pacote 2, item 2)', () => {
+  test('qualquer origem compartilhada entre as duas allowlists é recusada na inicialização', () => {
+    assert.match(
+      erroDe({ CORS_ORIGIN: 'http://localhost:5500', PLATAFORMA_CORS_ORIGIN: 'http://localhost:5500' }),
+      /PLATAFORMA_CORS_ORIGIN: não pode compartilhar nenhuma origem com CORS_ORIGIN/,
+    );
+    // Uma entre várias já é suficiente para recusar.
+    assert.match(
+      erroDe({
+        CORS_ORIGIN: 'https://app.empresa.com.br,http://localhost:5500',
+        PLATAFORMA_CORS_ORIGIN: 'https://admin.empresa.com.br,http://localhost:5500',
+      }),
+      /PLATAFORMA_CORS_ORIGIN: não pode compartilhar nenhuma origem com CORS_ORIGIN/,
+    );
+  });
+
+  test('a comparação é por origem canônica, não por texto bruto: variações de caixa/porta implícita que canonizam para o mesmo valor também são recusadas', () => {
+    assert.match(
+      erroDe({ CORS_ORIGIN: 'HTTP://Localhost:5500', PLATAFORMA_CORS_ORIGIN: 'http://localhost:5500' }),
+      /PLATAFORMA_CORS_ORIGIN: não pode compartilhar nenhuma origem com CORS_ORIGIN/,
+    );
+  });
+
+  test('origens distintas (o caso normal, inclusive os padrões de desenvolvimento) continuam aceitas', () => {
+    assert.deepEqual(carregarConfigHttp({}).cors.origens, ['http://localhost:5500']);
+    assert.deepEqual(carregarConfigHttp({}).plataforma.corsOrigens, ['http://localhost:5501']);
+    assert.equal(
+      erroDe({
+        CORS_ORIGIN: 'https://app.empresa.com.br',
+        PLATAFORMA_CORS_ORIGIN: 'https://admin.empresa.com.br',
+      }),
+      null,
+    );
+  });
+});
+
+describe('carregarConfigHttp: PLATAFORMA_HOST obrigatório em production (correção final do Pacote 2, item 3)', () => {
+  const BASE_PRODUCAO = {
+    NODE_ENV: 'production',
+    CORS_ORIGIN: 'https://app.empresa.com.br',
+    PLATAFORMA_CORS_ORIGIN: 'https://admin.empresa.com.br',
+  };
+
+  test('ausente em production: recusa a inicialização', () => {
+    assert.match(erroDe(BASE_PRODUCAO), /PLATAFORMA_HOST: obrigatória em production/);
+  });
+
+  test('presente em production: aceito e refletido em plataforma.host', () => {
+    const cfg = carregarConfigHttp({ ...BASE_PRODUCAO, PLATAFORMA_HOST: 'admin.empresa.com.br' });
+    assert.equal(cfg.plataforma.host, 'admin.empresa.com.br');
+  });
+
+  test('continua opcional em development e test: ausência não impede a inicialização', () => {
+    assert.equal(carregarConfigHttp({ NODE_ENV: 'development' }).plataforma.host, null);
+    assert.equal(carregarConfigHttp({ NODE_ENV: 'test' }).plataforma.host, null);
+  });
+
+  test('mesmo em production, formato inválido continua recusado (não vira "obrigatória" quando presente, mas malformado)', () => {
+    assert.match(
+      erroDe({ ...BASE_PRODUCAO, PLATAFORMA_HOST: 'https://admin.empresa.com.br' }),
+      /PLATAFORMA_HOST: deve ser um hostname válido/,
+    );
   });
 });

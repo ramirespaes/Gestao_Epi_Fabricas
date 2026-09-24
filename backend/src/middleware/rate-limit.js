@@ -47,4 +47,19 @@ const limitadorGeral = criarLimitador(httpConfig.rateLimit.geral);
 // reais de login; não é montado enquanto essas rotas não existirem.
 const limitadorAutenticacao = criarLimitador(httpConfig.rateLimit.autenticacao);
 
-module.exports = { criarLimitador, limitadorGeral, limitadorAutenticacao };
+// Limitadores do namespace /api/plataforma (Autenticação Global — Pacote 2):
+// instâncias PRÓPRIAS (contador em memória separado do cliente), reaproveitando
+// os mesmos parâmetros de httpConfig.rateLimit — não há configuração dedicada
+// para a plataforma nesta rodada (decisão de escopo registrada em
+// login-plataforma.service.js); um cliente da API empresarial nunca consome a
+// cota do Painel Privado, e vice-versa.
+const limitadorPlataformaGeral = criarLimitador(httpConfig.rateLimit.geral);
+const limitadorPlataformaAutenticacao = criarLimitador(httpConfig.rateLimit.autenticacao);
+
+module.exports = {
+  criarLimitador,
+  limitadorGeral,
+  limitadorAutenticacao,
+  limitadorPlataformaGeral,
+  limitadorPlataformaAutenticacao,
+};

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel Privado — SafeWork</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #10151c; color: #e6e9ee; margin: 0; }
+    header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; background: #1a212b; border-bottom: 1px solid #262f3b; }
+    header h1 { font-size: 1rem; margin: 0; }
+    #sair { background: #2a3644; color: #e6e9ee; border: 1px solid #3a4656; border-radius: 4px; padding: 0.4rem 0.8rem; cursor: pointer; }
+    main { padding: 1.5rem; max-width: 640px; }
+    #carregando, #erro { padding: 1rem; }
+    #erro { color: #ff6b6b; display: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Painel Privado — SafeWork</h1>
+    <button id="sair" type="button">Sair</button>
+  </header>
+  <main>
+    <p id="carregando">Carregando...</p>
+    <p id="erro"></p>
+    <div id="conteudo" style="display:none;">
+      <p>Administrador autenticado: <strong id="email-administrador"></strong></p>
+      <p>Esta é a área administrativa inicial do Painel Privado. O cadastro de empresas e o convite do administrador MASTER ainda não fazem parte deste pacote.</p>
+    </div>
+  </main>
+
+  <script src="../js/api-http.js"></script>
+  <script src="config.js"></script>
+  <script src="painel.js"></script>
+</body>
+</html>

@@ -45,6 +45,16 @@ const CHAVE_COOLDOWN_FORMATO = /^[0-9a-f]{64}$/;
 const SEPARADOR = '\n';
 const LOCK_BYTES = 8;
 const CORRELACAO_HEX = 16;
+// Rótulo de domínio do cooldown do Painel Privado (correção final do
+// Pacote 2 — Autenticação Global): separa criptograficamente o espaço de
+// chaves da plataforma do espaço de chaves do cliente, mesmo sob o MESMO
+// segredo HMAC. Não é sigiloso — só evita que, em tese, uma chave de
+// plataforma e uma chave de cliente pudessem colidir. Maiúsculo e sem
+// caracteres possíveis num CNPJ normalizado (14 posições exatas) ou num
+// e-mail normalizado (contém '@'), então as três mensagens de entrada
+// (cliente, plataforma, qualquer outra futura) nunca podem ser confundidas
+// por concatenação.
+const ROTULO_PLATAFORMA = 'PLATAFORMA';
 
 function gerarChaveCooldown(cnpj, email) {
   const cnpjNormalizado = normalizarCnpj(cnpj);
@@ -61,6 +71,33 @@ function gerarChaveCooldown(cnpj, email) {
     return crypto
       .createHmac('sha256', segredo)
       .update(cnpjNormalizado, 'utf8')
+      .update(SEPARADOR, 'utf8')
+      .update(emailNormalizado, 'utf8')
+      .digest('hex');
+  } finally {
+    segredo.fill(0);
+  }
+}
+
+/**
+ * Chave opaca de cooldown do Painel Privado da plataforma (correção final
+ * do Pacote 2, migration 030): mesma construção HMAC-SHA-256, mas sem
+ * CNPJ — o login administrativo não depende de empresa alguma. A mensagem
+ * é ROTULO_PLATAFORMA || 0x0A || email_normalizado, para que a chave de um
+ * administrador nunca coincida com a de nenhum usuário empresarial, mesmo
+ * que o mesmo endereço de e-mail exista nos dois contextos.
+ */
+function gerarChaveCooldownPlataforma(email) {
+  const emailNormalizado = normalizarEmail(email);
+  if (emailNormalizado === null) {
+    throw new TypeError('e-mail não normalizável');
+  }
+
+  const segredo = obterLoginCooldownHmacSecret();
+  try {
+    return crypto
+      .createHmac('sha256', segredo)
+      .update(ROTULO_PLATAFORMA, 'utf8')
       .update(SEPARADOR, 'utf8')
       .update(emailNormalizado, 'utf8')
       .digest('hex');
@@ -99,6 +136,7 @@ function idCorrelacaoCooldown(chave) {
 module.exports = {
   CHAVE_COOLDOWN_TAMANHO,
   gerarChaveCooldown,
+  gerarChaveCooldownPlataforma,
   chaveCooldownTemFormatoValido,
   derivarAdvisoryLock64,
   idCorrelacaoCooldown,

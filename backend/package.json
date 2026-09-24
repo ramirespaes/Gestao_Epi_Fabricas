@@ -15,7 +15,8 @@
     "db:migrate": "node --require dotenv/config scripts/migrate-cli.js aplicar",
     "db:migrate:status": "node --require dotenv/config scripts/migrate-cli.js status",
     "db:migrate:baseline": "node --require dotenv/config scripts/migrate-cli.js baseline",
-    "db:provisionar:master": "node --require dotenv/config scripts/provisionar-permissoes-master.js"
+    "db:provisionar:master": "node --require dotenv/config scripts/provisionar-permissoes-master.js",
+    "db:criar-administrador-plataforma": "node --require dotenv/config scripts/criar-administrador-plataforma.js"
   },
   "keywords": [],
   "author": "",

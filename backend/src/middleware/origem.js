@@ -94,4 +94,9 @@ function criarVerificacaoOrigem({ origens }) {
 
 const verificarOrigem = criarVerificacaoOrigem({ origens: httpConfig.cors.origens });
 
-module.exports = { criarVerificacaoOrigem, verificarOrigem };
+// Verificação de origem do namespace /api/plataforma (Autenticação Global —
+// Pacote 2): mesma fábrica, allowlist SEPARADA — um Origin válido para o
+// cliente nunca é aceito aqui, e vice-versa.
+const verificarOrigemPlataforma = criarVerificacaoOrigem({ origens: httpConfig.plataforma.corsOrigens });
+
+module.exports = { criarVerificacaoOrigem, verificarOrigem, verificarOrigemPlataforma };

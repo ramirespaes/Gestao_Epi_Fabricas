@@ -65,4 +65,31 @@ const politicaSessao = criarPoliticaCookie({
 const serializarCookieSessao = (token) => politicaSessao.serializarSessao(token);
 const serializarRemocaoCookieSessao = () => politicaSessao.serializarRemocao();
 
-module.exports = { criarPoliticaCookie, serializarCookieSessao, serializarRemocaoCookieSessao };
+/**
+ * Cookie do Painel Privado da plataforma (Autenticação Global — Pacote 2).
+ * Mesma fábrica, mesmos atributos estruturais (HttpOnly, Path=/, sem
+ * Domain) e a MESMA política de Secure/SameSite/expiração do cookie
+ * empresarial — reaproveitando a arquitetura já aprovada, como o adendo
+ * v2.1 orienta. Só o NOME muda (authConfig.sessao.cookieNomeAdmin,
+ * validado como distinto de cookieNome na subida do processo,
+ * src/config/auth.js) — é essa diferença de nome, por si só, que garante
+ * que este cookie nunca é o mesmo que o middleware empresarial procura, e
+ * vice-versa.
+ */
+const politicaSessaoPlataforma = criarPoliticaCookie({
+  nome: authConfig.sessao.cookieNomeAdmin,
+  secure: authConfig.sessao.cookieSecure,
+  sameSite: authConfig.sessao.cookieSameSite,
+  expiracaoMinutos: authConfig.sessao.expiracaoMinutos,
+});
+
+const serializarCookieSessaoPlataforma = (token) => politicaSessaoPlataforma.serializarSessao(token);
+const serializarRemocaoCookieSessaoPlataforma = () => politicaSessaoPlataforma.serializarRemocao();
+
+module.exports = {
+  criarPoliticaCookie,
+  serializarCookieSessao,
+  serializarRemocaoCookieSessao,
+  serializarCookieSessaoPlataforma,
+  serializarRemocaoCookieSessaoPlataforma,
+};

@@ -42,4 +42,10 @@ function criarCors({ origens }) {
 
 const corsApi = criarCors({ origens: httpConfig.cors.origens });
 
-module.exports = { criarCors, corsApi };
+// CORS do namespace /api/plataforma (Autenticação Global — Pacote 2):
+// mesma fábrica, allowlist SEPARADA (httpConfig.plataforma.corsOrigens) —
+// nunca a mesma allowlist do cliente, mesma disciplina de isolamento do
+// adendo v2.1.
+const corsPlataforma = criarCors({ origens: httpConfig.plataforma.corsOrigens });
+
+module.exports = { criarCors, corsApi, corsPlataforma };
