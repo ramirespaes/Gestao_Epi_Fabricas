@@ -35,6 +35,10 @@
     "031_alter_plataforma_add_constraints_integridade.sql": "de452607097d8ed2e5c0f6f0359d3164a14a7d3eb9399dde05ce9d51bda3993d",
     "032_alter_empresas_add_cadastro_completo.sql": "1c0caf10be04a50561b8a008970fafc7c55fa63dde9559b5b7dd10788995057f",
     "033_create_convites_master.sql": "332cd602070d7a50c71ac3d30b0feeadde7b509215efbeafbc85fc4722209618",
-    "034_create_convite_master_tentativas.sql": "3f841124cbb0b614310f54c27b58e0db68d0dccee8999ef3e228fb8503f1452c"
+    "034_create_convite_master_tentativas.sql": "3f841124cbb0b614310f54c27b58e0db68d0dccee8999ef3e228fb8503f1452c",
+    "035_create_sessoes_globais.sql": "68ee000c3d7aaa5ca45692b078e01185bfcd9cbfb76521f5a0936483e4c9a155",
+    "036_create_login_tentativas_globais.sql": "ed1391dfe5d006be7b39d783b879766e09ce961267be0b4da2166bffde9b10a8",
+    "037_alter_sessoes_add_sessao_global_id.sql": "0dfe31fee6aca1725a54919d152353fa527cbfe510d996c5ae53ca03c733bbaf",
+    "038_create_triggers_revogar_sessoes_inativacao.sql": "47e1c97f178bc6f1ce1808c6ebb767b0f016d5655a55178299d474e8d1243ce5"
   }
 }

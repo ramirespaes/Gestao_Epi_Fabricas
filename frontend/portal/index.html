@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>Portal do Cliente — SafeWork</title>
+  <link rel="stylesheet" href="portal.css">
+</head>
+<body>
+  <div class="centro">
+    <form id="form-login" class="cartao" novalidate>
+      <div class="marca">
+        <strong>SafeWork — Gestão de EPIs</strong>
+        <span>Portal do Cliente</span>
+      </div>
+      <h1>Entrar</h1>
+      <div id="mensagem" class="mensagem" role="alert" aria-live="polite"></div>
+      <label for="email">E-mail</label>
+      <input type="email" id="email" name="email" autocomplete="username" required>
+      <label for="senha">Senha</label>
+      <input type="password" id="senha" name="senha" autocomplete="current-password" required>
+      <button type="submit" id="botao-entrar" class="botao">Entrar</button>
+    </form>
+  </div>
+
+  <script src="../js/api-http.js"></script>
+  <script src="../js/portal-cliente.js"></script>
+  <script src="config.js"></script>
+  <script src="login.js"></script>
+</body>
+</html>

@@ -34,7 +34,11 @@ const CAMPOS_PUBLICOS = Object.freeze([
   'id', 'empresa_id', 'nome', 'email', 'perfil', 'ativo', 'biometria_cadastrada',
 ]);
 const PROJECAO_PUBLICA = CAMPOS_PUBLICOS.join(', ');
-const PROJECAO_CREDENCIAL = `${PROJECAO_PUBLICA}, senha_hash`;
+// identidade_id (025) acompanha a credencial: quem verifica senha precisa
+// saber se este vínculo pertence ao modelo global — nesse caso a senha
+// mora em identidades e usuarios.senha_hash NUNCA autentica (Pacote 4,
+// adendo v2.1 §1.2, regra 3).
+const PROJECAO_CREDENCIAL = `${PROJECAO_PUBLICA}, senha_hash, identidade_id`;
 
 // Projeção da listagem de vínculos (Subetapa 3U): menor que a pública, de
 // propósito — sem biometria_cadastrada, que não ajuda a decidir vínculo.
@@ -393,7 +397,80 @@ async function buscarCredencialPorEmail(executor, empresaId, email) {
     return null;
   }
 
-  return { ...mapearPublico(linha), senha_hash: linha.senha_hash };
+  return { ...mapearPublico(linha), senha_hash: linha.senha_hash, identidade_id: linha.identidade_id ?? null };
+}
+
+// Projeção dos VÍNCULOS de uma identidade (Pacote 4): o que o Portal do
+// Cliente precisa para listar/selecionar empresa — nunca credencial, nunca
+// dado de outra identidade. `e.nome` é a razão social (032 não a renomeou).
+const PROJECAO_VINCULO_IDENTIDADE = `u.id AS usuario_id, u.nome AS usuario_nome, u.perfil AS usuario_perfil,
+            e.id AS empresa_id, e.nome AS empresa_nome, e.cnpj AS empresa_cnpj`;
+
+function exigirIdentidade(identidadeId) {
+  if (!Number.isInteger(identidadeId) || identidadeId <= 0) {
+    throw new TypeError('identificador de identidade inválido');
+  }
+}
+
+const mapearVinculoIdentidade = (linha) => ({
+  usuarioId: linha.usuario_id,
+  nome: linha.usuario_nome,
+  perfil: linha.usuario_perfil,
+  empresa: { id: linha.empresa_id, nome: linha.empresa_nome, cnpj: linha.empresa_cnpj },
+});
+
+/**
+ * Vínculos ATIVOS de uma identidade em empresas ATIVAS — a lista "selecione
+ * sua empresa" do Portal do Cliente (Pacote 4). As duas condições de
+ * atividade entram na consulta: um vínculo inativado ou uma empresa
+ * suspensa simplesmente não aparecem (adendo v2.1 §4.2 a/b). Ordenada por
+ * razão social para apresentação estável.
+ *
+ * @param {{query: Function}} executor
+ * @param {number} identidadeId
+ * @returns {Promise<Array<{usuarioId:number, nome:string, perfil:string, empresa:{id:number, nome:string, cnpj:string}}>>}
+ */
+async function listarVinculosAtivosDaIdentidade(executor, identidadeId) {
+  exigirIdentidade(identidadeId);
+
+  const { rows } = await executor.query(
+    `SELECT ${PROJECAO_VINCULO_IDENTIDADE}
+       FROM usuarios u
+       JOIN empresas e ON e.id = u.empresa_id
+      WHERE u.identidade_id = $1
+        AND u.ativo
+        AND e.ativo
+      ORDER BY e.nome, e.id`,
+    [identidadeId],
+  );
+
+  return rows.map(mapearVinculoIdentidade);
+}
+
+/**
+ * O vínculo ATIVO desta identidade nesta empresa ATIVA, ou null — a
+ * revalidação da seleção/troca de empresa (Pacote 4): o `empresaId`
+ * escolhido no navegador só vale se existir exatamente este vínculo. Não
+ * distingue "empresa inexistente", "sem vínculo", "vínculo inativo" e
+ * "empresa inativa": todos são null, e o serviço responde de forma
+ * genérica (não permitir inferência sobre empresas alheias).
+ */
+async function buscarVinculoAtivoDaIdentidade(executor, identidadeId, empresaId) {
+  exigirIdentidade(identidadeId);
+  exigirEmpresa(empresaId);
+
+  const { rows } = await executor.query(
+    `SELECT ${PROJECAO_VINCULO_IDENTIDADE}
+       FROM usuarios u
+       JOIN empresas e ON e.id = u.empresa_id
+      WHERE u.identidade_id = $1
+        AND e.id = $2
+        AND u.ativo
+        AND e.ativo`,
+    [identidadeId, empresaId],
+  );
+
+  return rows[0] === undefined ? null : mapearVinculoIdentidade(rows[0]);
 }
 
 const PERFIS_CONHECIDOS = Object.freeze(['MASTER', 'ADMINISTRADOR', 'SUPERVISOR', 'USUARIO']);
@@ -440,6 +517,8 @@ async function criar(executor, { empresaId, nome, perfil, identidadeId }) {
 
 module.exports = {
   criar,
+  listarVinculosAtivosDaIdentidade,
+  buscarVinculoAtivoDaIdentidade,
   buscarPorEmail,
   buscarPorId,
   buscarPorIdParaAtualizacao,

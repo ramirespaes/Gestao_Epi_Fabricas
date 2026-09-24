@@ -167,6 +167,22 @@ async function resolverCredencial(client, { cnpjNormalizado, emailNormalizado, s
     return { tipo: 'CREDENCIAIS_INVALIDAS' };
   }
 
+  // VÍNCULO DO MODELO GLOBAL (Pacote 4, adendo v2.1 §1.2, regra 3): um
+  // vínculo com identidade_id preenchido autentica SOMENTE pelo login
+  // global (identidades.senha_hash). Este contrato legado por CNPJ o RECUSA
+  // com a mesma resposta genérica — nunca delega nem verifica
+  // usuarios.senha_hash, que para esse vínculo é NULL por desenho (025) e,
+  // se um dia existir num vínculo legado depois ligado a uma identidade,
+  // nunca mais é uma credencial válida. Não há "segunda senha" possível.
+  // Hash fictício para não distinguir este ramo de "e-mail inexistente".
+  if (usuario.identidade_id !== null && usuario.identidade_id !== undefined) {
+    await password.verificarSenhaContraFicticio(senha);
+    await tratarFalha(client, {
+      chaveCooldown, empresaId: empresa.id, usuarioId: usuario.id, motivo: 'VINCULO_MODELO_GLOBAL', ip, dispositivo,
+    });
+    return { tipo: 'CREDENCIAIS_INVALIDAS' };
+  }
+
   // Roda sempre que existe um hash real para conferir, ativo ou não: reduz
   // a diferença de tempo observável entre "usuário inativo" e "senha
   // incorreta". O hash fictício é reservado aos ramos acima, onde não há

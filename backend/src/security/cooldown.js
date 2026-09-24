@@ -59,6 +59,11 @@ const ROTULO_PLATAFORMA = 'PLATAFORMA';
 // adendo v2.1 §5 item 2). Mesma razão do rótulo acima — espaço de chaves
 // próprio, sob o mesmo segredo, sem colisão possível com os outros dois.
 const ROTULO_CONVITE_MASTER = 'CONVITE_MASTER';
+// Rótulo do quarto contexto: LOGIN GLOBAL do Portal do Cliente (Pacote 4,
+// migration 036). Espaço de chaves próprio: o mesmo e-mail como
+// administrador da plataforma, como identidade global e como conta legada
+// de uma empresa tem três contadores de cooldown independentes.
+const ROTULO_IDENTIDADE_GLOBAL = 'IDENTIDADE_GLOBAL';
 const TOKEN_CONVITE_FORMATO = /^[A-Za-z0-9_-]{43}$/;
 
 function gerarChaveCooldown(cnpj, email) {
@@ -142,6 +147,33 @@ function gerarChaveCooldownConvite(tokenConvite) {
   }
 }
 
+/**
+ * Chave opaca de cooldown do LOGIN GLOBAL (Pacote 4, migration 036):
+ * HMAC-SHA-256 sobre ROTULO_IDENTIDADE_GLOBAL || 0x0A || email_normalizado.
+ * Mesma construção de gerarChaveCooldownPlataforma — sem CNPJ, porque o
+ * login global não pertence a empresa alguma — com rótulo próprio para que
+ * nunca coincida com a chave de um administrador de plataforma de mesmo
+ * e-mail.
+ */
+function gerarChaveCooldownGlobal(email) {
+  const emailNormalizado = normalizarEmail(email);
+  if (emailNormalizado === null) {
+    throw new TypeError('e-mail não normalizável');
+  }
+
+  const segredo = obterLoginCooldownHmacSecret();
+  try {
+    return crypto
+      .createHmac('sha256', segredo)
+      .update(ROTULO_IDENTIDADE_GLOBAL, 'utf8')
+      .update(SEPARADOR, 'utf8')
+      .update(emailNormalizado, 'utf8')
+      .digest('hex');
+  } finally {
+    segredo.fill(0);
+  }
+}
+
 /** true somente para string de 64 hex minúsculos. Nunca lança. */
 function chaveCooldownTemFormatoValido(chave) {
   return typeof chave === 'string' && CHAVE_COOLDOWN_FORMATO.test(chave);
@@ -174,6 +206,7 @@ module.exports = {
   gerarChaveCooldown,
   gerarChaveCooldownPlataforma,
   gerarChaveCooldownConvite,
+  gerarChaveCooldownGlobal,
   chaveCooldownTemFormatoValido,
   derivarAdvisoryLock64,
   idCorrelacaoCooldown,

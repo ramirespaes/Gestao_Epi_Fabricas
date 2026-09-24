@@ -86,10 +86,32 @@ const politicaSessaoPlataforma = criarPoliticaCookie({
 const serializarCookieSessaoPlataforma = (token) => politicaSessaoPlataforma.serializarSessao(token);
 const serializarRemocaoCookieSessaoPlataforma = () => politicaSessaoPlataforma.serializarRemocao();
 
+/**
+ * Cookie da sessão GLOBAL da identidade (Autenticação Global — Pacote 4,
+ * sessoes_globais/035). Mesma fábrica, mesmos atributos estruturais e a
+ * mesma política de Secure/SameSite/expiração; só o NOME muda
+ * (authConfig.sessao.cookieNomeGlobal, validado como distinto dos outros
+ * dois na subida). Emitido pelo login global do Portal do Cliente; lido
+ * exclusivamente por middleware/autenticacao-global.js. Nunca autentica
+ * uma rota empresarial (exigirSessao só olha cookieNome) nem uma rota do
+ * Painel Privado (exigirSessaoPlataforma só olha cookieNomeAdmin).
+ */
+const politicaSessaoGlobal = criarPoliticaCookie({
+  nome: authConfig.sessao.cookieNomeGlobal,
+  secure: authConfig.sessao.cookieSecure,
+  sameSite: authConfig.sessao.cookieSameSite,
+  expiracaoMinutos: authConfig.sessao.expiracaoMinutos,
+});
+
+const serializarCookieSessaoGlobal = (token) => politicaSessaoGlobal.serializarSessao(token);
+const serializarRemocaoCookieSessaoGlobal = () => politicaSessaoGlobal.serializarRemocao();
+
 module.exports = {
   criarPoliticaCookie,
   serializarCookieSessao,
   serializarRemocaoCookieSessao,
   serializarCookieSessaoPlataforma,
   serializarRemocaoCookieSessaoPlataforma,
+  serializarCookieSessaoGlobal,
+  serializarRemocaoCookieSessaoGlobal,
 };

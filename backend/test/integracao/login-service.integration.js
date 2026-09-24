@@ -64,7 +64,7 @@ describe('login.service.autenticar em PostgreSQL real', () => {
   before(async () => {
     HASH_SENHA_CORRETA = await gerarHashSenha(SENHA_CORRETA);
 
-    contexto = await abrirPoolTemporario(['000', '001', '002', '005', '013', '015']);
+    contexto = await abrirPoolTemporario(['000', '001', '002', '005', '025', '013', '015']);
     const cliente = await contexto.pool.connect();
     try {
       assert.equal(await inserirEmpresa(cliente, CNPJ_A, 'Empresa A'), 'ok');

@@ -57,7 +57,7 @@ const EpiPermissoes = require('../../../frontend/js/grupo-permissoes');
  * apenas — o banco principal não é tocado.
  */
 
-const MIGRATIONS = ['000', '001', '002', '003', '005', '009', '010', '011', '012', '013', '014', '015', '016', '017', '018', '019', '020', '021', '022', '023', '024'];
+const MIGRATIONS = ['000', '001', '002', '003', '005', '025', '009', '010', '011', '012', '013', '014', '015', '016', '017', '018', '019', '020', '021', '022', '023', '024'];
 
 const SENHA = 'senha-correta-do-teste-3t-2026';
 const CNPJ_A = '12345678000195';

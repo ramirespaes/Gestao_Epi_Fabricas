@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>Selecione sua empresa — SafeWork</title>
+  <link rel="stylesheet" href="portal.css">
+</head>
+<body>
+  <div class="centro">
+    <div class="cartao largo">
+      <div class="marca">
+        <strong>SafeWork — Gestão de EPIs</strong>
+        <span id="identificacao">Portal do Cliente</span>
+      </div>
+      <p id="carregando">Carregando...</p>
+
+      <div id="selecao" class="oculto">
+        <h1>Selecione sua empresa</h1>
+        <div id="mensagem" class="mensagem" role="alert" aria-live="polite"></div>
+        <ul id="lista-empresas" class="empresas"></ul>
+      </div>
+
+      <div id="sem-empresa" class="oculto">
+        <h1>Nenhuma empresa disponível</h1>
+        <div id="mensagem-sem-empresa" class="mensagem info"></div>
+      </div>
+
+      <button type="button" id="botao-sair" class="botao secundario oculto">Sair</button>
+    </div>
+  </div>
+
+  <script src="../js/api-http.js"></script>
+  <script src="../js/portal-cliente.js"></script>
+  <script src="config.js"></script>
+  <script src="empresas.js"></script>
+</body>
+</html>

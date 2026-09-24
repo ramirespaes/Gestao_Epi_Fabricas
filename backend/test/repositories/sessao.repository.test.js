@@ -199,6 +199,38 @@ describe('buscarValidaPorHash', () => {
     }
   });
 
+  test('identidade global (Pacote 4): LEFT JOIN identidades, e-mail via COALESCE(i.email, u.email) e identidade inativa derruba a sessão na própria consulta', async () => {
+    const executor = executorFalso([linhaSessao({ usuario_identidade_id: 12 })]);
+
+    const contexto = await buscarValidaPorHash(executor, HASH, INATIVIDADE);
+
+    const { texto } = executor.chamadas[0];
+    assert.match(texto, /left\s+join\s+identidades\s+i\s+on\s+i\.id\s*=\s*u\.identidade_id/i, 'LEFT, não INNER: vínculo do modelo anterior não tem identidade');
+    assert.match(texto, /coalesce\(\s*i\.email\s*,\s*u\.email\s*\)/i);
+    assert.match(texto, /\(\s*u\.identidade_id\s+is\s+null\s+or\s+i\.ativo\s*\)/i);
+    assert.equal(contexto.usuario.identidadeId, 12);
+    assert.equal((await buscarValidaPorHash(executorFalso([linhaSessao()]), HASH, INATIVIDADE)).usuario.identidadeId, null, 'modelo anterior: null, nunca undefined');
+  });
+
+  test('criar com sessaoGlobalId (Pacote 4, migration 037): a coluna só entra no INSERT quando informada, e é validada como id decimal canônico', async () => {
+    const executor = executorFalso([{ id: SESSAO }]);
+    const base = { empresaId: EMPRESA_A, usuarioId: USUARIO, tokenHash: HASH, expiraEm: new Date(Date.now() + 3600e3) };
+
+    await criar(executor, { ...base, autenticadoVia: 'SESSAO_GLOBAL', sessaoGlobalId: '55' });
+    const { texto, valores } = executor.chamadas[0];
+    assert.match(texto, /sessao_global_id/i);
+    assert.equal(valores.length, 8);
+    assert.equal(valores[7], '55');
+    assert.equal(valores[4], 'SESSAO_GLOBAL');
+
+    await criar(executor, base);
+    assert.doesNotMatch(executor.chamadas[1].texto, /sessao_global_id/i, 'chamadores anteriores ao Pacote 4 geram o SQL de antes');
+
+    for (const ruim of [55, '0', 'abc', '']) {
+      await assert.rejects(() => criar(executor, { ...base, sessaoGlobalId: ruim }), /sessão global/i);
+    }
+  });
+
   test('sessão inválida não é encontrada e devolve null', async () => {
     assert.equal(await buscarValidaPorHash(executorFalso([]), HASH, INATIVIDADE), null);
   });
@@ -303,6 +335,27 @@ describe('revogar', () => {
     await assert.rejects(() => revogar(executor, EMPRESA_A, '0', 'LOGOUT'), /sess/i);
     await assert.rejects(() => revogar(executor, EMPRESA_A, '007', 'LOGOUT'), /sess/i);
 
+    assert.equal(executor.chamadas.length, 0);
+  });
+});
+
+describe('revogarDaSessaoGlobal (Pacote 4)', () => {
+  const { revogarDaSessaoGlobal } = require('../../src/repositories/sessao.repository');
+
+  test('revoga as sessões empresariais ainda ativas nascidas da sessão global, pelo id da global e com o motivo', async () => {
+    const executor = executorFalso([], 2);
+    assert.equal(await revogarDaSessaoGlobal(executor, '55', 'LOGOUT_GLOBAL'), 2);
+    const { texto, valores } = executor.chamadas[0];
+    assert.match(texto, /update\s+sessoes\s+set/i);
+    assert.match(texto, /sessao_global_id\s*=\s*\$1/i);
+    assert.match(texto, /revogada_em\s+is\s+null/i);
+    assert.deepEqual(valores, ['55', 'LOGOUT_GLOBAL']);
+  });
+
+  test('recusa entrada inválida antes de consultar', async () => {
+    const executor = executorFalso([]);
+    await assert.rejects(() => revogarDaSessaoGlobal(executor, 55, 'LOGOUT_GLOBAL'), /sessão/i);
+    await assert.rejects(() => revogarDaSessaoGlobal(executor, '55', 'logout'), /motivo/i);
     assert.equal(executor.chamadas.length, 0);
   });
 });

@@ -156,6 +156,20 @@ describe('autenticar — falhas de credencial, todas com resposta pública gené
       },
     },
     {
+      // Pacote 4 (adendo v2.1 §1.2, regra 3): vínculo ligado a uma
+      // identidade global NUNCA autentica pelo contrato legado — nem com
+      // usuarios.senha_hash "correto"; a senha real nem é verificada.
+      nome: 'vínculo do modelo global (identidade_id preenchido), mesmo com senha legada correta',
+      motivoEsperado: 'VINCULO_MODELO_GLOBAL',
+      setup: (t) => {
+        t.mock.method(empresaRepo, 'buscarPorCnpj', async () => empresaAtiva);
+        t.mock.method(usuarioRepo, 'buscarCredencialPorEmail', async () => ({ ...usuarioAtivo, identidade_id: 12 }));
+        const senhaReal = t.mock.method(password, 'verificarSenha', async () => true);
+        const senhaFicticia = t.mock.method(password, 'verificarSenhaContraFicticio', async () => false);
+        return { senhaReal, senhaFicticia, esperaSenhaReal: false, esperaSenhaFicticia: true, empresaId: EMPRESA_ID, usuarioId: USUARIO_ID };
+      },
+    },
+    {
       nome: 'e-mail inexistente na empresa',
       motivoEsperado: 'EMAIL_INEXISTENTE',
       setup: (t) => {

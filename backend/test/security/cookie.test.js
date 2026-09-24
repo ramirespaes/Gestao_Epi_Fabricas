@@ -181,3 +181,32 @@ describe('regras que pertencem à configuração, não ao helper', () => {
     assert.doesNotThrow(() => carregarConfigAuth({ LOGIN_COOLDOWN_HMAC_SECRET: segredo, SESSAO_COOKIE_SAMESITE: 'none', SESSAO_COOKIE_SECURE: 'true' }));
   });
 });
+
+describe('cookie da sessão GLOBAL (Pacote 4)', () => {
+  const { serializarCookieSessaoGlobal, serializarRemocaoCookieSessaoGlobal, serializarCookieSessaoPlataforma } = require('../../src/security/cookie');
+
+  test('nome próprio (cookieNomeGlobal), distinto do empresarial e do administrativo; mesma política estrutural', () => {
+    const global = analisarSetCookie(serializarCookieSessaoGlobal(TOKEN));
+    const empresarial = analisarSetCookie(serializarCookieSessao(TOKEN));
+    const admin = analisarSetCookie(serializarCookieSessaoPlataforma(TOKEN));
+
+    assert.equal(global.nome, authConfig.sessao.cookieNomeGlobal);
+    assert.equal(new Set([global.nome, empresarial.nome, admin.nome]).size, 3, 'três cookies, três nomes');
+    assert.equal(global.valor, TOKEN);
+    assert.deepEqual({ ...estruturais(global), nome: undefined }, { ...estruturais(empresarial), nome: undefined }, 'HttpOnly/Path/SameSite/Secure/sem Domain idênticos ao empresarial');
+    assert.equal(global.atributos['max-age'], String(authConfig.sessao.expiracaoMinutos * 60));
+  });
+
+  test('remoção repete os atributos estruturais e zera o cookie', () => {
+    const emitido = analisarSetCookie(serializarCookieSessaoGlobal(TOKEN));
+    const removido = analisarSetCookie(serializarRemocaoCookieSessaoGlobal());
+    assert.deepEqual(estruturais(removido), estruturais(emitido));
+    assert.equal(removido.valorBruto, '');
+    assert.equal(removido.atributos['max-age'], '0');
+  });
+
+  test('token inválido: TypeError fixo, sem ecoar o valor; nada vai para o console', () => {
+    assert.throws(() => serializarCookieSessaoGlobal('nao-e-um-token'), { name: 'TypeError', message: 'token de sessão inválido' });
+    assert.equal(logs.length, 0);
+  });
+});

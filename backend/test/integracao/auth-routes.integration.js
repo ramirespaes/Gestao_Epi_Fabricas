@@ -74,7 +74,7 @@ describe('POST /api/auth/login com PostgreSQL real', () => {
   before(async () => {
     HASH_SENHA_CORRETA = await gerarHashSenha(SENHA_CORRETA);
 
-    contexto = await abrirPoolTemporario(['000', '001', '002', '005', '013', '015']);
+    contexto = await abrirPoolTemporario(['000', '001', '002', '005', '025', '013', '015']);
 
     const controller = criarAuthController({ pool: contexto.pool });
     // MESMO pool temporário do controller — não o pool global, e nenhuma
