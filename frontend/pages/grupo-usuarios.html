@@ -12,7 +12,8 @@
   Subetapa 3U).
 
   Terceira página ligada ao backend real. Usa a fundação da 3R
-  (js/api-http.js + js/auth-session.js), a listagem de grupos da 3S
+  (js/api-http.js + js/auth-session.js; desde a Etapa C, Parte C0, a sessão
+  vem de js/sessao-empresarial.js e do Portal do Cliente), a listagem de grupos da 3S
   (js/grupos-acesso.js), os contratos da 3O e a consulta de usuários
   criada nesta subetapa. Não carrega js/db-api.js nem js/main.js: o
   protótipo em localStorage e as 21 páginas antigas continuam intactos.
@@ -31,54 +32,23 @@
 -->
 <body>
 
-<!-- ══ LOGIN REAL ══ Mesma razão das telas anteriores: o login legado
-     valida senha contra o localStorage e não emite sessão no servidor. -->
-<div id="telaLogin" style="position:fixed;inset:0;z-index:10000;background:var(--surface);
+<!-- ══ VERIFICAÇÃO DA SESSÃO ══ (Etapa C, Parte C0) Esta página não tem
+     login próprio: usa a sessão empresarial criada pelo Portal do Cliente
+     (frontend/portal/), confirmada no servidor por js/sessao-empresarial.js.
+     Sem sessão válida a pessoa é levada ao Portal. Nada é carregado antes
+     da confirmação, e nada de sessão é guardado no navegador. -->
+<div id="telaSessao" style="position:fixed;inset:0;z-index:10000;background:var(--surface);
      display:flex;align-items:center;justify-content:center;padding:20px">
-  <div style="width:100%;max-width:400px">
-    <div style="text-align:center;margin-bottom:28px">
-      <div style="width:64px;height:64px;border-radius:20px;background:#1a3a6b;
-                  display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
-        <span class="material-symbols-outlined" style="font-size:32px;color:#fff">group_add</span>
-      </div>
-      <h1 style="font-size:20px;font-weight:700;margin:0">Integrantes do Grupo</h1>
-      <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Autenticação no servidor</p>
+  <div style="width:100%;max-width:400px;text-align:center">
+    <div style="width:64px;height:64px;border-radius:20px;background:#1a3a6b;
+                display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
+      <span class="material-symbols-outlined" style="font-size:32px;color:#fff">group_add</span>
     </div>
-
-    <section class="card">
-      <form id="formLogin" autocomplete="on">
-        <div class="form-grid" style="margin-bottom:4px">
-          <div class="field full">
-            <label for="loginCnpj">CNPJ da empresa</label>
-            <input id="loginCnpj" name="cnpj" class="input" type="text" inputmode="text"
-                   placeholder="00.000.000/0000-00" autocomplete="organization" required>
-          </div>
-          <div class="field full">
-            <label for="loginEmail">E-mail corporativo</label>
-            <input id="loginEmail" name="email" class="input" type="email"
-                   placeholder="seu.nome@empresa.com.br" autocomplete="username" required>
-          </div>
-          <div class="field full">
-            <label for="loginSenha">Senha</label>
-            <input id="loginSenha" name="senha" class="input" type="password"
-                   placeholder="••••••••" autocomplete="current-password" required>
-          </div>
-        </div>
-
-        <div id="erroLogin" style="display:none;margin-bottom:10px">
-          <div class="notice" style="background:var(--error-container);color:var(--error);border-color:rgba(255,59,48,0.2)"></div>
-        </div>
-
-        <button type="submit" id="botaoEntrar" class="filled-btn" style="width:100%;height:48px">
-          <span class="material-symbols-outlined">login</span>Entrar
-        </button>
-      </form>
-
-      <div class="preview-note" style="margin-top:16px">
-        Esta tela autentica no backend e recebe um cookie de sessão HttpOnly.
-        Nada é guardado no navegador: nem senha, nem token, nem sessão.
-      </div>
-    </section>
+    <h1 style="font-size:20px;font-weight:700;margin:0">Integrantes do Grupo</h1>
+    <p id="telaSessaoMensagem" role="status" aria-live="polite" style="font-size:13px;color:var(--on-surface-variant);margin-top:8px">Verificando sua sessão…</p>
+    <a id="telaSessaoPortal" href="../portal/index.html" class="filled-btn" style="display:none;margin-top:16px">
+      <span class="material-symbols-outlined">login</span>Ir para o Portal do Cliente
+    </a>
   </div>
 </div>
 
@@ -102,7 +72,7 @@
       <!-- Subetapa 3V: autorizações individuais e delegações. -->
       <a href="autorizacoes-individuais.html"><div class="nav-icon indigo">verified_user</div>Autorizações Individuais</a>
       <div class="nav-section">Sistema</div>
-      <a href="dashboard.html"><div class="nav-icon blue">dashboard</div>Voltar ao sistema</a>
+      <a href="../portal/inicio.html"><div class="nav-icon blue">home</div>Início</a>
     </nav>
   </aside>
 
@@ -117,7 +87,8 @@
       </div>
       <div class="inline-actions">
         <span id="identidade" style="font-size:13px;color:var(--on-surface-variant);align-self:center"></span>
-        <button id="botaoSair" class="outlined-btn"><span class="material-symbols-outlined">logout</span>Sair</button>
+        <button id="botaoTrocarEmpresa" class="outlined-btn" type="button" style="display:none"><span class="material-symbols-outlined">swap_horiz</span>Trocar de empresa</button>
+        <button id="botaoSair" class="outlined-btn" type="button"><span class="material-symbols-outlined">logout</span>Sair</button>
       </div>
     </div>
 
@@ -225,14 +196,17 @@
 </div>
 
 <script src="../js/api-http.js"></script>
-<script src="../js/auth-session.js"></script>
+<script src="../portal/config.js"></script>
+<script src="../js/sessao-empresarial.js"></script>
 <script src="../js/grupos-acesso.js"></script>
 <script src="../js/grupo-usuarios.js"></script>
 <script>
 (function () {
   'use strict';
 
-  EpiHttp.configurar({ baseUrl: 'http://localhost:3000/api' });
+  // Mesmo endereço do Portal do Cliente: localhost:3000/api em desenvolvimento,
+  // a própria origem + /api em produção (portal/config.js).
+  EpiHttp.configurar({ baseUrl: window.SAFEWORK_PORTAL_API_BASE_URL });
 
   var mensagens = EpiGrupoUsuarios.mensagens;
   var render = EpiGrupoUsuarios.render;
@@ -270,11 +244,10 @@
       $('avisoGrupoInativo').style.display = inativo ? 'block' : 'none';
     },
 
-    sessaoExpirada: function (mensagem) {
-      $('telaLogin').style.display = 'flex';
+    sessaoExpirada: function () {
       ui.aviso('', null);
       fecharConfirmacao();
-      erroLogin(mensagem);
+      EpiSessaoEmpresarial.sessaoEncerrada();
     },
   };
 
@@ -286,12 +259,6 @@
   // selecionado NA HORA DO CLIQUE, e não o que a pessoa leu no diálogo.
   var pedidoPendente = null;
 
-  function erroLogin(texto) {
-    var caixa = $('erroLogin');
-    if (!texto) { caixa.style.display = 'none'; return; }
-    caixa.querySelector('.notice').textContent = texto;
-    caixa.style.display = 'block';
-  }
 
   function abrir(id) { $(id).classList.add('open'); }
   function fechar(id) { $(id).classList.remove('open'); }
@@ -410,53 +377,27 @@
   }
 
   // ── sessão ─────────────────────────────────────────────────────────
-  async function entrar(evento) {
-    evento.preventDefault();
-    erroLogin('');
-    $('botaoEntrar').disabled = true;
-    try {
-      var r = await EpiAuth.entrar({
-        cnpj: $('loginCnpj').value.trim(),
-        email: $('loginEmail').value.trim(),
-        senha: $('loginSenha').value,
-      });
-      if (!r.ok) {
-        erroLogin(r.resposta.status === 401 ? EpiAuth.MENSAGEM_CREDENCIAIS : mensagens.deErro(r.resposta));
-        return;
-      }
-      $('loginSenha').value = '';   // a senha não fica nem no campo
-      await iniciarSessao(r.identidade);
-    } finally {
-      $('botaoEntrar').disabled = false;
-    }
-  }
-
-  async function iniciarSessao(identidade) {
-    $('telaLogin').style.display = 'none';
-    // Só para exibição — quem autoriza é o backend, a cada requisição.
-    $('identidade').textContent = identidade.usuario.nome + ' · ' + identidade.empresa.nome;
+  // Sem login próprio (Etapa C, Parte C0): identificação, "Sair" e
+  // "Trocar de empresa" são ligados por EpiSessaoEmpresarial.montar().
+  // O contexto recebido serve só para EXIBIR — quem autoriza é o backend.
+  async function iniciarSessao() {
     controlador.mostrarSemGrupo();
     await carregarGrupos();
   }
 
-  async function sair() {
-    // Encerrar ANTES do logout: o que estiver em voo já nasce obsoleto,
+  function encerrarTela() {
+    // Encerrar ANTES de sair: o que estiver em voo já nasce obsoleto,
     // inclusive uma digitação ainda em agrupamento.
     fecharConfirmacao();
     controlador.encerrar();
-    await EpiAuth.sair();
-    $('identidade').textContent = '';
     $('seletorGrupo').innerHTML = '<option value="">Selecione…</option>';
     $('campoBusca').value = '';
     $('filtroVinculo').value = 'todos';
     $('listaVinculados').innerHTML = '';
     $('listaDisponiveis').innerHTML = '';
-    $('telaLogin').style.display = 'flex';
   }
 
   // ── eventos ────────────────────────────────────────────────────────
-  $('formLogin').addEventListener('submit', entrar);
-  $('botaoSair').addEventListener('click', sair);
   $('seletorGrupo').addEventListener('change', selecionarDoSeletor);
   $('botaoRecarregar').addEventListener('click', function () {
     fecharConfirmacao();
@@ -497,10 +438,26 @@
 
   // O cookie sobrevive ao F5, mas o JavaScript não consegue lê-lo: a
   // única forma de saber se há sessão é perguntar ao servidor.
-  (async function () {
-    var sessao = await EpiAuth.sessaoAtual();
-    if (sessao.autenticado) await iniciarSessao(sessao.identidade);
-  })();
+  // Sessão empresarial do Portal do Cliente, confirmada no servidor por
+  // js/sessao-empresarial.js (Etapa C, Parte C0). Sem sessão, a pessoa é
+  // levada ao Portal; nenhum dado é carregado antes da confirmação.
+  EpiSessaoEmpresarial.montar({
+    elementos: {
+      tela: $('telaSessao'),
+      mensagem: $('telaSessaoMensagem'),
+      linkPortal: $('telaSessaoPortal'),
+      identificacao: $('identidade'),
+      botaoSair: $('botaoSair'),
+      botaoTrocar: $('botaoTrocarEmpresa'),
+    },
+    aoEncerrar: encerrarTela,
+    // Saída não confirmada pelo servidor: a tela fica como está e o aviso
+    // permite tentar de novo (a sessão pode continuar ativa).
+    aoFalharSaida: function (mensagem) { ui.aviso(mensagem, 'erro'); },
+  }).then(function (contexto) {
+    if (contexto) return iniciarSessao(contexto);
+    return undefined;
+  });
 })();
 </script>
 </body>
