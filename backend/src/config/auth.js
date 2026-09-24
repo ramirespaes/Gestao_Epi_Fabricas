@@ -49,6 +49,10 @@ const INTEIROS = Object.freeze({
   LOGIN_COOLDOWN_NIVEL2_JANELA_MINUTOS: { min: 1, max: 1440, padrao: 60 },
   LOGIN_COOLDOWN_NIVEL2_DURACAO_MINUTOS: { min: 1, max: 1440, padrao: 60 },
   LOGIN_TENTATIVAS_RETENCAO_DIAS: { min: 1, max: 365, padrao: 30 },
+  // Pacote 3 — validade do convite do MASTER (convites_master.expira_em).
+  // "Prazo curto" (planejamento v2 §8): padrão 3 dias (4320 min); mín 5
+  // min (testes/operação controlada), máx 30 dias.
+  CONVITE_MASTER_EXPIRACAO_MINUTOS: { min: 5, max: 43200, padrao: 4320 },
 });
 
 const OPCOES = Object.freeze({
@@ -116,6 +120,7 @@ const esquema = z
     LOGIN_COOLDOWN_NIVEL2_JANELA_MINUTOS: inteiroDeAmbiente(INTEIROS.LOGIN_COOLDOWN_NIVEL2_JANELA_MINUTOS),
     LOGIN_COOLDOWN_NIVEL2_DURACAO_MINUTOS: inteiroDeAmbiente(INTEIROS.LOGIN_COOLDOWN_NIVEL2_DURACAO_MINUTOS),
     LOGIN_TENTATIVAS_RETENCAO_DIAS: inteiroDeAmbiente(INTEIROS.LOGIN_TENTATIVAS_RETENCAO_DIAS),
+    CONVITE_MASTER_EXPIRACAO_MINUTOS: inteiroDeAmbiente(INTEIROS.CONVITE_MASTER_EXPIRACAO_MINUTOS),
   })
   .refine((e) => e.SESSAO_INATIVIDADE_MINUTOS <= e.SESSAO_EXPIRACAO_MINUTOS, {
     message: MENSAGENS.INATIVIDADE,
@@ -207,6 +212,9 @@ function analisarConfigAuth(origem) {
         },
       ],
       retencaoDias: e.LOGIN_TENTATIVAS_RETENCAO_DIAS,
+    },
+    conviteMaster: {
+      expiracaoMinutos: e.CONVITE_MASTER_EXPIRACAO_MINUTOS,
     },
   });
 

@@ -564,6 +564,21 @@ describe('app.js: namespace /api/plataforma (Autenticação Global — Pacote 2)
     assert.deepEqual([r.status, r.body], [200, { status: 'ok', service: 'gestao-epi-api' }]);
   });
 
+  test('Pacote 3: rotas de empresas e convites montadas em /api/plataforma; administrativas exigem sessão, públicas de aceite não', async () => {
+    for (const rota of [request(app).get('/api/plataforma/empresas'), request(app).post('/api/plataforma/empresas/1/convites-master').set('Origin', PERMITIDA_PLATAFORMA).send({ email: 'a@b.com' })]) {
+      const r = await rota;
+      assert.deepEqual([r.status, r.body.codigo], [401, 'SESSAO_INVALIDA'], 'montada e protegida (401, não 404)');
+    }
+    const consultar = await request(app).post('/api/plataforma/convite-master/consultar').set('Origin', PERMITIDA_PLATAFORMA).send({});
+    assert.deepEqual([consultar.status, consultar.body.codigo], [400, 'VALIDACAO'], 'pública: chega à validação sem sessão');
+    const consultaPorQuery = await request(app).get('/api/plataforma/convite-master/aceitar?token=x');
+    assert.equal(consultaPorQuery.status, 404, 'não existe mais rota que receba o token em query string');
+    const aceitar = await request(app).post('/api/plataforma/convite-master/aceitar').set('Origin', PERMITIDA_PLATAFORMA).send({});
+    assert.deepEqual([aceitar.status, aceitar.body.codigo], [400, 'VALIDACAO']);
+    const origemCliente = await request(app).post('/api/plataforma/convite-master/aceitar').set('Origin', PERMITIDA_CLIENTE).send({});
+    assert.deepEqual([origemCliente.status, origemCliente.body.codigo], [403, 'ORIGEM_NAO_PERMITIDA'], 'mesma allowlist de origem do Painel Privado');
+  });
+
   test('o rate limit da plataforma é uma cota PRÓPRIA, separada da cota geral do cliente', async () => {
     const restante = (resposta) => Number(String(resposta.headers.ratelimit).split(';').map((p) => p.trim()).find((p) => p.startsWith('r=')).slice(2));
 

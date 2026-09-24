@@ -396,7 +396,50 @@ async function buscarCredencialPorEmail(executor, empresaId, email) {
   return { ...mapearPublico(linha), senha_hash: linha.senha_hash };
 }
 
+const PERFIS_CONHECIDOS = Object.freeze(['MASTER', 'ADMINISTRADOR', 'SUPERVISOR', 'USUARIO']);
+const TAMANHO_MAXIMO_NOME = 150;
+
+/**
+ * Cria um VÍNCULO empresarial ligado a uma identidade global (Pacote 3,
+ * aceite de convite do MASTER) — primeiro código do projeto a inserir em
+ * `usuarios`. Modelo novo, exclusivamente: `identidade_id` obrigatório,
+ * `email` e `senha_hash` gravados como NULL (nunca copiados da identidade,
+ * nunca fictícios — migration 025 e chk_usuarios_credencial_por_modelo da
+ * 026). A credencial vive SÓ em `identidades`; aqui fica o que é do
+ * vínculo: empresa, nome de exibição, perfil, estado.
+ *
+ * `ativo` nasce true (DEFAULT da 005). Propaga violações do PostgreSQL sem
+ * traduzir — uq_usuarios_empresa_identidade (025: uma identidade, um
+ * vínculo por empresa) e a FK de perfil são interpretadas pelo serviço.
+ *
+ * @param {{query: Function}} executor
+ * @param {{empresaId: number, nome: string, perfil: string, identidadeId: number}} dados
+ */
+async function criar(executor, { empresaId, nome, perfil, identidadeId }) {
+  exigirEmpresa(empresaId);
+  if (typeof nome !== 'string' || nome.length === 0 || nome.length > TAMANHO_MAXIMO_NOME) {
+    throw new TypeError('nome de usuário inválido');
+  }
+  if (!PERFIS_CONHECIDOS.includes(perfil)) {
+    throw new TypeError('perfil inválido');
+  }
+  if (!Number.isInteger(identidadeId) || identidadeId <= 0) {
+    throw new TypeError('identificador de identidade inválido');
+  }
+
+  const { rows } = await executor.query(
+    `INSERT INTO usuarios (empresa_id, nome, email, senha_hash, perfil, identidade_id)
+     VALUES ($1, $2, NULL, NULL, $3, $4)
+     RETURNING ${PROJECAO_PUBLICA}, identidade_id`,
+    [empresaId, nome, perfil, identidadeId],
+  );
+
+  const linha = rows[0];
+  return { ...mapearPublico(linha), identidadeId: linha.identidade_id };
+}
+
 module.exports = {
+  criar,
   buscarPorEmail,
   buscarPorId,
   buscarPorIdParaAtualizacao,
@@ -409,4 +452,6 @@ module.exports = {
   CAMPOS_PUBLICOS,
   CAMPOS_VINCULO,
   MODOS_VINCULO,
+  PERFIS_CONHECIDOS,
+  TAMANHO_MAXIMO_NOME,
 };

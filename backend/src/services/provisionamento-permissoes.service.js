@@ -272,7 +272,49 @@ async function provisionar(pool, { empresaId, atorId = null, dryRun, ip = null, 
     return { dryRun: true, plano, inseridos: { recursos: [], acoes: [] }, auditoriaId: null };
   }
 
-  return emTransacao(pool, async (client) => {
+  return emTransacao(pool, (client) => provisionarComExecutor(client, { empresaId, atorId, ip, dispositivo }));
+}
+
+/**
+ * Corpo transacional do provisionamento, exposto para COMPOSIÇÃO com uma
+ * transação EXTERNA (Pacote 3 — cadastro de empresa pelo Painel Privado,
+ * item 5 da instrução: "garantir consistência transacional entre criação
+ * da empresa e provisionamento inicial, sem presumir que o serviço
+ * existente aceita uma transação externa").
+ *
+ * Antes desta extração, `provisionar()` só sabia abrir a PRÓPRIA transação
+ * (pool.connect + BEGIN/COMMIT/ROLLBACK): não havia como um serviço que já
+ * estivesse dentro de uma transação — o que insere a empresa — provisionar
+ * na MESMA unidade atômica. Passar-lhe um client no lugar do pool falharia
+ * (client não tem connect()). Esta função recebe o `client` já em
+ * transação e NUNCA emite BEGIN/COMMIT/ROLLBACK: quem abriu a transação é
+ * quem decide o desfecho, e um erro aqui propaga para o ROLLBACK de quem
+ * chamou — empresa e permissões nascem juntas, ou nenhuma das duas.
+ *
+ * `provisionar()` continua com a MESMA assinatura e o MESMO comportamento
+ * (o script administrativo e todos os testes existentes seguem intactos):
+ * agora ele só delega a este corpo, dentro da transação que ele mesmo abre.
+ * Sem `dryRun` aqui: dentro de uma transação externa o provisionamento é
+ * sempre real.
+ *
+ * @param {{query: Function}} client já dentro de uma transação
+ * @param {{empresaId: number, atorId?: number|null, ip?: string|null, dispositivo?: string|null}} dados
+ */
+async function provisionarComExecutor(client, { empresaId, atorId = null, ip = null, dispositivo = null }) {
+  exigirId(empresaId, 'identificador de empresa');
+  if (atorId !== null) {
+    exigirId(atorId, 'identificador de ator');
+  }
+  // Só o contrato mínimo de executor. Não se tenta distinguir pool de
+  // client por `connect`: um PoolClient do `pg` também expõe connect(), e
+  // essa heurística rejeitaria exatamente o objeto certo.
+  if (client === null || typeof client !== 'object' || typeof client.query !== 'function') {
+    throw new TypeError('provisionarComExecutor exige um executor com query()');
+  }
+
+  // Corpo original de provisionar() (Bloco 9, Etapa B), inalterado —
+  // apenas movido para cá. Ver "CONCORRÊNCIA NA INSERÇÃO" no cabeçalho.
+  {
     if (atorId !== null) {
       const ator = await usuarioRepo.buscarPorId(client, empresaId, atorId);
       if (ator === null) {
@@ -367,7 +409,20 @@ async function provisionar(pool, { empresaId, atorId = null, dryRun, ip = null, 
     }
 
     return { dryRun: false, plano: planoFinal, inseridos, auditoriaId };
-  });
+  }
 }
 
-module.exports = { planejar, provisionar, resumir, SITUACAO, ErroProvisionamento, ACAO_AUDITORIA, PERFIL };
+/**
+ * Empresa "pronta para o MASTER operar"? (Pacote 3, item 5: "uma empresa
+ * não deve ser apresentada como pronta para operação quando o MASTER ainda
+ * receberia 403 nas funções obrigatórias"). Verdadeiro só quando NENHUM
+ * item do escopo está AUSENTE, INSUFICIENTE ou NAO_CATALOGADA — o
+ * provisionamento existente não sobrescreve linhas insuficientes, então a
+ * inconsistência precisa ser DETECTADA e INFORMADA, nunca escondida.
+ */
+function prontaParaMaster(plano) {
+  const totais = resumir(plano);
+  return totais[SITUACAO.AUSENTE] === 0 && totais[SITUACAO.INSUFICIENTE] === 0 && totais[SITUACAO.NAO_CATALOGADA] === 0;
+}
+
+module.exports = { planejar, provisionar, provisionarComExecutor, prontaParaMaster, resumir, SITUACAO, ErroProvisionamento, ACAO_AUDITORIA, PERFIL };

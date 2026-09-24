@@ -55,6 +55,11 @@ const CORRELACAO_HEX = 16;
 // (cliente, plataforma, qualquer outra futura) nunca podem ser confundidas
 // por concatenação.
 const ROTULO_PLATAFORMA = 'PLATAFORMA';
+// Rótulo do terceiro contexto: aceite de convite do MASTER (Pacote 3,
+// adendo v2.1 §5 item 2). Mesma razão do rótulo acima — espaço de chaves
+// próprio, sob o mesmo segredo, sem colisão possível com os outros dois.
+const ROTULO_CONVITE_MASTER = 'CONVITE_MASTER';
+const TOKEN_CONVITE_FORMATO = /^[A-Za-z0-9_-]{43}$/;
 
 function gerarChaveCooldown(cnpj, email) {
   const cnpjNormalizado = normalizarCnpj(cnpj);
@@ -106,6 +111,37 @@ function gerarChaveCooldownPlataforma(email) {
   }
 }
 
+/**
+ * Chave opaca de cooldown do ACEITE DE CONVITE do MASTER (Pacote 3,
+ * migration 034): HMAC-SHA-256 sobre ROTULO_CONVITE_MASTER || 0x0A || o
+ * TOKEN do convite em claro. Derivada do token, não de CNPJ+e-mail (adendo
+ * v2.1 §5 item 2): não há CNPJ nessa tela, e é exatamente o token que um
+ * atacante teria em mãos — cada link recebe seu próprio contador de
+ * tentativas. O token em claro nunca é persistido: só este HMAC (que não é
+ * reversível sem o segredo) chega à tabela convite_master_tentativas.
+ *
+ * Exige o formato canônico do token (43 caracteres base64url, mesmo
+ * contrato de src/security/token.js): qualquer outra coisa é TypeError fixo,
+ * sem o valor — um "token" malformado nem chega a ganhar chave.
+ */
+function gerarChaveCooldownConvite(tokenConvite) {
+  if (typeof tokenConvite !== 'string' || !TOKEN_CONVITE_FORMATO.test(tokenConvite)) {
+    throw new TypeError('token de convite com formato inválido');
+  }
+
+  const segredo = obterLoginCooldownHmacSecret();
+  try {
+    return crypto
+      .createHmac('sha256', segredo)
+      .update(ROTULO_CONVITE_MASTER, 'utf8')
+      .update(SEPARADOR, 'utf8')
+      .update(tokenConvite, 'utf8')
+      .digest('hex');
+  } finally {
+    segredo.fill(0);
+  }
+}
+
 /** true somente para string de 64 hex minúsculos. Nunca lança. */
 function chaveCooldownTemFormatoValido(chave) {
   return typeof chave === 'string' && CHAVE_COOLDOWN_FORMATO.test(chave);
@@ -137,6 +173,7 @@ module.exports = {
   CHAVE_COOLDOWN_TAMANHO,
   gerarChaveCooldown,
   gerarChaveCooldownPlataforma,
+  gerarChaveCooldownConvite,
   chaveCooldownTemFormatoValido,
   derivarAdvisoryLock64,
   idCorrelacaoCooldown,

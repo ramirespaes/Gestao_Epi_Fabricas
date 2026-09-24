@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Empresas — Painel Privado SafeWork</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #10151c; color: #e6e9ee; margin: 0; }
+    header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; background: #1a212b; border-bottom: 1px solid #262f3b; }
+    header h1 { font-size: 1rem; margin: 0; }
+    nav a { color: #9fb3ff; margin-right: 1rem; }
+    button { background: #3861fb; color: #fff; border: none; border-radius: 4px; padding: 0.45rem 0.8rem; cursor: pointer; }
+    button.secundario { background: #2a3644; border: 1px solid #3a4656; }
+    button:disabled { opacity: 0.6; cursor: default; }
+    main { padding: 1.5rem; display: grid; grid-template-columns: 1fr 1.3fr; gap: 1.5rem; }
+    section { background: #1a212b; border-radius: 8px; padding: 1rem; }
+    h2 { font-size: 0.95rem; margin: 0 0 0.75rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th, td { text-align: left; padding: 0.4rem; border-bottom: 1px solid #262f3b; }
+    tr.selecionavel { cursor: pointer; }
+    tr.selecionavel:hover { background: #222c39; }
+    .inativa { color: #ff9f6b; }
+    form label { display: block; font-size: 0.8rem; margin: 0.5rem 0 0.2rem; }
+    form input, form select { width: 100%; padding: 0.4rem; border-radius: 4px; border: 1px solid #33404f; background: #0d1117; color: #e6e9ee; box-sizing: border-box; }
+    .grade { display: grid; grid-template-columns: 1fr 1fr; gap: 0 0.75rem; }
+    fieldset { border: 1px solid #33404f; border-radius: 6px; margin: 0.75rem 0; padding: 0.5rem 0.75rem; }
+    legend { font-size: 0.8rem; color: #9fb3ff; }
+    .mensagem { min-height: 1.2rem; font-size: 0.85rem; margin: 0.5rem 0; }
+    .erro { color: #ff6b6b; }
+    .ok { color: #7bd88f; }
+    .aviso { color: #ffd166; }
+    .acoes { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem; }
+    code { word-break: break-all; background: #0d1117; padding: 0.2rem 0.4rem; border-radius: 4px; display: inline-block; }
+    #detalhe { display: none; }
+    @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Painel Privado — SafeWork</h1>
+      <nav><a href="painel.html">Início</a><a href="empresas.html">Empresas</a></nav>
+    </div>
+    <button id="sair" type="button" class="secundario">Sair</button>
+  </header>
+
+  <main>
+    <section>
+      <h2>Empresas cadastradas</h2>
+      <div style="display:flex; gap:0.5rem; margin-bottom:0.5rem;">
+        <input id="busca" placeholder="Buscar por razão social, nome fantasia ou CNPJ" style="flex:1; padding:0.4rem; border-radius:4px; border:1px solid #33404f; background:#0d1117; color:#e6e9ee;">
+        <button id="btn-buscar" type="button" class="secundario">Buscar</button>
+        <button id="btn-nova" type="button">Nova empresa</button>
+      </div>
+      <p id="msg-lista" class="mensagem"></p>
+      <table>
+        <thead><tr><th>Razão social</th><th>CNPJ</th><th>Situação</th></tr></thead>
+        <tbody id="lista"></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2 id="titulo-form">Nova empresa</h2>
+      <p id="msg-form" class="mensagem"></p>
+      <form id="form-empresa" novalidate>
+        <div class="grade">
+          <div><label for="razaoSocial">Razão social *</label><input id="razaoSocial" name="razaoSocial" required></div>
+          <div><label for="nomeFantasia">Nome fantasia</label><input id="nomeFantasia" name="nomeFantasia"></div>
+          <div><label for="cnpj">CNPJ *</label><input id="cnpj" name="cnpj" required></div>
+          <div><label for="inscricaoEstadual">Inscrição estadual</label><input id="inscricaoEstadual" name="inscricaoEstadual"></div>
+          <div><label for="situacaoInscricaoEstadual">Situação da IE</label>
+            <select id="situacaoInscricaoEstadual" name="situacaoInscricaoEstadual">
+              <option value="">Não declarada</option><option value="CONTRIBUINTE">Contribuinte</option><option value="ISENTO">Isento</option><option value="NAO_CONTRIBUINTE">Não contribuinte</option>
+            </select></div>
+        </div>
+        <fieldset><legend>Endereço</legend><div class="grade">
+          <div><label for="endereco">Logradouro</label><input id="endereco" name="endereco"></div>
+          <div><label for="numero">Número</label><input id="numero" name="numero"></div>
+          <div><label for="complemento">Complemento</label><input id="complemento" name="complemento"></div>
+          <div><label for="bairro">Bairro</label><input id="bairro" name="bairro"></div>
+          <div><label for="cidade">Cidade</label><input id="cidade" name="cidade"></div>
+          <div><label for="uf">UF</label><input id="uf" name="uf" maxlength="2"></div>
+          <div><label for="cep">CEP</label><input id="cep" name="cep"></div>
+        </div></fieldset>
+        <fieldset><legend>Contato institucional</legend><div class="grade">
+          <div><label for="email">E-mail institucional</label><input id="email" name="email" type="email"></div>
+          <div><label for="telefone">Telefone geral</label><input id="telefone" name="telefone"></div>
+        </div></fieldset>
+        <fieldset><legend>Representante da empresa</legend><div class="grade">
+          <div><label for="representanteNome">Nome completo</label><input id="representanteNome" name="representanteNome"></div>
+          <div><label for="representanteCargo">Cargo/função</label><input id="representanteCargo" name="representanteCargo"></div>
+          <div><label for="representanteEmail">E-mail</label><input id="representanteEmail" name="representanteEmail" type="email"></div>
+          <div><label for="representanteTelefone">Telefone</label><input id="representanteTelefone" name="representanteTelefone"></div>
+        </div></fieldset>
+        <fieldset><legend>Contato financeiro</legend><div class="grade">
+          <div><label for="financeiroNome">Responsável financeiro</label><input id="financeiroNome" name="financeiroNome"></div>
+          <div><label for="financeiroEmail">E-mail financeiro</label><input id="financeiroEmail" name="financeiroEmail" type="email"></div>
+          <div><label for="financeiroTelefone">Telefone financeiro</label><input id="financeiroTelefone" name="financeiroTelefone"></div>
+        </div></fieldset>
+        <div class="acoes">
+          <button id="btn-salvar" type="submit">Salvar</button>
+          <button id="btn-cancelar-edicao" type="button" class="secundario">Limpar</button>
+        </div>
+      </form>
+
+      <div id="detalhe">
+        <hr style="border-color:#262f3b; margin:1rem 0;">
+        <h2>Situação e provisionamento MASTER</h2>
+        <p id="situacao"></p>
+        <p id="provisionamento" class="mensagem"></p>
+        <div class="acoes">
+          <button id="btn-inativar" type="button" class="secundario">Inativar</button>
+          <button id="btn-reativar" type="button" class="secundario">Reativar</button>
+        </div>
+
+        <h2 style="margin-top:1rem;">Primeiro MASTER — convite</h2>
+        <p class="mensagem aviso">O e-mail do representante NÃO vira MASTER automaticamente: informe explicitamente quem será o primeiro MASTER.</p>
+        <div style="display:flex; gap:0.5rem;">
+          <input id="email-master" type="email" placeholder="E-mail do primeiro MASTER" style="flex:1; padding:0.4rem; border-radius:4px; border:1px solid #33404f; background:#0d1117; color:#e6e9ee;">
+          <button id="btn-convidar" type="button">Gerar convite</button>
+        </div>
+        <p id="msg-convite" class="mensagem"></p>
+        <div id="entrega" style="display:none;">
+          <p class="aviso">Modo de desenvolvimento (sem envio de e-mail): repasse o link abaixo à pessoa convidada.</p>
+          <code id="link-aceite"></code>
+        </div>
+        <table style="margin-top:0.5rem;">
+          <thead><tr><th>E-mail</th><th>Situação</th><th>Expira em</th><th></th></tr></thead>
+          <tbody id="convites"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="../js/api-http.js"></script>
+  <script src="config.js"></script>
+  <script src="empresas.js"></script>
+</body>
+</html>

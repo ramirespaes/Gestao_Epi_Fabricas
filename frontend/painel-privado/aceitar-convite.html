@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>Aceitar convite — SafeWork</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #10151c; color: #e6e9ee; display: flex; min-height: 100vh; align-items: center; justify-content: center; margin: 0; }
+    .cartao { background: #1a212b; padding: 2rem; border-radius: 8px; width: 380px; box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
+    h1 { font-size: 1.1rem; margin: 0 0 1rem; }
+    label { display: block; font-size: 0.85rem; margin: 0.6rem 0 0.25rem; }
+    input { width: 100%; padding: 0.5rem; border-radius: 4px; border: 1px solid #33404f; background: #0d1117; color: #e6e9ee; box-sizing: border-box; }
+    button { width: 100%; margin-top: 1rem; padding: 0.6rem; background: #3861fb; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+    button:disabled { opacity: 0.6; cursor: default; }
+    .mensagem { min-height: 1.2rem; font-size: 0.85rem; margin: 0.5rem 0; }
+    .erro { color: #ff6b6b; } .ok { color: #7bd88f; } .info { color: #9fb3ff; }
+    #form-aceite, #sucesso { display: none; }
+  </style>
+</head>
+<body>
+  <div class="cartao">
+    <h1>Convite para administrador MASTER</h1>
+    <p id="carregando">Verificando o convite...</p>
+    <p id="mensagem" class="mensagem" role="alert" aria-live="polite"></p>
+
+    <form id="form-aceite" novalidate>
+      <p class="info">Empresa: <strong id="empresa"></strong><br>E-mail convidado: <strong id="email"></strong></p>
+      <p id="instrucao" class="info"></p>
+      <label for="nome">Seu nome</label>
+      <input id="nome" name="nome" autocomplete="name" required>
+      <label for="senha" id="rotulo-senha">Senha</label>
+      <input id="senha" name="senha" type="password" required>
+      <button id="botao" type="submit">Aceitar convite</button>
+    </form>
+
+    <div id="sucesso">
+      <p class="ok">Convite aceito. Seu vínculo de MASTER foi criado para <strong id="empresa-ok"></strong>.</p>
+      <p class="info">O acesso ao ambiente operacional (login global) será liberado no próximo pacote.</p>
+    </div>
+  </div>
+
+  <script src="../js/api-http.js"></script>
+  <script src="config.js"></script>
+  <script src="aceitar-convite.js"></script>
+</body>
+</html>
