@@ -52,6 +52,27 @@
     });
   }
 
+  /** Nada da sessão fica visível enquanto ela não é confirmada de novo. */
+  function ocultarProtegido() {
+    el('selecao').classList.add('oculto');
+    el('sem-empresa').classList.add('oculto');
+    el('botao-sair').classList.add('oculto');
+    el('identificacao').textContent = '';
+    el('lista-empresas').innerHTML = '';
+    mostrar('');
+    el('carregando').classList.remove('oculto');
+  }
+
+  // Página restaurada pelo navegador (BFCache) depois de "Sair" ou de uma
+  // troca de sessão em outra aba: identificação e lista somem e a consulta
+  // é refeita — encerrada leva ao login; válida reapresenta a lista ATUAL.
+  // Nenhum bloqueio do histórico do navegador.
+  window.addEventListener('pageshow', function (evento) {
+    if (!evento || !evento.persisted) return;
+    ocultarProtegido();
+    carregar();
+  });
+
   el('lista-empresas').addEventListener('click', function (evento) {
     var botao = evento.target.closest('button[data-empresa-id]');
     if (!botao) return;

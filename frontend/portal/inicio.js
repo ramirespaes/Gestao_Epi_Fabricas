@@ -19,6 +19,23 @@
   var el = function (id) { return document.getElementById(id); };
   function ir(destino) { window.location.href = Portal.decisao.pagina(destino); }
 
+  var CAMPOS_DA_SESSAO = ['empresa-cnpj', 'usuario-nome', 'usuario-email', 'usuario-perfil', 'empresa-ativa'];
+
+  /** Nada da sessão fica visível enquanto ela não é confirmada de novo. */
+  function ocultarProtegido() {
+    el('conteudo').classList.add('oculto');
+    el('acoes').classList.add('oculto');
+    el('botao-trocar').classList.add('oculto');
+    el('modulos-mensagem').classList.add('oculto');
+    CAMPOS_DA_SESSAO.forEach(function (id) { el(id).textContent = ''; });
+    el('empresa-nome').textContent = 'SafeWork — Gestão de EPIs';
+    window.EpiPermissoes.aplicarMenu(null, document.querySelectorAll('a[data-pagina]'));
+    el('mensagem').textContent = '';
+    el('mensagem').className = 'mensagem';
+    el('carregando').classList.remove('oculto');
+  }
+
+  function carregar() {
   Portal.acoes.sessao().then(function (r) {
     el('carregando').classList.add('oculto');
     var destino = Portal.decisao.destinoDaSessao(r);
@@ -64,6 +81,20 @@
     el('carregando').classList.add('oculto');
     el('mensagem').textContent = 'Não foi possível falar com o servidor. Verifique sua conexão.';
     el('mensagem').className = 'mensagem erro';
+  });
+  }
+
+  carregar();
+
+  // Página restaurada pelo navegador (BFCache) depois de "Sair" ou de uma
+  // troca de empresa/identidade em outra aba: o DOM antigo volta sem
+  // recarregar. Tudo da sessão some e a consulta é refeita — encerrada
+  // leva ao login; válida reapresenta empresa, usuário e módulos da sessão
+  // ATUAL. Nenhum bloqueio do histórico do navegador.
+  window.addEventListener('pageshow', function (evento) {
+    if (!evento || !evento.persisted) return;
+    ocultarProtegido();
+    carregar();
   });
 
   el('botao-trocar').addEventListener('click', function () { ir('selecionar'); });

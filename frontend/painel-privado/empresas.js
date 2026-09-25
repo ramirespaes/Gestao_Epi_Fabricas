@@ -181,12 +181,61 @@
   });
 
   // ----- sessão -----
+  /**
+   * Nada da área protegida fica visível enquanto a sessão não é confirmada:
+   * lista, formulário, detalhe, provisionamento, convites e link de aceite
+   * são limpos e o conteúdo é ocultado.
+   */
+  function ocultarProtegido() {
+    el('conteudo').style.display = 'none';
+    el('lista').innerHTML = '';
+    el('convites').innerHTML = '';
+    el('busca').value = '';
+    el('form-empresa').reset();
+    el('cnpj').disabled = false;
+    el('titulo-form').textContent = 'Nova empresa';
+    el('detalhe').style.display = 'none';
+    el('entrega').style.display = 'none';
+    el('link-aceite').textContent = '';
+    el('situacao').textContent = '';
+    el('email-master').value = '';
+    empresaAtual = null;
+    ['msg-lista', 'msg-form', 'msg-convite', 'provisionamento'].forEach(function (id) { mensagem(id, ''); });
+    el('carregando').style.display = '';
+  }
+
+  /** Confirma a sessão no servidor e só então revela o conteúdo e carrega a lista. */
+  function confirmarSessao() {
+    return Http.requisitar('GET', '/auth/me').then(function (r) {
+      el('carregando').style.display = 'none';
+      if (Http.ehNaoAutenticado(r)) { irParaLogin(); return; }
+      if (!r.ok) { mensagem('msg-lista', r.mensagem || 'Não foi possível confirmar a sessão.', 'erro'); return; }
+      el('conteudo').style.display = 'block';
+      carregarLista();
+    }).catch(function () {
+      el('carregando').style.display = 'none';
+      mensagem('msg-lista', 'Não foi possível falar com o servidor.', 'erro');
+    });
+  }
+
   el('sair').addEventListener('click', function () {
-    Http.requisitar('POST', '/auth/logout').then(irParaLogin).catch(irParaLogin);
+    el('sair').disabled = true;
+    // Os dados administrativos somem ANTES do pedido de logout e da
+    // navegação: uma cópia desta página guardada pelo navegador não terá
+    // nada para mostrar.
+    ocultarProtegido();
+    return Http.requisitar('POST', '/auth/logout').then(irParaLogin).catch(irParaLogin);
   });
 
-  Http.requisitar('GET', '/auth/me').then(function (r) {
-    if (Http.ehNaoAutenticado(r)) { irParaLogin(); return; }
-    carregarLista();
-  }).catch(function () { mensagem('msg-lista', 'Não foi possível falar com o servidor.', 'erro'); });
+  // Página restaurada pelo navegador (BFCache) depois de "Sair" ou de uma
+  // troca de sessão em outra aba: o DOM antigo volta sem recarregar. Tudo
+  // some e a sessão é confirmada de novo — encerrada leva ao login; válida
+  // recarrega a lista ATUAL. Nenhum bloqueio do histórico do navegador.
+  window.addEventListener('pageshow', function (evento) {
+    if (!evento || !evento.persisted) return;
+    ocultarProtegido();
+    confirmarSessao();
+  });
+
+  confirmarSessao();
 })();

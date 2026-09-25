@@ -281,7 +281,71 @@
       });
     }
     if (el.tela) el.tela.style.display = 'none';
+    registrarRestauracao(o, el, r.contexto);
     return r.contexto;
+  }
+
+  /**
+   * Página restaurada pelo navegador (BFCache: evento pageshow com
+   * persisted=true) depois de um logout, ou de uma troca de sessão em outra
+   * aba: o DOM antigo volta sem recarregar e sem nenhuma requisição, então
+   * a sessão é revalidada no servidor com a tela de verificação cobrindo a
+   * página e a identificação limpa. Encerrada -> Portal (e aoEncerrar
+   * limpa os dados); mesmo contexto -> a tela some; outra empresa, usuário
+   * ou perfil -> dados limpos e página recarregada para a sessão atual;
+   * falha de comunicação -> aviso e link para o Portal, nada revelado.
+   * Nenhum bloqueio do histórico do navegador. Janelas sem
+   * addEventListener (testes antigos) seguem aceitas.
+   */
+  function registrarRestauracao(o, el, contextoExibido) {
+    var j = janela();
+    if (!j || typeof j.addEventListener !== 'function') return;
+    var aoEncerrar = typeof o.aoEncerrar === 'function' ? o.aoEncerrar : function () {};
+    j.addEventListener('pageshow', function (evento) {
+      if (!evento || !evento.persisted) return undefined;
+      return revalidar(o, el, contextoExibido, aoEncerrar);
+    });
+  }
+
+  function mesmoContexto(a, b) {
+    return !!(a && b && a.empresa.id === b.empresa.id && a.usuario.id === b.usuario.id && a.usuario.perfil === b.usuario.perfil);
+  }
+
+  async function revalidar(o, el, contextoExibido, aoEncerrar) {
+    if (el.tela) el.tela.style.display = '';
+    if (el.mensagem) el.mensagem.textContent = MENSAGENS.VERIFICANDO;
+    if (el.linkPortal) el.linkPortal.style.display = 'none';
+    if (el.identificacao) el.identificacao.textContent = '';
+
+    var r;
+    try {
+      r = await iniciar({ janela: o.janela });
+    } catch (erro) {
+      r = { autenticado: false, motivo: 'FALHA' };
+    }
+
+    if (!r.autenticado) {
+      if (r.motivo === 'FALHA') {
+        if (el.mensagem) el.mensagem.textContent = MENSAGENS.FALHA;
+        if (el.linkPortal) el.linkPortal.style.display = '';
+        return;
+      }
+      aoEncerrar(); // SEM_SESSAO / RESPOSTA_INVALIDA: iniciar já levou ao Portal
+      return;
+    }
+
+    if (mesmoContexto(r.contexto, contextoExibido)) {
+      if (el.identificacao) el.identificacao.textContent = rotuloIdentificacao(r.contexto);
+      if (el.botaoTrocar) el.botaoTrocar.style.display = r.podeTrocar ? '' : 'none';
+      if (el.tela) el.tela.style.display = 'none';
+      return;
+    }
+
+    // Outra empresa/usuário/perfil: nada do contexto antigo pode ficar na
+    // tela; a página recarrega e refaz sessão e permissões do zero.
+    aoEncerrar();
+    var j = janela();
+    j.location.replace(j.location.pathname + (j.location.search || '') + (j.location.hash || ''));
   }
 
   function contexto() { return copiar(contextoAtual); }
