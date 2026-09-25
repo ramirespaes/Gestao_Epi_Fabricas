@@ -66,11 +66,11 @@
 
     <nav class="nav">
       <div class="nav-section">Administração</div>
-      <a href="grupos-acesso.html"><div class="nav-icon indigo">groups</div>Grupos de Acesso</a>
-      <a href="grupo-permissoes.html"><div class="nav-icon indigo">lock_person</div>Permissões do Grupo</a>
-      <a class="active" href="javascript:void(0)"><div class="nav-icon indigo">group_add</div>Integrantes do Grupo</a>
+      <a href="grupos-acesso.html" data-pagina="grupos-acesso" style="display:none"><div class="nav-icon indigo">groups</div>Grupos de Acesso</a>
+      <a href="grupo-permissoes.html" data-pagina="grupo-permissoes" style="display:none"><div class="nav-icon indigo">lock_person</div>Permissões do Grupo</a>
+      <a class="active" href="javascript:void(0)" data-pagina="grupo-usuarios" style="display:none"><div class="nav-icon indigo">group_add</div>Integrantes do Grupo</a>
       <!-- Subetapa 3V: autorizações individuais e delegações. -->
-      <a href="autorizacoes-individuais.html"><div class="nav-icon indigo">verified_user</div>Autorizações Individuais</a>
+      <a href="autorizacoes-individuais.html" data-pagina="autorizacoes-individuais" style="display:none"><div class="nav-icon indigo">verified_user</div>Autorizações Individuais</a>
       <div class="nav-section">Sistema</div>
       <a href="../portal/inicio.html"><div class="nav-icon blue">home</div>Início</a>
     </nav>
@@ -198,6 +198,7 @@
 <script src="../js/api-http.js"></script>
 <script src="../portal/config.js"></script>
 <script src="../js/sessao-empresarial.js"></script>
+<script src="../js/permissoes-efetivas.js"></script>
 <script src="../js/grupos-acesso.js"></script>
 <script src="../js/grupo-usuarios.js"></script>
 <script>
@@ -213,14 +214,24 @@
 
   var $ = function (id) { return document.getElementById(id); };
 
+  // Parte C1: o que o servidor disse que esta pessoa pode fazer aqui.
+  // Começa sem nada; só aplicarAcesso() (após GET /api/auth/permissoes) libera.
+  var acessoAtual = { permissoes: null, podeAlterar: false };
+
   // ── adaptador de DOM ───────────────────────────────────────────────
   // Nenhuma sequência assíncrona vive aqui: só leitura e escrita do DOM.
   // O agrupamento da digitação (debounce) também mudou de lugar na
   // correção pós-auditoria — mora no controlador, junto da guarda que
   // ele precisa acionar na tecla, e não 300 ms depois.
   var ui = {
-    renderVinculados: function (html) { $('listaVinculados').innerHTML = html; },
-    renderDisponiveis: function (html) { $('listaDisponiveis').innerHTML = html; },
+    renderVinculados: function (html) {
+      $('listaVinculados').innerHTML = html;
+      if (!acessoAtual.podeAlterar) EpiPermissoes.somenteLeitura($('listaVinculados'));
+    },
+    renderDisponiveis: function (html) {
+      $('listaDisponiveis').innerHTML = html;
+      if (!acessoAtual.podeAlterar) EpiPermissoes.somenteLeitura($('listaDisponiveis'));
+    },
     paginacao: function (html) { $('paginacao').innerHTML = html; },
 
     resumo: function (texto) {
@@ -380,6 +391,10 @@
   // Sem login próprio (Etapa C, Parte C0): identificação, "Sair" e
   // "Trocar de empresa" são ligados por EpiSessaoEmpresarial.montar().
   // O contexto recebido serve só para EXIBIR — quem autoriza é o backend.
+  function aplicarAcesso(acesso) {
+    acessoAtual = acesso;
+  }
+
   async function iniciarSessao() {
     controlador.mostrarSemGrupo();
     await carregarGrupos();
@@ -455,8 +470,20 @@
     // permite tentar de novo (a sessão pode continuar ativa).
     aoFalharSaida: function (mensagem) { ui.aviso(mensagem, 'erro'); },
   }).then(function (contexto) {
-    if (contexto) return iniciarSessao(contexto);
-    return undefined;
+    if (!contexto) return undefined;
+    // Parte C1: permissões efetivas NESTA empresa, calculadas pelo servidor.
+    // Falha, resposta de outra empresa ou falta de acesso: nada é carregado
+    // nem liberado (falha fechada). O backend continua recusando com 403.
+    return EpiPermissoes.prepararPagina({
+      pagina: 'grupo-usuarios',
+      contexto: contexto,
+      links: document.querySelectorAll('.nav a[data-pagina]'),
+      aviso: function (mensagem) { ui.aviso(mensagem, 'erro'); },
+    }).then(function (acesso) {
+      if (!acesso) return undefined;
+      aplicarAcesso(acesso);
+      return iniciarSessao(contexto);
+    });
   });
 })();
 </script>

@@ -6,160 +6,46 @@
   <title>Cadastro de Materiais — Gestão de EPIs</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
   <link rel="stylesheet" href="../css/main.css">
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    /* Parte C2: itens do menu ainda não integrados ao backend (sem link) */
+    .nav a.nav-pendente{cursor:default;opacity:.55}
+    .nav a.nav-pendente:hover{background:transparent}
+    .nav-etiqueta{margin-left:auto;font-size:10px;font-weight:500;color:var(--on-surface-variant);border:1px solid var(--outline);border-radius:99px;padding:1px 7px;white-space:nowrap}
+  </style>
 </head>
+<!--
+  Cadastro de Materiais e EPIs (Bloco 9, Etapa C, Parte C2).
+
+  Página ORIGINAL do sistema ligada ao BACKEND REAL, com a interface
+  preservada. Sessão empresarial do Portal do Cliente (C0), permissões
+  efetivas calculadas pelo servidor (C1) e os contratos de materiais e
+  estoque do Bloco 9, Etapa A. Não carrega js/db-api.js nem js/main.js: o
+  protótipo em localStorage segue intocado nas páginas antigas; o menu
+  lateral mantém a estrutura visual, mas os itens ainda não integrados
+  não têm link (etiqueta "Em integração").
+-->
 <body>
 
-<div id="loginScreen" style="position:fixed;inset:0;z-index:10000;
-       background:var(--surface);display:flex;align-items:center;justify-content:center;
-       padding:20px">
-
-    <div style="width:100%;max-width:400px">
-
-      <!-- Logo -->
-      <div style="text-align:center;margin-bottom:28px">
-        <div style="width:64px;height:64px;border-radius:20px;background:#1a3a6b;
-                    display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
-          <span class="material-symbols-outlined" style="font-size:32px;color:#fff">safety_check</span>
-        </div>
-        <h1 style="font-size:20px;font-weight:700;margin:0">Gestão de EPIs</h1>
-        <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Cobresul Metais LTDA</p>
-      </div>
-
-      <!-- ── PAINEL 1: LOGIN ────────────────────────────────────────────── -->
-      <section class="card" id="loginPanel">
-        <div class="form-grid" style="margin-bottom:4px">
-          <div class="field full">
-            <label for="loginEmail">E-mail corporativo</label>
-            <input id="loginEmail" class="input" type="email" placeholder="seu.nome@cobresul.com.br" autocomplete="username">
-          </div>
-          <div class="field full">
-            <label for="loginPassword">Senha</label>
-            <input id="loginPassword" class="input" type="password" placeholder="••••••••" autocomplete="current-password"
-                   onkeydown="if(event.key==='Enter') doLogin()">
-          </div>
-        </div>
-
-        <div id="loginError" style="display:none;margin-bottom:10px">
-          <div class="notice" style="background:rgba(255,59,48,0.06);color:#FF3B30;border-color:rgba(255,59,48,0.2)">
-            E-mail ou senha incorretos.
-          </div>
-        </div>
-
-        <button class="filled-btn" style="width:100%;height:48px" onclick="doLogin()">
-          <span class="material-symbols-outlined">login</span>Entrar
-        </button>
-
-        <!-- Login biométrico -->
-        <button class="outlined-btn" id="biometricLoginBtn" style="width:100%;height:48px;margin-top:10px;display:none"
-                onclick="loginWithBiometrics()">
-          <span class="material-symbols-outlined">fingerprint</span>Entrar com biometria
-        </button>
-
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
-          <button type="button" onclick="showLoginPanel('recoverPanel')"
-                  style="background:none;border:none;color:#007AFF;font-size:12px;cursor:pointer;padding:0">
-            Esqueci minha senha
-          </button>
-          <button type="button" onclick="showLoginPanel('biometricSetupPanel')"
-                  style="background:none;border:none;color:#007AFF;font-size:12px;cursor:pointer;padding:0">
-            Configurar biometria
-          </button>
-        </div>
-      </section>
-
-      <!-- ── PAINEL 2: RECUPERAÇÃO DE SENHA ─────────────────────────────── -->
-      <section class="card" id="recoverPanel" style="display:none">
-        <div class="card-header">
-          <div class="card-title">
-            <div class="card-icon" style="background:rgba(255,149,0,0.1);color:#FF9500">mail</div>
-            <div>
-              <h2>Recuperar senha</h2>
-              <p>Informe seu e-mail corporativo para receber o código de verificação.</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Etapa 1: pedir e-mail -->
-        <div id="recoverStep1">
-          <div class="field full">
-            <label for="recoverEmail">E-mail corporativo</label>
-            <input id="recoverEmail" class="input" type="email" placeholder="seu.nome@cobresul.com.br">
-          </div>
-          <button class="filled-btn" style="width:100%;height:46px;margin-top:12px" onclick="sendRecoveryCode()">
-            <span class="material-symbols-outlined">send</span>Enviar código
-          </button>
-        </div>
-
-        <!-- Etapa 2: código + nova senha -->
-        <div id="recoverStep2" style="display:none">
-          <div class="notice" style="margin-bottom:12px">
-            Código enviado para <strong id="recoverEmailDisplay"></strong>.
-            <span style="display:block;margin-top:4px;font-size:11px">(Simulação: o código aparece no console do navegador — F12)</span>
-          </div>
-          <div class="field full">
-            <label for="recoverCode">Código de verificação</label>
-            <input id="recoverCode" class="input" type="text" maxlength="6" placeholder="000000">
-          </div>
-          <div class="field full">
-            <label for="recoverNewPassword">Nova senha</label>
-            <input id="recoverNewPassword" class="input" type="password" placeholder="Mínimo 8 caracteres">
-          </div>
-          <button class="filled-btn" style="width:100%;height:46px;margin-top:8px" onclick="confirmPasswordReset()">
-            <span class="material-symbols-outlined">check</span>Redefinir senha
-          </button>
-        </div>
-
-        <button type="button" onclick="showLoginPanel('loginPanel')"
-                style="background:none;border:none;color:#007AFF;font-size:12px;cursor:pointer;padding:0;margin-top:14px">
-          ← Voltar ao login
-        </button>
-      </section>
-
-      <!-- ── PAINEL 3: CONFIGURAR BIOMETRIA ─────────────────────────────── -->
-      <section class="card" id="biometricSetupPanel" style="display:none">
-        <div class="card-header">
-          <div class="card-title">
-            <div class="card-icon" style="background:rgba(0,122,255,0.1);color:#007AFF">fingerprint</div>
-            <div>
-              <h2>Configurar login biométrico</h2>
-              <p>Use Touch ID, Face ID, Windows Hello ou leitor de digital para entrar sem senha.</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="form-grid">
-          <div class="field full">
-            <label for="biometricEmail">E-mail corporativo</label>
-            <input id="biometricEmail" class="input" type="email" placeholder="seu.nome@cobresul.com.br">
-          </div>
-          <div class="field full">
-            <label for="biometricPassword">Senha (confirmação)</label>
-            <input id="biometricPassword" class="input" type="password" placeholder="••••••••">
-          </div>
-        </div>
-
-        <div id="biometricUnsupported" style="display:none;margin-top:8px">
-          <div class="notice" style="background:rgba(255,59,48,0.06);color:#FF3B30;border-color:rgba(255,59,48,0.2)">
-            Este navegador/dispositivo não tem suporte a biometria (WebAuthn).
-          </div>
-        </div>
-
-        <button class="filled-btn" style="width:100%;height:46px;margin-top:8px" onclick="registerBiometrics()">
-          <span class="material-symbols-outlined">fingerprint</span>Cadastrar biometria deste dispositivo
-        </button>
-
-        <button type="button" onclick="showLoginPanel('loginPanel')"
-                style="background:none;border:none;color:#007AFF;font-size:12px;cursor:pointer;padding:0;margin-top:14px">
-          ← Voltar ao login
-        </button>
-      </section>
-
-      <p style="text-align:center;font-size:11px;color:var(--on-surface-variant);margin-top:20px">
-        Acesso restrito a colaboradores autorizados · NR-06 / NR-01 / LGPD
-      </p>
+<!-- ══ VERIFICAÇÃO DA SESSÃO ══ (Etapa C, Parte C0) Esta página não tem
+     login próprio: usa a sessão empresarial criada pelo Portal do Cliente
+     (frontend/portal/), confirmada no servidor por js/sessao-empresarial.js.
+     Sem sessão válida a pessoa é levada ao Portal. Nada é carregado antes
+     da confirmação, e nada de sessão é guardado no navegador. -->
+<div id="telaSessao" style="position:fixed;inset:0;z-index:10000;background:var(--surface);
+     display:flex;align-items:center;justify-content:center;padding:20px">
+  <div style="width:100%;max-width:400px;text-align:center">
+    <div style="width:64px;height:64px;border-radius:20px;background:#1a3a6b;
+                display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
+      <span class="material-symbols-outlined" style="font-size:32px;color:#fff">safety_check</span>
     </div>
+    <h1 style="font-size:20px;font-weight:700;margin:0">Gestão de EPIs</h1>
+    <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">SafeWork Engenharia</p>
+    <p id="telaSessaoMensagem" role="status" aria-live="polite" style="font-size:13px;color:var(--on-surface-variant);margin-top:8px">Verificando sua sessão…</p>
+    <a id="telaSessaoPortal" href="../portal/index.html" class="filled-btn" style="display:none;margin-top:16px">
+      <span class="material-symbols-outlined">login</span>Ir para o Portal do Cliente
+    </a>
   </div>
+</div>
 
 <div class="mobile-overlay" onclick="closeMobileMenu()"></div>
 <div class="mobile-topbar">
@@ -187,32 +73,37 @@
 
       <nav class="nav">
         <div class="nav-section">Visão geral</div>
-        <a class="active" data-page="dashboard" href="javascript:void(0)" onclick="showView('dashboardView'); setActiveNav(this); return false;"><div class="nav-icon blue">dashboard</div>Dashboard</a>
-        <a data-page="reports" href="javascript:void(0)" onclick="showView('reportsView'); setActiveNav(this); return false;"><div class="nav-icon indigo">analytics</div>Relatórios</a>
-        <a data-page="operations" href="javascript:void(0)" onclick="showView('operationsView'); setActiveNav(this); return false;"><div class="nav-icon gray">receipt_long</div>Operações</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">dashboard</div>Dashboard<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon indigo">analytics</div>Relatórios<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon gray">receipt_long</div>Operações<span class="nav-etiqueta">Em integração</span></a>
         <div class="nav-section">Estoque</div>
-        <a data-page="materials" href="javascript:void(0)" onclick="showView('materialsView'); setActiveNav(this); return false;"><div class="nav-icon teal">inventory_2</div>Materiais</a>
-        <a data-page="eligibilityRules" href="javascript:void(0)" onclick="showView('eligibilityRulesView'); setActiveNav(this); return false;"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor</a>
-        <a data-page="purchases" href="javascript:void(0)" onclick="showView('purchasesView'); setActiveNav(this); return false;"><div class="nav-icon orange">shopping_cart</div>Compras / Entradas</a>
-        <a data-page="stockValidity" href="javascript:void(0)" onclick="showView('stockValidityView'); setActiveNav(this); return false;"><div class="nav-icon red">event_busy</div>Validade do Estoque</a>
-        <a data-page="availableItems" href="javascript:void(0)" onclick="showView('availableItemsView'); setActiveNav(this); return false;"><div class="nav-icon green">checklist</div>Itens Disponíveis</a>
+        <a class="active" href="javascript:void(0)" data-pagina="materials" style="display:none"><div class="nav-icon teal">inventory_2</div>Materiais</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon orange">shopping_cart</div>Compras / Entradas<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon red">event_busy</div>Validade do Estoque<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon green">checklist</div>Itens Disponíveis<span class="nav-etiqueta">Em integração</span></a>
         <div class="nav-section">Entregas</div>
-        <a data-page="deliveredItems" href="javascript:void(0)" onclick="showView('deliveredItemsView'); setActiveNav(this); return false;"><div class="nav-icon green">inventory</div>EPIs Entregues</a>
-        <a data-page="epiFicha" href="javascript:void(0)" onclick="showView('epiFichaView'); setActiveNav(this); return false;"><div class="nav-icon brown">description</div>Ficha de EPI</a>
-        <a data-page="employeeHistory" href="javascript:void(0)" onclick="showView('employeeHistoryView'); setActiveNav(this); return false;"><div class="nav-icon blue">history</div>Histórico de Funcionários</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon green">inventory</div>EPIs Entregues<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon brown">description</div>Ficha de EPI<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">history</div>Histórico de Funcionários<span class="nav-etiqueta">Em integração</span></a>
         <div class="nav-section">Solicitações</div>
-        <a data-page="self-service" href="javascript:void(0)" onclick="showView('selfServiceView'); setActiveNav(this); return false;"><div class="nav-icon blue">badge</div>Autoatendimento (Totem)</a>
-        <a data-page="request" href="javascript:void(0)" onclick="showView('requestView'); setActiveNav(this); return false;"><div class="nav-icon blue">assignment</div>Pedido de EPI</a>
-        <a data-page="supervisorApproval" href="javascript:void(0)" onclick="showView('supervisorApprovalView'); setActiveNav(this); return false;"><div class="nav-icon orange">fact_check</div>Aprovação do Supervisor</a>
-        <a data-page="stockRequests" href="javascript:void(0)" onclick="showView('stockRequestsView'); setActiveNav(this); return false;"><div class="nav-icon red">playlist_add_check_circle</div>Sem Estoque</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">badge</div>Autoatendimento (Totem)<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">assignment</div>Pedido de EPI<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon orange">fact_check</div>Aprovação do Supervisor<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon red">playlist_add_check_circle</div>Sem Estoque<span class="nav-etiqueta">Em integração</span></a>
         <div class="nav-section">Administração</div>
-        <a data-page="importEmployees" href="javascript:void(0)" onclick="showView('importEmployeesView'); setActiveNav(this); return false;"><div class="nav-icon green">upload_file</div>Importar Funcionários</a>
-        <a data-page="newUser" href="javascript:void(0)" onclick="showView('newUserView'); setActiveNav(this); return false;"><div class="nav-icon green">person_add</div>Novo Usuário</a>
-        <a data-page="userAdmin" href="javascript:void(0)" onclick="showView('userAdminView'); setActiveNav(this); return false;"><div class="nav-icon indigo">group</div>Administração de Usuários</a>
-        <a data-page="config" href="javascript:void(0)" onclick="showView('configView'); setActiveNav(this); return false;"><div class="nav-icon gray">settings</div>Configurações</a>
-        <a data-page="support" href="javascript:void(0)" onclick="showView('supportView'); setActiveNav(this); return false;"><div class="nav-icon teal">support_agent</div>Suporte</a>
-        <a data-page="emailsGestao" href="javascript:void(0)" onclick="showView('emailsGestaoView'); setActiveNav(this); return false;"><div class="nav-icon blue">mark_email_read</div>Gestão de E-mails</a>
-        <a data-page="lgpd" href="javascript:void(0)" onclick="showView('lgpdView'); setActiveNav(this); return false;"><div class="nav-icon indigo">privacy_tip</div>Privacidade / LGPD</a>
+        <a href="grupos-acesso.html" data-pagina="grupos-acesso" style="display:none"><div class="nav-icon indigo">groups</div>Grupos de Acesso</a>
+        <a href="grupo-permissoes.html" data-pagina="grupo-permissoes" style="display:none"><div class="nav-icon indigo">lock_person</div>Permissões do Grupo</a>
+        <a href="grupo-usuarios.html" data-pagina="grupo-usuarios" style="display:none"><div class="nav-icon indigo">group_add</div>Integrantes do Grupo</a>
+        <a href="autorizacoes-individuais.html" data-pagina="autorizacoes-individuais" style="display:none"><div class="nav-icon indigo">verified_user</div>Autorizações Individuais</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon green">upload_file</div>Importar Funcionários<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon green">person_add</div>Novo Usuário<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon indigo">group</div>Administração de Usuários<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon gray">settings</div>Configurações<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon teal">support_agent</div>Suporte<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">mark_email_read</div>Gestão de E-mails<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon indigo">privacy_tip</div>Privacidade / LGPD<span class="nav-etiqueta">Em integração</span></a>
+        <a href="../portal/inicio.html"><div class="nav-icon blue">home</div>Início</a>
       </nav>
     </aside>
 
@@ -223,8 +114,15 @@
             <h2 style="font-family:var(--font-brand);font-size:22px;line-height:1.1;letter-spacing:-0.4px;font-weight:500">Cadastro de Materiais</h2>
             <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Cadastre EPIs por categoria, tipo, CA, fabricante, grade de tamanhos e controle de validade para uso na entrega ao funcionário.</p>
           </div>
-          <span class="badge role-master">Gestão de estoque</span>
+          <div class="inline-actions">
+            <span id="identidade" style="font-size:13px;color:var(--on-surface-variant);align-self:center"></span>
+            <span class="badge role-master">Gestão de estoque</span>
+            <button id="botaoTrocarEmpresa" class="outlined-btn" type="button" style="display:none"><span class="material-symbols-outlined">swap_horiz</span>Trocar de empresa</button>
+            <button id="botaoSair" class="outlined-btn" type="button"><span class="material-symbols-outlined">logout</span>Sair</button>
+          </div>
         </div>
+
+        <div id="aviso" style="display:none;margin-bottom:18px"></div>
 
         <section class="grid">
           <div class="stack">
@@ -255,7 +153,7 @@
                 </div>
                 <div class="field">
                   <label for="materialTipo">Tipo</label>
-                  <select id="materialTipo" class="select" onchange="toggleCustomMaterialType()">
+                  <select id="materialTipo" class="select">
                     <option>Sapatão / Botina</option>
                     <option>Óculos de proteção</option>
                     <option>Luva</option>
@@ -275,6 +173,11 @@
                   <input id="materialCa" class="input" type="text" placeholder="Número do CA" />
                 </div>
                 <div class="field">
+                  <label for="materialCaValidade">Validade do CA</label>
+                  <input id="materialCaValidade" class="input" type="date" />
+                  <div class="helper">Data de validade do Certificado de Aprovação, quando houver.</div>
+                </div>
+                <div class="field">
                   <label for="materialFabricante">Fabricante</label>
                   <input id="materialFabricante" class="input" type="text" placeholder="Ex.: Bracol / 3M / Danny" />
                 </div>
@@ -284,8 +187,13 @@
                 </div>
                 <div class="field">
                   <label for="materialQuantidadeComprada">Quantidade comprada</label>
-                  <input id="materialQuantidadeComprada" class="input" type="number" placeholder="Ex.: 120" />
-                  <div class="helper">Informe a quantidade comprada por par, unidade, caixa, pacote ou kit.</div>
+                  <input id="materialQuantidadeComprada" class="input" type="number" min="1" placeholder="Ex.: 120" />
+                  <div class="helper" id="materialQuantidadeHelper">Opcional. Gera uma entrada inicial de estoque, registrada separadamente após o cadastro.</div>
+                </div>
+                <div class="field">
+                  <label for="materialTamanhoEntrada">Tamanho da entrada inicial</label>
+                  <select id="materialTamanhoEntrada" class="select"></select>
+                  <div class="helper">Tamanho em que a quantidade comprada entra no estoque.</div>
                 </div>
                 <div class="field">
                   <label for="materialUnidade">Unidade de controle</label>
@@ -304,7 +212,7 @@
                 </div>
                 <div class="field">
                   <label for="materialValidade">Define prazo de uso</label>
-                  <select id="materialValidade" class="select" onchange="toggleValidityFields()">
+                  <select id="materialValidade" class="select">
                     <option value="sim">Sim — tem prazo de uso</option>
                     <option value="nao">Não — sem prazo definido</option>
                   </select>
@@ -314,7 +222,7 @@
                   <div class="form-grid">
                     <div class="field">
                       <label for="materialValidadeTipo">Unidade do prazo</label>
-                      <select id="materialValidadeTipo" class="select" onchange="updatePrazoLabel()">
+                      <select id="materialValidadeTipo" class="select">
                         <option value="meses" selected>Meses</option>
                         <option value="dias">Dias</option>
                         <option value="anos">Anos</option>
@@ -322,22 +230,22 @@
                     </div>
                     <div class="field">
                       <label for="materialPrazo" id="materialPrazoLabel">Prazo de uso (meses)</label>
-                      <input id="materialPrazo" class="input" type="number" min="1" placeholder="Ex.: 6" oninput="updatePrazoPreview()"/>
+                      <input id="materialPrazo" class="input" type="number" min="1" placeholder="Ex.: 6" />
                       <div class="helper" id="materialPrazoHelper">Quantos meses o funcionário pode usar este item após a entrega.</div>
                     </div>
                   </div>
 
                   <!-- Preview do prazo calculado -->
                   <div id="materialPrazoPreview" style="display:none;margin-top:10px;padding:10px 14px;background:rgba(0,122,255,0.06);border:0.5px solid rgba(0,122,255,0.15);border-radius:10px">
-                    <div style="font-size:12px;color:var(--on-surface-variant);margin-bottom:4px">Exemplo de aplicação:</div>
+                    <div style="font-size:12px;color:var(--on-surface-variant);margin-bottom:4px">Prazo que será gravado:</div>
                     <div style="font-size:13px;color:var(--on-surface)" id="materialPrazoPreviewText">—</div>
-                    <div style="font-size:11px;color:var(--on-surface-variant);margin-top:4px">Este prazo será calculado automaticamente a partir da data de entrega ao funcionário.</div>
+                    <div style="font-size:11px;color:var(--on-surface-variant);margin-top:4px">O prazo é armazenado em dias (1 mês = 30 dias; 1 ano = 365 dias) e será contado a partir da data de entrega ao funcionário.</div>
                   </div>
                 </div>
                 <div class="field full">
                   <label for="materialDocumentoValidade">Documento de validade / CA</label>
-                  <input id="materialDocumentoValidade" class="input" type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" />
-                  <div class="helper">Anexe o documento do CA, laudo, certificado ou arquivo de validade do item.</div>
+                  <input id="materialDocumentoValidade" class="input" type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" disabled />
+                  <div class="helper">Em desenvolvimento: o anexo do documento do CA, laudo ou certificado será disponibilizado em etapa futura.</div>
                 </div>
                 <div class="field full">
                   <label for="materialDesc">Descrição</label>
@@ -346,8 +254,8 @@
               </div>
 
               <div class="footer-actions">
-                <button class="outlined-btn">Limpar</button>
-                <button class="filled-btn"><span class="material-symbols-outlined">save</span>Salvar material</button>
+                <button id="botaoLimpar" class="outlined-btn" type="button">Limpar</button>
+                <button id="botaoSalvar" class="filled-btn" type="button" style="display:none"><span class="material-symbols-outlined">save</span>Salvar material</button>
               </div>
             </section>
           </div>
@@ -392,6 +300,11 @@
               </div>
 
               <div style="margin-top:16px">
+                <div class="field full" style="margin-bottom:12px">
+                  <label for="gradeMaterial">Material</label>
+                  <select id="gradeMaterial" class="select"></select>
+                  <div class="helper" id="gradeMaterialHelper">Escolha um material cadastrado para ver o saldo real por tamanho.</div>
+                </div>
                 <!-- Legenda -->
                 <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;flex-wrap:wrap">
                   <span style="font-size:12px;color:var(--on-surface-variant);font-weight:500">Status do estoque por tamanho:</span>
@@ -399,28 +312,10 @@
                   <span style="display:flex;align-items:center;gap:5px;font-size:11px"><span style="width:10px;height:10px;border-radius:3px;background:#FF9500;display:inline-block"></span>Atenção (baixo)</span>
                   <span style="display:flex;align-items:center;gap:5px;font-size:11px"><span style="width:10px;height:10px;border-radius:3px;background:#FF3B30;display:inline-block"></span>Em falta</span>
                 </div>
-                <!-- Chips clicáveis — clique para alternar status -->
-                <div style="display:flex;flex-wrap:wrap;gap:8px" id="sizeChipsGrid">
-                  <button class="size-chip chip-ok"      onclick="cycleSizeChip(this)" title="Clique para alternar status">34</button>
-                  <button class="size-chip chip-ok"      onclick="cycleSizeChip(this)" title="Clique para alternar status">35</button>
-                  <button class="size-chip chip-ok"      onclick="cycleSizeChip(this)" title="Clique para alternar status">36</button>
-                  <button class="size-chip chip-warning" onclick="cycleSizeChip(this)" title="Clique para alternar status">37</button>
-                  <button class="size-chip chip-ok"      onclick="cycleSizeChip(this)" title="Clique para alternar status">38</button>
-                  <button class="size-chip chip-ok"      onclick="cycleSizeChip(this)" title="Clique para alternar status">39</button>
-                  <button class="size-chip chip-empty"   onclick="cycleSizeChip(this)" title="Clique para alternar status">40</button>
-                  <button class="size-chip chip-ok"      onclick="cycleSizeChip(this)" title="Clique para alternar status">41</button>
-                  <button class="size-chip chip-ok"      onclick="cycleSizeChip(this)" title="Clique para alternar status">42</button>
-                  <button class="size-chip chip-warning" onclick="cycleSizeChip(this)" title="Clique para alternar status">43</button>
-                  <button class="size-chip chip-empty"   onclick="cycleSizeChip(this)" title="Clique para alternar status">44</button>
-                  <button class="size-chip chip-ok"      onclick="cycleSizeChip(this)" title="Clique para alternar status">Único</button>
-                  <button class="size-chip chip-ok"      onclick="cycleSizeChip(this)" title="Clique para alternar status">PP</button>
-                  <button class="size-chip chip-warning" onclick="cycleSizeChip(this)" title="Clique para alternar status">P</button>
-                  <button class="size-chip chip-ok"      onclick="cycleSizeChip(this)" title="Clique para alternar status">M</button>
-                  <button class="size-chip chip-ok"      onclick="cycleSizeChip(this)" title="Clique para alternar status">G</button>
-                  <button class="size-chip chip-empty"   onclick="cycleSizeChip(this)" title="Clique para alternar status">GG</button>
-                </div>
+                <!-- Chips somente leitura: a cor vem do saldo real (GET /materiais/:id/estoque) -->
+                <div style="display:flex;flex-wrap:wrap;gap:8px" id="sizeChipsGrid"></div>
                 <div style="margin-top:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
-                  <span style="font-size:11px;color:var(--on-surface-variant)">Clique para alternar manualmente · Atualiza automaticamente ao lançar entradas em Compras</span>
+                  <span style="font-size:11px;color:var(--on-surface-variant)">Saldo real por tamanho · atualizado pelas entradas de estoque</span>
                   <span id="stockSummaryText" style="font-size:12px;font-weight:500"></span>
                 </div>
               </div>
@@ -477,85 +372,306 @@
     </main>
   </div>
 
-<!-- ═══ MODAL: ATIVAR MODO QUIOSQUE ═══════════════════════════════ -->
-      <div class="modal-overlay" id="kioskActivateModal" onclick="closeKioskActivateModal(event)">
-        <div class="modal-card" style="width:min(100%,420px)" onclick="event.stopPropagation()">
-          <div class="modal-header">
-            <div class="modal-title">
-              <div class="card-icon" style="background:rgba(0,122,255,0.1);color:#007AFF">lock</div>
-              <div>
-                <h2 style="font-family:var(--font-brand);font-size:17px;font-weight:500">Ativar Modo Quiosque</h2>
-                <p style="font-size:12px;color:var(--on-surface-variant);margin-top:2px">A sidebar e a navegação serão bloqueadas. Só será possível desbloquear com a senha de administrador.</p>
-              </div>
-            </div>
-            <button class="modal-close" onclick="closeKioskActivateModal()">close</button>
-          </div>
-          <div class="field full" style="margin-top:8px">
-            <label>Defina a senha de desbloqueio</label>
-            <input id="kioskPassword" class="input" type="password" placeholder="Mínimo 4 dígitos" autocomplete="new-password">
-          </div>
-          <div class="notice" style="margin-top:10px;background:rgba(255,149,0,0.06);color:#C07000;border-color:rgba(255,149,0,0.2)">
-            Guarde esta senha. Ela será exigida para sair do modo quiosque neste dispositivo.
-          </div>
-          <div class="footer-actions">
-            <button class="outlined-btn" onclick="closeKioskActivateModal()">Cancelar</button>
-            <button class="filled-btn" onclick="activateKioskMode()">
-              <span class="material-symbols-outlined">lock</span>Ativar agora
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- ═══ OVERLAY: MODO QUIOSQUE ATIVO (bloqueia tudo) ═══════════════ -->
-      <div id="kioskLockOverlay" style="display:none;position:fixed;inset:0;z-index:9999;
-           background:var(--surface);align-items:center;justify-content:center;flex-direction:column;gap:16px">
-        <div style="width:72px;height:72px;border-radius:22px;background:rgba(0,122,255,0.1);
-                    display:flex;align-items:center;justify-content:center">
-          <span class="material-symbols-outlined" style="font-size:36px;color:#007AFF">lock</span>
-        </div>
-        <div style="text-align:center">
-          <div style="font-size:16px;font-weight:600">Modo Quiosque Ativo</div>
-          <div style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">
-            Este dispositivo está em modo de autoatendimento.<br>Digite a senha de administrador para liberar.
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input id="kioskUnlockInput" class="input" type="password" placeholder="Senha de desbloqueio"
-                 style="width:220px" onkeydown="if(event.key==='Enter') unlockKioskMode()">
-          <button class="filled-btn" onclick="unlockKioskMode()">
-            <span class="material-symbols-outlined">lock_open</span>Desbloquear
-          </button>
-        </div>
-        <div id="kioskUnlockError" style="display:none;color:#FF3B30;font-size:12px">Senha incorreta.</div>
-      </div>
-
-<script src="../js/db-api.js"></script>
-<script src="../js/main.js"></script>
+<script src="../js/api-http.js"></script>
+<script src="../portal/config.js"></script>
+<script src="../js/sessao-empresarial.js"></script>
+<script src="../js/permissoes-efetivas.js"></script>
+<script src="../js/pagina-base.js"></script>
+<script src="../js/materiais.js"></script>
 <script>
-  document.addEventListener('DOMContentLoaded', () => {
-    if (typeof updateSizeChipsFromStockAPI === "function") updateSizeChipsFromStockAPI(1);
-    var navLink = document.querySelector('.nav a[data-page="materials"]');
-    if (navLink && typeof setActiveNav === 'function') setActiveNav(navLink);
-    document.querySelectorAll('.nav a[data-page]').forEach(function(a) {
-      var page = a.getAttribute('data-page');
-      var fileMap = {
-        'self-service':'self-service.html','dashboard':'dashboard.html','config':'config.html',
-        'supervisorApproval':'supervisor-approval.html','request':'request.html',
-        'stockRequests':'stock-requests.html','userAdmin':'user-admin.html',
-        'operations':'operations.html','eligibilityRules':'eligibility-rules.html',
-        'materials':'materials.html','purchases':'purchases.html',
-        'stockValidity':'stock-validity.html','availableItems':'available-items.html',
-        'epiFicha':'epi-ficha.html','deliveredItems':'delivered-items.html',
-        'reports':'reports.html','employeeHistory':'employee-history.html',
-        'newUser':'new-user.html','support':'support.html',
-        'importEmployees':'import-employees.html','lgpd':'lgpd.html','emailsGestao':'emails-gestao.html'
-      };
-      if (fileMap[page]) {
-        a.setAttribute('href', fileMap[page]);
-        a.removeAttribute('onclick');
+/*
+  Ligação com o DOM — deliberadamente fina. Toda a lógica (corpo do POST,
+  conversão do prazo, entrada inicial separada, tradução de erro, estados
+  da grade e HTML escapado) vive em js/materiais.js, testado sem
+  navegador. Aqui só há eventos, exibição e foco.
+*/
+(function () {
+  'use strict';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var formulario = EpiMateriais.formulario, mensagens = EpiMateriais.mensagens, render = EpiMateriais.render, fluxo = EpiMateriais.fluxo;
+
+  // Parte C1: o que o servidor disse que esta pessoa pode fazer aqui.
+  // Começa sem nada; só aplicarAcesso() (após GET /api/auth/permissoes) libera.
+  var acessoAtual = { permissoes: null, podeAlterar: false, podeMovimentar: false };
+
+  // Mesmo endereço do Portal do Cliente: localhost:3000/api em desenvolvimento,
+  // a própria origem + /api em produção (portal/config.js).
+  EpiHttp.configurar({ baseUrl: window.SAFEWORK_PORTAL_API_BASE_URL });
+
+  var CAMPOS = ['materialNome', 'materialCategoria', 'materialTipo', 'materialTipoCustom', 'materialCa', 'materialCaValidade', 'materialFabricante',
+    'materialCodigo', 'materialQuantidadeComprada', 'materialTamanhoEntrada', 'materialUnidade', 'materialEstoqueMinimo', 'materialValidade',
+    'materialValidadeTipo', 'materialPrazo', 'materialDesc'];
+  var CAMPO_POR_ERRO = { nome: 'materialNome', categoria: 'materialCategoria', tipo: 'materialTipo', caNumero: 'materialCa', caValidade: 'materialCaValidade',
+    fabricante: 'materialFabricante', codigoInterno: 'materialCodigo', quantidadeComprada: 'materialQuantidadeComprada', tamanhoEntrada: 'materialTamanhoEntrada',
+    unidade: 'materialUnidade', estoqueMinimo: 'materialEstoqueMinimo', prazo: 'materialPrazo', descricao: 'materialDesc' };
+
+  function mostrarAviso(texto, tipo) {
+    var caixa = $('aviso');
+    if (!texto) { caixa.style.display = 'none'; caixa.innerHTML = ''; return; }
+    var cor = tipo === 'erro'
+      ? 'background:var(--error-container);color:var(--error);border-color:rgba(255,59,48,0.2)'
+      : tipo === 'atencao'
+        ? 'background:rgba(255,149,0,0.08);color:#C07000;border-color:rgba(255,149,0,0.25)'
+        : 'background:var(--success-container);color:#1A7A35;border-color:rgba(52,199,89,0.2)';
+    caixa.innerHTML = '<div class="notice" style="' + cor + '">' + render.escaparHtml(texto) + '</div>';
+    caixa.style.display = 'block';
+  }
+
+  /** Qualquer 401 devolve a pessoa ao Portal: a sessão acabou no servidor. */
+  function tratarSessao(resposta) {
+    if (!mensagens.exigeNovoLogin(resposta)) return false;
+    mostrarAviso('', null);
+    EpiSessaoEmpresarial.sessaoEncerrada();
+    return true;
+  }
+
+  // ── comportamentos do formulário original (reimplementados sem o protótipo) ──
+  function toggleCustomMaterialType() {
+    var outro = $('materialTipo').value === 'Outro';
+    $('customMaterialTypeField').style.display = outro ? '' : 'none';
+    if (!outro) $('materialTipoCustom').value = '';
+    preencherTamanhosEntrada();
+  }
+
+  function toggleValidityFields() {
+    var define = $('materialValidade').value === 'sim';
+    $('validityFields').style.display = define ? '' : 'none';
+    if (!define) { $('materialPrazo').value = ''; updatePrazoPreview(); }
+  }
+
+  function updatePrazoLabel() {
+    var unidade = $('materialValidadeTipo').value;
+    var rotulo = { meses: 'meses', dias: 'dias', anos: 'anos' }[unidade] || unidade;
+    $('materialPrazoLabel').textContent = 'Prazo de uso (' + rotulo + ')';
+    $('materialPrazoHelper').textContent = 'Quantos ' + rotulo + ' o funcionário pode usar este item após a entrega.';
+    updatePrazoPreview();
+  }
+
+  /** Mostra o valor EXATO que será gravado ("6 meses = 180 dias") antes de salvar. */
+  function updatePrazoPreview() {
+    var texto = formulario.textoPrazo($('materialPrazo').value, $('materialValidadeTipo').value);
+    $('materialPrazoPreview').style.display = texto ? '' : 'none';
+    $('materialPrazoPreviewText').textContent = texto || '—';
+  }
+
+  function tipoAtual() {
+    var t = $('materialTipo').value;
+    return t === 'Outro' ? $('materialTipoCustom').value : t;
+  }
+
+  /** Tamanhos sugeridos pelo tipo primeiro, depois os demais da grade. */
+  function preencherTamanhosEntrada() {
+    var sugeridos = formulario.tamanhosSugeridos(tipoAtual());
+    var todos = sugeridos.concat(formulario.TAMANHOS_GRADE.filter(function (t) { return sugeridos.indexOf(t) === -1; }));
+    var select = $('materialTamanhoEntrada');
+    var atual = select.value;
+    select.innerHTML = todos.map(function (t) { return '<option value="' + render.escaparHtml(t) + '">' + render.escaparHtml(t) + '</option>'; }).join('');
+    if (todos.indexOf(atual) !== -1) select.value = atual;
+  }
+
+  function limparErros() {
+    CAMPOS.forEach(function (id) { $(id).removeAttribute('aria-invalid'); $(id).style.borderColor = ''; });
+  }
+
+  function marcarErros(erros) {
+    limparErros();
+    erros.forEach(function (e) {
+      var id = CAMPO_POR_ERRO[e.campo];
+      if (!id) return;
+      $(id).setAttribute('aria-invalid', 'true');
+      $(id).style.borderColor = 'var(--error)';
+    });
+    var primeiro = CAMPO_POR_ERRO[erros[0].campo];
+    if (primeiro) $(primeiro).focus();
+  }
+
+  /** Só os campos: a mensagem do último cadastro permanece (correção 1 da auditoria). */
+  function limparFormulario() {
+    CAMPOS.forEach(function (id) {
+      var el = $(id);
+      if (el.tagName === 'SELECT') el.selectedIndex = 0; else el.value = '';
+    });
+    $('materialTipo').value = 'Sapatão / Botina';
+    $('materialValidade').value = 'sim';
+    $('materialValidadeTipo').value = 'meses';
+    limparErros();
+    toggleCustomMaterialType();
+    toggleValidityFields();
+    updatePrazoLabel();
+    $('materialNome').focus();
+  }
+
+  /** Botão "Limpar": campos e mensagem. */
+  function limpar() {
+    limparFormulario();
+    mostrarAviso('', null);
+  }
+
+  function camposDoFormulario() {
+    return {
+      nome: $('materialNome').value, categoria: $('materialCategoria').value, tipo: $('materialTipo').value, tipoCustom: $('materialTipoCustom').value,
+      caNumero: $('materialCa').value, caValidade: $('materialCaValidade').value, fabricante: $('materialFabricante').value, codigoInterno: $('materialCodigo').value,
+      quantidadeComprada: $('materialQuantidadeComprada').value, tamanhoEntrada: $('materialTamanhoEntrada').value, unidade: $('materialUnidade').value,
+      estoqueMinimo: $('materialEstoqueMinimo').value, definePrazo: $('materialValidade').value, prazoUnidade: $('materialValidadeTipo').value,
+      prazo: $('materialPrazo').value, descricao: $('materialDesc').value,
+    };
+  }
+
+  async function salvar() {
+    if (!acessoAtual.podeAlterar) return;
+    var montado = formulario.montarCorpo(camposDoFormulario());
+    if (!montado.ok) {
+      marcarErros(montado.erros);
+      mostrarAviso(montado.erros.map(function (e) { return e.mensagem; }).join(' '), 'erro');
+      return;
+    }
+    limparErros();
+    var botao = $('botaoSalvar');
+    botao.disabled = true;
+    try {
+      var r = await fluxo.cadastrar({ corpo: montado.corpo, entrada: montado.entrada, podeMovimentar: acessoAtual.podeMovimentar });
+      if (!r.ok) {
+        if (tratarSessao(r.resposta)) return;
+        if (r.confirmado) {
+          mostrarAviso(mensagens.erroCadastro(r.resposta), 'erro');
+          return;
+        }
+        // Rede ou 5xx: o cadastro pode ter acontecido. Formulário preservado,
+        // nenhuma repetição automática, lista recarregada para conferência.
+        mostrarAviso(mensagens.erroCadastro(r.resposta), 'atencao');
+        await carregarSeletorGrade(null, null);
+        return;
       }
+      var texto = mensagens.resultado(r);
+      var entradaFalhou = r.entrada.solicitada && !r.entrada.realizada;
+      if (entradaFalhou && r.entrada.resposta && mensagens.exigeNovoLogin(r.entrada.resposta)) { EpiSessaoEmpresarial.sessaoEncerrada(); return; }
+      mostrarAviso(texto, entradaFalhou ? 'atencao' : 'sucesso');
+      showToast(entradaFalhou
+        ? (r.entrada.motivo === 'NAO_CONFIRMADO' ? 'Material cadastrado; entrada de estoque não confirmada' : 'Material cadastrado; entrada de estoque não realizada')
+        : 'Material cadastrado', entradaFalhou ? 'warning' : 'success');
+      var novo = r.material;
+      limparFormulario(); // a mensagem acima permanece
+      await carregarSeletorGrade(novo.id, novo);
+      await carregarGrade(novo.id);
+    } finally {
+      botao.disabled = false;
+    }
+  }
+
+  // ── grade de tamanhos com saldo real ──
+  function mostrarGrade(html, resumo, corResumo) {
+    $('sizeChipsGrid').innerHTML = html;
+    $('stockSummaryText').textContent = resumo;
+    $('stockSummaryText').style.color = corResumo || '';
+  }
+
+  /**
+   * Todos os materiais ativos (todas as páginas). `materialNovo` (resposta
+   * do cadastro) entra na lista mesmo que a listagem ainda não o traga.
+   */
+  async function carregarSeletorGrade(selecionarId, materialNovo) {
+    var select = $('gradeMaterial');
+    var r = await EpiMateriais.acoes.listarTodos({ ativo: true });
+    if (!r.ok) {
+      if (tratarSessao(r)) return;
+      select.innerHTML = '<option value="">Falha ao listar os materiais</option>';
+      $('gradeMaterialHelper').textContent = mensagens.erroGrade(r);
+      mostrarGrade('', 'Falha na consulta', 'var(--error)');
+      return;
+    }
+    var lista = r.dados.materiais || [];
+    if (materialNovo && !lista.some(function (m) { return String(m.id) === String(materialNovo.id); })) lista = [materialNovo].concat(lista);
+    select.innerHTML = (lista.length ? '<option value="">Selecione um material</option>' : '<option value="">Nenhum material cadastrado nesta empresa</option>') + render.opcoesMateriais(lista);
+    $('gradeMaterialHelper').textContent = lista.length
+      ? (r.dados.completo ? 'Escolha um material cadastrado para ver o saldo real por tamanho.' : 'Lista parcial (' + lista.length + ' de ' + r.dados.total + '): escolha um material para ver o saldo real por tamanho.')
+      : 'Cadastre o primeiro material ao lado; a grade mostrará o saldo real por tamanho.';
+    if (selecionarId && lista.some(function (m) { return String(m.id) === String(selecionarId); })) select.value = String(selecionarId);
+  }
+
+  async function carregarGrade(id) {
+    if (!id) { mostrarGrade('', 'Nenhum material selecionado'); return; }
+    var g = await fluxo.carregarGrade(id);
+    if (!g.ok) {
+      if (tratarSessao(g.resposta)) return;
+      mostrarGrade('', 'Falha na consulta: ' + mensagens.erroGrade(g.resposta), 'var(--error)');
+      return;
+    }
+    mostrarGrade(render.chips(g.chips), g.resumo);
+  }
+
+  // ── acesso (C1) e sessão (C0) ──
+  function aplicarAcesso(acesso) {
+    acessoAtual = { permissoes: acesso.permissoes, podeAlterar: acesso.podeAlterar, podeMovimentar: EpiPermissoes.acao(acesso.permissoes, 'MOVIMENTAR_ESTOQUE') };
+    $('botaoSalvar').style.display = acesso.podeAlterar ? '' : 'none';
+    if (!acesso.podeAlterar) {
+      EpiPermissoes.somenteLeitura($('materialsView').querySelector('.form-grid'));
+      $('botaoLimpar').style.display = 'none';
+      mostrarAviso('Seu perfil pode consultar materiais nesta empresa, mas não cadastrar.', 'atencao');
+    } else if (!acessoAtual.podeMovimentar) {
+      $('materialQuantidadeComprada').disabled = true;
+      $('materialTamanhoEntrada').disabled = true;
+      $('materialQuantidadeHelper').textContent = 'Seu perfil não pode movimentar estoque nesta empresa: o material será cadastrado sem entrada inicial.';
+    }
+  }
+
+  async function iniciarSessao() {
+    await carregarSeletorGrade(null, null);
+    mostrarGrade('', 'Nenhum material selecionado');
+  }
+
+  function encerrarTela() {
+    $('sizeChipsGrid').innerHTML = '';
+    $('gradeMaterial').innerHTML = '';
+    mostrarAviso('', null);
+  }
+
+  // ── eventos ──
+  $('materialTipo').addEventListener('change', toggleCustomMaterialType);
+  $('materialTipoCustom').addEventListener('input', preencherTamanhosEntrada);
+  $('materialValidade').addEventListener('change', toggleValidityFields);
+  $('materialValidadeTipo').addEventListener('change', updatePrazoLabel);
+  $('materialPrazo').addEventListener('input', updatePrazoPreview);
+  $('botaoLimpar').addEventListener('click', limpar);
+  $('botaoSalvar').addEventListener('click', salvar);
+  $('gradeMaterial').addEventListener('change', function () { carregarGrade($('gradeMaterial').value); });
+  preencherTamanhosEntrada();
+  toggleValidityFields();
+  updatePrazoLabel();
+
+  // Sessão empresarial do Portal do Cliente, confirmada no servidor por
+  // js/sessao-empresarial.js (Etapa C, Parte C0). Sem sessão, a pessoa é
+  // levada ao Portal; nenhum dado é carregado antes da confirmação.
+  EpiSessaoEmpresarial.montar({
+    elementos: {
+      tela: $('telaSessao'),
+      mensagem: $('telaSessaoMensagem'),
+      linkPortal: $('telaSessaoPortal'),
+      identificacao: $('identidade'),
+      botaoSair: $('botaoSair'),
+      botaoTrocar: $('botaoTrocarEmpresa'),
+    },
+    aoEncerrar: encerrarTela,
+    // Saída não confirmada pelo servidor: a tela fica como está e o aviso
+    // permite tentar de novo (a sessão pode continuar ativa).
+    aoFalharSaida: function (mensagem) { mostrarAviso(mensagem, 'erro'); },
+  }).then(function (contexto) {
+    if (!contexto) return undefined;
+    // Parte C1: permissões efetivas NESTA empresa, calculadas pelo servidor.
+    // Falha, contexto divergente ou falta de acesso: nada é carregado nem
+    // liberado (falha fechada). O backend continua recusando com 403.
+    return EpiPermissoes.prepararPagina({
+      pagina: 'materials',
+      contexto: contexto,
+      links: document.querySelectorAll('.nav a[data-pagina]'),
+      aviso: function (mensagem) { mostrarAviso(mensagem, 'erro'); },
+    }).then(function (acesso) {
+      if (!acesso) return undefined;
+      aplicarAcesso(acesso);
+      return iniciarSessao();
     });
   });
+})();
 </script>
 </body>
 </html>

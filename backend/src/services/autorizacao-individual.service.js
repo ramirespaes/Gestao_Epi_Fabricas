@@ -138,6 +138,16 @@ async function carregarAtorAtivo(client, empresaId, atorId, codigo, mensagem) {
   return ator;
 }
 
+/**
+ * Quem pode conceder DIRETO: só um MASTER ativo desta empresa — a regra
+ * de concederDireta(), extraída sem alteração (Bloco 9, Etapa C, Parte
+ * C1) para ser também a resposta de "concederDireta" em
+ * GET /api/auth/permissoes. Recebe o ator já carregado (com ou sem trava).
+ */
+function atorPodeConcederDireta(ator) {
+  return ator !== null && ator !== undefined && ator.ativo === true && ator.perfil === PERFIL_MASTER;
+}
+
 /** Beneficiário desta empresa e ativo, travado; null nos demais casos, sem distinguir qual. */
 async function carregarBeneficiarioAtivo(client, empresaId, usuarioId) {
   const beneficiario = await usuarioRepo.buscarPorIdParaAtualizacao(client, empresaId, usuarioId);
@@ -272,7 +282,7 @@ async function concederDireta(pool, {
 
   return emTransacao(pool, async (client) => {
     const concedente = await carregarAtorAtivo(client, empresaId, concedidoPor, 'CONCESSAO_NAO_AUTORIZADA', MSG_CONCESSAO_NAO_AUTORIZADA);
-    if (concedente.perfil !== PERFIL_MASTER) {
+    if (!atorPodeConcederDireta(concedente)) {
       throw HttpError.forbidden('CONCESSAO_NAO_AUTORIZADA', MSG_CONCESSAO_NAO_AUTORIZADA);
     }
 
@@ -501,4 +511,4 @@ async function revogar(pool, {
   });
 }
 
-module.exports = { concederDireta, delegar, revogar };
+module.exports = { concederDireta, delegar, revogar, atorPodeConcederDireta };

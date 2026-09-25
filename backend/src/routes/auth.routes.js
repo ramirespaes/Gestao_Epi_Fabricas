@@ -45,6 +45,7 @@ const { exigirSessao } = require('../middleware/autenticacao');
  * Caminhos finais, quando montado por app.js sob /api:
  *   POST /api/auth/login
  *   GET  /api/auth/me
+ *   GET  /api/auth/permissoes   (Bloco 9, Etapa C, Parte C1)
  *   POST /api/auth/logout
  */
 
@@ -53,6 +54,9 @@ function criarAuthRoutes({ controller, limitador, exigirSessao: exigirSessaoInje
 
   router.post('/auth/login', limitador, validar({ body: authSchemas.login.body }), controller.login);
   router.get('/auth/me', exigirSessaoInjetado, controller.me);
+  // Bloco 9, Etapa C, Parte C1: permissões efetivas do usuário da sessão.
+  // Só leitura, sem corpo/query/params: empresa e usuário vêm da sessão.
+  router.get('/auth/permissoes', exigirSessaoInjetado, controller.permissoes);
   router.post('/auth/logout', controller.logout);
 
   return router;

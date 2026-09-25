@@ -53,6 +53,17 @@ const MSG_NOME_INVALIDO = 'Nome de material inválido';
 const MSG_MATERIAL_NAO_ENCONTRADO = 'Material não encontrado';
 const MSG_SEM_ALTERACAO = 'Nenhum campo para alterar';
 const MSG_DADOS_INVALIDOS = 'Dados de material inválidos';
+// Parte C2 (migration 039): índice único parcial do código interno por empresa.
+const INDICE_CODIGO_INTERNO = 'uq_materiais_empresa_codigo_interno';
+const MSG_CODIGO_INTERNO_DUPLICADO = 'Já existe um material com este código interno nesta empresa';
+
+/** Traduz a violação do índice do código interno; qualquer outra violação segue o tratamento anterior. */
+function traduzirViolacao(erro) {
+  if (erro.code === VIOLACAO_UNIQUE && erro.constraint === INDICE_CODIGO_INTERNO) {
+    return HttpError.conflict('MATERIAL_CODIGO_INTERNO_DUPLICADO', MSG_CODIGO_INTERNO_DUPLICADO);
+  }
+  return null;
+}
 
 function exigirId(valor, nome) {
   if (!Number.isInteger(valor) || valor <= 0) {
@@ -140,6 +151,9 @@ const instantaneo = (material) => ({
   prazoUsoDias: material.prazoUsoDias,
   unidade: material.unidade,
   estoqueMinimo: material.estoqueMinimo,
+  categoria: material.categoria,
+  codigoInterno: material.codigoInterno,
+  descricao: material.descricao,
   ativo: material.ativo,
 });
 
@@ -155,12 +169,16 @@ const instantaneo = (material) => ({
 async function criar(pool, {
   empresaId, atorId, nome, tipo = null, fabricante = null, caNumero = null,
   caValidade = null, prazoUsoDias = null, unidade, estoqueMinimo = 0,
+  categoria = null, codigoInterno = null, descricao = null,
   ip = null, dispositivo = null,
 }) {
   exigirId(empresaId, 'identificador de empresa');
   exigirId(atorId, 'identificador de ator');
 
   const nomeNormalizado = normalizarNome(nome);
+  const categoriaNormalizada = normalizarTextoOpcional(categoria, materialRepo.TAMANHO_MAXIMO_CATEGORIA);
+  const codigoInternoNormalizado = normalizarTextoOpcional(codigoInterno, materialRepo.TAMANHO_MAXIMO_CODIGO_INTERNO);
+  const descricaoNormalizada = normalizarTextoOpcional(descricao, materialRepo.TAMANHO_MAXIMO_DESCRICAO);
   const tipoNormalizado = normalizarTextoOpcional(tipo, materialRepo.TAMANHO_MAXIMO_TIPO);
   const fabricanteNormalizado = normalizarTextoOpcional(fabricante, materialRepo.TAMANHO_MAXIMO_FABRICANTE);
   const caNumeroNormalizado = normalizarTextoOpcional(caNumero, materialRepo.TAMANHO_MAXIMO_CA_NUMERO);
@@ -169,7 +187,8 @@ async function criar(pool, {
   if (nomeNormalizado === null) {
     throw HttpError.badRequest('MATERIAL_NOME_INVALIDO', MSG_NOME_INVALIDO);
   }
-  if (tipoNormalizado === undefined || fabricanteNormalizado === undefined || caNumeroNormalizado === undefined) {
+  if (tipoNormalizado === undefined || fabricanteNormalizado === undefined || caNumeroNormalizado === undefined
+    || categoriaNormalizada === undefined || codigoInternoNormalizado === undefined || descricaoNormalizada === undefined) {
     throw HttpError.badRequest('MATERIAL_DADOS_INVALIDOS', MSG_DADOS_INVALIDOS);
   }
   if (!prazoUsoDiasValido(prazoUsoDias) || unidadeNormalizada === null || !estoqueMinimoValido(estoqueMinimo)) {
@@ -189,8 +208,15 @@ async function criar(pool, {
         prazoUsoDias: prazoUsoDias ?? null,
         unidade: unidadeNormalizada,
         estoqueMinimo,
+        categoria: categoriaNormalizada,
+        codigoInterno: codigoInternoNormalizado,
+        descricao: descricaoNormalizada,
       });
     } catch (erro) {
+      const traduzido = traduzirViolacao(erro);
+      if (traduzido !== null) {
+        throw traduzido;
+      }
       if (erro.code === VIOLACAO_CHECK) {
         throw HttpError.badRequest('MATERIAL_DADOS_INVALIDOS', MSG_DADOS_INVALIDOS);
       }
@@ -265,11 +291,19 @@ async function alterar(pool, {
   caValidade, caValidadeInformado = false,
   prazoUsoDias, prazoUsoDiasInformado = false,
   unidade, estoqueMinimo,
+  categoria, categoriaInformado = false,
+  codigoInterno, codigoInternoInformado = false,
+  descricao, descricaoInformado = false,
   ip = null, dispositivo = null,
 }) {
   exigirId(empresaId, 'identificador de empresa');
   exigirId(atorId, 'identificador de ator');
   exigirId(materialId, 'identificador de material');
+
+  const categoriaNormalizada = categoriaInformado ? normalizarTextoOpcional(categoria, materialRepo.TAMANHO_MAXIMO_CATEGORIA) : null;
+  const codigoInternoNormalizado = codigoInternoInformado
+    ? normalizarTextoOpcional(codigoInterno, materialRepo.TAMANHO_MAXIMO_CODIGO_INTERNO) : null;
+  const descricaoNormalizada = descricaoInformado ? normalizarTextoOpcional(descricao, materialRepo.TAMANHO_MAXIMO_DESCRICAO) : null;
 
   const alterarNome = nome !== undefined;
   const nomeNormalizado = alterarNome ? normalizarNome(nome) : null;
@@ -281,7 +315,8 @@ async function alterar(pool, {
   const unidadeNormalizada = unidade !== undefined ? normalizarUnidade(unidade) : null;
 
   const nenhumCampo = !alterarNome && !tipoInformado && !fabricanteInformado && !caNumeroInformado
-    && !caValidadeInformado && !prazoUsoDiasInformado && unidade === undefined && estoqueMinimo === undefined;
+    && !caValidadeInformado && !prazoUsoDiasInformado && unidade === undefined && estoqueMinimo === undefined
+    && !categoriaInformado && !codigoInternoInformado && !descricaoInformado;
 
   return emTransacao(pool, async (client) => {
     if (nenhumCampo) {
@@ -295,7 +330,10 @@ async function alterar(pool, {
       || (caNumeroInformado && caNumeroNormalizado === undefined)
       || (unidade !== undefined && unidadeNormalizada === null)
       || (prazoUsoDiasInformado && !prazoUsoDiasValido(prazoUsoDias))
-      || (estoqueMinimo !== undefined && !estoqueMinimoValido(estoqueMinimo))) {
+      || (estoqueMinimo !== undefined && !estoqueMinimoValido(estoqueMinimo))
+      || (categoriaInformado && categoriaNormalizada === undefined)
+      || (codigoInternoInformado && codigoInternoNormalizado === undefined)
+      || (descricaoInformado && descricaoNormalizada === undefined)) {
       throw HttpError.badRequest('MATERIAL_DADOS_INVALIDOS', MSG_DADOS_INVALIDOS);
     }
 
@@ -315,8 +353,15 @@ async function alterar(pool, {
         prazoUsoDias: prazoUsoDiasInformado ? prazoUsoDias : null, prazoUsoDiasInformado,
         unidade: unidadeNormalizada,
         estoqueMinimo: estoqueMinimo ?? null,
+        categoria: categoriaNormalizada, categoriaInformado,
+        codigoInterno: codigoInternoNormalizado, codigoInternoInformado,
+        descricao: descricaoNormalizada, descricaoInformado,
       });
     } catch (erro) {
+      const traduzido = traduzirViolacao(erro);
+      if (traduzido !== null) {
+        throw traduzido;
+      }
       if (erro.code === VIOLACAO_UNIQUE || erro.code === VIOLACAO_CHECK) {
         throw HttpError.badRequest('MATERIAL_DADOS_INVALIDOS', MSG_DADOS_INVALIDOS);
       }

@@ -199,6 +199,124 @@ function opiniaoIndividual(valorIndividual) {
   return undefined;
 }
 
+
+/**
+ * DECISÃO por recurso — extraída sem alteração do middleware
+ * criarExigirPermissaoRecurso (Bloco 9, Etapa C, Parte C1), para que o
+ * middleware e a consulta de permissões efetivas (GET /api/auth/permissoes)
+ * usem UMA única interpretação do RBAC. Mesmas consultas, mesma ordem, mesma
+ * cadeia perfil -> grupo (opiniaoDoGrupo) -> exceção individual
+ * (opiniaoIndividual), MASTER parando no perfil. Devolve a decisão das
+ * quatro operações de uma vez: as linhas lidas já trazem as quatro flags,
+ * então nenhuma consulta a mais é feita por isso.
+ *
+ * @param {{query: Function}} executor
+ * @param {{empresaId: number, usuarioId: number, perfil: string}} contexto
+ *   SEMPRE o da sessão validada — nunca valores vindos do cliente.
+ * @param {string} recurso
+ * @returns {Promise<{visualizar: boolean, criar: boolean, editar: boolean, excluir: boolean}>}
+ */
+async function avaliarPermissaoRecurso(executor, { empresaId, usuarioId, perfil }, recurso) {
+  const permissao = await permissaoRepo.buscarPermissaoRecurso(executor, empresaId, perfil, recurso);
+  const decisao = {};
+  for (const [operacao, flag] of Object.entries(MAPA_OPERACAO_FLAG)) {
+    decisao[operacao] = permissao !== null && permissao[flag] === true;
+  }
+
+  if (perfil !== 'MASTER') {
+    const grupo = await permissaoRepo.buscarGrupoAcessoDoUsuario(executor, empresaId, usuarioId);
+    if (grupo !== null) {
+      const permissaoGrupo = await permissaoRepo.buscarPermissaoRecursoGrupo(executor, empresaId, grupo.id, recurso);
+      for (const [operacao, flag] of Object.entries(MAPA_OPERACAO_FLAG)) {
+        const opiniaoGrupo = opiniaoDoGrupo(grupo, permissaoGrupo === null ? null : permissaoGrupo[flag]);
+        if (opiniaoGrupo !== undefined) decisao[operacao] = opiniaoGrupo;
+      }
+    }
+
+    const permissaoIndividual = await permissaoRepo.buscarPermissaoRecursoIndividual(executor, empresaId, usuarioId, recurso);
+    for (const [operacao, flag] of Object.entries(MAPA_OPERACAO_FLAG)) {
+      const opiniaoUsuario = opiniaoIndividual(permissaoIndividual === null ? null : permissaoIndividual[flag]);
+      if (opiniaoUsuario !== undefined) decisao[operacao] = opiniaoUsuario;
+    }
+  }
+
+  return decisao;
+}
+
+/**
+ * DECISÃO por ação de negócio — extraída sem alteração do middleware
+ * criarExigirPermissaoAcao (Parte C1), pela mesma razão de
+ * avaliarPermissaoRecurso. Contrato completo (configuração, validade do
+ * modo, MASTER / OBRIGATORIA / ALTERNATIVA / NENHUMA, SST, bloqueio) está
+ * documentado na fábrica abaixo; esta função é exatamente aquele corpo,
+ * devolvendo true/false em vez de chamar next().
+ *
+ * @param {{query: Function}} executor
+ * @param {{empresaId: number, usuarioId: number, perfil: string}} contexto
+ * @param {string} acaoCodigo
+ * @returns {Promise<boolean>}
+ */
+async function avaliarPermissaoAcao(executor, { empresaId, usuarioId, perfil }, acaoCodigo) {
+  const configuracao = await permissaoRepo.buscarConfiguracaoAcao(executor, acaoCodigo);
+  if (configuracao === null || configuracao.ativo !== true) {
+    return false;
+  }
+
+  // Configuração inválida nega para QUALQUER perfil, MASTER incluído —
+  // por isso esta checagem roda antes de qualquer ramificação por perfil,
+  // nunca dentro do ramo "não-MASTER". Nenhum valor ausente ou fora do
+  // esperado é interpretado com um padrão implícito (ex.: exigeSst
+  // ausente NÃO vira false).
+  if (!MODOS_AUTORIZACAO_INDIVIDUAL_VALIDOS.has(configuracao.modoAutorizacaoIndividual)
+    || typeof configuracao.exigeSst !== 'boolean') {
+    return false;
+  }
+
+  const ehMaster = perfil === 'MASTER';
+
+  const permissao = await permissaoRepo.buscarPermissaoAcao(executor, empresaId, perfil, acaoCodigo);
+  const permitidoPeloPerfil = permissao !== null && permissao.permitido === true;
+
+  let concedido;
+  if (ehMaster) {
+    concedido = permitidoPeloPerfil;
+  } else if (configuracao.modoAutorizacaoIndividual === 'OBRIGATORIA') {
+    concedido = await permissaoRepo.usuarioTemAutorizacaoIndividual(executor, empresaId, usuarioId, acaoCodigo);
+  } else if (configuracao.modoAutorizacaoIndividual === 'ALTERNATIVA') {
+    let baseAposGrupo = permitidoPeloPerfil;
+
+    const grupo = await permissaoRepo.buscarGrupoAcessoDoUsuario(executor, empresaId, usuarioId);
+    if (grupo !== null) {
+      const permissaoGrupo = await permissaoRepo.buscarPermissaoAcaoGrupo(executor, empresaId, grupo.id, acaoCodigo);
+      const opiniao = opiniaoDoGrupo(grupo, permissaoGrupo === null ? null : permissaoGrupo.permitido);
+      if (opiniao !== undefined) baseAposGrupo = opiniao;
+    }
+
+    concedido = baseAposGrupo
+      || await permissaoRepo.usuarioTemAutorizacaoIndividual(executor, empresaId, usuarioId, acaoCodigo);
+  } else {
+    // Só 'NENHUMA' pode chegar aqui — os outros dois valores válidos já
+    // têm ramo próprio acima, e qualquer valor inválido já foi negado
+    // pela validação de configuração, antes mesmo de saber o perfil. Grupo
+    // não participa deste modo, por decisão explícita da Subetapa 3D.
+    concedido = permitidoPeloPerfil;
+  }
+
+  if (!concedido) {
+    return false;
+  }
+
+  if (configuracao.exigeSst && !ehMaster) {
+    const integraSst = await permissaoRepo.usuarioIntegraSst(executor, empresaId, usuarioId);
+    if (!integraSst) {
+      return false;
+    }
+  }
+
+  const bloqueado = await permissaoRepo.usuarioTemBloqueio(executor, empresaId, usuarioId, acaoCodigo);
+  return !bloqueado;
+}
+
 /**
  * Fábrica do middleware de autorização por recurso.
  *
@@ -232,7 +350,6 @@ function criarExigirPermissaoRecurso({ pool }, recurso, operacao) {
   if (typeof operacao !== 'string' || !Object.hasOwn(MAPA_OPERACAO_FLAG, operacao)) {
     throw new TypeError(`operação de recurso desconhecida: ${operacao}`);
   }
-  const flag = MAPA_OPERACAO_FLAG[operacao];
   if (typeof recurso !== 'string' || !FORMATO_RECURSO.test(recurso)) {
     throw new TypeError('recurso inválido');
   }
@@ -245,21 +362,8 @@ function criarExigirPermissaoRecurso({ pool }, recurso, operacao) {
 
     const { empresa, usuario } = req;
 
-    const permissao = await permissaoRepo.buscarPermissaoRecurso(pool, empresa.id, usuario.perfil, recurso);
-    let concedido = permissao !== null && permissao[flag] === true;
-
-    if (usuario.perfil !== 'MASTER') {
-      const grupo = await permissaoRepo.buscarGrupoAcessoDoUsuario(pool, empresa.id, usuario.id);
-      if (grupo !== null) {
-        const permissaoGrupo = await permissaoRepo.buscarPermissaoRecursoGrupo(pool, empresa.id, grupo.id, recurso);
-        const opiniaoGrupo = opiniaoDoGrupo(grupo, permissaoGrupo === null ? null : permissaoGrupo[flag]);
-        if (opiniaoGrupo !== undefined) concedido = opiniaoGrupo;
-      }
-
-      const permissaoIndividual = await permissaoRepo.buscarPermissaoRecursoIndividual(pool, empresa.id, usuario.id, recurso);
-      const opiniaoUsuario = opiniaoIndividual(permissaoIndividual === null ? null : permissaoIndividual[flag]);
-      if (opiniaoUsuario !== undefined) concedido = opiniaoUsuario;
-    }
+    const decisao = await avaliarPermissaoRecurso(pool, { empresaId: empresa.id, usuarioId: usuario.id, perfil: usuario.perfil }, recurso);
+    const concedido = decisao[operacao] === true;
 
     if (!concedido) {
       next(HttpError.forbidden('PERMISSAO_NEGADA', MENSAGEM_PERMISSAO_NEGADA));
@@ -342,69 +446,9 @@ function criarExigirPermissaoAcao({ pool }, acaoCodigo) {
       return;
     }
 
-    const configuracao = await permissaoRepo.buscarConfiguracaoAcao(pool, acaoCodigo);
-    if (configuracao === null || configuracao.ativo !== true) {
-      next(HttpError.forbidden('PERMISSAO_NEGADA', MENSAGEM_PERMISSAO_NEGADA));
-      return;
-    }
-
-    // Configuração inválida nega para QUALQUER perfil, MASTER incluído —
-    // por isso esta checagem roda antes de qualquer ramificação por perfil,
-    // nunca dentro do ramo "não-MASTER". Nenhum valor ausente ou fora do
-    // esperado é interpretado com um padrão implícito (ex.: exigeSst
-    // ausente NÃO vira false).
-    if (!MODOS_AUTORIZACAO_INDIVIDUAL_VALIDOS.has(configuracao.modoAutorizacaoIndividual)
-      || typeof configuracao.exigeSst !== 'boolean') {
-      next(HttpError.forbidden('PERMISSAO_NEGADA', MENSAGEM_PERMISSAO_NEGADA));
-      return;
-    }
-
     const { empresa, usuario } = req;
-    const ehMaster = usuario.perfil === 'MASTER';
-
-    const permissao = await permissaoRepo.buscarPermissaoAcao(pool, empresa.id, usuario.perfil, acaoCodigo);
-    const permitidoPeloPerfil = permissao !== null && permissao.permitido === true;
-
-    let concedido;
-    if (ehMaster) {
-      concedido = permitidoPeloPerfil;
-    } else if (configuracao.modoAutorizacaoIndividual === 'OBRIGATORIA') {
-      concedido = await permissaoRepo.usuarioTemAutorizacaoIndividual(pool, empresa.id, usuario.id, acaoCodigo);
-    } else if (configuracao.modoAutorizacaoIndividual === 'ALTERNATIVA') {
-      let baseAposGrupo = permitidoPeloPerfil;
-
-      const grupo = await permissaoRepo.buscarGrupoAcessoDoUsuario(pool, empresa.id, usuario.id);
-      if (grupo !== null) {
-        const permissaoGrupo = await permissaoRepo.buscarPermissaoAcaoGrupo(pool, empresa.id, grupo.id, acaoCodigo);
-        const opiniao = opiniaoDoGrupo(grupo, permissaoGrupo === null ? null : permissaoGrupo.permitido);
-        if (opiniao !== undefined) baseAposGrupo = opiniao;
-      }
-
-      concedido = baseAposGrupo
-        || await permissaoRepo.usuarioTemAutorizacaoIndividual(pool, empresa.id, usuario.id, acaoCodigo);
-    } else {
-      // Só 'NENHUMA' pode chegar aqui — os outros dois valores válidos já
-      // têm ramo próprio acima, e qualquer valor inválido já foi negado
-      // pela validação de configuração, antes mesmo de saber o perfil. Grupo
-      // não participa deste modo, por decisão explícita da Subetapa 3D.
-      concedido = permitidoPeloPerfil;
-    }
-
+    const concedido = await avaliarPermissaoAcao(pool, { empresaId: empresa.id, usuarioId: usuario.id, perfil: usuario.perfil }, acaoCodigo);
     if (!concedido) {
-      next(HttpError.forbidden('PERMISSAO_NEGADA', MENSAGEM_PERMISSAO_NEGADA));
-      return;
-    }
-
-    if (configuracao.exigeSst && !ehMaster) {
-      const integraSst = await permissaoRepo.usuarioIntegraSst(pool, empresa.id, usuario.id);
-      if (!integraSst) {
-        next(HttpError.forbidden('PERMISSAO_NEGADA', MENSAGEM_PERMISSAO_NEGADA));
-        return;
-      }
-    }
-
-    const bloqueado = await permissaoRepo.usuarioTemBloqueio(pool, empresa.id, usuario.id, acaoCodigo);
-    if (bloqueado) {
       next(HttpError.forbidden('PERMISSAO_NEGADA', MENSAGEM_PERMISSAO_NEGADA));
       return;
     }
@@ -413,4 +457,10 @@ function criarExigirPermissaoAcao({ pool }, acaoCodigo) {
   };
 }
 
-module.exports = { criarExigirPermissaoRecurso, criarExigirPermissaoAcao };
+module.exports = {
+  criarExigirPermissaoRecurso,
+  criarExigirPermissaoAcao,
+  avaliarPermissaoRecurso,
+  avaliarPermissaoAcao,
+  OPERACOES_RECURSO: Object.freeze(Object.keys(MAPA_OPERACAO_FLAG)),
+};

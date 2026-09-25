@@ -62,6 +62,10 @@ Seis módulos JavaScript em `frontend/js/` dão suporte a essas páginas: `api-h
 
 **Desde o Bloco 9, Etapa C, Parte C0**, essas quatro páginas não têm mais login próprio (o formulário por CNPJ foi removido) nem carregam `auth-session.js`. A sessão é a do Portal do Cliente, confirmada no servidor pelo módulo comum `js/sessao-empresarial.js` (`GET /api/auth/me`). Sem sessão válida, a pessoa é levada ao Portal. "Sair" encerra as sessões global e empresarial; "Trocar de empresa" leva à seleção do Portal. O módulo também remove os rastros do protótipo que poderiam se passar por sessão (a chave `epi-session-user` e o parâmetro `?_s=`), sem tocar no banco simulado das páginas ainda não integradas. As páginas continuam sem `db-api.js` e `main.js`.
 
+**Desde a Parte C1**, o menu e os botões dessas páginas (e os módulos listados no início do Portal) refletem as **permissões efetivas** do usuário na empresa selecionada, obtidas de `GET /api/auth/permissoes`. O endpoint é somente leitura e usa empresa e usuário da sessão. Ele não reinterpreta o RBAC: responde com as mesmas funções que autorizam cada operação real (a decisão por recurso e por ação do middleware de autorização, a autoridade administrativa das páginas de acesso e as regras de concessão e delegação). O módulo `js/permissoes-efetivas.js` falha fechado: se a consulta falhar, vier de outra empresa ou fora do formato, nada é exibido nem liberado. Nada é guardado no navegador, e a consulta é refeita a cada carregamento. O backend continua sendo a autoridade final: chamadas diretas proibidas recebem 403.
+
+**Desde a Parte C2**, a página original `materials.html` (Cadastro de Materiais e EPIs) está ligada ao backend real, com a interface preservada: sessão do Portal (C0), permissões efetivas (C1: abrir exige `materials.visualizar`, salvar exige `materials.criar`) e os contratos de materiais e estoque do Bloco 9, Etapa A. O módulo `js/materiais.js` monta o corpo do `POST /api/materiais` a partir do formulário (prazo de uso convertido para dias no cliente, 1 mês = 30 e 1 ano = 365, com o valor exibido antes de salvar; tipo "Outro" usa o campo livre; campos vazios são omitidos e gravados como `NULL`). "Quantidade comprada" não é atributo do material: quando preenchida, gera uma **entrada de estoque separada** (`POST /api/materiais/:id/estoque/movimentar`, ação `MOVIMENTAR_ESTOQUE`), só depois do cadastro e só se o perfil tiver a ação; recusa da entrada não desfaz o cadastro e é informada explicitamente. A grade de tamanhos mostra o saldo real do material escolhido (sem estoque / abaixo do mínimo / com saldo / falha na consulta). O anexo do documento do CA continua visível e desabilitado ("em desenvolvimento"). Os campos Categoria, Código interno e Descrição passaram a existir no banco pela migration `039` (código interno único por empresa, ignorando maiúsculas). A página usa `js/pagina-base.js` (menu móvel e aviso, copiados de `main.js`) e não carrega `db-api.js`, `main.js` nem a biblioteca de planilhas; o menu lateral mantém a estrutura visual, mas os itens ainda não integrados ficam sem link, com a etiqueta "Em integração".
+
 ### Portal do Cliente (Autenticação Global — Pacote 4)
 
 `frontend/portal/` é a entrada dos clientes: login **somente por e-mail e senha** (identidade global), seleção de empresa e ambiente inicial autenticado. Usa o backend real, sessões no PostgreSQL e cookies `HttpOnly`; nada de sessão é guardado no navegador.
@@ -153,13 +157,17 @@ A API do Incremento 8 soma **23 endpoints**, em **20 caminhos distintos** (três
 
 ## Banco de dados e migrations
 
-O banco do projeto é PostgreSQL 16. As migrations ficam em `backend/migrations/` e existem hoje arquivos versionados de `000` a `024` (25 no total), que devem ser executados em ordem crescente de prefixo.
+O banco do projeto é PostgreSQL 16. As migrations ficam em `backend/migrations/` e existem hoje arquivos versionados de `000` a `039` (40 no total), que devem ser executados em ordem crescente de prefixo.
 
-As migrations `000` a `016` já estão incorporadas à `main` e aplicadas ao banco principal. As migrations `017` a `024` pertencem ao Incremento 8 (estrutura de SST, autorizações individuais e delegação, grupos de acesso e suas permissões, e as ações administrativas granulares) e **ainda não foram aplicadas ao banco principal** — foram validadas apenas em schemas temporários pela suíte de integração (ver seção de testes). A existência dos arquivos `.sql` no repositório não significa que a estrutura já exista no `public` de nenhum banco além dos schemas de teste.
+**Estado em 24/09/2026 (Bloco 9, Etapa C, Parte C2):** a fonte de verdade sobre o que está aplicado em cada banco é a tabela `pgmigrations` daquele banco (`npm run db:migrate:status`); o repositório só diz o que está versionado. A migration `039` (Parte C2) está versionada, registrada no manifesto de checksums e validada apenas em schemas temporários: não está aplicada a nenhum banco persistente (conferido nessa data no banco configurado em `.env`, cujo `public` não tem as três colunas). As migrations `025` a `038` foram versionadas nas etapas posteriores ao Incremento 8 (autenticação global, Portal do Cliente e sessões).
+
+**Registro histórico (Incremento 8, 22/09/2026):** as migrations `000` a `016` já estavam incorporadas à `main` e aplicadas ao banco principal. As migrations `017` a `024` pertencem ao Incremento 8 (estrutura de SST, autorizações individuais e delegação, grupos de acesso e suas permissões, e as ações administrativas granulares) e **ainda não foram aplicadas ao banco principal** — foram validadas apenas em schemas temporários pela suíte de integração (ver seção de testes). A existência dos arquivos `.sql` no repositório não significa que a estrutura já exista no `public` de nenhum banco além dos schemas de teste.
 
 Versionar uma migration não significa que ela já foi aplicada. O schema `public` de um banco só passa a ter a estrutura depois de uma execução explícita e autorizada. Criar a migration e aplicá-la são decisões separadas.
 
 Migrations já incorporadas ao histórico não são alteradas retroativamente. Quando uma estrutura precisa mudar, a correção entra em uma migration nova.
+
+A migration `039_alter_materiais_add_categoria_codigo_interno_descricao.sql` (Bloco 9, Etapa C, Parte C2) acrescenta a `materiais` as colunas nuláveis `categoria`, `codigo_interno` e `descricao`, com CHECKs que recusam vazio e espaços nas pontas, teto de 500 caracteres na descrição e índice único parcial `(empresa_id, upper(codigo_interno))` para linhas com código. É aditiva: nenhum registro existente é alterado. Como as demais, está apenas versionada e validada em schemas temporários; aplicá-la a qualquer banco exige autorização separada.
 
 A migration `016_alter_empresas_cnpj_alfanumerico.sql` altera a constraint estrutural de `empresas.cnpj` para aceitar 12 posições `[0-9A-Z]` seguidas de 2 dígitos numéricos. Ela substitui apenas a expressão da constraint e preserva o nome dela, o tipo `VARCHAR(14)`, o `NOT NULL` da coluna, a UNIQUE e a chave primária. A constraint verifica somente o formato. A conferência dos dígitos verificadores não é responsabilidade do banco.
 
@@ -308,6 +316,17 @@ Os testes `.integration.js` não entram no cálculo da cobertura. A medição ac
 | Checksums das migrations | 25 | 25 íntegras | — |
 
 Os 978 testes unitários do backend substituem os 310 anteriores (o Incremento 8 soma às suítes de autenticação/validação/segurança já existentes toda a suíte do RBAC). **A cobertura de linhas/ramos/funções não foi remedida para esse total** — a tabela de percentuais acima permanece a última disponível, referente aos 310 testes do fim do Incremento 7. Confirmar o percentual para os 978 testes atuais, com `npm run test:ci`, é uma pendência em aberto. Da mesma forma, os 716 testes de integração e os 25 checksums substituem, por serem mais recentes, os números de 45 testes e 17 migrations do estado anterior.
+
+**Bloco 9, Etapa C, Parte C2 e correções da auditoria — 24/09/2026** (suítes reexecutadas nesta atualização do README, mesmos comandos):
+
+| Suíte | Testes | Aprovados | Falhas |
+|---|---:|---:|---:|
+| Backend — unitário (`npm test`) | 1484 | 1484 | 0 |
+| Backend — integração PostgreSQL (`npm run test:integracao`) | 1051 | 1051 | 0 |
+| Frontend (`npm test`, dentro de `frontend/`) | 417 | 417 | 0 |
+| Checksums das migrations | 40 | 40 íntegras | — |
+
+Testes acrescentados pela Parte C2 (cadastro real de materiais): frontend +29; backend unitário +11 (schema 4, repositório 4, serviço 3); integração +33 (17 ponta a ponta em `frontend-materiais.integration.js`, 8 no Cenário 9 de `material-estoque-routes.integration.js`, 8 em `migration-039-materiais-categoria-codigo-descricao.integration.js`). Correções da auditoria da C2: frontend +12 (unitários e testes de página com DOM simulado), integração +4. Cobertura unitária do backend medida na C2 (`npm run test:cobertura`): 95,65% de linhas e 93,70% de ramos; as correções não alteraram código de `backend/src`.
 
 O requisito permanente continua sendo no mínimo 75% de linhas no backend.
 

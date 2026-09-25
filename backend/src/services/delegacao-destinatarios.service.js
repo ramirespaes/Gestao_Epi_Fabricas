@@ -93,29 +93,42 @@ async function listarDestinatarios(pool, { empresaId, atorId, busca = null }) {
   exigirId(empresaId, 'identificador de empresa');
   exigirId(atorId, 'identificador de ator');
 
-  const ator = await usuarioRepo.buscarPorId(pool, empresaId, atorId);
-  if (ator === null || ator.ativo !== true || ator.perfil === PERFIL_MASTER) {
-    throw HttpError.forbidden('CONSULTA_DESTINATARIOS_NAO_AUTORIZADA', MSG_NAO_AUTORIZADO);
-  }
-
-  const minhas = await autorizacaoRepo.listarPorUsuario(pool, empresaId, atorId);
-
-  let podeDelegarAlguma = false;
-  for (const origem of minhas) {
-    // Verificação em série, e para na primeira que serve: não há razão
-    // para consultar SST e bloqueio de todas as origens.
-    // eslint-disable-next-line no-await-in-loop
-    if (await origemEfetiva(pool, empresaId, atorId, origem)) {
-      podeDelegarAlguma = true;
-      break;
-    }
-  }
-
-  if (!podeDelegarAlguma) {
+  if (!await atorPodeDelegar(pool, empresaId, atorId)) {
     throw HttpError.forbidden('CONSULTA_DESTINATARIOS_NAO_AUTORIZADA', MSG_NAO_AUTORIZADO);
   }
 
   return usuarioRepo.listarDestinatariosAtivos(pool, empresaId, { busca, excluirId: atorId, limite: LIMITE });
 }
 
-module.exports = { listarDestinatarios };
+/**
+ * O ator pode delegar AGORA pelo menos uma autorização? É exatamente a
+ * condição que abre GET /delegacao/destinatarios (extraída sem alteração
+ * na Parte C1 da Etapa C do Bloco 9, para ser também a resposta de
+ * "delegar" em GET /api/auth/permissoes — uma só regra):
+ *   ator existe, está ativo e NÃO é MASTER (MASTER concede direto), e ao
+ *   menos uma origem própria passa em origemEfetiva().
+ *
+ * @returns {Promise<boolean>}
+ */
+async function atorPodeDelegar(pool, empresaId, atorId) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirId(atorId, 'identificador de ator');
+
+  const ator = await usuarioRepo.buscarPorId(pool, empresaId, atorId);
+  if (ator === null || ator.ativo !== true || ator.perfil === PERFIL_MASTER) {
+    return false;
+  }
+
+  const minhas = await autorizacaoRepo.listarPorUsuario(pool, empresaId, atorId);
+  for (const origem of minhas) {
+    // Verificação em série, e para na primeira que serve: não há razão
+    // para consultar SST e bloqueio de todas as origens.
+    // eslint-disable-next-line no-await-in-loop
+    if (await origemEfetiva(pool, empresaId, atorId, origem)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+module.exports = { listarDestinatarios, atorPodeDelegar };

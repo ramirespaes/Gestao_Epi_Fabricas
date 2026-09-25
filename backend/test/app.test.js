@@ -662,3 +662,16 @@ describe('app.js: rotas de autenticação GLOBAL do Portal do Cliente (Pacote 4)
     assert.equal(r.status, 404);
   });
 });
+
+describe('app.js: GET /api/auth/permissoes (Bloco 9, Etapa C, Parte C1)', () => {
+  const app = require('../src/app');
+  test('montada na cadeia /api e protegida: sem cookie, 401 SESSAO_INVALIDA (não 404); resposta sem cache', async () => {
+    const r = await request(app).get('/api/auth/permissoes');
+    assert.deepEqual([r.status, r.body.codigo], [401, 'SESSAO_INVALIDA']);
+    assert.equal(r.headers['cache-control'], 'no-store');
+  });
+  test('não existe no namespace da plataforma', async () => {
+    const r = await request(app).get('/api/plataforma/auth/permissoes');
+    assert.equal(r.status, 404);
+  });
+});

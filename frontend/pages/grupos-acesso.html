@@ -59,15 +59,15 @@
 
     <nav class="nav">
       <div class="nav-section">Administração</div>
-      <a class="active" href="javascript:void(0)"><div class="nav-icon indigo">groups</div>Grupos de Acesso</a>
+      <a class="active" href="javascript:void(0)" data-pagina="grupos-acesso" style="display:none"><div class="nav-icon indigo">groups</div>Grupos de Acesso</a>
       <!-- Subetapa 3T: a configuração das permissões é outra tela. O link
            é só navegação — ela revalida sessão e autoridade no backend. -->
-      <a href="grupo-permissoes.html"><div class="nav-icon indigo">lock_person</div>Permissões do Grupo</a>
+      <a href="grupo-permissoes.html" data-pagina="grupo-permissoes" style="display:none"><div class="nav-icon indigo">lock_person</div>Permissões do Grupo</a>
       <!-- Subetapa 3U: quem está em cada grupo. Link é só navegação —
            a tela revalida sessão e autoridade no backend. -->
-      <a href="grupo-usuarios.html"><div class="nav-icon indigo">group_add</div>Integrantes do Grupo</a>
+      <a href="grupo-usuarios.html" data-pagina="grupo-usuarios" style="display:none"><div class="nav-icon indigo">group_add</div>Integrantes do Grupo</a>
       <!-- Subetapa 3V: autorizações individuais e delegações. -->
-      <a href="autorizacoes-individuais.html"><div class="nav-icon indigo">verified_user</div>Autorizações Individuais</a>
+      <a href="autorizacoes-individuais.html" data-pagina="autorizacoes-individuais" style="display:none"><div class="nav-icon indigo">verified_user</div>Autorizações Individuais</a>
       <div class="nav-section">Sistema</div>
       <a href="../portal/inicio.html"><div class="nav-icon blue">home</div>Início</a>
     </nav>
@@ -83,7 +83,7 @@
       </div>
       <div class="inline-actions">
         <span id="identidade" style="font-size:13px;color:var(--on-surface-variant);align-self:center"></span>
-        <button id="botaoNovo" class="filled-btn"><span class="material-symbols-outlined">add</span>Novo grupo</button>
+        <button id="botaoNovo" class="filled-btn" style="display:none"><span class="material-symbols-outlined">add</span>Novo grupo</button>
         <button id="botaoTrocarEmpresa" class="outlined-btn" type="button" style="display:none"><span class="material-symbols-outlined">swap_horiz</span>Trocar de empresa</button>
         <button id="botaoSair" class="outlined-btn" type="button"><span class="material-symbols-outlined">logout</span>Sair</button>
       </div>
@@ -183,6 +183,7 @@
 <script src="../js/api-http.js"></script>
 <script src="../portal/config.js"></script>
 <script src="../js/sessao-empresarial.js"></script>
+<script src="../js/permissoes-efetivas.js"></script>
 <script src="../js/grupos-acesso.js"></script>
 <script>
 /*
@@ -194,6 +195,10 @@
   'use strict';
 
   var $ = function (id) { return document.getElementById(id); };
+
+  // Parte C1: o que o servidor disse que esta pessoa pode fazer aqui.
+  // Começa sem nada; só aplicarAcesso() (após GET /api/auth/permissoes) libera.
+  var acessoAtual = { permissoes: null, podeAlterar: false };
   var acoes = EpiGrupos.acoes, mensagens = EpiGrupos.mensagens, render = EpiGrupos.render;
 
   // O backend do projeto sobe em :3000 (PORT do .env.example). Servir esta
@@ -245,6 +250,7 @@
 
     var grupos = resposta.dados.grupos || [];
     alvo.innerHTML = grupos.length === 0 ? render.vazia() : render.tabela(grupos);
+    if (!acessoAtual.podeAlterar) EpiPermissoes.somenteLeitura(alvo);
   }
 
   // ── criar / editar ─────────────────────────────────────────────────
@@ -334,6 +340,11 @@
   // Sem login próprio (Etapa C, Parte C0): identificação, "Sair" e
   // "Trocar de empresa" são ligados por EpiSessaoEmpresarial.montar().
   // O contexto recebido serve só para EXIBIR — quem autoriza é o backend.
+  function aplicarAcesso(acesso) {
+    acessoAtual = acesso;
+    $('botaoNovo').style.display = acesso.podeAlterar ? '' : 'none';
+  }
+
   async function iniciarSessao() {
     await carregarLista();
   }
@@ -345,7 +356,7 @@
 
   // ── eventos ────────────────────────────────────────────────────────
   $('formGrupo').addEventListener('submit', salvar);
-  $('botaoNovo').addEventListener('click', abrirCriacao);
+  $('botaoNovo').addEventListener('click', function () { if (acessoAtual.podeAlterar) abrirCriacao(); });
   $('botaoAtualizar').addEventListener('click', carregarLista);
   $('filtroSituacao').addEventListener('change', carregarLista);
   $('botaoConfirmar').addEventListener('click', confirmar);
@@ -384,8 +395,20 @@
     // permite tentar de novo (a sessão pode continuar ativa).
     aoFalharSaida: function (mensagem) { mostrarAviso(mensagem, 'erro'); },
   }).then(function (contexto) {
-    if (contexto) return iniciarSessao(contexto);
-    return undefined;
+    if (!contexto) return undefined;
+    // Parte C1: permissões efetivas NESTA empresa, calculadas pelo servidor.
+    // Falha, resposta de outra empresa ou falta de acesso: nada é carregado
+    // nem liberado (falha fechada). O backend continua recusando com 403.
+    return EpiPermissoes.prepararPagina({
+      pagina: 'grupos-acesso',
+      contexto: contexto,
+      links: document.querySelectorAll('.nav a[data-pagina]'),
+      aviso: function (mensagem) { mostrarAviso(mensagem, 'erro'); },
+    }).then(function (acesso) {
+      if (!acesso) return undefined;
+      aplicarAcesso(acesso);
+      return iniciarSessao(contexto);
+    });
   });
 })();
 </script>

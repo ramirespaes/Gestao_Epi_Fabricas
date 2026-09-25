@@ -332,3 +332,19 @@ describe('me — corpo público estável (Pacote 4)', () => {
     assert.deepEqual(corpo, { status: 'ok', usuario: { id: 1, nome: 'n', email: 'e@x.com', perfil: 'MASTER' }, empresa: { id: 3 } });
   });
 });
+
+describe('permissoes (Parte C1)', () => {
+  test('usa SÓ o contexto da sessão (req.empresa/req.usuario) e devolve status ok + o cálculo', async (t) => {
+    const servico = require('../../src/services/permissoes-efetivas.service');
+    const calcular = t.mock.method(servico, 'calcular', async () => ({ empresaId: 3, usuarioId: 1, perfil: 'MASTER', recursos: {}, acoes: {}, administracao: {} }));
+    const { criarAuthController: fabrica } = require('../../src/controllers/auth.controller');
+    const controller = fabrica({ pool: {} });
+    let status; let corpo;
+    const res = { status(s) { status = s; return this; }, json(c) { corpo = c; return this; } };
+    await controller.permissoes({ empresa: { id: 3 }, usuario: { id: 1, perfil: 'MASTER' }, query: { empresaId: '99' }, body: { usuarioId: 5 } }, res);
+    assert.deepEqual(calcular.mock.calls[0].arguments[1], { empresaId: 3, usuarioId: 1, perfil: 'MASTER' });
+    assert.equal(status, 200);
+    assert.equal(corpo.status, 'ok');
+    assert.equal(corpo.empresaId, 3);
+  });
+});

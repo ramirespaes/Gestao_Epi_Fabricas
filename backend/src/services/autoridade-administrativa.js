@@ -258,18 +258,45 @@ async function exigirAutoridadeAdministrativa(client, empresaId, atorId, codigo,
  * @param {{query: Function}} executor pool ou client
  */
 async function exigirAutoridadeAdministrativaLeitura(executor, empresaId, atorId, codigo, mensagem, acaoAdministrativa) {
-  exigirAcaoAdministrativa(acaoAdministrativa);
-
-  const ator = await usuarioRepo.buscarPorId(executor, empresaId, atorId);
-  if (!await temAutoridade(executor, empresaId, atorId, ator, acaoAdministrativa, { travar: false })) {
+  const { autorizado, ator } = await avaliarAutoridadeAdministrativa(executor, empresaId, atorId, acaoAdministrativa);
+  if (!autorizado) {
     throw HttpError.forbidden(codigo, mensagem);
   }
   return ator;
 }
 
+/**
+ * A MESMA decisão de exigirAutoridadeAdministrativaLeitura, devolvendo
+ * true/false em vez de lançar (Bloco 9, Etapa C, Parte C1) — usada pela
+ * consulta de permissões efetivas (GET /api/auth/permissoes) para dizer à
+ * interface quais páginas administrativas mostrar. Mesmo critério, mesmos
+ * dois caminhos (MASTER ativo; ADMINISTRADOR ativo com autorização
+ * individual efetiva), mesmas leituras sem lock; nenhuma regra nova.
+ *
+ * O caminho de ESCRITA (exigirAutoridadeAdministrativa) aplica exatamente
+ * este critério, só que com FOR UPDATE dentro da transação — por isso a
+ * resposta desta função vale como previsão de "pode alterar" para a
+ * interface, mas a decisão final de cada escrita continua sendo tomada,
+ * travada, no momento da operação.
+ *
+ * @returns {Promise<boolean>}
+ */
+async function temAutoridadeAdministrativaLeitura(executor, empresaId, atorId, acaoAdministrativa) {
+  return (await avaliarAutoridadeAdministrativa(executor, empresaId, atorId, acaoAdministrativa)).autorizado;
+}
+
+async function avaliarAutoridadeAdministrativa(executor, empresaId, atorId, acaoAdministrativa) {
+  exigirAcaoAdministrativa(acaoAdministrativa);
+
+  const ator = await usuarioRepo.buscarPorId(executor, empresaId, atorId);
+  const autorizado = await temAutoridade(executor, empresaId, atorId, ator, acaoAdministrativa, { travar: false });
+  return { autorizado, ator };
+}
+
 module.exports = {
   exigirAutoridadeAdministrativa,
   exigirAutoridadeAdministrativaLeitura,
+  temAutoridadeAdministrativaLeitura,
   ACOES_ADMINISTRATIVAS,
   PERFIL_MASTER,
 };

@@ -45,6 +45,9 @@ const linha = (extra = {}) => ({
   prazo_uso_dias: 365,
   unidade: 'par',
   estoque_minimo: 5,
+  categoria: null,
+  codigo_interno: null,
+  descricao: null,
   ativo: true,
   criado_em: new Date('2026-09-23T12:00:00Z'),
   atualizado_em: new Date('2026-09-23T12:00:00Z'),
@@ -62,6 +65,9 @@ const mapeada = {
   prazoUsoDias: 365,
   unidade: 'par',
   estoqueMinimo: 5,
+  categoria: null,
+  codigoInterno: null,
+  descricao: null,
   ativo: true,
   criadoEm: new Date('2026-09-23T12:00:00Z'),
   atualizadoEm: new Date('2026-09-23T12:00:00Z'),
@@ -78,7 +84,7 @@ describe('criar', () => {
     assert.match(texto, /returning/i);
     const colunas = texto.slice(texto.indexOf('('), texto.search(/\bvalues\b/i));
     assert.doesNotMatch(colunas, /\bativo\b/i, 'ativo nasce do DEFAULT, não é enviado');
-    assert.deepEqual(valores, [EMPRESA_A, 'Botina de segurança', null, null, null, null, null, 'unidade', 0]);
+    assert.deepEqual(valores, [EMPRESA_A, 'Botina de segurança', null, null, null, null, null, 'unidade', 0, null, null, null]);
     assert.deepEqual(material, mapeada);
   });
 
@@ -99,6 +105,7 @@ describe('criar', () => {
 
     assert.deepEqual(executor.chamadas[0].valores, [
       EMPRESA_A, 'Botina de segurança', 'Sapatão / Botina', 'Bracol', '38271', '2026-08-15', 365, 'par', 5,
+      null, null, null,
     ]);
   });
 
@@ -270,6 +277,7 @@ describe('atualizar', () => {
       EMPRESA_A, 30, 'Botina reforçada',
       false, null, false, null, false, null, false, null, false, null,
       null, null, null,
+      false, null, false, null, false, null,
     ]);
   });
 
@@ -282,6 +290,7 @@ describe('atualizar', () => {
       EMPRESA_A, 30, null,
       false, null, false, null, false, null, false, null, false, null,
       null, null, null,
+      false, null, false, null, false, null,
     ]);
   });
 
@@ -305,6 +314,45 @@ describe('atualizar', () => {
     await assert.rejects(() => atualizar(executor, EMPRESA_A, 30, { nome: '' }), /nome/i);
     await assert.rejects(() => atualizar(executor, EMPRESA_A, 30, { estoqueMinimo: -1 }), /estoque/i);
     await assert.rejects(() => atualizar(executor, EMPRESA_A, 30, { ativo: 'sim' }), /ativo/i);
+    assert.equal(executor.chamadas.length, 0);
+  });
+});
+
+describe('categoria, codigo_interno e descricao — Parte C2 (migration 039)', () => {
+  test('criar grava os três campos como parâmetros (nunca concatenados) e a projeção os devolve mapeados', async () => {
+    const executor = executorFalso([linha({ categoria: 'EPI', codigo_interno: 'EPI-000245', descricao: 'Proteção leve' })]);
+    const r = await criar(executor, { empresaId: EMPRESA_A, nome: 'Luva', categoria: 'EPI', codigoInterno: 'EPI-000245', descricao: 'Proteção leve' });
+    const { texto, valores } = executor.chamadas[0];
+    assert.match(texto, /categoria/);
+    assert.match(texto, /codigo_interno/);
+    assert.match(texto, /descricao/);
+    assert.ok(valores.includes('EPI-000245') && valores.includes('EPI') && valores.includes('Proteção leve'));
+    assert.equal(texto.includes('EPI-000245'), false);
+    assert.deepEqual([r.categoria, r.codigoInterno, r.descricao], ['EPI', 'EPI-000245', 'Proteção leve']);
+  });
+
+  test('criar sem os três campos grava NULL (compatível com a 007 + 039)', async () => {
+    const executor = executorFalso([linha()]);
+    const r = await criar(executor, { empresaId: EMPRESA_A, nome: 'Luva' });
+    assert.deepEqual([r.categoria, r.codigoInterno, r.descricao], [null, null, null]);
+    assert.equal(executor.chamadas[0].valores.filter((v) => v === null).length >= 3, true);
+  });
+
+  test('atualizar: *Informado distingue "limpar" de "não mexer" também para os três campos', async () => {
+    const executor = executorFalso([linha()]);
+    await atualizar(executor, EMPRESA_A, 30, { codigoInternoInformado: true, codigoInterno: null, categoriaInformado: true, categoria: 'Uniforme' });
+    const { texto, valores } = executor.chamadas[0];
+    assert.match(texto, /codigo_interno = CASE WHEN/);
+    assert.match(texto, /categoria = CASE WHEN/);
+    assert.match(texto, /descricao = CASE WHEN/);
+    assert.ok(valores.includes('Uniforme'));
+  });
+
+  test('recusa texto acima do limite antes de consultar', async () => {
+    const executor = executorFalso([linha()]);
+    await assert.rejects(() => criar(executor, { empresaId: EMPRESA_A, nome: 'L', codigoInterno: 'x'.repeat(31) }), /código interno/i);
+    await assert.rejects(() => criar(executor, { empresaId: EMPRESA_A, nome: 'L', categoria: 'x'.repeat(31) }), /categoria/i);
+    await assert.rejects(() => criar(executor, { empresaId: EMPRESA_A, nome: 'L', descricao: 'x'.repeat(501) }), /descrição/i);
     assert.equal(executor.chamadas.length, 0);
   });
 });

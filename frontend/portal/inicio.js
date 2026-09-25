@@ -42,6 +42,24 @@
     if (Portal.decisao.podeTrocar(r.dados)) el('botao-trocar').classList.remove('oculto');
     el('acoes').classList.remove('oculto');
     el('conteudo').classList.remove('oculto');
+
+    // Bloco 9, Etapa C, Parte C1: os links dos módulos administrativos nascem
+    // ocultos e só aparecem com a permissão efetiva desta empresa, calculada
+    // pelo servidor. Falha na consulta: continuam ocultos (falha fechada).
+    var links = document.querySelectorAll('a[data-pagina]');
+    // Empresa, usuário e perfil exibidos nesta página precisam coincidir com
+    // os da resposta (correção pós-auditoria da C1); senão, falha fechada.
+    window.EpiPermissoes.carregar(window.EpiPermissoes.esperadoDoContexto(ctx)).then(function (p) {
+      window.EpiPermissoes.aplicarMenu(p.ok ? p.permissoes : null, links);
+      if (!p.ok) {
+        el('modulos-mensagem').textContent = p.motivo === 'CONTEXTO_DIVERGENTE'
+          ? window.EpiPermissoes.MENSAGENS.CONTEXTO_DIVERGENTE
+          : window.EpiPermissoes.MENSAGENS.FALHA;
+        el('modulos-mensagem').classList.remove('oculto');
+      }
+    }).catch(function () {
+      window.EpiPermissoes.aplicarMenu(null, links);
+    });
   }).catch(function () {
     el('carregando').classList.add('oculto');
     el('mensagem').textContent = 'Não foi possível falar com o servidor. Verifique sua conexão.';

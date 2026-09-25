@@ -57,7 +57,7 @@ const EpiPortal = require('../../../frontend/js/portal-cliente');
  * navegador real faz para localhost, entre as portas 5500 e 5501).
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 39 }, (_, i) => String(i).padStart(3, '0'));
+const TODAS_AS_MIGRATIONS = Array.from({ length: 40 }, (_, i) => String(i).padStart(3, '0'));
 const SENHA_ADMIN = 'planeta-nebulosa-ozonio-42';
 const SENHA_MASTER = 'quasar-boreal-91-nebula';
 const EMAIL_MASTER = 'master.teste@exemplo-cliente.com.br';

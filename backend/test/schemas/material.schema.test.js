@@ -113,3 +113,33 @@ describe('prazoUsoDias e estoqueMinimo — teto do INTEGER do PostgreSQL', () =>
     assert.equal(r.success, false);
   });
 });
+
+describe('categoria, codigoInterno e descricao — Parte C2 (migration 039)', () => {
+  test('criar aceita os três campos, apara espaços e permite null explícito', () => {
+    const r = material.criar.body.safeParse({ nome: 'Luva', categoria: ' EPI ', codigoInterno: ' EPI-000245 ', descricao: ' Proteção leve ' });
+    assert.equal(r.success, true, JSON.stringify(r.error && r.error.issues));
+    assert.deepEqual([r.data.categoria, r.data.codigoInterno, r.data.descricao], ['EPI', 'EPI-000245', 'Proteção leve']);
+    const nulo = material.criar.body.safeParse({ nome: 'Luva', categoria: null, codigoInterno: null, descricao: null });
+    assert.equal(nulo.success, true);
+  });
+
+  test('vazio: só espaços é aceito pelo schema? NÃO — textoCurto recusa vazio; o serviço trata "" como null antes', () => {
+    // Contrato: a interface manda null quando o campo está vazio; "" chega ao
+    // schema só por engano e recebe o código do campo.
+    unica(material.criar.body.safeParse({ nome: 'Luva', codigoInterno: '' }), { code: 'custom', codigo: 'CODIGO_INTERNO_INVALIDO' });
+    unica(material.criar.body.safeParse({ nome: 'Luva', categoria: '' }), { code: 'custom', codigo: 'CATEGORIA_INVALIDA' });
+    unica(material.criar.body.safeParse({ nome: 'Luva', descricao: '' }), { code: 'custom', codigo: 'DESCRICAO_INVALIDA' });
+  });
+
+  test('limites: 30/30/500 aceitos; 31/31/501 recusados com o código do campo', () => {
+    assert.equal(material.criar.body.safeParse({ nome: 'L', categoria: 'a'.repeat(30), codigoInterno: 'b'.repeat(30), descricao: 'c'.repeat(500) }).success, true);
+    unica(material.criar.body.safeParse({ nome: 'L', categoria: 'a'.repeat(31) }), { code: 'custom', codigo: 'CATEGORIA_INVALIDA' });
+    unica(material.criar.body.safeParse({ nome: 'L', codigoInterno: 'b'.repeat(31) }), { code: 'custom', codigo: 'CODIGO_INTERNO_INVALIDO' });
+    unica(material.criar.body.safeParse({ nome: 'L', descricao: 'c'.repeat(501) }), { code: 'custom', codigo: 'DESCRICAO_INVALIDA' });
+  });
+
+  test('alterar aceita os três campos (null limpa) e continua recusando campos desconhecidos', () => {
+    assert.equal(material.alterar.body.safeParse({ codigoInterno: null, categoria: 'Uniforme', descricao: null }).success, true);
+    assert.equal(material.alterar.body.safeParse({ quantidadeComprada: 1 }).success, false);
+  });
+});

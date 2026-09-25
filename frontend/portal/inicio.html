@@ -34,12 +34,14 @@
 
       <section class="bloco">
         <h2>Módulos já integrados ao servidor</h2>
-        <p>Usam a sessão desta empresa e as permissões do seu perfil, verificadas no servidor a cada operação.</p>
+        <p>Usam a sessão desta empresa e as permissões do seu perfil, verificadas no servidor a cada operação. Só aparecem os módulos que o seu perfil pode usar nesta empresa.</p>
+        <p id="modulos-mensagem" class="oculto"></p>
         <div class="modulos">
-          <a href="../pages/grupos-acesso.html">Grupos de acesso</a>
-          <a href="../pages/grupo-permissoes.html">Permissões dos grupos</a>
-          <a href="../pages/grupo-usuarios.html">Usuários dos grupos</a>
-          <a href="../pages/autorizacoes-individuais.html">Autorizações individuais</a>
+          <a href="../pages/grupos-acesso.html" data-pagina="grupos-acesso" style="display:none">Grupos de acesso</a>
+          <a href="../pages/grupo-permissoes.html" data-pagina="grupo-permissoes" style="display:none">Permissões dos grupos</a>
+          <a href="../pages/grupo-usuarios.html" data-pagina="grupo-usuarios" style="display:none">Usuários dos grupos</a>
+          <a href="../pages/autorizacoes-individuais.html" data-pagina="autorizacoes-individuais" style="display:none">Autorizações individuais</a>
+          <a href="../pages/materials.html" data-pagina="materials" style="display:none">Materiais e EPIs</a>
         </div>
       </section>
 
@@ -47,7 +49,6 @@
         <h2>Em integração</h2>
         <p>Os módulos operacionais abaixo ainda não estão ligados ao banco de dados desta empresa. Serão disponibilizados aqui a partir do Bloco 9 — Etapa C, sem dados de demonstração.</p>
         <div class="modulos">
-          <div>Materiais e EPIs<br><span class="etiqueta">Bloco 9 — Etapa C</span></div>
           <div>Estoque<br><span class="etiqueta">Bloco 9 — Etapa C</span></div>
           <div>Funcionários e GHE<br><span class="etiqueta">Bloco 9 — Etapa C</span></div>
           <div>Entregas e fichas de EPI<br><span class="etiqueta">Etapas seguintes</span></div>
@@ -60,6 +61,7 @@
 
   <script src="../js/api-http.js"></script>
   <script src="../js/portal-cliente.js"></script>
+  <script src="../js/permissoes-efetivas.js"></script>
   <script src="config.js"></script>
   <script src="inicio.js"></script>
 </body>
