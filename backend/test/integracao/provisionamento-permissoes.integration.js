@@ -38,6 +38,7 @@ const script = require('../../scripts/provisionar-permissoes-master');
 const MIGRATIONS = [
   '000', '001', '002', '003', '004', '005', '025', '006', '007', '008', '009', '010', '011',
   '012', '013', '014', '015', '016', '017', '018', '019', '020', '021', '022', '023',
+  '039',
 ];
 
 const SENHA = 'senha-correta-do-teste-provisionamento-2026';

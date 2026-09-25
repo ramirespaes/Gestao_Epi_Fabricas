@@ -118,6 +118,9 @@ describe('contrato do módulo', () => {
     assert.equal(autoridade.PERFIL_MASTER, 'MASTER');
     assert.deepEqual(Object.keys(autoridade).sort(), [
       'ACOES_ADMINISTRATIVAS', 'PERFIL_MASTER', 'exigirAutoridadeAdministrativa', 'exigirAutoridadeAdministrativaLeitura',
+      // Bloco 9, Etapa C, Parte C1: a mesma decisão de leitura, sem lançar,
+      // para GET /api/auth/permissoes — nenhuma regra nova.
+      'temAutoridadeAdministrativaLeitura',
     ].sort());
   });
 

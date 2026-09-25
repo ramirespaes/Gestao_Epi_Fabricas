@@ -1,6 +1,7 @@
 'use strict';
 
 const loginService = require('../services/login.service');
+const permissoesEfetivasService = require('../services/permissoes-efetivas.service');
 const sessaoRepo = require('../repositories/sessao.repository');
 const autenticacaoMiddleware = require('../middleware/autenticacao');
 const { serializarCookieSessao, serializarRemocaoCookieSessao } = require('../security/cookie');
@@ -50,6 +51,23 @@ function criarAuthController({ pool: poolInjetado }) {
         usuario,
         empresa: req.empresa,
       });
+    },
+
+    /**
+     * Permissões efetivas do usuário empresarial autenticado (Bloco 9,
+     * Etapa C, Parte C1). Somente leitura. Empresa, usuário e perfil vêm
+     * EXCLUSIVAMENTE de req.empresa/req.usuario, populados por exigirSessao
+     * a partir do PostgreSQL — nenhum parâmetro do navegador é aceito (a
+     * rota não tem corpo, query nem params). A resposta é apresentação: cada
+     * operação continua autorizada pelo backend no momento em que é feita.
+     */
+    async permissoes(req, res) {
+      const efetivas = await permissoesEfetivasService.calcular(poolInjetado, {
+        empresaId: req.empresa.id,
+        usuarioId: req.usuario.id,
+        perfil: req.usuario.perfil,
+      });
+      res.status(200).json({ status: 'ok', ...efetivas });
     },
 
     async login(req, res) {

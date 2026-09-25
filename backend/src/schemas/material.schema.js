@@ -31,6 +31,11 @@ const FABRICANTE_MAXIMO = 100;
 const CA_NUMERO_MAXIMO = 20;
 const UNIDADE_MAXIMA = 20;
 const BUSCA_MAXIMA = 100;
+// Parte C2 (migration 039): categoria/codigo_interno VARCHAR(30), descricao
+// TEXT com teto de 500 na aplicação e no CHECK do banco.
+const CATEGORIA_MAXIMA = 30;
+const CODIGO_INTERNO_MAXIMO = 30;
+const DESCRICAO_MAXIMA = 500;
 
 const nome = textoCurto(NOME_MAXIMO, 'NOME_INVALIDO', 'Nome do material inválido');
 const tipo = textoCurto(TIPO_MAXIMO, 'TIPO_INVALIDO', 'Tipo inválido');
@@ -38,6 +43,9 @@ const fabricante = textoCurto(FABRICANTE_MAXIMO, 'FABRICANTE_INVALIDO', 'Fabrica
 const caNumero = textoCurto(CA_NUMERO_MAXIMO, 'CA_NUMERO_INVALIDO', 'Número do CA inválido');
 const unidade = textoCurto(UNIDADE_MAXIMA, 'UNIDADE_INVALIDA', 'Unidade inválida');
 const busca = textoCurto(BUSCA_MAXIMA, 'BUSCA_INVALIDA', 'Termo de busca inválido');
+const categoria = textoCurto(CATEGORIA_MAXIMA, 'CATEGORIA_INVALIDA', 'Categoria inválida');
+const codigoInterno = textoCurto(CODIGO_INTERNO_MAXIMO, 'CODIGO_INTERNO_INVALIDO', 'Código interno inválido');
+const descricao = textoCurto(DESCRICAO_MAXIMA, 'DESCRICAO_INVALIDA', 'Descrição inválida');
 
 /**
  * Data no formato ISO (YYYY-MM-DD) com verificação estrita de calendário —
@@ -63,6 +71,9 @@ const paramsComId = z.strictObject({ id: idParametro });
 const criar = {
   body: z.strictObject({
     nome,
+    categoria: categoria.nullable().optional(),
+    codigoInterno: codigoInterno.nullable().optional(),
+    descricao: descricao.nullable().optional(),
     tipo: tipo.nullable().optional(),
     fabricante: fabricante.nullable().optional(),
     caNumero: caNumero.nullable().optional(),
@@ -88,6 +99,9 @@ const alterar = {
   params: paramsComId,
   body: z.strictObject({
     nome: nome.optional(),
+    categoria: categoria.nullable().optional(),
+    codigoInterno: codigoInterno.nullable().optional(),
+    descricao: descricao.nullable().optional(),
     tipo: tipo.nullable().optional(),
     fabricante: fabricante.nullable().optional(),
     caNumero: caNumero.nullable().optional(),

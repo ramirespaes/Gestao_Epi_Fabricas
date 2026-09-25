@@ -39,6 +39,7 @@
     "035_create_sessoes_globais.sql": "68ee000c3d7aaa5ca45692b078e01185bfcd9cbfb76521f5a0936483e4c9a155",
     "036_create_login_tentativas_globais.sql": "ed1391dfe5d006be7b39d783b879766e09ce961267be0b4da2166bffde9b10a8",
     "037_alter_sessoes_add_sessao_global_id.sql": "0dfe31fee6aca1725a54919d152353fa527cbfe510d996c5ae53ca03c733bbaf",
-    "038_create_triggers_revogar_sessoes_inativacao.sql": "47e1c97f178bc6f1ce1808c6ebb767b0f016d5655a55178299d474e8d1243ce5"
+    "038_create_triggers_revogar_sessoes_inativacao.sql": "47e1c97f178bc6f1ce1808c6ebb767b0f016d5655a55178299d474e8d1243ce5",
+    "039_alter_materiais_add_categoria_codigo_interno_descricao.sql": "940f4e814d5d074a5039b7c54094648de8dbe3a32b63cd5779f4bbb057cc7017"
   }
 }

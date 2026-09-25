@@ -265,9 +265,9 @@ describe('autorizacao-consulta.service — contrato do módulo', () => {
     assert.deepEqual(Object.keys(servico).sort(), ['listarPorUsuario']);
   });
 
-  test('o serviço aprovado da 3I continua exportando apenas as três operações de escrita', () => {
+  test('o serviço aprovado da 3I continua com as três operações de escrita (+ o predicado de concessão direta extraído na Parte C1, sem escrita)', () => {
     const tresI = require('../../src/services/autorizacao-individual.service');
 
-    assert.deepEqual(Object.keys(tresI).sort(), ['concederDireta', 'delegar', 'revogar']);
+    assert.deepEqual(Object.keys(tresI).sort(), ['atorPodeConcederDireta', 'concederDireta', 'delegar', 'revogar']);
   });
 });

@@ -46,7 +46,7 @@ const EpiGrupos = require('../../../frontend/js/grupos-acesso');
  * registra redirecionamentos, reescritas de URL e o uso de armazenamento.
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 39 }, (_, i) => String(i).padStart(3, '0'));
+const TODAS_AS_MIGRATIONS = Array.from({ length: 40 }, (_, i) => String(i).padStart(3, '0'));
 const SENHA = 'senha-forte-da-etapa-c-2026';
 const ANA = 'ana.c0@exemplo-cliente.com.br';   // MASTER em A, USUARIO em B
 const BIA = 'bia.c0@exemplo-cliente.com.br';   // MASTER só em A

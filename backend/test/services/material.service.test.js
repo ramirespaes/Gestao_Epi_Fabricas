@@ -309,3 +309,37 @@ describe('inativar e reativar', () => {
     assertRecusaSemRastro(cliente, escritas);
   });
 });
+
+describe('categoria, código interno e descrição — Parte C2', () => {
+  test('criar normaliza os três (apara; vazio -> null), grava e audita os três', async (t) => {
+    const escritas = mundoValido(t);
+    const cliente = criarClienteFalso();
+    const r = await servico.criar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Luva', categoria: ' EPI ', codigoInterno: ' EPI-000245 ', descricao: '   ' });
+    const dados = escritas.criar.mock.calls[0].arguments[1];
+    assert.deepEqual([dados.categoria, dados.codigoInterno, dados.descricao], ['EPI', 'EPI-000245', null]);
+    assert.deepEqual([r.categoria, r.codigoInterno], ['EPI', 'EPI-000245']);
+    const auditado = escritas.registrar.mock.calls[0].arguments[1].dadosNovos;
+    assert.deepEqual([auditado.categoria, auditado.codigoInterno, auditado.descricao], ['EPI', 'EPI-000245', null]);
+  });
+
+  test('violação do índice único do código interno (23505 uq_materiais_empresa_codigo_interno) vira 409 MATERIAL_CODIGO_INTERNO_DUPLICADO com ROLLBACK, em criar e em alterar', async (t) => {
+    const escritas = mundoValido(t);
+    const violacao = () => { const e = new Error('duplicate key'); e.code = '23505'; e.constraint = 'uq_materiais_empresa_codigo_interno'; throw e; };
+    escritas.criar.mock.mockImplementation(async () => violacao());
+    const cliente = criarClienteFalso();
+    await esperarHttpError(servico.criar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Luva', codigoInterno: 'EPI-1' }), 409, 'MATERIAL_CODIGO_INTERNO_DUPLICADO');
+    assertRecusaSemRastro(cliente, escritas);
+
+    escritas.atualizar.mock.mockImplementation(async () => violacao());
+    const cliente2 = criarClienteFalso();
+    await esperarHttpError(servico.alterar(criarPoolFalso(cliente2), { empresaId: EMPRESA, atorId: ATOR_ID, materialId: MATERIAL_ID, codigoInterno: 'EPI-1', codigoInternoInformado: true }), 409, 'MATERIAL_CODIGO_INTERNO_DUPLICADO');
+  });
+
+  test('alterar: null explícito limpa o código interno via *Informado; acima do limite é 400', async (t) => {
+    const escritas = mundoValido(t);
+    await servico.alterar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, materialId: MATERIAL_ID, codigoInterno: null, codigoInternoInformado: true });
+    const campos = escritas.atualizar.mock.calls[0].arguments[3];
+    assert.deepEqual([campos.codigoInternoInformado, campos.codigoInterno], [true, null]);
+    await esperarHttpError(servico.criar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'L', descricao: 'x'.repeat(501) }), 400, 'MATERIAL_DADOS_INVALIDOS');
+  });
+});

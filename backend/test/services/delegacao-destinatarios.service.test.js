@@ -197,9 +197,9 @@ describe('delegacao-destinatarios — quem pode consultar', () => {
     assert.deepEqual(pool.chamadas, []);
   });
 
-  test('exporta somente listarDestinatarios; a 3I segue com as três de escrita', () => {
-    assert.deepEqual(Object.keys(servico), ['listarDestinatarios']);
+  test('exporta listarDestinatarios e o predicado atorPodeDelegar (Parte C1); a 3I segue com as três de escrita + o predicado de concessão direta', () => {
+    assert.deepEqual(Object.keys(servico).sort(), ['atorPodeDelegar', 'listarDestinatarios']);
     const tresI = require('../../src/services/autorizacao-individual.service');
-    assert.deepEqual(Object.keys(tresI).sort(), ['concederDireta', 'delegar', 'revogar']);
+    assert.deepEqual(Object.keys(tresI).sort(), ['atorPodeConcederDireta', 'concederDireta', 'delegar', 'revogar']);
   });
 });

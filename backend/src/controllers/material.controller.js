@@ -25,7 +25,10 @@ const { pool } = require('../config/database');
 function criarMaterialController({ pool: poolInjetado }) {
   return {
     async criar(req, res) {
-      const { nome, tipo, fabricante, caNumero, caValidade, prazoUsoDias, unidade, estoqueMinimo } = req.validado.body;
+      const {
+        nome, tipo, fabricante, caNumero, caValidade, prazoUsoDias, unidade, estoqueMinimo,
+        categoria, codigoInterno, descricao,
+      } = req.validado.body;
 
       const material = await materialService.criar(poolInjetado, {
         empresaId: req.empresa.id,
@@ -38,6 +41,9 @@ function criarMaterialController({ pool: poolInjetado }) {
         prazoUsoDias: prazoUsoDias ?? null,
         unidade,
         estoqueMinimo,
+        categoria: categoria ?? null,
+        codigoInterno: codigoInterno ?? null,
+        descricao: descricao ?? null,
         ip: req.ip,
         dispositivo: req.headers['user-agent'],
       });
@@ -91,6 +97,9 @@ function criarMaterialController({ pool: poolInjetado }) {
         ...(Object.hasOwn(corpo, 'prazoUsoDias') ? { prazoUsoDias: corpo.prazoUsoDias, prazoUsoDiasInformado: true } : {}),
         ...(Object.hasOwn(corpo, 'unidade') ? { unidade: corpo.unidade } : {}),
         ...(Object.hasOwn(corpo, 'estoqueMinimo') ? { estoqueMinimo: corpo.estoqueMinimo } : {}),
+        ...(Object.hasOwn(corpo, 'categoria') ? { categoria: corpo.categoria, categoriaInformado: true } : {}),
+        ...(Object.hasOwn(corpo, 'codigoInterno') ? { codigoInterno: corpo.codigoInterno, codigoInternoInformado: true } : {}),
+        ...(Object.hasOwn(corpo, 'descricao') ? { descricao: corpo.descricao, descricaoInformado: true } : {}),
         ip: req.ip,
         dispositivo: req.headers['user-agent'],
       });

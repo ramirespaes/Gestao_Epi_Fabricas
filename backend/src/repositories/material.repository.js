@@ -37,8 +37,12 @@ const TAMANHO_MAXIMO_UNIDADE = 20;
 // etc. (correção pós-auditoria de 23/09/2026).
 const LIMITE_INTEGER_POSTGRES = 2147483647;
 
+// categoria, codigo_interno e descricao: migration 039 (Parte C2).
 const PROJECAO = `id, empresa_id, nome, tipo, fabricante, ca_numero, ca_validade,
-  prazo_uso_dias, unidade, estoque_minimo, ativo, criado_em, atualizado_em`;
+  prazo_uso_dias, unidade, estoque_minimo, categoria, codigo_interno, descricao, ativo, criado_em, atualizado_em`;
+const TAMANHO_MAXIMO_CATEGORIA = 30;
+const TAMANHO_MAXIMO_CODIGO_INTERNO = 30;
+const TAMANHO_MAXIMO_DESCRICAO = 500;
 
 function exigirEmpresa(empresaId) {
   if (!Number.isInteger(empresaId) || empresaId <= 0) {
@@ -105,6 +109,9 @@ const mapear = (linha) => (linha === undefined ? null : {
   prazoUsoDias: linha.prazo_uso_dias,
   unidade: linha.unidade,
   estoqueMinimo: linha.estoque_minimo,
+  categoria: linha.categoria ?? null,
+  codigoInterno: linha.codigo_interno ?? null,
+  descricao: linha.descricao ?? null,
   ativo: linha.ativo,
   criadoEm: linha.criado_em,
   atualizadoEm: linha.atualizado_em,
@@ -122,6 +129,7 @@ const mapear = (linha) => (linha === undefined ? null : {
 async function criar(executor, {
   empresaId, nome, tipo = null, fabricante = null, caNumero = null,
   caValidade = null, prazoUsoDias = null, unidade = 'unidade', estoqueMinimo = 0,
+  categoria = null, codigoInterno = null, descricao = null,
 }) {
   exigirEmpresa(empresaId);
   exigirNome(nome);
@@ -132,12 +140,15 @@ async function criar(executor, {
   exigirPrazoUsoDiasOpcional(prazoUsoDias);
   exigirUnidade(unidade);
   exigirEstoqueMinimo(estoqueMinimo);
+  exigirTextoOpcional(categoria, 'categoria', TAMANHO_MAXIMO_CATEGORIA);
+  exigirTextoOpcional(codigoInterno, 'código interno', TAMANHO_MAXIMO_CODIGO_INTERNO);
+  exigirTextoOpcional(descricao, 'descrição', TAMANHO_MAXIMO_DESCRICAO);
 
   const { rows } = await executor.query(
-    `INSERT INTO materiais (empresa_id, nome, tipo, fabricante, ca_numero, ca_validade, prazo_uso_dias, unidade, estoque_minimo)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO materiais (empresa_id, nome, tipo, fabricante, ca_numero, ca_validade, prazo_uso_dias, unidade, estoque_minimo, categoria, codigo_interno, descricao)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      RETURNING ${PROJECAO}`,
-    [empresaId, nome, tipo, fabricante, caNumero, caValidade, prazoUsoDias, unidade, estoqueMinimo],
+    [empresaId, nome, tipo, fabricante, caNumero, caValidade, prazoUsoDias, unidade, estoqueMinimo, categoria, codigoInterno, descricao],
   );
 
   return mapear(rows[0]);
@@ -266,6 +277,9 @@ async function atualizar(executor, empresaId, id, {
   unidade = null,
   estoqueMinimo = null,
   ativo = null,
+  categoria = null, categoriaInformado = false,
+  codigoInterno = null, codigoInternoInformado = false,
+  descricao = null, descricaoInformado = false,
 } = {}) {
   exigirEmpresa(empresaId);
   exigirId(id, 'identificador de material');
@@ -296,6 +310,15 @@ async function atualizar(executor, empresaId, id, {
   if (ativo !== null && typeof ativo !== 'boolean') {
     throw new TypeError('ativo deve ser booleano ou null');
   }
+  if (categoriaInformado) {
+    exigirTextoOpcional(categoria, 'categoria', TAMANHO_MAXIMO_CATEGORIA);
+  }
+  if (codigoInternoInformado) {
+    exigirTextoOpcional(codigoInterno, 'código interno', TAMANHO_MAXIMO_CODIGO_INTERNO);
+  }
+  if (descricaoInformado) {
+    exigirTextoOpcional(descricao, 'descrição', TAMANHO_MAXIMO_DESCRICAO);
+  }
 
   const { rows } = await executor.query(
     `UPDATE materiais
@@ -307,7 +330,10 @@ async function atualizar(executor, empresaId, id, {
             prazo_uso_dias = CASE WHEN $12::boolean THEN $13 ELSE prazo_uso_dias END,
             unidade = COALESCE($14, unidade),
             estoque_minimo = COALESCE($15, estoque_minimo),
-            ativo = COALESCE($16, ativo)
+            ativo = COALESCE($16, ativo),
+            categoria = CASE WHEN $17::boolean THEN $18 ELSE categoria END,
+            codigo_interno = CASE WHEN $19::boolean THEN $20 ELSE codigo_interno END,
+            descricao = CASE WHEN $21::boolean THEN $22 ELSE descricao END
       WHERE empresa_id = $1 AND id = $2
       RETURNING ${PROJECAO}`,
     [
@@ -318,6 +344,9 @@ async function atualizar(executor, empresaId, id, {
       caValidadeInformado, caValidade,
       prazoUsoDiasInformado, prazoUsoDias,
       unidade, estoqueMinimo, ativo,
+      categoriaInformado, categoria,
+      codigoInternoInformado, codigoInterno,
+      descricaoInformado, descricao,
     ],
   );
 
@@ -336,4 +365,7 @@ module.exports = {
   TAMANHO_MAXIMO_FABRICANTE,
   TAMANHO_MAXIMO_CA_NUMERO,
   TAMANHO_MAXIMO_UNIDADE,
+  TAMANHO_MAXIMO_CATEGORIA,
+  TAMANHO_MAXIMO_CODIGO_INTERNO,
+  TAMANHO_MAXIMO_DESCRICAO,
 };

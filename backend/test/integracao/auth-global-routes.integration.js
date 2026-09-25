@@ -43,7 +43,7 @@ const { assertSemSensiveis } = require('../helpers/sensiveis');
  * global. CSRF/CORS/Origin da montagem real estão em test/app.test.js.
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 39 }, (_, i) => String(i).padStart(3, '0'));
+const TODAS_AS_MIGRATIONS = Array.from({ length: 40 }, (_, i) => String(i).padStart(3, '0'));
 const SENHA = 'senha-forte-do-portal-2026';
 const SENHA_ERRADA = 'senha-errada-do-portal-2026';
 const SENHA_ADMIN = 'planeta-nebulosa-ozonio-42';

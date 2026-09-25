@@ -40,6 +40,7 @@ const { gerarHashSenha } = require('../../src/security/password');
 const MIGRATIONS = [
   '000', '001', '002', '003', '005', '025', '007', '008', '009', '010', '011',
   '012', '013', '014', '015', '016', '017', '018', '019', '020', '021', '022', '023',
+  '039',
 ];
 
 const SENHA = 'senha-correta-do-teste-bloco9-etapa-a-2026';
@@ -425,6 +426,77 @@ describe('API HTTP de materiais e estoque com PostgreSQL real', () => {
       assert.equal(resposta.status, 200);
       assert.ok(resposta.body.materiais.some((m) => m.id === materialId));
       assert.ok(!resposta.body.materiais.some((m) => m.id === materialPercentualId));
+    });
+  });
+
+  describe('Cenário 9 — Parte C2: categoria, código interno e descrição', () => {
+    let idComCodigo;
+
+    test('MASTER cadastra com categoria, código interno e descrição; os três voltam na resposta e na consulta; auditoria registra os três', async () => {
+      const resposta = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send({
+        nome: 'Luva nitrílica C2', categoria: 'EPI', codigoInterno: 'EPI-000245', descricao: 'Proteção química leve',
+        caNumero: '55771', caValidade: '2027-04-30', prazoUsoDias: 180, unidade: 'par', estoqueMinimo: 5,
+      });
+      assert.equal(resposta.status, 201, JSON.stringify(resposta.body));
+      assert.deepEqual(
+        [resposta.body.material.categoria, resposta.body.material.codigoInterno, resposta.body.material.descricao],
+        ['EPI', 'EPI-000245', 'Proteção química leve'],
+      );
+      idComCodigo = resposta.body.material.id;
+      const consulta = await request(app).get(`/api/materiais/${idComCodigo}`).set('Cookie', cookieMasterA);
+      assert.equal(consulta.body.material.codigoInterno, 'EPI-000245');
+      const { rows } = await pool.query("SELECT dados_novos FROM logs_auditoria WHERE empresa_id = $1 AND acao = 'MATERIAL_CRIADO' AND referencia = $2", [empresaA, String(idComCodigo)]);
+      assert.deepEqual([rows[0].dados_novos.categoria, rows[0].dados_novos.codigoInterno, rows[0].dados_novos.descricao], ['EPI', 'EPI-000245', 'Proteção química leve']);
+    });
+
+    test('código interno duplicado na MESMA empresa (mesmo com caixa diferente): 409 MATERIAL_CODIGO_INTERNO_DUPLICADO, nada criado', async () => {
+      const { rows: antes } = await pool.query('SELECT count(*)::int AS n FROM materiais WHERE empresa_id = $1', [empresaA]);
+      const r = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send({ nome: 'Outra luva', codigoInterno: 'epi-000245' });
+      assert.deepEqual([r.status, r.body.codigo], [409, 'MATERIAL_CODIGO_INTERNO_DUPLICADO']);
+      const { rows: depois } = await pool.query('SELECT count(*)::int AS n FROM materiais WHERE empresa_id = $1', [empresaA]);
+      assert.equal(depois[0].n, antes[0].n);
+      const patch = await request(app).patch(`/api/materiais/${materialId}`).set('Cookie', cookieMasterA).send({ codigoInterno: 'EPI-000245' });
+      assert.deepEqual([patch.status, patch.body.codigo], [409, 'MATERIAL_CODIGO_INTERNO_DUPLICADO']);
+    });
+
+    test('empresa B pode usar o mesmo código interno da empresa A', async () => {
+      const r = await request(app).post('/api/materiais').set('Cookie', cookieMasterB).send({ nome: 'Luva da B', codigoInterno: 'EPI-000245' });
+      assert.equal(r.status, 201, JSON.stringify(r.body));
+    });
+
+    test('vazio ou só espaços nos três campos: 400 VALIDACAO, como já ocorre com tipo/fabricante (o cliente converte vazio em null)', async () => {
+      for (const corpo of [{ categoria: '' }, { codigoInterno: '   ' }, { descricao: '' }, { tipo: '' }]) {
+        const r = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send({ nome: 'Vazio', ...corpo });
+        assert.deepEqual([r.status, r.body.codigo], [400, 'VALIDACAO'], JSON.stringify(corpo));
+      }
+    });
+
+    test('null nos três campos: 201 com null, e vários materiais sem código não conflitam entre si', async () => {
+      const a = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send({ nome: 'Sem código A', categoria: null, codigoInterno: null, descricao: null });
+      const b = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send({ nome: 'Sem código B', codigoInterno: null });
+      const c = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send({ nome: 'Sem código C' });
+      assert.deepEqual([a.status, b.status, c.status], [201, 201, 201]);
+      assert.deepEqual([a.body.material.categoria, a.body.material.codigoInterno, a.body.material.descricao], [null, null, null]);
+      assert.deepEqual([b.body.material.codigoInterno, c.body.material.codigoInterno], [null, null]);
+    });
+
+    test('PATCH: null explícito limpa o código; ausente não mexe', async () => {
+      const limpa = await request(app).patch(`/api/materiais/${idComCodigo}`).set('Cookie', cookieMasterA).send({ codigoInterno: null });
+      assert.deepEqual([limpa.status, limpa.body.material.codigoInterno, limpa.body.material.categoria], [200, null, 'EPI']);
+      const denovo = await request(app).patch(`/api/materiais/${idComCodigo}`).set('Cookie', cookieMasterA).send({ codigoInterno: 'EPI-000245' });
+      assert.equal(denovo.status, 200, 'liberado depois de limpo');
+    });
+
+    test('acima dos limites (categoria/código 30, descrição 500) e campo desconhecido: 400 VALIDACAO', async () => {
+      for (const corpo of [{ categoria: 'a'.repeat(31) }, { codigoInterno: 'b'.repeat(31) }, { descricao: 'c'.repeat(501) }, { quantidadeComprada: 10 }]) {
+        const r = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send({ nome: 'Limite', ...corpo });
+        assert.deepEqual([r.status, r.body.codigo], [400, 'VALIDACAO'], JSON.stringify(corpo));
+      }
+    });
+
+    test('perfil sem materials.criar: 403 mesmo com os campos novos', async () => {
+      const r = await request(app).post('/api/materiais').set('Cookie', cookieAdminSemPermissaoA).send({ nome: 'Tentativa', codigoInterno: 'X-1' });
+      assert.equal(r.status, 403);
     });
   });
 
