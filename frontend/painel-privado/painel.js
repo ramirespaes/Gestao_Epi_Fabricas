@@ -24,29 +24,57 @@
     window.location.href = 'index.html';
   }
 
-  window.EpiHttp.requisitar('GET', '/painel').then(function (resposta) {
-    elCarregando.style.display = 'none';
+  /** Nada da área protegida fica visível enquanto a sessão não é confirmada. */
+  function ocultarConteudo() {
+    elConteudo.style.display = 'none';
+    elEmail.textContent = '';
+    elErro.textContent = '';
+    elErro.style.display = 'none';
+    elCarregando.style.display = '';
+  }
 
-    if (window.EpiHttp.ehNaoAutenticado(resposta)) {
-      irParaLogin();
-      return;
-    }
-    if (!resposta.ok) {
-      elErro.textContent = resposta.mensagem || 'Não foi possível carregar o painel.';
+  function confirmarSessao() {
+    return window.EpiHttp.requisitar('GET', '/painel').then(function (resposta) {
+      elCarregando.style.display = 'none';
+
+      if (window.EpiHttp.ehNaoAutenticado(resposta)) {
+        irParaLogin();
+        return;
+      }
+      if (!resposta.ok) {
+        elErro.textContent = resposta.mensagem || 'Não foi possível carregar o painel.';
+        elErro.style.display = 'block';
+        return;
+      }
+
+      elEmail.textContent = resposta.dados.administrador.email;
+      elConteudo.style.display = 'block';
+    }).catch(function () {
+      elCarregando.style.display = 'none';
+      elErro.textContent = 'Não foi possível falar com o servidor. Verifique sua conexão.';
       elErro.style.display = 'block';
-      return;
-    }
+    });
+  }
 
-    elEmail.textContent = resposta.dados.administrador.email;
-    elConteudo.style.display = 'block';
-  }).catch(function () {
-    elCarregando.style.display = 'none';
-    elErro.textContent = 'Não foi possível falar com o servidor. Verifique sua conexão.';
-    elErro.style.display = 'block';
+  confirmarSessao();
+
+  // Página restaurada pelo navegador (BFCache) depois de "Sair" ou de uma
+  // troca de sessão em outra aba: o DOM antigo volta sem recarregar. O
+  // conteúdo some e a sessão é confirmada de novo no servidor — encerrada
+  // leva ao login; válida reapresenta o administrador ATUAL. Nenhum
+  // bloqueio do histórico do navegador.
+  window.addEventListener('pageshow', function (evento) {
+    if (!evento || !evento.persisted) return;
+    ocultarConteudo();
+    confirmarSessao();
   });
 
   botaoSair.addEventListener('click', function () {
     botaoSair.disabled = true;
+    // Os dados administrativos somem ANTES do pedido de logout e da
+    // navegação: uma cópia desta página guardada pelo navegador não terá
+    // nada para mostrar.
+    ocultarConteudo();
     window.EpiHttp.requisitar('POST', '/auth/logout').then(function () {
       irParaLogin();
     }).catch(function () {

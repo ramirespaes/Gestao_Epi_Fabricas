@@ -351,4 +351,59 @@ describe('C0 — páginas originais com a sessão empresarial real (PostgreSQL r
     EpiSessaoEmpresarial.sessaoEncerrada(); // o que a página faz ao receber o 401
     assert.deepEqual(j.redirecionamentos, ['../portal/index.html']);
   });
+  // ── Restauração pelo BFCache depois do logout (correção de 25/09/2026) ──
+  function paginaComEventos(nome) {
+    const j = pagina(nome);
+    j.eventos = {};
+    j.addEventListener = (ev, fn) => { (j.eventos[ev] = j.eventos[ev] || []).push(fn); };
+    return j;
+  }
+  function elementosFalsos() {
+    const e = (extra = {}) => ({ textContent: '', style: { display: '' }, disabled: false, addEventListener() {}, ...extra });
+    return { tela: e(), mensagem: e(), linkPortal: e({ style: { display: 'none' } }), identificacao: e(), botaoSair: e(), botaoTrocar: e() };
+  }
+  const dispararPageshow = async (j) => { for (const fn of (j.eventos.pageshow || [])) await fn({ persisted: true }); };
+
+  test('BFCache após "Sair": a página restaurada revalida no servidor, recebe 401 (sessões revogadas no PostgreSQL), limpa os dados e volta ao Portal', async () => {
+    const nav = navegadorNovo();
+    await entrarPeloPortal(BIA);
+    const j = paginaComEventos('grupos-acesso');
+    const el = elementosFalsos();
+    const encerrou = [];
+    const ctx = await EpiSessaoEmpresarial.montar({ elementos: el, janela: j, aoEncerrar: () => encerrou.push('limpou') });
+    assert.equal(ctx.usuario.id, usuario.biaA);
+    assert.equal(el.tela.style.display, 'none');
+
+    const saida = await EpiSessaoEmpresarial.sair();
+    assert.equal(saida.ok, true);
+    const revogadas = await pool.query('SELECT count(*)::int AS n FROM sessoes WHERE usuario_id = $1 AND revogada_em IS NULL', [usuario.biaA]);
+    assert.equal(revogadas.rows[0].n, 0, 'nenhuma sessão empresarial viva');
+    assert.equal(nav.jar.has(authConfig.sessao.cookieNome), false, 'cookie removido pelo servidor');
+
+    // O navegador restaura a página antiga (DOM com identificação) sem recarregar:
+    el.identificacao.textContent = 'restaurado pelo navegador';
+    el.tela.style.display = 'none';
+    await dispararPageshow(j);
+    assert.deepEqual([el.tela.style.display, el.identificacao.textContent, encerrou], ['', '', ['limpou']], 'aoEncerrar chamado pela revalidação (sair() direto não passa pelo botão)');
+    assert.equal(j.redirecionamentos.at(-1), '../portal/index.html');
+    assert.equal(nav.chamadas.filter((c) => c === 'GET /api/auth/me').length, 2, 'revalidou no servidor');
+    assert.equal(EpiSessaoEmpresarial.contexto(), null);
+  });
+
+  test('BFCache com troca de identidade em outra aba: a página restaurada detecta o contexto diferente, limpa os dados e recarrega para a sessão atual', async () => {
+    navegadorNovo();
+    await entrarPeloPortal(ANA); // duas empresas: escolhe A explicitamente
+    assert.equal((await EpiPortal.acoes.selecionar(empresa.A)).ok, true);
+    const j = paginaComEventos('grupo-usuarios');
+    const el = elementosFalsos();
+    const encerrou = [];
+    const ctx = await EpiSessaoEmpresarial.montar({ elementos: el, janela: j, aoEncerrar: () => encerrou.push('limpou') });
+    assert.equal(ctx.usuario.id, usuario.anaA);
+
+    await entrarPeloPortal(BIA); // outra aba: outra identidade, que entra direto na mesma empresa A (MASTER)
+    await dispararPageshow(j);
+    assert.deepEqual([encerrou, j.redirecionamentos], [['limpou'], ['/pages/grupo-usuarios.html']]);
+    assert.equal(el.tela.style.display, '', 'tela cobrindo a página até o recarregamento');
+  });
+
 });

@@ -5,29 +5,87 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Painel Privado — SafeWork</title>
   <style>
-    body { font-family: system-ui, sans-serif; background: #10151c; color: #e6e9ee; display: flex; min-height: 100vh; align-items: center; justify-content: center; margin: 0; }
-    form { background: #1a212b; padding: 2rem; border-radius: 8px; width: 320px; box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
-    h1 { font-size: 1.1rem; margin: 0 0 1.25rem; }
-    label { display: block; font-size: 0.85rem; margin-bottom: 0.25rem; }
-    input { width: 100%; padding: 0.5rem; margin-bottom: 1rem; border-radius: 4px; border: 1px solid #33404f; background: #0d1117; color: #e6e9ee; box-sizing: border-box; }
-    button { width: 100%; padding: 0.6rem; background: #3861fb; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 0.95rem; }
-    button:disabled { opacity: 0.6; cursor: default; }
-    #mensagem { min-height: 1.2rem; font-size: 0.85rem; color: #ff6b6b; margin-bottom: 0.75rem; }
+    /* Identidade visual SafeWork Engenharia (referência: frontend/institucional/) —
+       mesma folha nas duas telas de login; só as variáveis de tema mudam. */
+    :root { color-scheme: light; --ink: #153333; --muted: #617471; --accent: #1f7563; --accent-forte: #153333; --surface: #ffffff; --bg: #f7f8f6; --line: #e3e9e5; --campo: #ffffff; --hover: #8ab5a7; --foco: #e1efe9; --logo-fundo: #153333; --erro: #b3261e; --erro-fundo: #fdecea; --info-fundo: #eaf5ef; --sombra: #173d3720; }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100svh; background: var(--bg); color: var(--ink); font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; }
+    .centro { min-height: 100svh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    .cartao { width: 100%; max-width: 400px; padding: 32px 28px 28px; background: var(--surface); border: 1px solid var(--line); border-radius: 17px; box-shadow: 0 22px 55px var(--sombra); }
+    .marca { text-align: center; margin-bottom: 22px; }
+    .logo-site { display: inline-grid; place-items: center; width: 43px; height: 43px; margin: 0 auto 12px; border-radius: 13px; background: var(--logo-fundo); color: #ffffff; text-decoration: none; }
+    .logo-site svg { width: 27px; height: 27px; }
+    .logo-site[hidden] { display: none; }
+    .marca-nome { display: block; font-size: 17px; font-weight: 740; letter-spacing: -.05em; color: var(--ink); }
+    .marca-nome span { font-weight: 480; letter-spacing: -.035em; color: var(--muted); }
+    .marca-sub { display: block; margin-top: 4px; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+    h1 { margin: 0 0 14px; font-size: 20px; font-weight: 740; letter-spacing: -.03em; color: var(--ink); }
+    .mensagem { min-height: 1.2rem; margin-bottom: 12px; font-size: 13px; border-radius: 11px; }
+    .mensagem.erro { padding: 9px 12px; color: var(--erro); background: var(--erro-fundo); }
+    .mensagem.info { padding: 9px 12px; color: var(--ink); background: var(--info-fundo); }
+    .mensagem:empty { padding: 0; background: none; }
+    label { display: block; margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+    input { width: 100%; height: 44px; padding: 0 12px; margin-bottom: 14px; font: inherit; font-size: 15px; color: var(--ink); background: var(--campo); border: 1px solid var(--line); border-radius: 11px; outline: none; transition: border-color .15s, box-shadow .15s; }
+    input:hover { border-color: var(--hover); }
+    input:focus-visible { border-color: var(--hover); box-shadow: 0 0 0 3px var(--foco); }
+    .botao { width: 100%; height: 46px; margin-top: 4px; font: inherit; font-size: 15px; font-weight: 600; color: #ffffff; background: var(--accent); border: none; border-radius: 11px; cursor: pointer; transition: background-color .15s, box-shadow .15s; }
+    .botao:hover, .botao:focus-visible { background: var(--accent-forte); outline: none; box-shadow: 0 0 0 3px var(--foco); }
+    .botao:disabled { opacity: .6; cursor: default; }
+    .voltar-site { display: block; margin-top: 18px; text-align: center; font-size: 13px; color: var(--muted); text-decoration: none; }
+    .voltar-site:hover, .voltar-site:focus-visible { color: var(--accent); text-decoration: underline; }
+    .voltar-site[hidden] { display: none; }
+    @media (max-width: 500px) { .centro { padding: 16px; } .cartao { padding: 26px 20px 22px; border-radius: 15px; } }
   </style>
 </head>
 <body>
-  <form id="form-login" novalidate>
-    <h1>Painel Privado — SafeWork</h1>
-    <div id="mensagem" role="alert" aria-live="polite"></div>
-    <label for="email">E-mail</label>
-    <input type="email" id="email" name="email" autocomplete="username" required>
-    <label for="senha">Senha</label>
-    <input type="password" id="senha" name="senha" autocomplete="current-password" required>
-    <button type="submit" id="botao-entrar">Entrar</button>
-  </form>
+  <div class="centro">
+    <form id="form-login" class="cartao" novalidate>
+      <div class="marca">
+        <a id="link-logo-site" class="logo-site" href="#" aria-label="SafeWork Engenharia — voltar ao site" hidden><svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M5 17.3 12.1 24 27 8" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+        <strong class="marca-nome">SafeWork <span>Engenharia</span></strong>
+        <span class="marca-sub">Painel Privado · Administração SafeWork</span>
+      </div>
+      <h1>Entrar</h1>
+      <div id="mensagem" class="mensagem" role="alert" aria-live="polite"></div>
+      <label for="email">E-mail</label>
+      <input type="email" id="email" name="email" autocomplete="username" required>
+      <label for="senha">Senha</label>
+      <input type="password" id="senha" name="senha" autocomplete="current-password" required>
+      <button type="submit" id="botao-entrar" class="botao">Entrar</button>
+      <a id="link-voltar-site" class="voltar-site" href="#" hidden>Voltar ao site</a>
+    </form>
+  </div>
 
   <script src="../js/api-http.js"></script>
   <script src="config.js"></script>
   <script src="login.js"></script>
+  <script>
+    // Logo e "Voltar ao site": levam à página institucional da SafeWork
+    // Engenharia. Ambiente local (localhost, 127.0.0.1, [::1]): a institucional
+    // está na origem 5500, com o mesmo caminho até frontend/ que esta página
+    // (raiz do repositório ou raiz em frontend/). Produção: somente
+    // SITE_INSTITUCIONAL_PRODUCAO, a preencher com o domínio institucional
+    // definitivo na implantação; enquanto vazio, os links ficam ocultos — um
+    // visitante de produção nunca é levado a localhost. É um link comum, sem
+    // depender do histórico do navegador.
+    (function () {
+      'use strict';
+      const SITE_INSTITUCIONAL_PRODUCAO = '';
+      const HOSTS_LOCAIS = ['localhost', '127.0.0.1', '[::1]'];
+      let destino = SITE_INSTITUCIONAL_PRODUCAO;
+      if (HOSTS_LOCAIS.indexOf(location.hostname) !== -1) {
+        const base = location.pathname.replace(/\/painel-privado\/[^/]*$/, '');
+        destino = 'http://localhost:5500' + base + '/institucional/safework_engenharia_pagina_inicial.html';
+      }
+      if (!destino) return;
+      ['link-logo-site', 'link-voltar-site'].forEach(function (id) {
+        const link = document.getElementById(id);
+        if (!link) return;
+        link.href = destino;
+        link.hidden = false;
+      });
+    })();
+  </script>
 </body>
 </html>

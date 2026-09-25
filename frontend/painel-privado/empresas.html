@@ -5,50 +5,85 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Empresas — Painel Privado SafeWork</title>
   <style>
-    body { font-family: system-ui, sans-serif; background: #10151c; color: #e6e9ee; margin: 0; }
-    header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; background: #1a212b; border-bottom: 1px solid #262f3b; }
-    header h1 { font-size: 1rem; margin: 0; }
-    nav a { color: #9fb3ff; margin-right: 1rem; }
-    button { background: #3861fb; color: #fff; border: none; border-radius: 4px; padding: 0.45rem 0.8rem; cursor: pointer; }
-    button.secundario { background: #2a3644; border: 1px solid #3a4656; }
-    button:disabled { opacity: 0.6; cursor: default; }
-    main { padding: 1.5rem; display: grid; grid-template-columns: 1fr 1.3fr; gap: 1.5rem; }
-    section { background: #1a212b; border-radius: 8px; padding: 1rem; }
-    h2 { font-size: 0.95rem; margin: 0 0 0.75rem; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-    th, td { text-align: left; padding: 0.4rem; border-bottom: 1px solid #262f3b; }
+    /* Identidade visual SafeWork Engenharia — mesmas variáveis, fonte e medidas da tela de login (index.html) */
+    :root { color-scheme: light; --ink: #153333; --muted: #617471; --accent: #1f7563; --accent-forte: #153333; --surface: #ffffff; --bg: #f7f8f6; --line: #e3e9e5; --campo: #ffffff; --hover: #8ab5a7; --foco: #e1efe9; --logo-fundo: #153333; --erro: #b3261e; --erro-fundo: #fdecea; --ok: #1f7563; --ok-fundo: #eaf5ef; --aviso: #8a5a00; --aviso-fundo: #fff4dd; --info-fundo: #eaf5ef; --sombra: #173d3720; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100svh; background: var(--bg); color: var(--ink); font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; }
+    header { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px clamp(16px, 4vw, 40px); background: var(--surface); border-bottom: 1px solid var(--line); }
+    .marca { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .marca-logo { display: inline-grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 12px; background: var(--logo-fundo); color: #ffffff; }
+    .marca-logo svg { width: 24px; height: 24px; }
+    .marca-nome { display: block; font-size: 16px; font-weight: 740; letter-spacing: -.04em; color: var(--ink); }
+    .marca-nome span { font-weight: 480; letter-spacing: -.03em; color: var(--muted); }
+    .marca-sub { display: block; margin-top: 2px; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+    header h1 { margin: 0; font-size: 16px; font-weight: 740; letter-spacing: -.04em; color: var(--ink); }
+    nav a { color: var(--accent); font-weight: 600; text-decoration: none; margin-right: 16px; }
+    nav a:hover, nav a:focus-visible { text-decoration: underline; color: var(--accent-forte); }
+    button { font: inherit; font-size: 14px; font-weight: 600; color: #ffffff; background: var(--accent); border: 1px solid var(--accent); border-radius: 11px; padding: 9px 16px; cursor: pointer; transition: background-color .15s, box-shadow .15s; }
+    button:hover, button:focus-visible { background: var(--accent-forte); border-color: var(--accent-forte); outline: none; box-shadow: 0 0 0 3px var(--foco); }
+    button.secundario { color: var(--accent); background: var(--surface); border-color: var(--line); }
+    button.secundario:hover, button.secundario:focus-visible { color: var(--accent-forte); background: var(--foco); border-color: var(--hover); }
+    button:disabled { opacity: .6; cursor: default; box-shadow: none; }
+    #carregando, #erro { padding: 24px clamp(16px, 4vw, 40px); color: var(--muted); }
+    #erro { color: var(--erro); display: none; }
+    main { padding: 24px clamp(16px, 4vw, 40px); }
+    /* o grid fica num contêiner interno: o script mostra/esconde #conteudo com display:block */
+    .colunas { display: grid; grid-template-columns: 1fr 1.3fr; gap: 24px; align-items: start; }
+    section { background: var(--surface); border: 1px solid var(--line); border-radius: 17px; padding: 20px; box-shadow: 0 22px 55px var(--sombra); }
+    h2 { margin: 0 0 12px; font-size: 16px; font-weight: 740; letter-spacing: -.03em; color: var(--ink); }
+    .barra { display: flex; gap: 8px; margin-bottom: 8px; }
+    .barra input { flex: 1; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 8px; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line); }
+    td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--line); color: var(--ink); }
+    td small { color: var(--muted); }
     tr.selecionavel { cursor: pointer; }
-    tr.selecionavel:hover { background: #222c39; }
-    .inativa { color: #ff9f6b; }
-    form label { display: block; font-size: 0.8rem; margin: 0.5rem 0 0.2rem; }
-    form input, form select { width: 100%; padding: 0.4rem; border-radius: 4px; border: 1px solid #33404f; background: #0d1117; color: #e6e9ee; box-sizing: border-box; }
-    .grade { display: grid; grid-template-columns: 1fr 1fr; gap: 0 0.75rem; }
-    fieldset { border: 1px solid #33404f; border-radius: 6px; margin: 0.75rem 0; padding: 0.5rem 0.75rem; }
-    legend { font-size: 0.8rem; color: #9fb3ff; }
-    .mensagem { min-height: 1.2rem; font-size: 0.85rem; margin: 0.5rem 0; }
-    .erro { color: #ff6b6b; }
-    .ok { color: #7bd88f; }
-    .aviso { color: #ffd166; }
-    .acoes { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem; }
-    code { word-break: break-all; background: #0d1117; padding: 0.2rem 0.4rem; border-radius: 4px; display: inline-block; }
+    tr.selecionavel:hover { background: var(--foco); }
+    .inativa { color: var(--aviso); font-weight: 600; }
+    form label { display: block; margin: 10px 0 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+    input, select { width: 100%; height: 40px; padding: 0 12px; font: inherit; font-size: 14px; color: var(--ink); background: var(--campo); border: 1px solid var(--line); border-radius: 11px; outline: none; transition: border-color .15s, box-shadow .15s; }
+    input:hover, select:hover { border-color: var(--hover); }
+    input:focus-visible, select:focus-visible { border-color: var(--hover); box-shadow: 0 0 0 3px var(--foco); }
+    input:disabled { color: var(--muted); background: var(--bg); }
+    .grade { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+    fieldset { border: 1px solid var(--line); border-radius: 13px; margin: 14px 0; padding: 6px 14px 12px; }
+    legend { padding: 0 6px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+    .mensagem { min-height: 1.2rem; margin: 8px 0; font-size: 13px; border-radius: 11px; }
+    .mensagem.erro, .mensagem.ok, .mensagem.aviso { padding: 9px 12px; }
+    .mensagem:empty { padding: 0; background: none; }
+    .erro { color: var(--erro); background: var(--erro-fundo); }
+    .ok { color: var(--ok); background: var(--ok-fundo); }
+    .aviso { color: var(--aviso); background: var(--aviso-fundo); }
+    p.aviso { padding: 9px 12px; border-radius: 11px; font-size: 13px; }
+    .acoes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    hr { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
+    code { display: inline-block; word-break: break-all; padding: 6px 10px; border-radius: 9px; font-size: 12px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); }
     #detalhe { display: none; }
-    @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+    #situacao { margin: 0 0 8px; font-size: 14px; color: var(--ink); }
+    @media (max-width: 900px) { .colunas { grid-template-columns: 1fr; } }
+    @media (max-width: 600px) { .grade { grid-template-columns: 1fr; } header { flex-wrap: wrap; } }
   </style>
 </head>
 <body>
   <header>
-    <div>
-      <h1>Painel Privado — SafeWork</h1>
-      <nav><a href="painel.html">Início</a><a href="empresas.html">Empresas</a></nav>
+    <div class="marca">
+      <span class="marca-logo" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M5 17.3 12.1 24 27 8" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <div>
+        <h1 class="marca-nome">SafeWork <span>Engenharia</span></h1>
+        <span class="marca-sub">Painel Privado · Administração SafeWork</span>
+        <nav style="margin-top:6px;"><a href="painel.html">Início</a><a href="empresas.html">Empresas</a></nav>
+      </div>
     </div>
     <button id="sair" type="button" class="secundario">Sair</button>
   </header>
 
-  <main>
+  <p id="carregando">Carregando...</p>
+  <main id="conteudo" style="display:none;">
+   <div class="colunas">
     <section>
       <h2>Empresas cadastradas</h2>
-      <div style="display:flex; gap:0.5rem; margin-bottom:0.5rem;">
-        <input id="busca" placeholder="Buscar por razão social, nome fantasia ou CNPJ" style="flex:1; padding:0.4rem; border-radius:4px; border:1px solid #33404f; background:#0d1117; color:#e6e9ee;">
+      <div class="barra">
+        <input id="busca" placeholder="Buscar por razão social, nome fantasia ou CNPJ">
         <button id="btn-buscar" type="button" class="secundario">Buscar</button>
         <button id="btn-nova" type="button">Nova empresa</button>
       </div>
@@ -104,7 +139,7 @@
       </form>
 
       <div id="detalhe">
-        <hr style="border-color:#262f3b; margin:1rem 0;">
+        <hr>
         <h2>Situação e provisionamento MASTER</h2>
         <p id="situacao"></p>
         <p id="provisionamento" class="mensagem"></p>
@@ -113,10 +148,10 @@
           <button id="btn-reativar" type="button" class="secundario">Reativar</button>
         </div>
 
-        <h2 style="margin-top:1rem;">Primeiro MASTER — convite</h2>
+        <h2 style="margin-top:16px;">Primeiro MASTER — convite</h2>
         <p class="mensagem aviso">O e-mail do representante NÃO vira MASTER automaticamente: informe explicitamente quem será o primeiro MASTER.</p>
-        <div style="display:flex; gap:0.5rem;">
-          <input id="email-master" type="email" placeholder="E-mail do primeiro MASTER" style="flex:1; padding:0.4rem; border-radius:4px; border:1px solid #33404f; background:#0d1117; color:#e6e9ee;">
+        <div class="barra">
+          <input id="email-master" type="email" placeholder="E-mail do primeiro MASTER">
           <button id="btn-convidar" type="button">Gerar convite</button>
         </div>
         <p id="msg-convite" class="mensagem"></p>
@@ -124,16 +159,17 @@
           <p class="aviso">Modo de desenvolvimento (sem envio de e-mail): repasse o link abaixo à pessoa convidada.</p>
           <code id="link-aceite"></code>
         </div>
-        <table style="margin-top:0.5rem;">
+        <table style="margin-top:8px;">
           <thead><tr><th>E-mail</th><th>Situação</th><th>Expira em</th><th></th></tr></thead>
           <tbody id="convites"></tbody>
         </table>
       </div>
     </section>
+   </div>
   </main>
 
-  <script src="../js/api-http.js"></script>
-  <script src="config.js"></script>
-  <script src="empresas.js"></script>
+  <script src="../js/api-http.js?v=20260925"></script>
+  <script src="config.js?v=20260925"></script>
+  <script src="empresas.js?v=20260925"></script>
 </body>
 </html>
