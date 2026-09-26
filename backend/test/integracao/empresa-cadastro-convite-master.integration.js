@@ -85,13 +85,13 @@ const cadastroCompleto = (cnpj, extra = {}) => ({
   uf: 'rs',
   cep: '95000-000',
   telefone: '(54) 3333-0000',
-  email: 'Contato@Cobresul.com.br',
+  email: 'Contato@Example.Invalid',
   representanteNome: 'Maria Representante',
   representanteCargo: 'Diretora',
-  representanteEmail: 'maria@cobresul.com.br',
+  representanteEmail: 'maria@example.invalid',
   representanteTelefone: '(54) 99999-0001',
   financeiroNome: 'João Financeiro',
-  financeiroEmail: 'financeiro@cobresul.com.br',
+  financeiroEmail: 'financeiro@example.invalid',
   financeiroTelefone: '(54) 99999-0002',
   ...extra,
 });
@@ -151,9 +151,9 @@ describe('Pacote 3 — cadastro de empresas e convite do MASTER (HTTP + PostgreS
       assert.equal(empresaA.situacaoInscricaoEstadual, 'CONTRIBUINTE');
       assert.equal(empresaA.uf, 'RS', 'UF normalizada para maiúsculas');
       assert.equal(empresaA.cep, '95000000', 'CEP canônico sem máscara');
-      assert.equal(empresaA.email, 'contato@cobresul.com.br', 'e-mail institucional normalizado');
-      assert.deepEqual(empresaA.representante, { nome: 'Maria Representante', cargo: 'Diretora', email: 'maria@cobresul.com.br', telefone: '(54) 99999-0001' });
-      assert.deepEqual(empresaA.financeiro, { nome: 'João Financeiro', email: 'financeiro@cobresul.com.br', telefone: '(54) 99999-0002' });
+      assert.equal(empresaA.email, 'contato@example.invalid', 'e-mail institucional normalizado');
+      assert.deepEqual(empresaA.representante, { nome: 'Maria Representante', cargo: 'Diretora', email: 'maria@example.invalid', telefone: '(54) 99999-0001' });
+      assert.deepEqual(empresaA.financeiro, { nome: 'João Financeiro', email: 'financeiro@example.invalid', telefone: '(54) 99999-0002' });
       assert.equal(empresaA.ativo, true);
 
       // Persistido de verdade, na coluna certa (nome = razão social; IE nunca "ISENTO" por padrão).
@@ -161,8 +161,8 @@ describe('Pacote 3 — cadastro de empresas e convite do MASTER (HTTP + PostgreS
       assert.equal(rows[0].nome, 'Cobresul Indústria e Comércio Ltda');
       assert.equal(rows[0].nome_fantasia, 'Cobresul');
       assert.equal(rows[0].bairro, 'Distrito Industrial');
-      assert.equal(rows[0].representante_email, 'maria@cobresul.com.br');
-      assert.equal(rows[0].financeiro_email, 'financeiro@cobresul.com.br');
+      assert.equal(rows[0].representante_email, 'maria@example.invalid');
+      assert.equal(rows[0].financeiro_email, 'financeiro@example.invalid');
 
       // Provisionamento MASTER na mesma transação: linhas reais em permissoes_recurso/permissoes_acao.
       assert.equal(r.body.provisionamento.prontaParaMaster, true);
@@ -273,7 +273,7 @@ describe('Pacote 3 — cadastro de empresas e convite do MASTER (HTTP + PostgreS
       const denovo = await admin(request(app).post(`/api/plataforma/empresas/${empresaA.id}/inativar`)).send({});
       assert.deepEqual([denovo.status, denovo.body.alterado], [200, false]);
 
-      const convite = await admin(request(app).post(`/api/plataforma/empresas/${empresaA.id}/convites-master`)).send({ email: 'master@cobresul.com.br' });
+      const convite = await admin(request(app).post(`/api/plataforma/empresas/${empresaA.id}/convites-master`)).send({ email: 'master@example.invalid' });
       assert.deepEqual([convite.status, convite.body.codigo], [409, 'EMPRESA_INATIVA']);
       const prov = await admin(request(app).get(`/api/plataforma/empresas/${empresaA.id}/provisionamento`));
       assert.deepEqual([prov.status, prov.body.codigo], [409, 'EMPRESA_INATIVA']);
@@ -341,8 +341,8 @@ describe('Pacote 3 — cadastro de empresas e convite do MASTER (HTTP + PostgreS
     test('o cookie EMPRESARIAL (usuário de uma empresa) nunca autentica as rotas administrativas; administrador_id no corpo é recusado', async () => {
       const { rows: empresas } = await contexto.pool.query('SELECT id FROM empresas WHERE cnpj = $1', [CNPJ_A]);
       const hash = await gerarHashSenha(SENHA_CLIENTE);
-      await contexto.pool.query("INSERT INTO usuarios (empresa_id, nome, email, senha_hash, perfil) VALUES ($1, 'Usuário Cliente', 'usuario@cobresul.com.br', $2, 'ADMINISTRADOR')", [empresas[0].id, hash]);
-      const login = await request(app).post('/api/auth/login').send({ cnpj: CNPJ_A, email: 'usuario@cobresul.com.br', senha: SENHA_CLIENTE });
+      await contexto.pool.query("INSERT INTO usuarios (empresa_id, nome, email, senha_hash, perfil) VALUES ($1, 'Usuário Cliente', 'usuario@example.invalid', $2, 'ADMINISTRADOR')", [empresas[0].id, hash]);
+      const login = await request(app).post('/api/auth/login').send({ cnpj: CNPJ_A, email: 'usuario@example.invalid', senha: SENHA_CLIENTE });
       assert.equal(login.status, 200);
       const cookieCliente = cookieDe(login, authConfig.sessao.cookieNome);
 

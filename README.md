@@ -93,6 +93,10 @@ Em desenvolvimento, sirva `frontend/` em `http://localhost:5500` (Portal: `/port
 
 Pré-requisitos antes de preencher: API servida sob `/api` (cliente) e `/api/plataforma` (Painel) na mesma origem de cada portal; `CORS_ORIGIN` e `PLATAFORMA_CORS_ORIGIN` com as origens `https://` reais (disjuntas); `PLATAFORMA_HOST` definido; cookies `Secure`.
 
+### Publicação do frontend do cliente
+
+Em homologação e produção, publica-se somente o pacote gerado por `npm run publicacao:empacotar -- --saida <diretório>` (em `frontend/`), a partir da allowlist explícita `frontend/publicacao/allowlist.json`. As páginas legadas, `js/main.js`, `js/db-api.js`, o `index.html` da raiz e o Painel Privado ficam fora. O empacotador recusa o pacote inteiro diante de qualquer divergência. Detalhes e requisitos obrigatórios do deploy, entre eles a CSP no servidor estático, estão em `frontend/publicacao/README.md`.
+
 ## Backend
 
 O backend está localizado integralmente em `backend/` e concentra a API, configuração do servidor, acesso ao PostgreSQL 16, as migrations em `backend/migrations/` e as regras de negócio.

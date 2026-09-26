@@ -221,6 +221,17 @@ describe('planilha: cabeçalho, conversão e validação por linha (sem inventar
     assert.doesNotMatch(html, /<img/);
     assert.match(html, /&lt;img/);
   });
+
+  test('prévia mostra o CPF minimizado (***.***.***-XX); o valor enviado ao servidor continua completo', () => {
+    const r = F.planilha.interpretar([CABECALHO, linhaCsv(), linhaCsv({ cpf: '123', matricula: 'MAT-000002' })]);
+    const html = F.render.previa(r.linhas);
+    assert.match(html, /<td>\*\*\*\.\*\*\*\.\*\*\*-25<\/td>/);
+    assert.doesNotMatch(html, /529\.?982\.?247/);
+    assert.doesNotMatch(html, /<td>123<\/td>/, 'nem o valor inválido aparece');
+    assert.equal(r.linhas[0].dados.cpf, '52998224725');
+    assert.equal(F.utilitarios.mascararCpf('52998224725'), '***.***.***-25');
+    assert.equal(F.utilitarios.mascararCpf(''), '');
+  });
 });
 
 describe('Excel (.xlsx) real pela cópia local da biblioteca', () => {
@@ -421,7 +432,7 @@ describe('inspeção estática das duas páginas', () => {
 
   test('histórico: sem dados fictícios (colaborador, crachá, matrícula, entregas, indicadores), campos somente leitura, sem db-api/main.js', () => {
     const codigo = semComentarios(hist);
-    for (const proibido of [/Marcos Silva/, /CR-001284/, /MAT-000171/, /Botina de segurança/, /12\/04\/2026/, /Luva nitrílica/, />18</, /db-api\.js/, /main\.js/, /xlsx/, /loginScreen/, /kiosk/i, /onclick="openHistoryModal/, /localStorage/]) {
+    for (const proibido of [/Tício de Tal/, /CR-001284/, /MAT-000171/, /Botina de segurança/, /12\/04\/2026/, /Luva nitrílica/, />18</, /db-api\.js/, /main\.js/, /xlsx/, /loginScreen/, /kiosk/i, /onclick="openHistoryModal/, /localStorage/]) {
       assert.equal(proibido.test(codigo), false, `employee-history.html contém ${proibido}`);
     }
     for (const id of ['historyEmployeeName', 'historyEmployeeBadge', 'historyEmployeeMatricula', 'historySector']) {

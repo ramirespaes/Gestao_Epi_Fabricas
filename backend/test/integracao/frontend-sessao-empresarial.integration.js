@@ -50,7 +50,7 @@ const TODAS_AS_MIGRATIONS = Array.from({ length: 40 }, (_, i) => String(i).padSt
 const SENHA = 'senha-forte-da-etapa-c-2026';
 const ANA = 'ana.c0@exemplo-cliente.com.br';   // MASTER em A, USUARIO em B
 const BIA = 'bia.c0@exemplo-cliente.com.br';   // MASTER só em A
-const LEGADO = JSON.stringify({ id: 1, nome: 'Luis Freitas', perfil: 'MASTER' });
+const LEGADO = JSON.stringify({ id: 1, nome: 'Fulano de Tal', perfil: 'MASTER' });
 
 function criarNavegador(origem) {
   const jar = new Map();
