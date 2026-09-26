@@ -86,6 +86,12 @@
       abrir: [{ recurso: 'employeeGroups', operacao: 'visualizar' }],
       alterar: [{ recurso: 'employeeGroups', operacao: 'editar' }],
     },
+    // Parte C6: dashboard (recurso legado `dashboard`), somente leitura.
+    // Cada indicador ainda depende da permissão da fonte (decidida no servidor).
+    dashboard: {
+      abrir: [{ recurso: 'dashboard', operacao: 'visualizar' }],
+      alterar: [],
+    },
   };
 
   var MENSAGENS = {

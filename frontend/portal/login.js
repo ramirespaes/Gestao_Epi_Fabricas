@@ -21,7 +21,7 @@
   function ir(destino) { window.location.href = Portal.decisao.pagina(destino); }
 
   Portal.acoes.sessao().then(function (r) {
-    var destino = Portal.decisao.destinoDaSessao(r);
+    var destino = Portal.decisao.entradaDaSessao(r);
     if (destino !== 'login') ir(destino);
   }).catch(function () { /* sem sessão ou sem rede: permanece no login */ });
 
@@ -34,7 +34,7 @@
 
     Portal.acoes.entrar(credenciais).then(function (r) {
       if (r.ok) {
-        ir(Portal.decisao.destino(r.dados));
+        ir(Portal.decisao.entrada(r.dados));
         return;
       }
       // Mensagem pública e genérica do backend; nunca ecoa e-mail ou senha.

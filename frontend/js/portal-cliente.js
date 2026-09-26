@@ -45,6 +45,8 @@
     selecionar: 'empresas.html',
     semEmpresa: 'empresas.html',
     inicio: 'inicio.html',
+    // Parte C7: com empresa selecionada, o Portal leva ao dashboard.
+    painel: '../pages/dashboard.html',
   };
 
   var ROTULOS_PERFIL = {
@@ -118,6 +120,23 @@
     destinoDaSessao: function (resposta) {
       if (!resposta || !resposta.ok) return 'login';
       return decisao.destino(resposta.dados);
+    },
+
+    /**
+     * Parte C7 — para onde levar ao ENTRAR (login, sessão já existente ou
+     * seleção de empresa): com empresa selecionada, o painel
+     * (pages/dashboard.html); nos demais casos, o mesmo destino de antes.
+     * `destino` continua sendo a validação do início do Portal (inicio.js),
+     * que por isso nunca redireciona sozinho para o dashboard — sem laço.
+     */
+    entrada: function (dados) {
+      var d = decisao.destino(dados);
+      return d === 'inicio' ? 'painel' : d;
+    },
+
+    entradaDaSessao: function (resposta) {
+      if (!resposta || !resposta.ok) return 'login';
+      return decisao.entrada(resposta.dados);
     },
 
     pagina: function (destino) {

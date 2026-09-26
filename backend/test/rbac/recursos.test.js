@@ -9,6 +9,7 @@ const estoqueRoutes = require('../../src/routes/estoque.routes');
 const funcionarioRoutes = require('../../src/routes/funcionario.routes');
 const gheRoutes = require('../../src/routes/grupo-homogeneo-exposicao.routes');
 const itensDisponiveisRoutes = require('../../src/routes/itens-disponiveis.routes');
+const dashboardRoutes = require('../../src/routes/dashboard.routes');
 
 /**
  * Lista central de recursos RBAC (Bloco 9, Etapa B). O objetivo destes
@@ -47,7 +48,7 @@ describe('recursos conhecidos', () => {
 });
 
 describe('escopo do provisionamento do MASTER', () => {
-  test('é EXATAMENTE o que as rotas do Bloco 9 exigem: 3 recursos com visualizar/criar/editar, availableItems só visualizar (Parte C3), nenhum excluir, e 1 ação', () => {
+  test('é EXATAMENTE o que as rotas do Bloco 9 exigem: 3 recursos com visualizar/criar/editar, availableItems e dashboard só visualizar (Partes C3 e C6), nenhum excluir, e 1 ação', () => {
     const escopo = recursos.ESCOPO_PROVISIONAMENTO_MASTER;
     assert.equal(escopo.perfil, 'MASTER');
     assert.deepEqual(
@@ -57,6 +58,7 @@ describe('escopo do provisionamento do MASTER', () => {
         ['employeeHistory', ['visualizar', 'criar', 'editar']],
         ['employeeGroups', ['visualizar', 'criar', 'editar']],
         ['availableItems', ['visualizar']],
+        ['dashboard', ['visualizar']],
       ],
     );
     assert.deepEqual([...escopo.acoes], ['MOVIMENTAR_ESTOQUE']);
@@ -66,12 +68,12 @@ describe('escopo do provisionamento do MASTER', () => {
   });
 
   test('o escopo cobre os recursos/ação das rotas do Bloco 9 e NADA além deles (não concede "tudo" ao MASTER)', () => {
-    const recursosDasRotas = new Set([materialRoutes.RECURSO, estoqueRoutes.RECURSO, funcionarioRoutes.RECURSO, gheRoutes.RECURSO, itensDisponiveisRoutes.RECURSO]);
+    const recursosDasRotas = new Set([materialRoutes.RECURSO, estoqueRoutes.RECURSO, funcionarioRoutes.RECURSO, gheRoutes.RECURSO, itensDisponiveisRoutes.RECURSO, dashboardRoutes.RECURSO]);
     const recursosDoEscopo = new Set(recursos.ESCOPO_PROVISIONAMENTO_MASTER.recursos.map((r) => r.recurso));
     assert.deepEqual([...recursosDoEscopo].sort(), [...recursosDasRotas].sort());
     assert.deepEqual([...recursos.ESCOPO_PROVISIONAMENTO_MASTER.acoes], [estoqueRoutes.ACAO_MOVIMENTAR_ESTOQUE]);
     assert.ok(recursosDoEscopo.size < recursos.RECURSOS_CONHECIDOS.length, 'escopo é menor que a lista de conhecidos');
-    for (const legado of ['dashboard', 'userAdmin', 'config', 'lgpd', 'importEmployees']) {
+    for (const legado of ['userAdmin', 'config', 'lgpd', 'importEmployees']) {
       assert.ok(!recursosDoEscopo.has(legado), `${legado} não tem rota no backend e não entra no escopo`);
     }
   });

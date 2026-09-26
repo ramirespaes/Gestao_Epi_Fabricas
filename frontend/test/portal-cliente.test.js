@@ -159,3 +159,37 @@ describe('sem persistência de sessão no navegador', () => {
     }
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// Parte C7 — Portal → dashboard depois da seleção de empresa
+// ═══════════════════════════════════════════════════════════════════
+describe('C7: com empresa selecionada, o Portal leva ao dashboard', () => {
+  const raiz = path.join(__dirname, '..');
+  const lerCodigo = (rel) => fs.readFileSync(path.join(raiz, rel), 'utf8').replace(/^\s*(\*|\/\/).*$/gm, '');
+  const empresa = (id) => ({ id, nome: `E${id}`, cnpj: '11222333000181', perfil: 'MASTER' });
+
+  test('entrada: contexto presente -> painel (pages/dashboard.html); demais casos iguais ao destino', () => {
+    assert.equal(decisao.entrada({ empresas: [empresa(1)], contexto: { empresa: { id: 1 } } }), 'painel');
+    assert.equal(decisao.pagina('painel'), '../pages/dashboard.html');
+    assert.equal(decisao.entrada({ empresas: [empresa(1), empresa(2)], contexto: null }), 'selecionar');
+    assert.equal(decisao.entrada({ empresas: [], contexto: null }), 'semEmpresa');
+    assert.equal(decisao.entrada(null), 'login');
+    assert.equal(decisao.entradaDaSessao({ ok: false, status: 401 }), 'login');
+    assert.equal(decisao.entradaDaSessao({ ok: true, dados: { empresas: [empresa(1)], contexto: { empresa: { id: 1 } } } }), 'painel');
+    assert.equal(decisao.destino({ empresas: [empresa(1)], contexto: { empresa: { id: 1 } } }), 'inicio', 'a validação do início do Portal não muda');
+  });
+
+  test('login e seleção de empresa usam a entrada (dashboard); o início do Portal continua validando por destino, sem laço', () => {
+    const login = lerCodigo('portal/login.js');
+    assert.match(login, /Portal\.decisao\.entradaDaSessao\(r\)/);
+    assert.match(login, /ir\(Portal\.decisao\.entrada\(r\.dados\)\)/);
+    assert.equal(/decisao\.destino/.test(login), false, 'login não usa mais o destino antigo');
+    const empresas = lerCodigo('portal/empresas.js');
+    assert.match(empresas, /if \(r\.ok\) \{ ir\('painel'\); return; \}/);
+    assert.equal(/ir\('inicio'\)/.test(empresas), false);
+    const inicio = lerCodigo('portal/inicio.js');
+    assert.match(inicio, /Portal\.decisao\.destinoDaSessao\(r\)/);
+    assert.match(inicio, /if \(destino !== 'inicio'\)/);
+    assert.equal(/entrada/.test(inicio), false, 'o início do Portal nunca manda para o dashboard sozinho');
+  });
+});

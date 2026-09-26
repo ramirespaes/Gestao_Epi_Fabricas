@@ -211,6 +211,28 @@ async function buscarPorIdParaVinculo(executor, empresaId, id) {
 }
 
 /**
+ * Contagem da validade do CA dos materiais ATIVOS da empresa, para o
+ * dashboard (Parte C6), com a mesma classificação de Itens Disponíveis (C3):
+ * antes de hoje -> vencido; de hoje até hoje + diasAlerta -> a vencer;
+ * sem data -> fora das duas contagens.
+ */
+async function contarValidadeCa(executor, empresaId, diasAlerta) {
+  exigirEmpresa(empresaId);
+  if (!Number.isInteger(diasAlerta) || diasAlerta < 1) {
+    throw new TypeError('prazo de alerta da validade do CA inválido');
+  }
+  const { rows } = await executor.query(
+    `SELECT count(*) FILTER (WHERE ca_validade < CURRENT_DATE)::int AS vencido,
+            count(*) FILTER (WHERE ca_validade >= CURRENT_DATE AND ca_validade <= CURRENT_DATE + $2::int)::int AS a_vencer
+       FROM materiais
+      WHERE empresa_id = $1
+        AND ativo`,
+    [empresaId, diasAlerta],
+  );
+  return { vencido: rows[0].vencido, aVencer: rows[0].a_vencer };
+}
+
+/**
  * Lista os materiais de uma empresa, paginados e ordenados por nome
  * (comparação sem diferenciar maiúsculas).
  *
@@ -384,6 +406,7 @@ module.exports = {
   buscarPorId,
   buscarPorIdParaAtualizacao,
   buscarPorIdParaVinculo,
+  contarValidadeCa,
   listarPorEmpresa,
   contarPorEmpresa,
   atualizar,

@@ -261,7 +261,7 @@ describe('páginas (inspeção estática)', () => {
   test('portal/inicio: os quatro módulos administrativos (e, desde a C2, Materiais) nascem ocultos e dependem das permissões', () => {
     const html = ler('portal/inicio.html');
     const links = [...html.matchAll(/<a [^>]*data-pagina="([^"]+)"[^>]*>/g)];
-    assert.deepEqual(links.map((m) => m[1]), ['grupos-acesso', 'grupo-permissoes', 'grupo-usuarios', 'autorizacoes-individuais', 'materials', 'availableItems', 'employeeHistory', 'importEmployees', 'employeeGroups']);
+    assert.deepEqual(links.map((m) => m[1]), ['grupos-acesso', 'grupo-permissoes', 'grupo-usuarios', 'autorizacoes-individuais', 'materials', 'availableItems', 'employeeHistory', 'importEmployees', 'employeeGroups', 'dashboard']);
     for (const m of links) assert.match(m[0], /style="display:none"/);
     assert.match(html, /<script src="\.\.\/js\/permissoes-efetivas\.js"><\/script>/);
     assert.match(ler('portal/inicio.js'), /EpiPermissoes\.carregar\(window\.EpiPermissoes\.esperadoDoContexto\(ctx\)\)/, 'o Portal confere empresa, usuário e perfil');

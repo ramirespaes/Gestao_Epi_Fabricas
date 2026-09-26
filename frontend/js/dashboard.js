@@ -1,0 +1,77 @@
+(function (global) {
+  'use strict';
+
+  /**
+   * EpiDashboard — indicadores do dashboard (Bloco 9, Etapa C, Parte C6),
+   * sobre GET /api/dashboard/indicadores (recurso `dashboard`, visualizar).
+   *
+   * Só quatro indicadores têm dado real nesta etapa: itens disponíveis,
+   * estoque abaixo do mínimo, CA vencido (com a vencer) e funcionários
+   * ativos. Cada um só traz número se o usuário vê a FONTE (decisão do
+   * servidor); sem permissão: "—" e "sem permissão". Os demais cards e
+   * painéis da página ficam em "—" / "em integração". Nenhum valor fixo,
+   * nada guardado no navegador.
+   */
+
+  function http() {
+    if (!global.EpiHttp) throw new Error('EpiHttp não carregado: inclua js/api-http.js antes de js/dashboard.js');
+    return global.EpiHttp;
+  }
+
+  var acoes = {
+    consultar: function () { return http().requisitar('GET', '/dashboard/indicadores'); },
+  };
+
+  function inteiroNaoNegativo(v) { return typeof v === 'number' && isFinite(v) && Math.floor(v) === v && v >= 0; }
+  function milhar(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
+
+  var TRACO = '—';
+  var SEM_PERMISSAO = { valor: TRACO, meta: 'sem permissão' };
+  var INDISPONIVEL = { valor: TRACO, meta: 'indisponível' };
+  var EM_INTEGRACAO = { valor: TRACO, meta: 'em integração' };
+
+  /** Um indicador simples: número só com permitido === true e valor inteiro >= 0. */
+  function simples(ind, meta) {
+    if (ind && ind.permitido === false) return SEM_PERMISSAO;
+    if (ind && ind.permitido === true && inteiroNaoNegativo(ind.valor)) return { valor: milhar(ind.valor), meta: meta };
+    return INDISPONIVEL;
+  }
+
+  var render = {
+    EM_INTEGRACAO: EM_INTEGRACAO,
+    CARREGANDO: { valor: TRACO, meta: 'Carregando…' },
+    cards: function (indicadores) {
+      var i = indicadores || {};
+      var ca = i.caVencido;
+      var caVencido = simples(ca, '');
+      if (caVencido.valor !== TRACO) {
+        caVencido = inteiroNaoNegativo(ca.aVencer) && inteiroNaoNegativo(ca.diasAlerta)
+          ? { valor: caVencido.valor, meta: ca.aVencer + ' a vencer em ' + ca.diasAlerta + ' dias' }
+          : INDISPONIVEL;
+      }
+      return {
+        disponiveis: simples(i.itensDisponiveis, 'Saldo em estoque'),
+        abaixoMinimo: simples(i.estoqueAbaixoMinimo, 'Itens (material × tamanho) abaixo do mínimo'),
+        caVencido: caVencido,
+        funcionarios: simples(i.funcionariosAtivos, 'Funcionários ativos cadastrados'),
+      };
+    },
+    escaparHtml: function (s) {
+      return String(s === null || s === undefined ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    },
+  };
+
+  var mensagens = {
+    erro: function (r) {
+      if (!r || !r.status) return 'Falha de rede: não foi possível carregar os indicadores. Verifique a conexão e tente novamente.';
+      if (r.status === 401) return 'Sua sessão terminou. Entre novamente pelo Portal do Cliente.';
+      if (r.status === 403) return 'Seu perfil não pode consultar o dashboard nesta empresa.';
+      return 'Não foi possível carregar os indicadores. Tente novamente.';
+    },
+    exigeNovoLogin: function (r) { return !!r && r.status === 401; },
+  };
+
+  global.EpiDashboard = { acoes: acoes, render: render, mensagens: mensagens };
+
+  if (typeof module !== 'undefined' && module.exports) module.exports = global.EpiDashboard;
+})(typeof window !== 'undefined' ? window : globalThis);
