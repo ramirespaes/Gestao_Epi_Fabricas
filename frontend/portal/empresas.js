@@ -82,7 +82,7 @@
     mostrar('');
 
     Portal.acoes.selecionar(id).then(function (r) {
-      if (r.ok) { ir('inicio'); return; }
+      if (r.ok) { ir('painel'); return; }
       if (r.status === 401) { ir('login'); return; }
       carregar(Portal.mensagens.deErro(r));
     }).catch(function () {

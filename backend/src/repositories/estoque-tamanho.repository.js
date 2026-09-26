@@ -290,6 +290,27 @@ async function contarDisponiveis(executor, empresaId, filtros = {}) {
   return rows[0] ? rows[0].total : 0;
 }
 
+/**
+ * Resumo para o dashboard (Parte C6), com as MESMAS regras de Itens
+ * Disponíveis: materiais ativos da empresa, tamanhos cadastrados,
+ * disponível = saldo. `abaixoMinimo` conta material × tamanho em
+ * situação "Sem estoque" ou "Baixo" pela regra da grade da C2: saldo
+ * zerado, ou mínimo definido (> 0) e saldo menor que ele.
+ */
+async function resumirDisponiveis(executor, empresaId) {
+  exigirEmpresa(empresaId);
+  const { rows } = await executor.query(
+    `SELECT COALESCE(sum(et.quantidade), 0)::bigint AS disponivel,
+            count(*) FILTER (WHERE et.quantidade <= 0 OR (m.estoque_minimo > 0 AND et.quantidade < m.estoque_minimo))::int AS abaixo_minimo
+       FROM estoque_tamanhos et
+       JOIN materiais m ON m.id = et.material_id
+      WHERE m.empresa_id = $1
+        AND m.ativo`,
+    [empresaId],
+  );
+  return { disponivel: Number(rows[0].disponivel), abaixoMinimo: rows[0].abaixo_minimo };
+}
+
 /** Opções reais dos filtros: valores distintos da empresa, só de materiais ativos com tamanho cadastrado. */
 async function listarFiltrosDisponiveis(executor, empresaId) {
   exigirEmpresa(empresaId);
@@ -307,6 +328,7 @@ async function listarFiltrosDisponiveis(executor, empresaId) {
 }
 
 module.exports = {
+  resumirDisponiveis,
   listarDisponiveis,
   contarDisponiveis,
   listarFiltrosDisponiveis,

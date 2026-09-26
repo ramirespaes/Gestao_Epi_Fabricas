@@ -49,6 +49,7 @@ const RECURSOS_CONHECIDOS = Object.freeze([...RECURSOS_LEGADOS, ...RECURSOS_BLOC
 //                      estoque.routes.js GET (visualizar)
 //   employeeHistory -> funcionario.routes.js (visualizar/criar/editar)
 //   employeeGroups  -> grupo-homogeneo-exposicao.routes.js (visualizar/criar/editar)
+//   dashboard       -> dashboard.routes.js (visualizar) — Parte C6
 const ESCOPO_PROVISIONAMENTO_MASTER = Object.freeze({
   perfil: 'MASTER',
   recursos: Object.freeze([
@@ -57,6 +58,8 @@ const ESCOPO_PROVISIONAMENTO_MASTER = Object.freeze({
     Object.freeze({ recurso: 'employeeGroups', operacoes: Object.freeze(['visualizar', 'criar', 'editar']) }),
     // Parte C3: Itens Disponíveis é consulta — só visualizar, independente de materials.
     Object.freeze({ recurso: 'availableItems', operacoes: Object.freeze(['visualizar']) }),
+    // Parte C6: Dashboard é consulta — só visualizar; cada indicador ainda exige a fonte.
+    Object.freeze({ recurso: 'dashboard', operacoes: Object.freeze(['visualizar']) }),
   ]),
   // estoque.routes.js POST /materiais/:id/estoque/movimentar (migrations 003/017)
   acoes: Object.freeze(['MOVIMENTAR_ESTOQUE']),

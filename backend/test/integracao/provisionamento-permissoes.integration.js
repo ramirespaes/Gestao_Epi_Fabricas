@@ -167,7 +167,7 @@ describe('Provisionamento das permissões do MASTER com PostgreSQL real', () => 
     assert.deepEqual(await contarPermissoes(pool, empresaA), { recursos: 0, acoes: 0 });
   });
 
-  test('2. dry-run (padrão do script): relata 5 AUSENTES (4 recursos com availableItems + 1 ação), não grava, não audita; saída OK', async () => {
+  test('2. dry-run (padrão do script): relata 6 AUSENTES (5 recursos com availableItems e dashboard + 1 ação), não grava, não audita; saída OK', async () => {
     const saida = saidaCapturada();
     const { saida: codigo, resultado } = await script.executarComando({ empresaId: empresaA, atorId: null, executar: false }, { pool, saida });
     assert.equal(codigo, script.SAIDAS.OK);
@@ -175,7 +175,7 @@ describe('Provisionamento das permissões do MASTER com PostgreSQL real', () => 
     // F — dry-run continua representando SIMULAÇÃO: nada inserido, plano
     // permanece AUSENTE (nunca INSERIDA), e a linha de totais impressa ao
     // operador não afirma nenhuma inserção.
-    assert.deepEqual(provisionamento.resumir(resultado.plano), { AUSENTE: 5, ADEQUADA: 0, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 0 });
+    assert.deepEqual(provisionamento.resumir(resultado.plano), { AUSENTE: 6, ADEQUADA: 0, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 0 });
     assert.ok(resultado.plano.recursos.every((r) => r.situacao === 'AUSENTE'));
     assert.ok(resultado.plano.acoes.every((a) => a.situacao === 'AUSENTE'));
     assert.deepEqual(await contarPermissoes(pool, empresaA), { recursos: 0, acoes: 0 });
@@ -183,27 +183,27 @@ describe('Provisionamento das permissões do MASTER com PostgreSQL real', () => 
     assert.ok(saida.linhas.some((l) => l.startsWith('Banco: ')), 'imprime o banco em que está');
     assert.ok(saida.linhas.some((l) => l.includes('DRY-RUN')));
     assert.ok(saida.linhas.some((l) => l.includes('Nada foi gravado')));
-    assert.ok(saida.linhas.some((l) => l === 'Totais: ausentes=5 inseridas=0 adequadas=0 insuficientes=0 naoCatalogadas=0'), 'dry-run nunca reporta inserção');
+    assert.ok(saida.linhas.some((l) => l === 'Totais: ausentes=6 inseridas=0 adequadas=0 insuficientes=0 naoCatalogadas=0'), 'dry-run nunca reporta inserção');
     assert.ok(!saida.linhas.join('\n').includes(SENHA) && !saida.linhas.join('\n').includes(HASH_SENHA), 'nenhuma credencial na saída');
     for (const rota of ROTAS_DE_LEITURA) {
       assert.equal((await request(app).get(rota).set('Cookie', cookieMasterA)).status, 403, 'dry-run não concede nada');
     }
   });
 
-  test('3. --executar com ator: insere 4 recursos (availableItems só visualizar, Parte C3) + 1 ação, audita uma vez com o ator; MASTER passa a 200 (inclusive movimentar estoque)', async () => {
+  test('3. --executar com ator: insere 5 recursos (availableItems e dashboard só visualizar, Partes C3 e C6) + 1 ação, audita uma vez com o ator; MASTER passa a 200 (inclusive movimentar estoque)', async () => {
     const saida = saidaCapturada();
     const { saida: codigo, resultado } = await script.executarComando({ empresaId: empresaA, atorId: masterA, executar: true }, { pool, saida });
     assert.equal(codigo, script.SAIDAS.OK);
-    assert.deepEqual(resultado.inseridos, { recursos: ['materials', 'employeeHistory', 'employeeGroups', 'availableItems'], acoes: ['MOVIMENTAR_ESTOQUE'] });
-    assert.deepEqual(await contarPermissoes(pool, empresaA), { recursos: 4, acoes: 1 });
+    assert.deepEqual(resultado.inseridos, { recursos: ['materials', 'employeeHistory', 'employeeGroups', 'availableItems', 'dashboard'], acoes: ['MOVIMENTAR_ESTOQUE'] });
+    assert.deepEqual(await contarPermissoes(pool, empresaA), { recursos: 5, acoes: 1 });
 
     // A/B/C/D/E — o plano FINAL desta execução não pode chamar de AUSENTE o
     // que acabou de ser inserido e confirmado: os 4 itens viram INSERIDA, e
     // os totais impressos ao operador refletem exatamente isso (ausentes=0).
     assert.ok(resultado.plano.recursos.every((r) => r.situacao === 'INSERIDA'), 'nenhum item inserido continua rotulado AUSENTE no plano final');
     assert.ok(resultado.plano.acoes.every((a) => a.situacao === 'INSERIDA'));
-    assert.deepEqual(provisionamento.resumir(resultado.plano), { AUSENTE: 0, ADEQUADA: 0, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 5 });
-    assert.ok(saida.linhas.some((l) => l === 'Totais: ausentes=0 inseridas=5 adequadas=0 insuficientes=0 naoCatalogadas=0'), 'relatório administrativo não pode mais dizer "ausentes=4" depois de inserir com sucesso');
+    assert.deepEqual(provisionamento.resumir(resultado.plano), { AUSENTE: 0, ADEQUADA: 0, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 6 });
+    assert.ok(saida.linhas.some((l) => l === 'Totais: ausentes=0 inseridas=6 adequadas=0 insuficientes=0 naoCatalogadas=0'), 'relatório administrativo não pode mais dizer "ausentes=4" depois de inserir com sucesso');
 
     const { rows } = await pool.query(
       'SELECT recurso, pode_visualizar, pode_criar, pode_editar, pode_excluir, perfil FROM permissoes_recurso WHERE empresa_id = $1 ORDER BY recurso',
@@ -211,6 +211,7 @@ describe('Provisionamento das permissões do MASTER com PostgreSQL real', () => 
     );
     assert.deepEqual(rows, [
       { recurso: 'availableItems', pode_visualizar: true, pode_criar: false, pode_editar: false, pode_excluir: false, perfil: 'MASTER' },
+      { recurso: 'dashboard', pode_visualizar: true, pode_criar: false, pode_editar: false, pode_excluir: false, perfil: 'MASTER' },
       { recurso: 'employeeGroups', pode_visualizar: true, pode_criar: true, pode_editar: true, pode_excluir: false, perfil: 'MASTER' },
       { recurso: 'employeeHistory', pode_visualizar: true, pode_criar: true, pode_editar: true, pode_excluir: false, perfil: 'MASTER' },
       { recurso: 'materials', pode_visualizar: true, pode_criar: true, pode_editar: true, pode_excluir: false, perfil: 'MASTER' },
@@ -244,7 +245,7 @@ describe('Provisionamento das permissões do MASTER com PostgreSQL real', () => 
     // G — a segunda execução não insere nada: os 4 itens são reclassificados
     // ADEQUADA por planejar() (já existem com as flags certas), não INSERIDA
     // (esta execução não inseriu nada) — distinção preservada.
-    assert.deepEqual(provisionamento.resumir(resultado.plano), { AUSENTE: 0, ADEQUADA: 5, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 0 });
+    assert.deepEqual(provisionamento.resumir(resultado.plano), { AUSENTE: 0, ADEQUADA: 6, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 0 });
     assert.deepEqual(await contarPermissoes(pool, empresaA), antes);
     assert.equal(await contarAuditoria(pool, empresaA), 1);
   });
@@ -279,7 +280,7 @@ describe('Provisionamento das permissões do MASTER com PostgreSQL real', () => 
     const saida = saidaCapturada();
     const exec = await script.executarComando({ empresaId: empresaB, atorId: null, executar: true }, { pool, saida });
     assert.equal(exec.saida, script.SAIDAS.ATENCAO);
-    assert.deepEqual(exec.resultado.inseridos, { recursos: ['employeeHistory', 'employeeGroups', 'availableItems'], acoes: [] });
+    assert.deepEqual(exec.resultado.inseridos, { recursos: ['employeeHistory', 'employeeGroups', 'availableItems', 'dashboard'], acoes: [] });
     assert.ok(saida.linhas.some((l) => l.startsWith('ERR ATENÇÃO')));
 
     // G/H no plano FINAL desta execução: o que foi inserido agora vira
@@ -291,7 +292,7 @@ describe('Provisionamento das permissões do MASTER com PostgreSQL real', () => 
     assert.equal(porRecursoFinal.employeeGroups.situacao, 'INSERIDA');
     assert.equal(exec.resultado.plano.acoes[0].situacao, 'INSUFICIENTE');
     assert.equal(porRecursoFinal.availableItems.situacao, 'INSERIDA');
-    assert.deepEqual(provisionamento.resumir(exec.resultado.plano), { AUSENTE: 0, ADEQUADA: 0, INSUFICIENTE: 2, NAO_CATALOGADA: 0, INSERIDA: 3 });
+    assert.deepEqual(provisionamento.resumir(exec.resultado.plano), { AUSENTE: 0, ADEQUADA: 0, INSUFICIENTE: 2, NAO_CATALOGADA: 0, INSERIDA: 4 });
 
     const depois = await pool.query("SELECT pode_visualizar, pode_criar, pode_editar, pode_excluir, atualizado_em FROM permissoes_recurso WHERE empresa_id = $1 AND recurso = 'materials'", [empresaB]);
     assert.deepEqual(
@@ -302,7 +303,7 @@ describe('Provisionamento das permissões do MASTER com PostgreSQL real', () => 
     assert.equal(depois.rows[0].atualizado_em.getTime(), antes.rows[0].atualizado_em.getTime(), 'nem o trigger de atualizado_em disparou: nenhum UPDATE');
     const acao = await pool.query("SELECT permitido FROM permissoes_acao WHERE empresa_id = $1 AND acao_codigo = 'MOVIMENTAR_ESTOQUE'", [empresaB]);
     assert.equal(acao.rows[0].permitido, false, 'ação negada permanece negada');
-    assert.deepEqual(await contarPermissoes(pool, empresaB), { recursos: 4, acoes: 1 });
+    assert.deepEqual(await contarPermissoes(pool, empresaB), { recursos: 5, acoes: 1 });
 
     const auditoria = await pool.query("SELECT contexto FROM logs_auditoria WHERE empresa_id = $1 AND acao = 'PERMISSOES_MASTER_PROVISIONADAS'", [empresaB]);
     assert.equal(auditoria.rows.length, 1);
@@ -379,7 +380,7 @@ describe('Provisionamento das permissões do MASTER com PostgreSQL real', () => 
       const materials = resultado.plano.recursos.find((r) => r.recurso === 'materials');
       assert.equal(materials.situacao, provisionamento.SITUACAO.INSUFICIENTE);
       assert.deepEqual(materials.faltantes, ['editar']);
-      assert.deepEqual(resultado.inseridos.recursos.sort(), ['availableItems', 'employeeGroups', 'employeeHistory'], 'os dois recursos que NÃO conflitaram foram inseridos normalmente');
+      assert.deepEqual(resultado.inseridos.recursos.sort(), ['availableItems', 'dashboard', 'employeeGroups', 'employeeHistory'], 'os dois recursos que NÃO conflitaram foram inseridos normalmente');
 
       const { rows } = await pool.query(
         "SELECT pode_visualizar, pode_criar, pode_editar, pode_excluir FROM permissoes_recurso WHERE empresa_id = $1 AND recurso = 'materials'",
