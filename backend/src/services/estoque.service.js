@@ -4,6 +4,7 @@ const { HttpError } = require('../errors/HttpError');
 const materialRepo = require('../repositories/material.repository');
 const estoqueRepo = require('../repositories/estoque-tamanho.repository');
 const auditoriaRepo = require('../repositories/auditoria.repository');
+const { DIAS_ALERTA_VALIDADE_CA } = require('../schemas/itens-disponiveis.schema');
 
 /**
  * Serviço de estoque por tamanho (Bloco 9, Etapa A).
@@ -204,4 +205,22 @@ async function movimentar(pool, {
   });
 }
 
-module.exports = { consultar, movimentar };
+/**
+ * Itens disponíveis (Parte C3): consulta agregada, somente leitura, sem
+ * transação e sem auditoria. Empresa sempre da sessão (quem chama garante).
+ * O prazo de alerta da validade do CA vem do schema (fonte única).
+ */
+async function listarDisponiveis(pool, {
+  empresaId, categoria = null, tipo = null, tamanho = null, validade = null, pagina, limite,
+}) {
+  exigirId(empresaId, 'identificador de empresa');
+  const filtros = { categoria, tipo, tamanho, validade, diasAlerta: DIAS_ALERTA_VALIDADE_CA };
+  const [itens, total, opcoes] = await Promise.all([
+    estoqueRepo.listarDisponiveis(pool, empresaId, { ...filtros, pagina, limite }),
+    estoqueRepo.contarDisponiveis(pool, empresaId, filtros),
+    estoqueRepo.listarFiltrosDisponiveis(pool, empresaId),
+  ]);
+  return { itens, total, pagina, limite, filtros: opcoes };
+}
+
+module.exports = { consultar, movimentar, listarDisponiveis };

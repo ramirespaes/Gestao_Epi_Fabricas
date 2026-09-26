@@ -8,6 +8,7 @@ const materialRoutes = require('../../src/routes/material.routes');
 const estoqueRoutes = require('../../src/routes/estoque.routes');
 const funcionarioRoutes = require('../../src/routes/funcionario.routes');
 const gheRoutes = require('../../src/routes/grupo-homogeneo-exposicao.routes');
+const itensDisponiveisRoutes = require('../../src/routes/itens-disponiveis.routes');
 
 /**
  * Lista central de recursos RBAC (Bloco 9, Etapa B). O objetivo destes
@@ -46,7 +47,7 @@ describe('recursos conhecidos', () => {
 });
 
 describe('escopo do provisionamento do MASTER', () => {
-  test('é EXATAMENTE o que as rotas do Bloco 9 exigem: 3 recursos com visualizar/criar/editar (sem excluir) e 1 ação', () => {
+  test('é EXATAMENTE o que as rotas do Bloco 9 exigem: 3 recursos com visualizar/criar/editar, availableItems só visualizar (Parte C3), nenhum excluir, e 1 ação', () => {
     const escopo = recursos.ESCOPO_PROVISIONAMENTO_MASTER;
     assert.equal(escopo.perfil, 'MASTER');
     assert.deepEqual(
@@ -55,6 +56,7 @@ describe('escopo do provisionamento do MASTER', () => {
         ['materials', ['visualizar', 'criar', 'editar']],
         ['employeeHistory', ['visualizar', 'criar', 'editar']],
         ['employeeGroups', ['visualizar', 'criar', 'editar']],
+        ['availableItems', ['visualizar']],
       ],
     );
     assert.deepEqual([...escopo.acoes], ['MOVIMENTAR_ESTOQUE']);
@@ -64,7 +66,7 @@ describe('escopo do provisionamento do MASTER', () => {
   });
 
   test('o escopo cobre os recursos/ação das rotas do Bloco 9 e NADA além deles (não concede "tudo" ao MASTER)', () => {
-    const recursosDasRotas = new Set([materialRoutes.RECURSO, estoqueRoutes.RECURSO, funcionarioRoutes.RECURSO, gheRoutes.RECURSO]);
+    const recursosDasRotas = new Set([materialRoutes.RECURSO, estoqueRoutes.RECURSO, funcionarioRoutes.RECURSO, gheRoutes.RECURSO, itensDisponiveisRoutes.RECURSO]);
     const recursosDoEscopo = new Set(recursos.ESCOPO_PROVISIONAMENTO_MASTER.recursos.map((r) => r.recurso));
     assert.deepEqual([...recursosDoEscopo].sort(), [...recursosDasRotas].sort());
     assert.deepEqual([...recursos.ESCOPO_PROVISIONAMENTO_MASTER.acoes], [estoqueRoutes.ACAO_MOVIMENTAR_ESTOQUE]);

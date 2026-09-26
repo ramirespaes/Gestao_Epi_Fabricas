@@ -5,6 +5,8 @@ const funcionarioRepo = require('../repositories/funcionario.repository');
 const gheRepo = require('../repositories/grupo-homogeneo-exposicao.repository');
 const auditoriaRepo = require('../repositories/auditoria.repository');
 const { normalizarCpf, cpfTemDigitosVerificadoresValidos } = require('../utils/normalizacao');
+const { linhaImportacao, LINHAS_POR_LOTE } = require('../schemas/funcionario.schema');
+const declaracaoLgpd = require('./declaracao-lgpd');
 
 /**
  * Serviço de cadastro de funcionários (Bloco 9, Etapa B).
@@ -77,6 +79,34 @@ const MSG_GHE_INATIVO = 'GHE inativo não aceita novos vínculos';
 const MSG_SEM_ALTERACAO = 'Nenhum campo para alterar';
 
 const CAMPOS_SENSIVEIS = ['cpf', 'dataNascimento', 'telefone'];
+
+// C4 (migration 040): admissão a partir de 1900 e sempre depois do
+// nascimento, quando os dois existem. Datas chegam como AAAA-MM-DD (schema
+// e repositório), então a comparação de texto é a comparação de calendário.
+const ADMISSAO_MINIMA = '1900-01-01';
+const MSG_DATA_ADMISSAO_INVALIDA = 'Data de admissão inválida: deve ser a partir de 1900 e posterior ao nascimento';
+const CONSTRAINTS_ADMISSAO = ['chk_funcionarios_data_admissao_minima', 'chk_funcionarios_admissao_apos_nascimento'];
+const CONSTRAINT_CPF_FORMATO = 'chk_funcionarios_cpf_formato';
+
+// Importação em lote (C4, D1/D4).
+const ACAO_AUDITORIA_IMPORTACAO_LOTE = 'FUNCIONARIOS_IMPORTACAO_LOTE';
+const MSG_DECLARACAO_INVALIDA = 'A declaração sobre o tratamento dos dados precisa ser confirmada na versão vigente';
+
+function datasValidas(dataNascimento, dataAdmissao) {
+  if (dataAdmissao === null || dataAdmissao === undefined) {
+    return true;
+  }
+  if (dataAdmissao < ADMISSAO_MINIMA) {
+    return false;
+  }
+  return dataNascimento === null || dataNascimento === undefined || dataAdmissao > dataNascimento;
+}
+
+function exigirDatasValidas(dataNascimento, dataAdmissao) {
+  if (!datasValidas(dataNascimento, dataAdmissao)) {
+    throw HttpError.badRequest('FUNCIONARIO_DATA_ADMISSAO_INVALIDA', MSG_DATA_ADMISSAO_INVALIDA);
+  }
+}
 // Sensíveis que PODEM mudar por alterar(): cpf não está aqui de propósito.
 const MSG_CPF_IMUTAVEL = 'cpf não pode ser alterado após o cadastro';
 
@@ -136,9 +166,10 @@ async function emTransacao(pool, operacao) {
   }
 }
 
-/** Instantâneo para auditoria — SEM cpf, dataNascimento e telefone. */
+/** Instantâneo para auditoria — SEM cpf, dataNascimento e telefone (admissão é dado de vínculo, C4). */
 const instantaneo = (f) => ({
-  matricula: f.matricula, nome: f.nome, grupoHomogeneoId: f.grupoHomogeneoId, setor: f.setor, funcao: f.funcao, cracha: f.cracha, ativo: f.ativo,
+  matricula: f.matricula, nome: f.nome, grupoHomogeneoId: f.grupoHomogeneoId, setor: f.setor, funcao: f.funcao, cracha: f.cracha,
+  dataAdmissao: f.dataAdmissao ?? null, ativo: f.ativo,
 });
 
 /**
@@ -182,19 +213,30 @@ function traduzirViolacao(erro) {
   if (erro.code === VIOLACAO_FK) {
     return HttpError.badRequest('FUNCIONARIO_GHE_INVALIDO', MSG_GHE_INVALIDO);
   }
-  if (erro.code === VIOLACAO_CHECK) {
+  // CHECKs distinguidos pela constraint (C4: além do formato do CPF, as
+  // duas barreiras da data de admissão da migration 040).
+  if (erro.code === VIOLACAO_CHECK && CONSTRAINTS_ADMISSAO.includes(erro.constraint)) {
+    return HttpError.badRequest('FUNCIONARIO_DATA_ADMISSAO_INVALIDA', MSG_DATA_ADMISSAO_INVALIDA);
+  }
+  if (erro.code === VIOLACAO_CHECK && erro.constraint === CONSTRAINT_CPF_FORMATO) {
     return HttpError.badRequest('FUNCIONARIO_CPF_INVALIDO', MSG_CPF_INVALIDO);
+  }
+  if (erro.code === VIOLACAO_CHECK) {
+    return HttpError.badRequest('FUNCIONARIO_DADOS_INVALIDOS', MSG_DADOS_INVALIDOS);
   }
   return erro;
 }
 
-async function criar(pool, {
-  empresaId, atorId, matricula, nome, cpf, grupoHomogeneoId = null, dataNascimento = null,
-  setor = null, funcao = null, cracha = null, telefone = null, ip = null, dispositivo = null,
+/**
+ * Normaliza e valida os dados de um cadastro novo, SEM abrir transação.
+ * Lança HttpError 400 com o código do primeiro problema encontrado.
+ * Compartilhado por criar() e importar() — as regras do cadastro
+ * individual valem igualmente para cada linha importada (decisão D1).
+ */
+function prepararCadastro({
+  matricula, nome, cpf, grupoHomogeneoId = null, dataNascimento = null,
+  setor = null, funcao = null, cracha = null, telefone = null, dataAdmissao = null,
 }) {
-  exigirId(empresaId, 'identificador de empresa');
-  exigirId(atorId, 'identificador de ator');
-
   const matriculaNormalizada = normalizarTexto(matricula, funcionarioRepo.TAMANHO_MAXIMO_MATRICULA);
   const nomeNormalizado = normalizarTexto(nome, funcionarioRepo.TAMANHO_MAXIMO_NOME);
   const cpfNormalizado = normalizarCpfValido(cpf);
@@ -215,29 +257,45 @@ async function criar(pool, {
   if ([setorN, funcaoN, crachaN, telefoneN].includes(undefined) || !gheIdValido(grupoHomogeneoId)) {
     throw HttpError.badRequest('FUNCIONARIO_DADOS_INVALIDOS', MSG_DADOS_INVALIDOS);
   }
+  exigirDatasValidas(dataNascimento, dataAdmissao);
 
-  return emTransacao(pool, async (client) => {
-    if (grupoHomogeneoId !== null) {
-      await exigirGheVinculavel(client, empresaId, grupoHomogeneoId);
-    }
+  return {
+    matricula: matriculaNormalizada, nome: nomeNormalizado, cpf: cpfNormalizado, grupoHomogeneoId,
+    dataNascimento, setor: setorN, funcao: funcaoN, cracha: crachaN, telefone: telefoneN, dataAdmissao,
+  };
+}
 
-    let funcionario;
-    try {
-      funcionario = await funcionarioRepo.criar(client, {
-        empresaId, matricula: matriculaNormalizada, nome: nomeNormalizado, cpf: cpfNormalizado,
-        grupoHomogeneoId, dataNascimento, setor: setorN, funcao: funcaoN, cracha: crachaN, telefone: telefoneN,
-      });
-    } catch (erro) {
-      throw traduzirViolacao(erro);
-    }
+/** Grava um cadastro já preparado e sua auditoria, na transação do chamador. */
+async function gravarCadastro(client, { empresaId, atorId, ip, dispositivo, dados, contextoAuditoria = {} }) {
+  if (dados.grupoHomogeneoId !== null) {
+    await exigirGheVinculavel(client, empresaId, dados.grupoHomogeneoId);
+  }
 
-    await auditoriaRepo.registrar(client, {
-      empresaId, usuarioId: atorId, acao: ACAO_AUDITORIA_CRIACAO, referencia: String(funcionario.id), ip, dispositivo,
-      contexto: { criadoPor: atorId, camposSensiveisOmitidos: CAMPOS_SENSIVEIS }, dadosNovos: instantaneo(funcionario),
-    });
+  let funcionario;
+  try {
+    funcionario = await funcionarioRepo.criar(client, { empresaId, ...dados });
+  } catch (erro) {
+    throw traduzirViolacao(erro);
+  }
 
-    return funcionario;
+  await auditoriaRepo.registrar(client, {
+    empresaId, usuarioId: atorId, acao: ACAO_AUDITORIA_CRIACAO, referencia: String(funcionario.id), ip, dispositivo,
+    contexto: { criadoPor: atorId, camposSensiveisOmitidos: CAMPOS_SENSIVEIS, ...contextoAuditoria },
+    dadosNovos: instantaneo(funcionario),
   });
+
+  return funcionario;
+}
+
+async function criar(pool, {
+  empresaId, atorId, ip = null, dispositivo = null, ...campos
+}) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirId(atorId, 'identificador de ator');
+
+  const dados = prepararCadastro(campos);
+
+  return emTransacao(pool, (client) => gravarCadastro(client, { empresaId, atorId, ip, dispositivo, dados }));
 }
 
 async function buscar(pool, { empresaId, funcionarioId }) {
@@ -252,13 +310,14 @@ async function buscar(pool, { empresaId, funcionarioId }) {
 }
 
 async function listar(pool, {
-  empresaId, ativo = null, busca = null, grupoHomogeneoId = null, pagina = 1, limite = 20,
+  empresaId, ativo = null, busca = null, grupoHomogeneoId = null, cpf = null, pagina = 1, limite = 20,
 }) {
   exigirId(empresaId, 'identificador de empresa');
 
+  // `cpf` chega completo e normalizado do schema; igualdade exata no repositório.
   const [funcionarios, total] = await Promise.all([
-    funcionarioRepo.listarPorEmpresa(pool, empresaId, { ativo, busca, grupoHomogeneoId, pagina, limite }),
-    funcionarioRepo.contarPorEmpresa(pool, empresaId, { ativo, busca, grupoHomogeneoId }),
+    funcionarioRepo.listarPorEmpresa(pool, empresaId, { ativo, busca, grupoHomogeneoId, cpf, pagina, limite }),
+    funcionarioRepo.contarPorEmpresa(pool, empresaId, { ativo, busca, grupoHomogeneoId, cpf }),
   ]);
 
   return { funcionarios, total, pagina, limite };
@@ -283,6 +342,7 @@ async function alterar(pool, dados) {
     dataNascimento, dataNascimentoInformado = false,
     setor, setorInformado = false, funcao, funcaoInformado = false,
     cracha, crachaInformado = false, telefone, telefoneInformado = false,
+    dataAdmissao, dataAdmissaoInformado = false,
     ip = null, dispositivo = null,
   } = dados;
   exigirId(empresaId, 'identificador de empresa');
@@ -300,7 +360,8 @@ async function alterar(pool, dados) {
   const gheN = grupoHomogeneoIdInformado ? (grupoHomogeneoId ?? null) : null;
 
   const nenhumCampo = !alterarMatricula && !alterarNome && !grupoHomogeneoIdInformado
-    && !dataNascimentoInformado && !setorInformado && !funcaoInformado && !crachaInformado && !telefoneInformado;
+    && !dataNascimentoInformado && !setorInformado && !funcaoInformado && !crachaInformado && !telefoneInformado
+    && !dataAdmissaoInformado;
   if (nenhumCampo) {
     throw HttpError.badRequest('FUNCIONARIO_SEM_ALTERACAO', MSG_SEM_ALTERACAO);
   }
@@ -322,6 +383,13 @@ async function alterar(pool, dados) {
     if (grupoHomogeneoIdInformado && gheN !== null && gheN !== anterior.grupoHomogeneoId) {
       await exigirGheVinculavel(client, empresaId, gheN);
     }
+    // Datas efetivas depois da alteração: o campo informado vale; o omitido
+    // continua o gravado (lido travado acima). Ex.: nascimento novo posterior
+    // a uma admissão já gravada também é recusado.
+    exigirDatasValidas(
+      dataNascimentoInformado ? (dataNascimento ?? null) : (anterior.dataNascimento ?? null),
+      dataAdmissaoInformado ? (dataAdmissao ?? null) : (anterior.dataAdmissao ?? null),
+    );
 
     let atualizado;
     try {
@@ -331,6 +399,7 @@ async function alterar(pool, dados) {
         dataNascimento: dataNascimentoInformado ? (dataNascimento ?? null) : null, dataNascimentoInformado,
         setor: setorN, setorInformado, funcao: funcaoN, funcaoInformado,
         cracha: crachaN, crachaInformado, telefone: telefoneN, telefoneInformado,
+        dataAdmissao: dataAdmissaoInformado ? (dataAdmissao ?? null) : null, dataAdmissaoInformado,
       });
     } catch (erro) {
       throw traduzirViolacao(erro);
@@ -386,4 +455,136 @@ async function reativar(pool, dados) {
   return alterarEstado(pool, { ...dados, ativo: true });
 }
 
-module.exports = { criar, buscar, listar, alterar, inativar, reativar };
+// ═══════════════════════════════════════════════════════════════════
+// Importação em lote (Bloco 9, Etapa C, Parte C4 — D1 e D4, 25/09/2026)
+// ═══════════════════════════════════════════════════════════════════
+
+// Motivo público por código: curto, sem ecoar o valor recebido.
+const MOTIVOS = {
+  FUNCIONARIO_NOME_INVALIDO: 'Nome inválido.',
+  FUNCIONARIO_CPF_INVALIDO: 'CPF inválido.',
+  FUNCIONARIO_MATRICULA_INVALIDA: 'Matrícula inválida.',
+  FUNCIONARIO_DATA_ADMISSAO_INVALIDA: 'Data de admissão inválida: deve ser a partir de 1900 e posterior ao nascimento.',
+  FUNCIONARIO_DATA_NASCIMENTO_INVALIDA: 'Data de nascimento inválida.',
+  FUNCIONARIO_DADOS_INVALIDOS: 'Dados inválidos.',
+  FUNCIONARIO_CPF_EM_USO: 'CPF já cadastrado nesta empresa.',
+  FUNCIONARIO_MATRICULA_EM_USO: 'Matrícula já cadastrada nesta empresa.',
+  ERRO_INTERNO: 'Erro ao processar esta linha. Ela não foi gravada.',
+};
+const CODIGO_POR_CAMPO = {
+  nome: 'FUNCIONARIO_NOME_INVALIDO',
+  cpf: 'FUNCIONARIO_CPF_INVALIDO',
+  matricula: 'FUNCIONARIO_MATRICULA_INVALIDA',
+  dataAdmissao: 'FUNCIONARIO_DATA_ADMISSAO_INVALIDA',
+  dataNascimento: 'FUNCIONARIO_DATA_NASCIMENTO_INVALIDA',
+};
+const MOTIVO_POR_CAMPO = {
+  setor: 'Setor obrigatório (até 100 caracteres).',
+  funcao: 'Função/cargo obrigatória (até 100 caracteres).',
+  telefone: 'Telefone inválido (até 20 caracteres).',
+};
+const CAMPO_POR_CODIGO = Object.fromEntries(Object.entries(CODIGO_POR_CAMPO).map(([campo, codigo]) => [codigo, campo]));
+const CODIGOS_DUPLICIDADE = ['FUNCIONARIO_CPF_EM_USO', 'FUNCIONARIO_MATRICULA_EM_USO'];
+
+/** Recusa por validação de conteúdo (schema da linha): campos e motivo, sem valores. */
+function recusaPorValidacao(linha, issues) {
+  const campos = [...new Set(issues.map((i) => String(i.path[0])))];
+  const codigo = CODIGO_POR_CAMPO[campos[0]] ?? 'FUNCIONARIO_DADOS_INVALIDOS';
+  const motivo = campos.map((c) => (CODIGO_POR_CAMPO[c] ? MOTIVOS[CODIGO_POR_CAMPO[c]] : (MOTIVO_POR_CAMPO[c] ?? MOTIVOS.FUNCIONARIO_DADOS_INVALIDOS))).join(' ');
+  return { linha, situacao: 'RECUSADO', codigo, motivo, campos };
+}
+
+/** Uma linha: validar → gravar na própria transação → resultado. Nunca lança. */
+async function importarLinha(pool, { empresaId, atorId, ip, dispositivo, importacaoId }, bruta) {
+  const linha = bruta.linha;
+  const validada = linhaImportacao.safeParse(bruta);
+  if (!validada.success) {
+    return recusaPorValidacao(linha, validada.error.issues);
+  }
+  const v = validada.data;
+  try {
+    const dados = prepararCadastro({
+      matricula: v.matricula, nome: v.nome, cpf: v.cpf, grupoHomogeneoId: null,
+      dataNascimento: v.dataNascimento ?? null, dataAdmissao: v.dataAdmissao,
+      setor: v.setor, funcao: v.funcao, cracha: null, telefone: v.telefone ?? null,
+    });
+    const funcionario = await emTransacao(pool, (client) => gravarCadastro(client, {
+      empresaId, atorId, ip, dispositivo, dados,
+      contextoAuditoria: { origem: 'importacao', importacaoId, linha },
+    }));
+    return { linha, situacao: 'CADASTRADO', funcionarioId: funcionario.id };
+  } catch (erro) {
+    if (HttpError.ehHttpError(erro) && CODIGOS_DUPLICIDADE.includes(erro.codigo)) {
+      // O existente (ativo ou inativo) NUNCA é alterado nem reativado.
+      return { linha, situacao: 'DUPLICADO', codigo: erro.codigo, motivo: MOTIVOS[erro.codigo] };
+    }
+    if (HttpError.ehHttpError(erro) && erro.status < 500) {
+      const campo = CAMPO_POR_CODIGO[erro.codigo];
+      return {
+        linha, situacao: 'RECUSADO', codigo: erro.codigo, motivo: MOTIVOS[erro.codigo] ?? MOTIVOS.FUNCIONARIO_DADOS_INVALIDOS,
+        ...(campo ? { campos: [campo] } : {}),
+      };
+    }
+    // Falha inesperada: a linha não foi gravada (ROLLBACK da sua transação);
+    // as demais seguem. Log técnico só com identificadores — nunca a
+    // mensagem do erro, que pode conter valores da linha.
+    console.error('[importacao-funcionarios] erro inesperado ao gravar linha', {
+      importacaoId, linha, codigo: erro && erro.code ? String(erro.code) : null,
+    });
+    return { linha, situacao: 'ERRO', codigo: 'ERRO_INTERNO', motivo: MOTIVOS.ERRO_INTERNO };
+  }
+}
+
+/**
+ * Importa um lote de até 100 linhas de uma planilha. Cada linha é
+ * validada pelas mesmas regras do cadastro individual e gravada na SUA
+ * transação: recusa, duplicidade ou erro de uma linha não desfaz nem
+ * interrompe as outras. Funcionário existente nunca é alterado.
+ *
+ * Registra, ao final, UM evento de auditoria do lote com a declaração LGPD
+ * efetivamente apresentada (versão e SHA-256 do texto), o usuário
+ * responsável, os contadores e nenhum dado pessoal das linhas. A declaração
+ * é do responsável pela importação — não é consentimento dos trabalhadores.
+ *
+ * A resposta traz um resultado por linha e nunca devolve nome, CPF,
+ * telefone ou datas.
+ */
+async function importar(pool, {
+  empresaId, atorId, importacaoId, lote, arquivo, declaracaoLgpd: declaracao, linhas, ip = null, dispositivo = null,
+}) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirId(atorId, 'identificador de ator');
+  if (!Array.isArray(linhas) || linhas.length === 0 || linhas.length > LINHAS_POR_LOTE) {
+    throw new TypeError(`lote deve ter de 1 a ${LINHAS_POR_LOTE} linhas`);
+  }
+  if (!declaracao || declaracao.confirmada !== true || !declaracaoLgpd.versaoConhecida(declaracao.versao)) {
+    throw HttpError.badRequest('IMPORTACAO_DECLARACAO_LGPD_INVALIDA', MSG_DECLARACAO_INVALIDA);
+  }
+
+  const resultados = [];
+  for (const bruta of linhas) {
+    // Sequencial: a ordem das linhas decide qual de duas linhas repetidas cadastra.
+    // eslint-disable-next-line no-await-in-loop
+    resultados.push(await importarLinha(pool, { empresaId, atorId, ip, dispositivo, importacaoId }, bruta));
+  }
+
+  const contar = (situacao) => resultados.filter((r) => r.situacao === situacao).length;
+  const resumo = { cadastrados: contar('CADASTRADO'), duplicados: contar('DUPLICADO'), recusados: contar('RECUSADO'), erros: contar('ERRO') };
+
+  await emTransacao(pool, (client) => auditoriaRepo.registrar(client, {
+    empresaId, usuarioId: atorId, acao: ACAO_AUDITORIA_IMPORTACAO_LOTE, referencia: importacaoId, ip, dispositivo,
+    contexto: {
+      versaoDeclaracao: declaracao.versao,
+      hashTextoDeclaracao: declaracaoLgpd.hashDaVersao(declaracao.versao),
+      declaracaoConfirmada: true,
+      lote: lote.numero, totalLotes: lote.total,
+      formato: arquivo.formato, nomeArquivo: arquivo.nome, totalLinhasArquivo: arquivo.totalLinhas,
+      linhasNoLote: linhas.length,
+      ...resumo,
+    },
+  }));
+
+  return { importacaoId, lote: { numero: lote.numero, total: lote.total }, resumo, linhas: resultados };
+}
+
+module.exports = { criar, buscar, listar, alterar, inativar, reativar, importar };

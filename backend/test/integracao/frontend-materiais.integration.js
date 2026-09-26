@@ -95,7 +95,7 @@ function janela() {
 const FORMULARIO_COMPLETO = {
   nome: 'Botina de segurança C2', categoria: 'EPI', tipo: 'Sapatão / Botina', tipoCustom: '', caNumero: '38271', caValidade: '2027-01-31',
   fabricante: 'Bracol', codigoInterno: 'EPI-000245', quantidadeComprada: '120', tamanhoEntrada: '42', unidade: 'Par', estoqueMinimo: '5',
-  definePrazo: 'sim', prazoUnidade: 'meses', prazo: '6', descricao: 'Biqueira de composite, solado antiderrapante',
+  definePrazo: 'sim', prazoUnidade: 'meses', prazo: '6', descricao: 'Biqueira de composite, solado antiderrapante', registrarEntrada: 'sim',
 };
 
 describe('C2 — cadastro real de materiais pela página integrada (PostgreSQL real)', () => {
@@ -249,7 +249,7 @@ describe('C2 — cadastro real de materiais pela página integrada (PostgreSQL r
 
     test('mesmo código interno em OUTRA empresa: aceito (unicidade é por empresa)', async () => {
       await abrirPagina(EMAILS.multi, empresa.B);
-      const r = await cadastrar({ ...FORMULARIO_COMPLETO, nome: 'Botina da Beta', quantidadeComprada: '', tamanhoEntrada: '' }, true);
+      const r = await cadastrar({ ...FORMULARIO_COMPLETO, nome: 'Botina da Beta', quantidadeComprada: '', tamanhoEntrada: '', registrarEntrada: 'nao' }, true);
       assert.equal(r.ok, true, JSON.stringify(r));
       assert.equal(r.material.codigoInterno, 'EPI-000245');
       assert.equal(r.material.empresaId, empresa.B);

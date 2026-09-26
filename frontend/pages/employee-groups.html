@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GHE e EPIs — Gestão de EPIs</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+  <link rel="stylesheet" href="../css/main.css">
+  <style>
+    /* Parte C2: itens do menu ainda não integrados ao backend (sem link) */
+    .nav a.nav-pendente{cursor:default;opacity:.55}
+    .nav a.nav-pendente:hover{background:transparent}
+    tr.selecionado td{background:rgba(0,122,255,0.06)}
+    .nav-etiqueta{margin-left:auto;font-size:10px;font-weight:500;color:var(--on-surface-variant);border:1px solid var(--outline);border-radius:99px;padding:1px 7px;white-space:nowrap}
+  </style>
+</head>
+<!--
+  GHE e EPIs (Bloco 9, Etapa C, Parte C5) — página nova (decisão D10).
+
+  Gestão dos Grupos Homogêneos de Exposição e matriz GHE × EPI sobre o
+  backend real: sessão empresarial do Portal (C0), permissões efetivas
+  (C1, recurso employeeGroups) e /api/grupos-homogeneos[/:id/materiais].
+  Sem js/db-api.js, sem js/main.js, sem dados de exemplo.
+-->
+<body>
+
+<!-- ══ VERIFICAÇÃO DA SESSÃO ══ (Etapa C, Parte C0) Esta página não tem
+     login próprio: usa a sessão empresarial criada pelo Portal do Cliente
+     (frontend/portal/), confirmada no servidor por js/sessao-empresarial.js.
+     Sem sessão válida a pessoa é levada ao Portal. Nada é carregado antes
+     da confirmação, e nada de sessão é guardado no navegador. -->
+<div id="telaSessao" style="position:fixed;inset:0;z-index:10000;background:var(--surface);
+     display:flex;align-items:center;justify-content:center;padding:20px">
+  <div style="width:100%;max-width:400px;text-align:center">
+    <div style="width:64px;height:64px;border-radius:20px;background:#1a3a6b;
+                display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
+      <span class="material-symbols-outlined" style="font-size:32px;color:#fff">safety_check</span>
+    </div>
+    <h1 style="font-size:20px;font-weight:700;margin:0">Gestão de EPIs</h1>
+    <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">SafeWork Engenharia</p>
+    <p id="telaSessaoMensagem" role="status" aria-live="polite" style="font-size:13px;color:var(--on-surface-variant);margin-top:8px">Verificando sua sessão…</p>
+    <a id="telaSessaoPortal" href="../portal/index.html" class="filled-btn" style="display:none;margin-top:16px">
+      <span class="material-symbols-outlined">login</span>Ir para o Portal do Cliente
+    </a>
+  </div>
+</div>
+
+<div class="mobile-overlay" onclick="closeMobileMenu()"></div>
+<div class="mobile-topbar">
+    <div class="mobile-topbar-icon">safety_check</div>
+    <span class="mobile-topbar-title">Gestão de EPIs</span>
+  </div>
+  <button class="mobile-global-menu" type="button" onclick="toggleSidebar()" aria-label="Abrir menu">
+    <svg width="20" height="14" viewBox="0 0 20 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <line x1="0" y1="1"  x2="20" y2="1"  stroke="#1C1C1E" stroke-width="1.8" stroke-linecap="round"/>
+      <line x1="0" y1="7"  x2="20" y2="7"  stroke="#1C1C1E" stroke-width="1.8" stroke-linecap="round"/>
+      <line x1="0" y1="13" x2="20" y2="13" stroke="#1C1C1E" stroke-width="1.8" stroke-linecap="round"/>
+    </svg>
+  </button>
+  <div class="layout">
+<aside class="sidebar">
+      <div class="brand">
+        <div class="brand-left">
+          <div class="brand-badge">security</div>
+          <div>
+            <div class="brand-title">Gestão de EPIs</div>
+            <div class="brand-sub" style="font-size:11px;color:var(--on-surface-variant);margin-top:2px;">v1.0</div>
+          </div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <div class="nav-section">Visão geral</div>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">dashboard</div>Dashboard<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon indigo">analytics</div>Relatórios<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon gray">receipt_long</div>Operações<span class="nav-etiqueta">Em integração</span></a>
+        <div class="nav-section">Estoque</div>
+        <a href="materials.html" data-pagina="materials" style="display:none"><div class="nav-icon teal">inventory_2</div>Materiais</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor<span class="nav-etiqueta">Em integração</span></a>
+        <a class="active" href="javascript:void(0)" data-pagina="employeeGroups" style="display:none"><div class="nav-icon purple">group_work</div>GHE e EPIs</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon orange">shopping_cart</div>Compras / Entradas<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon red">event_busy</div>Validade do Estoque<span class="nav-etiqueta">Em integração</span></a>
+        <a href="available-items.html" data-pagina="availableItems" style="display:none"><div class="nav-icon green">checklist</div>Itens Disponíveis</a>
+        <div class="nav-section">Entregas</div>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon green">inventory</div>EPIs Entregues<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon brown">description</div>Ficha de EPI<span class="nav-etiqueta">Em integração</span></a>
+        <a href="employee-history.html" data-pagina="employeeHistory" style="display:none"><div class="nav-icon blue">history</div>Histórico de Funcionários</a>
+        <div class="nav-section">Solicitações</div>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">badge</div>Autoatendimento (Totem)<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">assignment</div>Pedido de EPI<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon orange">fact_check</div>Aprovação do Supervisor<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon red">playlist_add_check_circle</div>Sem Estoque<span class="nav-etiqueta">Em integração</span></a>
+        <div class="nav-section">Administração</div>
+        <a href="grupos-acesso.html" data-pagina="grupos-acesso" style="display:none"><div class="nav-icon indigo">groups</div>Grupos de Acesso</a>
+        <a href="grupo-permissoes.html" data-pagina="grupo-permissoes" style="display:none"><div class="nav-icon indigo">lock_person</div>Permissões do Grupo</a>
+        <a href="grupo-usuarios.html" data-pagina="grupo-usuarios" style="display:none"><div class="nav-icon indigo">group_add</div>Integrantes do Grupo</a>
+        <a href="autorizacoes-individuais.html" data-pagina="autorizacoes-individuais" style="display:none"><div class="nav-icon indigo">verified_user</div>Autorizações Individuais</a>
+        <a href="import-employees.html" data-pagina="importEmployees" style="display:none"><div class="nav-icon green">upload_file</div>Importar Funcionários</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon green">person_add</div>Novo Usuário<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon indigo">group</div>Administração de Usuários<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon gray">settings</div>Configurações<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon teal">support_agent</div>Suporte<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">mark_email_read</div>Gestão de E-mails<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon indigo">privacy_tip</div>Privacidade / LGPD<span class="nav-etiqueta">Em integração</span></a>
+        <a href="../portal/inicio.html"><div class="nav-icon blue">home</div>Início</a>
+      </nav>
+    </aside>
+
+    <main class="content">
+<section id="employeeGroupsView" class="view active">
+        <div class="page-actions">
+          <div>
+            <h2 style="font-family:var(--font-brand);font-size:22px;line-height:1.1;letter-spacing:-0.4px;font-weight:500">GHE e EPIs</h2>
+            <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Grupos Homogêneos de Exposição da empresa e os EPIs vinculados a cada grupo.</p>
+          </div>
+          <div class="inline-actions">
+            <span id="identidade" style="font-size:13px;color:var(--on-surface-variant);align-self:center"></span>
+            <button id="botaoTrocarEmpresa" class="outlined-btn" type="button" style="display:none"><span class="material-symbols-outlined">swap_horiz</span>Trocar de empresa</button>
+            <button id="botaoSair" class="outlined-btn" type="button"><span class="material-symbols-outlined">logout</span>Sair</button>
+          </div>
+        </div>
+
+        <div id="aviso" role="status" aria-live="polite" style="display:none;margin-bottom:18px"></div>
+
+        <section class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <div class="card-icon">group_work</div>
+              <div>
+                <h2>Grupos Homogêneos de Exposição (GHE)</h2>
+                <p>Cadastre, edite, inative ou reative os GHEs. Escolha um GHE para ver os EPIs vinculados.</p>
+              </div>
+            </div>
+            <button id="botaoNovoGrupo" class="filled-btn" type="button" hidden><span class="material-symbols-outlined">add</span>Novo GHE</button>
+          </div>
+
+          <form id="formGrupo" hidden novalidate style="margin-bottom:18px">
+            <h3 id="formGrupoTitulo" style="font-size:15px;font-weight:600;margin:0 0 12px">Novo GHE</h3>
+            <div class="filters-grid">
+              <div class="field">
+                <label for="gheNome">Nome *</label>
+                <input id="gheNome" class="input" type="text" maxlength="150" required>
+              </div>
+              <div class="field">
+                <label for="gheSetor">Setor</label>
+                <input id="gheSetor" class="input" type="text" maxlength="100">
+              </div>
+              <div class="field">
+                <label for="gheFuncao">Função</label>
+                <input id="gheFuncao" class="input" type="text" maxlength="100">
+              </div>
+              <div class="field">
+                <label for="gheDescricao">Descrição</label>
+                <textarea id="gheDescricao" class="input" rows="2" maxlength="2000"></textarea>
+              </div>
+              <div class="field">
+                <label for="gheRiscos">Riscos</label>
+                <textarea id="gheRiscos" class="input" rows="2" maxlength="2000"></textarea>
+              </div>
+              <div class="filters-actions">
+                <button id="botaoCancelarGrupo" class="outlined-btn" type="button">Cancelar</button>
+                <button id="botaoSalvarGrupo" class="filled-btn" type="button"><span class="material-symbols-outlined">save</span>Salvar GHE</button>
+              </div>
+            </div>
+          </form>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>GHE</th>
+                  <th>Setor</th>
+                  <th>Função</th>
+                  <th>Situação</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="gruposCorpo"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <div class="card-icon">checklist</div>
+              <div>
+                <h2 id="matrizTitulo">EPIs vinculados ao GHE</h2>
+                <p>Marque os EPIs do GHE selecionado e salve. O prazo de troca vem do cadastro do material.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Vinculado</th>
+                  <th>EPI</th>
+                  <th>Categoria</th>
+                  <th>Tipo</th>
+                  <th>CA</th>
+                  <th>Prazo de troca</th>
+                  <th>Situação</th>
+                </tr>
+              </thead>
+              <tbody id="matrizCorpo"></tbody>
+            </table>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;padding-top:12px;flex-wrap:wrap">
+            <span id="matrizResumo" role="status" aria-live="polite" style="font-size:13px;color:var(--on-surface-variant);margin-right:auto">Escolha um GHE para ver os EPIs.</span>
+            <button id="botaoDescartarMatriz" class="outlined-btn" type="button" disabled>Descartar alterações</button>
+            <button id="botaoSalvarMatriz" class="filled-btn" type="button" disabled><span class="material-symbols-outlined">save</span>Salvar vínculos</button>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+<script src="../js/api-http.js"></script>
+<script src="../portal/config.js"></script>
+<script src="../js/sessao-empresarial.js"></script>
+<script src="../js/permissoes-efetivas.js"></script>
+<script src="../js/pagina-base.js"></script>
+<script src="../js/grupos-homogeneos.js"></script>
+<script>
+/*
+  Ligação com o DOM — deliberadamente fina. Chamadas, diferença da matriz,
+  render e mensagens vivem em js/grupos-homogeneos.js (testado sem
+  navegador). A matriz exibida é SEMPRE a devolvida pela API: depois de
+  salvar (com sucesso ou não) ela é consultada de novo.
+*/
+(function () {
+  'use strict';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var G = EpiGruposHomogeneos;
+
+  // Mesmo endereço do Portal do Cliente (portal/config.js).
+  EpiHttp.configurar({ baseUrl: window.SAFEWORK_PORTAL_API_BASE_URL });
+
+  var podeEditar = false;
+  var podeCriar = false;
+  var grupos = [];
+  var selecionado = null;
+  var editando = null;      // id do GHE em edição; null = novo
+  var persistidos = [];     // vínculos devolvidos pela API
+  var marcados = [];        // seleção pendente na tela
+  // Proteção contra respostas fora de ordem e contra respostas que chegam
+  // depois do encerramento da sessão.
+  var consultaGrupos = 0;
+  var consultaMatriz = 0;
+  var encerrada = false;
+
+  $('gruposCorpo').innerHTML = G.render.estado('Carregando…', 5);
+  $('matrizCorpo').innerHTML = G.render.estado('Escolha um GHE para ver os EPIs.', 7);
+
+  function mostrarAviso(texto, tipo) {
+    var caixa = $('aviso');
+    if (!texto) { caixa.style.display = 'none'; caixa.innerHTML = ''; return; }
+    var cor = tipo === 'erro'
+      ? 'background:var(--error-container);color:var(--error);border-color:rgba(255,59,48,0.2)'
+      : 'background:rgba(52,199,89,0.08);color:#1E7B34;border-color:rgba(52,199,89,0.25)';
+    caixa.innerHTML = '<div class="notice" style="' + cor + '">' + G.render.escaparHtml(texto) + '</div>';
+    caixa.style.display = 'block';
+  }
+
+  function falhou(r) {
+    if (G.mensagens.exigeNovoLogin(r)) { EpiSessaoEmpresarial.sessaoEncerrada(); return true; }
+    return false;
+  }
+
+  function desenharGrupos() {
+    $('gruposCorpo').innerHTML = grupos.length
+      ? G.render.linhasGrupos(grupos, { podeEditar: podeEditar, selecionado: selecionado })
+      : G.render.estado(G.mensagens.vazioGrupos, 5);
+  }
+
+  async function carregarGrupos() {
+    if (encerrada) return;
+    var minha = ++consultaGrupos;
+    $('gruposCorpo').innerHTML = G.render.estado('Carregando…', 5);
+    var r = await G.acoes.listarGrupos();
+    if (encerrada || minha !== consultaGrupos) return;
+    if (!r.ok) {
+      if (falhou(r)) return;
+      grupos = [];
+      $('gruposCorpo').innerHTML = G.render.estado(G.mensagens.erro(r), 5);
+      return;
+    }
+    grupos = r.dados.grupos || [];
+    desenharGrupos();
+  }
+
+  function atualizarResumo() {
+    var a = G.matriz.alteracoes(persistidos, marcados);
+    $('matrizResumo').textContent = selecionado === null ? 'Escolha um GHE para ver os EPIs.' : G.matriz.resumo(a);
+    var pendente = G.matriz.temAlteracoes(a);
+    $('botaoSalvarMatriz').disabled = !podeEditar || !pendente;
+    $('botaoDescartarMatriz').disabled = !pendente;
+  }
+
+  async function carregarMatriz() {
+    if (encerrada || selecionado === null) return;
+    var minha = ++consultaMatriz;
+    $('matrizCorpo').innerHTML = G.render.estado('Carregando…', 7);
+    var r = await G.acoes.consultarMatriz(selecionado);
+    if (encerrada || minha !== consultaMatriz) return;
+    persistidos = [];
+    marcados = [];
+    if (!r.ok) {
+      if (falhou(r)) return;
+      $('matrizCorpo').innerHTML = G.render.estado(G.mensagens.erro(r), 7);
+      atualizarResumo();
+      return;
+    }
+    var d = r.dados;
+    persistidos = G.matriz.vinculados(d.materiais);
+    marcados = persistidos.slice();
+    $('matrizTitulo').textContent = 'EPIs vinculados ao GHE: ' + d.grupo.nome + (d.grupo.ativo ? '' : ' (inativo)');
+    $('matrizCorpo').innerHTML = d.materiais.length
+      ? G.render.linhasMatriz(d.materiais, marcados, { podeEditar: podeEditar })
+      : G.render.estado(G.mensagens.vazioMateriais, 7);
+    atualizarResumo();
+  }
+
+  function abrirFormulario(grupo) {
+    editando = grupo ? grupo.id : null;
+    $('formGrupoTitulo').textContent = grupo ? 'Editar GHE' : 'Novo GHE';
+    $('gheNome').value = grupo ? grupo.nome || '' : '';
+    $('gheSetor').value = grupo ? grupo.setor || '' : '';
+    $('gheFuncao').value = grupo ? grupo.funcao || '' : '';
+    $('gheDescricao').value = grupo ? grupo.descricao || '' : '';
+    $('gheRiscos').value = grupo ? grupo.riscos || '' : '';
+    $('formGrupo').hidden = false;
+    $('gheNome').focus();
+  }
+
+  function fecharFormulario() {
+    editando = null;
+    $('formGrupo').hidden = true;
+  }
+
+  async function salvarGrupo() {
+    var dados = {
+      nome: $('gheNome').value, setor: $('gheSetor').value, funcao: $('gheFuncao').value,
+      descricao: $('gheDescricao').value, riscos: $('gheRiscos').value,
+    };
+    if (!String(dados.nome).trim()) { mostrarAviso(G.mensagens.NOME_OBRIGATORIO, 'erro'); return; }
+    var botao = $('botaoSalvarGrupo');
+    botao.disabled = true;
+    try {
+      var r = editando === null ? await G.acoes.criarGrupo(dados) : await G.acoes.alterarGrupo(editando, dados);
+      if (encerrada) return;
+      if (!r.ok) {
+        if (falhou(r)) return;
+        mostrarAviso(G.mensagens.erro(r), 'erro'); // o formulário continua com o que foi digitado
+        return;
+      }
+      fecharFormulario();
+      mostrarAviso(G.mensagens.SALVO_GRUPO, 'ok');
+      await carregarGrupos();
+      if (selecionado !== null) await carregarMatriz();
+    } finally {
+      botao.disabled = false;
+    }
+  }
+
+  async function mudarEstado(acao, id) {
+    var grupo = grupos.find(function (g) { return g.id === id; });
+    var pergunta = acao === 'inativar'
+      ? 'Inativar o GHE "' + (grupo ? grupo.nome : '') + '"? Ele deixa de aceitar novos vínculos; os existentes são preservados.'
+      : 'Reativar o GHE "' + (grupo ? grupo.nome : '') + '"?';
+    if (!window.confirm(pergunta)) return;
+    var r = acao === 'inativar' ? await G.acoes.inativarGrupo(id) : await G.acoes.reativarGrupo(id);
+    if (encerrada) return;
+    if (!r.ok) {
+      if (falhou(r)) return;
+      mostrarAviso(G.mensagens.erro(r), 'erro');
+      return;
+    }
+    mostrarAviso(acao === 'inativar' ? 'GHE inativado.' : 'GHE reativado.', 'ok');
+    await carregarGrupos();
+    if (selecionado === id) await carregarMatriz();
+  }
+
+  async function salvarMatriz() {
+    if (selecionado === null || !podeEditar) return;
+    var alteracoes = G.matriz.alteracoes(persistidos, marcados);
+    if (!G.matriz.temAlteracoes(alteracoes)) return;
+    $('botaoSalvarMatriz').disabled = true;
+    var r = await G.acoes.salvarMatriz(selecionado, alteracoes);
+    if (encerrada) return;
+    if (r.semSessao) { EpiSessaoEmpresarial.sessaoEncerrada(); return; }
+    if (r.ok) {
+      mostrarAviso(G.mensagens.SALVO_MATRIZ, 'ok');
+    } else {
+      var n = r.falhas.length;
+      mostrarAviso(G.mensagens.erro(r.falhas[0].resposta) + (n > 1 ? ' (' + n + ' alterações não foram salvas.)' : ''), 'erro');
+    }
+    await carregarMatriz(); // o que vale é o estado persistido
+  }
+
+  $('gruposCorpo').addEventListener('click', function (evento) {
+    var alvo = evento.target && evento.target.closest ? evento.target.closest('[data-acao]') : null;
+    if (!alvo) return undefined;
+    var acao = alvo.getAttribute('data-acao');
+    var id = Number(alvo.getAttribute('data-id'));
+    if (acao === 'selecionar') {
+      selecionado = id;
+      mostrarAviso('', null);
+      desenharGrupos();
+      return carregarMatriz();
+    }
+    if (!podeEditar) return undefined;
+    if (acao === 'editar') { abrirFormulario(grupos.find(function (g) { return g.id === id; }) || null); return undefined; }
+    if (acao === 'inativar' || acao === 'reativar') return mudarEstado(acao, id);
+    return undefined;
+  });
+
+  $('matrizCorpo').addEventListener('change', function (evento) {
+    var alvo = evento.target;
+    var id = alvo && alvo.getAttribute ? Number(alvo.getAttribute('data-material-id')) : NaN;
+    if (!podeEditar || !id) return;
+    marcados = marcados.filter(function (m) { return m !== id; });
+    if (alvo.checked) marcados.push(id);
+    atualizarResumo();
+  });
+
+  $('botaoNovoGrupo').addEventListener('click', function () { abrirFormulario(null); });
+  $('botaoCancelarGrupo').addEventListener('click', fecharFormulario);
+  $('botaoSalvarGrupo').addEventListener('click', salvarGrupo);
+  $('botaoSalvarMatriz').addEventListener('click', salvarMatriz);
+  $('botaoDescartarMatriz').addEventListener('click', function () { mostrarAviso('', null); return carregarMatriz(); });
+
+  function encerrarTela() {
+    encerrada = true;
+    consultaGrupos += 1;
+    consultaMatriz += 1;
+    grupos = [];
+    selecionado = null;
+    persistidos = [];
+    marcados = [];
+    fecharFormulario();
+    $('gruposCorpo').innerHTML = '';
+    $('matrizCorpo').innerHTML = '';
+    $('matrizTitulo').textContent = 'EPIs vinculados ao GHE';
+    $('matrizResumo').textContent = '—';
+    $('botaoSalvarMatriz').disabled = true;
+    $('botaoDescartarMatriz').disabled = true;
+    mostrarAviso('', null);
+  }
+
+  // Sessão empresarial real (C0), permissões efetivas (C1) e revalidação ao
+  // restaurar pelo histórico (módulo comum). Nada é consultado antes.
+  EpiSessaoEmpresarial.montar({
+    elementos: {
+      tela: $('telaSessao'),
+      mensagem: $('telaSessaoMensagem'),
+      linkPortal: $('telaSessaoPortal'),
+      identificacao: $('identidade'),
+      botaoSair: $('botaoSair'),
+      botaoTrocar: $('botaoTrocarEmpresa'),
+    },
+    aoEncerrar: encerrarTela,
+    aoFalharSaida: function (mensagem) { mostrarAviso(mensagem, 'erro'); },
+  }).then(function (contexto) {
+    if (!contexto) return undefined;
+    return EpiPermissoes.prepararPagina({
+      pagina: 'employeeGroups',
+      contexto: contexto,
+      links: document.querySelectorAll('.nav a[data-pagina]'),
+      aviso: function (mensagem) { mostrarAviso(mensagem, 'erro'); },
+    }).then(function (acesso) {
+      if (!acesso) { $('gruposCorpo').innerHTML = ''; return undefined; }
+      var recursos = acesso.permissoes && acesso.permissoes.recursos ? acesso.permissoes.recursos.employeeGroups : null;
+      podeEditar = acesso.podeAlterar === true;
+      podeCriar = !!(recursos && recursos.criar === true);
+      $('botaoNovoGrupo').hidden = !podeCriar;
+      $('botaoSalvarMatriz').hidden = !podeEditar;
+      $('botaoDescartarMatriz').hidden = !podeEditar;
+      return carregarGrupos();
+    });
+  });
+})();
+</script>
+</body>
+</html>

@@ -40,7 +40,12 @@ const TAMANHO_MAXIMO_CRACHA = 30;
 const TAMANHO_MAXIMO_TELEFONE = 20;
 const CPF_FORMATO = /^[0-9]{11}$/;
 
-const PROJECAO = `id, empresa_id, grupo_homogeneo_id, matricula, nome, cpf, data_nascimento,
+// Datas (DATE, sem fuso) formatadas no próprio PostgreSQL como AAAA-MM-DD,
+// nunca convertidas em Date do Node: o dia devolvido é o gravado em qualquer
+// fuso do servidor (C4, 25/09/2026 — decisão M1 e migration 040; mesmo
+// padrão da validade do CA em material.repository.js).
+const PROJECAO = `id, empresa_id, grupo_homogeneo_id, matricula, nome, cpf,
+  to_char(data_nascimento, 'YYYY-MM-DD') AS data_nascimento, to_char(data_admissao, 'YYYY-MM-DD') AS data_admissao,
   setor, funcao, cracha, telefone, ativo, criado_em, atualizado_em`;
 
 function exigirEmpresa(empresaId) {
@@ -85,6 +90,13 @@ function exigirDataOpcional(valor, nome) {
   }
 }
 
+/** CPF exato para busca: só os 11 dígitos já normalizados (nunca parcial). */
+function exigirCpfOpcional(cpf) {
+  if (cpf !== null) {
+    exigirCpf(cpf);
+  }
+}
+
 const mapear = (linha) => (linha === undefined ? null : {
   id: linha.id,
   empresaId: linha.empresa_id,
@@ -93,6 +105,7 @@ const mapear = (linha) => (linha === undefined ? null : {
   nome: linha.nome,
   cpf: linha.cpf,
   dataNascimento: linha.data_nascimento,
+  dataAdmissao: linha.data_admissao,
   setor: linha.setor,
   funcao: linha.funcao,
   cracha: linha.cracha,
@@ -105,7 +118,7 @@ const mapear = (linha) => (linha === undefined ? null : {
 /** Cria um funcionário. `ativo` nasce true pelo DEFAULT da migration 006 e não é parâmetro. */
 async function criar(executor, {
   empresaId, matricula, nome, cpf, grupoHomogeneoId = null, dataNascimento = null,
-  setor = null, funcao = null, cracha = null, telefone = null,
+  setor = null, funcao = null, cracha = null, telefone = null, dataAdmissao = null,
 }) {
   exigirEmpresa(empresaId);
   exigirTexto(matricula, 'matrícula', TAMANHO_MAXIMO_MATRICULA);
@@ -117,13 +130,14 @@ async function criar(executor, {
   exigirTextoOpcional(funcao, 'função', TAMANHO_MAXIMO_FUNCAO);
   exigirTextoOpcional(cracha, 'crachá', TAMANHO_MAXIMO_CRACHA);
   exigirTextoOpcional(telefone, 'telefone', TAMANHO_MAXIMO_TELEFONE);
+  exigirDataOpcional(dataAdmissao, 'data de admissão');
 
   const { rows } = await executor.query(
     `INSERT INTO funcionarios
-       (empresa_id, grupo_homogeneo_id, matricula, nome, cpf, data_nascimento, setor, funcao, cracha, telefone)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       (empresa_id, grupo_homogeneo_id, matricula, nome, cpf, data_nascimento, setor, funcao, cracha, telefone, data_admissao)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING ${PROJECAO}`,
-    [empresaId, grupoHomogeneoId, matricula, nome, cpf, dataNascimento, setor, funcao, cracha, telefone],
+    [empresaId, grupoHomogeneoId, matricula, nome, cpf, dataNascimento, setor, funcao, cracha, telefone, dataAdmissao],
   );
 
   return mapear(rows[0]);
@@ -157,13 +171,16 @@ async function buscarPorIdParaAtualizacao(executor, empresaId, id) {
 /**
  * Lista os funcionários de uma empresa, paginados e ordenados por nome.
  * `busca` filtra por nome OU matrícula (texto literal, sem coringas);
- * `grupoHomogeneoId` filtra por GHE. Nenhum filtro por CPF: CPF não é
- * critério de busca livre (dado pessoal, CLAUDE.md §44).
+ * `grupoHomogeneoId` filtra por GHE. CPF NÃO é critério de busca livre
+ * (dado pessoal, CLAUDE.md §44): só a igualdade EXATA com os 11 dígitos
+ * completos (`cpf`, decisão D5 da C4 de 25/09/2026), sempre dentro da
+ * empresa — nunca ILIKE, nunca parcial.
  */
 async function listarPorEmpresa(executor, empresaId, {
-  ativo = null, busca = null, grupoHomogeneoId = null, pagina = 1, limite = 20,
+  ativo = null, busca = null, grupoHomogeneoId = null, cpf = null, pagina = 1, limite = 20,
 } = {}) {
   exigirEmpresa(empresaId);
+  exigirCpfOpcional(cpf);
   if (ativo !== null && typeof ativo !== 'boolean') {
     throw new TypeError('filtro ativo deve ser booleano ou null');
   }
@@ -188,16 +205,20 @@ async function listarPorEmpresa(executor, empresaId, {
         AND ($2::boolean IS NULL OR ativo = $2::boolean)
         AND ($3::text IS NULL OR nome ILIKE '%' || $3::text || '%' OR matricula ILIKE '%' || $3::text || '%')
         AND ($4::integer IS NULL OR grupo_homogeneo_id = $4::integer)
+        AND ($5::text IS NULL OR cpf = $5::text)
       ORDER BY lower(nome), id
-      LIMIT $5 OFFSET $6`,
-    [empresaId, ativo, buscaEscapada, grupoHomogeneoId, limite, deslocamento],
+      LIMIT $6 OFFSET $7`,
+    [empresaId, ativo, buscaEscapada, grupoHomogeneoId, cpf, limite, deslocamento],
   );
 
   return rows.map((linha) => mapear(linha));
 }
 
-async function contarPorEmpresa(executor, empresaId, { ativo = null, busca = null, grupoHomogeneoId = null } = {}) {
+async function contarPorEmpresa(executor, empresaId, {
+  ativo = null, busca = null, grupoHomogeneoId = null, cpf = null,
+} = {}) {
   exigirEmpresa(empresaId);
+  exigirCpfOpcional(cpf);
   if (ativo !== null && typeof ativo !== 'boolean') {
     throw new TypeError('filtro ativo deve ser booleano ou null');
   }
@@ -214,8 +235,9 @@ async function contarPorEmpresa(executor, empresaId, { ativo = null, busca = nul
       WHERE empresa_id = $1
         AND ($2::boolean IS NULL OR ativo = $2::boolean)
         AND ($3::text IS NULL OR nome ILIKE '%' || $3::text || '%' OR matricula ILIKE '%' || $3::text || '%')
-        AND ($4::integer IS NULL OR grupo_homogeneo_id = $4::integer)`,
-    [empresaId, ativo, buscaEscapada, grupoHomogeneoId],
+        AND ($4::integer IS NULL OR grupo_homogeneo_id = $4::integer)
+        AND ($5::text IS NULL OR cpf = $5::text)`,
+    [empresaId, ativo, buscaEscapada, grupoHomogeneoId, cpf],
   );
 
   return rows[0].total;
@@ -247,6 +269,7 @@ async function atualizar(executor, empresaId, id, campos = {}) {
     cracha = null, crachaInformado = false,
     telefone = null, telefoneInformado = false,
     ativo = null,
+    dataAdmissao = null, dataAdmissaoInformado = false,
   } = campos;
   exigirEmpresa(empresaId);
   exigirId(id, 'identificador de funcionário');
@@ -277,6 +300,9 @@ async function atualizar(executor, empresaId, id, campos = {}) {
   if (ativo !== null && typeof ativo !== 'boolean') {
     throw new TypeError('ativo deve ser booleano ou null');
   }
+  if (dataAdmissaoInformado) {
+    exigirDataOpcional(dataAdmissao, 'data de admissão');
+  }
 
   const { rows } = await executor.query(
     `UPDATE funcionarios
@@ -288,7 +314,8 @@ async function atualizar(executor, empresaId, id, campos = {}) {
             funcao = CASE WHEN $11::boolean THEN $12 ELSE funcao END,
             cracha = CASE WHEN $13::boolean THEN $14 ELSE cracha END,
             telefone = CASE WHEN $15::boolean THEN $16 ELSE telefone END,
-            ativo = COALESCE($17, ativo)
+            ativo = COALESCE($17, ativo),
+            data_admissao = CASE WHEN $18::boolean THEN $19 ELSE data_admissao END
       WHERE empresa_id = $1 AND id = $2
       RETURNING ${PROJECAO}`,
     [
@@ -300,6 +327,7 @@ async function atualizar(executor, empresaId, id, campos = {}) {
       crachaInformado, cracha,
       telefoneInformado, telefone,
       ativo,
+      dataAdmissaoInformado, dataAdmissao,
     ],
   );
 

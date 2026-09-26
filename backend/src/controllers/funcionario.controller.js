@@ -24,14 +24,16 @@ function criarFuncionarioController({ pool: poolInjetado }) {
         matricula: c.matricula, nome: c.nome, cpf: c.cpf,
         grupoHomogeneoId: c.grupoHomogeneoId ?? null, dataNascimento: c.dataNascimento ?? null,
         setor: c.setor ?? null, funcao: c.funcao ?? null, cracha: c.cracha ?? null, telefone: c.telefone ?? null,
+        dataAdmissao: c.dataAdmissao ?? null,
       });
       res.status(201).json({ status: 'ok', funcionario });
     },
 
     async listar(req, res) {
-      const { ativo, busca, grupoHomogeneoId, pagina, limite } = req.validado.query;
+      const { ativo, busca, grupoHomogeneoId, cpf, pagina, limite } = req.validado.query;
       const resultado = await funcionarioService.listar(poolInjetado, {
-        empresaId: req.empresa.id, ativo: ativo ?? null, busca: busca ?? null, grupoHomogeneoId: grupoHomogeneoId ?? null, pagina, limite,
+        empresaId: req.empresa.id, ativo: ativo ?? null, busca: busca ?? null, grupoHomogeneoId: grupoHomogeneoId ?? null,
+        cpf: cpf ?? null, pagina, limite,
       });
       res.status(200).json({ status: 'ok', ...resultado });
     },
@@ -54,8 +56,23 @@ function criarFuncionarioController({ pool: poolInjetado }) {
         ...informado(c, 'funcao', 'funcaoInformado'),
         ...informado(c, 'cracha', 'crachaInformado'),
         ...informado(c, 'telefone', 'telefoneInformado'),
+        ...informado(c, 'dataAdmissao', 'dataAdmissaoInformado'),
       });
       res.status(200).json({ status: 'ok', funcionario });
+    },
+
+    /**
+     * Importação em lote (C4). Empresa e ator sempre da sessão; o corpo
+     * validado nunca carrega empresaId. Resposta 200 com um resultado por
+     * linha — recusas e duplicidades de linha não são erro HTTP do lote.
+     */
+    async importar(req, res) {
+      const c = req.validado.body;
+      const resultado = await funcionarioService.importar(poolInjetado, {
+        ...comContexto(req),
+        importacaoId: c.importacaoId, lote: c.lote, arquivo: c.arquivo, declaracaoLgpd: c.declaracaoLgpd, linhas: c.linhas,
+      });
+      res.status(200).json({ status: 'ok', ...resultado });
     },
 
     async inativar(req, res) {

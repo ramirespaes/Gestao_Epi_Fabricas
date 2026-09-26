@@ -95,7 +95,7 @@ function criarMaterialController({ pool: poolInjetado }) {
         ...(Object.hasOwn(corpo, 'caNumero') ? { caNumero: corpo.caNumero, caNumeroInformado: true } : {}),
         ...(Object.hasOwn(corpo, 'caValidade') ? { caValidade: corpo.caValidade, caValidadeInformado: true } : {}),
         ...(Object.hasOwn(corpo, 'prazoUsoDias') ? { prazoUsoDias: corpo.prazoUsoDias, prazoUsoDiasInformado: true } : {}),
-        ...(Object.hasOwn(corpo, 'unidade') ? { unidade: corpo.unidade } : {}),
+        // `unidade` não é repassada: o schema de alterar não a aceita (unidade imutável).
         ...(Object.hasOwn(corpo, 'estoqueMinimo') ? { estoqueMinimo: corpo.estoqueMinimo } : {}),
         ...(Object.hasOwn(corpo, 'categoria') ? { categoria: corpo.categoria, categoriaInformado: true } : {}),
         ...(Object.hasOwn(corpo, 'codigoInterno') ? { codigoInterno: corpo.codigoInterno, codigoInternoInformado: true } : {}),

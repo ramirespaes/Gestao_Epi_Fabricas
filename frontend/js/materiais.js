@@ -7,6 +7,8 @@
    *
    *   GET  /materiais?ativo=&busca=&pagina=&limite=   (materials.visualizar)
    *   POST /materiais                                   (materials.criar)
+   *   GET  /materiais/:id                               (materials.visualizar)
+   *   PATCH /materiais/:id                              (materials.editar; melhoria da C2)
    *   GET  /materiais/:id/estoque                       (materials.visualizar)
    *   POST /materiais/:id/estoque/movimentar            (ação MOVIMENTAR_ESTOQUE)
    *
@@ -29,7 +31,8 @@
   var MOTIVO_ENTRADA_INICIAL = 'Entrada inicial do cadastro';
 
   // Tetos dos contratos (schemas do backend / migrations 007, 008 e 039).
-  var LIMITES = { nome: 150, tipo: 100, fabricante: 100, caNumero: 20, unidade: 20, categoria: 30, codigoInterno: 30, descricao: 500, tamanho: 20 };
+  // motivo: MOTIVO_MAXIMO do schema de movimentação de estoque (estoque.schema.js).
+  var LIMITES = { nome: 150, tipo: 100, fabricante: 100, caNumero: 20, unidade: 20, categoria: 30, codigoInterno: 30, descricao: 500, tamanho: 20, motivo: 200 };
   // Teto das colunas INTEGER (int4) do PostgreSQL, o mesmo do backend
   // (LIMITES.INTEGER_MAXIMO): prazo em dias, estoque mínimo e quantidade.
   // Validado aqui para não iniciar um cadastro cuja entrada seria recusada.
@@ -48,7 +51,16 @@
   var TAMANHOS_CALCADO = ['34', '35', '36', '37', '38', '39', '40', '41', '42', '43', '44'];
   var TAMANHOS_LUVA = ['PP', 'P', 'M', 'G', 'GG'];
 
-  var CLASSES_CHIP = { 'sem-estoque': 'chip-empty', 'abaixo-minimo': 'chip-warning', 'com-saldo': 'chip-ok' };
+  // Opções dos selects do formulário original (materials.html), na mesma
+  // ordem. Usadas para reabrir um material sem trocar valores em silêncio.
+  var CATEGORIAS = ['EPI', 'Uniforme', 'Ferramenta', 'Material de consumo'];
+  var TIPOS = ['Sapatão / Botina', 'Óculos de proteção', 'Luva', 'Protetor auricular', 'Capacete', 'Respirador'];
+  var UNIDADES = ['Par', 'Unidade', 'Caixa', 'Pacote', 'Kit'];
+  // Campos que a edição pode enviar ao PATCH. A unidade de controle fica de
+  // fora (decisão 3): mudar "par" para "unidade" mudaria o sentido do saldo.
+  var CAMPOS_EDITAVEIS = ['nome', 'categoria', 'tipo', 'caNumero', 'caValidade', 'fabricante', 'codigoInterno', 'descricao', 'prazoUsoDias', 'estoqueMinimo'];
+
+  var CLASSES_CHIP ={ 'sem-estoque': 'chip-empty', 'abaixo-minimo': 'chip-warning', 'com-saldo': 'chip-ok' };
 
   function http() {
     var cliente = global.EpiHttp;
@@ -107,6 +119,14 @@
     },
     criar: function (corpo) {
       return http().requisitar('POST', CAMINHO, { corpo: corpo });
+    },
+    /** Registro real para o modo edição. */
+    buscar: function (id) {
+      return http().requisitar('GET', CAMINHO + '/' + encodeURIComponent(id));
+    },
+    /** Só os campos cadastrais alterados (formulario.montarEdicao); nunca estoque. */
+    alterar: function (id, corpo) {
+      return http().requisitar('PATCH', CAMINHO + '/' + encodeURIComponent(id), { corpo: corpo });
     },
     estoque: function (id) {
       return http().requisitar('GET', CAMINHO + '/' + encodeURIComponent(id) + '/estoque');
@@ -206,12 +226,16 @@
       else corpo.prazoUsoDias = dias;
     }
 
+    // Entrada inicial só com "Sim" explícito (decisão 2 da melhoria da C2):
+    // com "Não" (ou sem escolha), quantidade e tamanho são ignorados e o
+    // material nasce sem estoque. Com "Sim", os dois são obrigatórios.
     var entrada = null;
-    var quantidade = texto(c.quantidadeComprada);
-    if (quantidade) {
+    if (texto(c.registrarEntrada) === 'sim') {
+      var quantidade = texto(c.quantidadeComprada);
       var q = inteiro(quantidade);
       var tamanho = texto(c.tamanhoEntrada);
-      if (q === null || q <= 0) erro('quantidadeComprada', 'Quantidade comprada deve ser um inteiro maior que zero.');
+      if (!quantidade) erro('quantidadeComprada', 'Informe a quantidade comprada da entrada inicial.');
+      else if (q === null || q <= 0) erro('quantidadeComprada', 'Quantidade comprada deve ser um inteiro maior que zero.');
       else if (q > INTEGER_MAXIMO) erro('quantidadeComprada', 'Quantidade comprada acima do limite (' + INTEGER_MAXIMO + ').');
       if (!tamanho) erro('tamanhoEntrada', 'Escolha o tamanho da entrada inicial.');
       else if (tamanho.length > LIMITES.tamanho) erro('tamanhoEntrada', 'Tamanho com mais de ' + LIMITES.tamanho + ' caracteres.');
@@ -222,15 +246,152 @@
     return { ok: true, corpo: corpo, entrada: entrada };
   }
 
+  // ── edição de material existente (melhoria da C2) ──
+
+  /** Prazo gravado em dias → anos (múltiplo de 365), meses (de 30) ou dias; ida e volta exata. */
+  function prazoParaCampos(dias) {
+    var n = typeof dias === 'number' ? dias : inteiro(dias);
+    if (n === null || n === undefined || n <= 0) return { definePrazo: 'nao', prazoUnidade: 'meses', prazo: '' };
+    if (n % 365 === 0) return { definePrazo: 'sim', prazoUnidade: 'anos', prazo: String(n / 365) };
+    if (n % 30 === 0) return { definePrazo: 'sim', prazoUnidade: 'meses', prazo: String(n / 30) };
+    return { definePrazo: 'sim', prazoUnidade: 'dias', prazo: String(n) };
+  }
+
+  /**
+   * Validade do CA para o campo date (AAAA-MM-DD). A API devolve a data
+   * pura, formatada no PostgreSQL, em qualquer fuso do servidor (ajuste de
+   * 25/09/2026). Data e hora ainda são aceitas por compatibilidade: usa só
+   * a parte da data, sem converter fuso no navegador.
+   */
+  function dataParaCampo(valor) {
+    var s = texto(valor);
+    return /^\d{4}-\d{2}-\d{2}(T|$)/.test(s) ? s.slice(0, 10) : '';
+  }
+
+  function naLista(lista, valor) {
+    var v = texto(valor).toLowerCase();
+    for (var i = 0; i < lista.length; i += 1) if (lista[i].toLowerCase() === v) return lista[i];
+    return null;
+  }
+
+  /**
+   * Material da API → campos do formulário (mesmo formato de montarCorpo).
+   * Valor fora das opções do HTML volta em `opcoesExtras` para a página
+   * acrescentar uma opção temporária: nada é trocado em silêncio.
+   */
+  function camposDoMaterial(material) {
+    var m = material || {};
+    var tipo = texto(m.tipo);
+    var tipoLista = naLista(TIPOS, tipo);
+    var categoria = texto(m.categoria);
+    var categoriaLista = categoria ? naLista(CATEGORIAS, categoria) : null;
+    var unidade = texto(m.unidade);
+    var unidadeLista = naLista(UNIDADES, unidade);
+    var prazo = prazoParaCampos(m.prazoUsoDias);
+    return {
+      campos: {
+        nome: texto(m.nome),
+        categoria: categoriaLista || categoria,
+        tipo: tipoLista || 'Outro',
+        tipoCustom: tipoLista ? '' : tipo,
+        caNumero: texto(m.caNumero),
+        caValidade: dataParaCampo(m.caValidade),
+        fabricante: texto(m.fabricante),
+        codigoInterno: texto(m.codigoInterno),
+        unidade: unidadeLista || unidade,
+        estoqueMinimo: m.estoqueMinimo === null || m.estoqueMinimo === undefined ? '' : String(m.estoqueMinimo),
+        definePrazo: prazo.definePrazo,
+        prazoUnidade: prazo.prazoUnidade,
+        prazo: prazo.prazo,
+        descricao: texto(m.descricao),
+        registrarEntrada: 'nao',
+        quantidadeComprada: '',
+        tamanhoEntrada: '',
+      },
+      opcoesExtras: {
+        categoria: !categoria ? { valor: '', rotulo: 'Sem categoria' } : (categoriaLista ? null : { valor: categoria, rotulo: categoria }),
+        unidade: unidadeLista || !unidade ? null : { valor: unidade, rotulo: unidade },
+      },
+    };
+  }
+
+  function valorOriginal(campo, valor) {
+    if (valor === null || valor === undefined) return null;
+    if (campo === 'caValidade') return dataParaCampo(valor) || null;
+    if (campo === 'prazoUsoDias' || campo === 'estoqueMinimo') return Number(valor);
+    return texto(valor) || null;
+  }
+
+  /**
+   * Corpo do PATCH /materiais/:id: só os campos que mudaram em relação ao
+   * registro carregado; opcional apagado → null. Mesmas validações do
+   * cadastro (montarCorpo). Nunca envia unidade, quantidade, tamanho ou
+   * empresaId: a edição não mexe em estoque.
+   * {ok:true, corpo, alterado} ou {ok:false, erros}.
+   */
+  function montarEdicao(campos, original) {
+    var o = original || {};
+    var base = {};
+    Object.keys(campos || {}).forEach(function (k) { base[k] = campos[k]; });
+    base.registrarEntrada = 'nao';
+    base.quantidadeComprada = '';
+    base.tamanhoEntrada = '';
+    // "Outro" sem texto só é aceito quando o material já não tinha tipo.
+    if (texto(base.tipo) === 'Outro' && !texto(base.tipoCustom) && !texto(o.tipo)) base.tipo = '';
+    var montado = montarCorpo(base);
+    var erros = montado.ok ? [] : montado.erros.slice();
+    if (!texto(base.estoqueMinimo) && !erros.some(function (e) { return e.campo === 'estoqueMinimo'; })) {
+      erros.push({ campo: 'estoqueMinimo', mensagem: 'Informe o estoque mínimo (use 0 para nenhum).' });
+    }
+    if (erros.length > 0) return { ok: false, erros: erros };
+    var corpo = {};
+    CAMPOS_EDITAVEIS.forEach(function (campo) {
+      var novo = hasOwn(montado.corpo, campo) ? montado.corpo[campo] : null;
+      if (novo !== valorOriginal(campo, o[campo])) corpo[campo] = novo;
+    });
+    return { ok: true, corpo: corpo, alterado: Object.keys(corpo).length > 0 };
+  }
+
+  /**
+   * Entrada de estoque em material já cadastrado (25/09/2026): corpo do
+   * POST /materiais/:id/estoque/movimentar, SEMPRE tipo ENTRADA. Tamanho
+   * escolhido e quantidade inteira > 0 obrigatórios; motivo opcional
+   * (vazio → omitido, o contrato aceita ausente). Nunca empresaId.
+   */
+  function montarEntrada(campos) {
+    var c = campos || {};
+    var erros = [];
+    var tamanho = texto(c.tamanho);
+    if (!tamanho) erros.push({ campo: 'tamanho', mensagem: 'Selecione o tamanho da entrada.' });
+    else if (tamanho.length > LIMITES.tamanho) erros.push({ campo: 'tamanho', mensagem: 'Tamanho com mais de ' + LIMITES.tamanho + ' caracteres.' });
+    var q = inteiro(c.quantidade);
+    if (q === null || q <= 0) erros.push({ campo: 'quantidade', mensagem: 'Informe uma quantidade inteira maior que zero.' });
+    else if (q > INTEGER_MAXIMO) erros.push({ campo: 'quantidade', mensagem: 'Quantidade acima do limite (' + INTEGER_MAXIMO + ').' });
+    var motivo = texto(c.motivo);
+    if (motivo.length > LIMITES.motivo) erros.push({ campo: 'motivo', mensagem: 'Motivo com mais de ' + LIMITES.motivo + ' caracteres.' });
+    if (erros.length > 0) return { ok: false, erros: erros };
+    var corpo = { tamanho: tamanho, tipo: 'ENTRADA', quantidade: q };
+    if (motivo) corpo.motivo = motivo;
+    return { ok: true, corpo: corpo };
+  }
+
   var formulario = {
     LIMITES: LIMITES,
     INTEGER_MAXIMO: INTEGER_MAXIMO,
     FATORES_PRAZO: FATORES_PRAZO,
     TAMANHOS_GRADE: TAMANHOS_GRADE,
+    CATEGORIAS: CATEGORIAS,
+    TIPOS: TIPOS,
+    UNIDADES: UNIDADES,
     converterPrazo: converterPrazo,
     textoPrazo: textoPrazo,
     tamanhosSugeridos: tamanhosSugeridos,
     montarCorpo: montarCorpo,
+    prazoParaCampos: prazoParaCampos,
+    dataParaCampo: dataParaCampo,
+    camposDoMaterial: camposDoMaterial,
+    montarEdicao: montarEdicao,
+    montarEntrada: montarEntrada,
   };
 
   // ───────────────────────────────────────────────────────────────────
@@ -293,6 +454,14 @@
     ENTRADA_GENERICO: 'não foi possível registrar a entrada de estoque.',
     GRADE_GENERICO: 'Não foi possível consultar o estoque deste material.',
     SUCESSO: 'Material cadastrado com sucesso.',
+    SEM_ESTOQUE_INICIAL: 'Registrado sem quantidade em estoque: nenhuma entrada inicial foi feita.',
+    SEM_EDITAR: 'Seu perfil não pode editar materiais nesta empresa.',
+    EDICAO_SUCESSO: 'Alterações do material salvas. O estoque não foi alterado.',
+    EDICAO_SEM_ALTERACAO: 'Nenhuma alteração para salvar.',
+    EDICAO_NAO_CONFIRMADA_REDE: 'Falha de rede: não foi possível confirmar se as alterações foram salvas. Cancele a edição e abra o material de novo para conferir antes de salvar outra vez.',
+    EDICAO_NAO_CONFIRMADA_SERVIDOR: 'Erro no servidor: não foi possível confirmar se as alterações foram salvas. Cancele a edição e abra o material de novo para conferir antes de salvar outra vez.',
+    EDICAO_GENERICO: 'Não foi possível salvar as alterações. Tente novamente.',
+    CARREGAR_GENERICO: 'Não foi possível abrir o material para edição.',
   };
 
   function ehRede(r) { return !r || r.status === 0 || typeof r.status !== 'number'; }
@@ -344,10 +513,49 @@
     return MSG.GRADE_GENERICO;
   }
 
+  /**
+   * Resultado da entrada de estoque em material já cadastrado.
+   * `r` vem de fluxo.registrarEntrada; `entrada` é o corpo enviado; `material` identifica.
+   */
+  function resultadoEntradaPosterior(r, entrada, material) {
+    var m = material || {};
+    if (r && r.ok) {
+      var s = r.saldo || {};
+      var e = entrada || {};
+      var identificacao = (m.nome ? ' de "' + m.nome + '"' : '') + (m.codigoInterno ? ' (código ' + m.codigoInterno + ')' : '');
+      return 'Entrada de estoque registrada: ' + e.quantidade + ' no tamanho ' + e.tamanho + identificacao + '. Saldo atual do tamanho ' + s.tamanho + ': ' + s.quantidade + '.';
+    }
+    var resposta = r ? r.resposta : null;
+    if (r && r.confirmado === false) return 'Entrada de estoque não confirmada: ' + erroEntrada(resposta) + ' ' + MSG.ORIENTACAO_SALDO;
+    return 'Entrada de estoque não realizada: ' + erroEntrada(resposta);
+  }
+
+  /** PATCH /materiais/:id. Rede e 5xx: não confirmado, nunca repetido sozinho. */
+  function erroEdicao(r) {
+    if (ehRede(r)) return MSG.EDICAO_NAO_CONFIRMADA_REDE;
+    if (ehServidor(r)) return MSG.EDICAO_NAO_CONFIRMADA_SERVIDOR;
+    if (r.status === 401) return MSG.SESSAO;
+    if (r.status === 403) return MSG.SEM_EDITAR;
+    if (r.status === 404) return MSG.NAO_ENCONTRADO;
+    if (r.codigo === 'MATERIAL_CODIGO_INTERNO_DUPLICADO') return MSG.CODIGO_DUPLICADO;
+    if (r.codigo === 'MATERIAL_SEM_ALTERACAO') return MSG.EDICAO_SEM_ALTERACAO;
+    if (r.status === 400) return 'Dados recusados pelo servidor.' + camposDe(r);
+    return MSG.EDICAO_GENERICO;
+  }
+
+  /** GET /materiais/:id ao entrar no modo edição. */
+  function erroCarregarEdicao(r) {
+    if (ehRede(r)) return 'Falha de rede ao abrir o material. Verifique a conexão e tente novamente.';
+    if (r.status === 401) return MSG.SESSAO;
+    if (r.status === 403) return 'Seu perfil não pode consultar este material nesta empresa.';
+    if (r.status === 404) return MSG.NAO_ENCONTRADO;
+    return MSG.CARREGAR_GENERICO;
+  }
+
   /** Texto final do cadastro: sucesso, com ou sem a entrada inicial. */
   function resultado(res) {
     var e = res && res.entrada ? res.entrada : { solicitada: false };
-    if (!e.solicitada) return MSG.SUCESSO;
+    if (!e.solicitada) return MSG.SUCESSO + ' ' + MSG.SEM_ESTOQUE_INICIAL;
     if (e.realizada) {
       var quantidade = e.quantidade !== undefined ? e.quantidade : (e.saldo ? e.saldo.quantidade : '');
       var tamanho = e.tamanho !== undefined ? e.tamanho : (e.saldo ? e.saldo.tamanho : '');
@@ -362,7 +570,10 @@
     return MSG.SUCESSO + ' Entrada de estoque não realizada: ' + motivo;
   }
 
-  var mensagens = { exigeNovoLogin: exigeNovoLogin, confirmado: confirmado, erroCadastro: erroCadastro, erroEntrada: erroEntrada, erroGrade: erroGrade, resultado: resultado, MSG: MSG };
+  var mensagens = {
+    exigeNovoLogin: exigeNovoLogin, confirmado: confirmado, erroCadastro: erroCadastro, erroEntrada: erroEntrada, erroGrade: erroGrade,
+    erroEdicao: erroEdicao, erroCarregarEdicao: erroCarregarEdicao, resultado: resultado, resultadoEntradaPosterior: resultadoEntradaPosterior, MSG: MSG,
+  };
 
   // ───────────────────────────────────────────────────────────────────
   // Render
@@ -440,7 +651,22 @@
     return { ok: true, material: material, chips: lista, resumo: resumo(lista) };
   }
 
-  var fluxo = { cadastrar: cadastrar, carregarGrade: carregarGrade, MOTIVO_ENTRADA_INICIAL: MOTIVO_ENTRADA_INICIAL };
+  /**
+   * Entrada de estoque em material já cadastrado: uma única chamada à rota
+   * existente, sempre ENTRADA (o tipo recebido é ignorado). Nunca PATCH do
+   * material. 4xx = recusa confirmada; rede e 5xx = não confirmada; nenhuma
+   * nova tentativa automática.
+   */
+  async function registrarEntrada(materialId, corpo) {
+    var c = corpo || {};
+    var envio = { tamanho: c.tamanho, tipo: 'ENTRADA', quantidade: c.quantidade };
+    if (c.motivo) envio.motivo = c.motivo;
+    var r = await acoes.movimentar(materialId, envio);
+    if (!r.ok) return { ok: false, confirmado: confirmado(r), resposta: r, saldo: null };
+    return { ok: true, confirmado: true, resposta: r, saldo: r.dados ? r.dados.saldo : null };
+  }
+
+  var fluxo = { cadastrar: cadastrar, carregarGrade: carregarGrade, registrarEntrada: registrarEntrada, MOTIVO_ENTRADA_INICIAL: MOTIVO_ENTRADA_INICIAL };
 
   global.EpiMateriais = {
     acoes: acoes,

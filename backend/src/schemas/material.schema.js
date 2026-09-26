@@ -95,6 +95,11 @@ const listar = {
 
 const buscar = { params: paramsComId };
 
+// `unidade` NÃO é aceita na edição (ajuste pós-melhoria C2, 25/09/2026):
+// trocar a unidade de controle mudaria o sentido dos saldos existentes
+// ("par" → "unidade"). Fica fora do strictObject, como `ativo`: qualquer
+// PATCH com `unidade` é 400 VALIDACAO (CAMPO_NAO_PERMITIDO). Troca
+// controlada, com regra de integridade, é melhoria futura.
 const alterar = {
   params: paramsComId,
   body: z.strictObject({
@@ -107,7 +112,6 @@ const alterar = {
     caNumero: caNumero.nullable().optional(),
     caValidade: caValidade.nullable().optional(),
     prazoUsoDias: prazoUsoDias.nullable().optional(),
-    unidade: unidade.optional(),
     estoqueMinimo: estoqueMinimo.optional(),
   }),
 };

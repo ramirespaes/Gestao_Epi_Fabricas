@@ -343,3 +343,25 @@ describe('categoria, código interno e descrição — Parte C2', () => {
     await esperarHttpError(servico.criar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'L', descricao: 'x'.repeat(501) }), 400, 'MATERIAL_DADOS_INVALIDOS');
   });
 });
+
+describe('alterar — unidade de controle imutável (ajuste pós-melhoria C2, 25/09/2026)', () => {
+  test('unidade informada, mesmo igual à atual ou junto de outros campos: 400 MATERIAL_UNIDADE_NAO_EDITAVEL, sem abrir transação, sem gravar nem auditar', async (t) => {
+    for (const extra of [{ unidade: 'caixa' }, { unidade: 'par' }, { unidade: 'caixa', nome: 'Botina nova' }]) {
+      const escritas = mundoValido(t);
+      const cliente = criarClienteFalso();
+      await esperarHttpError(
+        servico.alterar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, materialId: MATERIAL_ID, ...extra }),
+        400, 'MATERIAL_UNIDADE_NAO_EDITAVEL',
+      );
+      assert.equal(contar(cliente.chamadas, /^BEGIN$/), 0, JSON.stringify(extra));
+      assert.equal(escritas.atualizar.mock.calls.length, 0);
+      assert.equal(escritas.registrar.mock.calls.length, 0);
+    }
+  });
+
+  test('a edição nunca repassa unidade ao repositório', async (t) => {
+    const escritas = mundoValido(t);
+    await servico.alterar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, materialId: MATERIAL_ID, fabricante: '3M', fabricanteInformado: true });
+    assert.equal(escritas.atualizar.mock.calls[0].arguments[3].unidade, null, 'null = manter a unidade atual');
+  });
+});

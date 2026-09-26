@@ -42,6 +42,7 @@ const { HttpError } = require('../../src/errors/HttpError');
 const MIGRATIONS = [
   '000', '001', '002', '003', '004', '005', '006', '007', '008', '009', '010', '011',
   '012', '013', '014', '015', '016', '017', '018', '019', '020', '021', '022', '023',
+  '040', // C4: funcionarios.data_admissao (lida pela projeção do repositório)
 ];
 
 /** Espera até `condicao()` ser verdadeira (poll curto), ou falha. */

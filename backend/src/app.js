@@ -18,7 +18,9 @@ const { autorizacaoConsultaRoutes } = require('./routes/autorizacao-consulta.rou
 const { delegacaoDestinatariosRoutes } = require('./routes/delegacao-destinatarios.routes');
 const { materialRoutes } = require('./routes/material.routes');
 const { estoqueRoutes } = require('./routes/estoque.routes');
+const { itensDisponiveisRoutes } = require('./routes/itens-disponiveis.routes');
 const { grupoHomogeneoExposicaoRoutes } = require('./routes/grupo-homogeneo-exposicao.routes');
+const { gheMaterialRoutes } = require('./routes/ghe-material.routes');
 const { funcionarioRoutes } = require('./routes/funcionario.routes');
 const { cabecalhosSeguranca, semCache } = require('./middleware/cabecalhos');
 const { corsApi, corsPlataforma } = require('./middleware/cors');
@@ -114,6 +116,8 @@ app.use(
 //
 // grupoHomogeneoExposicaoRoutes e funcionarioRoutes (Bloco 9, Etapa B):
 // mesmo mecanismo da Etapa A, recursos 'employeeGroups' e 'employeeHistory'.
+// gheMaterialRoutes (Bloco 9, Etapa C, Parte C5): matriz GHE × EPI sob
+// /grupos-homogeneos/:id/materiais, mesmo recurso 'employeeGroups'.
 //
 // authGlobalRoutes (Autenticação Global — Pacote 4): login global por
 // e-mail+senha, seleção/troca de empresa e "sair completamente" do Portal
@@ -121,7 +125,7 @@ app.use(
 // plataforma). Emite o cookie global (nome próprio) e, ao selecionar
 // empresa, o MESMO cookie empresarial que exigirSessao já lê: nenhuma
 // rota de negócio muda.
-app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeral, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, estoqueRoutes, grupoHomogeneoExposicaoRoutes, funcionarioRoutes);
+app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeral, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, estoqueRoutes, itensDisponiveisRoutes, grupoHomogeneoExposicaoRoutes, gheMaterialRoutes, funcionarioRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

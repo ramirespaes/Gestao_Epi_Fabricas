@@ -276,3 +276,183 @@ describe('inativar e reativar', () => {
     assert.equal(contar(cliente.chamadas, /^ROLLBACK$/), 1);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// C4 (25/09/2026): data de admissão, CPF exato e importação em lote.
+// ═══════════════════════════════════════════════════════════════════
+const crypto = require('node:crypto');
+const declaracao = require('../../src/services/declaracao-lgpd');
+
+describe('C4 — data de admissão no cadastro e na edição', () => {
+  test('criar repassa dataAdmissao; admissão até o nascimento ou antes de 1900: 400 FUNCIONARIO_DATA_ADMISSAO_INVALIDA sem abrir transação', async (t) => {
+    const escritas = mundoValido(t);
+    await servico.criar(criarPoolFalso(criarClienteFalso()), { ...base, dataNascimento: '1990-03-15', dataAdmissao: '2020-06-01' });
+    assert.equal(escritas.criar.mock.calls[0].arguments[1].dataAdmissao, '2020-06-01');
+    for (const extra of [{ dataNascimento: '1990-03-15', dataAdmissao: '1990-03-15' }, { dataNascimento: '1990-03-15', dataAdmissao: '1980-01-01' }, { dataAdmissao: '1899-12-31' }]) {
+      const cliente = criarClienteFalso();
+      await esperarHttpError(servico.criar(criarPoolFalso(cliente), { ...base, ...extra }), 400, 'FUNCIONARIO_DATA_ADMISSAO_INVALIDA');
+      assert.equal(contar(cliente.chamadas, /^BEGIN$/), 0, JSON.stringify(extra));
+    }
+    assert.equal(escritas.criar.mock.calls.length, 1);
+  });
+
+  test('alterar compara com as datas já gravadas: admissão antes do nascimento existente, ou nascimento depois da admissão existente → 400 e ROLLBACK', async (t) => {
+    const escritas = mundoValido(t, { existente: funcionario({ dataNascimento: '1990-03-15', dataAdmissao: '2010-01-01' }) });
+    for (const extra of [{ dataAdmissao: '1989-01-01', dataAdmissaoInformado: true }, { dataNascimento: '2011-01-01', dataNascimentoInformado: true }]) {
+      const cliente = criarClienteFalso();
+      await esperarHttpError(servico.alterar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, funcionarioId: FUNC_ID, ...extra }), 400, 'FUNCIONARIO_DATA_ADMISSAO_INVALIDA');
+      assert.equal(contar(cliente.chamadas, /^ROLLBACK$/), 1);
+    }
+    assert.equal(escritas.atualizar.mock.calls.length, 0);
+    await servico.alterar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, funcionarioId: FUNC_ID, dataAdmissao: null, dataAdmissaoInformado: true });
+    const campos = escritas.atualizar.mock.calls[0].arguments[3];
+    assert.deepEqual([campos.dataAdmissao, campos.dataAdmissaoInformado], [null, true]);
+  });
+
+  test('CHECK do banco traduzido pela constraint: admissão → DATA_ADMISSAO_INVALIDA; formato de CPF → CPF_INVALIDO; outra → DADOS_INVALIDOS', async (t) => {
+    const casos = [
+      ['chk_funcionarios_admissao_apos_nascimento', 'FUNCIONARIO_DATA_ADMISSAO_INVALIDA'],
+      ['chk_funcionarios_data_admissao_minima', 'FUNCIONARIO_DATA_ADMISSAO_INVALIDA'],
+      ['chk_funcionarios_cpf_formato', 'FUNCIONARIO_CPF_INVALIDO'],
+      ['chk_outra', 'FUNCIONARIO_DADOS_INVALIDOS'],
+    ];
+    for (const [constraint, codigo] of casos) {
+      const escritas = mundoValido(t);
+      escritas.criar.mock.mockImplementation(async () => { throw Object.assign(new Error('violação'), { code: '23514', constraint }); });
+      await esperarHttpError(servico.criar(criarPoolFalso(criarClienteFalso()), base), 400, codigo);
+    }
+  });
+
+  test('auditoria inclui a data de admissão (dado de vínculo) e continua sem CPF, nascimento e telefone', async (t) => {
+    const escritas = mundoValido(t);
+    await servico.criar(criarPoolFalso(criarClienteFalso()), { ...base, dataAdmissao: '2020-06-01', telefone: '47999990000', dataNascimento: '1990-03-15' });
+    const auditoria = escritas.registrar.mock.calls[0].arguments[1];
+    assert.equal(auditoria.dadosNovos.dataAdmissao, '2020-06-01');
+    assertSemDadosSensiveis(auditoria);
+  });
+
+  test('listar repassa o CPF exato (já normalizado) ao repositório', async (t) => {
+    mundoValido(t);
+    await servico.listar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, cpf: '52998224725', pagina: 1, limite: 10 });
+    assert.equal(funcionarioRepo.listarPorEmpresa.mock.calls[0].arguments[2].cpf, '52998224725');
+    assert.equal(funcionarioRepo.contarPorEmpresa.mock.calls[0].arguments[2].cpf, '52998224725');
+  });
+});
+
+describe('C4 — declaração LGPD da importação (versão e hash do texto apresentado)', () => {
+  test('versão atual conhecida; hash = SHA-256 do texto exato; versão desconhecida não tem texto', () => {
+    assert.equal(declaracao.VERSAO_ATUAL, 'IMPORTACAO-FUNCIONARIOS-V1');
+    const texto = declaracao.textoDaVersao('IMPORTACAO-FUNCIONARIOS-V1');
+    assert.match(texto, /foram informados sobre o tratamento dos seus dados pessoais/);
+    assert.doesNotMatch(texto, /consent/i, 'declaração de informação, não consentimento');
+    assert.equal(declaracao.hashDaVersao('IMPORTACAO-FUNCIONARIOS-V1'), crypto.createHash('sha256').update(texto, 'utf8').digest('hex'));
+    assert.equal(declaracao.versaoConhecida('IMPORTACAO-FUNCIONARIOS-V0'), false);
+    assert.equal(declaracao.textoDaVersao('X'), null);
+  });
+});
+
+describe('C4 — importação em lote', () => {
+  const IMPORTACAO = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+  const linhaImp = (linha, extra = {}) => ({
+    linha, nome: `Funcionário ${linha}`, cpf: '52998224725', matricula: `MAT-${linha}`, dataAdmissao: '2020-06-01',
+    dataNascimento: '1990-03-15', setor: 'Produção', funcao: 'Operador', telefone: '47999990000', ...extra,
+  });
+  const pedido = (linhas, extra = {}) => ({
+    empresaId: EMPRESA, atorId: ATOR_ID, importacaoId: IMPORTACAO, lote: { numero: 1, total: 2 },
+    arquivo: { nome: 'funcionarios.xlsx', formato: 'xlsx', totalLinhas: 150 },
+    declaracaoLgpd: { versao: 'IMPORTACAO-FUNCIONARIOS-V1', confirmada: true }, linhas, ip: '10.0.0.1', dispositivo: 'teste', ...extra,
+  });
+
+  test('lote misto: cada linha tem resultado próprio e transação própria; uma linha ruim não desfaz nem interrompe as demais', async (t) => {
+    const escritas = mundoValido(t);
+    let id = 1000;
+    escritas.criar.mock.mockImplementation(async (_c, dados) => {
+      if (dados.matricula === 'MAT-4') throw Object.assign(new Error('dup'), { code: '23505', constraint: 'uq_funcionarios_empresa_cpf' });
+      if (dados.matricula === 'MAT-5') throw Object.assign(new Error('dup'), { code: '23505', constraint: 'uq_funcionarios_empresa_matricula' });
+      if (dados.matricula === 'MAT-6') throw new Error('falha inesperada com 52998224725 na mensagem');
+      id += 1;
+      return funcionario({ ...dados, id });
+    });
+    const erroLog = t.mock.method(console, 'error', () => {});
+    const cliente = criarClienteFalso();
+    const r = await servico.importar(criarPoolFalso(cliente), pedido([
+      linhaImp(2), linhaImp(3, { cpf: '52998224726' }), linhaImp(4), linhaImp(5), linhaImp(6), linhaImp(7, { dataAdmissao: '1985-01-01' }), linhaImp(8),
+    ]));
+    assert.deepEqual(r.linhas, [
+      { linha: 2, situacao: 'CADASTRADO', funcionarioId: 1001 },
+      { linha: 3, situacao: 'RECUSADO', codigo: 'FUNCIONARIO_CPF_INVALIDO', motivo: 'CPF inválido.', campos: ['cpf'] },
+      { linha: 4, situacao: 'DUPLICADO', codigo: 'FUNCIONARIO_CPF_EM_USO', motivo: 'CPF já cadastrado nesta empresa.' },
+      { linha: 5, situacao: 'DUPLICADO', codigo: 'FUNCIONARIO_MATRICULA_EM_USO', motivo: 'Matrícula já cadastrada nesta empresa.' },
+      { linha: 6, situacao: 'ERRO', codigo: 'ERRO_INTERNO', motivo: 'Erro ao processar esta linha. Ela não foi gravada.' },
+      { linha: 7, situacao: 'RECUSADO', codigo: 'FUNCIONARIO_DATA_ADMISSAO_INVALIDA', motivo: 'Data de admissão inválida: deve ser a partir de 1900 e posterior ao nascimento.', campos: ['dataAdmissao'] },
+      { linha: 8, situacao: 'CADASTRADO', funcionarioId: 1002 },
+    ]);
+    assert.deepEqual(r.resumo, { cadastrados: 2, duplicados: 2, recusados: 2, erros: 1 });
+    assert.deepEqual([r.importacaoId, r.lote], [IMPORTACAO, { numero: 1, total: 2 }]);
+    // linhas que chegaram ao banco (2, 4, 5, 6, 8) + o registro do lote: uma transação cada
+    assert.equal(contar(cliente.chamadas, /^BEGIN$/), 6);
+    assert.equal(contar(cliente.chamadas, /^COMMIT$/), 3, 'linhas 2 e 8 e a auditoria do lote');
+    assert.equal(contar(cliente.chamadas, /^ROLLBACK$/), 3, 'linhas 4, 5 e 6');
+    assert.equal(escritas.atualizar.mock.calls.length, 0, 'nunca altera funcionário existente');
+    // log técnico da linha com erro: só identificadores, nunca dados pessoais
+    assert.equal(erroLog.mock.calls.length, 1);
+    const logado = JSON.stringify(erroLog.mock.calls[0].arguments);
+    assert.match(logado, /importacao/);
+    assert.doesNotMatch(logado, /52998224725|Funcionário 6|47999990000|1990-03-15/);
+  });
+
+  test('a resposta nunca devolve nome, CPF, telefone nem datas das linhas', async (t) => {
+    mundoValido(t);
+    const r = await servico.importar(criarPoolFalso(criarClienteFalso()), pedido([linhaImp(2), linhaImp(3, { cpf: '1' })]));
+    assert.doesNotMatch(JSON.stringify(r), /52998224725|Funcionário 2|47999990000|1990-03-15|2020-06-01/);
+  });
+
+  test('auditoria: FUNCIONARIO_CRIADO por linha com origem, importacaoId e linha; um FUNCIONARIOS_IMPORTACAO_LOTE com declaração (versão, hash), contadores e nenhum dado pessoal', async (t) => {
+    const escritas = mundoValido(t);
+    await servico.importar(criarPoolFalso(criarClienteFalso()), pedido([linhaImp(2), linhaImp(3, { cpf: '1' })]));
+    const eventos = escritas.registrar.mock.calls.map((c) => c.arguments[1]);
+    assert.deepEqual(eventos.map((e) => e.acao), ['FUNCIONARIO_CRIADO', 'FUNCIONARIOS_IMPORTACAO_LOTE']);
+    const criado = eventos[0];
+    assert.deepEqual([criado.contexto.origem, criado.contexto.importacaoId, criado.contexto.linha], ['importacao', IMPORTACAO, 2]);
+    assertSemDadosSensiveis(criado);
+    const lote = eventos[1];
+    assert.deepEqual([lote.empresaId, lote.usuarioId, lote.referencia, lote.ip, lote.dispositivo], [EMPRESA, ATOR_ID, IMPORTACAO, '10.0.0.1', 'teste']);
+    assert.deepEqual(lote.contexto, {
+      versaoDeclaracao: 'IMPORTACAO-FUNCIONARIOS-V1',
+      hashTextoDeclaracao: declaracao.hashDaVersao('IMPORTACAO-FUNCIONARIOS-V1'),
+      declaracaoConfirmada: true,
+      lote: 1, totalLotes: 2, formato: 'xlsx', nomeArquivo: 'funcionarios.xlsx', totalLinhasArquivo: 150,
+      linhasNoLote: 2, cadastrados: 1, duplicados: 0, recusados: 1, erros: 0,
+    });
+    assert.doesNotMatch(JSON.stringify(lote), /52998224725|Funcionário|47999990000|1990-03-15/);
+  });
+
+  test('declaração ausente, não confirmada ou de versão desconhecida: 400 IMPORTACAO_DECLARACAO_LGPD_INVALIDA antes de qualquer transação', async (t) => {
+    const escritas = mundoValido(t);
+    for (const declaracaoLgpd of [undefined, { versao: 'IMPORTACAO-FUNCIONARIOS-V1', confirmada: false }, { versao: 'IMPORTACAO-FUNCIONARIOS-V0', confirmada: true }]) {
+      const cliente = criarClienteFalso();
+      await esperarHttpError(servico.importar(criarPoolFalso(cliente), pedido([linhaImp(2)], { declaracaoLgpd })), 400, 'IMPORTACAO_DECLARACAO_LGPD_INVALIDA');
+      assert.equal(contar(cliente.chamadas, /^BEGIN$/), 0);
+    }
+    assert.equal(escritas.criar.mock.calls.length, 0);
+    assert.equal(escritas.registrar.mock.calls.length, 0);
+  });
+
+  test('mais de 100 linhas no lote: TypeError de contrato (a rota já recusa com 400), nada gravado', async (t) => {
+    const escritas = mundoValido(t);
+    const linhas = Array.from({ length: 101 }, (_, i) => linhaImp(i + 2));
+    await assert.rejects(servico.importar(criarPoolFalso(criarClienteFalso()), pedido(linhas)), TypeError);
+    assert.equal(escritas.criar.mock.calls.length, 0);
+  });
+
+  test('importação nunca vincula GHE nem aceita crachá: o repositório recebe só os campos da planilha', async (t) => {
+    const escritas = mundoValido(t);
+    await servico.importar(criarPoolFalso(criarClienteFalso()), pedido([linhaImp(2)]));
+    const dados = escritas.criar.mock.calls[0].arguments[1];
+    assert.deepEqual(dados, {
+      empresaId: EMPRESA, matricula: 'MAT-2', nome: 'Funcionário 2', cpf: '52998224725', grupoHomogeneoId: null,
+      dataNascimento: '1990-03-15', dataAdmissao: '2020-06-01', setor: 'Produção', funcao: 'Operador', cracha: null, telefone: '47999990000',
+    });
+    assert.equal(escritas.buscarGhe.mock.calls.length, 0);
+  });
+});
