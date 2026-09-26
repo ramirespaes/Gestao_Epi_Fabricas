@@ -158,3 +158,18 @@ describe('cpfTemDigitosVerificadoresValidos (Bloco 9, Etapa B)', () => {
     assert.equal(cpfTemDigitosVerificadoresValidos(52998224725), false);
   });
 });
+
+describe('mascararCpf (minimização na resposta — segurança S3 do Bloco 9)', () => {
+  const { mascararCpf } = require('../../src/utils/normalizacao');
+
+  test('CPF armazenado vira ***.***.***-XX, só com os dois últimos dígitos', () => {
+    assert.equal(mascararCpf('52998224725'), '***.***.***-25');
+    assert.equal(mascararCpf('11144477735'), '***.***.***-35');
+  });
+
+  test('qualquer outra entrada devolve null, sem vazar parte dela', () => {
+    for (const invalido of ['529.982.247-25', '123', '', null, undefined, 52998224725]) {
+      assert.equal(mascararCpf(invalido), null, String(invalido));
+    }
+  });
+});

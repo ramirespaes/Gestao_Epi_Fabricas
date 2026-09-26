@@ -138,6 +138,17 @@ function cpfTemDigitosVerificadoresValidos(cpfNormalizado) {
 }
 
 /**
+ * Minimização para respostas e telas (segurança S3 do Bloco 9): só os dois
+ * últimos dígitos de um CPF JÁ armazenado ('52998224725' -> '***.***.***-25');
+ * null para qualquer outra entrada, sem devolver parte dela.
+ */
+function mascararCpf(cpfArmazenado) {
+  return typeof cpfArmazenado === 'string' && CPF_FORMATO_ARMAZENADO.test(cpfArmazenado)
+    ? `***.***.***-${cpfArmazenado.slice(9)}`
+    : null;
+}
+
+/**
  * '  Luis@Empresa.com ' -> 'luis@empresa.com'; senão null.
  */
 function normalizarEmail(valor) {
@@ -162,5 +173,6 @@ module.exports = {
   cnpjTemDigitosVerificadoresValidos,
   normalizarCpf,
   cpfTemDigitosVerificadoresValidos,
+  mascararCpf,
   normalizarEmail,
 };

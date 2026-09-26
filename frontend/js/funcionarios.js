@@ -22,8 +22,8 @@
    * PRIVACIDADE: o ARQUIVO é interpretado só no navegador e nunca é enviado
    * inteiro; os DADOS NECESSÁRIOS de cada funcionário válido (nome, CPF,
    * matrícula, datas, setor, função, telefone) SÃO enviados ao servidor
-   * para gravação. Nenhum valor de planilha é logado; o relatório final não
-   * exibe CPF. O BACKEND É A AUTORIDADE FINAL: tudo o que é validado aqui é
+   * para gravação. Nenhum valor de planilha é logado; a prévia mostra o CPF
+   * minimizado (***.***.***-XX) e o relatório final não o exibe. O BACKEND É A AUTORIDADE FINAL: tudo o que é validado aqui é
    * validado de novo no servidor.
    */
 
@@ -79,11 +79,14 @@
     return p(ano, 4) + '-' + p(mes, 2) + '-' + p(dia, 2);
   }
 
-  function formatarCpf(d) {
-    return /^\d{11}$/.test(d) ? d.slice(0, 3) + '.' + d.slice(3, 6) + '.' + d.slice(6, 9) + '-' + d.slice(9) : d;
+  // Minimização na tela (segurança S3 do Bloco 9): só os dois últimos
+  // dígitos; valor fora do formato não aparece nem em parte.
+  function mascararCpf(d) {
+    if (!d) return '';
+    return /^\d{11}$/.test(d) ? '***.***.***-' + d.slice(9) : '***.***.***-**';
   }
 
-  var utilitarios = { cpfValido: cpfValido, dataDeCalendario: dataDeCalendario, formatarCpf: formatarCpf };
+  var utilitarios = { cpfValido: cpfValido, dataDeCalendario: dataDeCalendario, mascararCpf: mascararCpf };
 
   // ───────────────────────────────────────────────────────────────────
   // Ações
@@ -327,7 +330,7 @@
         dataNascimento: nasc.valor || null, dataAdmissao: adm.valor || null, funcao: funcao,
       },
       exibicao: {
-        nome: nome, setor: setor, telefone: telefone, cpf: formatarCpf(cpf), matricula: matricula,
+        nome: nome, setor: setor, telefone: telefone, cpf: mascararCpf(cpf), matricula: matricula,
         nascimento: exibirData(nasc.valor, celula('nascimento')), contratacao: exibirData(adm.valor, celula('contratacao')), cargo: funcao,
       },
       erros: erros,

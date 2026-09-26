@@ -1,6 +1,7 @@
 'use strict';
 
 const funcionarioService = require('../services/funcionario.service');
+const { mascararCpf } = require('../utils/normalizacao');
 const { pool } = require('../config/database');
 
 /**
@@ -10,10 +11,20 @@ const { pool } = require('../config/database');
  *
  * `alterar` NÃO repassa `cpf` ao serviço: o CPF é imutável após o cadastro
  * (schema de alterar não o declara; o serviço e o repositório o recusam).
+ *
+ * Nenhuma resposta devolve o CPF completo (segurança S3 do Bloco 9): nenhuma
+ * tela precisa dele e a listagem permitiria coletar os CPFs da empresa
+ * inteira. Sai só `cpfMascarado` (***.***.***-XX). Gravação, validação e
+ * busca por CPF completo (igualdade exata) continuam as mesmas.
  */
 
 const comContexto = (req) => ({ empresaId: req.empresa.id, atorId: req.usuario.id, ip: req.ip, dispositivo: req.headers['user-agent'] });
 const informado = (corpo, campo, flag) => (Object.hasOwn(corpo, campo) ? { [campo]: corpo[campo], [flag]: true } : {});
+
+function paraResposta(funcionario) {
+  const { cpf, ...resto } = funcionario;
+  return { ...resto, cpfMascarado: mascararCpf(cpf) };
+}
 
 function criarFuncionarioController({ pool: poolInjetado }) {
   return {
@@ -26,7 +37,7 @@ function criarFuncionarioController({ pool: poolInjetado }) {
         setor: c.setor ?? null, funcao: c.funcao ?? null, cracha: c.cracha ?? null, telefone: c.telefone ?? null,
         dataAdmissao: c.dataAdmissao ?? null,
       });
-      res.status(201).json({ status: 'ok', funcionario });
+      res.status(201).json({ status: 'ok', funcionario: paraResposta(funcionario) });
     },
 
     async listar(req, res) {
@@ -35,12 +46,12 @@ function criarFuncionarioController({ pool: poolInjetado }) {
         empresaId: req.empresa.id, ativo: ativo ?? null, busca: busca ?? null, grupoHomogeneoId: grupoHomogeneoId ?? null,
         cpf: cpf ?? null, pagina, limite,
       });
-      res.status(200).json({ status: 'ok', ...resultado });
+      res.status(200).json({ status: 'ok', ...resultado, funcionarios: resultado.funcionarios.map(paraResposta) });
     },
 
     async buscar(req, res) {
       const funcionario = await funcionarioService.buscar(poolInjetado, { empresaId: req.empresa.id, funcionarioId: req.validado.params.id });
-      res.status(200).json({ status: 'ok', funcionario });
+      res.status(200).json({ status: 'ok', funcionario: paraResposta(funcionario) });
     },
 
     async alterar(req, res) {
@@ -58,7 +69,7 @@ function criarFuncionarioController({ pool: poolInjetado }) {
         ...informado(c, 'telefone', 'telefoneInformado'),
         ...informado(c, 'dataAdmissao', 'dataAdmissaoInformado'),
       });
-      res.status(200).json({ status: 'ok', funcionario });
+      res.status(200).json({ status: 'ok', funcionario: paraResposta(funcionario) });
     },
 
     /**
@@ -77,12 +88,12 @@ function criarFuncionarioController({ pool: poolInjetado }) {
 
     async inativar(req, res) {
       const { funcionario, alterado } = await funcionarioService.inativar(poolInjetado, { ...comContexto(req), funcionarioId: req.validado.params.id });
-      res.status(200).json({ status: 'ok', funcionario, alterado });
+      res.status(200).json({ status: 'ok', funcionario: paraResposta(funcionario), alterado });
     },
 
     async reativar(req, res) {
       const { funcionario, alterado } = await funcionarioService.reativar(poolInjetado, { ...comContexto(req), funcionarioId: req.validado.params.id });
-      res.status(200).json({ status: 'ok', funcionario, alterado });
+      res.status(200).json({ status: 'ok', funcionario: paraResposta(funcionario), alterado });
     },
   };
 }

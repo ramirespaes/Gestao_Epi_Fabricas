@@ -27,20 +27,20 @@ const executorFalso = (linhas = []) => {
 };
 
 const linha = (extra = {}) => ({
-  id: 70, empresa_id: EMPRESA_A, grupo_homogeneo_id: GHE, matricula: 'MAT-000171', nome: 'Marcos Silva',
+  id: 70, empresa_id: EMPRESA_A, grupo_homogeneo_id: GHE, matricula: 'MAT-000171', nome: 'Tício de Tal',
   cpf: '52998224725', data_nascimento: '1990-03-15', setor: 'Manutenção', funcao: 'Mecânico',
   cracha: 'CR-001284', telefone: null, ativo: true, data_admissao: '2020-06-01',
   criado_em: new Date('2026-09-23T12:00:00Z'), atualizado_em: new Date('2026-09-23T12:00:00Z'), ...extra,
 });
 
 const mapeada = {
-  id: 70, empresaId: EMPRESA_A, grupoHomogeneoId: GHE, matricula: 'MAT-000171', nome: 'Marcos Silva',
+  id: 70, empresaId: EMPRESA_A, grupoHomogeneoId: GHE, matricula: 'MAT-000171', nome: 'Tício de Tal',
   cpf: '52998224725', dataNascimento: '1990-03-15', setor: 'Manutenção', funcao: 'Mecânico',
   cracha: 'CR-001284', telefone: null, ativo: true, dataAdmissao: '2020-06-01',
   criadoEm: new Date('2026-09-23T12:00:00Z'), atualizadoEm: new Date('2026-09-23T12:00:00Z'),
 };
 
-const base = { empresaId: EMPRESA_A, matricula: 'MAT-000171', nome: 'Marcos Silva', cpf: '52998224725' };
+const base = { empresaId: EMPRESA_A, matricula: 'MAT-000171', nome: 'Tício de Tal', cpf: '52998224725' };
 
 describe('criar', () => {
   test('INSERT parametrizado; ativo não é parâmetro; nenhuma referência a usuarios', async () => {
@@ -53,14 +53,14 @@ describe('criar', () => {
     assert.doesNotMatch(texto, /usuarios/i);
     const colunas = texto.slice(texto.indexOf('('), texto.search(/\bvalues\b/i));
     assert.doesNotMatch(colunas, /\bativo\b/i);
-    assert.deepEqual(valores, [EMPRESA_A, GHE, 'MAT-000171', 'Marcos Silva', '52998224725', '1990-03-15', 'Manutenção', 'Mecânico', 'CR-001284', null, null]);
+    assert.deepEqual(valores, [EMPRESA_A, GHE, 'MAT-000171', 'Tício de Tal', '52998224725', '1990-03-15', 'Manutenção', 'Mecânico', 'CR-001284', null, null]);
     assert.deepEqual(funcionario, mapeada);
   });
 
   test('sem GHE e sem opcionais: NULLs como parâmetro', async () => {
     const executor = executorFalso([linha({ grupo_homogeneo_id: null })]);
     await criar(executor, base);
-    assert.deepEqual(executor.chamadas[0].valores, [EMPRESA_A, null, 'MAT-000171', 'Marcos Silva', '52998224725', null, null, null, null, null, null]);
+    assert.deepEqual(executor.chamadas[0].valores, [EMPRESA_A, null, 'MAT-000171', 'Tício de Tal', '52998224725', null, null, null, null, null, null]);
   });
 
   test('recusa entrada inválida antes de consultar — CPF só é aceito já normalizado (11 dígitos)', async () => {
@@ -131,8 +131,8 @@ describe('listarPorEmpresa e contarPorEmpresa', () => {
 
 describe('atualizar', () => {
   test('UPDATE alcança só o cadastro — nunca id, empresa_id, criado_em nem cpf; parâmetros na ordem do contrato', async () => {
-    const executor = executorFalso([linha({ nome: 'Marcos S.' })]);
-    await atualizar(executor, EMPRESA_A, 70, { nome: 'Marcos S.' });
+    const executor = executorFalso([linha({ nome: 'Tício T.' })]);
+    await atualizar(executor, EMPRESA_A, 70, { nome: 'Tício T.' });
     const { texto, valores } = executor.chamadas[0];
     const set = texto.slice(texto.search(/\bset\b/i), texto.search(/\bwhere\b/i));
     for (const c of ['matricula', 'nome', 'grupo_homogeneo_id', 'data_nascimento', 'setor', 'funcao', 'cracha', 'telefone', 'ativo']) {
@@ -142,7 +142,7 @@ describe('atualizar', () => {
     assert.doesNotMatch(set, /criado_em\s*=/i);
     assert.doesNotMatch(set, /\bid\s*=/i);
     assert.doesNotMatch(set, /\bcpf\s*=/i, 'CPF é imutável: o UPDATE não tem cláusula para a coluna (ela só aparece na projeção RETURNING)');
-    assert.deepEqual(valores, [EMPRESA_A, 70, null, 'Marcos S.', false, null, false, null, false, null, false, null, false, null, false, null, null, false, null]);
+    assert.deepEqual(valores, [EMPRESA_A, 70, null, 'Tício T.', false, null, false, null, false, null, false, null, false, null, false, null, null, false, null]);
   });
 
   test('CPF imutável: atualizar recusa a chave cpf com qualquer valor (válido, inválido ou null), sem consultar', async () => {

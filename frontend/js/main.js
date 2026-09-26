@@ -69,7 +69,7 @@
       {nome:'Maria Fernandez', ini:'MF', setor:'Qualidade', epi:'Luva nitrílica', entrega:'10/03/2026', prazo:30},
       {nome:'Bruno Costa', ini:'BC', setor:'Qualidade', epi:'Capacete', entrega:'20/03/2026', prazo:90},
       {nome:'Ricardo Melo', ini:'RM', setor:'Manutenção', epi:'Botina de segurança', entrega:'25/03/2026', prazo:30},
-      {nome:'Marcos Silva', ini:'MS', setor:'Manutenção', epi:'Botina de segurança', entrega:'12/04/2026', prazo:30}
+      {nome:'Tício de Tal', ini:'TT', setor:'Manutenção', epi:'Botina de segurança', entrega:'12/04/2026', prazo:30}
     ];
 
     function renderDashboardLegend(){
@@ -167,7 +167,7 @@
 
       const mailList = document.getElementById('autoMailPreviewList');
       if(mailList){
-        const recipients = ['sst@empresa.com','almoxarifado@empresa.com','lideranca@empresa.com'];
+        const recipients = ['sst@example.invalid','almoxarifado@example.invalid','lideranca@example.invalid'];
         mailList.innerHTML = priorityRows.length ? recipients.map((email, index) => `
           <div class="mail-preview-item">
             <strong>${email}</strong>
@@ -1178,7 +1178,7 @@
       const example = [
         'João Pereira,Produção,(47) 99999-0001,123.456.789-09,MAT-000001,15/03/1990,01/06/2020,Operador de Produção',
         'Ana Souza,Qualidade,(47) 99999-0002,987.654.321-00,MAT-000002,22/07/1985,10/01/2019,Analista de Qualidade',
-        'Marcos Silva,Manutenção,(47) 99999-0003,456.789.123-87,MAT-000003,08/11/1992,15/08/2021,Mecânico de Manutenção',
+        'Tício de Tal,Manutenção,(47) 99999-0003,456.789.123-87,MAT-000003,08/11/1992,15/08/2021,Mecânico de Manutenção',
       ];
       const csv = [header, ...example].join('\n');
       const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -1496,29 +1496,29 @@
     ];
 
     var emailHistorico = [
-      { id: 1,  dt: '19/04/2026 09:10', tipo: 'aprovacao',        dest: 'João Pereira',    email: 'joao@empresa.com',          assunto: 'Pedido de EPI aprovado',                ref: 'PED-0041',  status: 'enviado'  },
-      { id: 2,  dt: '19/04/2026 08:41', tipo: 'boas-vindas',      dest: 'Carlos Mendes',   email: 'carlos@empresa.com',         assunto: 'Bem-vindo ao Gestão de EPIs',           ref: 'USR-0024',  status: 'enviado'  },
-      { id: 3,  dt: '19/04/2026 08:41', tipo: 'boas-vindas',      dest: 'Fernanda Lima',   email: 'fernanda@empresa.com',       assunto: 'Bem-vindo ao Gestão de EPIs',           ref: 'USR-0025',  status: 'enviado'  },
-      { id: 4,  dt: '19/04/2026 07:00', tipo: 'alerta-vencimento',dest: 'SST',             email: 'sst@empresa.com',            assunto: 'Alerta: 3 EPIs próximos do vencimento', ref: 'AUTO-007',  status: 'enviado'  },
-      { id: 5,  dt: '19/04/2026 07:00', tipo: 'alerta-vencimento',dest: 'Luis Freitas',    email: 'luis@empresa.com',           assunto: 'Alerta: 3 EPIs próximos do vencimento', ref: 'AUTO-007',  status: 'enviado'  },
-      { id: 6,  dt: '18/04/2026 16:50', tipo: 'estoque',          dest: 'Almoxarifado',    email: 'almoxarifado@empresa.com',   assunto: 'Estoque mínimo atingido: Botina nº40',  ref: 'EST-014',   status: 'falha'    },
-      { id: 7,  dt: '18/04/2026 14:22', tipo: 'alerta-troca',     dest: 'SST',             email: 'sst@empresa.com',            assunto: 'URGENTE: Troca imediata — Marcos Silva',ref: 'AUTO-006',  status: 'enviado'  },
-      { id: 8,  dt: '18/04/2026 14:22', tipo: 'alerta-troca',     dest: 'Liderança',       email: 'lideranca@empresa.com',      assunto: 'URGENTE: Troca imediata — Marcos Silva',ref: 'AUTO-006',  status: 'enviado'  },
-      { id: 9,  dt: '18/04/2026 09:05', tipo: 'aprovacao',        dest: 'Ana Souza',       email: 'ana@empresa.com',            assunto: 'Pedido de EPI aprovado',                ref: 'PED-0040',  status: 'enviado'  },
-      { id: 10, dt: '17/04/2026 10:30', tipo: 'entrega',          dest: 'Marcos Silva',    email: 'marcos@empresa.com',         assunto: 'EPI entregue — Ficha #0171',            ref: 'FIC-0171',  status: 'enviado'  },
-      { id: 11, dt: '16/04/2026 11:30', tipo: 'estoque',          dest: 'Compras',         email: 'compras@empresa.com',        assunto: 'Estoque mínimo: Luva nitrílica',        ref: 'EST-013',   status: 'enviado'  },
-      { id: 12, dt: '15/04/2026 08:00', tipo: 'ca-vencendo',      dest: 'SST',             email: 'sst@empresa.com',            assunto: 'CA a vencer: Protetor auricular',       ref: 'CA-0055',   status: 'enviado'  },
-      { id: 13, dt: '14/04/2026 15:18', tipo: 'reprovacao',       dest: 'Pedro Alves',     email: 'pedro@empresa.com',          assunto: 'Pedido de EPI reprovado',               ref: 'PED-0039',  status: 'enviado'  },
-      { id: 14, dt: '14/04/2026 07:00', tipo: 'alerta-vencimento',dest: 'SST',             email: 'sst@empresa.com',            assunto: 'Alerta: 2 EPIs próximos do vencimento', ref: 'AUTO-005',  status: 'falha'    },
+      { id: 1,  dt: '19/04/2026 09:10', tipo: 'aprovacao',        dest: 'João Pereira',    email: 'joao@example.invalid',          assunto: 'Pedido de EPI aprovado',                ref: 'PED-0041',  status: 'enviado'  },
+      { id: 2,  dt: '19/04/2026 08:41', tipo: 'boas-vindas',      dest: 'Carlos Mendes',   email: 'carlos@example.invalid',         assunto: 'Bem-vindo ao Gestão de EPIs',           ref: 'USR-0024',  status: 'enviado'  },
+      { id: 3,  dt: '19/04/2026 08:41', tipo: 'boas-vindas',      dest: 'Fernanda Lima',   email: 'fernanda@example.invalid',       assunto: 'Bem-vindo ao Gestão de EPIs',           ref: 'USR-0025',  status: 'enviado'  },
+      { id: 4,  dt: '19/04/2026 07:00', tipo: 'alerta-vencimento',dest: 'SST',             email: 'sst@example.invalid',            assunto: 'Alerta: 3 EPIs próximos do vencimento', ref: 'AUTO-007',  status: 'enviado'  },
+      { id: 5,  dt: '19/04/2026 07:00', tipo: 'alerta-vencimento',dest: 'Fulano de Tal',    email: 'fulano@example.invalid',           assunto: 'Alerta: 3 EPIs próximos do vencimento', ref: 'AUTO-007',  status: 'enviado'  },
+      { id: 6,  dt: '18/04/2026 16:50', tipo: 'estoque',          dest: 'Almoxarifado',    email: 'almoxarifado@example.invalid',   assunto: 'Estoque mínimo atingido: Botina nº40',  ref: 'EST-014',   status: 'falha'    },
+      { id: 7,  dt: '18/04/2026 14:22', tipo: 'alerta-troca',     dest: 'SST',             email: 'sst@example.invalid',            assunto: 'URGENTE: Troca imediata — Tício de Tal',ref: 'AUTO-006',  status: 'enviado'  },
+      { id: 8,  dt: '18/04/2026 14:22', tipo: 'alerta-troca',     dest: 'Liderança',       email: 'lideranca@example.invalid',      assunto: 'URGENTE: Troca imediata — Tício de Tal',ref: 'AUTO-006',  status: 'enviado'  },
+      { id: 9,  dt: '18/04/2026 09:05', tipo: 'aprovacao',        dest: 'Ana Souza',       email: 'ana@example.invalid',            assunto: 'Pedido de EPI aprovado',                ref: 'PED-0040',  status: 'enviado'  },
+      { id: 10, dt: '17/04/2026 10:30', tipo: 'entrega',          dest: 'Tício de Tal',    email: 'ticio@example.invalid',         assunto: 'EPI entregue — Ficha #0171',            ref: 'FIC-0171',  status: 'enviado'  },
+      { id: 11, dt: '16/04/2026 11:30', tipo: 'estoque',          dest: 'Compras',         email: 'compras@example.invalid',        assunto: 'Estoque mínimo: Luva nitrílica',        ref: 'EST-013',   status: 'enviado'  },
+      { id: 12, dt: '15/04/2026 08:00', tipo: 'ca-vencendo',      dest: 'SST',             email: 'sst@example.invalid',            assunto: 'CA a vencer: Protetor auricular',       ref: 'CA-0055',   status: 'enviado'  },
+      { id: 13, dt: '14/04/2026 15:18', tipo: 'reprovacao',       dest: 'Pedro Alves',     email: 'pedro@example.invalid',          assunto: 'Pedido de EPI reprovado',               ref: 'PED-0039',  status: 'enviado'  },
+      { id: 14, dt: '14/04/2026 07:00', tipo: 'alerta-vencimento',dest: 'SST',             email: 'sst@example.invalid',            assunto: 'Alerta: 2 EPIs próximos do vencimento', ref: 'AUTO-005',  status: 'falha'    },
     ];
 
     var destinatarios = [
-      { id: 1, nome: 'Luis Freitas',   email: 'luis@empresa.com',          cargo: 'Master / SST',       tipos: ['boas-vindas','alerta-vencimento','alerta-troca','aprovacao','entrega','estoque','ca-vencendo'], status: 'ativo'  },
-      { id: 2, nome: 'SST',            email: 'sst@empresa.com',            cargo: 'Segurança do Trabalho',tipos: ['alerta-vencimento','alerta-troca','entrega','ca-vencendo','estoque'],                        status: 'ativo'  },
-      { id: 3, nome: 'Almoxarifado',   email: 'almoxarifado@empresa.com',   cargo: 'Almoxarifado',       tipos: ['estoque','alerta-vencimento'],                                                                status: 'ativo'  },
-      { id: 4, nome: 'Liderança',      email: 'lideranca@empresa.com',      cargo: 'Liderança Produção',  tipos: ['alerta-troca','aprovacao'],                                                                  status: 'ativo'  },
-      { id: 5, nome: 'Compras',        email: 'compras@empresa.com',        cargo: 'Compras',            tipos: ['estoque','ca-vencendo'],                                                                       status: 'ativo'  },
-      { id: 6, nome: 'RH',             email: 'rh@empresa.com',             cargo: 'Recursos Humanos',   tipos: ['boas-vindas','reprovacao'],                                                                   status: 'inativo'},
+      { id: 1, nome: 'Fulano de Tal',   email: 'fulano@example.invalid',          cargo: 'Master / SST',       tipos: ['boas-vindas','alerta-vencimento','alerta-troca','aprovacao','entrega','estoque','ca-vencendo'], status: 'ativo'  },
+      { id: 2, nome: 'SST',            email: 'sst@example.invalid',            cargo: 'Segurança do Trabalho',tipos: ['alerta-vencimento','alerta-troca','entrega','ca-vencendo','estoque'],                        status: 'ativo'  },
+      { id: 3, nome: 'Almoxarifado',   email: 'almoxarifado@example.invalid',   cargo: 'Almoxarifado',       tipos: ['estoque','alerta-vencimento'],                                                                status: 'ativo'  },
+      { id: 4, nome: 'Liderança',      email: 'lideranca@example.invalid',      cargo: 'Liderança Produção',  tipos: ['alerta-troca','aprovacao'],                                                                  status: 'ativo'  },
+      { id: 5, nome: 'Compras',        email: 'compras@example.invalid',        cargo: 'Compras',            tipos: ['estoque','ca-vencendo'],                                                                       status: 'ativo'  },
+      { id: 6, nome: 'RH',             email: 'rh@example.invalid',             cargo: 'Recursos Humanos',   tipos: ['boas-vindas','reprovacao'],                                                                   status: 'inativo'},
     ];
     var destNextId = 7;
 
@@ -1718,9 +1718,9 @@
     /* ── SUPORTE ── */
     function openSupportModal(canal) {
       var titles = {sistema:'Abrir chamado — Sistema',almoxarifado:'Solicitar apoio — Almoxarifado',sst:'Contatar SST'};
-      var subs   = {sistema:'Descreva o erro ou dúvida. Atendimento: suporte@empresa.com',
-                    almoxarifado:'Dúvidas sobre saldo, entrega e reposição. Contato: almoxarifado@empresa.com',
-                    sst:'Tratativas sobre validade de uso, troca e exigência de EPI. Contato: sst@empresa.com'};
+      var subs   = {sistema:'Descreva o erro ou dúvida. Atendimento: suporte@example.invalid',
+                    almoxarifado:'Dúvidas sobre saldo, entrega e reposição. Contato: almoxarifado@example.invalid',
+                    sst:'Tratativas sobre validade de uso, troca e exigência de EPI. Contato: sst@example.invalid'};
       document.getElementById('supportModalTitle').textContent = titles[canal] || 'Abrir chamado';
       document.getElementById('supportModalSub').textContent   = subs[canal]   || '';
       document.getElementById('supportModal').classList.add('open');
@@ -1736,14 +1736,14 @@
       // Destino conforme canal
       var canal = document.getElementById('supportModalTitle').textContent;
       var destinos = {
-        'sistema':       'suporte@empresa.com',
-        'almoxarifado':  'almoxarifado@empresa.com',
-        'sst':           'sst@empresa.com',
+        'sistema':       'suporte@example.invalid',
+        'almoxarifado':  'almoxarifado@example.invalid',
+        'sst':           'sst@example.invalid',
       };
       // Detectar pelo título
-      var dest = 'suporte@empresa.com';
-      if (canal.includes('Almoxarifado')) dest = 'almoxarifado@empresa.com';
-      else if (canal.includes('SST'))     dest = 'sst@empresa.com';
+      var dest = 'suporte@example.invalid';
+      if (canal.includes('Almoxarifado')) dest = 'almoxarifado@example.invalid';
+      else if (canal.includes('SST'))     dest = 'sst@example.invalid';
 
       var assunto = encodeURIComponent('[Sistema EPI] ' + tipo + (nome ? ' — ' + nome : ''));
       var corpo   = encodeURIComponent(
@@ -1929,12 +1929,12 @@
       try { _emp = JSON.parse(localStorage.getItem('epi-ficha-empresa') || '{}'); } catch(e) {}
 
       var dados = {
-        funcionario:  document.getElementById('fichaNome')?.textContent || 'Marcos Silva',
+        funcionario:  document.getElementById('fichaNome')?.textContent || 'Tício de Tal',
         matricula:    document.getElementById('fichaMatricula')?.textContent || 'MAT-000171',
         cpf:          document.getElementById('fichaCpf')?.textContent || '***.***.789-45',
         setor:        document.getElementById('fichaSetor')?.textContent || 'Manutenção',
         funcao:       document.getElementById('fichaFuncao')?.textContent || 'Mecânico',
-        responsavel:  _emp.responsavel || 'Luis Freitas',
+        responsavel:  _emp.responsavel || 'Fulano de Tal',
         cargo:        _emp.cargo || 'Responsável SST / Entregador',
         epi:          'Botina de segurança',
         ca:           '12345',
@@ -2213,10 +2213,10 @@
       exportCSV('epis_entregues.csv',
         ['Funcionário','Setor','Tipo','Item entregue','Tamanho','Quantidade','Data da entrega','Entregue por'],
         [
-          ['Marcos Silva','Manutenção','Sapatão / Botina','Botina de segurança','40','1 par','12/04/2026','Luis Freitas'],
-          ['João Pereira','Produção','Protetor auricular','Protetor auricular silicone','Único','2 unidades','11/04/2026','Tainara Alves'],
-          ['Ana Souza','Produção','Óculos de proteção','Óculos incolor antiembaçante','Único','1 unidade','08/04/2026','Luis Freitas'],
-          ['Carlos Mendes','Expedição','Roupa / Uniforme','Uniforme operacional','G','2 unidades','17/04/2026','Luis Freitas'],
+          ['Tício de Tal','Manutenção','Sapatão / Botina','Botina de segurança','40','1 par','12/04/2026','Fulano de Tal'],
+          ['João Pereira','Produção','Protetor auricular','Protetor auricular silicone','Único','2 unidades','11/04/2026','Beltrana de Tal'],
+          ['Ana Souza','Produção','Óculos de proteção','Óculos incolor antiembaçante','Único','1 unidade','08/04/2026','Fulano de Tal'],
+          ['Carlos Mendes','Expedição','Roupa / Uniforme','Uniforme operacional','G','2 unidades','17/04/2026','Fulano de Tal'],
         ]
       );
     }
@@ -2272,10 +2272,10 @@
     function doExportConfig() {
       var config = {
         exportedAt: new Date().toISOString(),
-        exportedBy: 'Luis Freitas',
+        exportedBy: 'Fulano de Tal',
         users: [
-          {nome:'Luis Freitas',email:'luis.freitas@empresa.com',role:'Master',status:'Ativo'},
-          {nome:'Tainara Alves',email:'tainara@empresa.com',role:'Administrador',status:'Ativo'},
+          {nome:'Fulano de Tal',email:'fulano@example.invalid',role:'Master',status:'Ativo'},
+          {nome:'Beltrana de Tal',email:'beltrana@example.invalid',role:'Administrador',status:'Ativo'},
         ],
         rolePermissions: typeof rolePermissions !== 'undefined' ? rolePermissions : {},
         actionPermissions: typeof blockedActions !== 'undefined' ? blockedActions : {},
@@ -2325,7 +2325,7 @@
         '{{data_vencimento}}':        '18/05/2026',
         '{{dias}}':                   '30',
         '{{data_entrega}}':           '19/04/2026',
-        '{{responsavel_sst}}':        'Luis Freitas',
+        '{{responsavel_sst}}':        'Fulano de Tal',
         '{{empresa_nome}}':           'Cobresul',
         '{{link_sistema}}':           'https://sistema.empresa.com',
       };
@@ -2395,13 +2395,13 @@
     };
 
     var deliveredData = [
-      { func: 'Marcos Silva',  setor: 'Manutenção', tipo: 'Sapatão / Botina',   item: 'Botina de segurança',          tam: '40',    qtd: '1 par',      dt: '12/04/2026', por: 'Luis Freitas'  },
-      { func: 'João Pereira',  setor: 'Produção',   tipo: 'Protetor auricular', item: 'Protetor auricular silicone',  tam: 'Único', qtd: '2 unidades', dt: '11/04/2026', por: 'Tainara Alves' },
-      { func: 'Ana Souza',     setor: 'Produção',   tipo: 'Óculos de proteção', item: 'Óculos incolor antiembaçante', tam: 'Único', qtd: '1 unidade',  dt: '08/04/2026', por: 'Luis Freitas'  },
-      { func: 'Carlos Mendes', setor: 'Expedição',  tipo: 'Roupa / Uniforme',   item: 'Uniforme operacional',         tam: 'G',     qtd: '2 unidades', dt: '17/04/2026', por: 'Luis Freitas'  },
-      { func: 'Pedro Alves',   setor: 'Manutenção', tipo: 'Luva',               item: 'Luva nitrílica',               tam: 'G',     qtd: '3 pares',    dt: '01/11/2025', por: 'Luis Freitas'  },
-      { func: 'Fernanda Lima', setor: 'Qualidade',  tipo: 'Óculos de proteção', item: 'Óculos ampla visão',           tam: 'Único', qtd: '1 unidade',  dt: '15/01/2026', por: 'Tainara Alves' },
-      { func: 'Ricardo Souza', setor: 'Produção',   tipo: 'Capacete',           item: 'Capacete de segurança Classe B',tam:'Único', qtd: '1 unidade',  dt: '10/03/2024', por: 'Luis Freitas'  },
+      { func: 'Tício de Tal',  setor: 'Manutenção', tipo: 'Sapatão / Botina',   item: 'Botina de segurança',          tam: '40',    qtd: '1 par',      dt: '12/04/2026', por: 'Fulano de Tal'  },
+      { func: 'João Pereira',  setor: 'Produção',   tipo: 'Protetor auricular', item: 'Protetor auricular silicone',  tam: 'Único', qtd: '2 unidades', dt: '11/04/2026', por: 'Beltrana de Tal' },
+      { func: 'Ana Souza',     setor: 'Produção',   tipo: 'Óculos de proteção', item: 'Óculos incolor antiembaçante', tam: 'Único', qtd: '1 unidade',  dt: '08/04/2026', por: 'Fulano de Tal'  },
+      { func: 'Carlos Mendes', setor: 'Expedição',  tipo: 'Roupa / Uniforme',   item: 'Uniforme operacional',         tam: 'G',     qtd: '2 unidades', dt: '17/04/2026', por: 'Fulano de Tal'  },
+      { func: 'Pedro Alves',   setor: 'Manutenção', tipo: 'Luva',               item: 'Luva nitrílica',               tam: 'G',     qtd: '3 pares',    dt: '01/11/2025', por: 'Fulano de Tal'  },
+      { func: 'Fernanda Lima', setor: 'Qualidade',  tipo: 'Óculos de proteção', item: 'Óculos ampla visão',           tam: 'Único', qtd: '1 unidade',  dt: '15/01/2026', por: 'Beltrana de Tal' },
+      { func: 'Ricardo Souza', setor: 'Produção',   tipo: 'Capacete',           item: 'Capacete de segurança Classe B',tam:'Único', qtd: '1 unidade',  dt: '10/03/2024', por: 'Fulano de Tal'  },
     ];
 
     function parseBR(dtStr) {
@@ -2639,7 +2639,7 @@
     function exportUpcomingReport() {
       var headers = ['Funcionário','Setor','EPI','Data entrega','Prazo de uso','Vencimento do uso','Dias restantes','Status'];
       var rows = [
-        ['Marcos Silva','Manutenção','Botina de segurança','12/04/2026','12 meses','12/04/2027','357','Ok'],
+        ['Tício de Tal','Manutenção','Botina de segurança','12/04/2026','12 meses','12/04/2027','357','Ok'],
         ['João Pereira','Produção','Protetor auricular','11/04/2026','6 meses','11/10/2026','174','Ok'],
         ['Ana Souza','Produção','Óculos de proteção','08/04/2026','12 meses','08/04/2027','353','Ok'],
         ['Pedro Alves','Manutenção','Luva nitrílica','01/11/2025','6 meses','01/05/2026','11','A vencer'],
@@ -2652,9 +2652,9 @@
     function exportAuditSig() {
       var headers = ['Ficha','Funcionário','Setor','EPI entregue','Data entrega','Responsável'];
       var rows = [
-        ['FIC-0168','Pedro Alves','Manutenção','Luva nitrílica','01/11/2025','Luis Freitas'],
-        ['FIC-0155','Carlos Mendes','Expedição','Uniforme operacional','15/03/2026','Tainara Alves'],
-        ['FIC-0149','Fernanda Lima','Qualidade','Óculos ampla visão','15/01/2026','Luis Freitas'],
+        ['FIC-0168','Pedro Alves','Manutenção','Luva nitrílica','01/11/2025','Fulano de Tal'],
+        ['FIC-0155','Carlos Mendes','Expedição','Uniforme operacional','15/03/2026','Beltrana de Tal'],
+        ['FIC-0149','Fernanda Lima','Qualidade','Óculos ampla visão','15/01/2026','Fulano de Tal'],
       ];
       exportCSV('fichas_sem_assinatura.csv', headers, rows);
     }
@@ -2662,9 +2662,9 @@
     function exportAuditPending() {
       var headers = ['Pedido','Funcionário','EPI solicitado','Data aprovação','Supervisor','Dias em fila','Status'];
       var rows = [
-        ['PED-0039','João Pereira','Capacete Classe B','10/04/2026','Fabio Santos','10','Aguardando entrega'],
-        ['PED-0037','Marcos Silva','Respirador PFF2','05/04/2026','Luis Freitas','15','Atrasado'],
-        ['PED-0035','Ana Souza','Luva de raspa vaqueta','01/04/2026','Fabio Santos','19','Atrasado'],
+        ['PED-0039','João Pereira','Capacete Classe B','10/04/2026','Sicrano de Tal','10','Aguardando entrega'],
+        ['PED-0037','Tício de Tal','Respirador PFF2','05/04/2026','Fulano de Tal','15','Atrasado'],
+        ['PED-0035','Ana Souza','Luva de raspa vaqueta','01/04/2026','Sicrano de Tal','19','Atrasado'],
       ];
       exportCSV('solicitacoes_pendentes.csv', headers, rows);
     }
@@ -2672,13 +2672,13 @@
     function exportAuditLog() {
       var headers = ['Data/Hora','Usuário','Perfil','Ação','Referência','IP/Dispositivo'];
       var rows = [
-        ['19/04/2026 10:05','Luis Freitas','Master','Entrega registrada','FIC-0171 · Marcos Silva','192.168.1.10 · Chrome/Win'],
-        ['19/04/2026 09:10','Fabio Santos','Supervisor','Pedido aprovado','PED-0041 · João Pereira','192.168.1.22 · Safari/iOS'],
-        ['19/04/2026 08:41','Luis Freitas','Master','Usuário cadastrado','USR-0025 · Fernanda Lima','192.168.1.10 · Chrome/Win'],
-        ['18/04/2026 16:50','Tainara Alves','Admin','Alerta de estoque mínimo','EST-014 · Botina nº40','192.168.1.15 · Chrome/Mac'],
-        ['18/04/2026 14:22','Luis Freitas','Master','Alerta crítico enviado','AUTO-006 · Marcos Silva','Sistema automático'],
-        ['17/04/2026 10:30','Luis Freitas','Master','Assinatura coletada','FIC-0171 · Marcos Silva','192.168.1.10 · Chrome/Win'],
-        ['16/04/2026 11:30','Tainara Alves','Admin','Compra registrada','EST-013 · Luva nitrílica','192.168.1.15 · Chrome/Mac'],
+        ['19/04/2026 10:05','Fulano de Tal','Master','Entrega registrada','FIC-0171 · Tício de Tal','192.168.1.10 · Chrome/Win'],
+        ['19/04/2026 09:10','Sicrano de Tal','Supervisor','Pedido aprovado','PED-0041 · João Pereira','192.168.1.22 · Safari/iOS'],
+        ['19/04/2026 08:41','Fulano de Tal','Master','Usuário cadastrado','USR-0025 · Fernanda Lima','192.168.1.10 · Chrome/Win'],
+        ['18/04/2026 16:50','Beltrana de Tal','Admin','Alerta de estoque mínimo','EST-014 · Botina nº40','192.168.1.15 · Chrome/Mac'],
+        ['18/04/2026 14:22','Fulano de Tal','Master','Alerta crítico enviado','AUTO-006 · Tício de Tal','Sistema automático'],
+        ['17/04/2026 10:30','Fulano de Tal','Master','Assinatura coletada','FIC-0171 · Tício de Tal','192.168.1.10 · Chrome/Win'],
+        ['16/04/2026 11:30','Beltrana de Tal','Admin','Compra registrada','EST-013 · Luva nitrílica','192.168.1.15 · Chrome/Mac'],
       ];
       exportCSV('log_auditoria.csv', headers, rows);
     }
@@ -2688,18 +2688,18 @@
 
     // Dados de histórico por funcionário (simulado)
     var HISTORY_DATA = {
-      'Marcos Silva': {
-        nome: 'Marcos Silva', matricula: 'MAT-000171', setor: 'Manutenção', cracha: 'CR-001284',
+      'Tício de Tal': {
+        nome: 'Tício de Tal', matricula: 'MAT-000171', setor: 'Manutenção', cracha: 'CR-001284',
         kpis: { total: 18, epis: 7, ultima: '12/04/2026', ativos: 4 },
         items: [
-          { dt: '12/04/2026 14:20', epi: 'Botina de segurança',     tam: '40',    qtd: '1 par',      ca: '12345', motivo: 'Admissão',       por: 'Luis Freitas',  status: 'Ativo'     },
-          { dt: '12/04/2026 14:21', epi: 'Óculos de proteção',      tam: 'Único', qtd: '1 unidade',  ca: '99881', motivo: 'Reposição',      por: 'Luis Freitas',  status: 'Ativo'     },
-          { dt: '03/01/2026 09:10', epi: 'Protetor auricular',       tam: 'Único', qtd: '2 unidades', ca: '—',     motivo: 'Admissão',       por: 'Tainara Alves', status: 'Ativo'     },
-          { dt: '15/08/2025 16:44', epi: 'Luva nitrílica',           tam: 'G',     qtd: '3 pares',    ca: '55771', motivo: 'Desgaste',       por: 'Luis Freitas',  status: 'Encerrado' },
-          { dt: '10/03/2025 10:00', epi: 'Luva nitrílica',           tam: 'G',     qtd: '3 pares',    ca: '55771', motivo: 'Admissão',       por: 'Luis Freitas',  status: 'Encerrado' },
-          { dt: '10/03/2025 10:05', epi: 'Capacete Classe B',        tam: 'Único', qtd: '1 unidade',  ca: '77210', motivo: 'Admissão',       por: 'Luis Freitas',  status: 'Ativo'     },
-          { dt: '10/03/2025 10:10', epi: 'Uniforme operacional',     tam: 'G',     qtd: '2 unidades', ca: '—',     motivo: 'Admissão',       por: 'Luis Freitas',  status: 'Ativo'     },
-          { dt: '20/09/2024 14:00', epi: 'Respirador PFF2',          tam: 'Único', qtd: '5 unidades', ca: '40219', motivo: 'Tarefa especial',por: 'Tainara Alves', status: 'Encerrado' },
+          { dt: '12/04/2026 14:20', epi: 'Botina de segurança',     tam: '40',    qtd: '1 par',      ca: '12345', motivo: 'Admissão',       por: 'Fulano de Tal',  status: 'Ativo'     },
+          { dt: '12/04/2026 14:21', epi: 'Óculos de proteção',      tam: 'Único', qtd: '1 unidade',  ca: '99881', motivo: 'Reposição',      por: 'Fulano de Tal',  status: 'Ativo'     },
+          { dt: '03/01/2026 09:10', epi: 'Protetor auricular',       tam: 'Único', qtd: '2 unidades', ca: '—',     motivo: 'Admissão',       por: 'Beltrana de Tal', status: 'Ativo'     },
+          { dt: '15/08/2025 16:44', epi: 'Luva nitrílica',           tam: 'G',     qtd: '3 pares',    ca: '55771', motivo: 'Desgaste',       por: 'Fulano de Tal',  status: 'Encerrado' },
+          { dt: '10/03/2025 10:00', epi: 'Luva nitrílica',           tam: 'G',     qtd: '3 pares',    ca: '55771', motivo: 'Admissão',       por: 'Fulano de Tal',  status: 'Encerrado' },
+          { dt: '10/03/2025 10:05', epi: 'Capacete Classe B',        tam: 'Único', qtd: '1 unidade',  ca: '77210', motivo: 'Admissão',       por: 'Fulano de Tal',  status: 'Ativo'     },
+          { dt: '10/03/2025 10:10', epi: 'Uniforme operacional',     tam: 'G',     qtd: '2 unidades', ca: '—',     motivo: 'Admissão',       por: 'Fulano de Tal',  status: 'Ativo'     },
+          { dt: '20/09/2024 14:00', epi: 'Respirador PFF2',          tam: 'Único', qtd: '5 unidades', ca: '40219', motivo: 'Tarefa especial',por: 'Beltrana de Tal', status: 'Encerrado' },
         ]
       },
     };
@@ -2713,9 +2713,9 @@
       // Buscar em EPI_RECORDS primeiro, depois HISTORY_DATA
       var funcKey = findFuncionario(searchVal, filterType) ||
                     findFuncionario(searchVal) ||
-                    'Marcos Silva';
+                    'Tício de Tal';
       var rec  = EPI_RECORDS[funcKey];
-      var func = rec ? rec.func : { nome:'Marcos Silva', matricula:'MAT-000171', setor:'Manutenção', cracha:'CR-001284' };
+      var func = rec ? rec.func : { nome:'Tício de Tal', matricula:'MAT-000171', setor:'Manutenção', cracha:'CR-001284' };
       var entregas = rec ? rec.entregas : [];
 
       // Construir data compatível com _historyCurrentData
@@ -3314,7 +3314,7 @@
             if (d && typeof applyFichaEmpresa === 'function') applyFichaEmpresa(d);
           }
           setTimeout(function(){
-            if (typeof renderFichaTable === 'function') renderFichaTable(_fichaFuncAtual || 'Marcos Silva');
+            if (typeof renderFichaTable === 'function') renderFichaTable(_fichaFuncAtual || 'Tício de Tal');
           }, 80);
         }
 
@@ -3331,25 +3331,25 @@
        Conecta: Histórico de Funcionários ↔ Ficha de EPI
     ═══════════════════════════════════════════════════════════════ */
     var EPI_RECORDS = {
-      'Marcos Silva': {
-        func: { nome:'Marcos Silva', matricula:'MAT-000171', cpf:'***.***.789-45',
+      'Tício de Tal': {
+        func: { nome:'Tício de Tal', matricula:'MAT-000171', cpf:'***.***.789-45',
                 setor:'Manutenção', funcao:'Mecânico', cracha:'CR-001284' },
         entregas: [
-          { id:'E001', dt:'12/04/2026 14:20', epi:'Botina de segurança',    tam:'40',    qtd:'1 par',      ca:'12345', valCa:'10/2026', motivo:'Admissão',  por:'Luis Freitas',  assinatura:'manual',  status:'Ativo',     fichaNum:'0171' },
-          { id:'E002', dt:'12/04/2026 14:21', epi:'Óculos de proteção',     tam:'Único', qtd:'1 unidade',  ca:'99881', valCa:'09/2026', motivo:'Reposição', por:'Luis Freitas',  assinatura:'manual',  status:'Ativo',     fichaNum:'0171' },
-          { id:'E003', dt:'03/01/2026 09:10', epi:'Protetor auricular',      tam:'Único', qtd:'2 unidades', ca:'—',     valCa:'—',       motivo:'Admissão',  por:'Tainara Alves', assinatura:'pendente',status:'Ativo',     fichaNum:'0165' },
-          { id:'E004', dt:'15/08/2025 16:44', epi:'Luva nitrílica',          tam:'G',     qtd:'3 pares',    ca:'55771', valCa:'06/2026', motivo:'Desgaste',  por:'Luis Freitas',  assinatura:'manual',  status:'Encerrado', fichaNum:'0148' },
-          { id:'E005', dt:'10/03/2025 10:05', epi:'Capacete Classe B',       tam:'Único', qtd:'1 unidade',  ca:'77210', valCa:'03/2028', motivo:'Admissão',  por:'Luis Freitas',  assinatura:'manual',  status:'Ativo',     fichaNum:'0132' },
-          { id:'E006', dt:'10/03/2025 10:10', epi:'Uniforme operacional',    tam:'G',     qtd:'2 unidades', ca:'—',     valCa:'—',       motivo:'Admissão',  por:'Luis Freitas',  assinatura:'manual',  status:'Ativo',     fichaNum:'0132' },
-          { id:'E007', dt:'20/09/2024 14:00', epi:'Respirador PFF2',         tam:'Único', qtd:'5 unidades', ca:'40219', valCa:'09/2025', motivo:'Tarefa',    por:'Tainara Alves', assinatura:'digital', status:'Encerrado', fichaNum:'0118' },
+          { id:'E001', dt:'12/04/2026 14:20', epi:'Botina de segurança',    tam:'40',    qtd:'1 par',      ca:'12345', valCa:'10/2026', motivo:'Admissão',  por:'Fulano de Tal',  assinatura:'manual',  status:'Ativo',     fichaNum:'0171' },
+          { id:'E002', dt:'12/04/2026 14:21', epi:'Óculos de proteção',     tam:'Único', qtd:'1 unidade',  ca:'99881', valCa:'09/2026', motivo:'Reposição', por:'Fulano de Tal',  assinatura:'manual',  status:'Ativo',     fichaNum:'0171' },
+          { id:'E003', dt:'03/01/2026 09:10', epi:'Protetor auricular',      tam:'Único', qtd:'2 unidades', ca:'—',     valCa:'—',       motivo:'Admissão',  por:'Beltrana de Tal', assinatura:'pendente',status:'Ativo',     fichaNum:'0165' },
+          { id:'E004', dt:'15/08/2025 16:44', epi:'Luva nitrílica',          tam:'G',     qtd:'3 pares',    ca:'55771', valCa:'06/2026', motivo:'Desgaste',  por:'Fulano de Tal',  assinatura:'manual',  status:'Encerrado', fichaNum:'0148' },
+          { id:'E005', dt:'10/03/2025 10:05', epi:'Capacete Classe B',       tam:'Único', qtd:'1 unidade',  ca:'77210', valCa:'03/2028', motivo:'Admissão',  por:'Fulano de Tal',  assinatura:'manual',  status:'Ativo',     fichaNum:'0132' },
+          { id:'E006', dt:'10/03/2025 10:10', epi:'Uniforme operacional',    tam:'G',     qtd:'2 unidades', ca:'—',     valCa:'—',       motivo:'Admissão',  por:'Fulano de Tal',  assinatura:'manual',  status:'Ativo',     fichaNum:'0132' },
+          { id:'E007', dt:'20/09/2024 14:00', epi:'Respirador PFF2',         tam:'Único', qtd:'5 unidades', ca:'40219', valCa:'09/2025', motivo:'Tarefa',    por:'Beltrana de Tal', assinatura:'digital', status:'Encerrado', fichaNum:'0118' },
         ]
       },
       'João Pereira': {
         func: { nome:'João Pereira', matricula:'MAT-000121', cpf:'***.***.456-78',
                 setor:'Produção', funcao:'Operador', cracha:'CR-000988' },
         entregas: [
-          { id:'E010', dt:'11/04/2026 09:05', epi:'Protetor auricular',      tam:'Único', qtd:'2 unidades', ca:'12045', valCa:'04/2026', motivo:'Reposição', por:'Tainara Alves', assinatura:'manual',  status:'Ativo',     fichaNum:'0170' },
-          { id:'E011', dt:'10/03/2025 11:00', epi:'Óculos de proteção',      tam:'Único', qtd:'1 unidade',  ca:'99881', valCa:'09/2026', motivo:'Admissão',  por:'Luis Freitas',  assinatura:'manual',  status:'Ativo',     fichaNum:'0133' },
+          { id:'E010', dt:'11/04/2026 09:05', epi:'Protetor auricular',      tam:'Único', qtd:'2 unidades', ca:'12045', valCa:'04/2026', motivo:'Reposição', por:'Beltrana de Tal', assinatura:'manual',  status:'Ativo',     fichaNum:'0170' },
+          { id:'E011', dt:'10/03/2025 11:00', epi:'Óculos de proteção',      tam:'Único', qtd:'1 unidade',  ca:'99881', valCa:'09/2026', motivo:'Admissão',  por:'Fulano de Tal',  assinatura:'manual',  status:'Ativo',     fichaNum:'0133' },
         ]
       },
     };
@@ -3405,7 +3405,7 @@
     /* ═══ FICHA DE EPI — TABELA DINÂMICA ════════════════════════════════ */
 
     // Funcionário atual na ficha
-    var _fichaFuncAtual = 'Marcos Silva';
+    var _fichaFuncAtual = 'Tício de Tal';
 
     /* Renderizar tabela de EPIs da ficha — sem sobrescrever assinaturas */
     function renderFichaTable(funcKey) {
@@ -3776,7 +3776,7 @@
       return res;
     }
 
-    var CURRENT_USER = { id: 1, nome: 'Luis Freitas', perfil: 'MASTER' };
+    var CURRENT_USER = { id: 1, nome: 'Fulano de Tal', perfil: 'MASTER' };
 
 
     /* ── MATERIAIS / COMPRAS — request/response real via EpiAPI ── */

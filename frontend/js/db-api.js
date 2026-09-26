@@ -13,14 +13,14 @@
     ],
 
     usuarios: [
-      { id: 1, empresa_id: 1, nome: 'Luis Freitas',    email: 'luis.freitas@cobresul.com.br',    senha: 'Master@2026', perfil: 'MASTER',        ativo: true, bloqueios: [], biometria_cadastrada: false },
-      { id: 2, empresa_id: 1, nome: 'Tainara Alves',   email: 'tainara.alves@cobresul.com.br',   senha: 'Admin@2026',  perfil: 'ADMINISTRADOR', ativo: true, bloqueios: [], biometria_cadastrada: false },
-      { id: 3, empresa_id: 1, nome: 'Fabio Santos',    email: 'fabio.santos@cobresul.com.br',    senha: 'Super@2026',  perfil: 'SUPERVISOR',    ativo: true, bloqueios: [], biometria_cadastrada: false },
-      { id: 4, empresa_id: 1, nome: 'Marcos Silva',    email: 'marcos.silva@cobresul.com.br',    senha: 'User@2026',   perfil: 'USUARIO',       ativo: true, bloqueios: [], biometria_cadastrada: false },
+      { id: 1, empresa_id: 1, nome: 'Fulano de Tal',    email: 'fulano@example.invalid',    senha: 'prototipo-master', perfil: 'MASTER',        ativo: true, bloqueios: [], biometria_cadastrada: false },
+      { id: 2, empresa_id: 1, nome: 'Beltrana de Tal',   email: 'beltrana@example.invalid',   senha: 'prototipo-administradora',  perfil: 'ADMINISTRADOR', ativo: true, bloqueios: [], biometria_cadastrada: false },
+      { id: 3, empresa_id: 1, nome: 'Sicrano de Tal',    email: 'sicrano@example.invalid',    senha: 'prototipo-supervisor',  perfil: 'SUPERVISOR',    ativo: true, bloqueios: [], biometria_cadastrada: false },
+      { id: 4, empresa_id: 1, nome: 'Tício de Tal',    email: 'ticio@example.invalid',    senha: 'prototipo-usuario',   perfil: 'USUARIO',       ativo: true, bloqueios: [], biometria_cadastrada: false },
     ],
 
     funcionarios: [
-      { id: 1, empresa_id: 1, matricula: 'MAT-000171', nome: 'Marcos Silva',  cpf: '12345678945', data_nascimento: '1990-03-15', setor: 'Manutenção', funcao: 'Mecânico', cracha: 'CR-001284', telefone: '', ativo: true },
+      { id: 1, empresa_id: 1, matricula: 'MAT-000171', nome: 'Tício de Tal',  cpf: '12345678945', data_nascimento: '1990-03-15', setor: 'Manutenção', funcao: 'Mecânico', cracha: 'CR-001284', telefone: '', ativo: true },
       { id: 2, empresa_id: 1, matricula: 'MAT-000121', nome: 'João Pereira',  cpf: '23456789056', data_nascimento: '1988-07-22', setor: 'Produção',   funcao: 'Operador', cracha: 'CR-000988', telefone: '', ativo: true },
       { id: 3, empresa_id: 1, matricula: 'MAT-000098', nome: 'Ana Souza',     cpf: '34567890167', data_nascimento: '1995-11-30', setor: 'Produção',   funcao: 'Operadora',cracha: 'CR-000754', telefone: '', ativo: true },
       { id: 4, empresa_id: 1, matricula: 'MAT-000205', nome: 'Carlos Mendes', cpf: '45678901278', data_nascimento: '1982-01-09', setor: 'Expedição',  funcao: 'Auxiliar', cracha: 'CR-001390', telefone: '', ativo: true },
@@ -90,7 +90,7 @@
     ],
 
     logs_auditoria: [
-      { id: 1, usuario_id: 1, acao: 'ENTREGA_REGISTRADA',   referencia: 'FIC-0171 · Marcos Silva',  descricao: '', ip: '192.168.1.10', dispositivo: 'Chrome/Win', criado_em: '2026-04-19T10:05:00' },
+      { id: 1, usuario_id: 1, acao: 'ENTREGA_REGISTRADA',   referencia: 'FIC-0171 · Tício de Tal',  descricao: '', ip: '192.168.1.10', dispositivo: 'Chrome/Win', criado_em: '2026-04-19T10:05:00' },
       { id: 2, usuario_id: 3, acao: 'SOLICITACAO_APROVADA', referencia: 'PED-0041 · João Pereira',  descricao: '', ip: '192.168.1.22', dispositivo: 'Safari/iOS', criado_em: '2026-04-19T09:10:00' },
       { id: 3, usuario_id: 1, acao: 'USUARIO_CADASTRADO',    referencia: 'USR-0025 · Fernanda Lima', descricao: '', ip: '192.168.1.10', dispositivo: 'Chrome/Win', criado_em: '2026-04-19T08:41:00' },
     ],

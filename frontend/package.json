@@ -5,7 +5,8 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "test": "node --test \"test/**/*.test.js\""
+    "test": "node --test \"test/**/*.test.js\"",
+    "publicacao:empacotar": "node publicacao/empacotar.js"
   },
   "license": "UNLICENSED"
 }

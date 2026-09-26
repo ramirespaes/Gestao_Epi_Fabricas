@@ -7,7 +7,7 @@ const f = require('../../src/schemas/funcionario.schema');
 
 /** Schema de funcionários (Bloco 9, Etapa B). Nenhum campo de usuário do sistema. */
 
-const base = { matricula: 'MAT-000171', nome: 'Marcos Silva', cpf: '529.982.247-25' };
+const base = { matricula: 'MAT-000171', nome: 'Tício de Tal', cpf: '529.982.247-25' };
 
 describe('criar', () => {
   test('CPF com máscara sai normalizado (11 dígitos) e com DV conferido', () => {
@@ -66,7 +66,7 @@ describe('alterar / listar', () => {
       { cpf: '529.982.247-25' },
       { cpf: '52998224725' },
       { cpf: '111.444.777-35' },
-      { nome: 'Marcos S.', cpf: '529.982.247-25' },
+      { nome: 'Tício T.', cpf: '529.982.247-25' },
     ]) {
       const r = f.alterar.body.safeParse(corpo);
       assert.equal(r.success, false, JSON.stringify(Object.keys(corpo)));
@@ -77,7 +77,7 @@ describe('alterar / listar', () => {
   });
 
   test('criar continua exigindo cpf (a imutabilidade não muda a criação)', () => {
-    const r = f.criar.body.safeParse({ matricula: 'MAT-000171', nome: 'Marcos Silva' });
+    const r = f.criar.body.safeParse({ matricula: 'MAT-000171', nome: 'Tício de Tal' });
     assert.equal(r.success, false);
     assert.deepEqual(r.error.issues[0].path, ['cpf']);
   });

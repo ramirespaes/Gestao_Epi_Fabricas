@@ -31,7 +31,7 @@
         <div class="form-grid" style="margin-bottom:4px">
           <div class="field full">
             <label for="loginEmail">E-mail corporativo</label>
-            <input id="loginEmail" class="input" type="email" placeholder="seu.nome@cobresul.com.br" autocomplete="username">
+            <input id="loginEmail" class="input" type="email" placeholder="seu.nome@example.invalid" autocomplete="username">
           </div>
           <div class="field full">
             <label for="loginPassword">Senha</label>
@@ -84,7 +84,7 @@
         <div id="recoverStep1">
           <div class="field full">
             <label for="recoverEmail">E-mail corporativo</label>
-            <input id="recoverEmail" class="input" type="email" placeholder="seu.nome@cobresul.com.br">
+            <input id="recoverEmail" class="input" type="email" placeholder="seu.nome@example.invalid">
           </div>
           <button class="filled-btn" style="width:100%;height:46px;margin-top:12px" onclick="sendRecoveryCode()">
             <span class="material-symbols-outlined">send</span>Enviar código
@@ -131,7 +131,7 @@
         <div class="form-grid">
           <div class="field full">
             <label for="biometricEmail">E-mail corporativo</label>
-            <input id="biometricEmail" class="input" type="email" placeholder="seu.nome@cobresul.com.br">
+            <input id="biometricEmail" class="input" type="email" placeholder="seu.nome@example.invalid">
           </div>
           <div class="field full">
             <label for="biometricPassword">Senha (confirmação)</label>
@@ -260,7 +260,7 @@
                 <div class="field" style="margin:0">
                   <label>Funcionário / CPF / Matrícula</label>
                   <input class="input" id="fichaSearchFunc" type="text"
-                    placeholder="Ex.: Marcos Silva ou MAT-000171"
+                    placeholder="Ex.: Tício de Tal ou MAT-000171"
                     onkeydown="if(event.key==='Enter') renderFichaSearch()">
                 </div>
                 <div class="field" style="margin:0">
@@ -374,7 +374,7 @@
               <div style="display:grid;grid-template-columns:1fr 1fr">
                 <div style="display:flex;border-bottom:0.5px solid #ccc">
                   <div style="background:#eef2f9;font-weight:600;font-size:11px;padding:6px 8px;min-width:70px;color:#1a3a6b;border-right:0.5px solid #ccc">Nome</div>
-                  <div style="padding:6px 8px;font-size:12px;font-weight:500" id="fichaNome">Marcos Silva</div>
+                  <div style="padding:6px 8px;font-size:12px;font-weight:500" id="fichaNome">Tício de Tal</div>
                 </div>
                 <div style="display:flex;border-bottom:0.5px solid #ccc;border-left:0.5px solid #ccc">
                   <div style="background:#eef2f9;font-weight:600;font-size:11px;padding:6px 8px;min-width:50px;color:#1a3a6b;border-right:0.5px solid #ccc">CPF</div>
@@ -493,7 +493,7 @@
               </div>
               <!-- Nome + data + badge -->
               <div style="text-align:center;line-height:1.7;margin-top:12px">
-                <div style="font-size:13px;font-weight:600" id="fichaNomeSig">Marcos Silva</div>
+                <div style="font-size:13px;font-weight:600" id="fichaNomeSig">Tício de Tal</div>
                 <div style="font-size:11px;color:var(--on-surface-variant)" id="fichaCargo">Mecânico · Manutenção</div>
                 <div style="font-size:11px;color:var(--on-surface-variant)">Data: <span id="fichaDataSig">18/04/2026 14:20</span></div>
               </div>

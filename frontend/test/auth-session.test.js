@@ -43,7 +43,7 @@ const resposta = (status, corpo, { erroNaLeitura } = {}) => ({
 
 const IDENTIDADE = {
   status: 'ok',
-  usuario: { id: 5, nome: 'Tainara Alves', email: 't@demo.com.br', perfil: 'ADMINISTRADOR', ativo: true },
+  usuario: { id: 5, nome: 'Beltrana de Tal', email: 't@demo.com.br', perfil: 'ADMINISTRADOR', ativo: true },
   empresa: { id: 1, nome: 'Empresa A', cnpj: '12345678000195' },
 };
 

@@ -25,7 +25,7 @@ const GHE_ATIVO = 50;
 const GHE_INATIVO = 51;
 
 const funcionario = (extra = {}) => ({
-  id: FUNC_ID, empresaId: EMPRESA, grupoHomogeneoId: GHE_ATIVO, matricula: 'MAT-000171', nome: 'Marcos Silva',
+  id: FUNC_ID, empresaId: EMPRESA, grupoHomogeneoId: GHE_ATIVO, matricula: 'MAT-000171', nome: 'Tício de Tal',
   cpf: '52998224725', dataNascimento: '1990-03-15', setor: 'Manutenção', funcao: 'Mecânico', cracha: 'CR-001284',
   telefone: '47999990000', ativo: true, criadoEm: new Date('2026-09-23T12:00:00Z'), atualizadoEm: new Date('2026-09-23T12:00:00Z'), ...extra,
 });
@@ -71,7 +71,7 @@ async function esperarHttpError(promessa, status, codigo) {
   });
 }
 
-const base = { empresaId: EMPRESA, atorId: ATOR_ID, matricula: 'MAT-000171', nome: 'Marcos Silva', cpf: '529.982.247-25' };
+const base = { empresaId: EMPRESA, atorId: ATOR_ID, matricula: 'MAT-000171', nome: 'Tício de Tal', cpf: '529.982.247-25' };
 
 function assertSemDadosSensiveis(auditoria) {
   for (const chave of ['cpf', 'dataNascimento', 'telefone']) {
@@ -201,7 +201,7 @@ describe('alterar', () => {
     // valor já desestruturado NÃO reconheceria (correção pós-auditoria
     // independente de 23/09/2026).
     for (const cpf of ['52998224725', '529.982.247-25', '111.444.777-35', '00000000000', null, undefined]) {
-      const dados = { empresaId: EMPRESA, atorId: ATOR_ID, funcionarioId: FUNC_ID, nome: 'Marcos S.', cpf };
+      const dados = { empresaId: EMPRESA, atorId: ATOR_ID, funcionarioId: FUNC_ID, nome: 'Tício T.', cpf };
       assert.ok(Object.hasOwn(dados, 'cpf'), 'pré-condição do teste: a chave cpf precisa estar presente no objeto');
       const cliente = criarClienteFalso();
       await assert.rejects(
@@ -233,7 +233,7 @@ describe('alterar', () => {
     const escritas = mundoValido(t);
     const auditorias = [];
     await servico.alterar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, funcionarioId: FUNC_ID, telefone: '47988887777', telefoneInformado: true });
-    await servico.alterar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, funcionarioId: FUNC_ID, nome: 'Marcos S.', dataNascimento: '1990-03-16', dataNascimentoInformado: true });
+    await servico.alterar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, funcionarioId: FUNC_ID, nome: 'Tício T.', dataNascimento: '1990-03-16', dataNascimentoInformado: true });
     for (const chamada of escritas.atualizar.mock.calls) {
       assert.ok(!Object.hasOwn(chamada.arguments[3], 'cpf'), 'atualizar não recebe cpf nem como null');
     }

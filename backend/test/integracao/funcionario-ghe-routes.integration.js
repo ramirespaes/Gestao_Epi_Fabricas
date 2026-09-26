@@ -42,6 +42,12 @@ const CPF_A_NORMALIZADO = '52998224725';
 const CPF_B = '111.444.777-35';
 const CPF_B_NORMALIZADO = '11144477735';
 const TELEFONE_NOVO = '47988887777';
+const MASCARA_A = '***.***.***-25';
+const MASCARA_B = '***.***.***-35';
+
+async function cpfGravado(pool, funcionarioId) {
+  return (await pool.query('SELECT cpf FROM funcionarios WHERE id = $1', [funcionarioId])).rows[0].cpf;
+}
 
 async function inserirUsuario(pool, empresaId, email, perfil = 'ADMINISTRADOR') {
   const { rows } = await pool.query(
@@ -204,12 +210,14 @@ describe('API HTTP de GHE e funcionários com PostgreSQL real', () => {
   describe('Cenário 3 — funcionários: cadastro completo e separação de usuários', () => {
     test('cria com GHE ativo: CPF normalizado, audita FUNCIONARIO_CRIADO SEM cpf/telefone no registro', async () => {
       const r = await request(app).post('/api/funcionarios').set('Cookie', cookieMasterA).send({
-        matricula: 'MAT-000171', nome: 'Marcos Silva', cpf: CPF_A, grupoHomogeneoId: gheId,
+        matricula: 'MAT-000171', nome: 'Tício de Tal', cpf: CPF_A, grupoHomogeneoId: gheId,
         dataNascimento: '1990-03-15', setor: 'Manutenção', funcao: 'Mecânico', cracha: 'CR-001284', telefone: '47999990000',
       });
       assert.equal(r.status, 201);
       funcionarioId = r.body.funcionario.id;
-      assert.equal(r.body.funcionario.cpf, CPF_A_NORMALIZADO);
+      assert.equal(r.body.funcionario.cpf, undefined, 'a resposta nunca traz o CPF completo');
+      assert.equal(r.body.funcionario.cpfMascarado, MASCARA_A);
+      assert.equal(await cpfGravado(pool, funcionarioId), CPF_A_NORMALIZADO, 'gravado normalizado');
       assert.equal(r.body.funcionario.grupoHomogeneoId, gheId);
 
       const { rows } = await pool.query(
@@ -264,12 +272,19 @@ describe('API HTTP de GHE e funcionários com PostgreSQL real', () => {
       assert.deepEqual(porGhe.body.funcionarios.map((x) => x.id), [funcionarioId]);
       const porMatricula = await request(app).get('/api/funcionarios?busca=MAT-0001').set('Cookie', cookieMasterA);
       assert.deepEqual(porMatricula.body.funcionarios.map((x) => x.id), [funcionarioId]);
+      const porCpf = await request(app).get(`/api/funcionarios?cpf=${CPF_A_NORMALIZADO}`).set('Cookie', cookieMasterA);
+      assert.deepEqual(porCpf.body.funcionarios.map((x) => x.id), [funcionarioId], 'a busca por CPF completo continua exata');
+      assert.equal(porCpf.body.funcionarios[0].cpfMascarado, MASCARA_A);
+      for (const lista of [porGhe, porMatricula, porCpf]) {
+        assert.ok(!JSON.stringify(lista.body).includes(CPF_A_NORMALIZADO), 'a listagem nunca devolve o CPF completo');
+      }
 
       const patch = await request(app).patch(`/api/funcionarios/${funcionarioId}`).set('Cookie', cookieMasterA).send({ grupoHomogeneoId: null, telefone: TELEFONE_NOVO });
       assert.equal(patch.status, 200);
       assert.equal(patch.body.funcionario.grupoHomogeneoId, null);
       assert.equal(patch.body.funcionario.telefone, TELEFONE_NOVO);
-      assert.equal(patch.body.funcionario.cpf, CPF_A_NORMALIZADO, 'CPF intocado');
+      assert.equal(patch.body.funcionario.cpf, undefined);
+      assert.equal(await cpfGravado(pool, funcionarioId), CPF_A_NORMALIZADO, 'CPF intocado');
       // contexto/dados_novos como objetos (o driver já converte JSONB) — não
       // como ::text, cuja serialização tem espaços e tornaria a asserção frágil.
       const { rows } = await pool.query("SELECT contexto, dados_novos FROM logs_auditoria WHERE empresa_id = $1 AND acao = 'FUNCIONARIO_ALTERADO'", [empresaA]);
@@ -353,7 +368,8 @@ describe('API HTTP de GHE e funcionários com PostgreSQL real', () => {
       const ok = await request(app).patch(`/api/funcionarios/${funcionarioId}`).set('Cookie', cookieAdminFuncionariosA).send({ setor: 'Logística' });
       assert.equal(ok.status, 200);
       assert.equal(ok.body.funcionario.setor, 'Logística');
-      assert.equal(ok.body.funcionario.cpf, CPF_A_NORMALIZADO);
+      assert.equal(ok.body.funcionario.cpfMascarado, MASCARA_A);
+      assert.equal(await cpfGravado(pool, funcionarioId), CPF_A_NORMALIZADO);
     });
 
     test('procedimento aprovado: inativar preserva o cadastro e o histórico; recadastrar com CPF correto (201); o CPF do inativo continua reservado (409)', async () => {
@@ -361,6 +377,7 @@ describe('API HTTP de GHE e funcionários com PostgreSQL real', () => {
       const inativar = await request(app).post(`/api/funcionarios/${funcionarioId}/inativar`).set('Cookie', cookieMasterA).send({});
       assert.equal(inativar.status, 200);
       assert.equal(inativar.body.alterado, true);
+      assert.equal(inativar.body.funcionario.cpf, undefined);
 
       const depois = await fotografar();
       const { ativo: ativoAntes, atualizado_em: _a, ...restoAntes } = antes.linha;
@@ -369,13 +386,17 @@ describe('API HTTP de GHE e funcionários com PostgreSQL real', () => {
       assert.equal(ativoDepois, false);
       assert.deepEqual(restoDepois, restoAntes, 'inativar só muda ativo (e atualizado_em): CPF, matrícula, nome, GHE e demais campos preservados');
       assert.equal(depois.auditorias, antes.auditorias + 1, 'a inativação ACRESCENTA uma linha de auditoria e não altera nenhuma anterior');
-      assert.equal((await request(app).get(`/api/funcionarios/${funcionarioId}`).set('Cookie', cookieMasterA)).status, 200, 'o cadastro inativo continua consultável');
+      const consulta = await request(app).get(`/api/funcionarios/${funcionarioId}`).set('Cookie', cookieMasterA);
+      assert.equal(consulta.status, 200, 'o cadastro inativo continua consultável');
+      assert.deepEqual([consulta.body.funcionario.cpf, consulta.body.funcionario.cpfMascarado], [undefined, MASCARA_A]);
 
       // Novo cadastro com o CPF correto: independente, sem transferência de nada.
-      const novo = await request(app).post('/api/funcionarios').set('Cookie', cookieMasterA).send({ matricula: 'MAT-000172', nome: 'Marcos Silva', cpf: CPF_B });
+      const novo = await request(app).post('/api/funcionarios').set('Cookie', cookieMasterA).send({ matricula: 'MAT-000172', nome: 'Tício de Tal', cpf: CPF_B });
       assert.equal(novo.status, 201);
       assert.notEqual(novo.body.funcionario.id, funcionarioId);
-      assert.equal(novo.body.funcionario.cpf, CPF_B_NORMALIZADO);
+      assert.equal(novo.body.funcionario.cpf, undefined);
+      assert.equal(novo.body.funcionario.cpfMascarado, MASCARA_B);
+      assert.equal(await cpfGravado(pool, novo.body.funcionario.id), CPF_B_NORMALIZADO);
 
       // Unicidade por empresa preservada, inclusive para o inativo.
       const repetido = await request(app).post('/api/funcionarios').set('Cookie', cookieMasterA).send({ matricula: 'MAT-000173', nome: 'Outro', cpf: CPF_A });

@@ -112,7 +112,7 @@ describe('inspeção estática: pages/dashboard.html', () => {
   });
 
   test('nenhum número fixo nem dado fictício: todos os valores nascem "—"', () => {
-    assert.equal(/Luis Freitas/.test(html), false);
+    assert.equal(/Fulano de Tal/.test(html), false);
     for (const valor of [...html.matchAll(/<div class="kpi-value"[^>]*>([^<]*)<\/div>/g)].map((m) => m[1])) assert.equal(valor, '—');
     for (const valor of [...html.matchAll(/<strong id="kpi[A-Za-z]+">([^<]*)<\/strong>/g)].map((m) => m[1])) assert.equal(valor, '—');
     for (const ficticio of ['152', '312', '+12 este mês', 'Produção</option>', 'Manutenção</option>', 'boas-vindas@empresa.com']) assert.equal(html.includes(ficticio), false, ficticio);

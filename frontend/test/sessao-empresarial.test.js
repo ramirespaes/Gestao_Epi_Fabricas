@@ -171,7 +171,7 @@ describe('rastros do protótipo: nunca usados, sempre removidos', () => {
   });
 
   test('a "sessão" antiga (epi-session-user) em localStorage/sessionStorage NÃO autentica: sem cookie real -> Portal; e é removida das três camadas', async () => {
-    const legado = JSON.stringify({ id: 1, nome: 'Luis Freitas', perfil: 'MASTER' });
+    const legado = JSON.stringify({ id: 1, nome: 'Fulano de Tal', perfil: 'MASTER' });
     configurar({ 'GET /auth/me': resposta(401, {}) });
     const j = janelaFalsa(undefined, { local: { 'epi-session-user': legado, epi_db_v2: '{"banco":"simulado"}' }, sessao: { 'epi-session-user': legado } });
 
