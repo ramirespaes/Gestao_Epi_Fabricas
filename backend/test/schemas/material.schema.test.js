@@ -143,3 +143,15 @@ describe('categoria, codigoInterno e descricao — Parte C2 (migration 039)', ()
     assert.equal(material.alterar.body.safeParse({ quantidadeComprada: 1 }).success, false);
   });
 });
+
+describe('unidade de controle — imutável na edição (ajuste pós-melhoria C2, 25/09/2026)', () => {
+  test('PATCH recusa unidade como campo não permitido, sozinha ou junto de outros campos; o cadastro continua aceitando', () => {
+    for (const corpo of [{ unidade: 'caixa' }, { unidade: 'par' }, { nome: 'Botina', unidade: 'caixa' }]) {
+      const r = material.alterar.body.safeParse(corpo);
+      assert.equal(r.success, false, JSON.stringify(corpo));
+      assert.equal(r.error.issues[0].code, 'unrecognized_keys');
+      assert.deepEqual(r.error.issues[0].keys, ['unidade']);
+    }
+    assert.equal(material.criar.body.safeParse({ nome: 'Botina', unidade: 'par' }).success, true);
+  });
+});

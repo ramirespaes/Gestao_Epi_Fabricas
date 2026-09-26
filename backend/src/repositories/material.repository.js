@@ -38,7 +38,12 @@ const TAMANHO_MAXIMO_UNIDADE = 20;
 const LIMITE_INTEGER_POSTGRES = 2147483647;
 
 // categoria, codigo_interno e descricao: migration 039 (Parte C2).
-const PROJECAO = `id, empresa_id, nome, tipo, fabricante, ca_numero, ca_validade,
+// ca_validade é DATE (sem fuso): formatada no próprio PostgreSQL como
+// AAAA-MM-DD, nunca convertida em Date do Node. Assim 15/10/2026 continua
+// 15/10/2026 em qualquer fuso do servidor (ajuste pós-melhoria C2,
+// 25/09/2026; antes, a meia-noite local virava UTC no JSON e, a leste de
+// UTC, chegava como o dia anterior).
+const PROJECAO = `id, empresa_id, nome, tipo, fabricante, ca_numero, to_char(ca_validade, 'YYYY-MM-DD') AS ca_validade,
   prazo_uso_dias, unidade, estoque_minimo, categoria, codigo_interno, descricao, ativo, criado_em, atualizado_em`;
 const TAMANHO_MAXIMO_CATEGORIA = 30;
 const TAMANHO_MAXIMO_CODIGO_INTERNO = 30;
@@ -178,6 +183,27 @@ async function buscarPorIdParaAtualizacao(executor, empresaId, id) {
 
   const { rows } = await executor.query(
     `SELECT ${PROJECAO} FROM materiais WHERE empresa_id = $1 AND id = $2 FOR UPDATE`,
+    [empresaId, id],
+  );
+
+  return mapear(rows[0]);
+}
+
+/**
+ * Igual a buscarPorId, com FOR SHARE (dentro de transação) — para quem vai
+ * VINCULAR este material (matriz GHE × EPI, Parte C5) e precisa que o
+ * `ativo` lido continue verdadeiro até o COMMIT. Mesmo raciocínio de
+ * grupo-homogeneo-exposicao.repository.buscarPorIdParaVinculo: vínculos
+ * concorrentes coexistem (share com share); a inativação concorrente
+ * (buscarPorIdParaAtualizacao, FOR UPDATE) espera. A FK composta só toma
+ * FOR KEY SHARE e nunca garantiu `ativo`.
+ */
+async function buscarPorIdParaVinculo(executor, empresaId, id) {
+  exigirEmpresa(empresaId);
+  exigirId(id, 'identificador de material');
+
+  const { rows } = await executor.query(
+    `SELECT ${PROJECAO} FROM materiais WHERE empresa_id = $1 AND id = $2 FOR SHARE`,
     [empresaId, id],
   );
 
@@ -357,6 +383,7 @@ module.exports = {
   criar,
   buscarPorId,
   buscarPorIdParaAtualizacao,
+  buscarPorIdParaVinculo,
   listarPorEmpresa,
   contarPorEmpresa,
   atualizar,

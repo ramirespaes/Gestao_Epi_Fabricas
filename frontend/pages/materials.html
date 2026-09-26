@@ -79,13 +79,14 @@
         <div class="nav-section">Estoque</div>
         <a class="active" href="javascript:void(0)" data-pagina="materials" style="display:none"><div class="nav-icon teal">inventory_2</div>Materiais</a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor<span class="nav-etiqueta">Em integração</span></a>
+        <a href="employee-groups.html" data-pagina="employeeGroups" style="display:none"><div class="nav-icon purple">group_work</div>GHE e EPIs</a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon orange">shopping_cart</div>Compras / Entradas<span class="nav-etiqueta">Em integração</span></a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon red">event_busy</div>Validade do Estoque<span class="nav-etiqueta">Em integração</span></a>
-        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon green">checklist</div>Itens Disponíveis<span class="nav-etiqueta">Em integração</span></a>
+        <a href="available-items.html" data-pagina="availableItems" style="display:none"><div class="nav-icon green">checklist</div>Itens Disponíveis</a>
         <div class="nav-section">Entregas</div>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon green">inventory</div>EPIs Entregues<span class="nav-etiqueta">Em integração</span></a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon brown">description</div>Ficha de EPI<span class="nav-etiqueta">Em integração</span></a>
-        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">history</div>Histórico de Funcionários<span class="nav-etiqueta">Em integração</span></a>
+        <a href="employee-history.html" data-pagina="employeeHistory" style="display:none"><div class="nav-icon blue">history</div>Histórico de Funcionários</a>
         <div class="nav-section">Solicitações</div>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">badge</div>Autoatendimento (Totem)<span class="nav-etiqueta">Em integração</span></a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">assignment</div>Pedido de EPI<span class="nav-etiqueta">Em integração</span></a>
@@ -96,7 +97,7 @@
         <a href="grupo-permissoes.html" data-pagina="grupo-permissoes" style="display:none"><div class="nav-icon indigo">lock_person</div>Permissões do Grupo</a>
         <a href="grupo-usuarios.html" data-pagina="grupo-usuarios" style="display:none"><div class="nav-icon indigo">group_add</div>Integrantes do Grupo</a>
         <a href="autorizacoes-individuais.html" data-pagina="autorizacoes-individuais" style="display:none"><div class="nav-icon indigo">verified_user</div>Autorizações Individuais</a>
-        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon green">upload_file</div>Importar Funcionários<span class="nav-etiqueta">Em integração</span></a>
+        <a href="import-employees.html" data-pagina="importEmployees" style="display:none"><div class="nav-icon green">upload_file</div>Importar Funcionários</a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon green">person_add</div>Novo Usuário<span class="nav-etiqueta">Em integração</span></a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon indigo">group</div>Administração de Usuários<span class="nav-etiqueta">Em integração</span></a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon gray">settings</div>Configurações<span class="nav-etiqueta">Em integração</span></a>
@@ -131,11 +132,13 @@
                 <div class="card-title">
                   <div class="card-icon">inventory_2</div>
                   <div>
-                    <h2>Novo material / EPI</h2>
-                    <p>Estruture o cadastro para controlar tipo, validade e distribuição.</p>
+                    <h2 id="tituloFormulario">Novo material / EPI</h2>
+                    <p id="subtituloFormulario">Estruture o cadastro para controlar tipo, validade e distribuição.</p>
                   </div>
                 </div>
               </div>
+              <!-- Melhoria C2: identifica o material em edição (oculto no cadastro) -->
+              <div id="modoEdicao" class="notice" style="display:none;margin-bottom:14px"></div>
 
               <div class="form-grid">
                 <div class="field full">
@@ -186,11 +189,19 @@
                   <input id="materialCodigo" class="input" type="text" placeholder="EPI-000245" />
                 </div>
                 <div class="field">
+                  <label for="materialRegistrarEntrada">Registrar entrada inicial de estoque?</label>
+                  <select id="materialRegistrarEntrada" class="select">
+                    <option value="nao" selected>Não — cadastrar sem estoque</option>
+                    <option value="sim">Sim — informar quantidade e tamanho</option>
+                  </select>
+                  <div class="helper" id="materialRegistrarEntradaHelper">Com "Não", o material é cadastrado sem quantidade em estoque.</div>
+                </div>
+                <div class="field" id="campoQuantidadeComprada" style="display:none">
                   <label for="materialQuantidadeComprada">Quantidade comprada</label>
                   <input id="materialQuantidadeComprada" class="input" type="number" min="1" placeholder="Ex.: 120" />
-                  <div class="helper" id="materialQuantidadeHelper">Opcional. Gera uma entrada inicial de estoque, registrada separadamente após o cadastro.</div>
+                  <div class="helper" id="materialQuantidadeHelper">Obrigatória com "Sim". A entrada inicial é registrada separadamente, após o cadastro.</div>
                 </div>
-                <div class="field">
+                <div class="field" id="campoTamanhoEntrada" style="display:none">
                   <label for="materialTamanhoEntrada">Tamanho da entrada inicial</label>
                   <select id="materialTamanhoEntrada" class="select"></select>
                   <div class="helper">Tamanho em que a quantidade comprada entra no estoque.</div>
@@ -204,6 +215,7 @@
                     <option>Pacote</option>
                     <option>Kit</option>
                   </select>
+                  <div class="helper" id="materialUnidadeHelper" style="display:none">A unidade de controle não pode ser alterada em um material existente.</div>
                 </div>
                 <div class="field">
                   <label for="materialEstoqueMinimo">Estoque mínimo</label>
@@ -255,6 +267,7 @@
 
               <div class="footer-actions">
                 <button id="botaoLimpar" class="outlined-btn" type="button">Limpar</button>
+                <button id="botaoCancelarEdicao" class="outlined-btn" type="button" style="display:none">Cancelar edição</button>
                 <button id="botaoSalvar" class="filled-btn" type="button" style="display:none"><span class="material-symbols-outlined">save</span>Salvar material</button>
               </div>
             </section>
@@ -302,7 +315,10 @@
               <div style="margin-top:16px">
                 <div class="field full" style="margin-bottom:12px">
                   <label for="gradeMaterial">Material</label>
-                  <select id="gradeMaterial" class="select"></select>
+                  <div style="display:flex;gap:8px;align-items:center">
+                    <select id="gradeMaterial" class="select" style="flex:1"></select>
+                    <button id="botaoEditarMaterial" class="outlined-btn" type="button" style="display:none" disabled><span class="material-symbols-outlined">edit</span>Editar material</button>
+                  </div>
                   <div class="helper" id="gradeMaterialHelper">Escolha um material cadastrado para ver o saldo real por tamanho.</div>
                 </div>
                 <!-- Legenda -->
@@ -317,6 +333,28 @@
                 <div style="margin-top:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
                   <span style="font-size:11px;color:var(--on-surface-variant)">Saldo real por tamanho · atualizado pelas entradas de estoque</span>
                   <span id="stockSummaryText" style="font-size:12px;font-weight:500"></span>
+                </div>
+                <!-- C2: entrada de estoque em material já cadastrado (só com MOVIMENTAR_ESTOQUE) -->
+                <div id="blocoEntradaEstoque" style="display:none;margin-top:16px;padding-top:14px;border-top:0.5px solid rgba(0,0,0,0.08)">
+                  <div style="font-size:13px;font-weight:600;margin-bottom:10px">Registrar entrada de estoque</div>
+                  <div class="form-grid">
+                    <div class="field">
+                      <label for="entradaTamanho">Tamanho</label>
+                      <select id="entradaTamanho" class="select"><option value="">Selecione o tamanho</option></select>
+                    </div>
+                    <div class="field">
+                      <label for="entradaQuantidade">Quantidade</label>
+                      <input id="entradaQuantidade" class="input" type="number" min="1" placeholder="Ex.: 5" />
+                    </div>
+                    <div class="field full">
+                      <label for="entradaMotivo">Motivo (opcional)</label>
+                      <input id="entradaMotivo" class="input" type="text" maxlength="200" placeholder="Ex.: Compra NF 123" />
+                    </div>
+                  </div>
+                  <div class="helper" id="entradaEstoqueHelper">A entrada vai para o material escolhido acima. É registrada separadamente e não altera o cadastro do material.</div>
+                  <div class="footer-actions">
+                    <button id="botaoRegistrarEntrada" class="filled-btn" type="button" disabled><span class="material-symbols-outlined">add_box</span>Registrar entrada de estoque</button>
+                  </div>
                 </div>
               </div>
             </section>
@@ -393,7 +431,21 @@
 
   // Parte C1: o que o servidor disse que esta pessoa pode fazer aqui.
   // Começa sem nada; só aplicarAcesso() (após GET /api/auth/permissoes) libera.
-  var acessoAtual = { permissoes: null, podeAlterar: false, podeMovimentar: false };
+  var acessoAtual = { permissoes: null, podeAlterar: false, podeMovimentar: false, podeEditar: false };
+
+  // Melhoria da C2: modo edição. `edicao` guarda o registro carregado pelo
+  // GET /materiais/:id; `cargaEdicao` numera cada carga/salvamento para
+  // descartar respostas antigas (mesmo padrão da C3); `telaEncerrada`
+  // impede qualquer aplicação depois do fim da sessão.
+  var edicao = null;
+  var cargaEdicao = 0;
+  var carregandoEdicao = false;
+  var telaEncerrada = false;
+  // Entrada de estoque em material já cadastrado: material exibido na grade
+  // (para identificar a entrada) e bloqueio contra envio duplo.
+  var materialDaGrade = null;
+  var entradaEmAndamento = false;
+  var CAMPO_ENTRADA_POR_ERRO = { tamanho: 'entradaTamanho', quantidade: 'entradaQuantidade', motivo: 'entradaMotivo' };
 
   // Mesmo endereço do Portal do Cliente: localhost:3000/api em desenvolvimento,
   // a própria origem + /api em produção (portal/config.js).
@@ -401,10 +453,22 @@
 
   var CAMPOS = ['materialNome', 'materialCategoria', 'materialTipo', 'materialTipoCustom', 'materialCa', 'materialCaValidade', 'materialFabricante',
     'materialCodigo', 'materialQuantidadeComprada', 'materialTamanhoEntrada', 'materialUnidade', 'materialEstoqueMinimo', 'materialValidade',
-    'materialValidadeTipo', 'materialPrazo', 'materialDesc'];
+    'materialValidadeTipo', 'materialPrazo', 'materialDesc', 'materialRegistrarEntrada'];
   var CAMPO_POR_ERRO = { nome: 'materialNome', categoria: 'materialCategoria', tipo: 'materialTipo', caNumero: 'materialCa', caValidade: 'materialCaValidade',
     fabricante: 'materialFabricante', codigoInterno: 'materialCodigo', quantidadeComprada: 'materialQuantidadeComprada', tamanhoEntrada: 'materialTamanhoEntrada',
     unidade: 'materialUnidade', estoqueMinimo: 'materialEstoqueMinimo', prazo: 'materialPrazo', descricao: 'materialDesc' };
+  // Opções originais dos selects: um valor fora da lista ganha opção temporária na edição.
+  var OPCOES_ORIGINAIS = { materialCategoria: $('materialCategoria').innerHTML, materialUnidade: $('materialUnidade').innerHTML };
+  var opcoesTemporarias = [];
+  var TEXTOS_MODO = {
+    cadastro: { titulo: 'Novo material / EPI', subtitulo: 'Estruture o cadastro para controlar tipo, validade e distribuição.', salvar: 'Salvar material' },
+    edicao: { titulo: 'Editar material / EPI', subtitulo: 'Altere os dados cadastrais. O estoque e a unidade de controle não mudam pela edição.', salvar: 'Salvar alterações' },
+  };
+  var TEXTOS_ENTRADA = {
+    padrao: 'Com "Não", o material é cadastrado sem quantidade em estoque.',
+    semMovimentar: 'Seu perfil não pode movimentar estoque nesta empresa: o material será cadastrado sem entrada inicial.',
+    edicao: 'A edição não altera o estoque. Para mudar quantidades, registre uma entrada ou saída de estoque, que é uma operação separada.',
+  };
 
   function mostrarAviso(texto, tipo) {
     var caixa = $('aviso');
@@ -460,14 +524,29 @@
     return t === 'Outro' ? $('materialTipoCustom').value : t;
   }
 
-  /** Tamanhos sugeridos pelo tipo primeiro, depois os demais da grade. */
+  /**
+   * Tamanhos sugeridos pelo tipo primeiro, depois os demais da grade. A
+   * primeira opção é vazia: nenhum tamanho é escolhido automaticamente.
+   */
   function preencherTamanhosEntrada() {
     var sugeridos = formulario.tamanhosSugeridos(tipoAtual());
     var todos = sugeridos.concat(formulario.TAMANHOS_GRADE.filter(function (t) { return sugeridos.indexOf(t) === -1; }));
     var select = $('materialTamanhoEntrada');
     var atual = select.value;
-    select.innerHTML = todos.map(function (t) { return '<option value="' + render.escaparHtml(t) + '">' + render.escaparHtml(t) + '</option>'; }).join('');
-    if (todos.indexOf(atual) !== -1) select.value = atual;
+    select.innerHTML = '<option value="">Selecione o tamanho</option>'
+      + todos.map(function (t) { return '<option value="' + render.escaparHtml(t) + '">' + render.escaparHtml(t) + '</option>'; }).join('');
+    select.value = todos.indexOf(atual) !== -1 ? atual : '';
+  }
+
+  /** "Registrar entrada inicial de estoque?": só "Sim" mostra quantidade e tamanho; "Não" os limpa. */
+  function toggleEntradaInicial() {
+    var sim = $('materialRegistrarEntrada').value === 'sim';
+    $('campoQuantidadeComprada').style.display = sim ? '' : 'none';
+    $('campoTamanhoEntrada').style.display = sim ? '' : 'none';
+    if (!sim) {
+      $('materialQuantidadeComprada').value = '';
+      $('materialTamanhoEntrada').value = '';
+    }
   }
 
   function limparErros() {
@@ -495,10 +574,12 @@
     $('materialTipo').value = 'Sapatão / Botina';
     $('materialValidade').value = 'sim';
     $('materialValidadeTipo').value = 'meses';
+    $('materialRegistrarEntrada').value = 'nao';
     limparErros();
     toggleCustomMaterialType();
     toggleValidityFields();
     updatePrazoLabel();
+    toggleEntradaInicial();
     $('materialNome').focus();
   }
 
@@ -514,11 +595,12 @@
       caNumero: $('materialCa').value, caValidade: $('materialCaValidade').value, fabricante: $('materialFabricante').value, codigoInterno: $('materialCodigo').value,
       quantidadeComprada: $('materialQuantidadeComprada').value, tamanhoEntrada: $('materialTamanhoEntrada').value, unidade: $('materialUnidade').value,
       estoqueMinimo: $('materialEstoqueMinimo').value, definePrazo: $('materialValidade').value, prazoUnidade: $('materialValidadeTipo').value,
-      prazo: $('materialPrazo').value, descricao: $('materialDesc').value,
+      prazo: $('materialPrazo').value, descricao: $('materialDesc').value, registrarEntrada: $('materialRegistrarEntrada').value,
     };
   }
 
   async function salvar() {
+    if (edicao) { await salvarEdicao(); return; }
     if (!acessoAtual.podeAlterar) return;
     var montado = formulario.montarCorpo(camposDoFormulario());
     if (!montado.ok) {
@@ -559,6 +641,165 @@
     }
   }
 
+  // ── edição de material existente (melhoria da C2) ──
+
+  /** Libera ou bloqueia campos conforme o modo e o perfil; a unidade fica bloqueada na edição. */
+  function atualizarCampos() {
+    var emEdicao = !!edicao;
+    var liberado = emEdicao || acessoAtual.podeAlterar;
+    CAMPOS.forEach(function (id) { $(id).disabled = !liberado; });
+    var entradaPossivel = liberado && !emEdicao && acessoAtual.podeMovimentar;
+    ['materialRegistrarEntrada', 'materialQuantidadeComprada', 'materialTamanhoEntrada'].forEach(function (id) { $(id).disabled = !entradaPossivel; });
+    if (!entradaPossivel && $('materialRegistrarEntrada').value !== 'nao') {
+      $('materialRegistrarEntrada').value = 'nao';
+      toggleEntradaInicial();
+    }
+    $('materialUnidade').disabled = !liberado || emEdicao;
+    $('materialUnidadeHelper').style.display = emEdicao ? '' : 'none';
+    $('materialRegistrarEntradaHelper').textContent = emEdicao ? TEXTOS_ENTRADA.edicao
+      : (liberado && !acessoAtual.podeMovimentar ? TEXTOS_ENTRADA.semMovimentar : TEXTOS_ENTRADA.padrao);
+  }
+
+  /** Título, identificação e botões do modo atual (cadastro ou edição). */
+  function aplicarModo() {
+    var t = edicao ? TEXTOS_MODO.edicao : TEXTOS_MODO.cadastro;
+    $('tituloFormulario').textContent = t.titulo;
+    $('subtituloFormulario').textContent = t.subtitulo;
+    $('botaoSalvar').innerHTML = '<span class="material-symbols-outlined">save</span>' + t.salvar;
+    $('botaoSalvar').style.display = (edicao ? acessoAtual.podeEditar : acessoAtual.podeAlterar) ? '' : 'none';
+    $('botaoCancelarEdicao').style.display = edicao ? '' : 'none';
+    $('botaoLimpar').style.display = !edicao && acessoAtual.podeAlterar ? '' : 'none';
+    var caixa = $('modoEdicao');
+    if (edicao) {
+      var m = edicao.original;
+      caixa.textContent = 'Editando: ' + m.nome + (m.codigoInterno ? ' · código ' + m.codigoInterno : '') + ' (nº ' + m.id + ').';
+      caixa.style.display = '';
+    } else {
+      caixa.textContent = '';
+      caixa.style.display = 'none';
+    }
+    atualizarCampos();
+  }
+
+  /** "Editar material": só com materials.editar e com um material escolhido no seletor da grade. */
+  function atualizarBotaoEditar() {
+    var botao = $('botaoEditarMaterial');
+    botao.style.display = acessoAtual.podeEditar && !telaEncerrada ? '' : 'none';
+    botao.disabled = !acessoAtual.podeEditar || telaEncerrada || carregandoEdicao || !$('gradeMaterial').value;
+  }
+
+  function acrescentarOpcao(id, extra) {
+    if (!extra) return;
+    $(id).innerHTML = $(id).innerHTML + '<option value="' + render.escaparHtml(extra.valor) + '">' + render.escaparHtml(extra.rotulo) + '</option>';
+    opcoesTemporarias.push(id);
+  }
+
+  function restaurarOpcoes() {
+    opcoesTemporarias.forEach(function (id) { $(id).innerHTML = OPCOES_ORIGINAIS[id]; });
+    opcoesTemporarias = [];
+  }
+
+  async function iniciarEdicao() {
+    if (!acessoAtual.podeEditar || telaEncerrada) return;
+    var id = $('gradeMaterial').value;
+    if (!id) return;
+    cargaEdicao += 1;
+    var numero = cargaEdicao;
+    carregandoEdicao = true;
+    atualizarBotaoEditar();
+    var r = await EpiMateriais.acoes.buscar(id);
+    if (telaEncerrada || numero !== cargaEdicao) return; // resposta antiga: descartada
+    carregandoEdicao = false;
+    atualizarBotaoEditar();
+    if (!r.ok) {
+      if (tratarSessao(r)) return;
+      mostrarAviso(mensagens.erroCarregarEdicao(r), 'erro');
+      return;
+    }
+    entrarModoEdicao(r.dados && r.dados.material);
+  }
+
+  /** Preenche o formulário original com o registro real; não cria outro formulário. */
+  function entrarModoEdicao(material) {
+    if (!material) { mostrarAviso(mensagens.MSG.CARREGAR_GENERICO, 'erro'); return; }
+    var preparado = formulario.camposDoMaterial(material);
+    var c = preparado.campos;
+    restaurarOpcoes();
+    acrescentarOpcao('materialCategoria', preparado.opcoesExtras.categoria);
+    acrescentarOpcao('materialUnidade', preparado.opcoesExtras.unidade);
+    edicao = { id: material.id, original: material };
+    limparErros();
+    $('materialTipo').value = c.tipo;
+    toggleCustomMaterialType();
+    var valores = {
+      materialNome: c.nome, materialCategoria: c.categoria, materialTipoCustom: c.tipoCustom, materialCa: c.caNumero, materialCaValidade: c.caValidade,
+      materialFabricante: c.fabricante, materialCodigo: c.codigoInterno, materialUnidade: c.unidade, materialEstoqueMinimo: c.estoqueMinimo,
+      materialValidade: c.definePrazo, materialValidadeTipo: c.prazoUnidade, materialPrazo: c.prazo, materialDesc: c.descricao, materialRegistrarEntrada: 'nao',
+    };
+    Object.keys(valores).forEach(function (id) { $(id).value = valores[id]; });
+    toggleValidityFields();
+    updatePrazoLabel();
+    toggleEntradaInicial();
+    aplicarModo();
+    mostrarAviso('', null);
+    $('materialNome').focus();
+  }
+
+  /** Volta ao modo cadastro: formulário limpo, opções originais, cargas pendentes invalidadas. */
+  function sairModoEdicao() {
+    edicao = null;
+    cargaEdicao += 1;
+    carregandoEdicao = false;
+    restaurarOpcoes();
+    limparFormulario();
+    aplicarModo();
+    atualizarBotaoEditar();
+  }
+
+  function cancelarEdicao() {
+    if (!edicao && !carregandoEdicao) return;
+    sairModoEdicao();
+    mostrarAviso('', null);
+  }
+
+  /** PATCH só com o que mudou; nunca estoque nem unidade. Sem mudança: nenhuma requisição. */
+  async function salvarEdicao() {
+    if (!acessoAtual.podeEditar || !edicao || telaEncerrada) return;
+    var alvo = edicao;
+    var montado = formulario.montarEdicao(camposDoFormulario(), alvo.original);
+    if (!montado.ok) {
+      marcarErros(montado.erros);
+      mostrarAviso(montado.erros.map(function (e) { return e.mensagem; }).join(' '), 'erro');
+      return;
+    }
+    limparErros();
+    if (!montado.alterado) { mostrarAviso(mensagens.MSG.EDICAO_SEM_ALTERACAO, 'atencao'); return; }
+    cargaEdicao += 1;
+    var numero = cargaEdicao;
+    $('botaoSalvar').disabled = true;
+    $('botaoCancelarEdicao').disabled = true;
+    try {
+      var r = await EpiMateriais.acoes.alterar(alvo.id, montado.corpo);
+      if (telaEncerrada || numero !== cargaEdicao) return;
+      if (!r.ok) {
+        if (tratarSessao(r)) return;
+        if (r.codigo === 'MATERIAL_CODIGO_INTERNO_DUPLICADO') marcarErros([{ campo: 'codigoInterno' }]);
+        // 4xx: recusa confirmada. Rede ou 5xx: não confirmado; formulário preservado, sem repetição.
+        mostrarAviso(mensagens.erroEdicao(r), mensagens.confirmado(r) ? 'erro' : 'atencao');
+        return;
+      }
+      var material = r.dados && r.dados.material ? r.dados.material : alvo.original;
+      sairModoEdicao();
+      mostrarAviso(mensagens.MSG.EDICAO_SUCESSO, 'sucesso');
+      showToast('Alterações salvas', 'success');
+      await carregarSeletorGrade(material.id, material);
+      await carregarGrade(material.id);
+    } finally {
+      $('botaoSalvar').disabled = false;
+      $('botaoCancelarEdicao').disabled = false;
+    }
+  }
+
   // ── grade de tamanhos com saldo real ──
   function mostrarGrade(html, resumo, corResumo) {
     $('sizeChipsGrid').innerHTML = html;
@@ -578,6 +819,8 @@
       select.innerHTML = '<option value="">Falha ao listar os materiais</option>';
       $('gradeMaterialHelper').textContent = mensagens.erroGrade(r);
       mostrarGrade('', 'Falha na consulta', 'var(--error)');
+      atualizarBotaoEditar();
+      atualizarEntradaPosterior();
       return;
     }
     var lista = r.dados.materiais || [];
@@ -587,10 +830,12 @@
       ? (r.dados.completo ? 'Escolha um material cadastrado para ver o saldo real por tamanho.' : 'Lista parcial (' + lista.length + ' de ' + r.dados.total + '): escolha um material para ver o saldo real por tamanho.')
       : 'Cadastre o primeiro material ao lado; a grade mostrará o saldo real por tamanho.';
     if (selecionarId && lista.some(function (m) { return String(m.id) === String(selecionarId); })) select.value = String(selecionarId);
+    atualizarBotaoEditar();
+    atualizarEntradaPosterior();
   }
 
   async function carregarGrade(id) {
-    if (!id) { mostrarGrade('', 'Nenhum material selecionado'); return; }
+    if (!id) { mostrarGrade('', 'Nenhum material selecionado'); preencherTamanhosEntradaPosterior([]); return; }
     var g = await fluxo.carregarGrade(id);
     if (!g.ok) {
       if (tratarSessao(g.resposta)) return;
@@ -598,21 +843,101 @@
       return;
     }
     mostrarGrade(render.chips(g.chips), g.resumo);
+    if ($('gradeMaterial').value === String(id)) {
+      materialDaGrade = g.material;
+      preencherTamanhosEntradaPosterior(g.chips);
+    }
+  }
+
+  // ── entrada de estoque em material já cadastrado ──
+
+  /** Tamanhos da grade do material (sugeridos + já registrados) e depois os demais; começa sem seleção. */
+  function preencherTamanhosEntradaPosterior(chips) {
+    var lista = [];
+    (chips || []).forEach(function (c) { if (lista.indexOf(c.tamanho) === -1) lista.push(c.tamanho); });
+    if (lista.length) formulario.TAMANHOS_GRADE.forEach(function (t) { if (lista.indexOf(t) === -1) lista.push(t); });
+    $('entradaTamanho').innerHTML = '<option value="">Selecione o tamanho</option>'
+      + lista.map(function (t) { return '<option value="' + render.escaparHtml(t) + '">' + render.escaparHtml(t) + '</option>'; }).join('');
+    $('entradaTamanho').value = '';
+  }
+
+  function limparErrosEntrada() {
+    Object.keys(CAMPO_ENTRADA_POR_ERRO).forEach(function (k) {
+      var el = $(CAMPO_ENTRADA_POR_ERRO[k]);
+      el.removeAttribute('aria-invalid');
+      el.style.borderColor = '';
+    });
+  }
+
+  function limparEntradaPosterior() {
+    $('entradaTamanho').value = '';
+    $('entradaQuantidade').value = '';
+    $('entradaMotivo').value = '';
+    limparErrosEntrada();
+  }
+
+  /** Visível só com MOVIMENTAR_ESTOQUE; botão só com material escolhido e sem envio em andamento. */
+  function atualizarEntradaPosterior() {
+    var permitido = acessoAtual.podeMovimentar && !telaEncerrada;
+    $('blocoEntradaEstoque').style.display = permitido ? '' : 'none';
+    $('botaoRegistrarEntrada').disabled = !permitido || entradaEmAndamento || !$('gradeMaterial').value;
+  }
+
+  /** Sempre ENTRADA, pela rota existente de movimentação; nunca PATCH do material. */
+  async function registrarEntradaPosterior() {
+    if (!acessoAtual.podeMovimentar || telaEncerrada || entradaEmAndamento) return;
+    var id = $('gradeMaterial').value;
+    if (!id) return;
+    limparErrosEntrada();
+    var montado = formulario.montarEntrada({ tamanho: $('entradaTamanho').value, quantidade: $('entradaQuantidade').value, motivo: $('entradaMotivo').value });
+    if (!montado.ok) {
+      montado.erros.forEach(function (e) {
+        var el = $(CAMPO_ENTRADA_POR_ERRO[e.campo]);
+        el.setAttribute('aria-invalid', 'true');
+        el.style.borderColor = 'var(--error)';
+      });
+      $(CAMPO_ENTRADA_POR_ERRO[montado.erros[0].campo]).focus();
+      mostrarAviso(montado.erros.map(function (e) { return e.mensagem; }).join(' '), 'erro');
+      return;
+    }
+    var material = materialDaGrade && String(materialDaGrade.id) === String(id) ? materialDaGrade : { id: id };
+    entradaEmAndamento = true;
+    atualizarEntradaPosterior();
+    try {
+      var r = await fluxo.registrarEntrada(id, montado.corpo);
+      if (telaEncerrada) return; // sessão encerrada no meio: nada é aplicado
+      if (!r.ok && tratarSessao(r.resposta)) return;
+      mostrarAviso(mensagens.resultadoEntradaPosterior(r, montado.corpo, material), r.ok ? 'sucesso' : (r.confirmado ? 'erro' : 'atencao'));
+      if (r.ok) {
+        limparEntradaPosterior();
+        showToast('Entrada de estoque registrada', 'success');
+      }
+      // Sucesso: novo saldo. Não confirmada: saldo real para conferência. Recusa: nada mudou.
+      if ((r.ok || !r.confirmado) && $('gradeMaterial').value === String(id)) await carregarGrade(id);
+    } finally {
+      entradaEmAndamento = false;
+      atualizarEntradaPosterior();
+    }
   }
 
   // ── acesso (C1) e sessão (C0) ──
   function aplicarAcesso(acesso) {
-    acessoAtual = { permissoes: acesso.permissoes, podeAlterar: acesso.podeAlterar, podeMovimentar: EpiPermissoes.acao(acesso.permissoes, 'MOVIMENTAR_ESTOQUE') };
-    $('botaoSalvar').style.display = acesso.podeAlterar ? '' : 'none';
+    acessoAtual = {
+      permissoes: acesso.permissoes, podeAlterar: acesso.podeAlterar, podeMovimentar: EpiPermissoes.acao(acesso.permissoes, 'MOVIMENTAR_ESTOQUE'),
+      // Melhoria da C2: editar é independente de criar; o backend recusa com 403 de qualquer forma.
+      podeEditar: EpiPermissoes.recurso(acesso.permissoes, 'materials', 'editar'),
+    };
     if (!acesso.podeAlterar) {
       EpiPermissoes.somenteLeitura($('materialsView').querySelector('.form-grid'));
-      $('botaoLimpar').style.display = 'none';
-      mostrarAviso('Seu perfil pode consultar materiais nesta empresa, mas não cadastrar.', 'atencao');
-    } else if (!acessoAtual.podeMovimentar) {
-      $('materialQuantidadeComprada').disabled = true;
-      $('materialTamanhoEntrada').disabled = true;
-      $('materialQuantidadeHelper').textContent = 'Seu perfil não pode movimentar estoque nesta empresa: o material será cadastrado sem entrada inicial.';
+      mostrarAviso(acessoAtual.podeEditar
+        ? 'Seu perfil pode consultar e editar materiais nesta empresa, mas não cadastrar.'
+        : 'Seu perfil pode consultar materiais nesta empresa, mas não cadastrar.', 'atencao');
     }
+    // Sem MOVIMENTAR_ESTOQUE: "Registrar entrada inicial" fica em "Não", bloqueado, com aviso (atualizarCampos),
+    // e o bloco "Registrar entrada de estoque" fica oculto.
+    aplicarModo();
+    atualizarBotaoEditar();
+    atualizarEntradaPosterior();
   }
 
   async function iniciarSessao() {
@@ -621,6 +946,14 @@
   }
 
   function encerrarTela() {
+    // Sessão encerrada: nenhuma carga ou salvamento pendente é aplicado, e o
+    // registro carregado para edição sai da tela.
+    telaEncerrada = true;
+    if (edicao || carregandoEdicao) sairModoEdicao(); else cargaEdicao += 1;
+    atualizarBotaoEditar();
+    materialDaGrade = null;
+    limparEntradaPosterior();
+    atualizarEntradaPosterior();
     $('sizeChipsGrid').innerHTML = '';
     $('gradeMaterial').innerHTML = '';
     mostrarAviso('', null);
@@ -634,10 +967,22 @@
   $('materialPrazo').addEventListener('input', updatePrazoPreview);
   $('botaoLimpar').addEventListener('click', limpar);
   $('botaoSalvar').addEventListener('click', salvar);
-  $('gradeMaterial').addEventListener('change', function () { carregarGrade($('gradeMaterial').value); });
+  $('gradeMaterial').addEventListener('change', function () {
+    atualizarBotaoEditar();
+    materialDaGrade = null;
+    limparEntradaPosterior();
+    atualizarEntradaPosterior();
+    carregarGrade($('gradeMaterial').value);
+  });
+  $('botaoRegistrarEntrada').addEventListener('click', registrarEntradaPosterior);
+  $('materialRegistrarEntrada').addEventListener('change', toggleEntradaInicial);
+  $('botaoEditarMaterial').addEventListener('click', iniciarEdicao);
+  $('botaoCancelarEdicao').addEventListener('click', cancelarEdicao);
   preencherTamanhosEntrada();
   toggleValidityFields();
   updatePrazoLabel();
+  $('materialRegistrarEntrada').value = 'nao';
+  toggleEntradaInicial();
 
   // Sessão empresarial do Portal do Cliente, confirmada no servidor por
   // js/sessao-empresarial.js (Etapa C, Parte C0). Sem sessão, a pessoa é

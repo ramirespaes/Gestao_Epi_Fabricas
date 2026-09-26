@@ -273,3 +273,30 @@ describe('movimentar — recusas estruturais, todas com ROLLBACK e sem rastro', 
     }), /ator/i);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// Parte C3 — listarDisponiveis (somente leitura)
+// ═══════════════════════════════════════════════════════════════════
+describe('listarDisponiveis — Parte C3', () => {
+  test('compõe itens, total, página, limite e filtros; passa a empresa e o alerta de 60 dias; nenhuma escrita', async (t) => {
+    const recebido = {};
+    t.mock.method(estoqueRepo, 'listarDisponiveis', async (_p, empresaId, f) => { recebido.lista = [empresaId, f]; return [{ materialId: 1, saldo: 3, disponivel: 3 }]; });
+    t.mock.method(estoqueRepo, 'contarDisponiveis', async (_p, empresaId, f) => { recebido.conta = [empresaId, f]; return 1; });
+    t.mock.method(estoqueRepo, 'listarFiltrosDisponiveis', async (_p, empresaId) => { recebido.filtros = empresaId; return { categorias: ['EPI'], tipos: [], tamanhos: ['G'] }; });
+    const auditoria = t.mock.method(auditoriaRepo, 'registrar', async () => { throw new Error('não deve auditar'); });
+    const pool = { connect: async () => { throw new Error('não deve abrir transação'); }, query: async () => ({ rows: [] }) };
+
+    const r = await servico.listarDisponiveis(pool, { empresaId: EMPRESA, categoria: 'EPI', validade: 'expired', pagina: 1, limite: 50 });
+    assert.deepEqual(r, { itens: [{ materialId: 1, saldo: 3, disponivel: 3 }], total: 1, pagina: 1, limite: 50, filtros: { categorias: ['EPI'], tipos: [], tamanhos: ['G'] } });
+    assert.deepEqual(recebido.lista, [EMPRESA, { categoria: 'EPI', tipo: null, tamanho: null, validade: 'expired', pagina: 1, limite: 50, diasAlerta: 60 }]);
+    assert.deepEqual(recebido.conta, [EMPRESA, { categoria: 'EPI', tipo: null, tamanho: null, validade: 'expired', diasAlerta: 60 }]);
+    assert.equal(recebido.filtros, EMPRESA);
+    assert.equal(auditoria.mock.callCount(), 0);
+  });
+
+  test('empresa inválida é recusada antes de consultar', async (t) => {
+    const lista = t.mock.method(estoqueRepo, 'listarDisponiveis', async () => []);
+    await assert.rejects(() => servico.listarDisponiveis({}, { empresaId: 0, pagina: 1, limite: 50 }), /empresa/i);
+    assert.equal(lista.mock.callCount(), 0);
+  });
+});

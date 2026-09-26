@@ -356,3 +356,18 @@ describe('categoria, codigo_interno e descricao — Parte C2 (migration 039)', (
     assert.equal(executor.chamadas.length, 0);
   });
 });
+
+describe('validade do CA como data pura — ajuste pós-melhoria C2 (25/09/2026)', () => {
+  test('toda projeção formata ca_validade no PostgreSQL como AAAA-MM-DD: o valor nunca passa por Date do Node e não depende do fuso do servidor', async () => {
+    const executor = executorFalso([linha()]);
+    await criar(executor, { empresaId: EMPRESA_A, nome: 'Botina de segurança' });
+    await buscarPorId(executor, EMPRESA_A, 30);
+    await buscarPorIdParaAtualizacao(executor, EMPRESA_A, 30);
+    await listarPorEmpresa(executor, EMPRESA_A);
+    await atualizar(executor, EMPRESA_A, 30, { nome: 'Botina reforçada' });
+    assert.equal(executor.chamadas.length, 5);
+    for (const { texto } of executor.chamadas) {
+      assert.match(texto, /to_char\(ca_validade, 'YYYY-MM-DD'\) AS ca_validade/, texto);
+    }
+  });
+});

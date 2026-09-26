@@ -40,6 +40,8 @@ function criarFuncionarioRoutes({ controller, exigirSessao: exigirSessaoInjetado
   const exigirEditar = criarExigirPermissaoRecurso({ pool: poolInjetado }, RECURSO, 'editar');
 
   router.post('/funcionarios', exigirSessaoInjetado, exigirCriar, validar({ body: funcionarioSchemas.criar.body }), controller.criar);
+  // C4 (D1/D8): importação em lote, mesma permissão de criar funcionários.
+  router.post('/funcionarios/importacao', exigirSessaoInjetado, exigirCriar, validar({ body: funcionarioSchemas.importacao.body }), controller.importar);
   router.get('/funcionarios', exigirSessaoInjetado, exigirVisualizar, validar({ query: funcionarioSchemas.listar.query }), controller.listar);
   router.get('/funcionarios/:id', exigirSessaoInjetado, exigirVisualizar, validar({ params: funcionarioSchemas.buscar.params }), controller.buscar);
   router.patch('/funcionarios/:id', exigirSessaoInjetado, exigirEditar, validar({ params: funcionarioSchemas.alterar.params, body: funcionarioSchemas.alterar.body }), controller.alterar);

@@ -183,7 +183,133 @@ async function atualizarQuantidade(executor, empresaId, id, quantidade) {
   return mapear(rows[0]);
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// Parte C3 — consulta agregada de itens disponíveis (somente leitura)
+// ═══════════════════════════════════════════════════════════════════
+
+const VALIDADES_CA = Object.freeze(['ok', 'expiring', 'expired']);
+
+function exigirTextoFiltro(valor, nome) {
+  if (valor !== null && valor !== undefined && typeof valor !== 'string') {
+    throw new TypeError(`filtro ${nome} deve ser texto ou null`);
+  }
+}
+
+function exigirFiltrosDisponiveis({ categoria = null, tipo = null, tamanho = null, validade = null, diasAlerta }) {
+  exigirTextoFiltro(categoria, 'categoria');
+  exigirTextoFiltro(tipo, 'tipo');
+  exigirTextoFiltro(tamanho, 'tamanho');
+  if (validade !== null && !VALIDADES_CA.includes(validade)) {
+    throw new TypeError('filtro de validade inválido');
+  }
+  if (!Number.isInteger(diasAlerta) || diasAlerta < 1) {
+    throw new TypeError('prazo de alerta da validade do CA inválido');
+  }
+}
+
+/**
+ * Situação da validade do CA, calculada no banco (a paginação depende do
+ * filtro): sem data -> 'sem-validade'; antes de hoje -> 'expired'; de hoje
+ * até hoje + diasAlerta -> 'expiring'; depois -> 'ok'. `$6` é o prazo de
+ * alerta, sempre parâmetro.
+ */
+const CLASSIFICACAO_VALIDADE_CA = `CASE
+          WHEN m.ca_validade IS NULL THEN 'sem-validade'
+          WHEN m.ca_validade < CURRENT_DATE THEN 'expired'
+          WHEN m.ca_validade <= CURRENT_DATE + $6::int THEN 'expiring'
+          ELSE 'ok'
+        END`;
+
+// Mesma cláusula para listar e contar: isolamento por JOIN com materiais,
+// só materiais ativos, só tamanhos efetivamente cadastrados (inclusive saldo 0).
+const FILTRO_DISPONIVEIS = `FROM estoque_tamanhos et
+       JOIN materiais m ON m.id = et.material_id
+      WHERE m.empresa_id = $1
+        AND m.ativo
+        AND ($2::text IS NULL OR m.categoria = $2::text)
+        AND ($3::text IS NULL OR m.tipo = $3::text)
+        AND ($4::text IS NULL OR et.tamanho = $4::text)
+        AND ($5::text IS NULL OR ${CLASSIFICACAO_VALIDADE_CA} = $5::text)`;
+
+const paramsFiltro = (empresaId, f) => [empresaId, f.categoria ?? null, f.tipo ?? null, f.tamanho ?? null, f.validade ?? null, f.diasAlerta];
+
+function dataIso(valor) {
+  if (valor === null || valor === undefined) return null;
+  if (valor instanceof Date) {
+    const ano = valor.getFullYear();
+    const mes = String(valor.getMonth() + 1).padStart(2, '0');
+    const dia = String(valor.getDate()).padStart(2, '0');
+    return `${ano}-${mes}-${dia}`;
+  }
+  return String(valor).slice(0, 10);
+}
+
+/**
+ * Lista material ativo × tamanho da empresa, paginado. Nesta etapa não
+ * existe reserva: `disponivel` é igual a `saldo` (contrato preparado para
+ * a reserva futura sem quebrar os clientes).
+ */
+async function listarDisponiveis(executor, empresaId, filtros = {}) {
+  exigirEmpresa(empresaId);
+  exigirFiltrosDisponiveis(filtros);
+  const { pagina = 1, limite = 50 } = filtros;
+  if (!Number.isInteger(pagina) || pagina < 1) throw new TypeError('página inválida');
+  if (!Number.isInteger(limite) || limite < 1) throw new TypeError('limite inválido');
+
+  const { rows } = await executor.query(
+    `SELECT m.id AS material_id, m.nome AS material, m.codigo_interno, m.categoria, m.tipo,
+            et.tamanho, et.quantidade, m.unidade, m.estoque_minimo, m.ca_validade,
+            ${CLASSIFICACAO_VALIDADE_CA} AS validade
+       ${FILTRO_DISPONIVEIS}
+      ORDER BY lower(m.nome), m.id, et.tamanho
+      LIMIT $7 OFFSET $8`,
+    [...paramsFiltro(empresaId, filtros), limite, (pagina - 1) * limite],
+  );
+
+  return rows.map((l) => ({
+    materialId: l.material_id,
+    material: l.material,
+    codigoInterno: l.codigo_interno ?? null,
+    categoria: l.categoria ?? null,
+    tipo: l.tipo ?? null,
+    tamanho: l.tamanho,
+    saldo: l.quantidade,
+    disponivel: l.quantidade,
+    unidade: l.unidade,
+    estoqueMinimo: l.estoque_minimo,
+    caValidade: dataIso(l.ca_validade),
+    validade: l.validade,
+  }));
+}
+
+/** Total para a paginação, com exatamente os mesmos filtros. */
+async function contarDisponiveis(executor, empresaId, filtros = {}) {
+  exigirEmpresa(empresaId);
+  exigirFiltrosDisponiveis(filtros);
+  const { rows } = await executor.query(`SELECT count(*)::int AS total ${FILTRO_DISPONIVEIS}`, paramsFiltro(empresaId, filtros));
+  return rows[0] ? rows[0].total : 0;
+}
+
+/** Opções reais dos filtros: valores distintos da empresa, só de materiais ativos com tamanho cadastrado. */
+async function listarFiltrosDisponiveis(executor, empresaId) {
+  exigirEmpresa(empresaId);
+  const { rows } = await executor.query(
+    `SELECT array_agg(DISTINCT m.categoria ORDER BY m.categoria) FILTER (WHERE m.categoria IS NOT NULL) AS categorias,
+            array_agg(DISTINCT m.tipo ORDER BY m.tipo) FILTER (WHERE m.tipo IS NOT NULL) AS tipos,
+            array_agg(DISTINCT et.tamanho ORDER BY et.tamanho) AS tamanhos
+       FROM estoque_tamanhos et
+       JOIN materiais m ON m.id = et.material_id
+      WHERE m.empresa_id = $1 AND m.ativo`,
+    [empresaId],
+  );
+  const l = rows[0] || {};
+  return { categorias: l.categorias || [], tipos: l.tipos || [], tamanhos: l.tamanhos || [] };
+}
+
 module.exports = {
+  listarDisponiveis,
+  contarDisponiveis,
+  listarFiltrosDisponiveis,
   listarPorMaterial,
   buscarPorMaterialTamanhoParaAtualizacao,
   criar,

@@ -55,6 +55,8 @@ const ESCOPO_PROVISIONAMENTO_MASTER = Object.freeze({
     Object.freeze({ recurso: 'materials', operacoes: Object.freeze(['visualizar', 'criar', 'editar']) }),
     Object.freeze({ recurso: 'employeeHistory', operacoes: Object.freeze(['visualizar', 'criar', 'editar']) }),
     Object.freeze({ recurso: 'employeeGroups', operacoes: Object.freeze(['visualizar', 'criar', 'editar']) }),
+    // Parte C3: Itens Disponíveis é consulta — só visualizar, independente de materials.
+    Object.freeze({ recurso: 'availableItems', operacoes: Object.freeze(['visualizar']) }),
   ]),
   // estoque.routes.js POST /materiais/:id/estoque/movimentar (migrations 003/017)
   acoes: Object.freeze(['MOVIMENTAR_ESTOQUE']),

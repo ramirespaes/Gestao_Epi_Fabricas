@@ -52,6 +52,7 @@ const ACAO_AUDITORIA_REATIVACAO = 'MATERIAL_REATIVADO';
 const MSG_NOME_INVALIDO = 'Nome de material inválido';
 const MSG_MATERIAL_NAO_ENCONTRADO = 'Material não encontrado';
 const MSG_SEM_ALTERACAO = 'Nenhum campo para alterar';
+const MSG_UNIDADE_NAO_EDITAVEL = 'A unidade de controle de um material existente não pode ser alterada';
 const MSG_DADOS_INVALIDOS = 'Dados de material inválidos';
 // Parte C2 (migration 039): índice único parcial do código interno por empresa.
 const INDICE_CODIGO_INTERNO = 'uq_materiais_empresa_codigo_interno';
@@ -312,10 +313,17 @@ async function alterar(pool, {
     ? normalizarTextoOpcional(fabricante, materialRepo.TAMANHO_MAXIMO_FABRICANTE) : null;
   const caNumeroNormalizado = caNumeroInformado
     ? normalizarTextoOpcional(caNumero, materialRepo.TAMANHO_MAXIMO_CA_NUMERO) : null;
-  const unidadeNormalizada = unidade !== undefined ? normalizarUnidade(unidade) : null;
+
+  // Unidade de controle imutável na edição (ajuste pós-melhoria C2,
+  // 25/09/2026). A rota já a recusa no schema; esta é a defesa em
+  // profundidade para qualquer outro chamador. Recusa antes de abrir
+  // transação: nada é lido, gravado ou auditado.
+  if (unidade !== undefined) {
+    throw HttpError.badRequest('MATERIAL_UNIDADE_NAO_EDITAVEL', MSG_UNIDADE_NAO_EDITAVEL);
+  }
 
   const nenhumCampo = !alterarNome && !tipoInformado && !fabricanteInformado && !caNumeroInformado
-    && !caValidadeInformado && !prazoUsoDiasInformado && unidade === undefined && estoqueMinimo === undefined
+    && !caValidadeInformado && !prazoUsoDiasInformado && estoqueMinimo === undefined
     && !categoriaInformado && !codigoInternoInformado && !descricaoInformado;
 
   return emTransacao(pool, async (client) => {
@@ -328,7 +336,6 @@ async function alterar(pool, {
     if ((tipoInformado && tipoNormalizado === undefined)
       || (fabricanteInformado && fabricanteNormalizado === undefined)
       || (caNumeroInformado && caNumeroNormalizado === undefined)
-      || (unidade !== undefined && unidadeNormalizada === null)
       || (prazoUsoDiasInformado && !prazoUsoDiasValido(prazoUsoDias))
       || (estoqueMinimo !== undefined && !estoqueMinimoValido(estoqueMinimo))
       || (categoriaInformado && categoriaNormalizada === undefined)
@@ -351,7 +358,7 @@ async function alterar(pool, {
         caNumero: caNumeroNormalizado, caNumeroInformado,
         caValidade: caValidadeInformado ? caValidade : null, caValidadeInformado,
         prazoUsoDias: prazoUsoDiasInformado ? prazoUsoDias : null, prazoUsoDiasInformado,
-        unidade: unidadeNormalizada,
+        unidade: null, // null = manter a unidade atual (nunca alterada pela edição)
         estoqueMinimo: estoqueMinimo ?? null,
         categoria: categoriaNormalizada, categoriaInformado,
         codigoInterno: codigoInternoNormalizado, codigoInternoInformado,

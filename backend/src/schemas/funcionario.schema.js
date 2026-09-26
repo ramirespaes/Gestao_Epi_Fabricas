@@ -44,6 +44,9 @@ const cracha = textoCurto(CRACHA_MAXIMO, 'CRACHA_INVALIDO', 'Crachá inválido')
 const telefone = textoCurto(TELEFONE_MAXIMO, 'TELEFONE_INVALIDO', 'Telefone inválido');
 const busca = textoCurto(BUSCA_MAXIMA, 'BUSCA_INVALIDA', 'Termo de busca inválido');
 const dataNascimento = dataCalendario('DATA_NASCIMENTO_INVALIDA', 'Data de nascimento inválida');
+// C4 (migration 040): mesma regra de calendário; a relação com o nascimento
+// e o limite de 1900 são do serviço (e dos CHECKs, segunda barreira).
+const dataAdmissao = dataCalendario('DATA_ADMISSAO_INVALIDA', 'Data de admissão inválida');
 // grupoHomogeneoId em query chega como string: mesma regra de idParametro.
 const grupoHomogeneoIdQuery = idParametro;
 
@@ -60,6 +63,7 @@ const criar = {
     funcao: funcao.nullable().optional(),
     cracha: cracha.nullable().optional(),
     telefone: telefone.nullable().optional(),
+    dataAdmissao: dataAdmissao.nullable().optional(),
   }),
 };
 
@@ -69,6 +73,9 @@ const listar = {
     ativo: booleanoQuery.optional(),
     busca: busca.optional(),
     grupoHomogeneoId: grupoHomogeneoIdQuery.optional(),
+    // C4 (decisão D5): CPF só COMPLETO, com DV conferido, por igualdade
+    // exata no repositório; nunca parcial. Independente de `busca`.
+    cpf: cpfComDigitosVerificadores.optional(),
   }),
 };
 
@@ -86,6 +93,7 @@ const alterar = {
     funcao: funcao.nullable().optional(),
     cracha: cracha.nullable().optional(),
     telefone: telefone.nullable().optional(),
+    dataAdmissao: dataAdmissao.nullable().optional(),
   }),
 };
 
@@ -93,4 +101,72 @@ const semCorpo = z.strictObject({});
 const inativar = { params: paramsComId, body: semCorpo };
 const reativar = { params: paramsComId, body: semCorpo };
 
-module.exports = { criar, listar, buscar, alterar, inativar, reativar };
+// ── Importação em lote (C4, decisões D1/D4 de 25/09/2026) ──────────────
+// DUAS camadas, de propósito:
+//  * `importacao.body` valida só a ESTRUTURA do lote (tipos, tetos
+//    grosseiros, até 100 linhas, declaração confirmada). Erro aqui é defeito
+//    do cliente → 400 do lote inteiro.
+//  * `linhaImportacao` aplica as REGRAS DO CADASTRO a cada linha, no
+//    serviço. Erro aqui recusa só aquela linha — as demais seguem.
+const LINHAS_POR_LOTE = 100;
+const LINHAS_POR_ARQUIVO = 1000;
+// O cliente fecha cada lote em 100 linhas OU no limite de bytes do corpo
+// (32 KB da API), o que vier primeiro. Com campos longos e acentuados, um
+// lote pode ter bem menos de 100 linhas; o teto de lotes acompanha o de
+// linhas do arquivo (no pior caso extremo, uma linha por lote).
+const LOTES_POR_ARQUIVO = LINHAS_POR_ARQUIVO;
+// Teto grosseiro de estrutura (o fino, por campo, é da linhaImportacao):
+// uma célula longa demais é problema da LINHA, não do lote.
+const TEXTO_ESTRUTURA_MAXIMO = 500;
+const textoEstrutura = z.string().max(TEXTO_ESTRUTURA_MAXIMO).nullable().optional();
+const numeroLinha = z.number().int().min(2).max(LINHAS_POR_ARQUIVO + 1);
+
+const linhaImportacao = z.strictObject({
+  linha: numeroLinha,
+  nome,
+  cpf: cpfComDigitosVerificadores,
+  matricula,
+  dataAdmissao,
+  dataNascimento: dataNascimento.nullable().optional(),
+  // Setor e função (cargo) são obrigatórios pela planilha de importação.
+  setor,
+  funcao,
+  telefone: telefone.nullable().optional(),
+});
+
+const linhaEstrutura = z.strictObject({
+  linha: numeroLinha,
+  nome: textoEstrutura,
+  cpf: textoEstrutura,
+  matricula: textoEstrutura,
+  dataAdmissao: textoEstrutura,
+  dataNascimento: textoEstrutura,
+  setor: textoEstrutura,
+  funcao: textoEstrutura,
+  telefone: textoEstrutura,
+});
+
+const importacao = {
+  body: z.strictObject({
+    importacaoId: z.uuid(),
+    lote: z.strictObject({
+      numero: z.number().int().min(1).max(LOTES_POR_ARQUIVO),
+      total: z.number().int().min(1).max(LOTES_POR_ARQUIVO),
+    }).refine((l) => l.numero <= l.total, { message: 'Número do lote maior que o total' }),
+    arquivo: z.strictObject({
+      nome: textoCurto(100, 'ARQUIVO_NOME_INVALIDO', 'Nome do arquivo inválido'),
+      formato: z.enum(['xlsx', 'csv']),
+      totalLinhas: z.number().int().min(1).max(LINHAS_POR_ARQUIVO),
+    }),
+    declaracaoLgpd: z.strictObject({
+      versao: z.string().min(1).max(60),
+      confirmada: z.literal(true),
+    }),
+    linhas: z.array(linhaEstrutura).min(1).max(LINHAS_POR_LOTE)
+      .refine((ls) => new Set(ls.map((l) => l.linha)).size === ls.length, { message: 'Número de linha repetido no lote' }),
+  }),
+};
+
+module.exports = {
+  criar, listar, buscar, alterar, inativar, reativar, importacao, linhaImportacao, LINHAS_POR_LOTE, LINHAS_POR_ARQUIVO,
+};

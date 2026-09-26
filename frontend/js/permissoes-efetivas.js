@@ -61,6 +61,31 @@
       abrir: [{ recurso: 'materials', operacao: 'visualizar' }],
       alterar: [{ recurso: 'materials', operacao: 'criar' }],
     },
+    // Parte C3: consulta de itens disponíveis — recurso próprio, independente
+    // de materials; página somente leitura (nada a alterar).
+    availableItems: {
+      abrir: [{ recurso: 'availableItems', operacao: 'visualizar' }],
+      alterar: [],
+    },
+    // Parte C4: funcionários (recurso employeeHistory). Histórico só
+    // consulta; importar exige criar — a mesma permissão do
+    // POST /funcionarios/importacao (o recurso 'importEmployees' do
+    // catálogo não é usado). O backend continua sendo a autoridade.
+    employeeHistory: {
+      abrir: [{ recurso: 'employeeHistory', operacao: 'visualizar' }],
+      alterar: [],
+    },
+    importEmployees: {
+      abrir: [{ recurso: 'employeeHistory', operacao: 'criar' }],
+      alterar: [{ recurso: 'employeeHistory', operacao: 'criar' }],
+    },
+    // Parte C5: GHE e matriz GHE × EPI (recurso employeeGroups, sem recurso
+    // novo). Abrir = visualizar; alterar GHE e vínculos = editar. Cadastrar
+    // GHE novo exige criar, consultado à parte pela página.
+    employeeGroups: {
+      abrir: [{ recurso: 'employeeGroups', operacao: 'visualizar' }],
+      alterar: [{ recurso: 'employeeGroups', operacao: 'editar' }],
+    },
   };
 
   var MENSAGENS = {

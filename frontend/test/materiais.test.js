@@ -56,7 +56,7 @@ const FORMULARIO = {
   nome: '  Botina de segurança  ', categoria: 'EPI', tipo: 'Sapatão / Botina', tipoCustom: '',
   caNumero: ' 38271 ', caValidade: '2027-01-31', fabricante: 'Bracol', codigoInterno: ' EPI-000245 ',
   quantidadeComprada: '120', tamanhoEntrada: '42', unidade: 'Par', estoqueMinimo: '5',
-  definePrazo: 'sim', prazoUnidade: 'meses', prazo: '6', descricao: 'Biqueira de composite',
+  definePrazo: 'sim', prazoUnidade: 'meses', prazo: '6', descricao: 'Biqueira de composite', registrarEntrada: 'sim',
 };
 
 beforeEach(() => servidor(resposta(201, { status: 'ok', material: MATERIAL })));
@@ -215,7 +215,7 @@ describe('mensagens: cada código do backend vira texto claro, sem vazar o corpo
     assert.match(mensagens.erroEntrada({ ok: false, status: 400, codigo: 'VALIDACAO', detalhes: [{ caminho: 'quantidade' }] }), /quantidade/);
     assert.match(mensagens.erroEntrada({ ok: false, status: 0 }), /rede/i);
 
-    assert.equal(mensagens.resultado({ ok: true, material: MATERIAL, entrada: { solicitada: false } }), 'Material cadastrado com sucesso.');
+    assert.equal(mensagens.resultado({ ok: true, material: MATERIAL, entrada: { solicitada: false } }), 'Material cadastrado com sucesso. Registrado sem quantidade em estoque: nenhuma entrada inicial foi feita.');
     assert.equal(mensagens.resultado({ ok: true, material: MATERIAL, entrada: { solicitada: true, realizada: true, saldo: { tamanho: '42', quantidade: 120 } } }),
       'Material cadastrado com sucesso. Entrada de estoque registrada: 120 no tamanho 42.');
     const semPermissao = mensagens.resultado({ ok: true, material: MATERIAL, entrada: { solicitada: true, realizada: false, motivo: 'SEM_PERMISSAO' } });
@@ -431,7 +431,7 @@ describe('inspeção estática: pages/materials.html integrada, com a interface 
   test('menu: estrutura original preservada; integrados com data-pagina ocultos; demais sem link e com "Em integração"; nenhum link para o protótipo', () => {
     for (const secao of ['Visão geral', 'Estoque', 'Entregas', 'Solicitações', 'Administração']) assert.match(html, new RegExp(`<div class="nav-section">${secao}</div>`));
     const links = [...html.matchAll(/<a [^>]*data-pagina="([^"]+)"[^>]*>/g)];
-    assert.deepEqual(links.map((m) => m[1]).sort(), ['autorizacoes-individuais', 'grupo-permissoes', 'grupo-usuarios', 'grupos-acesso', 'materials']);
+    assert.deepEqual(links.map((m) => m[1]).sort(), ['autorizacoes-individuais', 'availableItems', 'employeeGroups', 'employeeHistory', 'grupo-permissoes', 'grupo-usuarios', 'grupos-acesso', 'importEmployees', 'materials']);
     for (const m of links) assert.match(m[0], /style="display:none"/, `${m[1]} deve nascer oculto`);
     assert.equal(/data-page=/.test(html), false, 'o mapa de arquivos do protótipo saiu');
     const pendentes = [...html.matchAll(/<a class="nav-pendente"[^>]*>[\s\S]*?<\/a>/g)];
@@ -444,7 +444,7 @@ describe('inspeção estática: pages/materials.html integrada, com a interface 
       assert.ok(html.includes(rotulo), `rótulo ${rotulo} preservado`);
     }
     const hrefs = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]).filter((h) => !h.startsWith('http') && !h.startsWith('../css/') && h !== 'javascript:void(0)');
-    const permitidos = new Set(['grupos-acesso.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'autorizacoes-individuais.html', '../portal/index.html', '../portal/inicio.html']);
+    const permitidos = new Set(['available-items.html', 'employee-groups.html', 'employee-history.html', 'import-employees.html', 'grupos-acesso.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'autorizacoes-individuais.html', '../portal/index.html', '../portal/inicio.html']);
     for (const h of hrefs) assert.ok(permitidos.has(h), `materials.html aponta para ${h}`);
     assert.match(html, /onclick="toggleSidebar\(\)"/);
     assert.match(html, /onclick="closeMobileMenu\(\)"/);
@@ -489,6 +489,8 @@ function estadoPadrao(extra = {}) {
     materiais: [], saldos: [], proximoId: 999,
     criar(corpo) { const m = { ...MATERIAL, ...corpo, id: e.proximoId }; return resposta(201, { status: 'ok', material: m }); },
     movimentar(id, corpo) { return resposta(200, { status: 'ok', saldo: { materialId: id, tamanho: corpo.tamanho, quantidade: corpo.quantidade } }); },
+    buscar(id) { return resposta(200, { status: 'ok', material: { ...MATERIAL, id } }); },
+    alterar(id, corpo) { return resposta(200, { status: 'ok', material: { ...MATERIAL, ...corpo, id } }); },
     responder(metodo, u, corpo) {
       const p = u.pathname;
       if (metodo === 'GET' && p === '/api/materiais') {
@@ -500,6 +502,9 @@ function estadoPadrao(extra = {}) {
       if (m && metodo === 'POST') return e.movimentar(Number(m[1]), corpo);
       m = p.match(/^\/api\/materiais\/(\d+)\/estoque$/);
       if (m && metodo === 'GET') return resposta(200, { status: 'ok', material: { ...MATERIAL, id: Number(m[1]) }, saldos: e.saldos });
+      m = p.match(/^\/api\/materiais\/(\d+)$/);
+      if (m && metodo === 'GET') return e.buscar(Number(m[1]));
+      if (m && metodo === 'PATCH') return e.alterar(Number(m[1]), corpo);
       return resposta(404, { status: 'erro', codigo: 'NAO_ENCONTRADO' });
     },
     ...extra,
@@ -511,7 +516,7 @@ function estadoPadrao(extra = {}) {
 function montarPagina({ permissoes = { recursos: { materials: { visualizar: true, criar: true, editar: false, excluir: false } }, acoes: { MOVIMENTAR_ESTOQUE: true }, administracao: {} }, podeAlterar = true } = {}) {
   const html = ler('pages/materials.html');
   const script = html.slice(html.lastIndexOf('<script>') + '<script>'.length, html.lastIndexOf('</script>'));
-  const SELECTS = new Set(['materialCategoria', 'materialTipo', 'materialUnidade', 'materialValidade', 'materialValidadeTipo', 'materialTamanhoEntrada', 'gradeMaterial']);
+  const SELECTS = new Set(['materialCategoria', 'materialTipo', 'materialUnidade', 'materialValidade', 'materialValidadeTipo', 'materialTamanhoEntrada', 'gradeMaterial', 'materialRegistrarEntrada', 'entradaTamanho']);
   const mapa = {};
   const elemento = (id) => {
     const listeners = {};
@@ -528,8 +533,8 @@ function montarPagina({ permissoes = { recursos: { materials: { visualizar: true
   const sandbox = {
     document: { getElementById: el, querySelectorAll: () => [] },
     window: { SAFEWORK_PORTAL_API_BASE_URL: BASE },
-    EpiHttp, EpiMateriais: carregarMateriais(), EpiPermissoes: { prepararPagina: async () => ({ permissoes, podeAlterar }), acao: P.acao, somenteLeitura() {} },
-    EpiSessaoEmpresarial: { montar: async () => CONTEXTO, sessaoEncerrada() { sandbox.encerrada = true; } },
+    EpiHttp, EpiMateriais: carregarMateriais(), EpiPermissoes: { prepararPagina: async () => ({ permissoes, podeAlterar }), acao: P.acao, recurso: P.recurso, somenteLeitura() {} },
+    EpiSessaoEmpresarial: { montar: async (o) => { sandbox.opcoesMontar = o; return CONTEXTO; }, sessaoEncerrada() { sandbox.encerrada = true; } },
     showToast: (m, t) => toasts.push([m, t]), toasts, console, setTimeout, Promise, String, Number, Array, Object, JSON,
   };
   vm.runInNewContext(script, sandbox);
@@ -539,7 +544,7 @@ function montarPagina({ permissoes = { recursos: { materials: { visualizar: true
   return { el, sandbox, esperar, disparar, preencher };
 }
 
-const FORMULARIO_DOM = { materialNome: 'Botina nova', materialCategoria: 'EPI', materialTipo: 'Sapatão / Botina', materialCa: '1', materialUnidade: 'Par', materialEstoqueMinimo: '5', materialValidade: 'sim', materialValidadeTipo: 'meses', materialPrazo: '6', materialQuantidadeComprada: '10', materialTamanhoEntrada: '42' };
+const FORMULARIO_DOM = { materialNome: 'Botina nova', materialCategoria: 'EPI', materialTipo: 'Sapatão / Botina', materialCa: '1', materialUnidade: 'Par', materialEstoqueMinimo: '5', materialValidade: 'sim', materialValidadeTipo: 'meses', materialPrazo: '6', materialQuantidadeComprada: '10', materialTamanhoEntrada: '42', materialRegistrarEntrada: 'sim' };
 
 describe('correção 1 — a mensagem do cadastro sobrevive à limpeza do formulário', () => {
   test('cadastro ok com entrada recusada (403): o formulário é limpo, mas o aviso "Entrada de estoque não realizada" permanece', async () => {
@@ -559,7 +564,7 @@ describe('correção 1 — a mensagem do cadastro sobrevive à limpeza do formul
     servidorRotas(estadoPadrao());
     const pg = montarPagina();
     await pg.esperar();
-    pg.preencher({ ...FORMULARIO_DOM, materialQuantidadeComprada: '' });
+    pg.preencher({ ...FORMULARIO_DOM, materialQuantidadeComprada: '', materialRegistrarEntrada: 'nao' });
     await pg.disparar('botaoSalvar');
     assert.match(pg.el('aviso').innerHTML, /Material cadastrado com sucesso\./);
     await pg.disparar('botaoLimpar');
@@ -607,7 +612,7 @@ describe('correção 2 — o seletor da grade consulta além dos primeiros 100 m
     const pg = montarPagina();
     await pg.esperar();
     assert.equal((pg.el('gradeMaterial').innerHTML.match(/<option value="\d+">/g) || []).length, 250);
-    pg.preencher({ ...FORMULARIO_DOM, materialQuantidadeComprada: '' });
+    pg.preencher({ ...FORMULARIO_DOM, materialQuantidadeComprada: '', materialRegistrarEntrada: 'nao' });
     await pg.disparar('botaoSalvar');
     assert.equal(pg.el('gradeMaterial').value, '999', 'recém-cadastrado selecionado');
     assert.match(pg.el('gradeMaterial').innerHTML, /<option value="999">Botina nova/);
@@ -722,5 +727,736 @@ describe('correção 4 — resultado não confirmado (rede / 5xx) é diferente d
     assert.match(pg.el('aviso').innerHTML, /Entrada de estoque não confirmada/);
     assert.equal(pg.el('gradeMaterial').value, '999');
     assert.ok(chamadas.some((c) => c.caminho === '/api/materiais/999/estoque'));
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Melhoria da C2 (25/09/2026): edição de material existente na mesma
+// tela (GET/PATCH /materiais/:id, que já existem), entrada inicial só com
+// "Sim" explícito, tamanho nunca escolhido automaticamente, unidade de
+// controle bloqueada na edição e validade do CA preservada.
+// ═══════════════════════════════════════════════════════════════════
+
+const PERMISSOES_EDITAR = { recursos: { materials: { visualizar: true, criar: true, editar: true, excluir: false } }, acoes: { MOVIMENTAR_ESTOQUE: true }, administracao: {} };
+const PERMISSOES_SO_EDITAR = { recursos: { materials: { visualizar: true, criar: false, editar: true, excluir: false } }, acoes: { MOVIMENTAR_ESTOQUE: true }, administracao: {} };
+const MATERIAL_CA = { ...MATERIAL, caValidade: '2026-10-15' };
+const pendente = () => { let resolver; const promessa = new Promise((r) => { resolver = r; }); return { promessa, resolver }; };
+
+async function abrirEdicao(pg, id = 77) {
+  pg.el('gradeMaterial').value = String(id);
+  await pg.disparar('gradeMaterial', 'change');
+  await pg.disparar('botaoEditarMaterial');
+}
+
+describe('melhoria C2 — módulo: carregar e editar material existente', () => {
+  test('acoes.buscar e acoes.alterar usam o GET e o PATCH existentes em /materiais/:id, sem empresaId', async () => {
+    const { acoes } = carregarMateriais();
+    servidor(resposta(200, { status: 'ok', material: MATERIAL }));
+    const b = await acoes.buscar(77);
+    assert.deepEqual([b.ok, b.dados.material.id], [true, 77]);
+    assert.deepEqual(chamadas, [{ metodo: 'GET', caminho: '/api/materiais/77', corpo: undefined }]);
+    servidor(resposta(200, { status: 'ok', material: { ...MATERIAL, nome: 'X' } }));
+    const a = await acoes.alterar(77, { nome: 'X' });
+    assert.equal(a.ok, true);
+    assert.deepEqual(chamadas, [{ metodo: 'PATCH', caminho: '/api/materiais/77', corpo: { nome: 'X' } }]);
+  });
+
+  test('prazo gravado em dias volta ao formulário em anos, meses ou dias, sem mudar o valor gravado', () => {
+    const { formulario } = carregarMateriais();
+    assert.deepEqual(formulario.prazoParaCampos(null), { definePrazo: 'nao', prazoUnidade: 'meses', prazo: '' });
+    assert.deepEqual(formulario.prazoParaCampos(365), { definePrazo: 'sim', prazoUnidade: 'anos', prazo: '1' });
+    assert.deepEqual(formulario.prazoParaCampos(730), { definePrazo: 'sim', prazoUnidade: 'anos', prazo: '2' });
+    assert.deepEqual(formulario.prazoParaCampos(180), { definePrazo: 'sim', prazoUnidade: 'meses', prazo: '6' });
+    assert.deepEqual(formulario.prazoParaCampos(30), { definePrazo: 'sim', prazoUnidade: 'meses', prazo: '1' });
+    assert.deepEqual(formulario.prazoParaCampos(45), { definePrazo: 'sim', prazoUnidade: 'dias', prazo: '45' });
+    for (const dias of [1, 29, 30, 45, 180, 365, 400, 730, 10950]) {
+      const c = formulario.prazoParaCampos(dias);
+      assert.equal(formulario.converterPrazo(c.prazo, c.prazoUnidade), dias, `ida e volta de ${dias} dias`);
+    }
+  });
+
+  test('validade do CA: 15/10/2026 continua 15/10/2026 no formulário (data pura ou data e hora em São Paulo ou UTC)', () => {
+    const { formulario } = carregarMateriais();
+    for (const v of ['2026-10-15', '2026-10-15T03:00:00.000Z', '2026-10-15T00:00:00.000Z']) {
+      assert.equal(formulario.dataParaCampo(v), '2026-10-15', v);
+    }
+    for (const v of [null, undefined, '', '15/10/2026', 'lixo']) assert.equal(formulario.dataParaCampo(v), '', String(v));
+    assert.equal(formulario.camposDoMaterial(MATERIAL_CA).campos.caValidade, '2026-10-15');
+  });
+
+  test('camposDoMaterial: preenche o formulário com o registro real; tipo fora da lista vira "Outro"; valores fora das listas ganham opção temporária, nunca trocados em silêncio', () => {
+    const { formulario } = carregarMateriais();
+    const r = formulario.camposDoMaterial(MATERIAL);
+    assert.deepEqual(r.campos, {
+      nome: 'Botina de segurança', categoria: 'EPI', tipo: 'Sapatão / Botina', tipoCustom: '', caNumero: '38271', caValidade: '2027-01-31',
+      fabricante: 'Bracol', codigoInterno: 'EPI-000245', unidade: 'Par', estoqueMinimo: '5', definePrazo: 'sim', prazoUnidade: 'meses', prazo: '6',
+      descricao: 'Biqueira de composite', registrarEntrada: 'nao', quantidadeComprada: '', tamanhoEntrada: '',
+    });
+    assert.deepEqual(r.opcoesExtras, { categoria: null, unidade: null });
+    const outro = formulario.camposDoMaterial({ ...MATERIAL, tipo: 'Perneira', categoria: null, unidade: 'rolo', caNumero: null, caValidade: null, fabricante: null, codigoInterno: null, descricao: null, prazoUsoDias: null });
+    assert.deepEqual([outro.campos.tipo, outro.campos.tipoCustom, outro.campos.categoria, outro.campos.unidade], ['Outro', 'Perneira', '', 'rolo']);
+    assert.deepEqual([outro.campos.caNumero, outro.campos.caValidade, outro.campos.fabricante, outro.campos.codigoInterno, outro.campos.descricao, outro.campos.definePrazo], ['', '', '', '', '', 'nao']);
+    assert.deepEqual(outro.opcoesExtras, { categoria: { valor: '', rotulo: 'Sem categoria' }, unidade: { valor: 'rolo', rotulo: 'rolo' } });
+    assert.deepEqual(formulario.camposDoMaterial({ ...MATERIAL, tipo: null }).campos.tipo, 'Outro');
+    assert.equal(formulario.camposDoMaterial({ ...MATERIAL, unidade: 'caixa' }).campos.unidade, 'Caixa');
+    assert.deepEqual(formulario.camposDoMaterial({ ...MATERIAL, categoria: 'Químicos' }).opcoesExtras.categoria, { valor: 'Químicos', rotulo: 'Químicos' });
+  });
+
+  test('montarEdicao: nada alterado → nenhum campo; nome, CA, validade e fabricante alterados → PATCH só com esses quatro', () => {
+    const { formulario } = carregarMateriais();
+    const campos = formulario.camposDoMaterial(MATERIAL_CA).campos;
+    assert.deepEqual(formulario.montarEdicao(campos, MATERIAL_CA), { ok: true, corpo: {}, alterado: false });
+    const r = formulario.montarEdicao({ ...campos, nome: ' Botina nova ', caNumero: '40000', caValidade: '2028-03-01', fabricante: '3M' }, MATERIAL_CA);
+    assert.deepEqual(r, { ok: true, corpo: { nome: 'Botina nova', caNumero: '40000', caValidade: '2028-03-01', fabricante: '3M' }, alterado: true });
+  });
+
+  test('montarEdicao: validade do CA recebida como data e hora e não tocada não é reenviada', () => {
+    const { formulario } = carregarMateriais();
+    const original = { ...MATERIAL, caValidade: '2026-10-15T03:00:00.000Z' };
+    const r = formulario.montarEdicao(formulario.camposDoMaterial(original).campos, original);
+    assert.deepEqual(r, { ok: true, corpo: {}, alterado: false });
+  });
+
+  test('montarEdicao: opcional apagado vai como null; prazo equivalente não é reenviado; "Não" no prazo limpa; novo prazo em dias', () => {
+    const { formulario } = carregarMateriais();
+    const campos = formulario.camposDoMaterial(MATERIAL).campos;
+    const limpo = formulario.montarEdicao({ ...campos, caNumero: '', caValidade: '', fabricante: ' ', codigoInterno: '', descricao: '', categoria: '' }, MATERIAL);
+    assert.deepEqual(limpo.corpo, { caNumero: null, caValidade: null, fabricante: null, codigoInterno: null, descricao: null, categoria: null });
+    assert.equal(formulario.montarEdicao({ ...campos, prazoUnidade: 'dias', prazo: '180' }, MATERIAL).alterado, false, '180 dias = 6 meses: nada muda');
+    assert.deepEqual(formulario.montarEdicao({ ...campos, definePrazo: 'nao' }, MATERIAL).corpo, { prazoUsoDias: null });
+    assert.deepEqual(formulario.montarEdicao({ ...campos, prazoUnidade: 'anos', prazo: '1' }, MATERIAL).corpo, { prazoUsoDias: 365 });
+    assert.deepEqual(formulario.montarEdicao({ ...campos, estoqueMinimo: '0' }, MATERIAL).corpo, { estoqueMinimo: 0 });
+  });
+
+  test('montarEdicao: unidade nunca é enviada; quantidade, tamanho e "Sim" da entrada são ignorados; nada de empresaId', () => {
+    const { formulario } = carregarMateriais();
+    const campos = formulario.camposDoMaterial(MATERIAL).campos;
+    const r = formulario.montarEdicao({ ...campos, unidade: 'Caixa', registrarEntrada: 'sim', quantidadeComprada: '50', tamanhoEntrada: '40', nome: 'Outro nome' }, MATERIAL);
+    assert.deepEqual(r, { ok: true, corpo: { nome: 'Outro nome' }, alterado: true });
+    assert.equal('entrada' in r, false);
+    assert.deepEqual(formulario.montarEdicao({ ...campos, unidade: 'Caixa' }, MATERIAL), { ok: true, corpo: {}, alterado: false });
+  });
+
+  test('montarEdicao: mesmas validações do cadastro; estoque mínimo obrigatório; tipo vazio só é aceito se já era vazio', () => {
+    const { formulario } = carregarMateriais();
+    const campos = formulario.camposDoMaterial(MATERIAL).campos;
+    const erros = (r) => (r.ok ? [] : r.erros.map((e) => e.campo).sort());
+    assert.deepEqual(erros(formulario.montarEdicao({ ...campos, nome: '  ' }, MATERIAL)), ['nome']);
+    assert.deepEqual(erros(formulario.montarEdicao({ ...campos, estoqueMinimo: '' }, MATERIAL)), ['estoqueMinimo']);
+    assert.deepEqual(erros(formulario.montarEdicao({ ...campos, categoria: 'x'.repeat(31) }, MATERIAL)), ['categoria']);
+    assert.deepEqual(erros(formulario.montarEdicao({ ...campos, caValidade: '15/10/2026' }, MATERIAL)), ['caValidade']);
+    assert.deepEqual(erros(formulario.montarEdicao({ ...campos, prazo: '0' }, MATERIAL)), ['prazo']);
+    assert.deepEqual(erros(formulario.montarEdicao({ ...campos, tipo: 'Outro', tipoCustom: '' }, MATERIAL)), ['tipo']);
+    const semTipo = { ...MATERIAL, tipo: null };
+    assert.deepEqual(formulario.montarEdicao(formulario.camposDoMaterial(semTipo).campos, semTipo), { ok: true, corpo: {}, alterado: false });
+  });
+
+  test('mensagens da edição: 403, 404, 409, 400, sem alteração, rede e 5xx (não confirmado), 401; nada do corpo vaza', () => {
+    const { mensagens } = carregarMateriais();
+    assert.match(mensagens.erroEdicao({ ok: false, status: 403, codigo: 'SEM_PERMISSAO' }), /não pode editar materiais nesta empresa/i);
+    assert.match(mensagens.erroEdicao({ ok: false, status: 404, codigo: 'MATERIAL_NAO_ENCONTRADO' }), /não encontrado nesta empresa/i);
+    assert.match(mensagens.erroEdicao({ ok: false, status: 409, codigo: 'MATERIAL_CODIGO_INTERNO_DUPLICADO' }), /código interno/i);
+    assert.match(mensagens.erroEdicao({ ok: false, status: 400, codigo: 'MATERIAL_SEM_ALTERACAO' }), /Nenhuma alteração/i);
+    const v = mensagens.erroEdicao({ ok: false, status: 400, codigo: 'VALIDACAO', detalhes: [{ caminho: 'caValidade', valor: 'SEGREDO-123' }] });
+    assert.match(v, /caValidade/);
+    assert.equal(/SEGREDO-123/.test(v), false);
+    for (const r of [{ ok: false, status: 0 }, { ok: false, status: 503, codigo: 'INDISPONIVEL' }]) {
+      assert.match(mensagens.erroEdicao(r), /não foi possível confirmar se as alterações foram salvas/i);
+    }
+    assert.match(mensagens.erroEdicao({ ok: false, status: 401 }), /sessão terminou/i);
+    assert.match(mensagens.erroCarregarEdicao({ ok: false, status: 404 }), /não encontrado nesta empresa/i);
+    assert.match(mensagens.erroCarregarEdicao({ ok: false, status: 0 }), /rede/i);
+    assert.match(mensagens.MSG.EDICAO_SUCESSO, /estoque não foi alterado/i);
+  });
+});
+
+describe('melhoria C2 — módulo: entrada inicial só com "Sim" explícito', () => {
+  test('"Não" (ou ausente): nenhuma entrada, mesmo com quantidade e tamanho preenchidos, e nenhum erro', () => {
+    const { formulario } = carregarMateriais();
+    for (const registrarEntrada of ['nao', undefined]) {
+      const r = formulario.montarCorpo({ ...FORMULARIO, registrarEntrada });
+      assert.equal(r.ok, true, JSON.stringify(r));
+      assert.equal(r.entrada, null, String(registrarEntrada));
+    }
+  });
+
+  test('"Sim": quantidade maior que zero e tamanho escolhido são obrigatórios', () => {
+    const { formulario } = carregarMateriais();
+    const erros = (r) => (r.ok ? [] : r.erros.map((e) => e.campo).sort());
+    assert.deepEqual(erros(formulario.montarCorpo({ ...FORMULARIO, quantidadeComprada: '' })), ['quantidadeComprada']);
+    assert.deepEqual(erros(formulario.montarCorpo({ ...FORMULARIO, quantidadeComprada: '0' })), ['quantidadeComprada']);
+    assert.deepEqual(erros(formulario.montarCorpo({ ...FORMULARIO, tamanhoEntrada: '' })), ['tamanhoEntrada']);
+    assert.deepEqual(erros(formulario.montarCorpo({ ...FORMULARIO, quantidadeComprada: '', tamanhoEntrada: '' })), ['quantidadeComprada', 'tamanhoEntrada']);
+    assert.deepEqual(formulario.montarCorpo(FORMULARIO).entrada, { tamanho: '42', quantidade: 120 });
+  });
+});
+
+describe('melhoria C2 — inspeção estática: acréscimos mínimos ao HTML original', () => {
+  const html = ler('pages/materials.html');
+  const opcoes = (id) => {
+    const bloco = html.slice(html.indexOf(`<select id="${id}"`), html.indexOf('</select>', html.indexOf(`<select id="${id}"`)));
+    return [...bloco.matchAll(/<option[^>]*>([^<]*)<\/option>/g)].map((m) => m[1]);
+  };
+
+  test('botões Editar material e Cancelar edição, seletor da entrada inicial (padrão Não), identificação do modo edição e ajuda da unidade', () => {
+    assert.match(html, /<button id="botaoEditarMaterial" class="outlined-btn" type="button" style="display:none" disabled>/);
+    assert.match(html, /<button id="botaoCancelarEdicao" class="outlined-btn" type="button" style="display:none">Cancelar edição<\/button>/);
+    assert.match(html, /<label for="materialRegistrarEntrada">Registrar entrada inicial de estoque\?<\/label>/);
+    assert.match(html, /<select id="materialRegistrarEntrada" class="select">\s*<option value="nao" selected>Não[^<]*<\/option>\s*<option value="sim">Sim[^<]*<\/option>/);
+    for (const id of ['materialRegistrarEntradaHelper', 'campoQuantidadeComprada', 'campoTamanhoEntrada', 'tituloFormulario', 'subtituloFormulario', 'modoEdicao', 'materialUnidadeHelper']) {
+      assert.match(html, new RegExp(`id="${id}"`), `falta #${id}`);
+    }
+    assert.match(html, /<div class="field" id="campoQuantidadeComprada" style="display:none">/);
+    assert.match(html, /<div class="field" id="campoTamanhoEntrada" style="display:none">/);
+    assert.match(html, /<h2 id="tituloFormulario">Novo material \/ EPI<\/h2>/);
+    assert.match(html, /<div class="helper" id="materialUnidadeHelper" style="display:none">A unidade de controle não pode ser alterada em um material existente\.<\/div>/);
+    assert.equal((html.match(/id="materialNome"/g) || []).length, 1, 'um único formulário');
+  });
+
+  test('as listas do módulo são exatamente as opções do HTML (categoria, tipo, unidade)', () => {
+    const { formulario } = carregarMateriais();
+    assert.deepEqual(opcoes('materialCategoria'), formulario.CATEGORIAS);
+    assert.deepEqual(opcoes('materialTipo'), formulario.TIPOS.concat(['Outro']));
+    assert.deepEqual(opcoes('materialUnidade'), formulario.UNIDADES);
+  });
+
+  test('sem inativar, reativar ou excluir nesta rodada; sem novas rotas', () => {
+    const codigo = semComentarios(ler('js/materiais.js'));
+    assert.equal(/inativar|reativar|'DELETE'/.test(codigo), false);
+    const rotas = [...codigo.matchAll(/requisitar\('([A-Z]+)', (.*?)(?:, \{ corpo: corpo \})?\);/g)].map((m) => `${m[1]} ${m[2]}`).sort();
+    assert.deepEqual(rotas, [
+      "GET CAMINHO + '/' + encodeURIComponent(id)",
+      "GET CAMINHO + '/' + encodeURIComponent(id) + '/estoque'",
+      "GET CAMINHO + (q.length ? '?' + q.join('&') : '')",
+      "PATCH CAMINHO + '/' + encodeURIComponent(id)",
+      'POST CAMINHO',
+      "POST CAMINHO + '/' + encodeURIComponent(id) + '/estoque/movimentar'",
+    ].sort());
+  });
+});
+
+describe('melhoria C2 — página: editar material existente', () => {
+  test('botão Editar material: oculto sem materials.editar; com editar, visível e habilitado só com um material escolhido', async () => {
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL] }));
+    const sem = montarPagina();
+    await sem.esperar();
+    assert.equal(sem.el('botaoEditarMaterial').style.display, 'none');
+    await abrirEdicao(sem);
+    assert.equal(chamadas.some((c) => c.caminho === '/api/materiais/77'), false, 'sem editar, nenhuma carga');
+
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL] }));
+    const com = montarPagina({ permissoes: PERMISSOES_EDITAR });
+    await com.esperar();
+    assert.equal(com.el('botaoEditarMaterial').style.display, '');
+    assert.equal(com.el('botaoEditarMaterial').disabled, true);
+    com.el('gradeMaterial').value = '77';
+    await com.disparar('gradeMaterial', 'change');
+    assert.equal(com.el('botaoEditarMaterial').disabled, false);
+  });
+
+  test('entrar na edição: o registro real preenche o formulário; título, identificação, Salvar alterações e Cancelar edição; validade do CA 15/10/2026 exata', async () => {
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL_CA], buscar: (id) => resposta(200, { status: 'ok', material: { ...MATERIAL_CA, id } }) }));
+    const pg = montarPagina({ permissoes: PERMISSOES_EDITAR });
+    await pg.esperar();
+    await abrirEdicao(pg);
+    assert.ok(chamadas.some((c) => c.metodo === 'GET' && c.caminho === '/api/materiais/77'));
+    const valores = Object.fromEntries(['materialNome', 'materialCategoria', 'materialTipo', 'materialCa', 'materialCaValidade', 'materialFabricante', 'materialCodigo',
+      'materialUnidade', 'materialEstoqueMinimo', 'materialValidade', 'materialValidadeTipo', 'materialPrazo', 'materialDesc'].map((id) => [id, pg.el(id).value]));
+    assert.deepEqual(valores, {
+      materialNome: 'Botina de segurança', materialCategoria: 'EPI', materialTipo: 'Sapatão / Botina', materialCa: '38271', materialCaValidade: '2026-10-15',
+      materialFabricante: 'Bracol', materialCodigo: 'EPI-000245', materialUnidade: 'Par', materialEstoqueMinimo: '5', materialValidade: 'sim',
+      materialValidadeTipo: 'meses', materialPrazo: '6', materialDesc: 'Biqueira de composite',
+    });
+    assert.equal(pg.el('materialPrazoPreviewText').textContent, '6 meses = 180 dias');
+    assert.equal(pg.el('tituloFormulario').textContent, 'Editar material / EPI');
+    assert.equal(pg.el('modoEdicao').style.display, '');
+    assert.match(pg.el('modoEdicao').textContent, /Botina de segurança/);
+    assert.match(pg.el('modoEdicao').textContent, /EPI-000245/);
+    assert.match(pg.el('botaoSalvar').innerHTML, /Salvar alterações/);
+    assert.equal(pg.el('botaoCancelarEdicao').style.display, '');
+    assert.equal(pg.el('botaoLimpar').style.display, 'none');
+  });
+
+  test('na edição: unidade de controle visível e bloqueada; entrada inicial, quantidade e tamanho indisponíveis, com orientação', async () => {
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL] }));
+    const pg = montarPagina({ permissoes: PERMISSOES_EDITAR });
+    await pg.esperar();
+    await abrirEdicao(pg);
+    assert.deepEqual([pg.el('materialUnidade').value, pg.el('materialUnidade').disabled], ['Par', true]);
+    assert.equal(pg.el('materialUnidadeHelper').style.display, '', 'ajuda da unidade visível (texto conferido na inspeção estática)');
+    assert.deepEqual([pg.el('materialRegistrarEntrada').value, pg.el('materialRegistrarEntrada').disabled], ['nao', true]);
+    assert.equal(pg.el('materialQuantidadeComprada').disabled, true);
+    assert.equal(pg.el('materialTamanhoEntrada').disabled, true);
+    assert.equal(pg.el('campoQuantidadeComprada').style.display, 'none');
+    assert.match(pg.el('materialRegistrarEntradaHelper').textContent, /edição não altera o estoque/i);
+    assert.equal(pg.el('materialNome').disabled, false);
+  });
+
+  test('Salvar alterações: PATCH só com os campos alterados, nenhuma movimentação; sucesso diz que o estoque não mudou, volta ao cadastro e recarrega a grade', async () => {
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL] }));
+    const pg = montarPagina({ permissoes: PERMISSOES_EDITAR });
+    await pg.esperar();
+    await abrirEdicao(pg);
+    pg.preencher({ materialNome: 'Botina nova', materialCa: '40000', materialCaValidade: '2028-03-01', materialFabricante: '3M' });
+    const antes = chamadas.length;
+    await pg.disparar('botaoSalvar');
+    const depois = chamadas.slice(antes);
+    assert.deepEqual(depois.filter((c) => c.metodo !== 'GET'), [{ metodo: 'PATCH', caminho: '/api/materiais/77', corpo: { nome: 'Botina nova', caNumero: '40000', caValidade: '2028-03-01', fabricante: '3M' } }]);
+    assert.ok(depois.some((c) => c.caminho === '/api/materiais/77/estoque'), 'grade recarregada');
+    assert.match(pg.el('aviso').innerHTML, /estoque não foi alterado/i);
+    assert.equal(pg.el('tituloFormulario').textContent, 'Novo material / EPI');
+    assert.equal(pg.el('botaoCancelarEdicao').style.display, 'none');
+    assert.equal(pg.el('materialUnidade').disabled, false);
+    assert.equal(pg.el('materialNome').value, '');
+  });
+
+  test('nada alterado: nenhuma requisição de escrita, aviso "Nenhuma alteração"; continua em edição', async () => {
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL] }));
+    const pg = montarPagina({ permissoes: PERMISSOES_EDITAR });
+    await pg.esperar();
+    await abrirEdicao(pg);
+    await pg.disparar('botaoSalvar');
+    assert.equal(chamadas.some((c) => c.metodo === 'PATCH' || c.metodo === 'POST'), false);
+    assert.match(pg.el('aviso').innerHTML, /Nenhuma alteração/);
+    assert.equal(pg.el('tituloFormulario').textContent, 'Editar material / EPI');
+  });
+
+  test('unidade alterada à força no DOM durante a edição: nunca vai no PATCH', async () => {
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL] }));
+    const pg = montarPagina({ permissoes: PERMISSOES_EDITAR });
+    await pg.esperar();
+    await abrirEdicao(pg);
+    pg.preencher({ materialUnidade: 'Caixa', materialFabricante: 'Danny' });
+    await pg.disparar('botaoSalvar');
+    assert.deepEqual(chamadas.filter((c) => c.metodo === 'PATCH').map((c) => c.corpo), [{ fabricante: 'Danny' }]);
+  });
+
+  test('Cancelar edição: nenhuma escrita, formulário limpo, volta ao modo cadastro com a unidade liberada', async () => {
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL] }));
+    const pg = montarPagina({ permissoes: PERMISSOES_EDITAR });
+    await pg.esperar();
+    await abrirEdicao(pg);
+    pg.preencher({ materialNome: 'Não salvar' });
+    await pg.disparar('botaoCancelarEdicao');
+    assert.equal(chamadas.some((c) => c.metodo === 'PATCH' || c.metodo === 'POST'), false);
+    assert.equal(pg.el('materialNome').value, '');
+    assert.equal(pg.el('tituloFormulario').textContent, 'Novo material / EPI');
+    assert.equal(pg.el('modoEdicao').style.display, 'none');
+    assert.match(pg.el('botaoSalvar').innerHTML, /Salvar material/);
+    assert.deepEqual([pg.el('materialUnidade').disabled, pg.el('materialRegistrarEntrada').disabled], [false, false]);
+    assert.equal(pg.el('botaoLimpar').style.display, '');
+  });
+
+  test('recusas: 403 e 404 mostram a mensagem e mantêm a edição; 409 marca o código interno; rede é "não confirmado", com um único PATCH', async () => {
+    for (const [status, codigo, texto] of [[403, 'SEM_PERMISSAO', /não pode editar/i], [404, 'MATERIAL_NAO_ENCONTRADO', /não encontrado nesta empresa/i], [409, 'MATERIAL_CODIGO_INTERNO_DUPLICADO', /código interno/i]]) {
+      servidorRotas(estadoPadrao({ materiais: [MATERIAL], alterar: () => resposta(status, { status: 'erro', codigo }) }));
+      const pg = montarPagina({ permissoes: PERMISSOES_EDITAR });
+      await pg.esperar();
+      await abrirEdicao(pg);
+      pg.preencher({ materialCodigo: 'EPI-1' });
+      await pg.disparar('botaoSalvar');
+      assert.match(pg.el('aviso').innerHTML, texto, String(status));
+      assert.equal(pg.el('tituloFormulario').textContent, 'Editar material / EPI', `${status}: continua em edição`);
+      if (status === 409) assert.equal(pg.el('materialCodigo').atributos['aria-invalid'], 'true');
+    }
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL], alterar: () => new TypeError('Failed to fetch') }));
+    const pg = montarPagina({ permissoes: PERMISSOES_EDITAR });
+    await pg.esperar();
+    await abrirEdicao(pg);
+    pg.preencher({ materialNome: 'Rede caiu' });
+    await pg.disparar('botaoSalvar');
+    assert.equal(chamadas.filter((c) => c.metodo === 'PATCH').length, 1);
+    assert.match(pg.el('aviso').innerHTML, /não foi possível confirmar se as alterações foram salvas/i);
+    assert.match(pg.el('aviso').innerHTML, /C07000/);
+    assert.equal(pg.el('materialNome').value, 'Rede caiu', 'formulário preservado');
+  });
+
+  test('falha ao carregar (404, rede): mensagem e nenhum dado no formulário; 401 devolve ao Portal', async () => {
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL], buscar: () => resposta(404, { status: 'erro', codigo: 'MATERIAL_NAO_ENCONTRADO' }) }));
+    const pg = montarPagina({ permissoes: PERMISSOES_EDITAR });
+    await pg.esperar();
+    await abrirEdicao(pg);
+    assert.match(pg.el('aviso').innerHTML, /não encontrado nesta empresa/i);
+    assert.equal(pg.el('materialNome').value, '');
+    assert.notEqual(pg.el('tituloFormulario').textContent, 'Editar material / EPI');
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL], buscar: () => resposta(401, { status: 'erro', codigo: 'SESSAO_INVALIDA' }) }));
+    const pg2 = montarPagina({ permissoes: PERMISSOES_EDITAR });
+    await pg2.esperar();
+    await abrirEdicao(pg2);
+    assert.equal(pg2.sandbox.encerrada, true);
+  });
+
+  test('respostas antigas descartadas: Editar A (lenta) e depois B (rápida) → fica B; Cancelar ou encerrar a sessão durante a carga → nada é preenchido', async () => {
+    const lenta = pendente();
+    const B = { ...MATERIAL, id: 88, nome: 'Luva B' };
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL, B], buscar: (id) => (id === 77 ? lenta.promessa : resposta(200, { status: 'ok', material: B })) }));
+    const pg = montarPagina({ permissoes: PERMISSOES_EDITAR });
+    await pg.esperar();
+    pg.el('gradeMaterial').value = '77';
+    const cargaA = pg.disparar('botaoEditarMaterial');
+    await abrirEdicao(pg, 88);
+    lenta.resolver(resposta(200, { status: 'ok', material: MATERIAL }));
+    await cargaA;
+    await pg.esperar();
+    assert.equal(pg.el('materialNome').value, 'Luva B');
+    assert.match(pg.el('modoEdicao').textContent, /Luva B/);
+
+    const lenta2 = pendente();
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL], buscar: () => lenta2.promessa }));
+    const pg2 = montarPagina({ permissoes: PERMISSOES_EDITAR });
+    await pg2.esperar();
+    pg2.el('gradeMaterial').value = '77';
+    await pg2.disparar('gradeMaterial', 'change');
+    const carga2 = pg2.disparar('botaoEditarMaterial'); // fica pendente até a resposta
+    await pg2.esperar();
+    await pg2.disparar('botaoCancelarEdicao');
+    lenta2.resolver(resposta(200, { status: 'ok', material: MATERIAL }));
+    await carga2;
+    await pg2.esperar();
+    assert.equal(pg2.el('materialNome').value, '', 'cancelado durante a carga');
+
+    const lenta3 = pendente();
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL], buscar: () => lenta3.promessa }));
+    const pg3 = montarPagina({ permissoes: PERMISSOES_EDITAR });
+    await pg3.esperar();
+    pg3.el('gradeMaterial').value = '77';
+    await pg3.disparar('gradeMaterial', 'change');
+    const carga3 = pg3.disparar('botaoEditarMaterial'); // fica pendente até a resposta
+    await pg3.esperar();
+    pg3.sandbox.opcoesMontar.aoEncerrar();
+    lenta3.resolver(resposta(200, { status: 'ok', material: MATERIAL }));
+    await carga3;
+    await pg3.esperar();
+    assert.equal(pg3.el('materialNome').value, '', 'sessão encerrada durante a carga');
+    assert.equal(pg3.el('botaoEditarMaterial').style.display, 'none');
+  });
+
+  test('sessão encerrada em pleno modo edição: formulário limpo, fora da edição', async () => {
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL] }));
+    const pg = montarPagina({ permissoes: PERMISSOES_EDITAR });
+    await pg.esperar();
+    await abrirEdicao(pg);
+    pg.sandbox.opcoesMontar.aoEncerrar();
+    assert.equal(pg.el('materialNome').value, '');
+    assert.equal(pg.el('modoEdicao').style.display, 'none');
+  });
+
+  test('perfil com editar e sem criar: formulário bloqueado no cadastro, liberado só na edição, bloqueado de novo ao cancelar', async () => {
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL] }));
+    const pg = montarPagina({ permissoes: PERMISSOES_SO_EDITAR, podeAlterar: false });
+    await pg.esperar();
+    assert.deepEqual([pg.el('botaoSalvar').style.display, pg.el('materialNome').disabled, pg.el('botaoEditarMaterial').style.display], ['none', true, '']);
+    await abrirEdicao(pg);
+    assert.deepEqual([pg.el('botaoSalvar').style.display, pg.el('materialNome').disabled, pg.el('materialUnidade').disabled], ['', false, true]);
+    pg.preencher({ materialFabricante: 'Danny' });
+    await pg.disparar('botaoSalvar');
+    assert.deepEqual(chamadas.filter((c) => c.metodo === 'PATCH').map((c) => c.corpo), [{ fabricante: 'Danny' }]);
+    await abrirEdicao(pg);
+    await pg.disparar('botaoCancelarEdicao');
+    assert.deepEqual([pg.el('botaoSalvar').style.display, pg.el('materialNome').disabled], ['none', true]);
+  });
+});
+
+describe('melhoria C2 — página: entrada inicial de estoque', () => {
+  test('padrão "Não": quantidade e tamanho ocultos; o tamanho começa vazio ("Selecione o tamanho"), sem escolha automática', async () => {
+    servidorRotas(estadoPadrao());
+    const pg = montarPagina();
+    await pg.esperar();
+    assert.equal(pg.el('materialRegistrarEntrada').value, 'nao');
+    assert.equal(pg.el('campoQuantidadeComprada').style.display, 'none');
+    assert.equal(pg.el('campoTamanhoEntrada').style.display, 'none');
+    assert.match(pg.el('materialTamanhoEntrada').innerHTML, /^<option value="">Selecione o tamanho<\/option>/);
+    assert.equal(pg.el('materialTamanhoEntrada').value, '');
+  });
+
+  test('"Sim": os campos aparecem e o tamanho continua vazio, inclusive após trocar o tipo', async () => {
+    servidorRotas(estadoPadrao());
+    const pg = montarPagina();
+    await pg.esperar();
+    pg.el('materialRegistrarEntrada').value = 'sim';
+    await pg.disparar('materialRegistrarEntrada', 'change');
+    assert.deepEqual([pg.el('campoQuantidadeComprada').style.display, pg.el('campoTamanhoEntrada').style.display], ['', '']);
+    assert.equal(pg.el('materialTamanhoEntrada').value, '');
+    pg.el('materialTipo').value = 'Luva';
+    await pg.disparar('materialTipo', 'change');
+    assert.equal(pg.el('materialTamanhoEntrada').value, '');
+    assert.match(pg.el('materialTamanhoEntrada').innerHTML, /^<option value="">Selecione o tamanho<\/option><option value="PP">/);
+  });
+
+  test('voltar para "Não" limpa quantidade e tamanho', async () => {
+    servidorRotas(estadoPadrao());
+    const pg = montarPagina();
+    await pg.esperar();
+    pg.preencher({ materialRegistrarEntrada: 'sim', materialQuantidadeComprada: '10', materialTamanhoEntrada: '42' });
+    pg.el('materialRegistrarEntrada').value = 'nao';
+    await pg.disparar('materialRegistrarEntrada', 'change');
+    assert.deepEqual([pg.el('materialQuantidadeComprada').value, pg.el('materialTamanhoEntrada').value], ['', '']);
+  });
+
+  test('"Não": cadastro sem entrada, mesmo com quantidade no campo; a mensagem diz que ficou sem quantidade em estoque', async () => {
+    servidorRotas(estadoPadrao());
+    const pg = montarPagina();
+    await pg.esperar();
+    pg.preencher({ ...FORMULARIO_DOM, materialRegistrarEntrada: 'nao' });
+    await pg.disparar('botaoSalvar');
+    assert.deepEqual(chamadas.filter((c) => c.metodo === 'POST').map((c) => c.caminho), ['/api/materiais']);
+    assert.match(pg.el('aviso').innerHTML, /sem quantidade em estoque/i);
+  });
+
+  test('"Sim" sem tamanho escolhido ou sem quantidade: nada é enviado e o campo é marcado', async () => {
+    for (const [falta, campo] of [[{ materialTamanhoEntrada: '' }, 'materialTamanhoEntrada'], [{ materialQuantidadeComprada: '' }, 'materialQuantidadeComprada']]) {
+      servidorRotas(estadoPadrao());
+      const pg = montarPagina();
+      await pg.esperar();
+      pg.preencher({ ...FORMULARIO_DOM, ...falta });
+      await pg.disparar('botaoSalvar');
+      assert.equal(chamadas.some((c) => c.metodo === 'POST'), false, campo);
+      assert.equal(pg.el(campo).atributos['aria-invalid'], 'true', campo);
+    }
+  });
+
+  test('"Sim" completo: cadastro e entrada no tamanho escolhido', async () => {
+    servidorRotas(estadoPadrao());
+    const pg = montarPagina();
+    await pg.esperar();
+    pg.preencher(FORMULARIO_DOM);
+    await pg.disparar('botaoSalvar');
+    assert.deepEqual(chamadas.filter((c) => /movimentar$/.test(c.caminho)).map((c) => [c.corpo.tamanho, c.corpo.quantidade]), [['42', 10]]);
+  });
+
+  test('sem MOVIMENTAR_ESTOQUE: seletor em "Não", bloqueado, com o aviso', async () => {
+    servidorRotas(estadoPadrao());
+    const pg = montarPagina({ permissoes: { recursos: { materials: { visualizar: true, criar: true, editar: false, excluir: false } }, acoes: {}, administracao: {} } });
+    await pg.esperar();
+    assert.deepEqual([pg.el('materialRegistrarEntrada').value, pg.el('materialRegistrarEntrada').disabled], ['nao', true]);
+    assert.match(pg.el('materialRegistrarEntradaHelper').textContent, /não pode movimentar estoque/i);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// C2 — entrada de estoque em material já cadastrado (25/09/2026):
+// "Registrar entrada de estoque" no quadro Grade de tamanhos, pela rota
+// existente POST /materiais/:id/estoque/movimentar, somente ENTRADA,
+// separada da edição cadastral (nunca PATCH).
+// ═══════════════════════════════════════════════════════════════════
+
+const PERMISSOES_SEM_MOVIMENTAR = { recursos: { materials: { visualizar: true, criar: true, editar: true, excluir: false } }, acoes: {}, administracao: {} };
+
+async function escolherMaterial(pg, id = 77) {
+  pg.el('gradeMaterial').value = String(id);
+  await pg.disparar('gradeMaterial', 'change');
+}
+
+describe('entrada de estoque posterior — módulo', () => {
+  test('montarEntrada: sempre ENTRADA; tamanho escolhido e quantidade > 0 obrigatórios; motivo opcional, aparado; nada de empresaId', () => {
+    const { formulario } = carregarMateriais();
+    assert.deepEqual(formulario.montarEntrada({ tamanho: '35', quantidade: '5', motivo: '' }), { ok: true, corpo: { tamanho: '35', tipo: 'ENTRADA', quantidade: 5 } });
+    assert.deepEqual(formulario.montarEntrada({ tamanho: ' 35 ', quantidade: ' 5 ', motivo: '  Compra NF 123  ' }).corpo, { tamanho: '35', tipo: 'ENTRADA', quantidade: 5, motivo: 'Compra NF 123' });
+    const erros = (r) => (r.ok ? [] : r.erros.map((e) => e.campo).sort());
+    assert.deepEqual(erros(formulario.montarEntrada({ tamanho: '', quantidade: '5' })), ['tamanho']);
+    for (const q of ['', '0', '-1', '1.5', 'abc', '2147483648']) assert.deepEqual(erros(formulario.montarEntrada({ tamanho: '35', quantidade: q })), ['quantidade'], q);
+    assert.deepEqual(erros(formulario.montarEntrada({ tamanho: 'x'.repeat(21), quantidade: '5' })), ['tamanho']);
+    assert.deepEqual(erros(formulario.montarEntrada({ tamanho: '35', quantidade: '5', motivo: 'x'.repeat(201) })), ['motivo']);
+    assert.equal(formulario.montarEntrada({ tamanho: '35', quantidade: '2147483647' }).corpo.quantidade, 2147483647);
+    assert.equal(formulario.LIMITES.motivo, 200);
+  });
+
+  test('fluxo.registrarEntrada: um único POST na rota existente; recusa 4xx é confirmada; rede e 5xx não confirmadas; nunca repete', async () => {
+    const { fluxo } = carregarMateriais();
+    servidor(resposta(200, { status: 'ok', saldo: { materialId: 77, tamanho: '35', quantidade: 5 } }));
+    const ok = await fluxo.registrarEntrada(77, { tamanho: '35', tipo: 'ENTRADA', quantidade: 5 });
+    assert.deepEqual([ok.ok, ok.saldo], [true, { materialId: 77, tamanho: '35', quantidade: 5 }]);
+    assert.deepEqual(chamadas, [{ metodo: 'POST', caminho: '/api/materiais/77/estoque/movimentar', corpo: { tamanho: '35', tipo: 'ENTRADA', quantidade: 5 } }]);
+    servidor(resposta(403, { status: 'erro', codigo: 'SEM_PERMISSAO' }));
+    const negado = await fluxo.registrarEntrada(77, { tamanho: '35', tipo: 'ENTRADA', quantidade: 5 });
+    assert.deepEqual([negado.ok, negado.confirmado, chamadas.length], [false, true, 1]);
+    servidor(new TypeError('Failed to fetch'));
+    const rede = await fluxo.registrarEntrada(77, { tamanho: '35', tipo: 'ENTRADA', quantidade: 5 });
+    assert.deepEqual([rede.ok, rede.confirmado, chamadas.length], [false, false, 1]);
+  });
+
+  test('fluxo.registrarEntrada força ENTRADA, mesmo que o corpo diga outra coisa', async () => {
+    const { fluxo } = carregarMateriais();
+    servidor(resposta(200, { status: 'ok', saldo: { materialId: 77, tamanho: '35', quantidade: 5 } }));
+    await fluxo.registrarEntrada(77, { tamanho: '35', tipo: 'SAIDA', quantidade: 5 });
+    assert.equal(chamadas[0].corpo.tipo, 'ENTRADA');
+  });
+
+  test('mensagens: sucesso com tamanho, quantidade e saldo atual; recusa e não confirmado distintos; nada do corpo vaza', () => {
+    const { mensagens } = carregarMateriais();
+    const ok = mensagens.resultadoEntradaPosterior({ ok: true, saldo: { tamanho: '35', quantidade: 5 } }, { tamanho: '35', quantidade: 5 }, { nome: 'Botina', codigoInterno: 'TESTE-C3-002' });
+    assert.equal(ok, 'Entrada de estoque registrada: 5 no tamanho 35 de "Botina" (código TESTE-C3-002). Saldo atual do tamanho 35: 5.');
+    assert.match(mensagens.resultadoEntradaPosterior({ ok: false, confirmado: true, resposta: { ok: false, status: 403 } }, {}, {}), /^Entrada de estoque não realizada: .*movimentar estoque/i);
+    assert.match(mensagens.resultadoEntradaPosterior({ ok: false, confirmado: true, resposta: { ok: false, status: 409, codigo: 'MATERIAL_INATIVO' } }, {}, {}), /inativo/i);
+    const incerta = mensagens.resultadoEntradaPosterior({ ok: false, confirmado: false, resposta: { ok: false, status: 0 } }, {}, {});
+    assert.match(incerta, /^Entrada de estoque não confirmada: /);
+    assert.match(incerta, /saldo real/i);
+    const v = mensagens.resultadoEntradaPosterior({ ok: false, confirmado: true, resposta: { ok: false, status: 400, codigo: 'VALIDACAO', detalhes: [{ caminho: 'quantidade', valor: 'SEGREDO-9' }] } }, {}, {});
+    assert.equal(/SEGREDO-9/.test(v), false);
+  });
+});
+
+describe('entrada de estoque posterior — inspeção estática', () => {
+  const html = ler('pages/materials.html');
+  test('bloco no quadro Grade de tamanhos, oculto até a permissão; tamanho sem seleção; só entrada', () => {
+    const grade = html.slice(html.indexOf('<h2>Grade de tamanhos</h2>'), html.indexOf('Exemplos de tipos'));
+    assert.match(grade, /<div id="blocoEntradaEstoque" style="display:none[^"]*">/);
+    assert.match(grade, /Registrar entrada de estoque/);
+    assert.match(grade, /<select id="entradaTamanho" class="select"><option value="">Selecione o tamanho<\/option><\/select>/);
+    assert.match(grade, /<input id="entradaQuantidade" class="input" type="number" min="1"/);
+    assert.match(grade, /<input id="entradaMotivo" class="input" type="text" maxlength="200"/);
+    assert.match(grade, /<button id="botaoRegistrarEntrada" class="filled-btn" type="button" disabled>/);
+    assert.equal(/SAIDA|Saída/i.test(grade.replace(/Registrar entrada de estoque/g, '')), false, 'nenhuma saída nesta funcionalidade');
+  });
+});
+
+describe('entrada de estoque posterior — página', () => {
+  test('sem MOVIMENTAR_ESTOQUE: bloco oculto e nenhuma movimentação possível', async () => {
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL] }));
+    const pg = montarPagina({ permissoes: PERMISSOES_SEM_MOVIMENTAR });
+    await pg.esperar();
+    await escolherMaterial(pg);
+    assert.equal(pg.el('blocoEntradaEstoque').style.display, 'none');
+    pg.preencher({ entradaTamanho: '35', entradaQuantidade: '5' });
+    await pg.disparar('botaoRegistrarEntrada');
+    assert.equal(chamadas.some((c) => /movimentar$/.test(c.caminho)), false);
+  });
+
+  test('com MOVIMENTAR_ESTOQUE: bloco visível; botão só com material escolhido; tamanhos sugeridos do tipo mais a grade, começando sem seleção', async () => {
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL] }));
+    const pg = montarPagina();
+    await pg.esperar();
+    assert.equal(pg.el('blocoEntradaEstoque').style.display, '');
+    assert.equal(pg.el('botaoRegistrarEntrada').disabled, true);
+    await escolherMaterial(pg);
+    assert.equal(pg.el('botaoRegistrarEntrada').disabled, false);
+    assert.match(pg.el('entradaTamanho').innerHTML, /^<option value="">Selecione o tamanho<\/option><option value="34">34<\/option><option value="35">35<\/option>/);
+    assert.equal(pg.el('entradaTamanho').value, '');
+  });
+
+  test('tamanho já registrado fora da grade padrão também aparece na lista', async () => {
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL], saldos: [{ tamanho: '45 largo', quantidade: 2 }] }));
+    const pg = montarPagina();
+    await pg.esperar();
+    await escolherMaterial(pg);
+    assert.match(pg.el('entradaTamanho').innerHTML, /<option value="45 largo">45 largo<\/option>/);
+  });
+
+  test('entrada de 5 no tamanho 35: um POST ENTRADA na rota existente, nenhum PATCH; grade recarregada; mensagem com o saldo; campos limpos', async () => {
+    const estado = estadoPadrao({ materiais: [MATERIAL] });
+    servidorRotas(estado);
+    const pg = montarPagina();
+    await pg.esperar();
+    await escolherMaterial(pg);
+    const antes = chamadas.length;
+    estado.saldos = [{ tamanho: '35', quantidade: 5 }];
+    pg.preencher({ entradaTamanho: '35', entradaQuantidade: '5', entradaMotivo: '' });
+    await pg.disparar('botaoRegistrarEntrada');
+    const depois = chamadas.slice(antes);
+    assert.deepEqual(depois.filter((c) => c.metodo !== 'GET'), [{ metodo: 'POST', caminho: '/api/materiais/77/estoque/movimentar', corpo: { tamanho: '35', tipo: 'ENTRADA', quantidade: 5 } }]);
+    assert.ok(depois.some((c) => c.metodo === 'GET' && c.caminho === '/api/materiais/77/estoque'), 'grade recarregada');
+    assert.match(pg.el('sizeChipsGrid').innerHTML, /title="5 em estoque">35</);
+    assert.match(pg.el('aviso').innerHTML, /Entrada de estoque registrada: 5 no tamanho 35/);
+    assert.match(pg.el('aviso').innerHTML, /Saldo atual do tamanho 35: 5/);
+    assert.deepEqual([pg.el('entradaTamanho').value, pg.el('entradaQuantidade').value, pg.el('entradaMotivo').value], ['', '', '']);
+    assert.equal(pg.el('gradeMaterial').value, '77', 'mesmo material selecionado');
+  });
+
+  test('motivo preenchido vai no corpo, aparado', async () => {
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL] }));
+    const pg = montarPagina();
+    await pg.esperar();
+    await escolherMaterial(pg);
+    pg.preencher({ entradaTamanho: '35', entradaQuantidade: '5', entradaMotivo: '  Compra NF 123 ' });
+    await pg.disparar('botaoRegistrarEntrada');
+    assert.deepEqual(chamadas.filter((c) => c.metodo === 'POST').map((c) => c.corpo), [{ tamanho: '35', tipo: 'ENTRADA', quantidade: 5, motivo: 'Compra NF 123' }]);
+  });
+
+  test('sem tamanho ou com quantidade inválida: nada é enviado e o campo é marcado', async () => {
+    for (const [campos, id] of [[{ entradaTamanho: '', entradaQuantidade: '5' }, 'entradaTamanho'], [{ entradaTamanho: '35', entradaQuantidade: '0' }, 'entradaQuantidade'], [{ entradaTamanho: '35', entradaQuantidade: '' }, 'entradaQuantidade']]) {
+      servidorRotas(estadoPadrao({ materiais: [MATERIAL] }));
+      const pg = montarPagina();
+      await pg.esperar();
+      await escolherMaterial(pg);
+      pg.preencher(campos);
+      await pg.disparar('botaoRegistrarEntrada');
+      assert.equal(chamadas.some((c) => c.metodo === 'POST'), false, id);
+      assert.equal(pg.el(id).atributos['aria-invalid'], 'true', id);
+    }
+  });
+
+  test('recusa 403 e 409 (inativo): mensagem de erro, campos preservados; rede: "não confirmada", um único POST, grade recarregada para conferência', async () => {
+    for (const [status, codigo, texto] of [[403, 'SEM_PERMISSAO', /movimentar estoque/i], [409, 'MATERIAL_INATIVO', /inativo/i]]) {
+      servidorRotas(estadoPadrao({ materiais: [MATERIAL], movimentar: () => resposta(status, { status: 'erro', codigo }) }));
+      const pg = montarPagina();
+      await pg.esperar();
+      await escolherMaterial(pg);
+      pg.preencher({ entradaTamanho: '35', entradaQuantidade: '5' });
+      await pg.disparar('botaoRegistrarEntrada');
+      assert.match(pg.el('aviso').innerHTML, texto, String(status));
+      assert.equal(pg.el('entradaQuantidade').value, '5', 'campos preservados');
+    }
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL], movimentar: () => new TypeError('Failed to fetch') }));
+    const pg = montarPagina();
+    await pg.esperar();
+    await escolherMaterial(pg);
+    pg.preencher({ entradaTamanho: '35', entradaQuantidade: '5' });
+    const antes = chamadas.length;
+    await pg.disparar('botaoRegistrarEntrada');
+    const depois = chamadas.slice(antes);
+    assert.equal(depois.filter((c) => c.metodo === 'POST').length, 1);
+    assert.match(pg.el('aviso').innerHTML, /Entrada de estoque não confirmada/);
+    assert.match(pg.el('aviso').innerHTML, /C07000/);
+    assert.ok(depois.some((c) => c.caminho === '/api/materiais/77/estoque'), 'grade recarregada para conferência');
+  });
+
+  test('401 na entrada devolve ao Portal', async () => {
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL], movimentar: () => resposta(401, { status: 'erro', codigo: 'SESSAO_INVALIDA' }) }));
+    const pg = montarPagina();
+    await pg.esperar();
+    await escolherMaterial(pg);
+    pg.preencher({ entradaTamanho: '35', entradaQuantidade: '5' });
+    await pg.disparar('botaoRegistrarEntrada');
+    assert.equal(pg.sandbox.encerrada, true);
+  });
+
+  test('trocar de material limpa os campos da entrada e refaz a lista de tamanhos', async () => {
+    const B = { ...MATERIAL, id: 88, nome: 'Luva B', tipo: 'Luva' };
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL, B] }));
+    const pg = montarPagina();
+    await pg.esperar();
+    await escolherMaterial(pg);
+    pg.preencher({ entradaTamanho: '35', entradaQuantidade: '5', entradaMotivo: 'x' });
+    await escolherMaterial(pg, 88);
+    assert.deepEqual([pg.el('entradaTamanho').value, pg.el('entradaQuantidade').value, pg.el('entradaMotivo').value], ['', '', '']);
+  });
+
+  test('sessão encerrada durante a entrada: resposta posterior não é aplicada; bloco oculto', async () => {
+    const lenta = pendente();
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL], movimentar: () => lenta.promessa }));
+    const pg = montarPagina();
+    await pg.esperar();
+    await escolherMaterial(pg);
+    pg.preencher({ entradaTamanho: '35', entradaQuantidade: '5' });
+    const envio = pg.disparar('botaoRegistrarEntrada');
+    await pg.esperar();
+    pg.sandbox.opcoesMontar.aoEncerrar();
+    lenta.resolver(resposta(200, { status: 'ok', saldo: { materialId: 77, tamanho: '35', quantidade: 5 } }));
+    await envio;
+    await pg.esperar();
+    assert.equal(/Entrada de estoque registrada/.test(pg.el('aviso').innerHTML), false);
+    assert.equal(pg.el('blocoEntradaEstoque').style.display, 'none');
+  });
+
+  test('a entrada não interfere na edição cadastral: em modo edição, registrar entrada não envia PATCH nem sai da edição', async () => {
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL] }));
+    const pg = montarPagina({ permissoes: PERMISSOES_EDITAR });
+    await pg.esperar();
+    await abrirEdicao(pg);
+    pg.preencher({ entradaTamanho: '35', entradaQuantidade: '5' });
+    await pg.disparar('botaoRegistrarEntrada');
+    assert.equal(chamadas.some((c) => c.metodo === 'PATCH'), false);
+    assert.equal(chamadas.filter((c) => /movimentar$/.test(c.caminho)).length, 1);
+    assert.equal(pg.el('tituloFormulario').textContent, 'Editar material / EPI');
   });
 });
