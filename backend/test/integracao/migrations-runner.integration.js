@@ -23,7 +23,7 @@ const { aplicarMigrations } = require('../../scripts/migrate');
  */
 
 const DIRETORIO_REAL = path.join(__dirname, '..', '..', 'migrations');
-const TOTAL_MIGRATIONS_REAIS = 42; // 000–041 (a 040 é da C4: funcionarios.data_admissao; a 041 é da C5: ghe_materiais)
+const TOTAL_MIGRATIONS_REAIS = 43; // 000–042 (a 040 é da C4: funcionarios.data_admissao; a 041 é da C5: ghe_materiais; a 042 cria estoque_lotes e estoque_operacoes)
 
 const criarDiretorio = (arquivos) => {
   const diretorio = fs.mkdtempSync(path.join(os.tmpdir(), 'gestao-epi-migrations-'));
@@ -106,7 +106,7 @@ describe('aplicação das migrations reais em schema vazio', () => {
     assert.deepEqual(rows.map((linha) => linha.table_schema), [contexto.schema]);
   });
 
-  test('aplica e registra as 42 migrations em ordem crescente', async () => {
+  test('aplica e registra as 43 migrations em ordem crescente', async () => {
     const registradas = await nomesRegistrados(contexto.cliente);
 
     assert.equal(registradas.length, TOTAL_MIGRATIONS_REAIS);
@@ -222,7 +222,7 @@ describe('baseline: registro sem execução', () => {
   before(async () => { contexto = await abrirSchemaTemporario([]); });
   after(async () => { if (contexto) await contexto.encerrar(); });
 
-  test('o baseline registra as 42 sem executar o SQL', async () => {
+  test('o baseline registra as 43 sem executar o SQL', async () => {
     // Estrutura já aplicada, e depois a tabela de controle é descartada para
     // simular um banco anterior ao runner. Se o baseline executasse o SQL, o
     // primeiro CREATE TABLE falharia porque o objeto já existe.
