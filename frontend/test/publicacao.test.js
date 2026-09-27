@@ -123,6 +123,58 @@ describe('publicação do frontend do cliente por allowlist explícita', () => {
     recusa(() => verificarPacote(saida), 'PACOTE_DIVERGENTE');
   });
 
+  describe('script externo: só o Turnstile oficial, e só no login do Portal', () => {
+    const TURNSTILE = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+
+    function frontendSintetico(paginas) {
+      const raiz = diretorioTemporario();
+      for (const [relativo, conteudo] of Object.entries(paginas)) {
+        fs.mkdirSync(path.dirname(path.join(raiz, relativo)), { recursive: true });
+        fs.writeFileSync(path.join(raiz, relativo), conteudo);
+      }
+      return { raiz, arquivos: Object.keys(paginas), saida: path.join(diretorioTemporario(), 'pacote') };
+    }
+    const pagina = (...srcs) => `<!DOCTYPE html><html><body>${srcs.map((s) => `<script src="${s}"></script>`).join('')}<script src="login.js"></script></body></html>`;
+
+    test('a URL exata do Turnstile em portal/index.html é aceita', () => {
+      const f = frontendSintetico({ 'portal/index.html': pagina(TURNSTILE), 'portal/login.js': '' });
+      assert.deepEqual(empacotar(f).arquivos, ['portal/index.html', 'portal/login.js']);
+    });
+
+    test('qualquer variação da URL continua recusada', () => {
+      for (const src of [
+        'https://challenges.cloudflare.com/turnstile/v0/api.js',
+        'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=iniciar',
+        'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit#x',
+        'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit ',
+        'https://challenges.cloudflare.com/turnstile/v1/api.js?render=explicit',
+        'https://challenges.cloudflare.com/turnstile/v0/outro.js?render=explicit',
+        'https://challenges.cloudflare.com/cdn-cgi/challenge-platform/scripts/jsd/main.js',
+        'https://static.cloudflareinsights.com/beacon.min.js',
+        'https://challenges.cloudflare.com.mal.test/turnstile/v0/api.js?render=explicit',
+        'https://mal.challenges.cloudflare.com/turnstile/v0/api.js?render=explicit',
+        'http://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit',
+        '//challenges.cloudflare.com/turnstile/v0/api.js?render=explicit',
+        'HTTPS://CHALLENGES.CLOUDFLARE.COM/turnstile/v0/api.js?render=explicit',
+        'https://cdn.jsdelivr.net/npm/qualquer@1/index.js',
+        'https://mal.test/turnstile/v0/api.js?render=explicit',
+      ]) {
+        const f = frontendSintetico({ 'portal/index.html': pagina(src), 'portal/login.js': '' });
+        recusa(() => empacotar(f), 'SCRIPT_EXTERNO');
+        assert.equal(fs.existsSync(f.saida), false, src);
+      }
+    });
+
+    test('o Turnstile em outra página é recusado, e um segundo script externo no login também', () => {
+      for (const outra of ['portal/empresas.html', 'portal/aceitar-convite.html', 'pages/dashboard.html', 'index.html']) {
+        const f = frontendSintetico({ [outra]: pagina(TURNSTILE), 'portal/index.html': pagina(), 'portal/login.js': '', [path.posix.join(path.posix.dirname(outra), 'login.js')]: '' });
+        recusa(() => empacotar(f), 'SCRIPT_EXTERNO');
+      }
+      const f = frontendSintetico({ 'portal/index.html': pagina(TURNSTILE, 'https://mal.test/x.js'), 'portal/login.js': '' });
+      recusa(() => empacotar(f), 'SCRIPT_EXTERNO');
+    });
+  });
+
   test('linha de comando: sai com 0 ao gerar o pacote e com 1 quando recusa', () => {
     const saida = path.join(diretorioTemporario(), 'pacote');
     const ok = spawnSync(process.execPath, [CLI, '--saida', saida], { encoding: 'utf8' });

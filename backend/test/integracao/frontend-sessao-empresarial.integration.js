@@ -6,6 +6,7 @@ const express = require('express');
 const http = require('node:http');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { criarAuthController } = require('../../src/controllers/auth.controller');
 const { criarAuthRoutes } = require('../../src/routes/auth.routes');
 const { criarAuthGlobalController } = require('../../src/controllers/auth-global.controller');
@@ -117,7 +118,7 @@ describe('C0 — páginas originais com a sessão empresarial real (PostgreSQL r
   }
 
   async function entrarPeloPortal(email) {
-    const r = await EpiPortal.acoes.entrar({ email, senha: SENHA });
+    const r = await EpiPortal.acoes.entrar({ email, senha: SENHA, turnstileToken: TOKEN_TURNSTILE_TESTE });
     assert.equal(r.ok, true, JSON.stringify(r));
     return r.dados;
   }
@@ -150,7 +151,7 @@ describe('C0 — páginas originais com a sessão empresarial real (PostgreSQL r
       '/api',
       corsApi, semCache, verificarOrigem, exigirJson, parserJson,
       criarAuthRoutes({ controller: criarAuthController({ pool }), limitador: semLimite(), exigirSessao }),
-      criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }) }),
+      criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }), ...turnstileDeTeste() }),
       criarGrupoAcessoRoutes({ controller: criarGrupoAcessoController({ pool }), exigirSessao }),
     );
     app.use(notFoundHandler);

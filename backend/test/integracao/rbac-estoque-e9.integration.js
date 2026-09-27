@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const request = require('supertest');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { inserirLote, baixarLote } = require('./helpers/estoque-lotes');
 const { criarAppTeste } = require('../helpers/app-teste');
 const { criarAuthController } = require('../../src/controllers/auth.controller');
@@ -146,14 +147,14 @@ describe('E9 — RBAC de Validade e Operações de estoque (PostgreSQL real)', (
       a.use(
         '/api',
         criarAuthRoutes({ controller: criarAuthController({ pool }), limitador: semLimite(), exigirSessao }),
-        criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }) }),
+        criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }), ...turnstileDeTeste() }),
         criarGrupoPermissaoRoutes({ controller: criarGrupoPermissaoController({ pool }), exigirSessao }),
         criarEstoqueRoutes({ controller: criarEstoqueController({ pool, relogio: NOITE_DE_30_09 }), exigirSessao, pool }),
         criarDashboardRoutes({ controller: criarDashboardController({ pool, relogio: NOITE_DE_30_09 }), exigirSessao, pool }),
       );
     });
     for (const k of Object.keys(EMAILS)) {
-      const login = await request(app).post('/api/auth/global/login').send({ email: EMAILS[k], senha: SENHA });
+      const login = await request(app).post('/api/auth/global/login').send({ email: EMAILS[k], senha: SENHA, turnstileToken: TOKEN_TURNSTILE_TESTE });
       assert.equal(login.status, 200, JSON.stringify(login.body));
       const c = cookiesDe(login);
       cookie[k] = `${C_GLOBAL}=${c[C_GLOBAL]}; ${C_EMPRESA}=${c[C_EMPRESA]}`;

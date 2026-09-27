@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { criarAppTeste } = require('../helpers/app-teste');
 const { criarAuthController } = require('../../src/controllers/auth.controller');
 const { criarAuthRoutes } = require('../../src/routes/auth.routes');
@@ -86,7 +87,7 @@ describe('Portal do Cliente — login global, seleção de empresa e sessões (P
   const login = (email, senha = SENHA, cookies = '') => {
     const req = request(app).post('/api/auth/global/login');
     if (cookies) req.set('Cookie', cookies);
-    return req.send({ email, senha });
+    return req.send({ email, senha, turnstileToken: TOKEN_TURNSTILE_TESTE });
   };
   const me = (cookies) => request(app).get('/api/auth/global/me').set('Cookie', cookies);
   const meEmpresarial = (cookies) => request(app).get('/api/auth/me').set('Cookie', cookies);
@@ -115,7 +116,7 @@ describe('Portal do Cliente — login global, seleção de empresa e sessões (P
       a.use(
         '/api',
         criarAuthRoutes({ controller: criarAuthController({ pool }), limitador: semLimite(), exigirSessao }),
-        criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal }),
+        criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal, ...turnstileDeTeste() }),
         criarGrupoAcessoRoutes({ controller: criarGrupoAcessoController({ pool }), exigirSessao }),
       );
       a.use('/api/plataforma', criarAuthPlataformaRoutes({ controller: criarAuthPlataformaController({ pool }), limitador: semLimite(), exigirSessaoPlataforma }));
@@ -220,6 +221,19 @@ describe('Portal do Cliente — login global, seleção de empresa e sessões (P
       assert.deepEqual([r.status, r.body.codigo], [401, 'CREDENCIAIS_INVALIDAS']);
       assert.ok((await tentativasDe(DORA)).some((x) => x.motivo === 'IDENTIDADE_INATIVA'));
       assert.equal(await sessaoGlobalDe(DORA), undefined);
+    });
+
+    test('Turnstile inválido: 403 antes do login, mesmo com a senha correta; nenhuma tentativa gravada e nenhuma sessão criada', async () => {
+      const contar = async (tabela) => (await pool.query(`SELECT count(*)::int AS n FROM ${tabela}`)).rows[0].n;
+      const [tentativasAntes, sessoesAntes] = [await contar('login_tentativas_globais'), await contar('sessoes_globais')];
+      const r = await request(app).post('/api/auth/global/login').send({ email: ANA, senha: SENHA, turnstileToken: 'token-recusado-pelo-siteverify' });
+      assert.deepEqual([r.status, r.body.codigo], [403, 'VERIFICACAO_SEGURANCA_INVALIDA']);
+      assert.equal('set-cookie' in r.headers, false);
+      assert.equal(await contar('login_tentativas_globais'), tentativasAntes, 'não conta como falha de credencial nem alimenta o cooldown');
+      assert.equal(await contar('sessoes_globais'), sessoesAntes);
+      const semToken = await request(app).post('/api/auth/global/login').send({ email: ANA, senha: SENHA });
+      assert.deepEqual([semToken.status, semToken.body.codigo], [400, 'VALIDACAO']);
+      assert.equal(await contar('login_tentativas_globais'), tentativasAntes);
     });
 
     test('cooldown: após N falhas a tentativa seguinte recebe 429 com Retry-After, sem verificar senha nem criar linha nova', async () => {

@@ -6,6 +6,7 @@ const express = require('express');
 const http = require('node:http');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { criarAuthGlobalController } = require('../../src/controllers/auth-global.controller');
 const { criarAuthGlobalRoutes } = require('../../src/routes/auth-global.routes');
 const { criarFuncionarioController } = require('../../src/controllers/funcionario.controller');
@@ -74,7 +75,7 @@ describe('C4 — importação e histórico pelo módulo real das páginas (Postg
 
   async function entrar(email) {
     EpiHttp.configurar({ baseUrl: `${base}/api`, fetch: criarNavegador(origem) });
-    const login = await EpiPortal.acoes.entrar({ email, senha: SENHA });
+    const login = await EpiPortal.acoes.entrar({ email, senha: SENHA, turnstileToken: TOKEN_TURNSTILE_TESTE });
     assert.equal(login.ok, true, JSON.stringify(login));
   }
 
@@ -97,7 +98,7 @@ describe('C4 — importação e histórico pelo módulo real das páginas (Postg
     app.use(
       '/api',
       corsApi, semCache, verificarOrigem, exigirJson, parserJson,
-      criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }) }),
+      criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }), ...turnstileDeTeste() }),
       criarFuncionarioRoutes({ controller: criarFuncionarioController({ pool }), exigirSessao, pool }),
     );
     app.use(notFoundHandler);

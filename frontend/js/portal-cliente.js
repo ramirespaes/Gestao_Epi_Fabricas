@@ -8,7 +8,8 @@
    * (js/api-http.js, carregado antes). Consome exatamente os contratos do
    * backend:
    *
-   *   POST /api/auth/global/login                   { email, senha } -> { identidade, empresas, contexto }
+   *   POST /api/auth/global/login                   { email, senha, turnstileToken } -> { identidade, empresas, contexto }
+   *   GET  /api/auth/global/turnstile               -> { siteKey, action } do widget de verificação
    *   GET  /api/auth/global/me                      -> { identidade, empresas, contexto } | 401
    *   POST /api/auth/global/empresas/:id/selecionar (sem corpo) -> { usuario, empresa }
    *   POST /api/auth/logout                         "sair da empresa" (mantém o login global)
@@ -35,6 +36,7 @@
 
   var CAMINHOS = {
     login: '/auth/global/login',
+    verificacao: '/auth/global/turnstile',
     me: '/auth/global/me',
     sairEmpresa: '/auth/logout',
     sairTudo: '/auth/global/logout',
@@ -71,13 +73,22 @@
   }
 
   var acoes = {
-    /** A senha só existe nesta chamada; nunca é guardada nem registrada. */
+    /** Senha e token da verificação só existem nesta chamada; nunca são guardados nem registrados. */
     entrar: function (credenciais) {
       var c = credenciais || {};
       if (typeof c.email !== 'string' || typeof c.senha !== 'string') {
         return Promise.reject(new TypeError('email e senha são obrigatórios'));
       }
-      return http().requisitar('POST', CAMINHOS.login, { corpo: { email: c.email, senha: c.senha } });
+      if (typeof c.turnstileToken !== 'string' || c.turnstileToken.length === 0) {
+        return Promise.reject(new TypeError('verificação de segurança obrigatória'));
+      }
+      return http().requisitar('POST', CAMINHOS.login, {
+        corpo: { email: c.email, senha: c.senha, turnstileToken: c.turnstileToken },
+      });
+    },
+
+    configuracaoVerificacao: function () {
+      return http().requisitar('GET', CAMINHOS.verificacao);
     },
 
     sessao: function () {
@@ -181,12 +192,121 @@
   var mensagens = {
     CREDENCIAIS: 'E-mail ou senha inválidos.',
     SEM_EMPRESA: 'Seu acesso foi confirmado, mas não há nenhuma empresa ativa vinculada a ele. Procure o responsável pelo cadastro da sua empresa.',
+    VERIFICACAO_PENDENTE: 'Aguarde a verificação de segurança para entrar.',
+    VERIFICACAO_EXPIRADA: 'A verificação de segurança expirou. Aguarde uma nova verificação.',
+    VERIFICACAO_ERRO: 'Não foi possível concluir a verificação de segurança. Recarregue a página e tente novamente.',
     deErro: function (resposta) {
       if (!resposta) return 'Não foi possível concluir a operação.';
       if (resposta.status === 403 && resposta.codigo === 'EMPRESA_NAO_AUTORIZADA') {
         return 'Esta empresa não está mais disponível para o seu acesso. A lista foi atualizada.';
       }
+      if (resposta.codigo === 'VERIFICACAO_SEGURANCA_INVALIDA') {
+        return 'A verificação de segurança não foi aceita. Aguarde uma nova verificação e tente novamente.';
+      }
+      if (resposta.codigo === 'VERIFICACAO_SEGURANCA_INDISPONIVEL') {
+        return 'A verificação de segurança está temporariamente indisponível. Tente novamente em instantes.';
+      }
       return resposta.mensagem || 'Não foi possível concluir a operação.';
+    },
+  };
+
+  /**
+   * Verificação de segurança do login (Cloudflare Turnstile). O token fica
+   * só nesta closure: nunca em storage, cookie, URL, DOM ou console.
+   * `response-field: false` impede o widget de criar um campo com ele no
+   * formulário. Estados: carregando, aguardando, pronto, expirado, erro.
+   */
+  var OPCOES_WIDGET = { theme: 'auto', language: 'pt-BR', appearance: 'always' };
+  // `flexible` tem largura mínima de 300px; abaixo disso uso `compact` (150px).
+  var LARGURA_MINIMA_FLEXIVEL = 300;
+
+  function tamanhoDoWidget(largura) {
+    return typeof largura === 'number' && isFinite(largura) && largura >= LARGURA_MINIMA_FLEXIVEL ? 'flexible' : 'compact';
+  }
+
+  function larguraDe(elemento) {
+    return elemento && typeof elemento.getBoundingClientRect === 'function' ? elemento.getBoundingClientRect().width : NaN;
+  }
+
+  function criarVerificacao(opcoes) {
+    var o = opcoes || {};
+    var token = null;
+    var widget = null;
+    var estado = 'carregando';
+
+    function mudar(novo) {
+      estado = novo;
+      if (typeof o.aoMudar === 'function') o.aoMudar(novo);
+    }
+    function descartar(novo) {
+      token = null;
+      mudar(novo);
+    }
+
+    return {
+      iniciar: function () {
+        var api = o.turnstile;
+        if (!api || typeof api.render !== 'function' || typeof api.reset !== 'function'
+          || typeof o.siteKey !== 'string' || typeof o.action !== 'string') {
+          descartar('erro');
+          return false;
+        }
+        widget = api.render(o.elemento, {
+          sitekey: o.siteKey,
+          action: o.action,
+          theme: OPCOES_WIDGET.theme,
+          language: OPCOES_WIDGET.language,
+          size: tamanhoDoWidget(larguraDe(o.elemento)),
+          appearance: OPCOES_WIDGET.appearance,
+          'response-field': false,
+          callback: function (novo) {
+            if (typeof novo === 'string' && novo.length > 0) {
+              token = novo;
+              mudar('pronto');
+            }
+          },
+          'expired-callback': function () { descartar('expirado'); },
+          'timeout-callback': function () { descartar('expirado'); },
+          // true avisa o widget de que tratei o erro; ele segue tentando sozinho.
+          'error-callback': function () { descartar('erro'); return true; },
+        });
+        mudar('aguardando');
+        return true;
+      },
+      temToken: function () { return token !== null; },
+      estado: function () { return estado; },
+      /** Entrega o token e o esquece: cada token vale para uma única tentativa. */
+      consumir: function () {
+        var atual = token;
+        token = null;
+        if (atual !== null) mudar('aguardando');
+        return atual;
+      },
+      reiniciar: function () {
+        token = null;
+        if (widget !== null) o.turnstile.reset(widget);
+        mudar('aguardando');
+      },
+    };
+  }
+
+  var login = {
+    /**
+     * Envia o login com o token atual, já descartado. Qualquer desfecho que
+     * não seja sucesso (4xx, 5xx ou falha de rede depois do envio) reinicia
+     * o widget: a próxima tentativa exige um token novo.
+     */
+    enviar: function (credenciais, verificacao) {
+      var token = verificacao.consumir();
+      if (token === null) return Promise.resolve({ ok: false, semVerificacao: true });
+      var c = credenciais || {};
+      return acoes.entrar({ email: c.email, senha: c.senha, turnstileToken: token }).then(function (r) {
+        if (!r.ok) verificacao.reiniciar();
+        return r;
+      }, function (erro) {
+        verificacao.reiniciar();
+        throw erro;
+      });
     },
   };
 
@@ -195,6 +315,8 @@
     decisao: decisao,
     render: render,
     mensagens: mensagens,
+    verificacao: { criar: criarVerificacao, tamanho: tamanhoDoWidget },
+    login: login,
     PAGINAS: PAGINAS,
   };
 

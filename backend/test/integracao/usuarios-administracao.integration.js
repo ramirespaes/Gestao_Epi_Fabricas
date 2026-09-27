@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { criarAppTeste } = require('../helpers/app-teste');
 const { criarAuthController } = require('../../src/controllers/auth.controller');
 const { criarAuthRoutes } = require('../../src/routes/auth.routes');
@@ -71,7 +72,7 @@ describe('Parte F — administração de usuários (PostgreSQL real)', () => {
   )).rows;
 
   async function entrar(chave) {
-    const login = await request(app).post('/api/auth/global/login').send({ email: email[chave], senha: SENHA });
+    const login = await request(app).post('/api/auth/global/login').send({ email: email[chave], senha: SENHA, turnstileToken: TOKEN_TURNSTILE_TESTE });
     assert.equal(login.status, 200, JSON.stringify(login.body));
     const c = cookiesDe(login);
     segredos.push(c[C_GLOBAL]);
@@ -154,7 +155,7 @@ describe('Parte F — administração de usuários (PostgreSQL real)', () => {
       a.use(
         '/api',
         criarAuthRoutes({ controller: criarAuthController({ pool }), limitador: semLimite(), exigirSessao }),
-        criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }) }),
+        criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }), ...turnstileDeTeste() }),
         criarUsuarioAdministracaoRoutes({ controller: criarUsuarioAdministracaoController({ pool }), exigirSessao }),
       );
     });

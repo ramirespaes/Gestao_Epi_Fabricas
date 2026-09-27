@@ -8,6 +8,7 @@ const path = require('node:path');
 const request = require('supertest');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { criarAppTeste } = require('../helpers/app-teste');
 const { criarAuthGlobalController } = require('../../src/controllers/auth-global.controller');
 const { criarAuthGlobalRoutes } = require('../../src/routes/auth-global.routes');
@@ -132,12 +133,12 @@ describe('E8 — operações de estoque (PostgreSQL real)', () => {
     app = criarAppTeste((a) => {
       a.use(
         '/api',
-        criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }) }),
+        criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }), ...turnstileDeTeste() }),
         criarEstoqueRoutes({ controller: criarEstoqueController({ pool }), exigirSessao, pool }),
       );
     });
     for (const k of Object.keys(EMAILS)) {
-      const login = await request(app).post('/api/auth/global/login').send({ email: EMAILS[k], senha: SENHA });
+      const login = await request(app).post('/api/auth/global/login').send({ email: EMAILS[k], senha: SENHA, turnstileToken: TOKEN_TURNSTILE_TESTE });
       assert.equal(login.status, 200, JSON.stringify(login.body));
       const c = cookiesDe(login);
       cookie[k] = `${C_GLOBAL}=${c[C_GLOBAL]}; ${C_EMPRESA}=${c[C_EMPRESA]}`;

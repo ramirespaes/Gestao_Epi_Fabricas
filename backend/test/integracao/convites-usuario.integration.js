@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const request = require('supertest');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { criarAppTeste } = require('../helpers/app-teste');
 const { criarAuthController } = require('../../src/controllers/auth.controller');
 const { criarAuthRoutes } = require('../../src/routes/auth.routes');
@@ -92,7 +93,7 @@ describe('Parte F — convite de usuário (PostgreSQL real)', () => {
   }
 
   async function entrar(chave) {
-    const login = await request(app).post('/api/auth/global/login').send({ email: email[chave], senha: SENHA });
+    const login = await request(app).post('/api/auth/global/login').send({ email: email[chave], senha: SENHA, turnstileToken: TOKEN_TURNSTILE_TESTE });
     assert.equal(login.status, 200, JSON.stringify(login.body));
     const c = cookiesDe(login);
     cookie[chave] = `${C_GLOBAL}=${c[C_GLOBAL]}; ${C_EMPRESA}=${c[C_EMPRESA]}`;
@@ -121,7 +122,7 @@ describe('Parte F — convite de usuário (PostgreSQL real)', () => {
       a.use(
         '/api',
         criarAuthRoutes({ controller: criarAuthController({ pool }), limitador: semLimite(), exigirSessao }),
-        criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }) }),
+        criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }), ...turnstileDeTeste() }),
         criarConviteUsuarioRoutes({ controller: criarConviteUsuarioController({ pool }), exigirSessao, limitador: semLimite() }),
       );
     });
@@ -281,7 +282,7 @@ describe('Parte F — convite de usuário (PostgreSQL real)', () => {
       assert.deepEqual(vinculos.map((v) => [v.empresa_id, v.nome, v.perfil, v.ativo, v.email, v.senha_hash]), [[empresa.A, 'Aceite Nova', 'SUPERVISOR', true, null, null]]);
       const [a] = (await auditorias('USUARIO_CRIADO')).filter((x) => x.referencia === String(vinculos[0].id));
       assert.deepEqual([a.empresa_id, a.usuario_id, a.contexto.conviteCriadoPor, a.contexto.identidadeCriada], [empresa.A, vinculos[0].id, u.masterA, true]);
-      const login = await request(app).post('/api/auth/global/login').send({ email: 'aceite.nova@exemplo-cliente.com.br', senha: SENHA_NOVA });
+      const login = await request(app).post('/api/auth/global/login').send({ email: 'aceite.nova@exemplo-cliente.com.br', senha: SENHA_NOVA, turnstileToken: TOKEN_TURNSTILE_TESTE });
       assert.equal(login.status, 200);
       assert.deepEqual(login.body.empresas.map((e) => e.id), [empresa.A]);
     });

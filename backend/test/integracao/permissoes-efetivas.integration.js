@@ -6,6 +6,7 @@ const http = require('node:http');
 const request = require('supertest');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { criarAppTeste } = require('../helpers/app-teste');
 const { criarAuthController } = require('../../src/controllers/auth.controller');
 const { criarAuthRoutes } = require('../../src/routes/auth.routes');
@@ -88,7 +89,7 @@ describe('C1 — permissões efetivas (PostgreSQL real)', () => {
 
   /** Login global + seleção da empresa: devolve o cabeçalho Cookie da sessão empresarial. */
   async function sessao(email, empresaId) {
-    const login = await request(app).post('/api/auth/global/login').send({ email, senha: SENHA });
+    const login = await request(app).post('/api/auth/global/login').send({ email, senha: SENHA, turnstileToken: TOKEN_TURNSTILE_TESTE });
     assert.equal(login.status, 200, JSON.stringify(login.body));
     const c = cookiesDe(login);
     const global = `${C_GLOBAL}=${c[C_GLOBAL]}`;
@@ -184,7 +185,7 @@ describe('C1 — permissões efetivas (PostgreSQL real)', () => {
       a.use(
         '/api',
         criarAuthRoutes({ controller: criarAuthController({ pool }), limitador: semLimite(), exigirSessao }),
-        criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }) }),
+        criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }), ...turnstileDeTeste() }),
         criarGrupoAcessoRoutes({ controller: criarGrupoAcessoController({ pool }), exigirSessao }),
         criarGrupoPermissaoRoutes({ controller: criarGrupoPermissaoController({ pool }), exigirSessao }),
         criarMaterialRoutes({ controller: criarMaterialController({ pool }), exigirSessao, pool }),
@@ -288,7 +289,7 @@ describe('C1 — permissões efetivas (PostgreSQL real)', () => {
   });
 
   test('empresa A x B e TROCA de empresa: a mesma pessoa tem permissões de B depois de trocar; nada da empresa anterior sobrevive; a sessão de A não consulta mais nada', async () => {
-    const login = await request(app).post('/api/auth/global/login').send({ email: EMAILS.multi, senha: SENHA });
+    const login = await request(app).post('/api/auth/global/login').send({ email: EMAILS.multi, senha: SENHA, turnstileToken: TOKEN_TURNSTILE_TESTE });
     const global = `${C_GLOBAL}=${cookiesDe(login)[C_GLOBAL]}`;
     const selA = await request(app).post(`/api/auth/global/empresas/${empresa.A}/selecionar`).set('Cookie', global);
     const cookieA = `${global}; ${C_EMPRESA}=${cookiesDe(selA)[C_EMPRESA]}`;

@@ -616,6 +616,27 @@ describe('app.js: rotas de autenticação GLOBAL do Portal do Cliente (Pacote 4)
     assert.deepEqual([comCnpj.status, comCnpj.body.codigo], [400, 'VALIDACAO']);
   });
 
+  test('POST /api/auth/global/login sem turnstileToken: 400 no campo do token, antes de qualquer chamada externa', async (t) => {
+    const fetch = t.mock.method(globalThis, 'fetch', async () => { throw new Error('não deveria chamar a rede'); });
+    const r = await request(app).post('/api/auth/global/login').set('Origin', PERMITIDA_CLIENTE).set('Content-Type', 'application/json')
+      .send({ email: 'p@x.com', senha: 'uma-senha-qualquer-123' });
+    assert.deepEqual([r.status, r.body.codigo], [400, 'VALIDACAO']);
+    assert.ok(r.body.detalhes.some((d) => d.campo === 'body.turnstileToken'));
+    assert.equal(fetch.mock.calls.length, 0);
+  });
+
+  test('GET /api/auth/global/turnstile: site key e action pela cadeia /api do cliente, sem sessão e sem a secret', async () => {
+    const { turnstileConfig } = require('../src/config/turnstile');
+    const r = await request(app).get('/api/auth/global/turnstile').set('Origin', PERMITIDA_CLIENTE);
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body, { status: 'ok', siteKey: turnstileConfig.portal.siteKey, action: 'portal_login' });
+    assert.equal(r.headers['access-control-allow-origin'], PERMITIDA_CLIENTE);
+    assert.equal(r.text.includes(turnstileConfig.portal.secretKey), false);
+    assert.equal('set-cookie' in r.headers, false);
+    const plataforma = await request(app).get('/api/plataforma/auth/global/turnstile').set('Origin', PERMITIDA_PLATAFORMA);
+    assert.equal(plataforma.status, 404, 'não existe no namespace do Painel Privado');
+  });
+
   test('CSRF/Origin: POST sem Origin dá 403 ORIGEM_AUSENTE; Origin estranha e Origin DA PLATAFORMA dão 403 ORIGEM_NAO_PERMITIDA (allowlists disjuntas)', async () => {
     const semOrigem = await request(app).post('/api/auth/global/login').set('Content-Type', 'application/json').send({});
     assert.deepEqual([semOrigem.status, semOrigem.body.codigo], [403, 'ORIGEM_AUSENTE']);

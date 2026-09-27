@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { criarAppTeste } = require('../helpers/app-teste');
 const { criarAuthGlobalController } = require('../../src/controllers/auth-global.controller');
 const { criarAuthGlobalRoutes } = require('../../src/routes/auth-global.routes');
@@ -79,7 +80,7 @@ describe('C4 — funcionários: importação em lote, CPF exato e admissão (Pos
   const cookie = {};
 
   async function sessao(email) {
-    const login = await request(app).post('/api/auth/global/login').send({ email, senha: SENHA });
+    const login = await request(app).post('/api/auth/global/login').send({ email, senha: SENHA, turnstileToken: TOKEN_TURNSTILE_TESTE });
     assert.equal(login.status, 200, JSON.stringify(login.body));
     const c = cookiesDe(login);
     return `${C_GLOBAL}=${c[C_GLOBAL]}; ${C_EMPRESA}=${c[C_EMPRESA]}`;
@@ -114,7 +115,7 @@ describe('C4 — funcionários: importação em lote, CPF exato e admissão (Pos
     app = criarAppTeste((a) => {
       a.use(
         '/api',
-        criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }) }),
+        criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }), ...turnstileDeTeste() }),
         criarFuncionarioRoutes({ controller: criarFuncionarioController({ pool }), exigirSessao, pool }),
       );
     });
