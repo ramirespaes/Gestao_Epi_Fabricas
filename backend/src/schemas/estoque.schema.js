@@ -1,7 +1,9 @@
 'use strict';
 
 const { z } = require('zod');
-const { idParametro, textoCurto, LIMITES } = require('./campos.schema');
+const {
+  idParametro, textoCurto, dataCalendario, LIMITES,
+} = require('./campos.schema');
 
 /**
  * Schemas das rotas de estoque por tamanho (Bloco 9, Etapa A). Só
@@ -40,4 +42,46 @@ const movimentar = {
   }),
 };
 
-module.exports = { consultar, movimentar };
+// Limites de estoque_lotes e estoque_operacoes (migration 042).
+const CA_NUMERO_MAXIMO = 20;
+const JUSTIFICATIVA_MAXIMA = 500;
+const MOTIVOS_BAIXA = Object.freeze(['CA_VENCIDO', 'AVARIA', 'DESCARTE', 'PERDA', 'AJUSTE_INVENTARIO', 'DEVOLUCAO_FORNECEDOR', 'OUTRO']);
+
+const caNumero = textoCurto(CA_NUMERO_MAXIMO, 'CA_NUMERO_INVALIDO', 'Número do CA inválido');
+const caValidade = dataCalendario('CA_VALIDADE_INVALIDA', 'Data de validade do CA inválida');
+const justificativa = textoCurto(JUSTIFICATIVA_MAXIMA, 'JUSTIFICATIVA_INVALIDA', 'Justificativa inválida');
+// O PostgreSQL compara UUID sem caixa; eu guardo uma forma só, para a trava da chave também ser uma só.
+const chaveIdempotencia = z.uuid().transform((valor) => valor.toLowerCase());
+
+// Toda entrada nova traz CA e validade. Não há campo para dispensar o CA.
+// O tamanho pode faltar aqui: quem decide se ele é exigido é o material.
+const entrada = {
+  params: paramsComId,
+  body: z.strictObject({
+    tamanho: tamanho.nullable().optional(),
+    quantidade,
+    caNumero,
+    caValidade,
+    chaveIdempotencia,
+  }),
+};
+
+const baixa = {
+  params: z.strictObject({ loteId: idParametro }),
+  body: z.strictObject({
+    quantidade,
+    motivo: z.enum(MOTIVOS_BAIXA),
+    justificativa: justificativa.nullable().optional(),
+    chaveIdempotencia,
+  }).superRefine((corpo, ctx) => {
+    if (corpo.motivo === 'OUTRO' && !corpo.justificativa) {
+      ctx.addIssue({
+        code: 'custom', path: ['justificativa'], message: 'Justificativa obrigatória para o motivo OUTRO', params: { codigo: 'JUSTIFICATIVA_OBRIGATORIA' },
+      });
+    }
+  }),
+};
+
+module.exports = {
+  consultar, movimentar, entrada, baixa, MOTIVOS_BAIXA, TAMANHO_MAXIMO, CA_NUMERO_MAXIMO, JUSTIFICATIVA_MAXIMA,
+};

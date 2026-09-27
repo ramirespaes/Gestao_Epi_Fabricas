@@ -50,7 +50,7 @@ const EpiPermissoes = require('../../../frontend/js/permissoes-efetivas');
  * consulta; e o módulo real do frontend (falha fechada, empresa divergente).
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 40 }, (_, i) => String(i).padStart(3, '0'));
+const TODAS_AS_MIGRATIONS = Array.from({ length: 45 }, (_, i) => String(i).padStart(3, '0'));
 const SENHA = 'senha-forte-da-parte-c1-2026';
 const { cookieNome: C_EMPRESA, cookieNomeGlobal: C_GLOBAL } = authConfig.sessao;
 

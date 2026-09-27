@@ -2,6 +2,7 @@
 
 const { HttpError } = require('../errors/HttpError');
 const materialRepo = require('../repositories/material.repository');
+const loteRepo = require('../repositories/estoque-lote.repository');
 const auditoriaRepo = require('../repositories/auditoria.repository');
 
 /**
@@ -54,6 +55,7 @@ const MSG_MATERIAL_NAO_ENCONTRADO = 'Material não encontrado';
 const MSG_SEM_ALTERACAO = 'Nenhum campo para alterar';
 const MSG_UNIDADE_NAO_EDITAVEL = 'A unidade de controle de um material existente não pode ser alterada';
 const MSG_DADOS_INVALIDOS = 'Dados de material inválidos';
+const MSG_TAMANHO_SALDO_INCOMPATIVEL = 'Há saldo em estoque incompatível com a nova exigência de tamanho';
 // Parte C2 (migration 039): índice único parcial do código interno por empresa.
 const INDICE_CODIGO_INTERNO = 'uq_materiais_empresa_codigo_interno';
 const MSG_CODIGO_INTERNO_DUPLICADO = 'Já existe um material com este código interno nesta empresa';
@@ -113,8 +115,10 @@ function normalizarUnidade(unidade) {
   return aparada;
 }
 
+// O prazo de uso é obrigatório. Só cadastro legado tem prazo nulo, e a edição
+// não deixa apagá-lo.
 function prazoUsoDiasValido(valor) {
-  return valor === null || valor === undefined || (Number.isInteger(valor) && valor > 0);
+  return Number.isInteger(valor) && valor > 0;
 }
 
 function estoqueMinimoValido(valor) {
@@ -150,6 +154,7 @@ const instantaneo = (material) => ({
   caNumero: material.caNumero,
   caValidade: material.caValidade,
   prazoUsoDias: material.prazoUsoDias,
+  exigeTamanho: material.exigeTamanho,
   unidade: material.unidade,
   estoqueMinimo: material.estoqueMinimo,
   categoria: material.categoria,
@@ -163,13 +168,13 @@ const instantaneo = (material) => ({
  *
  * @param {import('pg').Pool} pool
  * @param {{empresaId: number, atorId: number, nome: string, tipo?: string|null, fabricante?: string|null,
- *   caNumero?: string|null, caValidade?: string|null, prazoUsoDias?: number|null, unidade?: string,
+ *   caNumero?: string|null, caValidade?: string|null, prazoUsoDias: number, exigeTamanho: boolean, unidade?: string,
  *   estoqueMinimo?: number, ip?: string|null, dispositivo?: string|null}} dados
  *   empresaId e atorId DEVEM vir do contexto autenticado do chamador.
  */
 async function criar(pool, {
   empresaId, atorId, nome, tipo = null, fabricante = null, caNumero = null,
-  caValidade = null, prazoUsoDias = null, unidade, estoqueMinimo = 0,
+  caValidade = null, prazoUsoDias = null, exigeTamanho = null, unidade, estoqueMinimo = 0,
   categoria = null, codigoInterno = null, descricao = null,
   ip = null, dispositivo = null,
 }) {
@@ -192,7 +197,8 @@ async function criar(pool, {
     || categoriaNormalizada === undefined || codigoInternoNormalizado === undefined || descricaoNormalizada === undefined) {
     throw HttpError.badRequest('MATERIAL_DADOS_INVALIDOS', MSG_DADOS_INVALIDOS);
   }
-  if (!prazoUsoDiasValido(prazoUsoDias) || unidadeNormalizada === null || !estoqueMinimoValido(estoqueMinimo)) {
+  if (!prazoUsoDiasValido(prazoUsoDias) || typeof exigeTamanho !== 'boolean'
+    || unidadeNormalizada === null || !estoqueMinimoValido(estoqueMinimo)) {
     throw HttpError.badRequest('MATERIAL_DADOS_INVALIDOS', MSG_DADOS_INVALIDOS);
   }
 
@@ -207,6 +213,7 @@ async function criar(pool, {
         caNumero: caNumeroNormalizado,
         caValidade,
         prazoUsoDias: prazoUsoDias ?? null,
+        exigeTamanho,
         unidade: unidadeNormalizada,
         estoqueMinimo,
         categoria: categoriaNormalizada,
@@ -291,6 +298,7 @@ async function alterar(pool, {
   caNumero, caNumeroInformado = false,
   caValidade, caValidadeInformado = false,
   prazoUsoDias, prazoUsoDiasInformado = false,
+  exigeTamanho,
   unidade, estoqueMinimo,
   categoria, categoriaInformado = false,
   codigoInterno, codigoInternoInformado = false,
@@ -323,7 +331,7 @@ async function alterar(pool, {
   }
 
   const nenhumCampo = !alterarNome && !tipoInformado && !fabricanteInformado && !caNumeroInformado
-    && !caValidadeInformado && !prazoUsoDiasInformado && estoqueMinimo === undefined
+    && !caValidadeInformado && !prazoUsoDiasInformado && exigeTamanho === undefined && estoqueMinimo === undefined
     && !categoriaInformado && !codigoInternoInformado && !descricaoInformado;
 
   return emTransacao(pool, async (client) => {
@@ -337,6 +345,7 @@ async function alterar(pool, {
       || (fabricanteInformado && fabricanteNormalizado === undefined)
       || (caNumeroInformado && caNumeroNormalizado === undefined)
       || (prazoUsoDiasInformado && !prazoUsoDiasValido(prazoUsoDias))
+      || (exigeTamanho !== undefined && typeof exigeTamanho !== 'boolean')
       || (estoqueMinimo !== undefined && !estoqueMinimoValido(estoqueMinimo))
       || (categoriaInformado && categoriaNormalizada === undefined)
       || (codigoInternoInformado && codigoInternoNormalizado === undefined)
@@ -347,6 +356,13 @@ async function alterar(pool, {
     const anterior = await materialRepo.buscarPorIdParaAtualizacao(client, empresaId, materialId);
     if (anterior === null) {
       throw HttpError.notFound('MATERIAL_NAO_ENCONTRADO', MSG_MATERIAL_NAO_ENCONTRADO);
+    }
+    // A primeira classificação do legado é livre. Depois, só troco se nenhum
+    // lote com saldo ficar incompatível; saldo zero é histórico e não impede.
+    // A trava do material acima segura entradas novas até o fim desta troca.
+    const trocaClassificacao = exigeTamanho !== undefined && anterior.exigeTamanho !== null && anterior.exigeTamanho !== exigeTamanho;
+    if (trocaClassificacao && await loteRepo.possuiSaldoIncompativel(client, empresaId, materialId, exigeTamanho)) {
+      throw HttpError.conflict('MATERIAL_TAMANHO_SALDO_INCOMPATIVEL', MSG_TAMANHO_SALDO_INCOMPATIVEL);
     }
 
     let atualizado;
@@ -363,6 +379,7 @@ async function alterar(pool, {
         categoria: categoriaNormalizada, categoriaInformado,
         codigoInterno: codigoInternoNormalizado, codigoInternoInformado,
         descricao: descricaoNormalizada, descricaoInformado,
+        exigeTamanho: exigeTamanho ?? null, // null = manter a classificação atual
       });
     } catch (erro) {
       const traduzido = traduzirViolacao(erro);

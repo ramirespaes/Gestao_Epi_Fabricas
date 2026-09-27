@@ -17,10 +17,14 @@ const {
  * nenhum: inativar e reativar têm rotas próprias, mesmo padrão de
  * grupo-acesso.schema.js.
  *
- * Campos opcionais (`tipo`, `fabricante`, `caNumero`, `caValidade`,
- * `prazoUsoDias`) aceitam `null` explícito, que o serviço interpreta como
- * "limpar o campo"; ausente significa "não mexer" em alterar() — mesmo
- * contrato de `descricao` em grupo-acesso.schema.js.
+ * Campos opcionais (`tipo`, `fabricante`, `caNumero`, `caValidade`)
+ * aceitam `null` explícito, que o serviço interpreta como "limpar o campo";
+ * ausente significa "não mexer" em alterar() — mesmo contrato de
+ * `descricao` em grupo-acesso.schema.js.
+ *
+ * O prazo de uso é obrigatório no cadastro e, na edição, pode mudar mas
+ * não pode ser apagado: não aceita `null`. `exigeTamanho` segue a mesma
+ * regra: o material novo sempre diz se usa tamanho.
  */
 
 // materiais.nome VARCHAR(150), tipo/fabricante VARCHAR(100), ca_numero VARCHAR(20),
@@ -65,6 +69,7 @@ const caValidade = dataCalendario('CA_VALIDADE_INVALIDA', 'Data de validade do C
 // de um 400 de validação (correção pós-auditoria de 23/09/2026).
 const prazoUsoDias = z.number().int().positive().max(LIMITES.INTEGER_MAXIMO);
 const estoqueMinimo = z.number().int().nonnegative().max(LIMITES.INTEGER_MAXIMO);
+const exigeTamanho = z.boolean();
 
 const paramsComId = z.strictObject({ id: idParametro });
 
@@ -78,7 +83,8 @@ const criar = {
     fabricante: fabricante.nullable().optional(),
     caNumero: caNumero.nullable().optional(),
     caValidade: caValidade.nullable().optional(),
-    prazoUsoDias: prazoUsoDias.nullable().optional(),
+    prazoUsoDias,
+    exigeTamanho,
     unidade: unidade.optional(),
     estoqueMinimo: estoqueMinimo.optional(),
   }),
@@ -111,7 +117,8 @@ const alterar = {
     fabricante: fabricante.nullable().optional(),
     caNumero: caNumero.nullable().optional(),
     caValidade: caValidade.nullable().optional(),
-    prazoUsoDias: prazoUsoDias.nullable().optional(),
+    prazoUsoDias: prazoUsoDias.optional(),
+    exigeTamanho: exigeTamanho.optional(),
     estoqueMinimo: estoqueMinimo.optional(),
   }),
 };

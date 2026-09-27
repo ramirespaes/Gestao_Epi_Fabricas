@@ -44,6 +44,7 @@
     "040_alter_funcionarios_add_data_admissao.sql": "7968b1f4b0bbba982740ecfff2f1c9aa270db0d996709e1034a5878464cc122a",
     "041_create_ghe_materiais.sql": "26950c40b314046c5b6238eb8a3054b25f7f74302cf642693e393ade49e99c0a",
     "042_create_estoque_lotes_operacoes.sql": "6ece869b7d2ec0d86ddf8837910fd65f42614dcf815f23eeb5ec76d44c74f8fd",
-    "043_migrate_estoque_tamanhos_saldo_inicial.sql": "3b10027fadf358bd09f3660042fec6ec43ca2bb9d2efba4cbe27f7dec030f349"
+    "043_migrate_estoque_tamanhos_saldo_inicial.sql": "3b10027fadf358bd09f3660042fec6ec43ca2bb9d2efba4cbe27f7dec030f349",
+    "044_alter_materiais_add_exige_tamanho.sql": "ce45c7b507484ce8cd29538b09b4ec23348af8f4832ca14fc09c53ae8223b5db"
   }
 }

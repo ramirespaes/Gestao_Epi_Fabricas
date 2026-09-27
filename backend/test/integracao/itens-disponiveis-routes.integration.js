@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { inserirLote, baixarLote, somarDias } = require('./helpers/estoque-lotes');
 const { criarAppTeste } = require('../helpers/app-teste');
 const { criarAuthGlobalController } = require('../../src/controllers/auth-global.controller');
 const { criarAuthGlobalRoutes } = require('../../src/routes/auth-global.routes');
@@ -23,11 +24,14 @@ const provisionamento = require('../../src/services/provisionamento-permissoes.s
 
 /**
  * Bloco 9, Etapa C, Parte C3 — GET /api/estoque/itens-disponiveis com
- * PostgreSQL real, em schema temporário exclusivo com TODAS as migrations
- * (000–039). Somente leitura: nenhuma rota nova escreve.
+ * PostgreSQL real, em schema temporário exclusivo com TODAS as migrations.
+ * Somente leitura. O saldo vem dos lotes, com a data operacional fixada em
+ * 30/09/2026 (relógio injetado).
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 40 }, (_, i) => String(i).padStart(3, '0'));
+const TODAS_AS_MIGRATIONS = Array.from({ length: 45 }, (_, i) => String(i).padStart(3, '0'));
+const HOJE = '2026-09-30';
+const RELOGIO = () => new Date('2026-09-30T15:00:00Z');
 const SENHA = 'senha-forte-da-parte-c3-2026';
 const EMAILS = {
   masterA: 'master.a.c3@exemplo-cliente.com.br',
@@ -86,22 +90,28 @@ describe('C3 — GET /api/estoque/itens-disponiveis (PostgreSQL real)', () => {
     await q("INSERT INTO permissoes_recurso (empresa_id, perfil, recurso, pode_visualizar) VALUES ($1, 'SUPERVISOR', 'materials', true)", [empresa.A]);
     await q("INSERT INTO usuario_permissoes_recurso (empresa_id, usuario_id, recurso, pode_visualizar, concedido_por) VALUES ($1, $2, 'availableItems', true, $3)", [empresa.A, u.usuarioA, u.masterA]);
 
-    // Materiais da empresa A (validade do CA relativa a CURRENT_DATE do próprio banco)
+    // Materiais: o CA e a validade (relativa a HOJE) ficam em cada lote.
+    const responsavel = { [empresa.A]: u.masterA, [empresa.B]: u.masterB };
     const material = async (chave, empresaId, campos, saldos) => {
       const r = await q(
-        `INSERT INTO materiais (empresa_id, nome, tipo, categoria, codigo_interno, unidade, estoque_minimo, ca_validade, ativo)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, CASE WHEN $8::int IS NULL THEN NULL ELSE CURRENT_DATE + $8::int END, $9) RETURNING id`,
-        [empresaId, campos.nome, campos.tipo, campos.categoria, campos.codigo || null, campos.unidade, campos.minimo, campos.caDias, campos.ativo !== false],
+        `INSERT INTO materiais (empresa_id, nome, tipo, categoria, codigo_interno, unidade, estoque_minimo, exige_ca, ativo)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+        [empresaId, campos.nome, campos.tipo, campos.categoria, campos.codigo || null, campos.unidade, campos.minimo, campos.exigeCa !== false, campos.ativo !== false],
       );
       m[chave] = r.rows[0].id;
-      for (const [tamanho, quantidade] of saldos) await q('INSERT INTO estoque_tamanhos (material_id, tamanho, quantidade) VALUES ($1, $2, $3)', [m[chave], tamanho, quantidade]);
+      const validade = campos.caDias === null ? null : somarDias(HOJE, campos.caDias);
+      for (const [tamanho, quantidade] of saldos) {
+        const loteId = await inserirLote(pool, { empresaId, materialId: m[chave], tamanho, quantidade: quantidade || 1, ca: validade ? 'CA-1' : null, validade });
+        // Tamanho esgotado: o lote existiu e foi baixado por inteiro.
+        if (quantidade === 0) await baixarLote(pool, { empresaId, loteId, quantidade: 1, usuarioId: responsavel[empresaId] });
+      }
     };
     await material('botina', empresa.A, { nome: 'Botina de segurança', tipo: 'Sapatão / Botina', categoria: 'EPI', codigo: 'EPI-001', unidade: 'par', minimo: 5, caDias: 10 }, [['40', 12], ['41', 3], ['42', 0]]);
     await material('luva', empresa.A, { nome: 'Luva nitrílica', tipo: 'Luva', categoria: 'EPI', unidade: 'par', minimo: 0, caDias: -1 }, [['M', 4]]);
     await material('oculosHoje', empresa.A, { nome: 'Óculos incolor', tipo: 'Óculos de proteção', categoria: 'EPI', unidade: 'unidade', minimo: 2, caDias: 0 }, [['Único', 22]]);
     await material('capacete60', empresa.A, { nome: 'Capacete classe B', tipo: 'Capacete', categoria: 'EPI', unidade: 'unidade', minimo: 1, caDias: 60 }, [['Único', 5]]);
     await material('respirador61', empresa.A, { nome: 'Respirador PFF2', tipo: 'Respirador', categoria: 'EPI', unidade: 'unidade', minimo: 1, caDias: 61 }, [['Único', 30]]);
-    await material('camiseta', empresa.A, { nome: 'Camiseta manga longa', tipo: 'Roupa / Uniforme', categoria: 'Uniforme', unidade: 'unidade', minimo: 10, caDias: null }, [['G', 9]]);
+    await material('camiseta', empresa.A, { nome: 'Camiseta manga longa', tipo: 'Roupa / Uniforme', categoria: 'Uniforme', unidade: 'unidade', minimo: 10, caDias: null, exigeCa: false }, [['G', 9]]);
     await material('inativo', empresa.A, { nome: 'Material inativo', tipo: 'Luva', categoria: 'Ferramenta', unidade: 'unidade', minimo: 0, caDias: null, ativo: false }, [['P', 50]]);
     await material('semSaldo', empresa.A, { nome: 'Protetor sem linha de saldo', tipo: 'Protetor auricular', categoria: 'Material de consumo', unidade: 'unidade', minimo: 0, caDias: null }, []);
     await material('botinaB', empresa.B, { nome: 'Botina da empresa B', tipo: 'Sapatão / Botina', categoria: 'EPI', unidade: 'par', minimo: 1, caDias: 100 }, [['40', 99]]);
@@ -114,7 +124,7 @@ describe('C3 — GET /api/estoque/itens-disponiveis (PostgreSQL real)', () => {
         criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }) }),
         criarMaterialRoutes({ controller: criarMaterialController({ pool }), exigirSessao, pool }),
         criarEstoqueRoutes({ controller: criarEstoqueController({ pool }), exigirSessao, pool }),
-        criarItensDisponiveisRoutes({ controller: criarItensDisponiveisController({ pool }), exigirSessao, pool }),
+        criarItensDisponiveisRoutes({ controller: criarItensDisponiveisController({ pool, relogio: RELOGIO }), exigirSessao, pool }),
       );
     });
     for (const k of Object.keys(EMAILS)) cookie[k] = await sessao(EMAILS[k]);
@@ -137,7 +147,7 @@ describe('C3 — GET /api/estoque/itens-disponiveis (PostgreSQL real)', () => {
     assert.equal((await request(app).get(ROTA).set('Cookie', `${C_EMPRESA}=${'0'.repeat(64)}`)).status, 401);
   });
 
-  test('MASTER A: só materiais ATIVOS da empresa A, todos os tamanhos cadastrados (inclusive saldo 0), saldo = disponivel, ordem por material e tamanho', async () => {
+  test('MASTER A: só materiais ATIVOS da empresa A, todos os tamanhos com lote (inclusive esgotado), saldo = disponível + bloqueado, ordem por material e tamanho', async () => {
     const r = await listar('masterA');
     assert.equal(r.status, 200, JSON.stringify(r.body));
     assert.equal(r.body.status, 'ok');
@@ -149,13 +159,12 @@ describe('C3 — GET /api/estoque/itens-disponiveis (PostgreSQL real)', () => {
     ]);
     assert.equal(r.body.total, 8);
     assert.deepEqual([r.body.pagina, r.body.limite], [1, 50]);
-    for (const i of r.body.itens) assert.equal(i.disponivel, i.saldo, 'nesta etapa disponivel = saldo');
+    for (const i of r.body.itens) assert.equal(i.saldo, i.disponivel + i.bloqueado, 'saldo físico = disponível + bloqueado');
     const botina40 = r.body.itens[0];
     assert.deepEqual(botina40, {
       materialId: m.botina, material: 'Botina de segurança', codigoInterno: 'EPI-001', categoria: 'EPI', tipo: 'Sapatão / Botina',
-      tamanho: '40', saldo: 12, disponivel: 12, unidade: 'par', estoqueMinimo: 5, caValidade: botina40.caValidade, validade: 'expiring',
+      tamanho: '40', saldo: 12, bloqueado: 0, disponivel: 12, unidade: 'par', estoqueMinimo: 5, caValidade: somarDias(HOJE, 10), validade: 'expiring',
     });
-    assert.match(botina40.caValidade, /^\d{4}-\d{2}-\d{2}$/);
     assert.equal(r.body.itens.some((i) => i.material === 'Material inativo'), false, 'inativo nunca aparece');
     assert.equal(r.body.itens.some((i) => i.material === 'Protetor sem linha de saldo'), false, 'nenhum tamanho fictício');
     assert.equal(r.body.itens.some((i) => i.material === 'Botina da empresa B'), false, 'isolamento');
@@ -189,9 +198,9 @@ describe('C3 — GET /api/estoque/itens-disponiveis (PostgreSQL real)', () => {
     assert.deepEqual([camiseta.caValidade, camiseta.validade], [null, 'sem-validade']);
   });
 
-  test('CA vencido NÃO bloqueia o estoque: o item continua listado com seu saldo', async () => {
+  test('CA vencido bloqueia: o item continua listado com o saldo físico, e nada dele fica disponível', async () => {
     const luva = (await listar('masterA', '?tipo=Luva')).body.itens[0];
-    assert.deepEqual([luva.validade, luva.saldo, luva.disponivel], ['expired', 4, 4]);
+    assert.deepEqual([luva.validade, luva.saldo, luva.bloqueado, luva.disponivel], ['expired', 4, 4, 0]);
   });
 
   test('paginação: total correto, páginas disjuntas, página além do fim vazia', async () => {
@@ -237,9 +246,9 @@ describe('C3 — GET /api/estoque/itens-disponiveis (PostgreSQL real)', () => {
     assert.equal((await pool.query('SELECT count(*)::int n FROM logs_auditoria')).rows[0].n, antes);
   });
 
-  test('persistência: uma SAÍDA real na C2 aparece na consulta seguinte; saldo zerado continua listado como 0', async () => {
-    const mov = await request(app).post(`/api/materiais/${m.botina}/estoque/movimentar`).set('Cookie', cookie.masterA).send({ tamanho: '41', tipo: 'SAIDA', quantidade: 3, motivo: 'teste C3' });
-    assert.equal(mov.status, 200, JSON.stringify(mov.body));
+  test('persistência: uma baixa registrada no histórico aparece na consulta seguinte; tamanho esgotado continua listado como 0', async () => {
+    const { rows: [l] } = await pool.query("SELECT id FROM estoque_lotes WHERE material_id = $1 AND tamanho = '41'", [m.botina]);
+    await baixarLote(pool, { empresaId: empresa.A, loteId: l.id, quantidade: 3, usuarioId: u.masterA });
     const botina41 = (await listar('masterA', '?tamanho=41')).body.itens[0];
     assert.deepEqual([botina41.saldo, botina41.disponivel], [0, 0]);
   });

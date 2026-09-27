@@ -46,7 +46,7 @@ const EpiMateriais = require('../../../frontend/js/materiais');
  * não apenas que a interface esconde botões.
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 40 }, (_, i) => String(i).padStart(3, '0'));
+const TODAS_AS_MIGRATIONS = Array.from({ length: 45 }, (_, i) => String(i).padStart(3, '0'));
 const SENHA = 'senha-forte-da-etapa-c2-2026';
 const EMAILS = {
   master: 'master.c2@exemplo-cliente.com.br',       // MASTER em A
@@ -136,10 +136,11 @@ describe('C2 — cadastro real de materiais pela página integrada (PostgreSQL r
     };
   }
 
+  // A tela ainda não pergunta se o material usa tamanho; completo o corpo aqui.
   const cadastrar = (formulario, podeMovimentar) => {
     const m = EpiMateriais.formulario.montarCorpo(formulario);
     assert.equal(m.ok, true, JSON.stringify(m));
-    return EpiMateriais.fluxo.cadastrar({ corpo: m.corpo, entrada: m.entrada, podeMovimentar });
+    return EpiMateriais.fluxo.cadastrar({ corpo: { ...m.corpo, exigeTamanho: true }, entrada: m.entrada, podeMovimentar });
   };
 
   before(async () => {
@@ -255,16 +256,21 @@ describe('C2 — cadastro real de materiais pela página integrada (PostgreSQL r
       assert.equal(r.material.empresaId, empresa.B);
     });
 
-    test('sem prazo, sem CA, sem quantidade: cadastro mínimo grava NULL nos opcionais e não cria saldo', async () => {
+    test('sem prazo a API recusa o cadastro; com prazo, sem CA e sem quantidade, o cadastro mínimo grava NULL nos opcionais e não cria saldo', async () => {
       await abrirPagina(EMAILS.master, empresa.A);
-      const r = await cadastrar({
+      const minimo = {
         nome: 'Protetor auricular', categoria: '', tipo: 'Protetor auricular', tipoCustom: '', caNumero: '', caValidade: '', fabricante: '', codigoInterno: '',
         quantidadeComprada: '', tamanhoEntrada: '', unidade: 'Unidade', estoqueMinimo: '', definePrazo: 'nao', prazoUnidade: 'meses', prazo: '', descricao: '',
-      }, true);
+      };
+      const semPrazo = await cadastrar(minimo, true);
+      assert.deepEqual([semPrazo.ok, semPrazo.resposta.status, semPrazo.resposta.detalhes.map((d) => d.campo)], [false, 400, ['body.prazoUsoDias']]);
+      assert.equal((await pool.query("SELECT count(*)::int AS n FROM materiais WHERE nome = 'Protetor auricular'")).rows[0].n, 0);
+
+      const r = await cadastrar({ ...minimo, definePrazo: 'sim', prazo: '6' }, true);
       assert.equal(r.ok, true, JSON.stringify(r));
       assert.equal(r.entrada.solicitada, false);
       const { rows } = await pool.query('SELECT categoria, codigo_interno, descricao, ca_numero, ca_validade, prazo_uso_dias, estoque_minimo, unidade FROM materiais WHERE id = $1', [r.material.id]);
-      assert.deepEqual(rows[0], { categoria: null, codigo_interno: null, descricao: null, ca_numero: null, ca_validade: null, prazo_uso_dias: null, estoque_minimo: 0, unidade: 'unidade' });
+      assert.deepEqual(rows[0], { categoria: null, codigo_interno: null, descricao: null, ca_numero: null, ca_validade: null, prazo_uso_dias: 180, estoque_minimo: 0, unidade: 'unidade' });
       assert.equal((await pool.query('SELECT count(*)::int AS n FROM estoque_tamanhos WHERE material_id = $1', [r.material.id])).rows[0].n, 0);
     });
   });
@@ -327,7 +333,7 @@ describe('C2 — cadastro real de materiais pela página integrada (PostgreSQL r
     test('cadastro ok e entrada recusada pelo servidor (quantidade acima do limite inteiro): material permanece, sem exclusão nem nova tentativa; mensagem explícita', async () => {
       const pagina = await abrirPagina(EMAILS.master, empresa.A);
       const m = EpiMateriais.formulario.montarCorpo({ ...FORMULARIO_COMPLETO, nome: 'Capacete classe B', codigoInterno: 'EPI-000400', tipo: 'Capacete', quantidadeComprada: '1', tamanhoEntrada: 'Único' });
-      const r = await EpiMateriais.fluxo.cadastrar({ corpo: m.corpo, entrada: { tamanho: 'Único', quantidade: 2147483648 }, podeMovimentar: true });
+      const r = await EpiMateriais.fluxo.cadastrar({ corpo: { ...m.corpo, exigeTamanho: true }, entrada: { tamanho: 'Único', quantidade: 2147483648 }, podeMovimentar: true });
       assert.equal(r.ok, true, JSON.stringify(r));
       assert.deepEqual([r.entrada.solicitada, r.entrada.realizada, r.entrada.motivo, r.entrada.resposta.status, r.entrada.resposta.codigo], [true, false, 'RECUSADA', 400, 'VALIDACAO']);
       assert.match(EpiMateriais.mensagens.resultado(r), /^Material cadastrado com sucesso\. Entrada de estoque não realizada: /);
@@ -472,7 +478,7 @@ describe('C2 — correções da auditoria (PostgreSQL real)', () => {
     const primeiraPagina = await EpiMateriais.acoes.listar({ ativo: true, limite: 100 });
     assert.equal(primeiraPagina.dados.materiais.length, 100, 'uma página só não basta');
 
-    const novo = await EpiMateriais.fluxo.cadastrar({ corpo: { nome: 'Material 121 novo', codigoInterno: 'PG-121' }, entrada: null, podeMovimentar: true });
+    const novo = await EpiMateriais.fluxo.cadastrar({ corpo: { nome: 'Material 121 novo', codigoInterno: 'PG-121', prazoUsoDias: 180, exigeTamanho: true }, entrada: null, podeMovimentar: true });
     assert.equal(novo.ok, true, JSON.stringify(novo));
     const depois = await EpiMateriais.acoes.listarTodos({ ativo: true });
     assert.equal(depois.dados.materiais.length, 121);
@@ -498,7 +504,7 @@ describe('C2 — correções da auditoria (PostgreSQL real)', () => {
       },
     });
     const m = EpiMateriais.formulario.montarCorpo({ ...FORMULARIO_COMPLETO, nome: 'Rede caiu', codigoInterno: 'REDE-1', quantidadeComprada: '7', tamanhoEntrada: '40' });
-    const r = await EpiMateriais.fluxo.cadastrar({ corpo: m.corpo, entrada: m.entrada, podeMovimentar: true });
+    const r = await EpiMateriais.fluxo.cadastrar({ corpo: { ...m.corpo, exigeTamanho: true }, entrada: m.entrada, podeMovimentar: true });
     assert.equal(r.ok, true, JSON.stringify(r));
     assert.deepEqual([r.entrada.solicitada, r.entrada.realizada, r.entrada.motivo, r.entrada.resposta.status, tentativas], [true, false, 'NAO_CONFIRMADO', 0, 1]);
     const texto = EpiMateriais.mensagens.resultado(r);
@@ -525,11 +531,11 @@ describe('C2 — correções da auditoria (PostgreSQL real)', () => {
         return nav(url, opcoes);
       },
     });
-    const incerto = await EpiMateriais.fluxo.cadastrar({ corpo: { nome: 'Servidor 503' }, entrada: null, podeMovimentar: true });
+    const incerto = await EpiMateriais.fluxo.cadastrar({ corpo: { nome: 'Servidor 503', prazoUsoDias: 180, exigeTamanho: true }, entrada: null, podeMovimentar: true });
     assert.deepEqual([incerto.ok, incerto.confirmado, incerto.resposta.status], [false, false, 503]);
     assert.match(EpiMateriais.mensagens.erroCadastro(incerto.resposta), /não foi possível confirmar/i);
     EpiHttp.configurar({ fetch: nav });
-    const recusa = await EpiMateriais.fluxo.cadastrar({ corpo: { nome: 'Duplicado', codigoInterno: 'pg-001' }, entrada: null, podeMovimentar: true });
+    const recusa = await EpiMateriais.fluxo.cadastrar({ corpo: { nome: 'Duplicado', codigoInterno: 'pg-001', prazoUsoDias: 180, exigeTamanho: true }, entrada: null, podeMovimentar: true });
     assert.deepEqual([recusa.ok, recusa.confirmado, recusa.resposta.status], [false, true, 409]);
   });
 });

@@ -1,6 +1,7 @@
 'use strict';
 
 const dashboardService = require('../services/dashboard.service');
+const { dataOperacional } = require('../utils/data-operacional');
 const { pool } = require('../config/database');
 
 /**
@@ -9,11 +10,11 @@ const { pool } = require('../config/database');
  * `dashboard.visualizar`, e o serviço decide cada indicador pela fonte.
  */
 
-function criarDashboardController({ pool: poolInjetado }) {
+function criarDashboardController({ pool: poolInjetado, relogio = () => new Date() }) {
   return {
     async indicadores(req, res) {
       const indicadores = await dashboardService.consultar(poolInjetado, {
-        empresaId: req.empresa.id, usuarioId: req.usuario.id, perfil: req.usuario.perfil,
+        empresaId: req.empresa.id, usuarioId: req.usuario.id, perfil: req.usuario.perfil, hoje: dataOperacional(relogio()),
       });
       res.status(200).json({ status: 'ok', indicadores });
     },

@@ -40,6 +40,7 @@ const MIGRATIONS = [
   '012', '013', '014', '015', '016', '017', '018', '019', '020', '021', '022', '023',
   '039',
   '040', // C4: funcionarios.data_admissao (lida pela projeção do repositório)
+  '041', '042', '044', // materiais.exige_tamanho, lido pela projeção do material
 ];
 
 const SENHA = 'senha-correta-do-teste-provisionamento-2026';
@@ -228,7 +229,7 @@ describe('Provisionamento das permissões do MASTER com PostgreSQL real', () => 
     for (const rota of ROTAS_DE_LEITURA) {
       assert.equal((await request(app).get(rota).set('Cookie', cookieMasterA)).status, 200, rota);
     }
-    const material = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send({ nome: 'Luva nitrílica' });
+    const material = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send({ nome: 'Luva nitrílica', prazoUsoDias: 180, exigeTamanho: true });
     assert.equal(material.status, 201);
     const movimento = await request(app).post(`/api/materiais/${material.body.material.id}/estoque/movimentar`).set('Cookie', cookieMasterA).send({ tamanho: 'M', tipo: 'ENTRADA', quantidade: 10 });
     assert.equal(movimento.status, 200, 'MOVIMENTAR_ESTOQUE concedida ao MASTER pela linha de permissoes_acao');
@@ -315,7 +316,7 @@ describe('Provisionamento das permissões do MASTER com PostgreSQL real', () => 
 
     // Consequência observável no RBAC: MASTER B vê materiais (visualizar concedido), mas não edita (a linha insuficiente não foi "corrigida" pelo script).
     assert.equal((await request(app).get('/api/materiais').set('Cookie', cookieMasterB)).status, 200);
-    assert.equal((await request(app).post('/api/materiais').set('Cookie', cookieMasterB).send({ nome: 'X' })).status, 201, 'criar estava concedido');
+    assert.equal((await request(app).post('/api/materiais').set('Cookie', cookieMasterB).send({ nome: 'X', prazoUsoDias: 180, exigeTamanho: true })).status, 201, 'criar estava concedido');
     const { rows: mats } = await pool.query('SELECT id FROM materiais WHERE empresa_id = $1', [empresaB]);
     assert.equal((await request(app).patch(`/api/materiais/${mats[0].id}`).set('Cookie', cookieMasterB).send({ nome: 'Y' })).status, 403, 'editar continua negado');
   });

@@ -44,7 +44,7 @@ const LIMITE_INTEGER_POSTGRES = 2147483647;
 // 25/09/2026; antes, a meia-noite local virava UTC no JSON e, a leste de
 // UTC, chegava como o dia anterior).
 const PROJECAO = `id, empresa_id, nome, tipo, fabricante, ca_numero, to_char(ca_validade, 'YYYY-MM-DD') AS ca_validade,
-  prazo_uso_dias, unidade, estoque_minimo, categoria, codigo_interno, descricao, ativo, criado_em, atualizado_em`;
+  prazo_uso_dias, unidade, estoque_minimo, categoria, codigo_interno, descricao, exige_tamanho, ativo, criado_em, atualizado_em`;
 const TAMANHO_MAXIMO_CATEGORIA = 30;
 const TAMANHO_MAXIMO_CODIGO_INTERNO = 30;
 const TAMANHO_MAXIMO_DESCRICAO = 500;
@@ -90,6 +90,13 @@ function exigirPrazoUsoDiasOpcional(valor) {
   }
 }
 
+// exige_tamanho: NULL só existe no material legado, ainda não classificado.
+function exigirExigeTamanhoOpcional(valor) {
+  if (valor !== null && typeof valor !== 'boolean') {
+    throw new TypeError('exigência de tamanho deve ser booleana ou null');
+  }
+}
+
 // estoque_minimo: CHECK (estoque_minimo >= 0), e teto do INTEGER do banco.
 function exigirEstoqueMinimo(valor) {
   if (!Number.isInteger(valor) || valor < 0 || valor > LIMITE_INTEGER_POSTGRES) {
@@ -117,6 +124,7 @@ const mapear = (linha) => (linha === undefined ? null : {
   categoria: linha.categoria ?? null,
   codigoInterno: linha.codigo_interno ?? null,
   descricao: linha.descricao ?? null,
+  exigeTamanho: linha.exige_tamanho ?? null,
   ativo: linha.ativo,
   criadoEm: linha.criado_em,
   atualizadoEm: linha.atualizado_em,
@@ -129,12 +137,12 @@ const mapear = (linha) => (linha === undefined ? null : {
  * @param {{query: Function}} executor
  * @param {{empresaId: number, nome: string, tipo?: string|null, fabricante?: string|null,
  *   caNumero?: string|null, caValidade?: string|Date|null, prazoUsoDias?: number|null,
- *   unidade?: string, estoqueMinimo?: number}} dados
+ *   unidade?: string, estoqueMinimo?: number, exigeTamanho?: boolean|null}} dados
  */
 async function criar(executor, {
   empresaId, nome, tipo = null, fabricante = null, caNumero = null,
   caValidade = null, prazoUsoDias = null, unidade = 'unidade', estoqueMinimo = 0,
-  categoria = null, codigoInterno = null, descricao = null,
+  categoria = null, codigoInterno = null, descricao = null, exigeTamanho = null,
 }) {
   exigirEmpresa(empresaId);
   exigirNome(nome);
@@ -148,12 +156,13 @@ async function criar(executor, {
   exigirTextoOpcional(categoria, 'categoria', TAMANHO_MAXIMO_CATEGORIA);
   exigirTextoOpcional(codigoInterno, 'código interno', TAMANHO_MAXIMO_CODIGO_INTERNO);
   exigirTextoOpcional(descricao, 'descrição', TAMANHO_MAXIMO_DESCRICAO);
+  exigirExigeTamanhoOpcional(exigeTamanho);
 
   const { rows } = await executor.query(
-    `INSERT INTO materiais (empresa_id, nome, tipo, fabricante, ca_numero, ca_validade, prazo_uso_dias, unidade, estoque_minimo, categoria, codigo_interno, descricao)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    `INSERT INTO materiais (empresa_id, nome, tipo, fabricante, ca_numero, ca_validade, prazo_uso_dias, unidade, estoque_minimo, categoria, codigo_interno, descricao, exige_tamanho)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING ${PROJECAO}`,
-    [empresaId, nome, tipo, fabricante, caNumero, caValidade, prazoUsoDias, unidade, estoqueMinimo, categoria, codigoInterno, descricao],
+    [empresaId, nome, tipo, fabricante, caNumero, caValidade, prazoUsoDias, unidade, estoqueMinimo, categoria, codigoInterno, descricao, exigeTamanho],
   );
 
   return mapear(rows[0]);
@@ -208,28 +217,6 @@ async function buscarPorIdParaVinculo(executor, empresaId, id) {
   );
 
   return mapear(rows[0]);
-}
-
-/**
- * Contagem da validade do CA dos materiais ATIVOS da empresa, para o
- * dashboard (Parte C6), com a mesma classificação de Itens Disponíveis (C3):
- * antes de hoje -> vencido; de hoje até hoje + diasAlerta -> a vencer;
- * sem data -> fora das duas contagens.
- */
-async function contarValidadeCa(executor, empresaId, diasAlerta) {
-  exigirEmpresa(empresaId);
-  if (!Number.isInteger(diasAlerta) || diasAlerta < 1) {
-    throw new TypeError('prazo de alerta da validade do CA inválido');
-  }
-  const { rows } = await executor.query(
-    `SELECT count(*) FILTER (WHERE ca_validade < CURRENT_DATE)::int AS vencido,
-            count(*) FILTER (WHERE ca_validade >= CURRENT_DATE AND ca_validade <= CURRENT_DATE + $2::int)::int AS a_vencer
-       FROM materiais
-      WHERE empresa_id = $1
-        AND ativo`,
-    [empresaId, diasAlerta],
-  );
-  return { vencido: rows[0].vencido, aVencer: rows[0].a_vencer };
 }
 
 /**
@@ -328,9 +315,11 @@ async function atualizar(executor, empresaId, id, {
   categoria = null, categoriaInformado = false,
   codigoInterno = null, codigoInternoInformado = false,
   descricao = null, descricaoInformado = false,
+  exigeTamanho = null,
 } = {}) {
   exigirEmpresa(empresaId);
   exigirId(id, 'identificador de material');
+  exigirExigeTamanhoOpcional(exigeTamanho);
   if (nome !== null) {
     exigirNome(nome);
   }
@@ -381,7 +370,8 @@ async function atualizar(executor, empresaId, id, {
             ativo = COALESCE($16, ativo),
             categoria = CASE WHEN $17::boolean THEN $18 ELSE categoria END,
             codigo_interno = CASE WHEN $19::boolean THEN $20 ELSE codigo_interno END,
-            descricao = CASE WHEN $21::boolean THEN $22 ELSE descricao END
+            descricao = CASE WHEN $21::boolean THEN $22 ELSE descricao END,
+            exige_tamanho = COALESCE($23::boolean, exige_tamanho)
       WHERE empresa_id = $1 AND id = $2
       RETURNING ${PROJECAO}`,
     [
@@ -395,6 +385,7 @@ async function atualizar(executor, empresaId, id, {
       categoriaInformado, categoria,
       codigoInternoInformado, codigoInterno,
       descricaoInformado, descricao,
+      exigeTamanho,
     ],
   );
 
@@ -406,7 +397,6 @@ module.exports = {
   buscarPorId,
   buscarPorIdParaAtualizacao,
   buscarPorIdParaVinculo,
-  contarValidadeCa,
   listarPorEmpresa,
   contarPorEmpresa,
   atualizar,

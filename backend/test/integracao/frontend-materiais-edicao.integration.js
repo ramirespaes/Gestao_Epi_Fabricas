@@ -6,6 +6,7 @@ const express = require('express');
 const http = require('node:http');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { inserirLote } = require('./helpers/estoque-lotes');
 const { criarAuthGlobalController } = require('../../src/controllers/auth-global.controller');
 const { criarAuthGlobalRoutes } = require('../../src/routes/auth-global.routes');
 const { criarMaterialController } = require('../../src/controllers/material.controller');
@@ -43,7 +44,7 @@ const EpiMateriais = require('../../../frontend/js/materiais');
  * da empresa (404).
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 40 }, (_, i) => String(i).padStart(3, '0'));
+const TODAS_AS_MIGRATIONS = Array.from({ length: 45 }, (_, i) => String(i).padStart(3, '0'));
 const SENHA = 'senha-forte-da-melhoria-c2-2026';
 const EMAILS = {
   master: 'master.edicao@exemplo-cliente.com.br',     // MASTER em A: visualizar, criar, editar, MOVIMENTAR_ESTOQUE
@@ -158,9 +159,10 @@ describe('Melhoria C2 — edição de material e entrada inicial (PostgreSQL rea
 
     // Material de partida: cadastro pela página com "Sim", 30 no tamanho 42.
     await entrar(EMAILS.master, empresa.A);
+    // A tela ainda não pergunta se o material usa tamanho; completo o corpo aqui.
     const m = EpiMateriais.formulario.montarCorpo(FORMULARIO);
     assert.equal(m.ok, true, JSON.stringify(m));
-    const r = await EpiMateriais.fluxo.cadastrar({ corpo: m.corpo, entrada: m.entrada, podeMovimentar: true });
+    const r = await EpiMateriais.fluxo.cadastrar({ corpo: { ...m.corpo, exigeTamanho: true }, entrada: m.entrada, podeMovimentar: true });
     assert.equal(r.ok && r.entrada.realizada, true, JSON.stringify(r));
     idBotina = r.material.id;
   });
@@ -219,7 +221,7 @@ describe('Melhoria C2 — edição de material e entrada inicial (PostgreSQL rea
     }
   }
 
-  test('validade do CA 15/10/2026 é 15/10/2026 em São Paulo, UTC, Tóquio e Berlim: consulta, lista, estoque, formulário de edição e C3', async () => {
+  test('validade do CA 15/10/2026 é 15/10/2026 em São Paulo, UTC, Tóquio e Berlim: consulta, lista, estoque e formulário de edição', async () => {
     await entrar(EMAILS.master, empresa.A);
     await pool.query("UPDATE materiais SET ca_validade = '2026-10-15' WHERE id = $1", [idBotina]);
     for (const fuso of FUSOS) {
@@ -227,14 +229,12 @@ describe('Melhoria C2 — edição de material e entrada inicial (PostgreSQL rea
         const um = await EpiMateriais.acoes.buscar(idBotina);
         const lista = await EpiMateriais.acoes.listar({ ativo: true, limite: 100 });
         const estoque = await EpiMateriais.acoes.estoque(idBotina);
-        const c3 = await EpiHttp.requisitar('GET', '/estoque/itens-disponiveis?limite=100');
-        assert.deepEqual([um.ok, lista.ok, estoque.ok, c3.ok], [true, true, true, true], fuso);
+        assert.deepEqual([um.ok, lista.ok, estoque.ok], [true, true, true], fuso);
         assert.deepEqual([
           um.dados.material.caValidade,
           lista.dados.materiais.find((m) => m.id === idBotina).caValidade,
           estoque.dados.material.caValidade,
-          c3.dados.itens.find((i) => i.materialId === idBotina).caValidade,
-        ], ['2026-10-15', '2026-10-15', '2026-10-15', '2026-10-15'], fuso);
+        ], ['2026-10-15', '2026-10-15', '2026-10-15'], fuso);
         assert.equal(EpiMateriais.formulario.camposDoMaterial(um.dados.material).campos.caValidade, '2026-10-15', fuso);
       });
     }
@@ -291,6 +291,8 @@ describe('Melhoria C2 — edição de material e entrada inicial (PostgreSQL rea
     assert.equal(g.ok, true, JSON.stringify(g));
     assert.deepEqual(g.chips.map((c) => [c.tamanho, c.quantidade]), [['PP', 0], ['P', 0], ['M', 0], ['G', 0], ['GG', 0], ['42', 30]]);
 
+    // Itens Disponíveis lê os lotes: registro o mesmo saldo da botina como lote.
+    await inserirLote(pool, { empresaId: empresa.A, materialId: idBotina, tamanho: '42', quantidade: 30, ca: '12345', validade: '2099-12-31' });
     const c3 = await EpiHttp.requisitar('GET', '/estoque/itens-disponiveis?limite=100');
     assert.equal(c3.ok, true, JSON.stringify(c3));
     const linhas = c3.dados.itens.filter((i) => i.materialId === idBotina);
@@ -301,7 +303,7 @@ describe('Melhoria C2 — edição de material e entrada inicial (PostgreSQL rea
     const nav = await entrar(EMAILS.master, empresa.A);
     const m = EpiMateriais.formulario.montarCorpo({ ...FORMULARIO, nome: 'Sem estoque C2', codigoInterno: 'ED-002', registrarEntrada: 'nao' });
     assert.equal(m.entrada, null);
-    const r = await EpiMateriais.fluxo.cadastrar({ corpo: m.corpo, entrada: m.entrada, podeMovimentar: true });
+    const r = await EpiMateriais.fluxo.cadastrar({ corpo: { ...m.corpo, exigeTamanho: true }, entrada: m.entrada, podeMovimentar: true });
     assert.equal(r.ok, true, JSON.stringify(r));
     assert.deepEqual(await saldos(r.material.id), []);
     assert.equal(nav.chamadas.some((c) => /estoque\/movimentar/.test(c)), false);
@@ -351,13 +353,13 @@ describe('Melhoria C2 — edição de material e entrada inicial (PostgreSQL rea
     before(async () => {
       await entrar(EMAILS.master, empresa.A);
       const m = EpiMateriais.formulario.montarCorpo({ ...FORMULARIO, nome: 'Botina teste validade C3', codigoInterno: 'ED-C3-002', caNumero: '', registrarEntrada: 'nao' });
-      const r = await EpiMateriais.fluxo.cadastrar({ corpo: m.corpo, entrada: m.entrada, podeMovimentar: true });
+      const r = await EpiMateriais.fluxo.cadastrar({ corpo: { ...m.corpo, exigeTamanho: true }, entrada: m.entrada, podeMovimentar: true });
       assert.equal(r.ok, true, JSON.stringify(r));
       idSemEstoque = r.material.id;
       assert.deepEqual(await saldos(idSemEstoque), []);
     });
 
-    test('5 pares no tamanho 35: mesmo material e código, linha 35 criada com 5, ENTRADA auditada, nenhum PATCH, grade e C3 com o novo saldo', async () => {
+    test('5 pares no tamanho 35: mesmo material e código, linha 35 criada com 5, ENTRADA auditada, nenhum PATCH, grade com o novo saldo', async () => {
       const nav = await entrar(EMAILS.master, empresa.A);
       const materialAntes = await linhaMaterial(idSemEstoque);
       const auditoriaAntes = await contarAuditoria('ESTOQUE_MOVIMENTADO');
@@ -377,9 +379,6 @@ describe('Melhoria C2 — edição de material e entrada inicial (PostgreSQL rea
 
       const g = await EpiMateriais.fluxo.carregarGrade(idSemEstoque);
       assert.deepEqual(g.chips.find((c) => c.tamanho === '35'), { tamanho: '35', quantidade: 5, situacao: 'com-saldo' });
-      const c3 = await EpiHttp.requisitar('GET', '/estoque/itens-disponiveis?limite=100');
-      assert.deepEqual(c3.dados.itens.filter((i) => i.materialId === idSemEstoque).map((i) => [i.codigoInterno, i.tamanho, i.saldo, i.disponivel, i.unidade]),
-        [['ED-C3-002', '35', 5, 5, 'par']]);
     });
 
     test('segunda entrada no mesmo tamanho soma ao saldo; tamanho novo cria outra linha', async () => {

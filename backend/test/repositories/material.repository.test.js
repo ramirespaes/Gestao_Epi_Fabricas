@@ -68,6 +68,7 @@ const mapeada = {
   categoria: null,
   codigoInterno: null,
   descricao: null,
+  exigeTamanho: null,
   ativo: true,
   criadoEm: new Date('2026-09-23T12:00:00Z'),
   atualizadoEm: new Date('2026-09-23T12:00:00Z'),
@@ -84,7 +85,7 @@ describe('criar', () => {
     assert.match(texto, /returning/i);
     const colunas = texto.slice(texto.indexOf('('), texto.search(/\bvalues\b/i));
     assert.doesNotMatch(colunas, /\bativo\b/i, 'ativo nasce do DEFAULT, não é enviado');
-    assert.deepEqual(valores, [EMPRESA_A, 'Botina de segurança', null, null, null, null, null, 'unidade', 0, null, null, null]);
+    assert.deepEqual(valores, [EMPRESA_A, 'Botina de segurança', null, null, null, null, null, 'unidade', 0, null, null, null, null]);
     assert.deepEqual(material, mapeada);
   });
 
@@ -105,7 +106,7 @@ describe('criar', () => {
 
     assert.deepEqual(executor.chamadas[0].valores, [
       EMPRESA_A, 'Botina de segurança', 'Sapatão / Botina', 'Bracol', '38271', '2026-08-15', 365, 'par', 5,
-      null, null, null,
+      null, null, null, null,
     ]);
   });
 
@@ -278,6 +279,7 @@ describe('atualizar', () => {
       false, null, false, null, false, null, false, null, false, null,
       null, null, null,
       false, null, false, null, false, null,
+      null,
     ]);
   });
 
@@ -291,6 +293,7 @@ describe('atualizar', () => {
       false, null, false, null, false, null, false, null, false, null,
       null, null, null,
       false, null, false, null, false, null,
+      null,
     ]);
   });
 
@@ -369,5 +372,40 @@ describe('validade do CA como data pura — ajuste pós-melhoria C2 (25/09/2026)
     for (const { texto } of executor.chamadas) {
       assert.match(texto, /to_char\(ca_validade, 'YYYY-MM-DD'\) AS ca_validade/, texto);
     }
+  });
+});
+
+describe('exige_tamanho — migration 044', () => {
+  test('a projeção lê exige_tamanho e o mapeamento devolve exigeTamanho, inclusive o null do legado', async () => {
+    for (const valor of [true, false, null]) {
+      const executor = executorFalso([linha({ exige_tamanho: valor })]);
+      const r = await buscarPorId(executor, EMPRESA_A, 30);
+      assert.match(executor.chamadas[0].texto, /\bexige_tamanho\b/);
+      assert.equal(r.exigeTamanho, valor);
+    }
+  });
+
+  test('criar grava exige_tamanho como parâmetro', async () => {
+    const executor = executorFalso([linha({ exige_tamanho: false })]);
+    await criar(executor, { empresaId: EMPRESA_A, nome: 'Óculos', prazoUsoDias: 180, exigeTamanho: false });
+    const { texto, valores } = executor.chamadas[0];
+    assert.match(texto.slice(0, texto.search(/\bvalues\b/i)), /\bexige_tamanho\b/);
+    assert.equal(valores.at(-1), false);
+  });
+
+  test('atualizar: ausente mantém o valor atual; informado grava; nunca apaga para null', async () => {
+    const executor = executorFalso([linha()], [linha({ exige_tamanho: true })]);
+    await atualizar(executor, EMPRESA_A, 30, {});
+    await atualizar(executor, EMPRESA_A, 30, { exigeTamanho: true });
+    const [ausente, informado] = executor.chamadas;
+    assert.match(ausente.texto, /exige_tamanho\s*=\s*COALESCE\(\$23::boolean,\s*exige_tamanho\)/);
+    assert.deepEqual([ausente.valores.length, ausente.valores.at(-1), informado.valores.at(-1)], [23, null, true]);
+  });
+
+  test('recusa valor que não é booleano antes de consultar', async () => {
+    const executor = executorFalso([]);
+    await assert.rejects(() => criar(executor, { empresaId: EMPRESA_A, nome: 'Óculos', exigeTamanho: 'sim' }), /tamanho/);
+    await assert.rejects(() => atualizar(executor, EMPRESA_A, 30, { exigeTamanho: 1 }), /tamanho/);
+    assert.equal(executor.chamadas.length, 0);
   });
 });

@@ -29,7 +29,10 @@ const { pool } = require('../config/database');
  *
  * Caminhos finais, quando montado por app.js sob /api:
  *   GET  /api/materiais/:id/estoque
+ *   GET  /api/materiais/:id/estoque/lotes
  *   POST /api/materiais/:id/estoque/movimentar
+ *   POST /api/materiais/:id/estoque/entradas
+ *   POST /api/estoque/lotes/:loteId/baixas
  */
 
 const RECURSO = 'materials';
@@ -47,11 +50,31 @@ function criarEstoqueRoutes({ controller, exigirSessao: exigirSessaoInjetado, po
     validar({ params: estoqueSchemas.consultar.params }),
     controller.consultar,
   );
+  router.get(
+    '/materiais/:id/estoque/lotes',
+    exigirSessaoInjetado, exigirVisualizarMaterial,
+    validar({ params: estoqueSchemas.consultar.params }),
+    controller.lotes,
+  );
+  // Legado: grava em estoque_tamanhos, que nenhuma leitura usa mais. Fica só
+  // enquanto o materials.html depende dela; nenhum fluxo novo pode usá-la.
   router.post(
     '/materiais/:id/estoque/movimentar',
     exigirSessaoInjetado, exigirMovimentarEstoque,
     validar({ params: estoqueSchemas.movimentar.params, body: estoqueSchemas.movimentar.body }),
     controller.movimentar,
+  );
+  router.post(
+    '/materiais/:id/estoque/entradas',
+    exigirSessaoInjetado, exigirMovimentarEstoque,
+    validar({ params: estoqueSchemas.entrada.params, body: estoqueSchemas.entrada.body }),
+    controller.entrada,
+  );
+  router.post(
+    '/estoque/lotes/:loteId/baixas',
+    exigirSessaoInjetado, exigirMovimentarEstoque,
+    validar({ params: estoqueSchemas.baixa.params, body: estoqueSchemas.baixa.body }),
+    controller.baixa,
   );
 
   return router;

@@ -26,7 +26,7 @@ function criarMaterialController({ pool: poolInjetado }) {
   return {
     async criar(req, res) {
       const {
-        nome, tipo, fabricante, caNumero, caValidade, prazoUsoDias, unidade, estoqueMinimo,
+        nome, tipo, fabricante, caNumero, caValidade, prazoUsoDias, exigeTamanho, unidade, estoqueMinimo,
         categoria, codigoInterno, descricao,
       } = req.validado.body;
 
@@ -39,6 +39,7 @@ function criarMaterialController({ pool: poolInjetado }) {
         caNumero: caNumero ?? null,
         caValidade: caValidade ?? null,
         prazoUsoDias: prazoUsoDias ?? null,
+        exigeTamanho,
         unidade,
         estoqueMinimo,
         categoria: categoria ?? null,
@@ -95,6 +96,7 @@ function criarMaterialController({ pool: poolInjetado }) {
         ...(Object.hasOwn(corpo, 'caNumero') ? { caNumero: corpo.caNumero, caNumeroInformado: true } : {}),
         ...(Object.hasOwn(corpo, 'caValidade') ? { caValidade: corpo.caValidade, caValidadeInformado: true } : {}),
         ...(Object.hasOwn(corpo, 'prazoUsoDias') ? { prazoUsoDias: corpo.prazoUsoDias, prazoUsoDiasInformado: true } : {}),
+        ...(Object.hasOwn(corpo, 'exigeTamanho') ? { exigeTamanho: corpo.exigeTamanho } : {}),
         // `unidade` não é repassada: o schema de alterar não a aceita (unidade imutável).
         ...(Object.hasOwn(corpo, 'estoqueMinimo') ? { estoqueMinimo: corpo.estoqueMinimo } : {}),
         ...(Object.hasOwn(corpo, 'categoria') ? { categoria: corpo.categoria, categoriaInformado: true } : {}),

@@ -61,7 +61,7 @@ const ESCOPO_PROVISIONAMENTO_MASTER = Object.freeze({
     // Parte C6: Dashboard é consulta — só visualizar; cada indicador ainda exige a fonte.
     Object.freeze({ recurso: 'dashboard', operacoes: Object.freeze(['visualizar']) }),
   ]),
-  // estoque.routes.js POST /materiais/:id/estoque/movimentar (migrations 003/017)
+  // estoque.routes.js: movimentar, entradas e baixas por lote (migrations 003/017)
   acoes: Object.freeze(['MOVIMENTAR_ESTOQUE']),
 });
 
