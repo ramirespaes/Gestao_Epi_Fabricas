@@ -797,15 +797,17 @@ Ao definir `engines`, preferir compatibilidade mínima coerente com o projeto e 
 
 Não alterar a versão mínima suportada sem explicar impacto.
 
-A versão mínima proposta para discussão é:
+A versão mínima aprovada para o backend é Node.js 22 ou superior, declarada em `backend/package.json`:
 
 ```json
 {
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   }
 }
 ```
+
+Essa decisão se refere ao backend.
 
 Não adicionar essa configuração silenciosamente.
 

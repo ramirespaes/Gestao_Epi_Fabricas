@@ -22,6 +22,9 @@
   "author": "",
   "license": "UNLICENSED",
   "type": "commonjs",
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
     "argon2": "^0.45.1",
     "cookie": "^0.7.2",
