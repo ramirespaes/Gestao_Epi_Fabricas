@@ -31,8 +31,6 @@ const material = (extra = {}) => ({
   nome: 'Botina de segurança',
   tipo: 'Sapatão / Botina',
   fabricante: 'Bracol',
-  caNumero: '38271',
-  caValidade: '2026-08-15',
   prazoUsoDias: 365,
   unidade: 'par',
   estoqueMinimo: 5,
@@ -494,5 +492,137 @@ describe('exige tamanho', () => {
     const escritas = mundoValido(t, { existente: material({ exigeTamanho: true }) });
     await esperarHttpError(servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ exigeTamanho: null })), 400, 'MATERIAL_DADOS_INVALIDOS');
     assert.equal(escritas.atualizar.mock.calls.length, 0);
+  });
+});
+
+describe('óculos com grau (migration 045)', () => {
+  const OCULOS = 'Óculos de proteção';
+  const novo = (extra) => ({ empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Óculos', prazoUsoDias: 180, exigeTamanho: false, ...extra });
+  const alteracao = (extra) => ({ empresaId: EMPRESA, atorId: ATOR_ID, materialId: MATERIAL_ID, ...extra });
+  const oculos = (oculosComGrau) => material({ tipo: OCULOS, oculosComGrau, exigeTamanho: false });
+
+  async function esperarRecusa(promessa, codigo) {
+    await assert.rejects(promessa, (erro) => {
+      assert.ok(HttpError.ehHttpError(erro), `esperado HttpError, veio ${erro && erro.name}: ${erro && erro.message}`);
+      assert.deepEqual([erro.status, erro.codigo], [400, 'VALIDACAO']);
+      assert.deepEqual(erro.detalhes.map((d) => [d.campo, d.codigo]), [['body.oculosComGrau', codigo]]);
+      return true;
+    });
+  }
+
+  test('cadastro de óculos com true ou false: grava e audita o valor escolhido', async (t) => {
+    for (const oculosComGrau of [true, false]) {
+      const escritas = mundoValido(t);
+      await servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipo: OCULOS, oculosComGrau }));
+      assert.equal(escritas.criar.mock.calls[0].arguments[1].oculosComGrau, oculosComGrau);
+      assert.equal(escritas.registrar.mock.calls[0].arguments[1].dadosNovos.oculosComGrau, oculosComGrau);
+    }
+  });
+
+  test('cadastro de óculos sem a informação, ou com null: 400 OCULOS_COM_GRAU_OBRIGATORIO antes de abrir transação', async (t) => {
+    for (const extra of [{}, { oculosComGrau: null }]) {
+      const escritas = mundoValido(t);
+      const cliente = criarClienteFalso();
+      await esperarRecusa(servico.criar(criarPoolFalso(cliente), novo({ tipo: OCULOS, ...extra })), 'OCULOS_COM_GRAU_OBRIGATORIO');
+      assert.deepEqual([cliente.chamadas.length, escritas.criar.mock.calls.length], [0, 0], JSON.stringify(extra));
+    }
+  });
+
+  test('o tipo é comparado exatamente: aparado vale; minúsculo, abreviado ou nome com "óculos" não é óculos de proteção', async (t) => {
+    const aparado = mundoValido(t);
+    await servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipo: `  ${OCULOS}  `, oculosComGrau: true }));
+    assert.equal(aparado.criar.mock.calls[0].arguments[1].oculosComGrau, true);
+    for (const extra of [{ tipo: 'óculos de proteção' }, { tipo: 'Óculos' }, { tipo: 'Luva', nome: 'Óculos de proteção incolor' }]) {
+      const escritas = mundoValido(t);
+      await esperarRecusa(servico.criar(criarPoolFalso(criarClienteFalso()), novo({ ...extra, oculosComGrau: true })), 'OCULOS_COM_GRAU_NAO_SE_APLICA');
+      assert.equal(escritas.criar.mock.calls.length, 0, JSON.stringify(extra));
+    }
+  });
+
+  test('cadastro de outro tipo ou sem tipo: true ou false é 400 OCULOS_COM_GRAU_NAO_SE_APLICA; ausente ou null grava null', async (t) => {
+    for (const tipo of ['Luva', null]) {
+      for (const oculosComGrau of [true, false]) {
+        const escritas = mundoValido(t);
+        await esperarRecusa(servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipo, oculosComGrau })), 'OCULOS_COM_GRAU_NAO_SE_APLICA');
+        assert.equal(escritas.criar.mock.calls.length, 0);
+      }
+      for (const extra of [{}, { oculosComGrau: null }]) {
+        const escritas = mundoValido(t);
+        await servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipo, ...extra }));
+        assert.equal(escritas.criar.mock.calls[0].arguments[1].oculosComGrau, null);
+      }
+    }
+  });
+
+  test('valor que não é booleano nem null: 400 MATERIAL_DADOS_INVALIDOS, no cadastro e na edição', async (t) => {
+    const escritas = mundoValido(t, { existente: oculos(true) });
+    await esperarHttpError(servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipo: OCULOS, oculosComGrau: 'sim' })), 400, 'MATERIAL_DADOS_INVALIDOS');
+    await esperarHttpError(servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ oculosComGrau: 1, oculosComGrauInformado: true })), 400, 'MATERIAL_DADOS_INVALIDOS');
+    assert.deepEqual([escritas.criar.mock.calls.length, escritas.atualizar.mock.calls.length], [0, 0]);
+  });
+
+  test('legado de óculos com NULL: alterar outro campo não mexe na informação', async (t) => {
+    const escritas = mundoValido(t, { existente: oculos(null) });
+    await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ nome: 'Óculos renomeado' }));
+    const campos = escritas.atualizar.mock.calls[0].arguments[3];
+    assert.equal(campos.oculosComGrauInformado, false, 'não informado = não mexer');
+    assert.equal(escritas.registrar.mock.calls[0].arguments[1].dadosAnteriores.oculosComGrau, null);
+  });
+
+  test('legado de óculos com NULL pode ser classificado como true ou false; só essa informação já é uma alteração', async (t) => {
+    for (const oculosComGrau of [true, false]) {
+      const escritas = mundoValido(t, { existente: oculos(null) });
+      await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ oculosComGrau, oculosComGrauInformado: true }));
+      const campos = escritas.atualizar.mock.calls[0].arguments[3];
+      assert.deepEqual([campos.oculosComGrauInformado, campos.oculosComGrau], [true, oculosComGrau]);
+    }
+  });
+
+  test('óculos classificados não voltam a NULL: null explícito é 400 OCULOS_COM_GRAU_OBRIGATORIO, com ROLLBACK', async (t) => {
+    const escritas = mundoValido(t, { existente: oculos(true) });
+    const cliente = criarClienteFalso();
+    await esperarRecusa(servico.alterar(criarPoolFalso(cliente), alteracao({ oculosComGrau: null, oculosComGrauInformado: true })), 'OCULOS_COM_GRAU_OBRIGATORIO');
+    assert.equal(escritas.atualizar.mock.calls.length, 0);
+    assertRecusaSemRastro(cliente, escritas);
+  });
+
+  test('óculos que passam a outro tipo: a informação é limpa para NULL; mandar true ou false junto é 400', async (t) => {
+    const escritas = mundoValido(t, { existente: oculos(true) });
+    await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ tipo: 'Luva', tipoInformado: true }));
+    const campos = escritas.atualizar.mock.calls[0].arguments[3];
+    assert.deepEqual([campos.oculosComGrauInformado, campos.oculosComGrau], [true, null]);
+
+    for (const oculosComGrau of [true, false]) {
+      const recusa = mundoValido(t, { existente: oculos(true) });
+      const cliente = criarClienteFalso();
+      await esperarRecusa(
+        servico.alterar(criarPoolFalso(cliente), alteracao({ tipo: 'Luva', tipoInformado: true, oculosComGrau, oculosComGrauInformado: true })),
+        'OCULOS_COM_GRAU_NAO_SE_APLICA',
+      );
+      assert.equal(recusa.atualizar.mock.calls.length, 0);
+      assertRecusaSemRastro(cliente, recusa);
+    }
+  });
+
+  test('outro tipo que passa a óculos: sem a informação é 400 OCULOS_COM_GRAU_OBRIGATORIO; com true ou false grava', async (t) => {
+    const recusa = mundoValido(t, { existente: material({ tipo: 'Luva', oculosComGrau: null }) });
+    const cliente = criarClienteFalso();
+    await esperarRecusa(servico.alterar(criarPoolFalso(cliente), alteracao({ tipo: OCULOS, tipoInformado: true })), 'OCULOS_COM_GRAU_OBRIGATORIO');
+    assertRecusaSemRastro(cliente, recusa);
+
+    for (const oculosComGrau of [true, false]) {
+      const escritas = mundoValido(t, { existente: material({ tipo: 'Luva', oculosComGrau: null }) });
+      await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ tipo: OCULOS, tipoInformado: true, oculosComGrau, oculosComGrauInformado: true }));
+      const campos = escritas.atualizar.mock.calls[0].arguments[3];
+      assert.deepEqual([campos.tipo, campos.oculosComGrauInformado, campos.oculosComGrau], [OCULOS, true, oculosComGrau]);
+    }
+  });
+
+  test('material que continua de outro tipo: true ou false na edição é 400 OCULOS_COM_GRAU_NAO_SE_APLICA', async (t) => {
+    for (const oculosComGrau of [true, false]) {
+      const escritas = mundoValido(t, { existente: material({ tipo: 'Luva', oculosComGrau: null }) });
+      await esperarRecusa(servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ oculosComGrau, oculosComGrauInformado: true })), 'OCULOS_COM_GRAU_NAO_SE_APLICA');
+      assert.equal(escritas.atualizar.mock.calls.length, 0);
+    }
   });
 });

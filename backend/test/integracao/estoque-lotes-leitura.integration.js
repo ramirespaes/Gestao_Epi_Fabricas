@@ -30,7 +30,7 @@ const loteRepo = require('../../src/repositories/estoque-lote.repository');
  * números mudariam.
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 45 }, (_, i) => String(i).padStart(3, '0'));
+const TODAS_AS_MIGRATIONS = Array.from({ length: 46 }, (_, i) => String(i).padStart(3, '0'));
 const HOJE = '2026-09-30';
 const NOITE_DE_30_09 = () => new Date('2026-10-01T02:30:00Z');
 const MADRUGADA_DE_01_10 = () => new Date('2026-10-01T03:30:00Z');
@@ -225,9 +225,10 @@ describe('leitura do estoque por lote (PostgreSQL real, data operacional control
     assert.deepEqual(a.itensDisponiveis, { permitido: true, valor: 47 });
     // Botina 41 (4 < 10), Botina 42 esgotada (0) e Óculos (físico 20, bloqueado 15, disponível 5 < 10).
     assert.deepEqual(a.estoqueAbaixoMinimo, { permitido: true, valor: 3 });
-    // Botina 40 vencida e Óculos vencido; não contam o lote zerado, o inativo, o sem CA, o que dispensa CA,
-    // o que vence hoje e o material sem estoque com CA legado vencido.
-    assert.deepEqual(a.caVencido, { permitido: true, valor: 2, aVencer: 2, diasAlerta: 60 });
+    // Botina 40 vencida, Óculos vencido e o lote com saldo do material inativo (E9: estoque físico não some ao
+    // inativar); não contam o lote zerado, o sem CA, o que dispensa CA, o que vence hoje e o material sem estoque
+    // com CA legado vencido. O disponível continua só de material ativo.
+    assert.deepEqual(a.caVencido, { permitido: true, valor: 3, aVencer: 2, diasAlerta: 60 });
 
     const b = (await get('masterB', '/api/dashboard/indicadores')).body.indicadores;
     assert.deepEqual([b.itensDisponiveis.valor, b.estoqueAbaixoMinimo.valor, b.caVencido.valor, b.caVencido.aVencer], [7, 0, 1, 0]);
@@ -257,6 +258,6 @@ describe('leitura do estoque por lote (PostgreSQL real, data operacional control
     assert.equal(lotes.hoje, '2026-10-01');
     assert.deepEqual(lotes.lotes.find((l) => l.tamanho === '41').situacaoCa, 'VENCIDO');
     const a = (await get('masterA', '/api/dashboard/indicadores', appMadrugada)).body.indicadores;
-    assert.deepEqual([a.itensDisponiveis.valor, a.caVencido.valor, a.caVencido.aVencer], [43, 3, 1]);
+    assert.deepEqual([a.itensDisponiveis.valor, a.caVencido.valor, a.caVencido.aVencer], [43, 4, 1]);
   });
 });

@@ -43,7 +43,7 @@ const EpiItens = require('../../../frontend/js/itens-disponiveis');
  * O saldo vem dos lotes, com a data operacional fixada em 30/09/2026.
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 45 }, (_, i) => String(i).padStart(3, '0'));
+const TODAS_AS_MIGRATIONS = Array.from({ length: 46 }, (_, i) => String(i).padStart(3, '0'));
 const HOJE = '2026-09-30';
 const RELOGIO = () => new Date('2026-09-30T15:00:00Z');
 const SENHA = 'senha-forte-da-parte-c3-2026';

@@ -5,41 +5,39 @@ const assert = require('node:assert/strict');
 
 const estoque = require('../../src/schemas/estoque.schema');
 
-/** Testes do schema de estoque (Bloco 9, Etapa A — correção pós-auditoria de 23/09/2026). */
+/** Testes do schema de estoque por lote (Bloco 9). */
 
-describe('quantidade — teto do INTEGER do PostgreSQL', () => {
+const CHAVE = '3f2b8c1e-9a4d-4e7b-8c2a-1d5e6f7a8b9c';
+
+describe('quantidade — teto do INTEGER do PostgreSQL, na entrada e na baixa', () => {
+  const corpos = (quantidade) => [
+    ['entrada', estoque.entrada.body, { tamanho: '40', quantidade, caNumero: '12345', caValidade: '2030-01-31', chaveIdempotencia: CHAVE }],
+    ['baixa', estoque.baixa.body, { quantidade, motivo: 'AVARIA', chaveIdempotencia: CHAVE }],
+  ];
+
   test('aceita exatamente o teto do INTEGER (2147483647)', () => {
-    const r = estoque.movimentar.body.safeParse({ tamanho: '40', tipo: 'ENTRADA', quantidade: 2147483647 });
-    assert.equal(r.success, true);
+    for (const [nome, schema, corpo] of corpos(2147483647)) assert.equal(schema.safeParse(corpo).success, true, nome);
   });
 
   test('rejeita quantidade acima do teto do INTEGER', () => {
-    const r = estoque.movimentar.body.safeParse({ tamanho: '40', tipo: 'ENTRADA', quantidade: 2147483648 });
-    assert.equal(r.success, false);
+    for (const [nome, schema, corpo] of corpos(2147483648)) assert.equal(schema.safeParse(corpo).success, false, nome);
   });
 
   test('rejeita quantidade zero ou negativa', () => {
     for (const quantidade of [0, -1]) {
-      const r = estoque.movimentar.body.safeParse({ tamanho: '40', tipo: 'ENTRADA', quantidade });
-      assert.equal(r.success, false);
+      for (const [nome, schema, corpo] of corpos(quantidade)) assert.equal(schema.safeParse(corpo).success, false, `${nome} ${quantidade}`);
     }
   });
 });
 
-describe('motivo — null explícito não gera invalid_union', () => {
-  test('motivo null é aceito, com o código correto quando o conteúdo é inválido', () => {
-    const nulo = estoque.movimentar.body.safeParse({ tamanho: '40', tipo: 'ENTRADA', quantidade: 1, motivo: null });
-    assert.equal(nulo.success, true);
-    assert.equal(nulo.data.motivo, null);
-
-    const invalido = estoque.movimentar.body.safeParse({ tamanho: '40', tipo: 'ENTRADA', quantidade: 1, motivo: 'x'.repeat(300) });
-    assert.equal(invalido.success, false);
-    assert.equal(invalido.error.issues[0].code, 'custom');
-    assert.equal(invalido.error.issues[0].params.codigo, 'MOTIVO_INVALIDO');
+describe('caminho antigo por tamanho: sem schema', () => {
+  test('não há mais schema de movimentação nem de consulta por tamanho', () => {
+    assert.equal('movimentar' in estoque, false);
+    assert.equal('consultar' in estoque, false);
+    assert.equal(estoque.lotes.params.safeParse({ id: '7' }).data.id, 7);
   });
 });
 
-const CHAVE = '3f2b8c1e-9a4d-4e7b-8c2a-1d5e6f7a8b9c';
 const issuesDe = (r) => r.error.issues.map((i) => [i.path.join('.'), i.code, i.params ? i.params.codigo : undefined]);
 
 describe('entrada — CA e validade sempre obrigatórios', () => {
@@ -162,5 +160,30 @@ describe('baixa — motivos da 042 e justificativa do OUTRO', () => {
     assert.equal(estoque.baixa.body.safeParse(valida({ loteId: 1 })).success, false, 'o lote vem da rota');
     assert.equal(estoque.baixa.params.safeParse({ loteId: '7' }).data.loteId, 7);
     assert.equal(estoque.baixa.params.safeParse({ loteId: '07' }).success, false);
+  });
+});
+
+describe('operacoes — filtros do histórico (E8)', () => {
+  const q = (query) => estoque.operacoes.query.safeParse(query);
+
+  test('sem filtro: página 1 e limite 50; tipos só os três da 042', () => {
+    assert.deepEqual(q({}).data, { pagina: 1, limite: 50 });
+    assert.deepEqual([...estoque.TIPOS_OPERACAO], ['SALDO_INICIAL', 'ENTRADA', 'BAIXA']);
+    for (const tipo of estoque.TIPOS_OPERACAO) assert.equal(q({ tipo }).data.tipo, tipo);
+    for (const tipo of ['ENTREGA', 'baixa', '', ['BAIXA', 'ENTRADA']]) assert.equal(q({ tipo }).success, false, String(tipo));
+  });
+
+  test('período: datas de calendário, o mesmo dia vale, e a data final antes da inicial é recusada', () => {
+    assert.deepEqual(q({ de: '2026-09-09', ate: '2026-09-09' }).data, { de: '2026-09-09', ate: '2026-09-09', pagina: 1, limite: 50 });
+    for (const data of ['2026-13-01', '2026-02-30', '09/09/2026', 'ontem']) assert.equal(q({ de: data }).success, false, data);
+    assert.deepEqual(issuesDe(q({ de: '2026-09-10', ate: '2026-09-09' })), [['ate', 'custom', 'PERIODO_INVERTIDO']]);
+  });
+
+  test('busca aparada até 100 caracteres; limite até 100; nenhum parâmetro fora da lista', () => {
+    assert.equal(q({ busca: '  CA-777  ' }).data.busca, 'CA-777');
+    assert.equal(q({ busca: 'x'.repeat(101) }).success, false);
+    assert.equal(q({ limite: '100' }).data.limite, 100);
+    for (const limite of ['0', '101', '-1', '1e2']) assert.equal(q({ limite }).success, false, limite);
+    for (const extra of [{ ordem: 'criado_em' }, { empresaId: '2' }, { usuarioId: '1' }]) assert.equal(q(extra).success, false, JSON.stringify(extra));
   });
 });

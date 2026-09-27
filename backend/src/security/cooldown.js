@@ -64,6 +64,10 @@ const ROTULO_CONVITE_MASTER = 'CONVITE_MASTER';
 // administrador da plataforma, como identidade global e como conta legada
 // de uma empresa tem três contadores de cooldown independentes.
 const ROTULO_IDENTIDADE_GLOBAL = 'IDENTIDADE_GLOBAL';
+// Rótulo do quinto contexto: aceite de convite de USUÁRIO de uma empresa
+// (Bloco 9, parte F, migration 046). O mesmo token nunca coincide com a
+// chave do convite do MASTER.
+const ROTULO_CONVITE_USUARIO = 'CONVITE_USUARIO';
 const TOKEN_CONVITE_FORMATO = /^[A-Za-z0-9_-]{43}$/;
 
 function gerarChaveCooldown(cnpj, email) {
@@ -130,6 +134,20 @@ function gerarChaveCooldownPlataforma(email) {
  * sem o valor — um "token" malformado nem chega a ganhar chave.
  */
 function gerarChaveCooldownConvite(tokenConvite) {
+  return chaveDeTokenDeConvite(ROTULO_CONVITE_MASTER, tokenConvite);
+}
+
+/**
+ * Chave opaca de cooldown do ACEITE DE CONVITE de usuário (migration 046):
+ * mesma construção de gerarChaveCooldownConvite, com o rótulo
+ * CONVITE_USUARIO. Cada link tem o próprio contador, separado do convite
+ * do MASTER e dos logins.
+ */
+function gerarChaveCooldownConviteUsuario(tokenConvite) {
+  return chaveDeTokenDeConvite(ROTULO_CONVITE_USUARIO, tokenConvite);
+}
+
+function chaveDeTokenDeConvite(rotulo, tokenConvite) {
   if (typeof tokenConvite !== 'string' || !TOKEN_CONVITE_FORMATO.test(tokenConvite)) {
     throw new TypeError('token de convite com formato inválido');
   }
@@ -138,7 +156,7 @@ function gerarChaveCooldownConvite(tokenConvite) {
   try {
     return crypto
       .createHmac('sha256', segredo)
-      .update(ROTULO_CONVITE_MASTER, 'utf8')
+      .update(rotulo, 'utf8')
       .update(SEPARADOR, 'utf8')
       .update(tokenConvite, 'utf8')
       .digest('hex');
@@ -206,6 +224,7 @@ module.exports = {
   gerarChaveCooldown,
   gerarChaveCooldownPlataforma,
   gerarChaveCooldownConvite,
+  gerarChaveCooldownConviteUsuario,
   gerarChaveCooldownGlobal,
   chaveCooldownTemFormatoValido,
   derivarAdvisoryLock64,

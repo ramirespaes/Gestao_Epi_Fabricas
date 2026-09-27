@@ -4596,7 +4596,7 @@
 
     function openExpiredStock(){
       const navLinks = document.querySelectorAll('.nav a');
-      const stockValidityNav = Array.from(navLinks).find(a => a.textContent.includes('Validade do Estoque'));
+      const stockValidityNav = Array.from(navLinks).find(a => a.textContent.includes('Validade de estoque'));
       if(stockValidityNav) setActiveNav(stockValidityNav);
       showView('stockValidityView');
       const expiredSection = document.querySelector('#stockValidityView .card:nth-of-type(2)');
@@ -4605,7 +4605,7 @@
 
     function openAvailableItems(){
       const navLinks = document.querySelectorAll('.nav a');
-      const availableNav = Array.from(navLinks).find(a => a.textContent.includes('Itens Disponíveis'));
+      const availableNav = Array.from(navLinks).find(a => a.textContent.includes('Análise de estoque'));
       if(availableNav) setActiveNav(availableNav);
       showView('availableItemsView');
     }

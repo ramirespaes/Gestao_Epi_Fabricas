@@ -25,13 +25,16 @@ function exigirId(valor, nome) {
  * ATIVOS e, além deles, os inativos que já estão vinculados (um vínculo
  * existente continua visível — e removível — depois da inativação).
  * Ordenados por nome sem diferenciar maiúsculas.
+ *
+ * O GHE associa o material, não um CA: o CA real é o do lote, conhecido na
+ * entrega. As colunas antigas de CA do cadastro não são lidas.
  */
 async function listarMatriz(executor, empresaId, gheId) {
   exigirId(empresaId, 'identificador de empresa');
   exigirId(gheId, 'identificador de GHE');
 
   const { rows } = await executor.query(
-    `SELECT m.id, m.nome, m.tipo, m.categoria, m.codigo_interno, m.ca_numero, m.prazo_uso_dias, m.unidade, m.ativo,
+    `SELECT m.id, m.nome, m.tipo, m.categoria, m.codigo_interno, m.prazo_uso_dias, m.unidade, m.ativo,
             (gm.id IS NOT NULL) AS vinculado
        FROM materiais m
        LEFT JOIN ghe_materiais gm
@@ -48,7 +51,6 @@ async function listarMatriz(executor, empresaId, gheId) {
     tipo: l.tipo,
     categoria: l.categoria ?? null,
     codigoInterno: l.codigo_interno ?? null,
-    caNumero: l.ca_numero,
     prazoUsoDias: l.prazo_uso_dias,
     unidade: l.unidade,
     ativo: l.ativo,

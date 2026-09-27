@@ -11,7 +11,7 @@ O comando termina com código 0 quando gera o pacote e com código 1 quando o re
 
 ## Por que existe
 
-As páginas legadas do protótipo continuam no repositório: são 17 em `pages/`, mais `js/main.js` e `js/db-api.js`. Elas carregam SheetJS 0.18.5 por CDN, sem SRI e com CVE-2023-30533 e CVE-2024-22363, e simulam login e sessão, inclusive pela URL (`?_s=`).
+As páginas legadas do protótipo continuam no repositório: são 13 em `pages/` desde o fechamento do Bloco 9, mais `js/main.js` e `js/db-api.js`. Elas carregam SheetJS 0.18.5 por CDN, sem SRI e com CVE-2023-30533 e CVE-2024-22363, e simulam login e sessão, inclusive pela URL (`?_s=`).
 
 A origem do frontend está na allowlist de CORS da API com credenciais. Por isso, qualquer script que rode nessa origem age na API com a sessão real de quem estiver logado. Essas páginas não podem ser publicadas.
 
@@ -42,7 +42,7 @@ Acrescentar um arquivo à allowlist é uma decisão de segurança e passa por re
 
 | Item | Motivo |
 |---|---|
-| 17 páginas legadas, `js/main.js`, `js/db-api.js` | protótipo (ver acima) |
+| 13 páginas legadas, `js/main.js`, `js/db-api.js` | protótipo (ver acima) |
 | `js/auth-session.js` | nenhuma página publicada o carrega |
 | `index.html` da raiz | redirecionamento do protótipo, usado só em desenvolvimento |
 | `painel-privado/` | tem origem própria, com allowlist de CORS disjunta da do cliente; se for publicado, será um alvo separado, com allowlist própria |

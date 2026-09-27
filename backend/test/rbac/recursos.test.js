@@ -35,6 +35,9 @@ describe('recursos conhecidos', () => {
       assert.equal(typeof modulo.RECURSO, 'string');
       assert.ok(recursos.recursoConhecido(modulo.RECURSO), `${modulo.RECURSO} precisa estar em RECURSOS_CONHECIDOS`);
     }
+    for (const recurso of [estoqueRoutes.RECURSO_VALIDADE, estoqueRoutes.RECURSO_OPERACOES]) {
+      assert.ok(recursos.recursoConhecido(recurso), `${recurso} precisa estar em RECURSOS_CONHECIDOS`);
+    }
     assert.equal(recursos.recursoConhecido('inventado'), false);
     assert.equal(recursos.recursoConhecido(42), false);
   });
@@ -48,7 +51,7 @@ describe('recursos conhecidos', () => {
 });
 
 describe('escopo do provisionamento do MASTER', () => {
-  test('é EXATAMENTE o que as rotas do Bloco 9 exigem: 3 recursos com visualizar/criar/editar, availableItems e dashboard só visualizar (Partes C3 e C6), nenhum excluir, e 1 ação', () => {
+  test('é EXATAMENTE o que as rotas do Bloco 9 exigem: 3 recursos com visualizar/criar/editar, availableItems, dashboard, stockValidity e operations só visualizar (Partes C3, C6 e E9), nenhum excluir, e 1 ação', () => {
     const escopo = recursos.ESCOPO_PROVISIONAMENTO_MASTER;
     assert.equal(escopo.perfil, 'MASTER');
     assert.deepEqual(
@@ -59,6 +62,8 @@ describe('escopo do provisionamento do MASTER', () => {
         ['employeeGroups', ['visualizar', 'criar', 'editar']],
         ['availableItems', ['visualizar']],
         ['dashboard', ['visualizar']],
+        ['stockValidity', ['visualizar']],
+        ['operations', ['visualizar']],
       ],
     );
     assert.deepEqual([...escopo.acoes], ['MOVIMENTAR_ESTOQUE']);
@@ -68,7 +73,8 @@ describe('escopo do provisionamento do MASTER', () => {
   });
 
   test('o escopo cobre os recursos/ação das rotas do Bloco 9 e NADA além deles (não concede "tudo" ao MASTER)', () => {
-    const recursosDasRotas = new Set([materialRoutes.RECURSO, estoqueRoutes.RECURSO, funcionarioRoutes.RECURSO, gheRoutes.RECURSO, itensDisponiveisRoutes.RECURSO, dashboardRoutes.RECURSO]);
+    const recursosDasRotas = new Set([materialRoutes.RECURSO, estoqueRoutes.RECURSO, estoqueRoutes.RECURSO_VALIDADE, estoqueRoutes.RECURSO_OPERACOES,
+      funcionarioRoutes.RECURSO, gheRoutes.RECURSO, itensDisponiveisRoutes.RECURSO, dashboardRoutes.RECURSO]);
     const recursosDoEscopo = new Set(recursos.ESCOPO_PROVISIONAMENTO_MASTER.recursos.map((r) => r.recurso));
     assert.deepEqual([...recursosDoEscopo].sort(), [...recursosDasRotas].sort());
     assert.deepEqual([...recursos.ESCOPO_PROVISIONAMENTO_MASTER.acoes], [estoqueRoutes.ACAO_MOVIMENTAR_ESTOQUE]);

@@ -6,6 +6,7 @@ const identidadeRepo = require('../repositories/identidade.repository');
 const usuarioRepo = require('../repositories/usuario.repository');
 const sessaoRepo = require('../repositories/sessao.repository');
 const sessaoGlobalRepo = require('../repositories/sessao-global.repository');
+const auditoriaRepo = require('../repositories/auditoria.repository');
 const token = require('../security/token');
 
 /**
@@ -39,6 +40,13 @@ const token = require('../security/token');
  * completamente" é `encerrarTudo`: revoga a global E as sessões
  * empresariais que nasceram dela (LOGOUT_GLOBAL), na mesma transação.
  *
+ * AUDITORIA: toda ativação de contexto vai para logs_auditoria, na mesma
+ * transação. No destino, EMPRESA_SELECIONADA com o tipo: SELECAO_INICIAL,
+ * TROCA (um contexto desta pessoa em outra empresa ainda valia) ou RESELECAO
+ * (a mesma empresa de novo). Na origem, só numa troca, EMPRESA_CONTEXTO_
+ * ENCERRADO com o motivo. Cada empresa enxerga só o que aconteceu nela:
+ * nenhum registro cita a outra empresa, o usuário de lá ou a sessão global.
+ *
  * Não há aqui autorização por perfil, nem RBAC: MASTER, ADMINISTRADOR,
  * SUPERVISOR e USUARIO passam pelo mesmo caminho; o que muda entre eles são
  * as permissões decididas depois, por requisição, pelo middleware de
@@ -55,6 +63,15 @@ const MOTIVO = Object.freeze({
   LOGOUT: 'LOGOUT',
   NOVO_LOGIN: 'NOVO_LOGIN_GLOBAL',
   LOGIN_INCOMPLETO: 'LOGIN_INCOMPLETO',
+});
+const ACAO_AUDITORIA = Object.freeze({
+  SELECIONADA: 'EMPRESA_SELECIONADA',
+  ENCERRADA: 'EMPRESA_CONTEXTO_ENCERRADO',
+});
+const TIPO_SELECAO = Object.freeze({
+  INICIAL: 'SELECAO_INICIAL',
+  TROCA: 'TROCA',
+  RESELECAO: 'RESELECAO',
 });
 const MSG = Object.freeze({
   SESSAO_INVALIDA: 'Sessão inválida ou expirada',
@@ -129,7 +146,9 @@ async function listarEmpresas(pool, { identidadeId }) {
  * a sessão do cookie empresarial que a requisição já trazia, resolvida
  * pelo controller via buscarContextoSessao — revogada aqui, na mesma
  * transação, seja qual for a identidade dona dela (posse do cookie é
- * autoridade para encerrá-lo, exatamente como no logout).
+ * autoridade para encerrá-lo, exatamente como no logout). Ela traz também
+ * usuarioId e identidadeId, lidos do servidor: só a da mesma pessoa conta
+ * como troca na auditoria.
  *
  * @returns {Promise<{usuario: object, empresa: object, sessao: {id:string, expiraEm:Date}, token: string}>}
  */
@@ -167,9 +186,18 @@ async function selecionar(pool, {
     // Troca: TODA sessão empresarial ainda viva nascida deste login global
     // é revogada (não só a do cookie desta aba), e também a do cookie, se
     // ela veio de outro login. Mesma transação da criação da nova.
-    await sessaoRepo.revogarDaSessaoGlobal(client, sessaoGlobalId, MOTIVO.TROCA_EMPRESA);
+    const atingidas = await sessaoRepo.revogarDaSessaoGlobalComSituacao(
+      client, sessaoGlobalId, MOTIVO.TROCA_EMPRESA, authConfig.sessao.inatividadeMinutos,
+    );
+    // Contextos desta pessoa que ainda valiam e que esta operação encerrou.
+    // Sessão expirada, inativa ou já revogada não é contexto encerrado.
+    const encerrados = atingidas.filter((s) => s.valida).map((s) => ({ empresaId: s.empresaId, usuarioId: s.usuarioId }));
     if (sessaoEmpresarialAnterior !== null) {
-      await sessaoRepo.revogar(client, sessaoEmpresarialAnterior.empresaId, sessaoEmpresarialAnterior.sessaoId, MOTIVO.TROCA_EMPRESA);
+      const revogada = await sessaoRepo.revogar(client, sessaoEmpresarialAnterior.empresaId, sessaoEmpresarialAnterior.sessaoId, MOTIVO.TROCA_EMPRESA);
+      // A sessão de outra pessoa no mesmo navegador é encerrada, mas não é troca de ninguém.
+      if (revogada && sessaoEmpresarialAnterior.identidadeId === identidadeId) {
+        encerrados.push({ empresaId: sessaoEmpresarialAnterior.empresaId, usuarioId: sessaoEmpresarialAnterior.usuarioId });
+      }
     }
 
     const agora = await buscarInstanteReal(client);
@@ -186,6 +214,24 @@ async function selecionar(pool, {
       ip: ipP,
       dispositivo: dispositivoP,
       sessaoGlobalId,
+    });
+
+    // Cada empresa registra só o que aconteceu nela. Se esta gravação falhar,
+    // a transação inteira é desfeita e a troca não acontece.
+    const destino = vinculo.empresa.id;
+    const deOutraEmpresa = encerrados.filter((c) => c.empresaId !== destino);
+    let tipo = TIPO_SELECAO.INICIAL;
+    if (deOutraEmpresa.length > 0) tipo = TIPO_SELECAO.TROCA;
+    else if (encerrados.length > 0) tipo = TIPO_SELECAO.RESELECAO;
+    for (const origem of deOutraEmpresa) {
+      await auditoriaRepo.registrar(client, {
+        empresaId: origem.empresaId, usuarioId: origem.usuarioId, acao: ACAO_AUDITORIA.ENCERRADA,
+        ip: ipP, dispositivo: dispositivoP, contexto: { motivo: MOTIVO.TROCA_EMPRESA },
+      });
+    }
+    await auditoriaRepo.registrar(client, {
+      empresaId: destino, usuarioId: vinculo.usuarioId, acao: ACAO_AUDITORIA.SELECIONADA,
+      ip: ipP, dispositivo: dispositivoP, contexto: { tipo },
     });
 
     return {
@@ -295,4 +341,6 @@ module.exports = {
   encerrarTudo,
   AUTENTICADO_VIA,
   MOTIVO,
+  ACAO_AUDITORIA,
+  TIPO_SELECAO,
 };

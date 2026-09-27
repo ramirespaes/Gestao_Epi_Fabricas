@@ -1,7 +1,16 @@
 /* Portal do Cliente — SafeWork (Pacote 4). Estilo próprio, sem dependência externa. */
+/* O tema segue o sistema operacional (E10): claro por padrão, escuro pelos tokens abaixo.
+   --primaria é a cor de texto e borda; --primaria-fundo, a de fundo com texto branco. */
 :root {
-  --fundo: #f4f6f9; --cartao: #ffffff; --texto: #1c2430; --suave: #5b6675; --borda: #d9dee6;
-  --primaria: #1a3a6b; --primaria-texto: #ffffff; --erro: #b3261e; --erro-fundo: #fdecea; --info-fundo: #eaf1fb;
+  color-scheme: light dark;
+  --fundo: #f4f6f9; --cartao: #ffffff; --texto: #1c2430; --suave: #5b6675; --borda: #d9dee6; --fundo-suave: #fafbfc;
+  --primaria: #1a3a6b; --primaria-fundo: #1a3a6b; --primaria-texto: #ffffff; --erro: #b3261e; --erro-fundo: #fdecea; --info-fundo: #eaf1fb;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fundo: #1c1c1e; --cartao: #2c2c2e; --texto: #f2f2f7; --suave: #aeaeb2; --borda: #3a3a3c; --fundo-suave: #242426;
+    --primaria: #8fb3ff; --primaria-fundo: #2f5aa8; --erro: #ff6961; --erro-fundo: rgba(255, 69, 58, 0.15); --info-fundo: rgba(10, 132, 255, 0.15);
+  }
 }
 * { box-sizing: border-box; }
 body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--fundo); color: var(--texto); }
@@ -13,9 +22,9 @@ body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 .marca span { font-size: 0.85rem; color: var(--suave); }
 h1 { font-size: 1.1rem; margin: 0 0 16px; }
 label { display: block; font-size: 0.85rem; margin: 0 0 4px; }
-input { width: 100%; padding: 10px; margin-bottom: 14px; border: 1px solid var(--borda); border-radius: 6px; font-size: 0.95rem; }
+input { width: 100%; padding: 10px; margin-bottom: 14px; border: 1px solid var(--borda); border-radius: 6px; font-size: 0.95rem; background: var(--cartao); color: var(--texto); }
 button { font: inherit; cursor: pointer; }
-.botao { width: 100%; padding: 11px; border: none; border-radius: 6px; background: var(--primaria); color: var(--primaria-texto); font-size: 0.95rem; }
+.botao { width: 100%; padding: 11px; border: none; border-radius: 6px; background: var(--primaria-fundo); color: var(--primaria-texto); font-size: 0.95rem; }
 .botao:disabled { opacity: 0.6; cursor: default; }
 .botao.secundario { background: transparent; color: var(--primaria); border: 1px solid var(--primaria); }
 .mensagem { min-height: 1.2rem; font-size: 0.88rem; margin-bottom: 12px; }
@@ -24,12 +33,12 @@ button { font: inherit; cursor: pointer; }
 .mensagem:empty { padding: 0; background: none; }
 ul.empresas { list-style: none; margin: 0 0 16px; padding: 0; }
 ul.empresas li { margin-bottom: 8px; }
-button.empresa { width: 100%; text-align: left; padding: 12px 14px; border: 1px solid var(--borda); border-radius: 8px; background: #fff; }
+button.empresa { width: 100%; text-align: left; padding: 12px 14px; border: 1px solid var(--borda); border-radius: 8px; background: var(--cartao); color: var(--texto); }
 button.empresa:hover, button.empresa:focus { border-color: var(--primaria); outline: none; }
 button.empresa.atual { border-color: var(--primaria); background: var(--info-fundo); }
 .empresa-nome { display: block; font-weight: 600; }
 .empresa-detalhe { display: block; font-size: 0.8rem; color: var(--suave); margin-top: 2px; }
-header.topo { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; padding: 14px 22px; background: var(--primaria); color: #fff; }
+header.topo { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; padding: 14px 22px; background: var(--primaria-fundo); color: #fff; }
 header.topo .identificacao { font-size: 0.9rem; }
 header.topo .identificacao strong { display: block; font-size: 1rem; }
 header.topo nav { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -41,6 +50,6 @@ section.bloco p { margin: 6px 0; font-size: 0.92rem; }
 .modulos { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
 .modulos a, .modulos div { display: block; padding: 12px; border: 1px solid var(--borda); border-radius: 8px; text-decoration: none; color: var(--texto); font-size: 0.9rem; }
 .modulos a:hover { border-color: var(--primaria); }
-.modulos div { color: var(--suave); background: #fafbfc; }
+.modulos div { color: var(--suave); background: var(--fundo-suave); }
 .etiqueta { display: inline-block; font-size: 0.72rem; padding: 2px 7px; border-radius: 10px; background: var(--info-fundo); color: var(--primaria); margin-top: 6px; }
 .oculto { display: none !important; }

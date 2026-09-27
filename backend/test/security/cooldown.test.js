@@ -174,6 +174,34 @@ describe('gerarChaveCooldownConvite (Pacote 3 — aceite de convite do MASTER)',
   });
 });
 
+describe('gerarChaveCooldownConviteUsuario (parte F — aceite de convite de usuário)', () => {
+  const { gerarChaveCooldownConviteUsuario } = require('../../src/security/cooldown');
+  const TOKEN = 'Zm9ybWF0b2Jhc2U2NHVybGRldG9rZW5jb21fNDNjaGFy'.slice(0, 43);
+  const chave = gerarChaveCooldownConviteUsuario(TOKEN);
+
+  test('HMAC-SHA-256 sobre CONVITE_USUARIO + 0x0A + token, 64 hex; nunca igual à chave do convite do MASTER', () => {
+    assert.equal(chave, hmac(`CONVITE_USUARIO\n${TOKEN}`));
+    assert.match(chave, HEX64);
+    assert.equal(chaveCooldownTemFormatoValido(chave), true);
+    assert.notEqual(chave, gerarChaveCooldownConvite(TOKEN));
+  });
+
+  test('determinística; tokens diferentes geram chaves diferentes', () => {
+    assert.equal(gerarChaveCooldownConviteUsuario(TOKEN), chave);
+    assert.notEqual(gerarChaveCooldownConviteUsuario(`${TOKEN.slice(0, 42)}x`), chave);
+  });
+
+  test('exige o formato canônico do token: TypeError fixo, sem o valor', () => {
+    for (const ruim of ['abc', `${TOKEN}=`, TOKEN.slice(0, 42), null, 123, undefined, `${TOKEN}a`]) {
+      assert.throws(() => gerarChaveCooldownConviteUsuario(ruim), { name: 'TypeError', message: 'token de convite com formato inválido' });
+    }
+  });
+
+  test('a chave não contém o token nem o segredo', () => {
+    assertSemSensiveis(chave, [TOKEN.slice(0, 12), SEGREDO_HEX.slice(0, 12)], 'chave de convite de usuário');
+  });
+});
+
 describe('gerarChaveCooldownGlobal (Pacote 4 — login global do Portal do Cliente)', () => {
   const { gerarChaveCooldownGlobal } = require('../../src/security/cooldown');
   const chave = gerarChaveCooldownGlobal('  Pessoa@Exemplo-Cliente.com.br ');

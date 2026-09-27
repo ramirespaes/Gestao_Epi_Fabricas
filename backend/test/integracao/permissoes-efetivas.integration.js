@@ -19,6 +19,8 @@ const { criarMaterialController } = require('../../src/controllers/material.cont
 const { criarMaterialRoutes } = require('../../src/routes/material.routes');
 const { criarEstoqueController } = require('../../src/controllers/estoque.controller');
 const { criarEstoqueRoutes } = require('../../src/routes/estoque.routes');
+const { criarUsuarioAdministracaoController } = require('../../src/controllers/usuario-administracao.controller');
+const { criarUsuarioAdministracaoRoutes } = require('../../src/routes/usuario-administracao.routes');
 const { criarExigirSessao } = require('../../src/middleware/autenticacao');
 const { criarExigirSessaoGlobal } = require('../../src/middleware/autenticacao-global');
 const { criarLimitador } = require('../../src/middleware/rate-limit');
@@ -50,7 +52,7 @@ const EpiPermissoes = require('../../../frontend/js/permissoes-efetivas');
  * consulta; e o módulo real do frontend (falha fechada, empresa divergente).
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 45 }, (_, i) => String(i).padStart(3, '0'));
+const TODAS_AS_MIGRATIONS = Array.from({ length: 48 }, (_, i) => String(i).padStart(3, '0'));
 const SENHA = 'senha-forte-da-parte-c1-2026';
 const { cookieNome: C_EMPRESA, cookieNomeGlobal: C_GLOBAL } = authConfig.sessao;
 
@@ -58,6 +60,7 @@ const EMAILS = {
   master: 'master.c1@exemplo-cliente.com.br',
   adminGrupos: 'admin.grupos.c1@exemplo-cliente.com.br',
   adminSem: 'admin.sem.c1@exemplo-cliente.com.br',
+  adminUsuarios: 'admin.usuarios.c1@exemplo-cliente.com.br', // parte F: só GERENCIAR_USUARIOS
   supervisor: 'supervisor.c1@exemplo-cliente.com.br',
   usuario: 'usuario.c1@exemplo-cliente.com.br',
   multi: 'multi.c1@exemplo-cliente.com.br', // USUARIO em A, MASTER em B
@@ -108,11 +111,12 @@ describe('C1 — permissões efetivas (PostgreSQL real)', () => {
     const passou = (r) => r.status !== 403;
     const visualizar = passou(await request(app).get('/api/materiais').set('Cookie', cookie));
     const criar = passou(await request(app).post('/api/materiais').set('Cookie', cookie).send({ nome: `Material ${Math.random()}` }));
-    const movimentar = passou(await request(app).post(`/api/materiais/${u.materialA}/estoque/movimentar`).set('Cookie', cookie)
-      .send({ tamanho: 'M', tipo: 'ENTRADA', quantidade: 1 }));
+    // Corpo vazio: quem passa pela autorização recebe 400 da validação, e nada é gravado.
+    const movimentar = passou(await request(app).post(`/api/materiais/${u.materialA}/estoque/entradas`).set('Cookie', cookie).send({}));
     const grupos = passou(await request(app).get('/api/grupos-acesso').set('Cookie', cookie));
     const permissoesGrupo = passou(await request(app).get(`/api/grupos-acesso/${grupo.ativo}/permissoes/recursos`).set('Cookie', cookie));
-    return { visualizar, criar, movimentar, grupos, permissoesGrupo };
+    const usuarios = passou(await request(app).get('/api/administracao/usuarios').set('Cookie', cookie));
+    return { visualizar, criar, movimentar, grupos, permissoesGrupo, usuarios };
   }
 
   function previsao(p) {
@@ -122,6 +126,7 @@ describe('C1 — permissões efetivas (PostgreSQL real)', () => {
       movimentar: p.acoes.MOVIMENTAR_ESTOQUE,
       grupos: p.administracao.gruposAcesso.consultar,
       permissoesGrupo: p.administracao.permissoesGrupo.consultar,
+      usuarios: p.administracao.usuarios.consultar,
     };
   }
 
@@ -144,6 +149,7 @@ describe('C1 — permissões efetivas (PostgreSQL real)', () => {
     await vinculo('master', empresa.A, identidade.master, 'MASTER');
     await vinculo('adminGrupos', empresa.A, identidade.adminGrupos, 'ADMINISTRADOR');
     await vinculo('adminSem', empresa.A, identidade.adminSem, 'ADMINISTRADOR');
+    await vinculo('adminUsuarios', empresa.A, identidade.adminUsuarios, 'ADMINISTRADOR');
     await vinculo('supervisor', empresa.A, identidade.supervisor, 'SUPERVISOR');
     await vinculo('usuario', empresa.A, identidade.usuario, 'USUARIO');
     await vinculo('multiA', empresa.A, identidade.multi, 'USUARIO');
@@ -164,6 +170,8 @@ describe('C1 — permissões efetivas (PostgreSQL real)', () => {
     await q("INSERT INTO usuario_permissoes_recurso (empresa_id, usuario_id, recurso, pode_visualizar, concedido_por) VALUES ($1, $2, 'materials', false, $3)", [empresa.A, u.supervisor, u.master]);
     // Autoridade administrativa: ADMINISTRADOR com ADMINISTRAR_GRUPOS_ACESSO (só essa).
     await q("INSERT INTO usuario_autorizacoes (empresa_id, usuario_id, acao_codigo, autorizado_por) VALUES ($1, $2, 'ADMINISTRAR_GRUPOS_ACESSO', $3)", [empresa.A, u.adminGrupos, u.master]);
+    // Parte F: ADMINISTRADOR com GERENCIAR_USUARIOS (047, OBRIGATORIA), só essa.
+    await q("INSERT INTO usuario_autorizacoes (empresa_id, usuario_id, acao_codigo, autorizado_por) VALUES ($1, $2, 'GERENCIAR_USUARIOS', $3)", [empresa.A, u.adminUsuarios, u.master]);
     // Delegação: USUARIO com MOVIMENTAR_ESTOQUE repassável (ALTERNATIVA) — pode movimentar e delegar.
     await q("INSERT INTO usuario_autorizacoes (empresa_id, usuario_id, acao_codigo, autorizado_por, pode_delegar) VALUES ($1, $2, 'MOVIMENTAR_ESTOQUE', $3, true)", [empresa.A, u.usuario, u.master]);
 
@@ -181,6 +189,7 @@ describe('C1 — permissões efetivas (PostgreSQL real)', () => {
         criarGrupoPermissaoRoutes({ controller: criarGrupoPermissaoController({ pool }), exigirSessao }),
         criarMaterialRoutes({ controller: criarMaterialController({ pool }), exigirSessao, pool }),
         criarEstoqueRoutes({ controller: criarEstoqueController({ pool }), exigirSessao, pool }),
+        criarUsuarioAdministracaoRoutes({ controller: criarUsuarioAdministracaoController({ pool }), exigirSessao }),
       );
     });
     servidor = http.createServer(app);
@@ -194,20 +203,20 @@ describe('C1 — permissões efetivas (PostgreSQL real)', () => {
     if (contexto) await contexto.encerrar();
   });
 
-  test('formato: empresa/usuário/perfil da sessão, todos os recursos conhecidos, as ações do catálogo e as quatro áreas administrativas — só booleanos', async () => {
+  test('formato: empresa/usuário/perfil da sessão, todos os recursos conhecidos, as ações do catálogo e as cinco áreas administrativas — só booleanos', async () => {
     const p = await permissoes(await sessao(EMAILS.master, empresa.A));
     assert.deepEqual([p.empresaId, p.usuarioId, p.perfil], [empresa.A, u.master, 'MASTER']);
     assert.deepEqual(Object.keys(p.recursos).sort(), [...RECURSOS_CONHECIDOS].sort());
     const catalogo = (await permissaoRepo.listarAcoes(pool)).map((a) => a.codigo).sort();
     assert.deepEqual(Object.keys(p.acoes).sort(), catalogo);
     for (const r of Object.values(p.recursos)) assert.deepEqual(Object.keys(r).sort(), ['criar', 'editar', 'excluir', 'visualizar']);
-    assert.deepEqual(Object.keys(p.administracao).sort(), ['autorizacoesIndividuais', 'gruposAcesso', 'permissoesGrupo', 'vinculosGrupo']);
+    assert.deepEqual(Object.keys(p.administracao).sort(), ['autorizacoesIndividuais', 'gruposAcesso', 'permissoesGrupo', 'usuarios', 'vinculosGrupo']);
     const valores = JSON.stringify(p.recursos) + JSON.stringify(p.acoes) + JSON.stringify(p.administracao);
     assert.equal(/"[a-zA-Z]+":(?!true|false|\{)/.test(valores), false, 'só booleanos');
   });
 
   test('EQUIVALÊNCIA com as rotas reais, para cada perfil: o que o endpoint prevê é exatamente o que o middleware e os serviços decidem', async () => {
-    for (const [chave, email] of Object.entries({ master: EMAILS.master, adminGrupos: EMAILS.adminGrupos, adminSem: EMAILS.adminSem, supervisor: EMAILS.supervisor, usuario: EMAILS.usuario })) {
+    for (const [chave, email] of Object.entries({ master: EMAILS.master, adminGrupos: EMAILS.adminGrupos, adminSem: EMAILS.adminSem, adminUsuarios: EMAILS.adminUsuarios, supervisor: EMAILS.supervisor, usuario: EMAILS.usuario })) {
       const cookie = await sessao(email, empresa.A);
       const p = await permissoes(cookie);
       assert.deepEqual(previsao(p), await decisaoReal(cookie), `divergência para ${chave}`);
@@ -219,10 +228,21 @@ describe('C1 — permissões efetivas (PostgreSQL real)', () => {
     assert.deepEqual(p.recursos.materials, { visualizar: true, criar: true, editar: true, excluir: false });
     assert.equal(p.recursos.reports.visualizar, false, 'MASTER só tem o que foi provisionado — nada "de graça"');
     assert.equal(p.acoes.MOVIMENTAR_ESTOQUE, true);
-    for (const area of ['gruposAcesso', 'permissoesGrupo', 'vinculosGrupo']) {
+    for (const area of ['gruposAcesso', 'permissoesGrupo', 'vinculosGrupo', 'usuarios']) {
       assert.deepEqual(p.administracao[area], { consultar: true, alterar: true }, area);
     }
     assert.deepEqual(p.administracao.autorizacoesIndividuais, { consultar: true, concederDireta: true, delegar: false });
+  });
+
+  test('parte F: usuários só com GERENCIAR_USUARIOS efetiva; ela não abre as áreas de grupos, nem a de grupos abre usuários', async () => {
+    const comUsuarios = await permissoes(await sessao(EMAILS.adminUsuarios, empresa.A));
+    assert.deepEqual(comUsuarios.administracao.usuarios, { consultar: true, alterar: true });
+    for (const area of ['gruposAcesso', 'permissoesGrupo', 'vinculosGrupo']) assert.equal(comUsuarios.administracao[area].consultar, false, area);
+    for (const email of [EMAILS.adminGrupos, EMAILS.adminSem, EMAILS.supervisor, EMAILS.usuario]) {
+      assert.deepEqual((await permissoes(await sessao(email, empresa.A))).administracao.usuarios, { consultar: false, alterar: false }, email);
+    }
+    assert.deepEqual((await permissoes(await sessao(EMAILS.multi, empresa.B))).administracao.usuarios, { consultar: true, alterar: true }, 'MASTER em B');
+    assert.deepEqual((await permissoes(await sessao(EMAILS.multi, empresa.A))).administracao.usuarios, { consultar: false, alterar: false }, 'USUARIO em A');
   });
 
   test('ADMINISTRADOR: autoridade administrativa só com autorização individual efetiva, e só daquela área; sem ela, nada', async () => {

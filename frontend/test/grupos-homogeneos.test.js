@@ -178,10 +178,10 @@ describe('inspeção estática: pages/employee-groups.html e menus', () => {
       assert.equal(proibido.test(codigo), false, `employee-groups.html contém ${proibido}`);
     }
     const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
-    assert.deepEqual(scripts, ['../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/grupos-homogeneos.js']);
+    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/grupos-homogeneos.js']);
     assert.match(codigo, /EpiSessaoEmpresarial\.montar\(/);
     assert.match(codigo, /EpiPermissoes\.prepararPagina\(\{\s*pagina: 'employeeGroups'/);
-    for (const id of ['telaSessao', 'telaSessaoMensagem', 'telaSessaoPortal', 'identidade', 'botaoSair', 'botaoTrocarEmpresa', 'aviso',
+    for (const id of ['telaSessao', 'telaSessaoMensagem', 'telaSessaoPortal', 'aviso',
       'gruposCorpo', 'botaoNovoGrupo', 'formGrupo', 'gheNome', 'gheSetor', 'gheFuncao', 'gheDescricao', 'gheRiscos', 'botaoSalvarGrupo', 'botaoCancelarGrupo',
       'matrizTitulo', 'matrizCorpo', 'botaoSalvarMatriz', 'botaoDescartarMatriz', 'matrizResumo']) {
       assert.ok(ids.includes(id), `falta #${id}`);

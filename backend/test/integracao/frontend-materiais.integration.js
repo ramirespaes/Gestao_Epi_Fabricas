@@ -46,7 +46,7 @@ const EpiMateriais = require('../../../frontend/js/materiais');
  * não apenas que a interface esconde botões.
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 45 }, (_, i) => String(i).padStart(3, '0'));
+const TODAS_AS_MIGRATIONS = Array.from({ length: 46 }, (_, i) => String(i).padStart(3, '0'));
 const SENHA = 'senha-forte-da-etapa-c2-2026';
 const EMAILS = {
   master: 'master.c2@exemplo-cliente.com.br',       // MASTER em A
@@ -93,9 +93,9 @@ function janela() {
 }
 
 const FORMULARIO_COMPLETO = {
-  nome: 'Botina de segurança C2', categoria: 'EPI', tipo: 'Sapatão / Botina', tipoCustom: '', caNumero: '38271', caValidade: '2027-01-31',
-  fabricante: 'Bracol', codigoInterno: 'EPI-000245', quantidadeComprada: '120', tamanhoEntrada: '42', unidade: 'Par', estoqueMinimo: '5',
-  definePrazo: 'sim', prazoUnidade: 'meses', prazo: '6', descricao: 'Biqueira de composite, solado antiderrapante', registrarEntrada: 'sim',
+  nome: 'Botina de segurança C2', categoria: 'EPI', tipo: 'Sapatão / Botina', tipoCustom: '', controleTamanho: 'grade',
+  fabricante: 'Bracol', codigoInterno: 'EPI-000245', quantidadeComprada: '120', tamanhoEntrada: '42', caEntrada: '38271', caValidadeEntrada: '2030-12-31',
+  unidade: 'Par', estoqueMinimo: '5', prazoUnidade: 'meses', prazo: '6', descricao: 'Biqueira de composite, solado antiderrapante', registrarEntrada: 'sim',
 };
 
 describe('C2 — cadastro real de materiais pela página integrada (PostgreSQL real)', () => {
@@ -136,11 +136,10 @@ describe('C2 — cadastro real de materiais pela página integrada (PostgreSQL r
     };
   }
 
-  // A tela ainda não pergunta se o material usa tamanho; completo o corpo aqui.
   const cadastrar = (formulario, podeMovimentar) => {
     const m = EpiMateriais.formulario.montarCorpo(formulario);
     assert.equal(m.ok, true, JSON.stringify(m));
-    return EpiMateriais.fluxo.cadastrar({ corpo: { ...m.corpo, exigeTamanho: true }, entrada: m.entrada, podeMovimentar });
+    return EpiMateriais.fluxo.cadastrar({ corpo: m.corpo, entrada: m.entrada, podeMovimentar, idempotencia: EpiMateriais.idempotencia.criar() });
   };
 
   before(async () => {
@@ -197,7 +196,7 @@ describe('C2 — cadastro real de materiais pela página integrada (PostgreSQL r
   describe('positivos', () => {
     let idBotina;
 
-    test('MASTER: abre, pode cadastrar e movimentar; cadastro completo persiste todos os campos (039, validade do CA, prazo convertido) e a entrada inicial cria o saldo; auditoria dos dois eventos', async () => {
+    test('MASTER: abre, pode cadastrar e movimentar; cadastro completo persiste os campos (039, prazo convertido, controle de tamanho) e a entrada inicial cria o lote com o CA; auditoria dos dois eventos', async () => {
       const pagina = await abrirPagina(EMAILS.master, empresa.A);
       assert.deepEqual([pagina.podeAbrir, pagina.podeAlterar, pagina.podeMovimentar], [true, true, true]);
       assert.equal(pagina.nav.jar.has(authConfig.sessao.cookieNome), true, 'sessão empresarial = cookie HttpOnly');
@@ -206,46 +205,44 @@ describe('C2 — cadastro real de materiais pela página integrada (PostgreSQL r
       assert.equal(r.ok, true, JSON.stringify(r));
       assert.deepEqual([r.entrada.solicitada, r.entrada.realizada, r.entrada.motivo], [true, true, null]);
       idBotina = r.material.id;
-      assert.equal(EpiMateriais.mensagens.resultado(r), 'Material cadastrado com sucesso. Entrada de estoque registrada: 120 no tamanho 42.');
+      assert.equal(EpiMateriais.mensagens.resultado(r), 'Material cadastrado com sucesso. Entrada inicial registrada: 120 no tamanho 42.');
 
       const { rows } = await pool.query('SELECT * FROM materiais WHERE id = $1', [idBotina]);
       const m = rows[0];
       assert.equal(m.empresa_id, empresa.A, 'empresa da sessão, nunca do cliente');
       assert.deepEqual(
-        [m.nome, m.categoria, m.tipo, m.ca_numero, m.fabricante, m.codigo_interno, m.unidade, m.estoque_minimo, m.prazo_uso_dias, m.descricao, m.ativo],
-        ['Botina de segurança C2', 'EPI', 'Sapatão / Botina', '38271', 'Bracol', 'EPI-000245', 'par', 5, 180, 'Biqueira de composite, solado antiderrapante', true],
+        [m.nome, m.categoria, m.tipo, m.fabricante, m.codigo_interno, m.unidade, m.estoque_minimo, m.prazo_uso_dias, m.exige_tamanho, m.descricao, m.ativo],
+        ['Botina de segurança C2', 'EPI', 'Sapatão / Botina', 'Bracol', 'EPI-000245', 'par', 5, 180, true, 'Biqueira de composite, solado antiderrapante', true],
       );
-      assert.equal(m.ca_validade instanceof Date ? m.ca_validade.toISOString().slice(0, 10) : String(m.ca_validade), '2027-01-31', 'validade do CA gravada');
-      const saldo = await pool.query('SELECT tamanho, quantidade FROM estoque_tamanhos WHERE material_id = $1', [idBotina]);
-      assert.deepEqual(saldo.rows, [{ tamanho: '42', quantidade: 120 }]);
-      const auditoria = await pool.query("SELECT acao, dados_novos FROM logs_auditoria WHERE empresa_id = $1 AND usuario_id = $2 AND acao IN ('MATERIAL_CRIADO', 'ESTOQUE_MOVIMENTADO') ORDER BY id", [empresa.A, usuario.master]);
-      assert.deepEqual(auditoria.rows.map((l) => l.acao), ['MATERIAL_CRIADO', 'ESTOQUE_MOVIMENTADO']);
-      assert.deepEqual([auditoria.rows[0].dados_novos.categoria, auditoria.rows[0].dados_novos.codigoInterno, auditoria.rows[0].dados_novos.prazoUsoDias], ['EPI', 'EPI-000245', 180]);
-      assert.deepEqual(pagina.nav.chamadas.filter((c) => c.startsWith('POST /api/materiais')), ['POST /api/materiais', `POST /api/materiais/${idBotina}/estoque/movimentar`]);
+      assert.deepEqual([m.ca_numero, m.ca_validade], [null, null], 'o CA fica no lote, não no cadastro');
+      const lotes = await pool.query('SELECT tamanho, ca_numero, ca_validade::text, origem, saldo FROM estoque_lotes WHERE material_id = $1', [idBotina]);
+      assert.deepEqual(lotes.rows, [{ tamanho: '42', ca_numero: '38271', ca_validade: '2030-12-31', origem: 'ENTRADA', saldo: 120 }]);
+      assert.equal((await pool.query('SELECT count(*)::int AS n FROM estoque_tamanhos WHERE material_id = $1', [idBotina])).rows[0].n, 0);
+      const auditoria = await pool.query("SELECT acao, dados_novos FROM logs_auditoria WHERE empresa_id = $1 AND usuario_id = $2 AND acao IN ('MATERIAL_CRIADO', 'ESTOQUE_ENTRADA') ORDER BY id", [empresa.A, usuario.master]);
+      assert.deepEqual(auditoria.rows.map((l) => l.acao), ['MATERIAL_CRIADO', 'ESTOQUE_ENTRADA']);
+      assert.deepEqual([auditoria.rows[0].dados_novos.categoria, auditoria.rows[0].dados_novos.codigoInterno, auditoria.rows[0].dados_novos.prazoUsoDias, auditoria.rows[0].dados_novos.exigeTamanho], ['EPI', 'EPI-000245', 180, true]);
+      assert.deepEqual(pagina.nav.chamadas.filter((c) => c.startsWith('POST /api/materiais')), ['POST /api/materiais', `POST /api/materiais/${idBotina}/estoque/entradas`]);
     });
 
-    test('grade: o material recém-criado mostra o saldo real por tamanho, com o mínimo do material; tamanhos sem saldo aparecem como sem estoque', async () => {
+    test('estoque do material recém-criado: o lote com físico, bloqueado e disponível; uma baixa atualiza os saldos', async () => {
       await abrirPagina(EMAILS.master, empresa.A);
-      const g = await EpiMateriais.fluxo.carregarGrade(idBotina);
-      assert.equal(g.ok, true, JSON.stringify(g));
-      assert.deepEqual(g.chips.find((c) => c.tamanho === '42'), { tamanho: '42', quantidade: 120, situacao: 'com-saldo' });
-      assert.deepEqual(g.chips.find((c) => c.tamanho === '41'), { tamanho: '41', quantidade: 0, situacao: 'sem-estoque' });
-      assert.equal(g.resumo, '1 disponível · 0 atenção · 10 em falta');
-      // saída direta deixa o tamanho abaixo do mínimo → atenção
-      const saida = await EpiMateriais.acoes.movimentar(idBotina, { tamanho: '42', tipo: 'SAIDA', quantidade: 117, motivo: 'ajuste do teste' });
-      assert.equal(saida.ok, true, JSON.stringify(saida));
-      const g2 = await EpiMateriais.fluxo.carregarGrade(idBotina);
-      assert.deepEqual(g2.chips.find((c) => c.tamanho === '42'), { tamanho: '42', quantidade: 3, situacao: 'abaixo-minimo' });
+      const e = await EpiMateriais.fluxo.carregarEstoque(idBotina);
+      assert.equal(e.ok, true, JSON.stringify(e));
+      assert.deepEqual(e.lotes.map((l) => [l.tamanho, l.caNumero, l.situacaoCa, l.fisico, l.bloqueado, l.disponivel]), [['42', '38271', 'VALIDO', 120, 0, 120]]);
+      assert.deepEqual(e.totais, { fisico: 120, bloqueado: 0, disponivel: 120 });
+      const baixa = await EpiMateriais.fluxo.registrarBaixa(e.lotes[0].loteId, { quantidade: 117, motivo: 'AJUSTE_INVENTARIO' }, EpiMateriais.idempotencia.criar());
+      assert.equal(baixa.ok, true, JSON.stringify(baixa));
+      assert.deepEqual((await EpiMateriais.fluxo.carregarEstoque(idBotina)).totais, { fisico: 3, bloqueado: 0, disponivel: 3 });
     });
 
-    test('seletor da grade lista só materiais ativos da empresa da sessão; perfil com visualizar (sem criar) abre a página e consulta a grade', async () => {
+    test('seletor lista só materiais ativos da empresa da sessão; perfil com visualizar (sem criar) abre a página e consulta os lotes', async () => {
       const pagina = await abrirPagina(EMAILS.leitor, empresa.A);
       assert.deepEqual([pagina.podeAbrir, pagina.podeAlterar, pagina.podeMovimentar], [true, false, false]);
       const lista = await EpiMateriais.acoes.listar({ ativo: true, limite: 100 });
       assert.equal(lista.ok, true, JSON.stringify(lista));
       assert.ok(lista.dados.materiais.some((m) => m.id === idBotina));
       assert.ok(lista.dados.materiais.every((m) => m.empresaId === empresa.A));
-      assert.equal((await EpiMateriais.fluxo.carregarGrade(idBotina)).ok, true);
+      assert.equal((await EpiMateriais.fluxo.carregarEstoque(idBotina)).ok, true);
     });
 
     test('mesmo código interno em OUTRA empresa: aceito (unicidade é por empresa)', async () => {
@@ -256,38 +253,104 @@ describe('C2 — cadastro real de materiais pela página integrada (PostgreSQL r
       assert.equal(r.material.empresaId, empresa.B);
     });
 
-    test('sem prazo a API recusa o cadastro; com prazo, sem CA e sem quantidade, o cadastro mínimo grava NULL nos opcionais e não cria saldo', async () => {
+    test('sem prazo ou sem controle de tamanho a página não envia e a API recusa; com os dois, o cadastro mínimo grava NULL nos opcionais e não cria estoque', async () => {
       await abrirPagina(EMAILS.master, empresa.A);
       const minimo = {
-        nome: 'Protetor auricular', categoria: '', tipo: 'Protetor auricular', tipoCustom: '', caNumero: '', caValidade: '', fabricante: '', codigoInterno: '',
-        quantidadeComprada: '', tamanhoEntrada: '', unidade: 'Unidade', estoqueMinimo: '', definePrazo: 'nao', prazoUnidade: 'meses', prazo: '', descricao: '',
+        nome: 'Protetor auricular', categoria: '', tipo: 'Protetor auricular', tipoCustom: '', fabricante: '', codigoInterno: '', controleTamanho: '',
+        quantidadeComprada: '', tamanhoEntrada: '', unidade: 'Unidade', estoqueMinimo: '', prazoUnidade: 'meses', prazo: '', descricao: '', registrarEntrada: 'nao',
       };
-      const semPrazo = await cadastrar(minimo, true);
-      assert.deepEqual([semPrazo.ok, semPrazo.resposta.status, semPrazo.resposta.detalhes.map((d) => d.campo)], [false, 400, ['body.prazoUsoDias']]);
+      const local = EpiMateriais.formulario.montarCorpo(minimo);
+      assert.deepEqual([local.ok, local.erros.map((e) => e.campo).sort()], [false, ['controleTamanho', 'prazo']]);
+      const direto = await EpiMateriais.acoes.criar({ nome: 'Protetor auricular', unidade: 'unidade' });
+      assert.deepEqual([direto.status, direto.detalhes.map((d) => d.campo).sort()], [400, ['body.exigeTamanho', 'body.prazoUsoDias']]);
       assert.equal((await pool.query("SELECT count(*)::int AS n FROM materiais WHERE nome = 'Protetor auricular'")).rows[0].n, 0);
 
-      const r = await cadastrar({ ...minimo, definePrazo: 'sim', prazo: '6' }, true);
+      const r = await cadastrar({ ...minimo, prazo: '6', controleTamanho: 'unico' }, true);
       assert.equal(r.ok, true, JSON.stringify(r));
       assert.equal(r.entrada.solicitada, false);
-      const { rows } = await pool.query('SELECT categoria, codigo_interno, descricao, ca_numero, ca_validade, prazo_uso_dias, estoque_minimo, unidade FROM materiais WHERE id = $1', [r.material.id]);
-      assert.deepEqual(rows[0], { categoria: null, codigo_interno: null, descricao: null, ca_numero: null, ca_validade: null, prazo_uso_dias: 180, estoque_minimo: 0, unidade: 'unidade' });
-      assert.equal((await pool.query('SELECT count(*)::int AS n FROM estoque_tamanhos WHERE material_id = $1', [r.material.id])).rows[0].n, 0);
+      const { rows } = await pool.query('SELECT categoria, codigo_interno, descricao, ca_numero, ca_validade, prazo_uso_dias, exige_tamanho, estoque_minimo, unidade FROM materiais WHERE id = $1', [r.material.id]);
+      assert.deepEqual(rows[0], { categoria: null, codigo_interno: null, descricao: null, ca_numero: null, ca_validade: null, prazo_uso_dias: 180, exige_tamanho: false, estoque_minimo: 0, unidade: 'unidade' });
+      assert.equal((await pool.query('SELECT count(*)::int AS n FROM estoque_lotes WHERE material_id = $1', [r.material.id])).rows[0].n, 0);
+    });
+  });
+
+  describe('estoque por lote pela página', () => {
+    const contar = async (sql, params) => (await pool.query(sql, params)).rows[0].n;
+
+    test('tamanho único com entrada inicial: material classificado, lote sem tamanho e operação ENTRADA; nada em estoque_tamanhos e nenhuma movimentação antiga', async () => {
+      const pagina = await abrirPagina(EMAILS.master, empresa.A);
+      const legadoAntes = await contar('SELECT count(*)::int AS n FROM estoque_tamanhos');
+      const m = EpiMateriais.formulario.montarCorpo({
+        nome: 'Óculos incolor por lote', categoria: 'EPI', tipo: 'Óculos de proteção', tipoCustom: '', fabricante: '', codigoInterno: 'LOTE-001', unidade: 'Unidade',
+        estoqueMinimo: '5', prazoUnidade: 'meses', prazo: '6', controleTamanho: 'unico', descricao: '', registrarEntrada: 'sim',
+        quantidadeComprada: '12', tamanhoEntrada: '', caEntrada: '38271', caValidadeEntrada: '2030-12-31',
+      });
+      assert.equal(m.ok, true, JSON.stringify(m));
+      const r = await EpiMateriais.fluxo.cadastrar({ corpo: m.corpo, entrada: m.entrada, podeMovimentar: pagina.podeMovimentar, idempotencia: EpiMateriais.idempotencia.criar() });
+      assert.deepEqual([r.ok, r.entrada.realizada], [true, true], JSON.stringify(r));
+      const id = r.material.id;
+      const { rows: [material] } = await pool.query('SELECT exige_tamanho, prazo_uso_dias, ca_numero FROM materiais WHERE id = $1', [id]);
+      assert.deepEqual(material, { exige_tamanho: false, prazo_uso_dias: 180, ca_numero: null });
+      const { rows: lotes } = await pool.query('SELECT tamanho, ca_numero, ca_validade::text, origem, saldo FROM estoque_lotes WHERE material_id = $1', [id]);
+      assert.deepEqual(lotes, [{ tamanho: null, ca_numero: '38271', ca_validade: '2030-12-31', origem: 'ENTRADA', saldo: 12 }]);
+      assert.equal(await contar("SELECT count(*)::int AS n FROM estoque_operacoes o JOIN estoque_lotes l ON l.id = o.lote_id WHERE l.material_id = $1 AND o.tipo = 'ENTRADA'", [id]), 1);
+      assert.equal(await contar('SELECT count(*)::int AS n FROM estoque_tamanhos'), legadoAntes);
+      assert.equal(pagina.nav.chamadas.some((c) => /movimentar|\/estoque$/.test(c)), false, pagina.nav.chamadas.join('\n'));
+
+      const estoque = await EpiMateriais.fluxo.carregarEstoque(id);
+      assert.equal(estoque.ok, true);
+      assert.deepEqual([estoque.lotes.map((l) => [l.tamanho, l.fisico, l.disponivel]), estoque.totais], [[[null, 12, 12]], { fisico: 12, bloqueado: 0, disponivel: 12 }]);
+      assert.match(EpiMateriais.estoque.linhasLotes(estoque.lotes), /<td>Único<\/td>/);
+    });
+
+    test('entrada posterior com tamanho e baixa no lote escolhido; saldos atualizados; a mesma baixa repetida não duplica', async () => {
+      await abrirPagina(EMAILS.master, empresa.A);
+      const criado = await EpiMateriais.fluxo.cadastrar({ corpo: { nome: 'Luva por lote', exigeTamanho: true, prazoUsoDias: 90, unidade: 'par' }, entrada: null, podeMovimentar: true, idempotencia: EpiMateriais.idempotencia.criar() });
+      const id = criado.material.id;
+      const entradas = EpiMateriais.idempotencia.criar();
+      const e = await EpiMateriais.fluxo.registrarEntrada(id, { tamanho: 'M', quantidade: 10, caNumero: '55771', caValidade: '2030-12-31' }, entradas);
+      assert.equal(e.ok, true, JSON.stringify(e));
+      const baixas = EpiMateriais.idempotencia.criar();
+      const corpo = { quantidade: 4, motivo: 'OUTRO', justificativa: 'Doação para treinamento' };
+      const chave = baixas.chave(e.lote.loteId, corpo);
+      const b = await EpiMateriais.fluxo.registrarBaixa(e.lote.loteId, corpo, baixas);
+      assert.equal(b.ok, true, JSON.stringify(b));
+      const repetida = await EpiHttp.requisitar('POST', `/estoque/lotes/${e.lote.loteId}/baixas`, { corpo: { ...corpo, chaveIdempotencia: chave } });
+      assert.deepEqual([repetida.status, repetida.dados.repetida], [200, true]);
+      const estoque = await EpiMateriais.fluxo.carregarEstoque(id);
+      assert.deepEqual(estoque.lotes.map((l) => [l.tamanho, l.fisico, l.bloqueado, l.disponivel]), [['M', 6, 0, 6]]);
+      assert.equal(await contar("SELECT count(*)::int AS n FROM estoque_operacoes WHERE lote_id = $1 AND tipo = 'BAIXA'", [e.lote.loteId]), 1);
+    });
+
+    test('isolamento: outra empresa não consulta os lotes nem registra entrada ou baixa no estoque da empresa A', async () => {
+      await abrirPagina(EMAILS.master, empresa.A);
+      const criado = await EpiMateriais.fluxo.cadastrar({ corpo: { nome: 'Capacete por lote', exigeTamanho: false, prazoUsoDias: 365 }, entrada: { quantidade: 3, caNumero: '77210', caValidade: '2030-12-31' }, podeMovimentar: true, idempotencia: EpiMateriais.idempotencia.criar() });
+      assert.equal(criado.entrada.realizada, true, JSON.stringify(criado));
+      const id = criado.material.id;
+      const loteId = (await EpiMateriais.fluxo.carregarEstoque(id)).lotes[0].loteId;
+
+      await abrirPagina(EMAILS.multi, empresa.B);
+      const consulta = await EpiMateriais.fluxo.carregarEstoque(id);
+      const entrada = await EpiMateriais.fluxo.registrarEntrada(id, { quantidade: 1, caNumero: '1', caValidade: '2030-12-31' }, EpiMateriais.idempotencia.criar());
+      const baixa = await EpiMateriais.fluxo.registrarBaixa(loteId, { quantidade: 1, motivo: 'PERDA' }, EpiMateriais.idempotencia.criar());
+      assert.deepEqual([consulta.resposta.status, entrada.resposta.status, baixa.resposta.status], [404, 404, 404]);
+      assert.equal(await contar('SELECT saldo AS n FROM estoque_lotes WHERE id = $1', [loteId]), 3);
     });
   });
 
   describe('negativos e segurança: a API recusa, não apenas a tela esconde', () => {
-    test('perfil com criar mas SEM MOVIMENTAR_ESTOQUE: material salvo, entrada não tentada pela página; a chamada direta de movimentação é recusada com 403 e não altera saldo', async () => {
+    test('perfil com criar mas SEM MOVIMENTAR_ESTOQUE: material salvo, entrada não tentada pela página; a entrada direta é recusada com 403 e não cria lote', async () => {
       const pagina = await abrirPagina(EMAILS.cadastra, empresa.A);
       assert.deepEqual([pagina.podeAbrir, pagina.podeAlterar, pagina.podeMovimentar], [true, true, false]);
       const r = await cadastrar({ ...FORMULARIO_COMPLETO, nome: 'Luva nitrílica', codigoInterno: 'EPI-000300', tipo: 'Luva', tamanhoEntrada: 'M', quantidadeComprada: '40' }, pagina.podeMovimentar);
       assert.equal(r.ok, true, JSON.stringify(r));
       assert.deepEqual([r.entrada.solicitada, r.entrada.realizada, r.entrada.motivo], [true, false, 'SEM_PERMISSAO']);
-      assert.match(EpiMateriais.mensagens.resultado(r), /^Material cadastrado com sucesso\. Entrada de estoque não realizada: /);
-      assert.equal(pagina.nav.chamadas.some((c) => /estoque\/movimentar/.test(c)), false, 'nenhuma movimentação foi tentada');
+      assert.match(EpiMateriais.mensagens.resultado(r), /^Material cadastrado com sucesso\. Entrada inicial não realizada: /);
+      assert.equal(pagina.nav.chamadas.some((c) => /estoque\/entradas/.test(c)), false, 'nenhuma entrada foi tentada');
 
-      const direta = await EpiMateriais.acoes.movimentar(r.material.id, { tamanho: 'M', tipo: 'ENTRADA', quantidade: 40, motivo: 'tentativa direta' });
-      assert.deepEqual([direta.ok, direta.status], [false, 403]);
-      assert.equal((await pool.query('SELECT count(*)::int AS n FROM estoque_tamanhos WHERE material_id = $1', [r.material.id])).rows[0].n, 0);
+      const direta = await EpiMateriais.fluxo.registrarEntrada(r.material.id, { tamanho: 'M', quantidade: 40, caNumero: '38271', caValidade: '2030-12-31' }, EpiMateriais.idempotencia.criar());
+      assert.deepEqual([direta.ok, direta.resposta.status], [false, 403]);
+      assert.equal((await pool.query('SELECT count(*)::int AS n FROM estoque_lotes WHERE material_id = $1', [r.material.id])).rows[0].n, 0);
       assert.equal((await pool.query('SELECT ativo FROM materiais WHERE id = $1', [r.material.id])).rows[0].ativo, true, 'o material continua cadastrado');
     });
 
@@ -305,19 +368,19 @@ describe('C2 — cadastro real de materiais pela página integrada (PostgreSQL r
       const pagina = await abrirPagina(EMAILS.nada, empresa.A);
       assert.deepEqual([pagina.podeAbrir, pagina.podeAlterar, pagina.podeMovimentar], [false, false, false]);
       assert.equal((await EpiMateriais.acoes.listar({ ativo: true })).status, 403);
-      assert.equal((await EpiMateriais.fluxo.carregarGrade(1)).resposta.status, 403);
+      assert.equal((await EpiMateriais.fluxo.carregarEstoque(1)).resposta.status, 403);
       assert.equal((await EpiMateriais.acoes.criar({ nome: 'x' })).status, 403);
     });
 
     test('isolamento: a empresa B não vê nem consulta o estoque do material da empresa A; a lista de B não contém materiais de A', async () => {
       await abrirPagina(EMAILS.multi, empresa.B);
       const idA = (await pool.query('SELECT id FROM materiais WHERE empresa_id = $1 ORDER BY id LIMIT 1', [empresa.A])).rows[0].id;
-      const g = await EpiMateriais.fluxo.carregarGrade(idA);
+      const g = await EpiMateriais.fluxo.carregarEstoque(idA);
       assert.deepEqual([g.ok, g.resposta.status, g.resposta.codigo], [false, 404, 'MATERIAL_NAO_ENCONTRADO']);
       const lista = await EpiMateriais.acoes.listar({ ativo: true, limite: 100 });
       assert.ok(lista.dados.materiais.every((m) => m.empresaId === empresa.B));
-      const mov = await EpiMateriais.acoes.movimentar(idA, { tamanho: '42', tipo: 'ENTRADA', quantidade: 1 });
-      assert.equal(mov.status, 404, 'movimentar material de outra empresa: inexistente para B');
+      const entrada = await EpiMateriais.fluxo.registrarEntrada(idA, { tamanho: '42', quantidade: 1, caNumero: '1', caValidade: '2030-12-31' }, EpiMateriais.idempotencia.criar());
+      assert.equal(entrada.resposta.status, 404, 'entrada em material de outra empresa: inexistente para B');
     });
 
     test('código interno duplicado na mesma empresa (caixa diferente): 409, mensagem clara, nada criado, nenhuma entrada tentada', async () => {
@@ -327,21 +390,20 @@ describe('C2 — cadastro real de materiais pela página integrada (PostgreSQL r
       assert.deepEqual([r.ok, r.etapa, r.resposta.status, r.resposta.codigo], [false, 'cadastro', 409, 'MATERIAL_CODIGO_INTERNO_DUPLICADO']);
       assert.match(EpiMateriais.mensagens.erroCadastro(r.resposta), /código interno/i);
       assert.equal((await pool.query('SELECT count(*)::int AS n FROM materiais WHERE empresa_id = $1', [empresa.A])).rows[0].n, antes);
-      assert.equal(pagina.nav.chamadas.some((c) => /estoque\/movimentar/.test(c)), false);
+      assert.equal(pagina.nav.chamadas.some((c) => /estoque\/entradas/.test(c)), false);
     });
 
     test('cadastro ok e entrada recusada pelo servidor (quantidade acima do limite inteiro): material permanece, sem exclusão nem nova tentativa; mensagem explícita', async () => {
       const pagina = await abrirPagina(EMAILS.master, empresa.A);
-      const m = EpiMateriais.formulario.montarCorpo({ ...FORMULARIO_COMPLETO, nome: 'Capacete classe B', codigoInterno: 'EPI-000400', tipo: 'Capacete', quantidadeComprada: '1', tamanhoEntrada: 'Único' });
-      const r = await EpiMateriais.fluxo.cadastrar({ corpo: { ...m.corpo, exigeTamanho: true }, entrada: { tamanho: 'Único', quantidade: 2147483648 }, podeMovimentar: true });
+      const m = EpiMateriais.formulario.montarCorpo({ ...FORMULARIO_COMPLETO, nome: 'Capacete classe B', codigoInterno: 'EPI-000400', tipo: 'Capacete', controleTamanho: 'unico', quantidadeComprada: '1' });
+      const r = await EpiMateriais.fluxo.cadastrar({ corpo: m.corpo, entrada: { quantidade: 2147483648, caNumero: '77210', caValidade: '2030-12-31' }, podeMovimentar: true, idempotencia: EpiMateriais.idempotencia.criar() });
       assert.equal(r.ok, true, JSON.stringify(r));
       assert.deepEqual([r.entrada.solicitada, r.entrada.realizada, r.entrada.motivo, r.entrada.resposta.status, r.entrada.resposta.codigo], [true, false, 'RECUSADA', 400, 'VALIDACAO']);
-      assert.match(EpiMateriais.mensagens.resultado(r), /^Material cadastrado com sucesso\. Entrada de estoque não realizada: /);
-      const chamadasMov = pagina.nav.chamadas.filter((c) => /estoque\/movimentar/.test(c));
-      assert.equal(chamadasMov.length, 1, 'uma única tentativa');
+      assert.match(EpiMateriais.mensagens.resultado(r), /^Material cadastrado com sucesso\. Entrada inicial não realizada: /);
+      assert.equal(pagina.nav.chamadas.filter((c) => /estoque\/entradas/.test(c)).length, 1, 'uma única tentativa');
       assert.equal(pagina.nav.chamadas.some((c) => /DELETE|inativar/.test(c)), false);
       assert.equal((await pool.query('SELECT ativo FROM materiais WHERE id = $1', [r.material.id])).rows[0].ativo, true);
-      assert.equal((await pool.query('SELECT count(*)::int AS n FROM estoque_tamanhos WHERE material_id = $1', [r.material.id])).rows[0].n, 0);
+      assert.equal((await pool.query('SELECT count(*)::int AS n FROM estoque_lotes WHERE material_id = $1', [r.material.id])).rows[0].n, 0);
     });
 
     test('dados malformados: a página não envia (erros por campo); enviados diretamente, o servidor recusa com 400 VALIDACAO (quantidadeComprada, empresaId, limites)', async () => {
@@ -402,7 +464,9 @@ describe('C2 — cadastro real de materiais pela página integrada (PostgreSQL r
 
     test('nenhuma requisição da página carrega empresaId, usuarioId ou perfil; nenhuma usa ?_s=', async () => {
       const pagina = await abrirPagina(EMAILS.master, empresa.A);
-      await cadastrar({ ...FORMULARIO_COMPLETO, nome: 'Respirador PFF2', codigoInterno: 'EPI-000500', tipo: 'Respirador', tamanhoEntrada: 'Único', quantidadeComprada: '10' }, true);
+      const r = await cadastrar({ ...FORMULARIO_COMPLETO, nome: 'Respirador PFF2', codigoInterno: 'EPI-000500', tipo: 'Respirador', controleTamanho: 'unico', quantidadeComprada: '10' }, true);
+      const e = await EpiMateriais.fluxo.carregarEstoque(r.material.id);
+      await EpiMateriais.fluxo.registrarBaixa(e.lotes[0].loteId, { quantidade: 1, motivo: 'PERDA' }, EpiMateriais.idempotencia.criar());
       await EpiMateriais.acoes.listar({ ativo: true, limite: 100 });
       assert.equal(pagina.nav.chamadas.some((c) => /empresaId|usuarioId|perfil=|_s=/.test(c)), false, pagina.nav.chamadas.join('\n'));
     });
@@ -494,31 +558,34 @@ describe('C2 — correções da auditoria (PostgreSQL real)', () => {
     assert.equal((await pool.query("SELECT count(*)::int AS n FROM materiais WHERE nome = 'Acima do limite'")).rows[0].n, 0);
   });
 
-  test('correção 4 — entrada com resultado não confirmado (rede cai após o cadastro): motivo NAO_CONFIRMADO, uma única tentativa, material preservado, mensagem com a identificação e a orientação do saldo real', async () => {
+  test('correção 4 — entrada gravada no servidor com a resposta perdida: NAO_CONFIRMADO, uma única tentativa, material preservado; repetir a mesma entrada devolve a original e não duplica o lote', async () => {
     const nav = await abrirComoMaster();
     let tentativas = 0;
     EpiHttp.configurar({
       fetch: async (url, opcoes) => {
-        if (/estoque\/movimentar$/.test(new URL(url).pathname)) { tentativas += 1; throw new TypeError('Failed to fetch'); }
-        return nav(url, opcoes);
+        const resposta = await nav(url, opcoes);
+        if (/estoque\/entradas$/.test(new URL(url).pathname)) { tentativas += 1; throw new TypeError('Failed to fetch'); }
+        return resposta;
       },
     });
+    const operacao = EpiMateriais.idempotencia.criar();
     const m = EpiMateriais.formulario.montarCorpo({ ...FORMULARIO_COMPLETO, nome: 'Rede caiu', codigoInterno: 'REDE-1', quantidadeComprada: '7', tamanhoEntrada: '40' });
-    const r = await EpiMateriais.fluxo.cadastrar({ corpo: { ...m.corpo, exigeTamanho: true }, entrada: m.entrada, podeMovimentar: true });
+    const r = await EpiMateriais.fluxo.cadastrar({ corpo: m.corpo, entrada: m.entrada, podeMovimentar: true, idempotencia: operacao });
     assert.equal(r.ok, true, JSON.stringify(r));
     assert.deepEqual([r.entrada.solicitada, r.entrada.realizada, r.entrada.motivo, r.entrada.resposta.status, tentativas], [true, false, 'NAO_CONFIRMADO', 0, 1]);
     const texto = EpiMateriais.mensagens.resultado(r);
     assert.match(texto, new RegExp(`nº ${r.material.id}`));
     assert.match(texto, /REDE-1/);
-    assert.match(texto, /Entrada de estoque não confirmada/);
-    assert.match(texto, /saldo real/i);
+    assert.match(texto, /Entrada inicial não confirmada/);
+    assert.match(texto, /Confira os lotes/);
     assert.equal((await pool.query('SELECT ativo FROM materiais WHERE id = $1', [r.material.id])).rows[0].ativo, true, 'material preservado');
-    assert.equal((await pool.query('SELECT count(*)::int AS n FROM estoque_tamanhos WHERE material_id = $1', [r.material.id])).rows[0].n, 0, 'nada foi gravado sem confirmação (a rede caiu antes do servidor)');
-    // a orientação é verificável: a grade real do material mostra o saldo
+
     EpiHttp.configurar({ fetch: nav });
-    const g = await EpiMateriais.fluxo.carregarGrade(r.material.id);
-    assert.equal(g.ok, true);
-    assert.equal(g.chips.every((c) => c.quantidade === 0), true);
+    const repetida = await EpiMateriais.fluxo.registrarEntrada(r.material.id, m.entrada, operacao);
+    assert.deepEqual([repetida.ok, repetida.repetida], [true, true], JSON.stringify(repetida));
+    const e = await EpiMateriais.fluxo.carregarEstoque(r.material.id);
+    assert.deepEqual(e.lotes.map((l) => [l.tamanho, l.fisico]), [['40', 7]], 'um lote só');
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM estoque_tamanhos WHERE material_id = $1', [r.material.id])).rows[0].n, 0);
   });
 
   test('correção 4 — cadastro com resposta de erro do servidor não é tratado como recusa: confirmado=false; recusa 409 é confirmado=true', async () => {

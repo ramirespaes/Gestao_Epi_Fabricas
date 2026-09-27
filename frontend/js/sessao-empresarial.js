@@ -234,7 +234,10 @@
    * `aoFalharSaida(mensagem)` exibe o aviso e o botão volta a ficar
    * disponível para uma nova tentativa.
    *
-   * @param {{elementos: {tela, mensagem, linkPortal, identificacao, botaoSair, botaoTrocar},
+   * `usuario` e `empresa` são opcionais: o bloco de conta do Dashboard mostra
+   * o nome e a empresa separados, sempre como texto.
+   *
+   * @param {{elementos: {tela, mensagem, linkPortal, identificacao, usuario, empresa, botaoSair, botaoTrocar},
    *          aoEncerrar?: Function, aoFalharSaida?: Function, janela?: object}} opcoes
    */
   async function montar(opcoes) {
@@ -261,6 +264,7 @@
     }
 
     if (el.identificacao) el.identificacao.textContent = rotuloIdentificacao(r.contexto);
+    mostrarConta(el, r.contexto);
     if (el.botaoTrocar) {
       el.botaoTrocar.style.display = r.podeTrocar ? '' : 'none';
       el.botaoTrocar.addEventListener('click', function () { aoEncerrar(); trocarEmpresa(); });
@@ -307,6 +311,12 @@
     });
   }
 
+  /** Nome e empresa do bloco de conta; sem contexto, os dois ficam vazios. */
+  function mostrarConta(el, ctx) {
+    if (el.usuario) el.usuario.textContent = ctx ? ctx.usuario.nome : '';
+    if (el.empresa) el.empresa.textContent = ctx ? ctx.empresa.nome : '';
+  }
+
   function mesmoContexto(a, b) {
     return !!(a && b && a.empresa.id === b.empresa.id && a.usuario.id === b.usuario.id && a.usuario.perfil === b.usuario.perfil);
   }
@@ -316,6 +326,7 @@
     if (el.mensagem) el.mensagem.textContent = MENSAGENS.VERIFICANDO;
     if (el.linkPortal) el.linkPortal.style.display = 'none';
     if (el.identificacao) el.identificacao.textContent = '';
+    mostrarConta(el, null);
 
     var r;
     try {
@@ -336,6 +347,7 @@
 
     if (mesmoContexto(r.contexto, contextoExibido)) {
       if (el.identificacao) el.identificacao.textContent = rotuloIdentificacao(r.contexto);
+      mostrarConta(el, r.contexto);
       if (el.botaoTrocar) el.botaoTrocar.style.display = r.podeTrocar ? '' : 'none';
       if (el.tela) el.tela.style.display = 'none';
       return;

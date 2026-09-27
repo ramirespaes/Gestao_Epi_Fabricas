@@ -23,12 +23,11 @@ const { escaparCoringasLike } = require('../utils/like');
  * função aqui alcança um material de outra empresa, nem mesmo por id.
  */
 
-// materiais.nome VARCHAR(150), tipo/fabricante VARCHAR(100), ca_numero VARCHAR(20),
-// unidade VARCHAR(20) — mesmos tetos da migration 007.
+// materiais.nome VARCHAR(150), tipo/fabricante VARCHAR(100), unidade
+// VARCHAR(20) — mesmos tetos da migration 007.
 const TAMANHO_MAXIMO_NOME = 150;
 const TAMANHO_MAXIMO_TIPO = 100;
 const TAMANHO_MAXIMO_FABRICANTE = 100;
-const TAMANHO_MAXIMO_CA_NUMERO = 20;
 const TAMANHO_MAXIMO_UNIDADE = 20;
 
 // prazo_uso_dias e estoque_minimo são INTEGER (int4) no banco (migration
@@ -38,13 +37,10 @@ const TAMANHO_MAXIMO_UNIDADE = 20;
 const LIMITE_INTEGER_POSTGRES = 2147483647;
 
 // categoria, codigo_interno e descricao: migration 039 (Parte C2).
-// ca_validade é DATE (sem fuso): formatada no próprio PostgreSQL como
-// AAAA-MM-DD, nunca convertida em Date do Node. Assim 15/10/2026 continua
-// 15/10/2026 em qualquer fuso do servidor (ajuste pós-melhoria C2,
-// 25/09/2026; antes, a meia-noite local virava UTC no JSON e, a leste de
-// UTC, chegava como o dia anterior).
-const PROJECAO = `id, empresa_id, nome, tipo, fabricante, ca_numero, to_char(ca_validade, 'YYYY-MM-DD') AS ca_validade,
-  prazo_uso_dias, unidade, estoque_minimo, categoria, codigo_interno, descricao, exige_tamanho, ativo, criado_em, atualizado_em`;
+// O material não tem CA (E10): ca_numero e ca_validade ficam no banco só
+// como histórico, fora da projeção, do INSERT e do UPDATE. O CA é do lote.
+const PROJECAO = `id, empresa_id, nome, tipo, fabricante,
+  prazo_uso_dias, unidade, estoque_minimo, categoria, codigo_interno, descricao, exige_tamanho, oculos_com_grau, ativo, criado_em, atualizado_em`;
 const TAMANHO_MAXIMO_CATEGORIA = 30;
 const TAMANHO_MAXIMO_CODIGO_INTERNO = 30;
 const TAMANHO_MAXIMO_DESCRICAO = 500;
@@ -73,12 +69,6 @@ function exigirTextoOpcional(valor, nome, tamanhoMaximo) {
   }
 }
 
-function exigirDataOpcional(valor, nome) {
-  if (valor !== null && !(valor instanceof Date) && typeof valor !== 'string') {
-    throw new TypeError(`${nome} deve ser data, string ou null`);
-  }
-}
-
 // escaparCoringasLike (correção pós-auditoria da Etapa A) vive em
 // utils/like.js desde a Etapa B — mesma regra para materiais, GHE e
 // funcionários. O termo continua indo sempre como parâmetro ($3).
@@ -94,6 +84,13 @@ function exigirPrazoUsoDiasOpcional(valor) {
 function exigirExigeTamanhoOpcional(valor) {
   if (valor !== null && typeof valor !== 'boolean') {
     throw new TypeError('exigência de tamanho deve ser booleana ou null');
+  }
+}
+
+// oculos_com_grau: só óculos de proteção guardam valor; a regra é do serviço e do CHECK da 045.
+function exigirOculosComGrauOpcional(valor) {
+  if (valor !== null && typeof valor !== 'boolean') {
+    throw new TypeError('óculos com grau deve ser booleano ou null');
   }
 }
 
@@ -116,8 +113,6 @@ const mapear = (linha) => (linha === undefined ? null : {
   nome: linha.nome,
   tipo: linha.tipo,
   fabricante: linha.fabricante,
-  caNumero: linha.ca_numero,
-  caValidade: linha.ca_validade,
   prazoUsoDias: linha.prazo_uso_dias,
   unidade: linha.unidade,
   estoqueMinimo: linha.estoque_minimo,
@@ -125,6 +120,7 @@ const mapear = (linha) => (linha === undefined ? null : {
   codigoInterno: linha.codigo_interno ?? null,
   descricao: linha.descricao ?? null,
   exigeTamanho: linha.exige_tamanho ?? null,
+  oculosComGrau: linha.oculos_com_grau ?? null,
   ativo: linha.ativo,
   criadoEm: linha.criado_em,
   atualizadoEm: linha.atualizado_em,
@@ -136,20 +132,18 @@ const mapear = (linha) => (linha === undefined ? null : {
  *
  * @param {{query: Function}} executor
  * @param {{empresaId: number, nome: string, tipo?: string|null, fabricante?: string|null,
- *   caNumero?: string|null, caValidade?: string|Date|null, prazoUsoDias?: number|null,
- *   unidade?: string, estoqueMinimo?: number, exigeTamanho?: boolean|null}} dados
+ *   prazoUsoDias?: number|null, unidade?: string, estoqueMinimo?: number,
+ *   exigeTamanho?: boolean|null, oculosComGrau?: boolean|null}} dados
  */
 async function criar(executor, {
-  empresaId, nome, tipo = null, fabricante = null, caNumero = null,
-  caValidade = null, prazoUsoDias = null, unidade = 'unidade', estoqueMinimo = 0,
-  categoria = null, codigoInterno = null, descricao = null, exigeTamanho = null,
+  empresaId, nome, tipo = null, fabricante = null,
+  prazoUsoDias = null, unidade = 'unidade', estoqueMinimo = 0,
+  categoria = null, codigoInterno = null, descricao = null, exigeTamanho = null, oculosComGrau = null,
 }) {
   exigirEmpresa(empresaId);
   exigirNome(nome);
   exigirTextoOpcional(tipo, 'tipo', TAMANHO_MAXIMO_TIPO);
   exigirTextoOpcional(fabricante, 'fabricante', TAMANHO_MAXIMO_FABRICANTE);
-  exigirTextoOpcional(caNumero, 'número do CA', TAMANHO_MAXIMO_CA_NUMERO);
-  exigirDataOpcional(caValidade, 'validade do CA');
   exigirPrazoUsoDiasOpcional(prazoUsoDias);
   exigirUnidade(unidade);
   exigirEstoqueMinimo(estoqueMinimo);
@@ -157,12 +151,13 @@ async function criar(executor, {
   exigirTextoOpcional(codigoInterno, 'código interno', TAMANHO_MAXIMO_CODIGO_INTERNO);
   exigirTextoOpcional(descricao, 'descrição', TAMANHO_MAXIMO_DESCRICAO);
   exigirExigeTamanhoOpcional(exigeTamanho);
+  exigirOculosComGrauOpcional(oculosComGrau);
 
   const { rows } = await executor.query(
-    `INSERT INTO materiais (empresa_id, nome, tipo, fabricante, ca_numero, ca_validade, prazo_uso_dias, unidade, estoque_minimo, categoria, codigo_interno, descricao, exige_tamanho)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    `INSERT INTO materiais (empresa_id, nome, tipo, fabricante, prazo_uso_dias, unidade, estoque_minimo, categoria, codigo_interno, descricao, exige_tamanho, oculos_com_grau)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      RETURNING ${PROJECAO}`,
-    [empresaId, nome, tipo, fabricante, caNumero, caValidade, prazoUsoDias, unidade, estoqueMinimo, categoria, codigoInterno, descricao, exigeTamanho],
+    [empresaId, nome, tipo, fabricante, prazoUsoDias, unidade, estoqueMinimo, categoria, codigoInterno, descricao, exigeTamanho, oculosComGrau],
   );
 
   return mapear(rows[0]);
@@ -295,9 +290,9 @@ async function contarPorEmpresa(executor, empresaId, { ativo = null, busca = nul
  * decisão já tomada em grupo-acesso.repository.js.
  *
  * Cada campo ausente em `campos` permanece como está. Para os campos
- * opcionais do domínio (tipo, fabricante, caNumero, caValidade,
- * prazoUsoDias), a flag `*Informado` distingue "não mexer" de "limpar para
- * null" — mesmo mecanismo de `descricaoInformada` em
+ * opcionais do domínio (tipo, fabricante, prazoUsoDias, oculosComGrau e
+ * os da Parte C2), a flag `*Informado` distingue "não mexer"
+ * de "limpar para null" — mesmo mecanismo de `descricaoInformada` em
  * grupo-acesso.repository.js, repetido por campo.
  *
  * @returns {Promise<object|null>} material já atualizado, ou null se não existia nesta empresa
@@ -306,8 +301,6 @@ async function atualizar(executor, empresaId, id, {
   nome = null,
   tipo = null, tipoInformado = false,
   fabricante = null, fabricanteInformado = false,
-  caNumero = null, caNumeroInformado = false,
-  caValidade = null, caValidadeInformado = false,
   prazoUsoDias = null, prazoUsoDiasInformado = false,
   unidade = null,
   estoqueMinimo = null,
@@ -316,10 +309,14 @@ async function atualizar(executor, empresaId, id, {
   codigoInterno = null, codigoInternoInformado = false,
   descricao = null, descricaoInformado = false,
   exigeTamanho = null,
+  oculosComGrau = null, oculosComGrauInformado = false,
 } = {}) {
   exigirEmpresa(empresaId);
   exigirId(id, 'identificador de material');
   exigirExigeTamanhoOpcional(exigeTamanho);
+  if (oculosComGrauInformado) {
+    exigirOculosComGrauOpcional(oculosComGrau);
+  }
   if (nome !== null) {
     exigirNome(nome);
   }
@@ -328,12 +325,6 @@ async function atualizar(executor, empresaId, id, {
   }
   if (fabricanteInformado) {
     exigirTextoOpcional(fabricante, 'fabricante', TAMANHO_MAXIMO_FABRICANTE);
-  }
-  if (caNumeroInformado) {
-    exigirTextoOpcional(caNumero, 'número do CA', TAMANHO_MAXIMO_CA_NUMERO);
-  }
-  if (caValidadeInformado) {
-    exigirDataOpcional(caValidade, 'validade do CA');
   }
   if (prazoUsoDiasInformado) {
     exigirPrazoUsoDiasOpcional(prazoUsoDias);
@@ -362,30 +353,28 @@ async function atualizar(executor, empresaId, id, {
         SET nome = COALESCE($3, nome),
             tipo = CASE WHEN $4::boolean THEN $5 ELSE tipo END,
             fabricante = CASE WHEN $6::boolean THEN $7 ELSE fabricante END,
-            ca_numero = CASE WHEN $8::boolean THEN $9 ELSE ca_numero END,
-            ca_validade = CASE WHEN $10::boolean THEN $11 ELSE ca_validade END,
-            prazo_uso_dias = CASE WHEN $12::boolean THEN $13 ELSE prazo_uso_dias END,
-            unidade = COALESCE($14, unidade),
-            estoque_minimo = COALESCE($15, estoque_minimo),
-            ativo = COALESCE($16, ativo),
-            categoria = CASE WHEN $17::boolean THEN $18 ELSE categoria END,
-            codigo_interno = CASE WHEN $19::boolean THEN $20 ELSE codigo_interno END,
-            descricao = CASE WHEN $21::boolean THEN $22 ELSE descricao END,
-            exige_tamanho = COALESCE($23::boolean, exige_tamanho)
+            prazo_uso_dias = CASE WHEN $8::boolean THEN $9 ELSE prazo_uso_dias END,
+            unidade = COALESCE($10, unidade),
+            estoque_minimo = COALESCE($11, estoque_minimo),
+            ativo = COALESCE($12, ativo),
+            categoria = CASE WHEN $13::boolean THEN $14 ELSE categoria END,
+            codigo_interno = CASE WHEN $15::boolean THEN $16 ELSE codigo_interno END,
+            descricao = CASE WHEN $17::boolean THEN $18 ELSE descricao END,
+            exige_tamanho = COALESCE($19::boolean, exige_tamanho),
+            oculos_com_grau = CASE WHEN $20::boolean THEN $21::boolean ELSE oculos_com_grau END
       WHERE empresa_id = $1 AND id = $2
       RETURNING ${PROJECAO}`,
     [
       empresaId, id, nome,
       tipoInformado, tipo,
       fabricanteInformado, fabricante,
-      caNumeroInformado, caNumero,
-      caValidadeInformado, caValidade,
       prazoUsoDiasInformado, prazoUsoDias,
       unidade, estoqueMinimo, ativo,
       categoriaInformado, categoria,
       codigoInternoInformado, codigoInterno,
       descricaoInformado, descricao,
       exigeTamanho,
+      oculosComGrauInformado, oculosComGrau,
     ],
   );
 
@@ -403,7 +392,6 @@ module.exports = {
   TAMANHO_MAXIMO_NOME,
   TAMANHO_MAXIMO_TIPO,
   TAMANHO_MAXIMO_FABRICANTE,
-  TAMANHO_MAXIMO_CA_NUMERO,
   TAMANHO_MAXIMO_UNIDADE,
   TAMANHO_MAXIMO_CATEGORIA,
   TAMANHO_MAXIMO_CODIGO_INTERNO,

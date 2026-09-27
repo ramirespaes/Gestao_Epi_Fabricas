@@ -1,6 +1,7 @@
 'use strict';
 
 const { exigirDataOperacional } = require('../utils/data-operacional');
+const { escaparCoringasLike } = require('../utils/like');
 
 /**
  * Leitura do estoque por lote. Toda consulta filtra pela empresa e liga o
@@ -198,14 +199,17 @@ async function listarFiltrosDisponiveis(executor, empresaId) {
   return { categorias: l.categorias || [], tipos: l.tipos || [], tamanhos: l.tamanhos || [] };
 }
 
-// Indicadores do dashboard. Abaixo do mínimo só existe com mínimo configurado:
-// disponível 0 sem mínimo não é alerta. Lote zerado não soma saldo nem entra
-// em CA vencido.
+// Indicadores do dashboard. Disponível e abaixo do mínimo são do material
+// ativo, o que pode ser entregue e reposto; abaixo do mínimo só existe com
+// mínimo configurado, e disponível 0 sem mínimo não é alerta. CA vencido e a
+// vencer usam o recorte da Validade de estoque (lote com saldo, de material
+// ativo ou inativo), para os dois números baterem. Lote zerado não entra.
 async function resumirIndicadores(executor, empresaId, referencia) {
   exigirId(empresaId, 'empresa');
   exigirReferencia(referencia);
   const { rows } = await executor.query(
     `WITH ${LOTES_ATIVOS},
+     ${LOTES_VALIDADE},
      pares AS (
        SELECT material_id, tamanho, sum(saldo - bloqueado) AS disponivel
          FROM lotes
@@ -216,12 +220,119 @@ async function resumirIndicadores(executor, empresaId, referencia) {
                FROM pares p
                JOIN materiais m ON m.empresa_id = $1 AND m.id = p.material_id
               WHERE m.estoque_minimo > 0 AND p.disponivel < m.estoque_minimo)::int AS abaixo_minimo,
-            (SELECT count(*) FROM lotes WHERE saldo > 0 AND situacao = 'VENCIDO')::int AS ca_vencido,
-            (SELECT count(*) FROM lotes WHERE saldo > 0 AND situacao IN ('VENCE_HOJE', 'A_VENCER'))::int AS ca_a_vencer`,
+            (SELECT count(*) FROM validade WHERE situacao = 'VENCIDO')::int AS ca_vencido,
+            (SELECT count(*) FROM validade WHERE situacao IN ('VENCE_HOJE', 'A_VENCER'))::int AS ca_a_vencer`,
     [empresaId, referencia.hoje, referencia.diasAlerta],
   );
   const r = rows[0];
   return { disponivel: Number(r.disponivel), abaixoMinimo: r.abaixo_minimo, caVencido: r.ca_vencido, caAVencer: r.ca_a_vencer };
+}
+
+// E7 — validade de estoque. A unidade é o lote com saldo físico, de material
+// ativo ou inativo: inativar o cadastro não faz o estoque desaparecer (E9).
+// O Dashboard conta CA vencido e a vencer com este mesmo recorte. $4 é a
+// situação pedida, ou o grupo VENCIMENTO_PROXIMO, e $5 a busca já escapada,
+// em nome ou CA.
+const SITUACOES_LOTE = Object.freeze(['VENCIDO', 'VENCE_HOJE', 'A_VENCER', 'VENCIMENTO_PROXIMO', 'VALIDO', 'SEM_CA', 'NAO_EXIGE_CA']);
+
+const LOTES_VALIDADE = `validade AS (
+     SELECT l.id, l.material_id, m.nome, m.codigo_interno, m.categoria, m.tipo, m.ativo AS material_ativo, l.tamanho, l.ca_numero,
+            l.ca_validade, l.saldo, ${BLOQUEADO} AS bloqueado, ${SITUACAO_CA} AS situacao
+       ${JUNCAO}
+      WHERE l.empresa_id = $1
+        AND l.saldo > 0
+   )`;
+
+const FILTRO_VALIDADE = `WHERE ($4::text IS NULL OR situacao = $4::text
+            OR ($4::text = 'VENCIMENTO_PROXIMO' AND situacao IN ('VENCE_HOJE', 'A_VENCER')))
+        AND ($5::text IS NULL OR nome ILIKE '%' || $5::text || '%' OR ca_numero ILIKE '%' || $5::text || '%')`;
+
+// O que precisa de ação primeiro: vencido, sem CA, vence hoje, a vencer.
+const ORDEM_VALIDADE = `CASE situacao WHEN 'VENCIDO' THEN 1 WHEN 'SEM_CA' THEN 2 WHEN 'VENCE_HOJE' THEN 3
+                        WHEN 'A_VENCER' THEN 4 WHEN 'VALIDO' THEN 5 ELSE 6 END,
+               ca_validade NULLS LAST, lower(nome), tamanho NULLS FIRST, id`;
+
+function filtrosValidade(filtros = {}) {
+  const situacao = filtros.situacao ?? null;
+  if (situacao !== null && !SITUACOES_LOTE.includes(situacao)) {
+    throw new TypeError('situação de validade inválida');
+  }
+  const busca = filtros.busca ?? null;
+  if (busca !== null && (typeof busca !== 'string' || busca.length === 0)) {
+    throw new TypeError('busca inválida');
+  }
+  return { situacao, busca: busca === null ? null : escaparCoringasLike(busca) };
+}
+
+async function listarValidade(executor, empresaId, { hoje, diasAlerta, pagina, limite, ...filtros }) {
+  exigirId(empresaId, 'empresa');
+  exigirReferencia({ hoje, diasAlerta });
+  exigirId(pagina, 'página');
+  exigirId(limite, 'limite');
+  const f = filtrosValidade(filtros);
+  const { rows } = await executor.query(
+    `WITH ${LOTES_VALIDADE}
+     SELECT id, material_id, nome, codigo_interno, categoria, tipo, material_ativo, tamanho, ca_numero,
+            to_char(ca_validade, 'YYYY-MM-DD') AS validade_ca, saldo, bloqueado, situacao
+       FROM validade
+       ${FILTRO_VALIDADE}
+      ORDER BY ${ORDEM_VALIDADE}
+      LIMIT $6 OFFSET $7`,
+    [empresaId, hoje, diasAlerta, f.situacao, f.busca, limite, (pagina - 1) * limite],
+  );
+  return rows.map((l) => ({
+    loteId: l.id,
+    materialId: l.material_id,
+    material: l.nome,
+    codigoInterno: l.codigo_interno,
+    categoria: l.categoria,
+    tipo: l.tipo,
+    materialAtivo: l.material_ativo,
+    tamanho: l.tamanho,
+    caNumero: l.ca_numero,
+    caValidade: l.validade_ca,
+    fisico: l.saldo,
+    bloqueado: l.bloqueado,
+    disponivel: l.saldo - l.bloqueado,
+    situacaoCa: l.situacao,
+  }));
+}
+
+async function contarValidade(executor, empresaId, { hoje, diasAlerta, ...filtros }) {
+  exigirId(empresaId, 'empresa');
+  exigirReferencia({ hoje, diasAlerta });
+  const f = filtrosValidade(filtros);
+  const { rows } = await executor.query(
+    `WITH ${LOTES_VALIDADE}
+     SELECT count(*)::int AS total FROM validade ${FILTRO_VALIDADE}`,
+    [empresaId, hoje, diasAlerta, f.situacao, f.busca],
+  );
+  return rows[0].total;
+}
+
+// Indicadores do conjunto inteiro, sem filtro: vence hoje não é vencido, e
+// bloqueado é o lote que não pode gerar nova entrega (vencido ou sem CA).
+async function resumirValidade(executor, empresaId, referencia) {
+  exigirId(empresaId, 'empresa');
+  exigirReferencia(referencia);
+  const { rows } = await executor.query(
+    `WITH ${LOTES_VALIDADE}
+     SELECT count(*)::int AS lotes,
+            count(*) FILTER (WHERE situacao = 'VENCIDO')::int AS vencido,
+            count(*) FILTER (WHERE situacao = 'VENCE_HOJE')::int AS vence_hoje,
+            count(*) FILTER (WHERE situacao = 'A_VENCER')::int AS a_vencer,
+            count(*) FILTER (WHERE situacao = 'VALIDO')::int AS valido,
+            count(*) FILTER (WHERE situacao = 'SEM_CA')::int AS sem_ca,
+            count(*) FILTER (WHERE situacao = 'NAO_EXIGE_CA')::int AS nao_exige_ca,
+            count(*) FILTER (WHERE bloqueado > 0)::int AS bloqueados
+       FROM validade`,
+    [empresaId, referencia.hoje, referencia.diasAlerta],
+  );
+  const r = rows[0];
+  return {
+    lotes: r.lotes, vencido: r.vencido, venceHoje: r.vence_hoje, aVencer: r.a_vencer, valido: r.valido,
+    semCa: r.sem_ca, naoExigeCa: r.nao_exige_ca, bloqueados: r.bloqueados,
+  };
 }
 
 /**
@@ -254,5 +365,9 @@ module.exports = {
   contarDisponiveis,
   listarFiltrosDisponiveis,
   resumirIndicadores,
+  listarValidade,
+  contarValidade,
+  resumirValidade,
   VALIDADES,
+  SITUACOES_LOTE,
 };

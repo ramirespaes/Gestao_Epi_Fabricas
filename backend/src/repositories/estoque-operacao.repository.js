@@ -1,9 +1,11 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const { escaparCoringasLike } = require('../utils/like');
 
 /**
- * Escrita do estoque por lote. Eu só insiro lote e operação: os contadores do
+ * Escrita do estoque por lote e leitura do histórico de operações. Eu só
+ * insiro lote e operação, nunca altero nem apago uma operação: os contadores do
  * lote mudam pelo trigger da migration 042 quando a operação entra, e nunca
  * por UPDATE daqui. Toda consulta filtra pela empresa.
  *
@@ -168,7 +170,81 @@ async function registrarBaixa(executor, dados) {
   return mapearOperacao(rows[0]);
 }
 
+// ── Histórico (E8) ──────────────────────────────────────────────────
+// Só leitura de estoque_operacoes, sempre da empresa recebida. O período é
+// em dias de São Paulo. A ordem é fixa, mais recente primeiro e o id como
+// desempate, e segue o índice (empresa_id, criado_em DESC, id DESC).
+
+const TIPOS_OPERACAO = Object.freeze(['SALDO_INICIAL', 'ENTRADA', 'BAIXA']);
+const LIMITE_HISTORICO_MAXIMO = 100;
+
+const ORIGEM_HISTORICO = `FROM estoque_operacoes o
+       JOIN estoque_lotes l ON l.empresa_id = o.empresa_id AND l.id = o.lote_id
+       JOIN materiais m ON m.empresa_id = l.empresa_id AND m.id = l.material_id`;
+
+const FILTRO_HISTORICO = `WHERE o.empresa_id = $1
+        AND ($2::text IS NULL OR o.tipo = $2::text)
+        AND ($3::date IS NULL OR o.criado_em >= ($3::date)::timestamp AT TIME ZONE 'America/Sao_Paulo')
+        AND ($4::date IS NULL OR o.criado_em < ($4::date + 1)::timestamp AT TIME ZONE 'America/Sao_Paulo')
+        AND ($5::text IS NULL OR m.nome ILIKE '%' || $5::text || '%' OR l.ca_numero ILIKE '%' || $5::text || '%')`;
+
+function filtrosHistorico({ tipo = null, de = null, ate = null, busca = null } = {}) {
+  if (tipo !== null && !TIPOS_OPERACAO.includes(tipo)) throw new TypeError('tipo de operação inválido');
+  for (const data of [de, ate]) {
+    if (data !== null && (typeof data !== 'string' || !DATA_FORMATO.test(data))) throw new TypeError('período inválido');
+  }
+  if (busca !== null && (typeof busca !== 'string' || busca.length === 0)) throw new TypeError('busca inválida');
+  return [tipo, de, ate, busca === null ? null : escaparCoringasLike(busca)];
+}
+
+/** Uma página do histórico, com o lote, o material e o nome de quem registrou, da mesma empresa. */
+async function listarHistorico(executor, empresaId, { pagina, limite, ...filtros }) {
+  exigirId(empresaId, 'empresa');
+  exigirId(pagina, 'página');
+  if (!Number.isInteger(limite) || limite < 1 || limite > LIMITE_HISTORICO_MAXIMO) {
+    throw new TypeError('limite inválido');
+  }
+  const { rows } = await executor.query(
+    `SELECT o.id, o.tipo, o.quantidade, o.motivo, o.justificativa, o.criado_em, o.lote_id,
+            l.material_id, m.nome, m.codigo_interno, l.tamanho, l.ca_numero,
+            to_char(l.ca_validade, 'YYYY-MM-DD') AS ca_validade, u.nome AS responsavel
+       ${ORIGEM_HISTORICO}
+       LEFT JOIN usuarios u ON u.empresa_id = o.empresa_id AND u.id = o.usuario_id
+       ${FILTRO_HISTORICO}
+      ORDER BY o.criado_em DESC, o.id DESC
+      LIMIT $6 OFFSET $7`,
+    [empresaId, ...filtrosHistorico(filtros), limite, (pagina - 1) * limite],
+  );
+  return rows.map((o) => ({
+    operacaoId: String(o.id),
+    tipo: o.tipo,
+    quantidade: o.quantidade,
+    motivo: o.motivo,
+    justificativa: o.justificativa,
+    responsavel: o.responsavel,
+    criadoEm: o.criado_em,
+    loteId: o.lote_id,
+    materialId: o.material_id,
+    material: o.nome,
+    codigoInterno: o.codigo_interno,
+    tamanho: o.tamanho,
+    caNumero: o.ca_numero,
+    caValidade: o.ca_validade,
+  }));
+}
+
+async function contarHistorico(executor, empresaId, filtros) {
+  exigirId(empresaId, 'empresa');
+  const { rows } = await executor.query(
+    `SELECT count(*)::int AS total ${ORIGEM_HISTORICO} ${FILTRO_HISTORICO}`,
+    [empresaId, ...filtrosHistorico(filtros)],
+  );
+  return rows[0].total;
+}
+
 module.exports = {
+  listarHistorico,
+  contarHistorico,
   travarChave,
   buscarPorChave,
   buscarLote,

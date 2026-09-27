@@ -108,11 +108,12 @@ const exigirEscrita = (executor, atorId, acao) => autoridade.exigirAutoridadeAdm
 const exigirLeitura = (executor, atorId, acao) => autoridade.exigirAutoridadeAdministrativaLeitura(executor, EMPRESA, atorId, CODIGO_ERRO, MENSAGEM, acao);
 
 describe('contrato do módulo', () => {
-  test('exporta as três ações administrativas do catálogo (migration 024), congeladas', () => {
+  test('exporta as ações administrativas do catálogo (024 e 047), congeladas', () => {
     assert.deepEqual(autoridade.ACOES_ADMINISTRATIVAS, {
       GRUPOS_ACESSO: 'ADMINISTRAR_GRUPOS_ACESSO',
       PERMISSOES_GRUPO: 'ADMINISTRAR_PERMISSOES_GRUPO',
       VINCULOS_GRUPO: 'ADMINISTRAR_VINCULOS_GRUPO',
+      USUARIOS: 'GERENCIAR_USUARIOS',
     });
     assert.equal(Object.isFrozen(autoridade.ACOES_ADMINISTRATIVAS), true);
     assert.equal(autoridade.PERFIL_MASTER, 'MASTER');
@@ -188,6 +189,19 @@ describe('caminho 2 — ADMINISTRADOR expressamente autorizado (Subetapa 3Q)', (
     assert.equal((await exigirEscrita(executorFalso(), ADMIN_ID, PERMISSOES_GRUPO)).id, ADMIN_ID);
     await esperar403(exigirEscrita(executorFalso(), ADMIN_ID, GRUPOS_ACESSO));
     await esperar403(exigirEscrita(executorFalso(), ADMIN_ID, VINCULOS_GRUPO));
+  });
+
+  test('GERENCIAR_USUARIOS segue a mesma regra: vale só para usuários e não abre as telas de grupos', async (t) => {
+    const { USUARIOS } = autoridade.ACOES_ADMINISTRATIVAS;
+    mundo(t, { autorizacoes: [`${ADMIN_ID}:${USUARIOS}`] });
+
+    assert.equal((await exigirEscrita(executorFalso(), ADMIN_ID, USUARIOS)).id, ADMIN_ID);
+    assert.equal((await exigirLeitura(executorFalso(), ADMIN_ID, USUARIOS)).id, ADMIN_ID);
+    for (const acao of [GRUPOS_ACESSO, PERMISSOES_GRUPO, VINCULOS_GRUPO]) {
+      await esperar403(exigirEscrita(executorFalso(), ADMIN_ID, acao));
+    }
+    await esperar403(exigirEscrita(executorFalso(), SUPERVISOR_ID, USUARIOS));
+    await esperar403(exigirLeitura(executorFalso(), USUARIO_ID, USUARIOS));
   });
 
   test('a autorização é sempre consultada para a ação EXATA da operação, e na empresa da sessão', async (t) => {

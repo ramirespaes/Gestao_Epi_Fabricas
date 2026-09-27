@@ -205,3 +205,50 @@ describe('registrarEntrada — lote sem tamanho (migration 044)', () => {
     assert.equal(vazio.chamadas.length, 0);
   });
 });
+
+describe('histórico de operações (E8)', () => {
+  const linhaHistorico = (extra = {}) => ({
+    id: '99', tipo: 'BAIXA', quantidade: 2, motivo: 'OUTRO', justificativa: 'Doação', criado_em: CRIADO_EM, lote_id: LOTE,
+    material_id: MATERIAL, nome: 'Botina', codigo_interno: 'EPI-1', tamanho: null, ca_numero: '12345', ca_validade: '2027-06-30', responsavel: 'Maria', ...extra,
+  });
+
+  test('lista só da empresa, com filtros parametrizados, busca sem coringas e ordem fixa do servidor', async () => {
+    const executor = executorFalso([linhaHistorico()]);
+    const r = await repo.listarHistorico(executor, EMPRESA, {
+      tipo: 'BAIXA', de: '2026-09-01', ate: '2026-09-30', busca: '50%_x\\', pagina: 3, limite: 20,
+    });
+    const [{ texto, valores }] = executor.chamadas;
+    assert.deepEqual(valores, [EMPRESA, 'BAIXA', '2026-09-01', '2026-09-30', '50\\%\\_x\\\\', 20, 40]);
+    assert.match(texto, /WHERE o\.empresa_id = \$1/);
+    assert.match(texto, /l\.empresa_id = o\.empresa_id/);
+    assert.match(texto, /u\.empresa_id = o\.empresa_id AND u\.id = o\.usuario_id/);
+    assert.match(texto, /ORDER BY o\.criado_em DESC, o\.id DESC\s+LIMIT \$6 OFFSET \$7/);
+    assert.match(texto, /AT TIME ZONE 'America\/Sao_Paulo'/);
+    assert.doesNotMatch(texto, /logs_auditoria|chave_idempotencia|requisicao_hash|UPDATE|DELETE|INSERT/i);
+    assert.deepEqual(r, [{
+      operacaoId: '99', tipo: 'BAIXA', quantidade: 2, motivo: 'OUTRO', justificativa: 'Doação', responsavel: 'Maria', criadoEm: CRIADO_EM,
+      loteId: LOTE, materialId: MATERIAL, material: 'Botina', codigoInterno: 'EPI-1', tamanho: null, caNumero: '12345', caValidade: '2027-06-30',
+    }]);
+  });
+
+  test('sem filtro, os filtros vão como null; a contagem usa os mesmos filtros', async () => {
+    const executor = executorFalso([], [{ total: 7 }]);
+    await repo.listarHistorico(executor, EMPRESA, { pagina: 1, limite: 50 });
+    assert.equal(await repo.contarHistorico(executor, EMPRESA, { tipo: 'ENTRADA' }), 7);
+    assert.deepEqual(executor.chamadas.map((c) => c.valores), [[EMPRESA, null, null, null, null, 50, 0], [EMPRESA, 'ENTRADA', null, null, null]]);
+    assert.doesNotMatch(executor.chamadas[1].texto, /ORDER BY|LIMIT/);
+  });
+
+  test('recusa empresa, tipo, data, busca, página e limite inválidos antes de consultar', async () => {
+    const executor = executorFalso();
+    const pagina = { pagina: 1, limite: 50 };
+    await assert.rejects(() => repo.listarHistorico(executor, 0, pagina), /empresa/);
+    await assert.rejects(() => repo.listarHistorico(executor, EMPRESA, { ...pagina, tipo: 'ENTREGA' }), /tipo/);
+    await assert.rejects(() => repo.listarHistorico(executor, EMPRESA, { ...pagina, de: '01/09/2026' }), /período/);
+    await assert.rejects(() => repo.listarHistorico(executor, EMPRESA, { ...pagina, busca: '' }), /busca/);
+    await assert.rejects(() => repo.listarHistorico(executor, EMPRESA, { pagina: 0, limite: 50 }), /página/);
+    await assert.rejects(() => repo.listarHistorico(executor, EMPRESA, { pagina: 1, limite: 101 }), /limite/);
+    await assert.rejects(() => repo.contarHistorico(executor, EMPRESA, { ate: "2026-09-30' OR 1=1" }), /período/);
+    assert.equal(executor.chamadas.length, 0);
+  });
+});

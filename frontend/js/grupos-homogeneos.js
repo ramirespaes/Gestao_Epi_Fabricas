@@ -151,7 +151,8 @@
           + (o.podeEditar ? '' : ' disabled') + (m.indexOf(x.id) !== -1 ? ' checked' : '')
           + ' aria-label="Vincular ' + escaparHtml(x.nome) + ' ao GHE">';
         var prazo = typeof x.prazoUsoDias === 'number' ? x.prazoUsoDias + ' dias' : '';
-        return '<tr><td>' + caixa + '</td><td>' + nome + '</td>' + celula(x.categoria) + celula(x.tipo) + celula(x.caNumero)
+        // Sem CA: o GHE associa o material; o CA real é o do lote, conhecido na entrega.
+        return '<tr><td>' + caixa + '</td><td>' + nome + '</td>' + celula(x.categoria) + celula(x.tipo)
           + celula(prazo) + '<td>' + situacao(x.ativo) + '</td></tr>';
       }).join('');
     },

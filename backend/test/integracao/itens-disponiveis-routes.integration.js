@@ -29,7 +29,7 @@ const provisionamento = require('../../src/services/provisionamento-permissoes.s
  * 30/09/2026 (relógio injetado).
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 45 }, (_, i) => String(i).padStart(3, '0'));
+const TODAS_AS_MIGRATIONS = Array.from({ length: 46 }, (_, i) => String(i).padStart(3, '0'));
 const HOJE = '2026-09-30';
 const RELOGIO = () => new Date('2026-09-30T15:00:00Z');
 const SENHA = 'senha-forte-da-parte-c3-2026';
@@ -234,7 +234,7 @@ describe('C3 — GET /api/estoque/itens-disponiveis (PostgreSQL real)', () => {
     assert.equal(usr.body.total, 8);
     assert.equal((await request(app).get('/api/materiais').set('Cookie', cookie.usuarioA)).status, 403, 'itens disponíveis não concede o cadastro');
     assert.equal((await request(app).post('/api/materiais').set('Cookie', cookie.usuarioA).send({ nome: 'x' })).status, 403);
-    assert.equal((await request(app).post(`/api/materiais/${m.botina}/estoque/movimentar`).set('Cookie', cookie.usuarioA).send({ tamanho: '40', tipo: 'SAIDA', quantidade: 1 })).status, 403, 'nem movimentar');
+    assert.equal((await request(app).post(`/api/materiais/${m.botina}/estoque/entradas`).set('Cookie', cookie.usuarioA).send({})).status, 403, 'nem movimentar');
   });
 
   test('somente leitura: POST, PATCH e DELETE não existem; nada é auditado pela consulta', async () => {

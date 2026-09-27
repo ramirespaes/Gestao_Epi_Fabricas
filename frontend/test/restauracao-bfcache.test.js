@@ -32,7 +32,7 @@ const CONTEXTO = (usuarioId, empresaId, extra = {}) => ({
   empresa: { id: empresaId, nome: `Empresa ${empresaId}`, cnpj: '11222333000181' },
 });
 const GLOBAL_ME = (usuarioId, empresaId) => ({ status: 'ok', identidade: { id: 9, email: `p${usuarioId}@exemplo-cliente.com.br` }, empresas: [{ id: empresaId, nome: `Empresa ${empresaId}`, perfil: 'MASTER' }], contexto: CONTEXTO(usuarioId, empresaId) });
-const PERMISSOES = (usuarioId, empresaId) => ({ status: 'ok', empresaId, usuarioId, perfil: 'MASTER', recursos: {}, acoes: {}, administracao: { gruposAcesso: { consultar: true, alterar: true }, permissoesGrupo: { consultar: true, alterar: true }, vinculosGrupo: { consultar: true, alterar: true }, autorizacoesIndividuais: { consultar: true, concederDireta: true, delegar: true } } });
+const PERMISSOES = (usuarioId, empresaId) => ({ status: 'ok', empresaId, usuarioId, perfil: 'MASTER', recursos: {}, acoes: {}, administracao: { gruposAcesso: { consultar: true, alterar: true }, permissoesGrupo: { consultar: true, alterar: true }, vinculosGrupo: { consultar: true, alterar: true }, usuarios: { consultar: true, alterar: true }, autorizacoesIndividuais: { consultar: true, concederDireta: true, delegar: true } } });
 
 let chamadas;
 /** Servidor falso por rota; `rotas` mapeia "METODO caminho" -> resposta | Error | função(). */
@@ -273,6 +273,24 @@ describe('Páginas integradas (js/sessao-empresarial.js, montar): restauração 
     await pageshow(j, true);
     assert.deepEqual([el.tela.style.display, encerrou, j.redirecionamentos], ['none', [], []]);
     assert.equal(el.identificacao.textContent, Sessao.rotuloIdentificacao(CONTEXTO(7, 3)));
+  });
+
+  test('bloco de conta: nome e empresa somem durante a verificação e voltam com a sessão confirmada; sem sessão, ficam vazios', async () => {
+    const estado = { logado: true, usuario: 7, empresa: 3 };
+    servidor(rotas(estado));
+    const j = janelaFalsa();
+    const e = () => ({ textContent: '', style: { display: '' }, addEventListener() {} });
+    const el = { tela: e(), mensagem: e(), linkPortal: e(), usuario: e(), empresa: e() };
+    await Sessao.montar({ elementos: el, janela: j });
+    const preenchido = [el.usuario.textContent, el.empresa.textContent];
+    assert.ok(preenchido.every((t) => t.length > 0), JSON.stringify(preenchido));
+    el.usuario.textContent = 'X';
+    el.empresa.textContent = 'Y';
+    await pageshow(j, true);
+    assert.deepEqual([el.usuario.textContent, el.empresa.textContent], preenchido);
+    estado.logado = false;
+    await pageshow(j, true);
+    assert.deepEqual([el.usuario.textContent, el.empresa.textContent], ['', '']);
   });
 
   test('sessão válida de OUTRA empresa ou usuário (troca em outra aba): dados antigos são limpos e a página é recarregada para o contexto atual, sem history.back', async () => {

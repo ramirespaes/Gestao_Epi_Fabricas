@@ -30,7 +30,7 @@ const provisionamento = require('../../src/services/provisionamento-permissoes.s
  * da API fica em 00h30 de 01/10.
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 45 }, (_, i) => String(i).padStart(3, '0'));
+const TODAS_AS_MIGRATIONS = Array.from({ length: 46 }, (_, i) => String(i).padStart(3, '0'));
 const HOJE = '2026-09-30';
 const ONTEM = somarDias(HOJE, -1);
 const AMANHA = somarDias(HOJE, 1);

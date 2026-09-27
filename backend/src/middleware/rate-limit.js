@@ -59,6 +59,10 @@ const limitadorPlataformaAutenticacao = criarLimitador(httpConfig.rateLimit.aute
 // instância própria, mesmos parâmetros do limite de autenticação. Camada
 // complementar ao cooldown persistente por token (convite-master.service.js).
 const limitadorPlataformaConvite = criarLimitador(httpConfig.rateLimit.autenticacao);
+// Parte F — rotas PÚBLICAS de aceite de convite de usuário, no namespace do
+// cliente: instância própria, mesmos parâmetros do limite de autenticação.
+// Complementa o cooldown persistente por token (convite-usuario.service.js).
+const limitadorConviteUsuario = criarLimitador(httpConfig.rateLimit.autenticacao);
 
 module.exports = {
   criarLimitador,
@@ -67,4 +71,5 @@ module.exports = {
   limitadorPlataformaGeral,
   limitadorPlataformaAutenticacao,
   limitadorPlataformaConvite,
+  limitadorConviteUsuario,
 };

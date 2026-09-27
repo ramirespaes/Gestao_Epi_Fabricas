@@ -378,11 +378,13 @@ describe('render — tri-state na tela e HTML escapado', () => {
 
 // ─────────────────────────────────────────────────────────────────────
 describe('catálogo de recursos — fonte real, não lista inventada', () => {
-  test('são os 21 identificadores de página que a navegação legada reconhece', () => {
+  // E9: os 21 da navegação legada e employeeGroups, que o servidor protege desde a Etapa B.
+  test('são os 21 identificadores de página que a navegação legada reconhece, mais o GHE (employeeGroups)', () => {
     const ids = EpiGrupoPermissoes.RECURSOS.map((r) => r.id);
 
-    assert.equal(ids.length, 21);
-    assert.deepEqual([...new Set(ids)].length, 21);
+    assert.equal(ids.length, 22);
+    assert.deepEqual([...new Set(ids)].length, 22);
+    assert.ok(ids.includes('employeeGroups'));
     for (const esperado of ['dashboard', 'materials', 'userAdmin', 'config', 'lgpd']) {
       assert.ok(ids.includes(esperado), `faltou ${esperado}`);
     }
@@ -405,7 +407,7 @@ describe('catálogo de recursos — fonte real, não lista inventada', () => {
     primeira[0].id = 'adulterado';
 
     const segunda = EpiGrupoPermissoes.RECURSOS;
-    assert.equal(segunda.length, 21);
+    assert.equal(segunda.length, 22);
     assert.equal(segunda.some((r) => r.id === 'intruso'), false);
     assert.equal(segunda.some((r) => r.id === 'adulterado'), false);
   });

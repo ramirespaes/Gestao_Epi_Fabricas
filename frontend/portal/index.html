@@ -8,7 +8,11 @@
   <style>
     /* Identidade visual SafeWork Engenharia (referência: frontend/institucional/) —
        mesma folha nas duas telas de login; só as variáveis de tema mudam. */
-    :root { color-scheme: light; --ink: #153333; --muted: #617471; --accent: #1f7563; --accent-forte: #153333; --surface: #ffffff; --bg: #f7f8f6; --line: #e3e9e5; --campo: #ffffff; --hover: #8ab5a7; --foco: #e1efe9; --logo-fundo: #153333; --erro: #b3261e; --erro-fundo: #fdecea; --info-fundo: #eaf5ef; --sombra: #173d3720; }
+    :root { color-scheme: light dark; --ink: #153333; --muted: #617471; --accent: #1f7563; --accent-forte: #153333; --surface: #ffffff; --bg: #f7f8f6; --line: #e3e9e5; --campo: #ffffff; --hover: #8ab5a7; --foco: #e1efe9; --logo-fundo: #153333; --erro: #b3261e; --erro-fundo: #fdecea; --info-fundo: #eaf5ef; --sombra: #173d3720; }
+    /* E10: no sistema em modo escuro, só as variáveis mudam; as regras são as mesmas. */
+    @media (prefers-color-scheme: dark) {
+      :root { --ink: #e8f0ed; --muted: #a2b3af; --accent: #26806b; --accent-forte: #1f6b59; --surface: #1f2826; --bg: #151b1a; --line: #33403d; --campo: #182120; --hover: #4f8f80; --foco: rgba(108, 201, 176, 0.25); --logo-fundo: #26806b; --erro: #ff8a80; --erro-fundo: rgba(255, 69, 58, 0.15); --info-fundo: rgba(108, 201, 176, 0.12); --sombra: #00000055; }
+    }
 
     * { box-sizing: border-box; }
     body { margin: 0; min-height: 100svh; background: var(--bg); color: var(--ink); font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; }

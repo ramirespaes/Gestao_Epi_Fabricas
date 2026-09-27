@@ -32,6 +32,7 @@ function corpo(extra = {}) {
       gruposAcesso: area(true),
       permissoesGrupo: area(false),
       vinculosGrupo: area(true),
+      usuarios: area(false),
       autorizacoesIndividuais: { consultar: true, concederDireta: false, delegar: true },
     },
     ...extra,
@@ -165,6 +166,25 @@ describe('decisões: só `true` explícito libera', () => {
     assert.deepEqual([P.recurso(p, 'materials', 'visualizar'), P.recurso(p, 'materials', 'criar'), P.recurso(p, 'reports', 'visualizar')], [true, false, false]);
     assert.equal(P.acao(p, 'MOVIMENTAR_ESTOQUE'), false);
   });
+
+  test('parte F: Novo usuário e Administração de usuários dependem só da área usuarios (GERENCIAR_USUARIOS)', async () => {
+    const exigencia = { abrir: [['usuarios', 'consultar']], alterar: [['usuarios', 'alterar']] };
+    assert.deepEqual([P.PAGINAS.newUser, P.PAGINAS.userAdmin], [exigencia, exigencia]);
+    const sem = perm();
+    assert.deepEqual([P.podeAbrir(sem, 'newUser'), P.podeAbrir(sem, 'userAdmin')], [false, false], 'grupos não abrem usuários');
+    const com = corpo({ administracao: { ...corpo().administracao, gruposAcesso: area(false), vinculosGrupo: area(false), usuarios: area(true) } });
+    assert.deepEqual([P.podeAbrir(com, 'newUser'), P.podeAlterar(com, 'newUser'), P.podeAbrir(com, 'userAdmin'), P.podeAlterar(com, 'userAdmin')], [true, true, true, true]);
+    assert.equal(P.podeAbrir(com, 'grupos-acesso'), false, 'usuários não abrem grupos');
+    const soLeitura = corpo({ administracao: { ...corpo().administracao, usuarios: { consultar: true, alterar: false } } });
+    assert.deepEqual([P.podeAbrir(soLeitura, 'userAdmin'), P.podeAlterar(soLeitura, 'userAdmin')], [true, false]);
+
+    const { usuarios, ...semArea } = corpo().administracao;
+    assert.equal(usuarios.consultar, false);
+    servidor(resposta(200, corpo({ administracao: semArea })));
+    assert.deepEqual(await P.carregar(ESPERADO), { ok: false, motivo: 'RESPOSTA_INVALIDA' }, 'área usuarios ausente é resposta inválida');
+    servidor(resposta(200, corpo({ administracao: { ...corpo().administracao, usuarios: { consultar: 'true', alterar: true } } })));
+    assert.deepEqual(await P.carregar(ESPERADO), { ok: false, motivo: 'RESPOSTA_INVALIDA' });
+  });
 });
 
 describe('menu, página e somente leitura', () => {
@@ -240,13 +260,14 @@ describe('páginas (inspeção estática)', () => {
   const semComentarios = (s) => s.replace(/<!--[\s\S]*?-->/g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
 
   for (const pagina of PAGINAS) {
-    test(`${pagina}: carrega o módulo após a sessão, prepara a página com o próprio nome, e os quatro links nascem ocultos`, () => {
+    test(`${pagina}: carrega o módulo após a sessão, prepara a página com o próprio nome, e os seis links nascem ocultos`, () => {
       const html = ler(`pages/${pagina}.html`);
       const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
       assert.ok(scripts.indexOf('../js/sessao-empresarial.js') < scripts.indexOf('../js/permissoes-efetivas.js'));
       assert.match(semComentarios(html), new RegExp(`EpiPermissoes\\.prepararPagina\\(\\{\\s*pagina: '${pagina}'`));
       const links = [...html.matchAll(/<a [^>]*data-pagina="([^"]+)"[^>]*>/g)];
-      assert.deepEqual(links.map((m) => m[1]).sort(), [...PAGINAS].sort());
+      // Parte F: as páginas de usuários entraram no menu administrativo.
+      assert.deepEqual(links.map((m) => m[1]).sort(), [...PAGINAS, 'newUser', 'userAdmin'].sort());
       for (const m of links) assert.match(m[0], /style="display:none"/, `${m[1]} deve nascer oculto`);
       assert.equal(/localStorage|sessionStorage/.test(semComentarios(html)), false);
     });
@@ -261,7 +282,9 @@ describe('páginas (inspeção estática)', () => {
   test('portal/inicio: os quatro módulos administrativos (e, desde a C2, Materiais) nascem ocultos e dependem das permissões', () => {
     const html = ler('portal/inicio.html');
     const links = [...html.matchAll(/<a [^>]*data-pagina="([^"]+)"[^>]*>/g)];
-    assert.deepEqual(links.map((m) => m[1]), ['grupos-acesso', 'grupo-permissoes', 'grupo-usuarios', 'autorizacoes-individuais', 'materials', 'availableItems', 'employeeHistory', 'importEmployees', 'employeeGroups', 'dashboard']);
+    // E10: na ordem do menu (fechamento-e10.test.js confere a ordem).
+    assert.deepEqual(links.map((m) => m[1]), ['dashboard', 'materials', 'stockValidity', 'availableItems', 'operations', 'employeeGroups', 'employeeHistory',
+      'grupos-acesso', 'grupo-permissoes', 'grupo-usuarios', 'autorizacoes-individuais', 'importEmployees', 'newUser', 'userAdmin']);
     for (const m of links) assert.match(m[0], /style="display:none"/);
     assert.match(html, /<script src="\.\.\/js\/permissoes-efetivas\.js"><\/script>/);
     assert.match(ler('portal/inicio.js'), /EpiPermissoes\.carregar\(window\.EpiPermissoes\.esperadoDoContexto\(ctx\)\)/, 'o Portal confere empresa, usuário e perfil');

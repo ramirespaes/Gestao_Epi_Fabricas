@@ -385,15 +385,15 @@ describe('as quatro páginas integradas (inspeção estática)', () => {
         assert.equal(proibido.test(codigo), false, `${pagina} contém ${proibido}`);
       }
       assert.match(codigo, /EpiSessaoEmpresarial\.montar\(/);
-      assert.match(codigo, /aoFalharSaida: function \(mensagem\) \{ (mostrarAviso|ui\.aviso)\(mensagem, 'erro'\); \}/, 'a falha de saída aparece no aviso da própria página');
+      assert.equal(/aoFalharSaida|botaoSair:|botaoTrocar:|identificacao:/.test(codigo), false, 'Sair e Trocar de empresa ficam no Dashboard e no Início do Portal');
       assert.match(codigo, /EpiHttp\.configurar\(\{ baseUrl: window\.SAFEWORK_PORTAL_API_BASE_URL \}\)/);
       assert.match(html, /id="telaSessao"/);
-      assert.match(html, /id="botaoTrocarEmpresa"/);
+      assert.equal(/id="(botaoTrocarEmpresa|botaoSair|identidade)"/.test(html), false);
     });
 
     test(`${pagina}: navegação só entre páginas integradas e o Portal — nenhum link para o protótipo`, () => {
       const hrefs = [...ler(pagina).matchAll(/href="([^"]+)"/g)].map((m) => m[1]).filter((h) => !h.startsWith('http') && !h.startsWith('../css/') && h !== 'javascript:void(0)');
-      const permitidos = new Set(['grupos-acesso.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'autorizacoes-individuais.html', '../portal/index.html', '../portal/inicio.html']);
+      const permitidos = new Set(['grupos-acesso.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'autorizacoes-individuais.html', 'new-user.html', 'user-admin.html', '../portal/index.html', '../portal/inicio.html']);
       for (const h of hrefs) assert.ok(permitidos.has(h), `${pagina} aponta para ${h}`);
     });
   }
@@ -403,5 +403,23 @@ describe('as quatro páginas integradas (inspeção estática)', () => {
     assert.equal(/\.setItem\(|\.getItem\(/.test(codigo), false);
     assert.equal(/EpiAPI|CURRENT_USER|db-api|epi_db_v2/.test(codigo), false);
     assert.equal(/location\.href\s*=|\?_s=/.test(codigo), false);
+  });
+});
+
+describe('montar: nome e empresa em elementos separados (bloco de conta do Dashboard)', () => {
+  test('preenche nome e empresa como texto, mesmo quando trazem marcação; nada vai por innerHTML', async () => {
+    const nome = '<img src=x onerror=alert(1)>';
+    configurar({ 'GET /auth/me': resposta(200, { ...ME, usuario: { ...ME.usuario, nome } }), 'GET /auth/global/me': resposta(200, { empresas: [{}] }) });
+    const el = { tela: elementoFalso(), mensagem: elementoFalso(), linkPortal: elementoFalso(), usuario: elementoFalso(), empresa: elementoFalso() };
+    await Sessao.montar({ elementos: el, janela: janelaFalsa() });
+    assert.deepEqual([el.usuario.textContent, el.empresa.textContent], [nome, 'Empresa Demo']);
+    assert.deepEqual([el.usuario.innerHTML, el.empresa.innerHTML], [undefined, undefined]);
+  });
+
+  test('sem sessão: nome e empresa continuam vazios', async () => {
+    configurar({ 'GET /auth/me': resposta(401, { status: 'erro', codigo: 'NAO_AUTENTICADO' }) });
+    const el = { tela: elementoFalso(), mensagem: elementoFalso(), linkPortal: elementoFalso(), usuario: elementoFalso(), empresa: elementoFalso() };
+    assert.equal(await Sessao.montar({ elementos: el, janela: janelaFalsa() }), null);
+    assert.deepEqual([el.usuario.textContent, el.empresa.textContent], ['', '']);
   });
 });

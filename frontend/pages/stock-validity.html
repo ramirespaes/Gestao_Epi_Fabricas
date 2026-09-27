@@ -3,163 +3,85 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Validade do CA — Gestão de EPIs</title>
+  <title>Validade de estoque — Gestão de EPIs</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
   <link rel="stylesheet" href="../css/main.css">
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="../js/tema.js"></script>
+  <style>
+    /* Parte C2: itens do menu ainda não integrados ao backend (sem link) */
+    .nav a.nav-pendente{cursor:default;opacity:.55}
+    .nav a.nav-pendente:hover{background:transparent}
+    .nav-etiqueta{margin-left:auto;font-size:10px;font-weight:500;color:var(--on-surface-variant);border:1px solid var(--outline);border-radius:99px;padding:1px 7px;white-space:nowrap}
+
+    /* E7: vidro discreto sobre os tokens de css/main.css, no tema claro e no escuro */
+    .validade{--vidro-fundo:rgba(255,255,255,.64);--vidro-borda:rgba(255,255,255,.72);--vidro-sombra:0 1px 0 rgba(255,255,255,.7) inset,0 10px 30px rgba(15,23,42,.07);
+      --realce:radial-gradient(1100px 520px at 0% -20%,rgba(0,122,255,.10),transparent 60%),radial-gradient(900px 480px at 100% 0%,rgba(88,86,214,.08),transparent 60%);
+      background:var(--realce);border-radius:22px;padding:6px}
+    html[data-theme="dark"] .validade{--vidro-fundo:rgba(44,44,46,.58);--vidro-borda:rgba(255,255,255,.10);--vidro-sombra:0 1px 0 rgba(255,255,255,.05) inset,0 12px 32px rgba(0,0,0,.38);
+      --realce:radial-gradient(1100px 520px at 0% -20%,rgba(10,132,255,.14),transparent 60%),radial-gradient(900px 480px at 100% 0%,rgba(94,92,230,.12),transparent 60%)}
+    .vidro{background:var(--vidro-fundo);-webkit-backdrop-filter:blur(18px) saturate(150%);backdrop-filter:blur(18px) saturate(150%);border:1px solid var(--vidro-borda);border-radius:18px;box-shadow:var(--vidro-sombra)}
+    html[data-theme="dark"] .vidro{color:var(--on-surface)}
+    @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.vidro{background:var(--surface-container)}}
+    .validade-topo{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:8px;padding:10px 12px 4px}
+    .validade-topo h2{font-family:var(--font-brand);font-size:22px;line-height:1.1;letter-spacing:-0.4px;font-weight:500}
+    .validade-topo p{font-size:13px;color:var(--on-surface-variant);margin-top:4px;max-width:760px}
+    .validade-hoje{font-size:12px;color:var(--on-surface-variant)}
+    .indicadores{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin:14px 0}
+    .indicador{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:14px 16px;text-align:left;font:inherit;color:var(--on-surface);cursor:pointer;transition:transform .15s ease,box-shadow .15s ease}
+    button.indicador:hover{transform:translateY(-1px)}
+    .indicador:focus-visible,.filtros :focus-visible,.botao-baixa:focus-visible,.painel-baixa :focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+    .indicador-rotulo{font-size:12px;font-weight:600;color:var(--on-surface-variant)}
+    .indicador strong{font-size:26px;font-weight:600;line-height:1.1}
+    .indicador-nota{font-size:11px;color:var(--on-surface-variant)}
+    .indicador.perigo strong{color:var(--error)}
+    .indicador.alerta strong{color:var(--warning)}
+    .indicador.ok strong{color:var(--success)}
+    .indicador.fixo{cursor:default}
+    .filtros{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;padding:14px 16px;margin-bottom:14px}
+    .filtros .field{min-width:200px;flex:1}
+    .filtros .acoes{display:flex;gap:8px}
+    .tabela-validade{padding:6px 6px 10px;margin-bottom:14px}
+    .tabela-validade .table-wrap{overflow-x:auto}
+    .tabela-validade td.numero,.tabela-validade th.numero{text-align:right}
+    .tabela-validade td.estado{text-align:center;color:var(--on-surface-variant);padding:28px 12px}
+    .tabela-validade small.detalhe{display:block;font-size:11px;color:var(--on-surface-variant)}
+    .tag-inativo{display:inline-flex;align-items:center;margin-left:6px;font-size:11px;font-weight:600;padding:1px 8px;border-radius:99px;background:var(--surface-container-high);color:var(--on-surface-variant);border:1px solid var(--outline-variant);white-space:nowrap}
+    .disp{display:inline-flex;align-items:center;font-size:12px;font-weight:500;padding:2px 9px;border-radius:99px;white-space:nowrap}
+    .disp-bloqueado{background:var(--error-container);color:var(--error)}
+    .disp-livre{background:var(--success-container);color:#1A7A35}
+    html[data-theme="dark"] .disp-livre{color:var(--success)}
+    .paginacao{display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:8px 10px 0;font-size:12px;color:var(--on-surface-variant)}
+    .painel-baixa{padding:16px 18px;margin-bottom:14px;border-color:rgba(255,59,48,.28)}
+    .painel-baixa h3{font-size:15px;font-weight:600;margin-bottom:4px}
+    .painel-baixa .descricao{font-size:13px;color:var(--on-surface-variant);margin-bottom:12px}
+    @media (max-width: 1100px){.indicadores{grid-template-columns:repeat(3,minmax(0,1fr))}}
+    @media (max-width: 640px){.indicadores{grid-template-columns:repeat(2,minmax(0,1fr))}.filtros .field{min-width:100%}}
+    @media (prefers-reduced-motion: reduce){.indicador{transition:none}button.indicador:hover{transform:none}}
+  </style>
 </head>
+<!--
+  Validade de estoque (Bloco 9, E7): acompanhamento lote a lote do CA, dos
+  vencimentos e dos bloqueios, com GET /api/estoque/validade e a baixa manual
+  de POST /api/estoque/lotes/:loteId/baixas. Sessão empresarial do Portal,
+  permissões do servidor; sem js/db-api.js e sem js/main.js.
+-->
 <body>
 
-<div id="loginScreen" style="position:fixed;inset:0;z-index:10000;
-       background:var(--surface);display:flex;align-items:center;justify-content:center;
-       padding:20px">
-
-    <div style="width:100%;max-width:400px">
-
-      <!-- Logo -->
-      <div style="text-align:center;margin-bottom:28px">
-        <div style="width:64px;height:64px;border-radius:20px;background:#1a3a6b;
-                    display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
-          <span class="material-symbols-outlined" style="font-size:32px;color:#fff">safety_check</span>
-        </div>
-        <h1 style="font-size:20px;font-weight:700;margin:0">Gestão de EPIs</h1>
-        <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Cobresul Metais LTDA</p>
-      </div>
-
-      <!-- ── PAINEL 1: LOGIN ────────────────────────────────────────────── -->
-      <section class="card" id="loginPanel">
-        <div class="form-grid" style="margin-bottom:4px">
-          <div class="field full">
-            <label for="loginEmail">E-mail corporativo</label>
-            <input id="loginEmail" class="input" type="email" placeholder="seu.nome@example.invalid" autocomplete="username">
-          </div>
-          <div class="field full">
-            <label for="loginPassword">Senha</label>
-            <input id="loginPassword" class="input" type="password" placeholder="••••••••" autocomplete="current-password"
-                   onkeydown="if(event.key==='Enter') doLogin()">
-          </div>
-        </div>
-
-        <div id="loginError" style="display:none;margin-bottom:10px">
-          <div class="notice" style="background:rgba(255,59,48,0.06);color:#FF3B30;border-color:rgba(255,59,48,0.2)">
-            E-mail ou senha incorretos.
-          </div>
-        </div>
-
-        <button class="filled-btn" style="width:100%;height:48px" onclick="doLogin()">
-          <span class="material-symbols-outlined">login</span>Entrar
-        </button>
-
-        <!-- Login biométrico -->
-        <button class="outlined-btn" id="biometricLoginBtn" style="width:100%;height:48px;margin-top:10px;display:none"
-                onclick="loginWithBiometrics()">
-          <span class="material-symbols-outlined">fingerprint</span>Entrar com biometria
-        </button>
-
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
-          <button type="button" onclick="showLoginPanel('recoverPanel')"
-                  style="background:none;border:none;color:#007AFF;font-size:12px;cursor:pointer;padding:0">
-            Esqueci minha senha
-          </button>
-          <button type="button" onclick="showLoginPanel('biometricSetupPanel')"
-                  style="background:none;border:none;color:#007AFF;font-size:12px;cursor:pointer;padding:0">
-            Configurar biometria
-          </button>
-        </div>
-      </section>
-
-      <!-- ── PAINEL 2: RECUPERAÇÃO DE SENHA ─────────────────────────────── -->
-      <section class="card" id="recoverPanel" style="display:none">
-        <div class="card-header">
-          <div class="card-title">
-            <div class="card-icon" style="background:rgba(255,149,0,0.1);color:#FF9500">mail</div>
-            <div>
-              <h2>Recuperar senha</h2>
-              <p>Informe seu e-mail corporativo para receber o código de verificação.</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Etapa 1: pedir e-mail -->
-        <div id="recoverStep1">
-          <div class="field full">
-            <label for="recoverEmail">E-mail corporativo</label>
-            <input id="recoverEmail" class="input" type="email" placeholder="seu.nome@example.invalid">
-          </div>
-          <button class="filled-btn" style="width:100%;height:46px;margin-top:12px" onclick="sendRecoveryCode()">
-            <span class="material-symbols-outlined">send</span>Enviar código
-          </button>
-        </div>
-
-        <!-- Etapa 2: código + nova senha -->
-        <div id="recoverStep2" style="display:none">
-          <div class="notice" style="margin-bottom:12px">
-            Código enviado para <strong id="recoverEmailDisplay"></strong>.
-            <span style="display:block;margin-top:4px;font-size:11px">(Simulação: o código aparece no console do navegador — F12)</span>
-          </div>
-          <div class="field full">
-            <label for="recoverCode">Código de verificação</label>
-            <input id="recoverCode" class="input" type="text" maxlength="6" placeholder="000000">
-          </div>
-          <div class="field full">
-            <label for="recoverNewPassword">Nova senha</label>
-            <input id="recoverNewPassword" class="input" type="password" placeholder="Mínimo 8 caracteres">
-          </div>
-          <button class="filled-btn" style="width:100%;height:46px;margin-top:8px" onclick="confirmPasswordReset()">
-            <span class="material-symbols-outlined">check</span>Redefinir senha
-          </button>
-        </div>
-
-        <button type="button" onclick="showLoginPanel('loginPanel')"
-                style="background:none;border:none;color:#007AFF;font-size:12px;cursor:pointer;padding:0;margin-top:14px">
-          ← Voltar ao login
-        </button>
-      </section>
-
-      <!-- ── PAINEL 3: CONFIGURAR BIOMETRIA ─────────────────────────────── -->
-      <section class="card" id="biometricSetupPanel" style="display:none">
-        <div class="card-header">
-          <div class="card-title">
-            <div class="card-icon" style="background:rgba(0,122,255,0.1);color:#007AFF">fingerprint</div>
-            <div>
-              <h2>Configurar login biométrico</h2>
-              <p>Use Touch ID, Face ID, Windows Hello ou leitor de digital para entrar sem senha.</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="form-grid">
-          <div class="field full">
-            <label for="biometricEmail">E-mail corporativo</label>
-            <input id="biometricEmail" class="input" type="email" placeholder="seu.nome@example.invalid">
-          </div>
-          <div class="field full">
-            <label for="biometricPassword">Senha (confirmação)</label>
-            <input id="biometricPassword" class="input" type="password" placeholder="••••••••">
-          </div>
-        </div>
-
-        <div id="biometricUnsupported" style="display:none;margin-top:8px">
-          <div class="notice" style="background:rgba(255,59,48,0.06);color:#FF3B30;border-color:rgba(255,59,48,0.2)">
-            Este navegador/dispositivo não tem suporte a biometria (WebAuthn).
-          </div>
-        </div>
-
-        <button class="filled-btn" style="width:100%;height:46px;margin-top:8px" onclick="registerBiometrics()">
-          <span class="material-symbols-outlined">fingerprint</span>Cadastrar biometria deste dispositivo
-        </button>
-
-        <button type="button" onclick="showLoginPanel('loginPanel')"
-                style="background:none;border:none;color:#007AFF;font-size:12px;cursor:pointer;padding:0;margin-top:14px">
-          ← Voltar ao login
-        </button>
-      </section>
-
-      <p style="text-align:center;font-size:11px;color:var(--on-surface-variant);margin-top:20px">
-        Acesso restrito a colaboradores autorizados · NR-06 / NR-01 / LGPD
-      </p>
+<div id="telaSessao" style="position:fixed;inset:0;z-index:10000;background:var(--surface);
+     display:flex;align-items:center;justify-content:center;padding:20px">
+  <div style="width:100%;max-width:400px;text-align:center">
+    <div style="width:64px;height:64px;border-radius:20px;background:#1a3a6b;
+                display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
+      <span class="material-symbols-outlined" style="font-size:32px;color:#fff">safety_check</span>
     </div>
+    <h1 style="font-size:20px;font-weight:700;margin:0">Gestão de EPIs</h1>
+    <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">SafeWork Engenharia</p>
+    <p id="telaSessaoMensagem" role="status" aria-live="polite" style="font-size:13px;color:var(--on-surface-variant);margin-top:8px">Verificando sua sessão…</p>
+    <a id="telaSessaoPortal" href="../portal/index.html" class="filled-btn" style="display:none;margin-top:16px">
+      <span class="material-symbols-outlined">login</span>Ir para o Portal do Cliente
+    </a>
   </div>
+</div>
 
 <div class="mobile-overlay" onclick="closeMobileMenu()"></div>
 <div class="mobile-topbar">
@@ -187,211 +109,408 @@
 
       <nav class="nav">
         <div class="nav-section">Visão geral</div>
-        <a class="active" data-page="dashboard" href="javascript:void(0)" onclick="showView('dashboardView'); setActiveNav(this); return false;"><div class="nav-icon blue">dashboard</div>Dashboard</a>
-        <a data-page="reports" href="javascript:void(0)" onclick="showView('reportsView'); setActiveNav(this); return false;"><div class="nav-icon indigo">analytics</div>Relatórios</a>
-        <a data-page="operations" href="javascript:void(0)" onclick="showView('operationsView'); setActiveNav(this); return false;"><div class="nav-icon gray">receipt_long</div>Operações</a>
+        <a href="dashboard.html" data-pagina="dashboard" style="display:none"><div class="nav-icon blue">dashboard</div>Dashboard</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon indigo">analytics</div>Relatórios<span class="nav-etiqueta">Em integração</span></a>
         <div class="nav-section">Estoque</div>
-        <a data-page="materials" href="javascript:void(0)" onclick="showView('materialsView'); setActiveNav(this); return false;"><div class="nav-icon teal">inventory_2</div>Materiais</a>
-        <a data-page="eligibilityRules" href="javascript:void(0)" onclick="showView('eligibilityRulesView'); setActiveNav(this); return false;"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor</a>
-        <a data-page="purchases" href="javascript:void(0)" onclick="showView('purchasesView'); setActiveNav(this); return false;"><div class="nav-icon orange">shopping_cart</div>Compras / Entradas</a>
-        <a data-page="stockValidity" href="javascript:void(0)" onclick="showView('stockValidityView'); setActiveNav(this); return false;"><div class="nav-icon red">event_busy</div>Validade do Estoque</a>
-        <a data-page="availableItems" href="javascript:void(0)" onclick="showView('availableItemsView'); setActiveNav(this); return false;"><div class="nav-icon green">checklist</div>Itens Disponíveis</a>
+        <a href="materials.html" data-pagina="materials" style="display:none"><div class="nav-icon teal">inventory_2</div>Gestão de estoque</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon orange">shopping_cart</div>Compras / Entradas<span class="nav-etiqueta">Em integração</span></a>
+        <a class="active" href="javascript:void(0)" data-pagina="stockValidity" style="display:none"><div class="nav-icon red">event_busy</div>Validade de estoque</a>
+        <a href="available-items.html" data-pagina="availableItems" style="display:none"><div class="nav-icon green">checklist</div>Análise de estoque</a>
+        <a href="operations.html" data-pagina="operations" style="display:none"><div class="nav-icon gray">receipt_long</div>Operações de estoque</a>
+        <a href="employee-groups.html" data-pagina="employeeGroups" style="display:none"><div class="nav-icon purple">group_work</div>GHE e EPIs</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor<span class="nav-etiqueta">Em integração</span></a>
         <div class="nav-section">Entregas</div>
-        <a data-page="deliveredItems" href="javascript:void(0)" onclick="showView('deliveredItemsView'); setActiveNav(this); return false;"><div class="nav-icon green">inventory</div>EPIs Entregues</a>
-        <a data-page="epiFicha" href="javascript:void(0)" onclick="showView('epiFichaView'); setActiveNav(this); return false;"><div class="nav-icon brown">description</div>Ficha de EPI</a>
-        <a data-page="employeeHistory" href="javascript:void(0)" onclick="showView('employeeHistoryView'); setActiveNav(this); return false;"><div class="nav-icon blue">history</div>Histórico de Funcionários</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon green">inventory</div>EPIs Entregues<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon brown">description</div>Ficha de EPI<span class="nav-etiqueta">Em integração</span></a>
+        <a href="employee-history.html" data-pagina="employeeHistory" style="display:none"><div class="nav-icon blue">history</div>Histórico de Funcionários</a>
         <div class="nav-section">Solicitações</div>
-        <a data-page="self-service" href="javascript:void(0)" onclick="showView('selfServiceView'); setActiveNav(this); return false;"><div class="nav-icon blue">badge</div>Autoatendimento (Totem)</a>
-        <a data-page="request" href="javascript:void(0)" onclick="showView('requestView'); setActiveNav(this); return false;"><div class="nav-icon blue">assignment</div>Pedido de EPI</a>
-        <a data-page="supervisorApproval" href="javascript:void(0)" onclick="showView('supervisorApprovalView'); setActiveNav(this); return false;"><div class="nav-icon orange">fact_check</div>Aprovação do Supervisor</a>
-        <a data-page="stockRequests" href="javascript:void(0)" onclick="showView('stockRequestsView'); setActiveNav(this); return false;"><div class="nav-icon red">playlist_add_check_circle</div>Sem Estoque</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">badge</div>Autoatendimento (Totem)<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">assignment</div>Pedido de EPI<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon orange">fact_check</div>Aprovação do Supervisor<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon red">playlist_add_check_circle</div>Sem Estoque<span class="nav-etiqueta">Em integração</span></a>
         <div class="nav-section">Administração</div>
-        <a data-page="importEmployees" href="javascript:void(0)" onclick="showView('importEmployeesView'); setActiveNav(this); return false;"><div class="nav-icon green">upload_file</div>Importar Funcionários</a>
-        <a data-page="newUser" href="javascript:void(0)" onclick="showView('newUserView'); setActiveNav(this); return false;"><div class="nav-icon green">person_add</div>Novo Usuário</a>
-        <a data-page="userAdmin" href="javascript:void(0)" onclick="showView('userAdminView'); setActiveNav(this); return false;"><div class="nav-icon indigo">group</div>Administração de Usuários</a>
-        <a data-page="config" href="javascript:void(0)" onclick="showView('configView'); setActiveNav(this); return false;"><div class="nav-icon gray">settings</div>Configurações</a>
-        <a data-page="support" href="javascript:void(0)" onclick="showView('supportView'); setActiveNav(this); return false;"><div class="nav-icon teal">support_agent</div>Suporte</a>
-        <a data-page="emailsGestao" href="javascript:void(0)" onclick="showView('emailsGestaoView'); setActiveNav(this); return false;"><div class="nav-icon blue">mark_email_read</div>Gestão de E-mails</a>
-        <a data-page="lgpd" href="javascript:void(0)" onclick="showView('lgpdView'); setActiveNav(this); return false;"><div class="nav-icon indigo">privacy_tip</div>Privacidade / LGPD</a>
+        <a href="grupos-acesso.html" data-pagina="grupos-acesso" style="display:none"><div class="nav-icon indigo">groups</div>Grupos de Acesso</a>
+        <a href="grupo-permissoes.html" data-pagina="grupo-permissoes" style="display:none"><div class="nav-icon indigo">lock_person</div>Permissões do Grupo</a>
+        <a href="grupo-usuarios.html" data-pagina="grupo-usuarios" style="display:none"><div class="nav-icon indigo">group_add</div>Integrantes do Grupo</a>
+        <a href="autorizacoes-individuais.html" data-pagina="autorizacoes-individuais" style="display:none"><div class="nav-icon indigo">verified_user</div>Autorizações Individuais</a>
+        <a href="import-employees.html" data-pagina="importEmployees" style="display:none"><div class="nav-icon green">upload_file</div>Importar Funcionários</a>
+        <a href="new-user.html" data-pagina="newUser" style="display:none"><div class="nav-icon green">person_add</div>Novo Usuário</a>
+        <a href="user-admin.html" data-pagina="userAdmin" style="display:none"><div class="nav-icon indigo">group</div>Administração de Usuários</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon gray">settings</div>Configurações<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon teal">support_agent</div>Suporte<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">mark_email_read</div>Gestão de E-mails<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon indigo">privacy_tip</div>Privacidade / LGPD<span class="nav-etiqueta">Em integração</span></a>
+        <a href="../portal/inicio.html"><div class="nav-icon blue">home</div>Início</a>
       </nav>
     </aside>
 
     <main class="content">
-<section id="stockValidityView" class="view active">
-        <div class="page-actions">
+<section id="stockValidityView" class="view active validade">
+        <div class="validade-topo">
           <div>
-            <h2 style="font-family:var(--font-brand);font-size:22px;line-height:1.1;letter-spacing:-0.4px;font-weight:500">Validade do CA — Certificado de Aprovação</h2>
-            <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Acompanhe a validade do CA de cada EPI em estoque. Itens com CA vencido não podem ser entregues (NR-06).</p>
+            <h2>Validade de estoque</h2>
+            <p>Acompanhe, lote a lote, o CA e a validade de cada entrada, o que vence em breve, o que está bloqueado e dê baixa no que não pode mais ser entregue.</p>
           </div>
-          <span class="badge" style="background:rgba(255,59,48,0.10);color:#FF3B30">NR-06 obrigatório</span>
+          <span id="validadeHoje" class="validade-hoje"></span>
         </div>
 
-        <!-- KPIs -->
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:4px">
-          <div class="stat"><span>CAs válidos</span><strong id="caKpiOk" style="color:#34C759">0</strong></div>
-          <div class="stat"><span>A vencer (≤60 dias)</span><strong id="caKpiExpiring" style="color:#FF9500">0</strong></div>
-          <div class="stat"><span>CA vencido</span><strong id="caKpiExpired" style="color:#FF3B30">0</strong></div>
-          <div class="stat"><span>Sem CA</span><strong id="caKpiNone" style="color:#8E8E93">0</strong></div>
+        <div id="aviso" role="status" aria-live="polite" style="display:none;margin:12px 0"></div>
+
+        <div class="indicadores" aria-label="Indicadores de validade dos lotes com saldo">
+          <button id="indVencido" class="vidro indicador perigo" type="button" data-situacao="VENCIDO"><span class="indicador-rotulo">Vencidos</span><strong id="indVencidoValor">—</strong><span class="indicador-nota">bloqueados até a baixa</span></button>
+          <button id="indVenceHoje" class="vidro indicador alerta" type="button" data-situacao="VENCE_HOJE"><span class="indicador-rotulo">Vence hoje</span><strong id="indVenceHojeValor">—</strong><span class="indicador-nota">ainda disponíveis hoje</span></button>
+          <button id="indAVencer" class="vidro indicador alerta" type="button" data-situacao="A_VENCER"><span class="indicador-rotulo">A vencer</span><strong id="indAVencerValor">—</strong><span class="indicador-nota">nos próximos 60 dias</span></button>
+          <button id="indValido" class="vidro indicador ok" type="button" data-situacao="VALIDO"><span class="indicador-rotulo">Válidos</span><strong id="indValidoValor">—</strong><span class="indicador-nota">além de 60 dias</span></button>
+          <button id="indSemCa" class="vidro indicador perigo" type="button" data-situacao="SEM_CA"><span class="indicador-rotulo">Sem CA</span><strong id="indSemCaValor">—</strong><span class="indicador-nota">bloqueados até a baixa</span></button>
+          <div id="indBloqueados" class="vidro indicador fixo"><span class="indicador-rotulo">Bloqueados</span><strong id="indBloqueadosValor">—</strong><span class="indicador-nota">lotes que não podem ser entregues</span></div>
         </div>
 
-        <!-- Filtros -->
-        <section class="card">
-          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-            <div class="field" style="min-width:160px;flex:1;margin:0">
-              <label>Tipo de EPI</label>
-              <select class="select" id="caFilterTipo" onchange="renderCaTable()">
-                <option value="">Todos</option>
-                <option>Sapatão / Botina</option>
-                <option>Óculos de proteção</option>
-                <option>Luva</option>
-                <option>Protetor auricular</option>
-                <option>Capacete</option>
-                <option>Respirador</option>
+        <div class="vidro filtros">
+          <div class="field">
+            <label for="filtroSituacao">Situação do CA</label>
+            <select id="filtroSituacao" class="select">
+              <option value="">Todos</option>
+              <option value="VENCIDO">Vencidos</option>
+              <option value="VENCE_HOJE">Vence hoje</option>
+              <option value="A_VENCER">A vencer</option>
+              <option value="VENCIMENTO_PROXIMO">Vence hoje ou a vencer</option>
+              <option value="VALIDO">Válidos</option>
+              <option value="SEM_CA">Sem CA</option>
+              <option value="NAO_EXIGE_CA">Não exige CA</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="filtroBusca">Material ou número do CA</label>
+            <input id="filtroBusca" class="input" type="search" maxlength="100" placeholder="Ex.: Botina ou 38271" />
+          </div>
+          <div class="acoes">
+            <button id="botaoLimparFiltros" class="outlined-btn" type="button">Limpar</button>
+            <button id="botaoFiltrar" class="filled-btn" type="button"><span class="material-symbols-outlined">filter_alt</span>Filtrar</button>
+          </div>
+        </div>
+
+        <section id="painelBaixa" class="vidro painel-baixa" style="display:none" aria-labelledby="tituloBaixa">
+          <h3 id="tituloBaixa">Baixa manual do lote</h3>
+          <p id="baixaLoteDescricao" class="descricao"></p>
+          <div class="form-grid">
+            <div class="field">
+              <label for="baixaQuantidade">Quantidade *</label>
+              <input id="baixaQuantidade" class="input" type="number" min="1" placeholder="Ex.: 2" />
+            </div>
+            <div class="field">
+              <label for="baixaMotivo">Motivo *</label>
+              <select id="baixaMotivo" class="select">
+                <option value="">Selecione o motivo</option>
+                <option value="CA_VENCIDO">CA vencido</option>
+                <option value="AVARIA">Avaria</option>
+                <option value="DESCARTE">Descarte</option>
+                <option value="PERDA">Perda</option>
+                <option value="AJUSTE_INVENTARIO">Ajuste de inventário</option>
+                <option value="DEVOLUCAO_FORNECEDOR">Devolução ao fornecedor</option>
+                <option value="OUTRO">Outro</option>
               </select>
             </div>
-            <div class="field" style="min-width:160px;flex:1;margin:0">
-              <label>Status do CA</label>
-              <select class="select" id="caFilterStatus" onchange="renderCaTable()">
-                <option value="">Todos</option>
-                <option value="ok">Válido</option>
-                <option value="expiring">A vencer</option>
-                <option value="expired">Vencido</option>
-                <option value="none">Sem CA</option>
-              </select>
+            <div class="field full" id="campoBaixaJustificativa" style="display:none">
+              <label for="baixaJustificativa">Justificativa *</label>
+              <input id="baixaJustificativa" class="input" type="text" maxlength="500" placeholder="Explique o motivo da baixa" />
             </div>
-            <button class="outlined-btn" onclick="clearCaFilters()" style="height:44px">
-              <span class="material-symbols-outlined" style="font-size:18px">filter_list_off</span>Limpar
-            </button>
+          </div>
+          <div class="helper">A baixa diminui o saldo deste lote e fica registrada. Ela só acontece quando você confirma.</div>
+          <div class="footer-actions">
+            <button id="botaoCancelarBaixa" class="outlined-btn" type="button">Cancelar</button>
+            <button id="botaoConfirmarBaixa" class="filled-btn" type="button"><span class="material-symbols-outlined">remove_circle</span>Confirmar baixa</button>
           </div>
         </section>
 
-        <!-- Tabela CA -->
-        <section class="card">
-          <div class="card-header">
-            <div class="card-title">
-              <div class="card-icon" style="background:rgba(255,59,48,0.10);color:#FF3B30">verified_user</div>
-              <div>
-                <h2>Certificados de Aprovação por EPI</h2>
-                <p>Validade do CA de cada item em estoque. CA vencido = entrega bloqueada pelo sistema.</p>
-              </div>
-            </div>
-          </div>
-
-          <div class="notice" style="background:rgba(255,59,48,0.06);color:#FF3B30;border-color:rgba(255,59,48,0.2);margin-bottom:14px">
-            <strong>NR-06:</strong> O EPI só pode ser comercializado e utilizado com indicação do Certificado de Aprovação (CA) expedido pelo MTE. CA vencido equivale a EPI sem CA — entrega proibida.
-          </div>
-
+        <div class="vidro tabela-validade">
           <div class="table-wrap">
-            <table id="caTable">
+            <table>
               <thead>
                 <tr>
-                  <th>EPI / Material</th>
+                  <th>Material</th>
                   <th>Tipo</th>
-                  <th>Fabricante</th>
-                  <th>Nº do CA</th>
+                  <th>Tamanho</th>
+                  <th>Número do CA</th>
                   <th>Validade do CA</th>
-                  <th>Dias restantes</th>
-                  <th>Qtd. em estoque</th>
-                  <th>Status</th>
+                  <th class="numero">Saldo</th>
+                  <th>Situação</th>
+                  <th>Disponibilidade</th>
                   <th>Ação</th>
                 </tr>
               </thead>
-              <tbody id="caTableBody">
-                <!-- Preenchido pelo JS -->
-              </tbody>
+              <tbody id="validadeCorpo"></tbody>
             </table>
           </div>
-        </section>
-
-        <div style="display:flex;justify-content:flex-start;padding-top:4px">
-          <button class="outlined-btn" onclick="exportStockValidity()">
-            <span class="material-symbols-outlined">download</span>Exportar validade dos CAs
-          </button>
+          <div class="paginacao">
+            <button id="paginaAnterior" class="outlined-btn" type="button" disabled>Anterior</button>
+            <span id="paginacaoTexto"></span>
+            <button id="paginaProxima" class="outlined-btn" type="button" disabled>Próxima</button>
+          </div>
         </div>
-
       </section>
     </main>
   </div>
 
-<!-- ═══ MODAL: ATIVAR MODO QUIOSQUE ═══════════════════════════════ -->
-      <div class="modal-overlay" id="kioskActivateModal" onclick="closeKioskActivateModal(event)">
-        <div class="modal-card" style="width:min(100%,420px)" onclick="event.stopPropagation()">
-          <div class="modal-header">
-            <div class="modal-title">
-              <div class="card-icon" style="background:rgba(0,122,255,0.1);color:#007AFF">lock</div>
-              <div>
-                <h2 style="font-family:var(--font-brand);font-size:17px;font-weight:500">Ativar Modo Quiosque</h2>
-                <p style="font-size:12px;color:var(--on-surface-variant);margin-top:2px">A sidebar e a navegação serão bloqueadas. Só será possível desbloquear com a senha de administrador.</p>
-              </div>
-            </div>
-            <button class="modal-close" onclick="closeKioskActivateModal()">close</button>
-          </div>
-          <div class="field full" style="margin-top:8px">
-            <label>Defina a senha de desbloqueio</label>
-            <input id="kioskPassword" class="input" type="password" placeholder="Mínimo 4 dígitos" autocomplete="new-password">
-          </div>
-          <div class="notice" style="margin-top:10px;background:rgba(255,149,0,0.06);color:#C07000;border-color:rgba(255,149,0,0.2)">
-            Guarde esta senha. Ela será exigida para sair do modo quiosque neste dispositivo.
-          </div>
-          <div class="footer-actions">
-            <button class="outlined-btn" onclick="closeKioskActivateModal()">Cancelar</button>
-            <button class="filled-btn" onclick="activateKioskMode()">
-              <span class="material-symbols-outlined">lock</span>Ativar agora
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- ═══ OVERLAY: MODO QUIOSQUE ATIVO (bloqueia tudo) ═══════════════ -->
-      <div id="kioskLockOverlay" style="display:none;position:fixed;inset:0;z-index:9999;
-           background:var(--surface);align-items:center;justify-content:center;flex-direction:column;gap:16px">
-        <div style="width:72px;height:72px;border-radius:22px;background:rgba(0,122,255,0.1);
-                    display:flex;align-items:center;justify-content:center">
-          <span class="material-symbols-outlined" style="font-size:36px;color:#007AFF">lock</span>
-        </div>
-        <div style="text-align:center">
-          <div style="font-size:16px;font-weight:600">Modo Quiosque Ativo</div>
-          <div style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">
-            Este dispositivo está em modo de autoatendimento.<br>Digite a senha de administrador para liberar.
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input id="kioskUnlockInput" class="input" type="password" placeholder="Senha de desbloqueio"
-                 style="width:220px" onkeydown="if(event.key==='Enter') unlockKioskMode()">
-          <button class="filled-btn" onclick="unlockKioskMode()">
-            <span class="material-symbols-outlined">lock_open</span>Desbloquear
-          </button>
-        </div>
-        <div id="kioskUnlockError" style="display:none;color:#FF3B30;font-size:12px">Senha incorreta.</div>
-      </div>
-
-<script src="../js/db-api.js"></script>
-<script src="../js/main.js"></script>
+<script src="../js/api-http.js"></script>
+<script src="../portal/config.js"></script>
+<script src="../js/sessao-empresarial.js"></script>
+<script src="../js/permissoes-efetivas.js"></script>
+<script src="../js/pagina-base.js"></script>
+<script src="../js/materiais.js"></script>
+<script src="../js/validade-estoque.js"></script>
 <script>
-  document.addEventListener('DOMContentLoaded', () => {
-    // init
-    var navLink = document.querySelector('.nav a[data-page="stockValidity"]');
-    if (navLink && typeof setActiveNav === 'function') setActiveNav(navLink);
-    document.querySelectorAll('.nav a[data-page]').forEach(function(a) {
-      var page = a.getAttribute('data-page');
-      var fileMap = {
-        'self-service':'self-service.html','dashboard':'dashboard.html','config':'config.html',
-        'supervisorApproval':'supervisor-approval.html','request':'request.html',
-        'stockRequests':'stock-requests.html','userAdmin':'user-admin.html',
-        'operations':'operations.html','eligibilityRules':'eligibility-rules.html',
-        'materials':'materials.html','purchases':'purchases.html',
-        'stockValidity':'stock-validity.html','availableItems':'available-items.html',
-        'epiFicha':'epi-ficha.html','deliveredItems':'delivered-items.html',
-        'reports':'reports.html','employeeHistory':'employee-history.html',
-        'newUser':'new-user.html','support':'support.html',
-        'importEmployees':'import-employees.html','lgpd':'lgpd.html','emailsGestao':'emails-gestao.html'
-      };
-      if (fileMap[page]) {
-        a.setAttribute('href', fileMap[page]);
-        a.removeAttribute('onclick');
+/*
+  Ligação com o DOM — fina. A regra de validade e o bloqueio vêm do servidor;
+  a consulta, os textos e o HTML escapado ficam em js/validade-estoque.js, e a
+  baixa usa js/materiais.js, como na Gestão de estoque.
+*/
+(function () {
+  'use strict';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var V = EpiValidadeEstoque;
+  var M = EpiMateriais;
+
+  // O que o servidor disse que esta pessoa pode fazer aqui. Começa sem nada.
+  var acessoAtual = { podeMovimentar: false };
+  var filtro = { situacao: V.filtroDaUrl(window.location.search), busca: '', pagina: 1 };
+  var lotesAtuais = [];
+  var loteEmBaixa = null;
+  // Só a consulta mais recente pode tocar a tela; depois do fim da sessão, nenhuma.
+  var consultaAtual = 0;
+  var encerrada = false;
+  var baixaEmAndamento = false;
+  // Uma chave por baixa: repetir a mesma baixa depois de uma resposta inconclusiva não duplica.
+  var operacaoBaixa = M.idempotencia.criar();
+  var INDICADORES = { vencido: 'indVencidoValor', venceHoje: 'indVenceHojeValor', aVencer: 'indAVencerValor', valido: 'indValidoValor', semCa: 'indSemCaValor', bloqueados: 'indBloqueadosValor' };
+  var FILTRO_DO_INDICADOR = { indVencido: 'VENCIDO', indVenceHoje: 'VENCE_HOJE', indAVencer: 'A_VENCER', indValido: 'VALIDO', indSemCa: 'SEM_CA' };
+  var CAMPO_BAIXA_POR_ERRO = { quantidade: 'baixaQuantidade', motivo: 'baixaMotivo', justificativa: 'baixaJustificativa' };
+
+  EpiHttp.configurar({ baseUrl: window.SAFEWORK_PORTAL_API_BASE_URL });
+
+  function mostrarAviso(texto, tipo) {
+    var caixa = $('aviso');
+    if (!texto) { caixa.style.display = 'none'; caixa.innerHTML = ''; return; }
+    var cor = tipo === 'erro'
+      ? 'background:var(--error-container);color:var(--error);border-color:rgba(255,59,48,0.2)'
+      : tipo === 'atencao'
+        ? 'background:rgba(255,149,0,0.08);color:#C07000;border-color:rgba(255,149,0,0.25)'
+        : 'background:var(--success-container);color:#1A7A35;border-color:rgba(52,199,89,0.2)';
+    caixa.innerHTML = '<div class="notice" style="' + cor + '">' + V.render.escaparHtml(texto) + '</div>';
+    caixa.style.display = 'block';
+  }
+
+  function desmarcarCampos() {
+    Object.keys(CAMPO_BAIXA_POR_ERRO).forEach(function (k) {
+      $(CAMPO_BAIXA_POR_ERRO[k]).removeAttribute('aria-invalid');
+      $(CAMPO_BAIXA_POR_ERRO[k]).style.borderColor = '';
+    });
+  }
+
+  function marcarCampos(erros) {
+    erros.forEach(function (e) {
+      var id = CAMPO_BAIXA_POR_ERRO[e.campo];
+      if (!id) return;
+      $(id).setAttribute('aria-invalid', 'true');
+      $(id).style.borderColor = 'var(--error)';
+    });
+    var primeiro = erros.length ? CAMPO_BAIXA_POR_ERRO[erros[0].campo] : null;
+    if (primeiro) $(primeiro).focus();
+  }
+
+  function pintarIndicadores(ind) {
+    Object.keys(INDICADORES).forEach(function (k) {
+      $(INDICADORES[k]).textContent = ind && typeof ind[k] === 'number' ? String(ind[k]) : '—';
+    });
+  }
+
+  function pintarPaginacao(d) {
+    var p = d ? V.render.paginacao(d.total, d.pagina, d.limite, lotesAtuais.length) : { texto: '', anterior: false, proxima: false };
+    $('paginacaoTexto').textContent = p.texto;
+    $('paginaAnterior').disabled = !p.anterior;
+    $('paginaProxima').disabled = !p.proxima;
+  }
+
+  async function carregar() {
+    if (encerrada) return;
+    consultaAtual += 1;
+    var numero = consultaAtual;
+    $('validadeCorpo').innerHTML = V.render.vazio('Carregando…');
+    var r = await V.acoes.listar({ situacao: filtro.situacao, busca: filtro.busca, pagina: filtro.pagina, limite: V.LIMITE });
+    if (encerrada || numero !== consultaAtual) return;
+    if (!r.ok) {
+      if (r.status === 401) { EpiSessaoEmpresarial.sessaoEncerrada(); return; }
+      var falha = V.mensagens.erroListagem(r);
+      lotesAtuais = [];
+      pintarIndicadores(null);
+      pintarPaginacao(null);
+      $('validadeCorpo').innerHTML = V.render.vazio(falha);
+      mostrarAviso(falha, 'erro');
+      return;
+    }
+    var d = r.dados || {};
+    lotesAtuais = Array.isArray(d.lotes) ? d.lotes : [];
+    pintarIndicadores(d.indicadores);
+    var opcoesTabela = {
+      podeBaixar: acessoAtual.podeMovimentar,
+      mensagemVazia: filtro.situacao || filtro.busca ? 'Nenhum lote com saldo para este filtro.' : 'Nenhum lote com saldo nesta empresa.',
+    };
+    $('validadeCorpo').innerHTML = V.render.tabela(lotesAtuais, opcoesTabela);
+    $('validadeHoje').textContent = d.hoje ? 'Situação em ' + V.texto.data(d.hoje) + ', horário de São Paulo.' : '';
+    pintarPaginacao(d);
+  }
+
+  function aplicarFiltro(situacao) {
+    filtro.situacao = V.filtroPermitido(situacao) ? situacao : '';
+    filtro.pagina = 1;
+    $('filtroSituacao').value = filtro.situacao;
+    fecharBaixa();
+    return carregar();
+  }
+
+  // ── baixa manual ──
+  function descreverLote(l) {
+    var ca = l.situacaoCa === 'NAO_EXIGE_CA' ? 'não exige CA' : (l.caNumero ? 'CA ' + l.caNumero : 'sem CA');
+    var validade = V.texto.data(l.caValidade);
+    return l.material + (l.materialAtivo === false ? ' (material inativo)' : '') + ' · tamanho ' + V.texto.tamanho(l.tamanho) + ' · ' + ca
+      + (validade ? ' · validade ' + validade : '') + ' · saldo físico ' + l.fisico;
+  }
+
+  function fecharBaixa() {
+    loteEmBaixa = null;
+    $('painelBaixa').style.display = 'none';
+    desmarcarCampos();
+  }
+
+  function toggleJustificativa() {
+    var outro = $('baixaMotivo').value === 'OUTRO';
+    $('campoBaixaJustificativa').style.display = outro ? '' : 'none';
+    if (!outro) $('baixaJustificativa').value = '';
+  }
+
+  /** Abre o painel do lote escolhido. CA vencido já vem sugerido, mas nada é enviado sem confirmação. */
+  function abrirBaixa(id) {
+    if (!acessoAtual.podeMovimentar || encerrada) return;
+    var lote = null;
+    lotesAtuais.forEach(function (l) { if (String(l.loteId) === String(id)) lote = l; });
+    if (!lote || !(Number(lote.fisico) > 0)) return;
+    loteEmBaixa = lote;
+    desmarcarCampos();
+    $('baixaLoteDescricao').textContent = descreverLote(lote);
+    $('baixaQuantidade').value = '';
+    $('baixaQuantidade').max = String(lote.fisico);
+    $('baixaMotivo').value = lote.situacaoCa === 'VENCIDO' ? 'CA_VENCIDO' : '';
+    toggleJustificativa();
+    $('painelBaixa').style.display = '';
+    $('baixaQuantidade').focus();
+  }
+
+  async function confirmarBaixa() {
+    if (!acessoAtual.podeMovimentar || encerrada || baixaEmAndamento || !loteEmBaixa) return;
+    var lote = loteEmBaixa;
+    desmarcarCampos();
+    var montado = M.formulario.montarBaixa({
+      loteId: String(lote.loteId), quantidade: $('baixaQuantidade').value, motivo: $('baixaMotivo').value, justificativa: $('baixaJustificativa').value,
+    }, [lote]);
+    if (!montado.ok) {
+      marcarCampos(montado.erros);
+      mostrarAviso(montado.erros.map(function (e) { return e.mensagem; }).join(' '), 'erro');
+      return;
+    }
+    baixaEmAndamento = true;
+    $('botaoConfirmarBaixa').disabled = true;
+    try {
+      var r = await M.fluxo.registrarBaixa(montado.loteId, montado.corpo, operacaoBaixa);
+      if (encerrada) return;
+      if (!r.ok && r.resposta && r.resposta.status === 401) { EpiSessaoEmpresarial.sessaoEncerrada(); return; }
+      mostrarAviso(M.mensagens.resultadoBaixa(r, montado.corpo, lote), r.ok ? 'sucesso' : (r.confirmado ? 'erro' : 'atencao'));
+      if (r.ok) {
+        fecharBaixa();
+        showToast('Baixa registrada', 'success');
       }
+      // Sucesso: saldos novos. Não confirmada: lotes reais para conferir. Recusa: nada mudou.
+      if (r.ok || !r.confirmado) await carregar();
+    } finally {
+      baixaEmAndamento = false;
+      $('botaoConfirmarBaixa').disabled = false;
+    }
+  }
+
+  function encerrarTela() {
+    // Sessão encerrada: nenhuma consulta pendente é aplicada e nada fica na tela.
+    encerrada = true;
+    consultaAtual += 1;
+    lotesAtuais = [];
+    fecharBaixa();
+    pintarIndicadores(null);
+    pintarPaginacao(null);
+    $('validadeCorpo').innerHTML = '';
+    mostrarAviso('', null);
+  }
+
+  // ── eventos ──
+  $('filtroSituacao').addEventListener('change', function () {
+    filtro.busca = $('filtroBusca').value.trim();
+    return aplicarFiltro($('filtroSituacao').value);
+  });
+  $('botaoFiltrar').addEventListener('click', function () {
+    filtro.busca = $('filtroBusca').value.trim();
+    return aplicarFiltro($('filtroSituacao').value);
+  });
+  $('botaoLimparFiltros').addEventListener('click', function () {
+    $('filtroBusca').value = '';
+    filtro.busca = '';
+    return aplicarFiltro('');
+  });
+  Object.keys(FILTRO_DO_INDICADOR).forEach(function (id) {
+    $(id).addEventListener('click', function () { return aplicarFiltro(FILTRO_DO_INDICADOR[id]); });
+  });
+  $('paginaAnterior').addEventListener('click', function () {
+    if (filtro.pagina <= 1) return undefined;
+    filtro.pagina -= 1;
+    return carregar();
+  });
+  $('paginaProxima').addEventListener('click', function () {
+    filtro.pagina += 1;
+    return carregar();
+  });
+  // Um ouvinte para a tabela inteira: o botão só leva o id do lote, e o lote
+  // vem da última consulta, nunca do HTML.
+  $('validadeCorpo').addEventListener('click', function (evento) {
+    var alvo = evento && evento.target && typeof evento.target.closest === 'function' ? evento.target.closest('[data-baixa-lote]') : null;
+    if (alvo) abrirBaixa(alvo.getAttribute('data-baixa-lote'));
+  });
+  $('baixaMotivo').addEventListener('change', toggleJustificativa);
+  $('botaoConfirmarBaixa').addEventListener('click', confirmarBaixa);
+  $('botaoCancelarBaixa').addEventListener('click', fecharBaixa);
+  fecharBaixa();
+  pintarIndicadores(null);
+  $('filtroSituacao').value = filtro.situacao;
+
+  // Sessão empresarial do Portal e permissões efetivas nesta empresa. Sem
+  // sessão ou sem acesso, nada é carregado. A baixa exige MOVIMENTAR_ESTOQUE,
+  // e o servidor confere de novo.
+  EpiSessaoEmpresarial.montar({
+    elementos: {
+      tela: $('telaSessao'),
+      mensagem: $('telaSessaoMensagem'),
+      linkPortal: $('telaSessaoPortal'),
+    },
+    aoEncerrar: encerrarTela,
+  }).then(function (contexto) {
+    if (!contexto) return undefined;
+    return EpiPermissoes.prepararPagina({
+      pagina: 'stockValidity',
+      contexto: contexto,
+      links: document.querySelectorAll('.nav a[data-pagina]'),
+      aviso: function (mensagem) { mostrarAviso(mensagem, 'erro'); },
+    }).then(function (acesso) {
+      if (!acesso) return undefined;
+      acessoAtual = { podeMovimentar: EpiPermissoes.acao(acesso.permissoes, 'MOVIMENTAR_ESTOQUE') };
+      return carregar();
     });
   });
+})();
 </script>
 </body>
 </html>

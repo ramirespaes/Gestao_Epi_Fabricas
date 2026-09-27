@@ -49,3 +49,10 @@ SELECT empresa_id, id, 'SALDO_INICIAL', quantidade_entrada
   FROM estoque_lotes
  WHERE origem = 'SALDO_INICIAL'
  ORDER BY id;
+
+-- Confiro agora, e não no commit, que cada lote aberto aqui tem a sua
+-- operação. A próxima migration pode alterar estoque_lotes na mesma transação,
+-- e o PostgreSQL recusa ALTER TABLE com verificação adiada pendente. Depois
+-- devolvo o gatilho ao modo adiado para o resto da transação.
+SET CONSTRAINTS trg_estoque_lotes_exigir_entrada IMMEDIATE;
+SET CONSTRAINTS trg_estoque_lotes_exigir_entrada DEFERRED;

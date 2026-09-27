@@ -360,6 +360,39 @@ describe('revogarDaSessaoGlobal (Pacote 4)', () => {
   });
 });
 
+describe('revogarDaSessaoGlobalComSituacao (auditoria da troca de empresa)', () => {
+  const { revogarDaSessaoGlobalComSituacao } = require('../../src/repositories/sessao.repository');
+
+  test('revoga as sessões ainda não revogadas da sessão global e devolve empresa, usuário e se cada uma ainda valia', async () => {
+    const executor = executorFalso([
+      { id: '10', empresa_id: 3, usuario_id: 70, valida: true },
+      { id: '11', empresa_id: 3, usuario_id: 70, valida: false },
+    ]);
+    const r = await revogarDaSessaoGlobalComSituacao(executor, '55', 'TROCA_EMPRESA', 30);
+    assert.deepEqual(r, [
+      { sessaoId: '10', empresaId: 3, usuarioId: 70, valida: true },
+      { sessaoId: '11', empresaId: 3, usuarioId: 70, valida: false },
+    ]);
+    const { texto, valores } = executor.chamadas[0];
+    assert.match(texto, /update\s+sessoes/i);
+    assert.match(texto, /sessao_global_id\s*=\s*\$1/i);
+    assert.match(texto, /revogada_em\s+is\s+null/i);
+    // O mesmo critério de buscarValidaPorHash decide se o contexto ainda valia.
+    for (const criterio of [/expira_em\s*>\s*now\(\)/i, /ultimo_uso_em\s*>\s*now\(\)\s*-\s*\(\$3 \* INTERVAL '1 minute'\)/i, /u\.ativo/i, /e\.ativo/i, /u\.identidade_id IS NULL OR i\.ativo/i]) {
+      assert.match(texto, criterio);
+    }
+    assert.deepEqual(valores, ['55', 'TROCA_EMPRESA', 30]);
+  });
+
+  test('recusa entrada inválida antes de consultar', async () => {
+    const executor = executorFalso([]);
+    await assert.rejects(() => revogarDaSessaoGlobalComSituacao(executor, 55, 'TROCA_EMPRESA', 30), /sessão/i);
+    await assert.rejects(() => revogarDaSessaoGlobalComSituacao(executor, '55', 'troca', 30), /motivo/i);
+    await assert.rejects(() => revogarDaSessaoGlobalComSituacao(executor, '55', 'TROCA_EMPRESA', 0), /inatividade/i);
+    assert.equal(executor.chamadas.length, 0);
+  });
+});
+
 describe('revogarDoUsuario', () => {
   test('revoga todas as sessões ativas do usuário na empresa', async () => {
     const executor = executorFalso([], 3);

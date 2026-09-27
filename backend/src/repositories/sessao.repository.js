@@ -319,6 +319,38 @@ async function revogarDaSessaoGlobal(executor, sessaoGlobalId, motivo) {
   return rowCount;
 }
 
+/**
+ * Igual a revogarDaSessaoGlobal, mas devolve cada sessão atingida com a
+ * empresa, o usuário e se ela ainda valia no momento, pelo mesmo critério de
+ * buscarValidaPorHash. A auditoria da troca de empresa só registra o
+ * encerramento de um contexto que ainda valia; sessão já revogada não é
+ * tocada nem devolvida. A FK composta de sessoes garante o usuário no JOIN.
+ */
+async function revogarDaSessaoGlobalComSituacao(executor, sessaoGlobalId, motivo, inatividadeMinutos) {
+  exigirSessao(sessaoGlobalId);
+  exigirMotivo(motivo);
+  exigirInatividade(inatividadeMinutos);
+
+  const { rows } = await executor.query(
+    `UPDATE sessoes s SET revogada_em = now(), motivo_revogacao = $2
+       FROM usuarios u
+       JOIN empresas e ON e.id = u.empresa_id
+       LEFT JOIN identidades i ON i.id = u.identidade_id
+      WHERE s.sessao_global_id = $1
+        AND s.revogada_em IS NULL
+        AND u.empresa_id = s.empresa_id AND u.id = s.usuario_id
+      RETURNING s.id, s.empresa_id, s.usuario_id,
+        (s.expira_em > now()
+          AND s.ultimo_uso_em > now() - ($3 * INTERVAL '1 minute')
+          AND u.ativo
+          AND e.ativo
+          AND (u.identidade_id IS NULL OR i.ativo)) AS valida`,
+    [sessaoGlobalId, motivo, inatividadeMinutos],
+  );
+
+  return rows.map((linha) => ({ sessaoId: linha.id, empresaId: linha.empresa_id, usuarioId: linha.usuario_id, valida: linha.valida === true }));
+}
+
 module.exports = {
   criar,
   buscarValidaPorHash,
@@ -326,5 +358,6 @@ module.exports = {
   revogar,
   revogarDoUsuario,
   revogarDaSessaoGlobal,
+  revogarDaSessaoGlobalComSituacao,
   CAMPOS_SESSAO,
 };

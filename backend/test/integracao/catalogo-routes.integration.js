@@ -40,11 +40,12 @@ const { gerarHashSenha } = require('../../src/security/password');
  *   • é somente leitura: não existe caminho para criar, alterar ou
  *     desativar uma ação por HTTP.
  *
- * A migration 024 é aplicada NESTE SCHEMA TEMPORÁRIO apenas — o banco
- * principal não é tocado.
+ * As migrations 024, 046 e 047 são aplicadas NESTE SCHEMA TEMPORÁRIO
+ * apenas — o banco principal não é tocado. A 047 põe GERENCIAR_USUARIOS
+ * (parte F) em OBRIGATORIA, como as três ações da 024.
  */
 
-const MIGRATIONS = ['000', '001', '002', '003', '005', '025', '009', '010', '011', '012', '013', '014', '015', '016', '017', '018', '019', '020', '021', '022', '023', '024'];
+const MIGRATIONS = ['000', '001', '002', '003', '005', '025', '009', '010', '011', '012', '013', '014', '015', '016', '017', '018', '019', '020', '021', '022', '023', '024', '046', '047'];
 
 const SENHA = 'senha-correta-do-teste-3t-2026';
 let HASH_SENHA;
@@ -241,7 +242,7 @@ describe('API HTTP do catálogo de ações com PostgreSQL real', () => {
       }
     });
 
-    test('traz as três ações administrativas da migration 024, todas OBRIGATORIA', async () => {
+    test('traz as quatro ações administrativas (024 e 047), todas OBRIGATORIA', async () => {
       const resposta = await request(app).get('/api/catalogo/acoes').set('Cookie', cookieMasterA);
       const porCodigo = Object.fromEntries(resposta.body.acoes.map((a) => [a.codigo, a]));
 
