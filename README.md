@@ -4,15 +4,42 @@ Sistema para gestão de Equipamentos de Proteção Individual (EPIs), com fronte
 
 ## Estado do projeto
 
-O desenvolvimento está organizado em 11 incrementos.
+O desenvolvimento é organizado em blocos. Situação em 26/09/2026:
+
+| Bloco | Situação |
+|---|---|
+| 1 a 7 — migrations de sessões, auditoria e tentativas de login (`013` a `015`), dependências, fundação da autenticação, validação de entrada e segurança HTTP | Concluídos e incorporados à `main` |
+| 8 — Autenticação real e RBAC | **Concluído** e incorporado à `main` (PRs #13 a #18). Encerramento formal na seção seguinte |
+| Autenticação global, Painel Privado, Portal do Cliente e página institucional (planejamento próprio) | Concluídos e incorporados à `main` (PRs #20 a #23 e #26) |
+| 9 — Integração das páginas ao backend real | **Em andamento.** Concluídas: Etapas A e B (backend de materiais, estoque, funcionários e GHE, PR #19), Etapa C, partes C0 a C7 (as partes C4 e C5 executaram a Etapa D), e a rodada de segurança S1/S2/S3 (PR #29). **Etapas E e F ainda não concluídas** |
+
+### Encerramento do Bloco 8
+
+O Bloco 8 foi planejado em 11 incrementos. Todos estão concluídos ou encerrados:
 
 | Incremento | Situação |
 |---|---|
-| 1 a 7 | Incorporados à `main` |
-| 8 — RBAC (perfis, grupos de acesso, permissões, autorizações individuais e delegação) | Implementação técnica concluída até a Subetapa 3V, incluindo o complemento de consulta de destinatários de delegação; ainda em processo de versionamento e encerramento no Git — **não incorporado à `main`** |
-| 9 a 11 | Ainda previstos, sem implementação iniciada |
+| 1 a 4 — repositórios de empresas, usuários, sessões e tentativas de login | Concluídos (PRs #13 e #14) |
+| 5 e 6 — serviço de autenticação e rota de login | Concluídos (PRs #15 e #16) |
+| 7 — validação de sessão, consulta da sessão atual e logout com revogação | Concluído (PR #17) |
+| 8 — RBAC: perfis, grupos de acesso, permissões, autorizações individuais e delegação | Concluído (PR #18) |
+| 9 — login do frontend | Absorvido pela autenticação global e pelo Portal do Cliente. O login por CNPJ foi abandonado por decisão posterior: o acesso empresarial usa e-mail, senha e seleção de empresa |
+| 10 — remoção da autenticação simulada | Encerrado pela rodada de segurança S1/S2/S3 (PR #29): as páginas legadas, `js/main.js` e `js/db-api.js` ficam fora do pacote publicado, gerado por allowlist explícita e fail-closed (ver "Publicação do frontend do cliente") |
+| 11 — validação final e encerramento | Validação técnica feita no fechamento do Incremento 8 (22/09/2026); encerramento documental registrado nesta seção (26/09/2026) |
 
-O Incremento 8 existe integralmente na branch `feature/bloco-08-incremento-08`. Sua incorporação à `main` depende da conclusão do fluxo de commits, push, Pull Request e merge, ainda não realizado. As seções de RBAC, API HTTP e as migrations `017`–`024` abaixo descrevem esse incremento pelo estado do código na working tree dessa branch, não pelo conteúdo atual de `main`.
+Os itens abaixo ficaram fora do Bloco 8 e têm destino formal. Não são pendências do encerramento do bloco:
+
+| Item | Destino |
+|---|---|
+| Cadastro de empresas | Entregue pela autenticação global (Painel Privado, PR #22) |
+| Administração de usuários da empresa | Bloco 9, Etapa F (não concluída) |
+| Troca de senha | Bloco 11, junto com a recuperação de senha e o restante do ciclo de vida da senha, antes da liberação comercial |
+| Recuperação de senha ("Esqueci minha senha") | Bloco 11, separada da autenticação básica já entregue, antes da liberação comercial |
+| Integração contínua (GitHub Actions) | Requisito obrigatório antes do deploy de homologação e testes na AWS |
+| Cobertura mínima de 25% no frontend | Bloco 11, com os testes finais, o fechamento acadêmico e a documentação |
+| Limpeza e retenção das tabelas de sessões e de tentativas de login | Requisito de hardening do deploy, antes da produção |
+| Página "Acesso negado", botão "Solicitar acesso" e notificações de pedidos de acesso | Backlog formal |
+| Reorganização de pastas | Backlog formal |
 
 ## Estrutura do projeto
 
@@ -39,13 +66,13 @@ gestao-epi/
 
 O frontend está localizado integralmente em `frontend/`.
 
-O ponto de entrada da aplicação é `frontend/index.html`.
+A entrada dos clientes é o Portal do Cliente (`frontend/portal/`). O `frontend/index.html` é o redirecionamento do protótipo: serve só em desenvolvimento e não entra no pacote publicado.
 
 A estrutura interna utiliza caminhos relativos entre `index.html`, `pages/`, `css/` e `js/`.
 
 ### Frontend legado
 
-As 21 páginas originais em `frontend/pages/`, `frontend/js/db-api.js` (simulador de API em `localStorage`) e `frontend/js/main.js` (RBAC replicado localmente para a demonstração) permanecem preservados e funcionando exatamente como antes. Nenhuma delas foi migrada para a API HTTP real — as duas camadas coexistem sem se tocar.
+Das 22 páginas originais em `frontend/pages/`, 5 já foram ligadas ao backend real no Bloco 9 (`materials.html`, `available-items.html`, `employee-history.html`, `import-employees.html` e `dashboard.html`). As outras 17 continuam no repositório como protótipo, com `frontend/js/db-api.js` (simulador de API em `localStorage`) e `frontend/js/main.js` (login e RBAC simulados), usando somente dados inequivocamente sintéticos. Elas não entram no pacote publicado (ver "Publicação do frontend do cliente") e serão integradas no Bloco 9 (Etapas E e F) e nos blocos seguintes.
 
 ### Frontend administrativo HTTP (Incremento 8)
 
@@ -78,7 +105,7 @@ Seis módulos JavaScript em `frontend/js/` dão suporte a essas páginas: `api-h
 
 Fluxo: uma empresa autorizada → entra direto; duas ou mais → escolhe; nenhuma → sem acesso operacional. Três cookies distintos: `gepi_sessao_global` (identidade; não dá acesso operacional), `gepi_sessao` (empresa selecionada; o mesmo que o RBAC sempre usou) e `gepi_sessao_admin` (Painel Privado). O login legado por CNPJ recusa vínculos ligados a uma identidade global — há uma única credencial válida por pessoa.
 
-Módulos de `frontend/pages/` ainda baseados em `localStorage` não são apresentados como dados da empresa; sua integração é o Bloco 9 — Etapa C.
+Módulos de `frontend/pages/` ainda baseados em `localStorage` não são apresentados como dados da empresa; a integração das páginas restantes continua no Bloco 9 (Etapas E e F, ainda não concluídas) e nos blocos seguintes.
 
 Em desenvolvimento, sirva `frontend/` em `http://localhost:5500` (Portal: `/portal/`) e em `http://localhost:5501` (Painel Privado: `/painel-privado/`), com o backend em `http://localhost:3000` — cada portal só é aceito pela allowlist de CORS/Origin do seu próprio namespace.
 
@@ -138,7 +165,7 @@ Além do `MASTER`, um `ADMINISTRADOR` pode receber, por autorização individual
 
 Preservados em toda a extensão do RBAC: **isolamento multiempresa** (nenhuma consulta ou escrita alcança dado de outra empresa — o identificador de empresa vem sempre da sessão) e **auditoria transacional** (toda escrita administrativa é registrada em `logs_auditoria`, na mesma transação da alteração; consultas não geram registro de auditoria).
 
-Adiados para depois do encerramento do Incremento 8: página de acesso negado com indicação de quem pode conceder a autorização, botão de solicitação de acesso, notificações de pedidos, e o workflow de CI/CD mencionado na seção de testes.
+Ficaram fora do Incremento 8, com destino registrado em "Encerramento do Bloco 8": a página de acesso negado com indicação de quem pode conceder a autorização, o botão de solicitação de acesso e as notificações de pedidos (backlog formal), e o workflow de CI (requisito obrigatório antes do deploy de homologação e testes na AWS).
 
 ## API HTTP
 
@@ -204,9 +231,9 @@ npm run db:migrate:status    # mostra o que está aplicado e o que está pendent
 npm run db:migrate           # aplica as migrations pendentes
 ```
 
-Em um banco vazio, a partir de `main`, a primeira execução de `npm run db:migrate:status` apresenta as 17 migrations como pendentes e pode terminar com código de saída 2. Esse código sinaliza pendência, não erro de configuração, e é o resultado esperado antes da primeira aplicação. Ao final da sequência, `npm run db:migrate:status` deve relatar 17 migrations aplicadas, nenhuma pendente e código de saída 0.
+Em um banco vazio, a primeira execução de `npm run db:migrate:status` apresenta todas as migrations versionadas como pendentes e pode terminar com código de saída 2. Esse código sinaliza pendência, não erro de configuração, e é o resultado esperado antes da primeira aplicação. Ao final da sequência, `npm run db:migrate:status` deve relatar todas as migrations aplicadas, nenhuma pendente e código de saída 0.
 
-Na branch `feature/bloco-08-incremento-08` — ainda não incorporada à `main` — o mesmo diretório contém 25 arquivos (`000` a `024`); rodar os mesmos comandos ali aplicaria também as 8 migrations do Incremento 8 a esse banco. Isso não foi feito no banco principal em nenhum momento do desenvolvimento do Incremento 8.
+As migrations `017` a `024`, do Incremento 8, estão na `main` desde o PR #18.
 
 ### Comandos de migration
 
@@ -281,9 +308,9 @@ A cobertura mínima obrigatória do projeto é:
 - Backend: 75% de linhas.
 - Frontend: 25%.
 
-O backend já aplica o limiar de 75% em `npm run test:ci`, que termina com código de saída diferente de zero quando qualquer teste falha ou quando a cobertura de linhas fica abaixo do mínimo. O pipeline de integração contínua deverá executar `npm ci` e `npm run test:ci`, e qualquer uma dessas duas condições deve bloquear o CI. O workflow do GitHub Actions será criado em etapa própria.
+O backend já aplica o limiar de 75% em `npm run test:ci`, que termina com código de saída diferente de zero quando qualquer teste falha ou quando a cobertura de linhas fica abaixo do mínimo. O pipeline de integração contínua deverá executar `npm ci` e `npm run test:ci`, e qualquer uma dessas duas condições deve bloquear o CI. O workflow do GitHub Actions ainda não existe; é requisito obrigatório antes do deploy de homologação e testes na AWS.
 
-O frontend passou a ter suíte de testes própria no Incremento 8 (`frontend/package.json`, runner nativo `node:test`, sem dependências externas — ver "Estado atual" abaixo), mas ainda sem instrumentação de cobertura. A meta obrigatória de 25% de cobertura do frontend permanece pendente de medição, a ser implementada em etapa própria antes da entrega acadêmica.
+O frontend passou a ter suíte de testes própria no Incremento 8 (`frontend/package.json`, runner nativo `node:test`, sem dependências externas — ver "Estado atual" abaixo), mas ainda sem instrumentação de cobertura. A meta obrigatória de 25% de cobertura do frontend ainda não é medida; a instrumentação e a medição estão destinadas ao Bloco 11, com os testes finais, o fechamento acadêmico e a documentação.
 
 ### Escopo da cobertura
 
@@ -319,7 +346,7 @@ Os testes `.integration.js` não entram no cálculo da cobertura. A medição ac
 | Frontend (`npm test`, dentro de `frontend/`) | 301 | 301 | 0 |
 | Checksums das migrations | 25 | 25 íntegras | — |
 
-Os 978 testes unitários do backend substituem os 310 anteriores (o Incremento 8 soma às suítes de autenticação/validação/segurança já existentes toda a suíte do RBAC). **A cobertura de linhas/ramos/funções não foi remedida para esse total** — a tabela de percentuais acima permanece a última disponível, referente aos 310 testes do fim do Incremento 7. Confirmar o percentual para os 978 testes atuais, com `npm run test:ci`, é uma pendência em aberto. Da mesma forma, os 716 testes de integração e os 25 checksums substituem, por serem mais recentes, os números de 45 testes e 17 migrations do estado anterior.
+Os 978 testes unitários do backend substituem os 310 anteriores (o Incremento 8 soma às suítes de autenticação/validação/segurança já existentes toda a suíte do RBAC). **A cobertura de linhas/ramos/funções não foi remedida para esse total** — a tabela de percentuais acima permanece a última disponível, referente aos 310 testes do fim do Incremento 7. A medição seguinte, feita no Bloco 9 (Parte C2), está registrada abaixo. Da mesma forma, os 716 testes de integração e os 25 checksums substituem, por serem mais recentes, os números de 45 testes e 17 migrations do estado anterior.
 
 **Bloco 9, Etapa C, Parte C2 e correções da auditoria — 24/09/2026** (suítes reexecutadas nesta atualização do README, mesmos comandos):
 
