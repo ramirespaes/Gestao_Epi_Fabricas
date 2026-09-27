@@ -218,10 +218,13 @@ async function criar(pool, { administradorId, empresaId, email, ip = null, dispo
 
     const convite = await conviteRepo.criar(client, { empresaId, emailConvite: emailN, tokenHash, criadoPor: administradorId, expiraEm });
 
+    // Minimização de PII (complemento da SEC-023/PRIV-001): e-mail e
+    // expiração já ficam em convites_master, que não tem esses campos
+    // alterados depois. A auditoria só aponta para o convite.
     await auditoriaPlataformaRepo.registrar(client, {
       administradorId, empresaAfetadaId: empresaId, acao: ACAO.CRIADO, referencia: convite.id, ip, dispositivo,
       contexto: { origem: 'painel_privado' },
-      dadosNovos: { conviteId: convite.id, emailConvite: emailN, expiraEm },
+      dadosNovos: { conviteId: convite.id },
     });
 
     return { convite, token: tokenClaro, empresa: resumoEmpresa(empresa) };

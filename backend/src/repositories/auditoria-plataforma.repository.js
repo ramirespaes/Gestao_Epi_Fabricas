@@ -1,5 +1,7 @@
 'use strict';
 
+const { ipParaGravar, dispositivoParaGravar } = require('../utils/origem-requisicao');
+
 /**
  * Repositório de auditoria da PLATAFORMA (logs_auditoria_plataforma,
  * migration 029 — Autenticação Global, Pacote 2). Espelha
@@ -14,6 +16,9 @@
  * contrário de `logs_auditoria.usuario_id`, que é nulável) e
  * `empresa_afetada_id` é OPCIONAL (nem toda ação de plataforma mira uma
  * empresa).
+ *
+ * IP e User-Agent são cortados aqui no tamanho das colunas (45 e 150),
+ * como em auditoria.repository.js (SEC-002).
  */
 
 function exigirAdministrador(administradorId) {
@@ -73,13 +78,15 @@ async function registrar(executor, {
   exigirObjetoOpcional(contexto, 'contexto');
   exigirObjetoOpcional(dadosAnteriores, 'dadosAnteriores');
   exigirObjetoOpcional(dadosNovos, 'dadosNovos');
+  const ipGravado = ipParaGravar(ip);
+  const dispositivoGravado = dispositivoParaGravar(dispositivo);
 
   const { rows } = await executor.query(
     `INSERT INTO logs_auditoria_plataforma
        (administrador_id, empresa_afetada_id, acao, referencia, descricao, ip, dispositivo, contexto, dados_anteriores, dados_novos)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING id, criado_em`,
-    [administradorId, empresaAfetadaId, acao, referencia, descricao, ip, dispositivo, contexto, dadosAnteriores, dadosNovos],
+    [administradorId, empresaAfetadaId, acao, referencia, descricao, ipGravado, dispositivoGravado, contexto, dadosAnteriores, dadosNovos],
   );
 
   return { id: rows[0].id, criadoEm: rows[0].criado_em };

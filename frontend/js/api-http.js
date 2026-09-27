@@ -259,13 +259,15 @@
   }
 
   /**
-   * Método, caminho e status. NUNCA o corpo — ali viaja senha no login.
-   * Status 0 significa "a troca não se completou", seja porque o fetch
-   * falhou, seja porque a leitura do corpo foi interrompida.
+   * Método, caminho e status. NUNCA o corpo — ali viaja senha no login —
+   * e nunca a query string, que pode levar dado pessoal (busca, filtros)
+   * (SEC-008). Status 0 significa "a troca não se completou", seja porque
+   * o fetch falhou, seja porque a leitura do corpo foi interrompida.
    */
   function registrar(metodo, caminho, status) {
     if (global.console && typeof global.console.log === 'function') {
-      global.console.log('%c[HTTP] ' + metodo + ' ' + caminho + ' → ' + status, 'color:#007AFF');
+      var semQuery = String(caminho).split('?')[0];
+      global.console.log('%c[HTTP] ' + metodo + ' ' + semQuery + ' → ' + status, 'color:#007AFF');
     }
   }
 

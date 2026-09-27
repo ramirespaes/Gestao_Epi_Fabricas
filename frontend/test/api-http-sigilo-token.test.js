@@ -33,3 +33,22 @@ test('POST /convite-master/consultar com token no corpo: URL sem token, log sem 
 
   EpiHttp.configurar({ fetch: null });
 });
+
+// SEC-008: a query string pode carregar dado pessoal (CPF, termo de busca).
+// O console registra método, caminho sem query e status.
+test('o log do cliente HTTP nunca inclui a query string', async (t) => {
+  const logs = [];
+  t.mock.method(console, 'log', (...a) => { logs.push(a.join(' ')); });
+  EpiHttp.configurar({
+    baseUrl: 'http://localhost:3000/api',
+    fetch: async () => ({ ok: true, status: 200, text: async () => '{"status":"ok"}' }),
+  });
+
+  await EpiHttp.requisitar('GET', '/funcionarios?cpf=52998224725&busca=Maria%20Silva&pagina=1');
+  await EpiHttp.requisitar('GET', '/funcionarios');
+  const texto = logs.join('\n');
+  assert.ok(texto.includes('GET /funcionarios'), 'método e caminho continuam registrados');
+  for (const dado of ['52998224725', 'cpf=', 'Maria', '?']) assert.equal(texto.includes(dado), false, dado);
+
+  EpiHttp.configurar({ fetch: null });
+});

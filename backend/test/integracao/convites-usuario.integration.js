@@ -147,7 +147,9 @@ describe('Parte F — convite de usuário (PostgreSQL real)', () => {
       assert.equal(JSON.stringify(linha).includes(token), false);
       const [a] = await auditorias('USUARIO_CONVIDADO');
       assert.deepEqual([a.empresa_id, a.usuario_id, a.referencia], [empresa.A, u.masterA, String(r.body.convite.id)]);
-      assert.deepEqual([a.dados_novos.emailConvite, a.dados_novos.perfil, a.dados_novos.nome], ['nova.pessoa@exemplo-cliente.com.br', 'USUARIO', 'Nova   Pessoa']);
+      // SEC-023/PRIV-001: e-mail, nome e perfil ficam no convite; a auditoria só aponta para ele.
+      assert.deepEqual(a.dados_novos, { conviteId: String(r.body.convite.id) });
+      assert.equal(JSON.stringify(a).includes('nova.pessoa@'), false, 'e-mail na auditoria');
       const escrito = JSON.stringify(logs.mock.calls.map((c) => c.arguments));
       assert.equal(escrito.includes(token), false, 'token no log');
       assert.equal(escrito.includes('nova.pessoa@'), false, 'e-mail no log');

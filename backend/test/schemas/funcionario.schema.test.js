@@ -118,11 +118,27 @@ describe('C4 (25/09/2026) — admissão, CPF exato na busca e importação em lo
     }
   });
 
-  test('listar: cpf só completo (11 dígitos, DV conferido), normalizado; parcial ou inválido é recusado', () => {
-    assert.equal(f.listar.query.safeParse({ cpf: '529.982.247-25' }).data.cpf, '52998224725');
-    assert.equal(f.listar.query.safeParse({ cpf: '52998224725' }).data.cpf, '52998224725');
-    assert.equal(f.listar.query.safeParse({ cpf: '529982' }).error.issues[0].params.codigo, 'CPF_INVALIDO');
-    assert.equal(f.listar.query.safeParse({ cpf: '52998224726' }).error.issues[0].params.codigo, 'CPF_DV_INVALIDO');
+  // SEC-008: CPF completo nunca na URL. A listagem por query não aceita mais
+  // `cpf`; a consulta por CPF é um corpo JSON, estrito, só com o CPF.
+  test('listar: a query não aceita cpf, completo ou não (a consulta por CPF vai no corpo)', () => {
+    for (const cpf of ['529.982.247-25', '52998224725', '529982']) {
+      const r = f.listar.query.safeParse({ cpf });
+      assert.equal(r.success, false, cpf);
+      assert.equal(r.error.issues[0].code, 'unrecognized_keys');
+      assert.deepEqual(r.error.issues[0].keys, ['cpf']);
+    }
+    assert.equal(f.listar.query.safeParse({ busca: 'silva' }).success, true);
+  });
+
+  test('consultaCpf: corpo só com cpf completo (11 dígitos, DV conferido), normalizado; parcial, inválido ou campo extra é recusado', () => {
+    assert.equal(f.consultaCpf.body.safeParse({ cpf: '529.982.247-25' }).data.cpf, '52998224725');
+    assert.equal(f.consultaCpf.body.safeParse({ cpf: '52998224725' }).data.cpf, '52998224725');
+    assert.equal(f.consultaCpf.body.safeParse({ cpf: '529982' }).error.issues[0].params.codigo, 'CPF_INVALIDO');
+    assert.equal(f.consultaCpf.body.safeParse({ cpf: '52998224726' }).error.issues[0].params.codigo, 'CPF_DV_INVALIDO');
+    assert.equal(f.consultaCpf.body.safeParse({}).success, false);
+    for (const extra of [{ empresaId: 2 }, { busca: 'x' }, { ativo: true }]) {
+      assert.equal(f.consultaCpf.body.safeParse({ cpf: '52998224725', ...extra }).success, false, JSON.stringify(extra));
+    }
   });
 
   test('importação: envelope estrito válido; até 100 linhas; declaração confirmada; formato xlsx ou csv', () => {
@@ -172,13 +188,17 @@ describe('C4 (25/09/2026) — admissão, CPF exato na busca e importação em lo
   });
 });
 
+// SEC-008: a busca por CPF saiu da query para o corpo de consultaCpf; a
+// guarda de formato acompanha o contrato.
 describe('ajuste de fechamento da C4 — CPF na busca (guarda do contrato existente)', () => {
   test('letras, barras, sublinhados e espaços internos são recusados, mesmo que removê-los desse um CPF válido; pontuação usual é aceita', () => {
     for (const invalido of ['529a982b247c25', '529.982.247/25', '529 982 247 25', '529_982_247_25', 'CPF52998224725']) {
-      assert.equal(f.listar.query.safeParse({ cpf: invalido }).success, false, invalido);
+      const r = f.consultaCpf.body.safeParse({ cpf: invalido });
+      assert.equal(r.success, false, invalido);
+      assert.deepEqual(r.error.issues[0].path, ['cpf'], invalido);
     }
     for (const valido of ['52998224725', '529.982.247-25', ' 529.982.247-25 ']) {
-      assert.equal(f.listar.query.safeParse({ cpf: valido }).data.cpf, '52998224725', valido);
+      assert.equal(f.consultaCpf.body.safeParse({ cpf: valido }).data.cpf, '52998224725', valido);
     }
   });
 });

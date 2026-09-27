@@ -64,6 +64,39 @@ describe('criar (administrador)', () => {
     assert.equal(audit.mock.calls[0].arguments[1].administradorId, 1);
   });
 
+  // PII na auditoria da plataforma (complemento da SEC-023/PRIV-001): e-mail
+  // e expiração ficam em convites_master; a auditoria só aponta para o convite.
+  test('auditoria da PLATAFORMA da criação: dadosNovos só com conviteId, sem e-mail, token ou hash; colunas estruturais preservadas', async (t) => {
+    const email = 'Pessoa.Master@Exemplo-Cliente.com.br';
+    const emailN = 'pessoa.master@exemplo-cliente.com.br';
+    t.mock.method(empresaRepo, 'buscarDetalhesPorId', async () => empresa);
+    t.mock.method(conviteRepo, 'buscarPendentePorEmailParaAtualizacao', async () => null);
+    const criar = t.mock.method(conviteRepo, 'criar', async (_, d) => ({ ...convitePendente, emailConvite: d.emailConvite, expiraEm: d.expiraEm }));
+    const audit = t.mock.method(auditoriaPlataformaRepo, 'registrar', async () => ({ id: '1' }));
+
+    const r = await servico.criar(poolFalso(clienteFalso()), { administradorId: 1, empresaId: 3, email, ip: '10.0.0.1', dispositivo: 'Navegador' });
+
+    assert.equal(audit.mock.calls.length, 1);
+    const registro = audit.mock.calls[0].arguments[1];
+    assert.deepEqual(registro.dadosNovos, { conviteId: '7' });
+    assert.equal(registro.administradorId, 1);
+    assert.equal(registro.empresaAfetadaId, 3);
+    assert.equal(registro.acao, 'CONVITE_MASTER_CRIADO');
+    assert.equal(registro.referencia, '7');
+    assert.deepEqual(registro.contexto, { origem: 'painel_privado' });
+    assert.deepEqual([registro.ip, registro.dispositivo], ['10.0.0.1', 'Navegador']);
+
+    const tokenHash = criar.mock.calls[0].arguments[1].tokenHash;
+    const texto = JSON.stringify(registro);
+    for (const dado of [emailN, 'pessoa.master', 'emailConvite', r.token, tokenHash]) {
+      assert.equal(texto.includes(dado), false, dado);
+    }
+    // O registro funcional e a resposta continuam com e-mail e expiração.
+    assert.equal(criar.mock.calls[0].arguments[1].emailConvite, emailN);
+    assert.equal(r.convite.emailConvite, emailN);
+    assert.ok(r.convite.expiraEm instanceof Date);
+  });
+
   test('recusas: e-mail inválido antes de conectar; empresa inexistente 404; inativa 409; pendente 409 (nada criado)', async (t) => {
     const pool = poolFalso(clienteFalso());
     await assert.rejects(() => servico.criar(pool, { administradorId: 1, empresaId: 3, email: 'x' }), (e) => e.codigo === 'CONVITE_EMAIL_INVALIDO');

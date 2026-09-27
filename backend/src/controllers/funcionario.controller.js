@@ -18,6 +18,8 @@ const { pool } = require('../config/database');
  * busca por CPF completo (igualdade exata) continuam as mesmas.
  */
 
+const LIMITE_CONSULTA_CPF = 20;
+
 const comContexto = (req) => ({ empresaId: req.empresa.id, atorId: req.usuario.id, ip: req.ip, dispositivo: req.headers['user-agent'] });
 const informado = (corpo, campo, flag) => (Object.hasOwn(corpo, campo) ? { [campo]: corpo[campo], [flag]: true } : {});
 
@@ -41,10 +43,20 @@ function criarFuncionarioController({ pool: poolInjetado }) {
     },
 
     async listar(req, res) {
-      const { ativo, busca, grupoHomogeneoId, cpf, pagina, limite } = req.validado.query;
+      const { ativo, busca, grupoHomogeneoId, pagina, limite } = req.validado.query;
       const resultado = await funcionarioService.listar(poolInjetado, {
         empresaId: req.empresa.id, ativo: ativo ?? null, busca: busca ?? null, grupoHomogeneoId: grupoHomogeneoId ?? null,
-        cpf: cpf ?? null, pagina, limite,
+        cpf: null, pagina, limite,
+      });
+      res.status(200).json({ status: 'ok', ...resultado, funcionarios: resultado.funcionarios.map(paraResposta) });
+    },
+
+    // SEC-008: CPF completo no corpo, nunca na URL. Mesma resposta da
+    // listagem; o CPF é único por empresa, então uma página basta.
+    async consultarCpf(req, res) {
+      const resultado = await funcionarioService.listar(poolInjetado, {
+        empresaId: req.empresa.id, ativo: null, busca: null, grupoHomogeneoId: null,
+        cpf: req.validado.body.cpf, pagina: 1, limite: LIMITE_CONSULTA_CPF,
       });
       res.status(200).json({ status: 'ok', ...resultado, funcionarios: resultado.funcionarios.map(paraResposta) });
     },

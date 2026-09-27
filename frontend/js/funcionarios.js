@@ -5,7 +5,8 @@
    * EpiFuncionarios — Bloco 9, Etapa C, Parte C4 (25/09/2026):
    * importação de funcionários por planilha e consulta do histórico.
    *
-   *   GET  /funcionarios?busca=|cpf=&pagina=&limite=   (employeeHistory.visualizar)
+   *   GET  /funcionarios?busca=&pagina=&limite=        (employeeHistory.visualizar)
+   *   POST /funcionarios/consulta-cpf  { cpf }          (employeeHistory.visualizar; CPF nunca na URL)
    *   GET  /funcionarios/:id                            (employeeHistory.visualizar)
    *   POST /funcionarios/importacao                     (employeeHistory.criar; até 100 linhas por lote)
    *
@@ -93,12 +94,18 @@
   // ───────────────────────────────────────────────────────────────────
 
   var acoes = {
-    /** Ativos e inativos: o histórico de quem saiu continua consultável. */
+    /**
+     * Ativos e inativos: o histórico de quem saiu continua consultável.
+     * CPF completo vai só no corpo de um POST (SEC-008): nunca na URL, no
+     * histórico do navegador nem em log de acesso.
+     */
     listar: function (filtro) {
       var f = filtro || {};
+      if (texto(f.cpf)) {
+        return http().requisitar('POST', CAMINHO + '/consulta-cpf', { corpo: { cpf: texto(f.cpf) } });
+      }
       var q = [];
       if (texto(f.busca)) q.push('busca=' + encodeURIComponent(texto(f.busca)));
-      if (texto(f.cpf)) q.push('cpf=' + encodeURIComponent(texto(f.cpf)));
       q.push('pagina=' + encodeURIComponent(f.pagina || 1));
       q.push('limite=' + encodeURIComponent(f.limite || LIMITES.limitePagina));
       return http().requisitar('GET', CAMINHO + '?' + q.join('&'));

@@ -33,11 +33,16 @@ const CODIGO_LIB_FORMATO = /^[A-Za-z0-9_.]{1,40}$/; // SQLSTATE do pg, type do b
 const METODO_FORMATO = /^[A-Z]{3,10}$/;
 const CAUSAS_MAXIMO = 3;
 
+// Corpo fixo (SEC-009): método, caminho e query são do cliente e podem levar
+// CPF, token de convite ou outro dado; nada disso volta na resposta.
+const CORPO_ROTA_NAO_ENCONTRADA = Object.freeze({
+  status: 'error',
+  codigo: 'ROTA_NAO_ENCONTRADA',
+  message: 'Rota não encontrada',
+});
+
 function notFoundHandler(req, res, next) {
-  res.status(404).json({
-    status: 'error',
-    message: `Rota não encontrada: ${req.method} ${req.originalUrl}`,
-  });
+  res.status(404).json(CORPO_ROTA_NAO_ENCONTRADA);
 }
 
 function nomeDoErro(err) {

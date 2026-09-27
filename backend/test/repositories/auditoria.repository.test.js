@@ -84,3 +84,44 @@ describe('registrar', () => {
     await assert.rejects(() => registrar(executor, { empresaId: EMPRESA, acao: 'X' }), (e) => e === erro);
   });
 });
+
+// SEC-002: User-Agent e IP vêm do cliente e as colunas são VARCHAR(150) e
+// VARCHAR(45). O repositório é o ponto canônico: corta aqui, para nenhum
+// serviço precisar lembrar, e a operação auditada não cai por isso.
+describe('SEC-002 — IP e User-Agent cabem nas colunas', () => {
+  const gravar = async (extra) => {
+    const executor = executorFalso();
+    await registrar(executor, { empresaId: EMPRESA, acao: 'X', ...extra });
+    const valores = executor.chamadas[0].valores;
+    return { ip: valores[5], dispositivo: valores[6] };
+  };
+
+  test('User-Agent com 150 fica igual; com 151 e com 400 é cortado nos primeiros 150', async () => {
+    const ua = (n) => 'Mozilla/5.0 '.repeat(40).slice(0, n);
+    assert.equal((await gravar({ dispositivo: ua(150) })).dispositivo, ua(150));
+    assert.equal((await gravar({ dispositivo: ua(151) })).dispositivo, ua(150));
+    assert.equal((await gravar({ dispositivo: ua(400) })).dispositivo, ua(150));
+  });
+
+  test('IP no limite fica igual; acima de 45 é cortado', async () => {
+    const ipv6 = '0000:0000:0000:0000:0000:ffff:192.168.100.228';
+    assert.equal(ipv6.length, 45);
+    assert.equal((await gravar({ ip: ipv6 })).ip, ipv6);
+    assert.equal((await gravar({ ip: '10.0.0.1' })).ip, '10.0.0.1');
+    assert.equal((await gravar({ ip: `${ipv6}, 203.0.113.9` })).ip, ipv6);
+  });
+
+  test('o corte conta caracteres, sem partir caractere composto', async () => {
+    const { dispositivo } = await gravar({ dispositivo: '😀'.repeat(151) });
+    assert.equal(dispositivo, '😀'.repeat(150));
+    assert.equal(Array.from(dispositivo).length, 150);
+  });
+
+  test('ausente vira null; tipo que não é texto é erro de programação, antes de consultar', async () => {
+    assert.deepEqual(await gravar({ ip: undefined, dispositivo: null }), { ip: null, dispositivo: null });
+    const executor = executorFalso();
+    await assert.rejects(() => registrar(executor, { empresaId: EMPRESA, acao: 'X', dispositivo: ['a', 'b'] }), /dispositivo/i);
+    await assert.rejects(() => registrar(executor, { empresaId: EMPRESA, acao: 'X', ip: 10 }), /ip/i);
+    assert.equal(executor.chamadas.length, 0);
+  });
+});

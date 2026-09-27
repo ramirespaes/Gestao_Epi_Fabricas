@@ -24,6 +24,7 @@ const { pool } = require('../config/database');
  * Caminhos, sob /api:
  *   POST  /api/funcionarios
  *   GET   /api/funcionarios
+ *   POST  /api/funcionarios/consulta-cpf   (SEC-008: CPF no corpo, nunca na URL)
  *   GET   /api/funcionarios/:id
  *   PATCH /api/funcionarios/:id
  *   POST  /api/funcionarios/:id/inativar
@@ -43,6 +44,8 @@ function criarFuncionarioRoutes({ controller, exigirSessao: exigirSessaoInjetado
   // C4 (D1/D8): importação em lote, mesma permissão de criar funcionários.
   router.post('/funcionarios/importacao', exigirSessaoInjetado, exigirCriar, validar({ body: funcionarioSchemas.importacao.body }), controller.importar);
   router.get('/funcionarios', exigirSessaoInjetado, exigirVisualizar, validar({ query: funcionarioSchemas.listar.query }), controller.listar);
+  // SEC-008: consulta por CPF completo, só leitura, com o CPF no corpo.
+  router.post('/funcionarios/consulta-cpf', exigirSessaoInjetado, exigirVisualizar, validar({ body: funcionarioSchemas.consultaCpf.body }), controller.consultarCpf);
   router.get('/funcionarios/:id', exigirSessaoInjetado, exigirVisualizar, validar({ params: funcionarioSchemas.buscar.params }), controller.buscar);
   router.patch('/funcionarios/:id', exigirSessaoInjetado, exigirEditar, validar({ params: funcionarioSchemas.alterar.params, body: funcionarioSchemas.alterar.body }), controller.alterar);
   router.post('/funcionarios/:id/inativar', exigirSessaoInjetado, exigirEditar, validar({ params: funcionarioSchemas.inativar.params, body: funcionarioSchemas.inativar.body }), controller.inativar);

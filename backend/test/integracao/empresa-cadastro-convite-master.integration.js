@@ -393,7 +393,12 @@ describe('Pacote 3 — cadastro de empresas e convite do MASTER (HTTP + PostgreS
       const { rows: audit } = await contexto.pool.query("SELECT administrador_id, empresa_afetada_id, dados_novos FROM logs_auditoria_plataforma WHERE acao = 'CONVITE_MASTER_CRIADO' AND referencia = $1", [convite.id]);
       assert.equal(audit.length, 1);
       assert.equal(audit[0].administrador_id, administradorId);
+      assert.equal(audit[0].empresa_afetada_id, empresaA);
       assert.equal(JSON.stringify(audit[0].dados_novos).includes(token), false);
+      // Minimização de PII: o e-mail fica em convites_master; a auditoria só aponta para ele.
+      assert.deepEqual(audit[0].dados_novos, { conviteId: String(convite.id) });
+      assert.equal(JSON.stringify(audit[0]).includes(EMAIL_MASTER), false, 'e-mail na auditoria da plataforma');
+      assert.equal(JSON.stringify(audit[0]).includes(rows[0].token_hash), false, 'hash do token na auditoria da plataforma');
 
       const duplicado = await admin(request(app).post(`/api/plataforma/empresas/${empresaA}/convites-master`)).send({ email: EMAIL_MASTER.toUpperCase() });
       assert.deepEqual([duplicado.status, duplicado.body.codigo], [409, 'CONVITE_JA_PENDENTE']);

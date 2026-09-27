@@ -13,7 +13,10 @@ const { httpConfig } = require('../../src/config/http');
  */
 
 const TOKEN = 'Zm9ybWF0b2Jhc2U2NHVybGRldG9rZW5jb21fNDNjaGFy'.slice(0, 43);
-const dados = { emailConvite: 'p@x.com', token: TOKEN, expiraEm: new Date('2026-09-30T00:00:00Z'), empresa: { id: 7, razaoSocial: 'X' } };
+const EMAIL = 'pessoa.convidada@exemplo-cliente.com.br';
+const dados = {
+  conviteId: '31', emailConvite: EMAIL, token: TOKEN, expiraEm: new Date('2026-09-30T00:00:00Z'), empresa: { id: 7, razaoSocial: 'Empresa Convidante Ltda' },
+};
 
 describe('entregar', () => {
   test('devolve o modo de desenvolvimento e um link sob a origem do Painel Privado com o token SÓ no fragmento (nunca na query)', async (t) => {
@@ -44,6 +47,20 @@ describe('entregar', () => {
     assert.ok(texto.includes('convite-master'));
     assert.equal(texto.includes(TOKEN), false);
     assert.equal(texto.includes('aceitar-convite.html'), false);
+  });
+
+  // SEC-006: o log técnico não leva dado pessoal; empresa e convite bastam
+  // para correlacionar com o registro do convite e a auditoria.
+  test('a linha de log leva só empresaId e conviteId: sem e-mail, nome da empresa ou token', async (t) => {
+    const logs = [];
+    t.mock.method(console, 'log', (...args) => { logs.push(args); });
+    await entrega.entregar(dados);
+    assert.equal(logs.length, 1);
+    const [mensagem, campos] = logs[0];
+    assert.match(mensagem, /convite-master/);
+    assert.deepEqual(campos, { empresaId: 7, conviteId: '31' });
+    const texto = JSON.stringify(logs);
+    for (const dado of [EMAIL, 'pessoa.convidada', 'Empresa Convidante', TOKEN]) assert.equal(texto.includes(dado), false, dado);
   });
 
   test('token ausente é erro de programação', async () => {

@@ -231,18 +231,21 @@ describe('C4 — funcionários: importação em lote, CPF exato e admissão (Pos
 
   test('busca por CPF: só completo, igualdade exata, restrita à empresa; parcial ou inválido → 400; independente da busca por nome/matrícula', async () => {
     const buscar = (quem, query) => request(app).get(`/api/funcionarios${query}`).set('Cookie', cookie[quem]);
+    // SEC-008: CPF completo só no corpo de POST /funcionarios/consulta-cpf.
+    const porCpf = (quem, valor) => request(app).post('/api/funcionarios/consulta-cpf').set('Cookie', cookie[quem]).send({ cpf: valor });
     const cpf = gerarCpf(1);
     const mascarado = `${cpf.slice(0, 3)}.${cpf.slice(3, 6)}.${cpf.slice(6, 9)}-${cpf.slice(9)}`;
-    const a = await buscar('masterA', `?cpf=${encodeURIComponent(mascarado)}`);
+    const a = await porCpf('masterA', mascarado);
     assert.equal(a.status, 200);
     assert.deepEqual(a.body.funcionarios.map((f) => [f.matricula, f.empresaId]), [['C4-2', empresa.A]]);
     assert.equal(a.body.total, 1);
-    const b = await buscar('masterB', `?cpf=${cpf}`);
+    const b = await porCpf('masterB', cpf);
     assert.deepEqual(b.body.funcionarios.map((f) => f.empresaId), [empresa.B], 'mesmo CPF, só o da própria empresa');
     for (const parcial of [cpf.slice(0, 6), `${cpf.slice(0, 10)}0`]) {
-      assert.equal((await buscar('masterA', `?cpf=${parcial}`)).status, 400, parcial);
+      assert.equal((await porCpf('masterA', parcial)).status, 400, parcial);
     }
-    assert.equal((await buscar('masterA', `?cpf=${gerarCpf(777)}`)).body.total, 0, 'CPF válido inexistente: nenhum resultado');
+    assert.equal((await porCpf('masterA', gerarCpf(777))).body.total, 0, 'CPF válido inexistente: nenhum resultado');
+    assert.equal((await buscar('masterA', `?cpf=${cpf}`)).status, 400, 'CPF na query é recusado');
     assert.equal((await buscar('masterA', '?busca=C4-2')).body.funcionarios[0].matricula, 'C4-2', 'busca livre continua por nome/matrícula');
     assert.equal((await buscar('masterA', `?busca=${cpf.slice(0, 5)}`)).body.total, 0, 'a busca livre nunca encontra por CPF');
   });

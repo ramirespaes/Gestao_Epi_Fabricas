@@ -46,11 +46,10 @@ describe('app.js', () => {
     assert.equal(resposta.body.codigo, 'VALIDACAO');
   });
 
-  test('rota inexistente responde 404 em JSON', async () => {
-    const resposta = await request(app).get('/api/nao-existe');
+  test('rota inexistente responde 404 em JSON, com corpo fixo que não ecoa a URL (SEC-009)', async () => {
+    const resposta = await request(app).get('/api/nao-existe?cpf=52998224725');
     assert.equal(resposta.status, 404);
-    assert.equal(resposta.body.status, 'error');
-    assert.match(resposta.body.message, /^Rota não encontrada: GET /);
+    assert.deepEqual(resposta.body, { status: 'error', codigo: 'ROTA_NAO_ENCONTRADA', message: 'Rota não encontrada' });
   });
 });
 
@@ -554,9 +553,9 @@ describe('app.js: namespace /api/plataforma (Autenticação Global — Pacote 2)
 
   test('rota inexistente sob /api/plataforma responde 404 pelo notFoundHandler PRÓPRIO da cadeia, sem cair em /api', async () => {
     const r = await request(app).get('/api/plataforma/nao-existe').set('Origin', PERMITIDA_PLATAFORMA);
+    // Se caísse na cadeia /api, a origem do Painel seria recusada (403).
     assert.equal(r.status, 404);
-    assert.equal(r.body.status, 'error');
-    assert.match(r.body.message, /^Rota não encontrada: GET \/api\/plataforma\/nao-existe/);
+    assert.deepEqual(r.body, { status: 'error', codigo: 'ROTA_NAO_ENCONTRADA', message: 'Rota não encontrada' });
   });
 
   test('GET /api/health continua respondendo normalmente: a cadeia /api/plataforma não intercepta /api/health', async () => {

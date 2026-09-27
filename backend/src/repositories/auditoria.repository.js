@@ -1,5 +1,7 @@
 'use strict';
 
+const { ipParaGravar, dispositivoParaGravar } = require('../utils/origem-requisicao');
+
 /**
  * Repositório de auditoria (logs_auditoria, migrations 012 e 014).
  *
@@ -22,6 +24,9 @@
  * negócio. Os objetos JS passados em contexto/dadosAnteriores/dadosNovos
  * são serializados pelo próprio driver `pg` (JSON.stringify automático
  * para objetos em parâmetros) e convertidos para JSONB pela coluna.
+ *
+ * IP e User-Agent são cortados aqui no tamanho das colunas (45 e 150):
+ * vêm do cliente, e nenhum serviço precisa lembrar de cortar (SEC-002).
  */
 
 function exigirEmpresa(empresaId) {
@@ -80,13 +85,15 @@ async function registrar(executor, {
   exigirObjetoOpcional(contexto, 'contexto');
   exigirObjetoOpcional(dadosAnteriores, 'dadosAnteriores');
   exigirObjetoOpcional(dadosNovos, 'dadosNovos');
+  const ipGravado = ipParaGravar(ip);
+  const dispositivoGravado = dispositivoParaGravar(dispositivo);
 
   const { rows } = await executor.query(
     `INSERT INTO logs_auditoria
        (empresa_id, usuario_id, acao, referencia, descricao, ip, dispositivo, contexto, dados_anteriores, dados_novos)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING id, criado_em`,
-    [empresaId, usuarioId, acao, referencia, descricao, ip, dispositivo, contexto, dadosAnteriores, dadosNovos],
+    [empresaId, usuarioId, acao, referencia, descricao, ipGravado, dispositivoGravado, contexto, dadosAnteriores, dadosNovos],
   );
 
   return { id: rows[0].id, criadoEm: rows[0].criado_em };

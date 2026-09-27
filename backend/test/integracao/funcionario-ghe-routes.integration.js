@@ -272,8 +272,10 @@ describe('API HTTP de GHE e funcionários com PostgreSQL real', () => {
       assert.deepEqual(porGhe.body.funcionarios.map((x) => x.id), [funcionarioId]);
       const porMatricula = await request(app).get('/api/funcionarios?busca=MAT-0001').set('Cookie', cookieMasterA);
       assert.deepEqual(porMatricula.body.funcionarios.map((x) => x.id), [funcionarioId]);
-      const porCpf = await request(app).get(`/api/funcionarios?cpf=${CPF_A_NORMALIZADO}`).set('Cookie', cookieMasterA);
+      // SEC-008: CPF completo no corpo de POST /funcionarios/consulta-cpf, nunca na URL.
+      const porCpf = await request(app).post('/api/funcionarios/consulta-cpf').set('Cookie', cookieMasterA).send({ cpf: CPF_A_NORMALIZADO });
       assert.deepEqual(porCpf.body.funcionarios.map((x) => x.id), [funcionarioId], 'a busca por CPF completo continua exata');
+      assert.equal((await request(app).get(`/api/funcionarios?cpf=${CPF_A_NORMALIZADO}`).set('Cookie', cookieMasterA)).status, 400, 'CPF na query é recusado');
       assert.equal(porCpf.body.funcionarios[0].cpfMascarado, MASCARA_A);
       for (const lista of [porGhe, porMatricula, porCpf]) {
         assert.ok(!JSON.stringify(lista.body).includes(CPF_A_NORMALIZADO), 'a listagem nunca devolve o CPF completo');
