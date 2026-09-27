@@ -163,11 +163,10 @@ describe('inspeção estática: pages/available-items.html integrada, interface 
       assert.equal(proibido.test(codigo), false, `available-items.html contém ${proibido}`);
     }
     const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
-    assert.deepEqual(scripts, ['../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/materiais.js', '../js/itens-disponiveis.js']);
+    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/materiais.js', '../js/itens-disponiveis.js']);
     assert.match(codigo, /EpiSessaoEmpresarial\.montar\(/);
     assert.match(codigo, /EpiPermissoes\.prepararPagina\(\{\s*pagina: 'availableItems'/);
-    assert.match(codigo, /aoFalharSaida: function \(mensagem\) \{ mostrarAviso\(mensagem, 'erro'\); \}/);
-    for (const id of ['telaSessao', 'telaSessaoMensagem', 'telaSessaoPortal', 'identidade', 'botaoSair', 'botaoTrocarEmpresa', 'aviso']) assert.ok(ids.includes(id), id);
+    for (const id of ['telaSessao', 'telaSessaoMensagem', 'telaSessaoPortal', 'aviso']) assert.ok(ids.includes(id), id);
   });
 
   test('filtros, botões, tabela e exportação originais preservados; linhas fictícias removidas; paginação acrescentada', () => {
@@ -187,21 +186,21 @@ describe('inspeção estática: pages/available-items.html integrada, interface 
     assert.match(html, /Validade do CA/i, 'rótulo esclarece que a validade é a do CA');
   });
 
-  test('menu: estrutura preservada; Itens Disponíveis ativo; integrados por permissão; demais sem link', () => {
+  test('menu: estrutura preservada; Análise de estoque ativa; integrados por permissão; demais sem link', () => {
     const links = [...html.matchAll(/<a [^>]*data-pagina="([^"]+)"[^>]*>/g)];
-    assert.deepEqual(links.map((m) => m[1]).sort(), ['autorizacoes-individuais', 'availableItems', 'dashboard', 'employeeGroups', 'employeeHistory', 'grupo-permissoes', 'grupo-usuarios', 'grupos-acesso', 'importEmployees', 'materials']);
+    assert.deepEqual(links.map((m) => m[1]).sort(), ['autorizacoes-individuais', 'availableItems', 'dashboard', 'employeeGroups', 'employeeHistory', 'grupo-permissoes', 'grupo-usuarios', 'grupos-acesso', 'importEmployees', 'materials', 'newUser', 'operations', 'stockValidity', 'userAdmin']);
     for (const m of links) assert.match(m[0], /style="display:none"/);
     assert.match(html, /<a class="active" href="javascript:void\(0\)" data-pagina="availableItems"/);
     const hrefs = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]).filter((h) => !h.startsWith('http') && !h.startsWith('../css/') && h !== 'javascript:void(0)');
-    const permitidos = new Set(['materials.html', 'dashboard.html', 'employee-groups.html', 'employee-history.html', 'import-employees.html', 'grupos-acesso.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'autorizacoes-individuais.html', '../portal/index.html', '../portal/inicio.html']);
+    const permitidos = new Set(['materials.html', 'stock-validity.html', 'operations.html', 'dashboard.html', 'employee-groups.html', 'employee-history.html', 'import-employees.html', 'grupos-acesso.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'autorizacoes-individuais.html', 'new-user.html', 'user-admin.html', '../portal/index.html', '../portal/inicio.html']);
     for (const h of hrefs) assert.ok(permitidos.has(h), h);
     // 20 na C3; a C4 integrou Histórico e Importar Funcionários (D9): restam 18.
-    assert.ok([...html.matchAll(/<a class="nav-pendente"/g)].length >= 17); // C6: Dashboard integrado
+    assert.ok([...html.matchAll(/<a class="nav-pendente"/g)].length >= 13); // C6: Dashboard; E7: Validade; E8: Operações; F: Novo Usuário e Administração de Usuários
   });
 
-  test('materials.html e o início do Portal passam a oferecer Itens Disponíveis (ocultos até a permissão)', () => {
-    assert.match(ler('pages/materials.html'), /<a href="available-items\.html" data-pagina="availableItems" style="display:none"><div class="nav-icon green">checklist<\/div>Itens Disponíveis<\/a>/);
-    assert.match(ler('portal/inicio.html'), /<a href="\.\.\/pages\/available-items\.html" data-pagina="availableItems" style="display:none">Itens disponíveis<\/a>/);
+  test('a Gestão de estoque e o início do Portal oferecem a Análise de estoque (oculta até a permissão)', () => {
+    assert.match(ler('pages/materials.html'), /<a href="available-items\.html" data-pagina="availableItems" style="display:none"><div class="nav-icon green">checklist<\/div>Análise de estoque<\/a>/);
+    assert.match(ler('portal/inicio.html'), /<a href="\.\.\/pages\/available-items\.html" data-pagina="availableItems" style="display:none">Análise de estoque<\/a>/);
   });
 });
 
@@ -517,5 +516,44 @@ describe('ajuste 3 — encerramento da sessão não preserva a consulta anterior
     assert.match(corpo, /aplicados = \{\};/);
     assert.match(corpo, /pagina = 1;/);
     assert.match(corpo, /\$\('deliveredStatus'\)\.value = '';/);
+  });
+});
+
+describe('segurança: na Análise de estoque, conteúdo da API aparece como texto, nunca como elemento ou evento', () => {
+  const ATAQUE = '<img src=x onerror=alert(1)>';
+  const ESCAPADO = '&lt;img src=x onerror=alert(1)&gt;';
+  const marcacoes = (html) => [...String(html).matchAll(/<\s*([a-zA-Z][\w-]*)([^>]*)>/g)].map((m) => ({ nome: m[1].toLowerCase(), atributos: m[2] }));
+  // Nomes de atributo, com os valores entre aspas neutralizados.
+  const nomesDeAtributo = (atributos) => [...atributos.replace(/"[^"]*"|'[^']*'/g, '""').matchAll(/([^\s="'/]+)\s*=/g)].map((m) => m[1].toLowerCase());
+  const semElementoInjetado = (html) => {
+    for (const m of marcacoes(html)) {
+      assert.notEqual(m.nome, 'img', html);
+      assert.equal(nomesDeAtributo(m.atributos).some((n) => n.startsWith('on')), false, `atributo de evento em <${m.nome}>: ${html}`);
+    }
+  };
+
+  test('linha da tabela: categoria, tipo, material, código, tamanho, quantidade e unidade escapados', () => {
+    const html = modulo().render.linhas([item({ categoria: ATAQUE, tipo: ATAQUE, material: ATAQUE, codigoInterno: `"><${ATAQUE}`, tamanho: ATAQUE, disponivel: ATAQUE, unidade: ATAQUE })]);
+    assert.ok(html.includes(ESCAPADO));
+    semElementoInjetado(html);
+  });
+
+  test('opções dos filtros e linha de estado: valores escapados, inclusive dentro de value="..."', () => {
+    const opcoes = modulo().render.opcoes([ATAQUE, `" onmouseover="alert(1)`], 'Todos', ATAQUE);
+    assert.ok(opcoes.includes(`value="${ESCAPADO}" selected>${ESCAPADO}`));
+    semElementoInjetado(opcoes);
+    const estado = modulo().render.estado(ATAQUE);
+    assert.ok(estado.includes(ESCAPADO));
+    semElementoInjetado(estado);
+  });
+
+  test('a página só escreve innerHTML com texto fixo ou com o render do módulo, que escapa', () => {
+    const html = ler('pages/available-items.html');
+    const script = html.slice(html.lastIndexOf('<script>'));
+    const atribuicoes = [...script.matchAll(/\.innerHTML\s*=\s*([^;]+);/g)].map((m) => m[1].trim());
+    assert.ok(atribuicoes.length > 0);
+    for (const origem of atribuicoes) {
+      assert.match(origem, /^(''|Itens\.render\.[a-z]+\(|d\.itens\.length|'<div class="notice" style="' \+ cor \+ '">' \+ Itens\.render\.escaparHtml\(texto\) \+ '<\/div>')/, origem);
+    }
   });
 });

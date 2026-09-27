@@ -70,7 +70,7 @@ const PERFIL_MASTER = 'MASTER';
 const PERFIL_ADMINISTRADOR = 'ADMINISTRADOR';
 
 /**
- * Códigos do catálogo real (`acoes`, migration 024) que representam cada
+ * Códigos do catálogo real (`acoes`, migrations 024 e 047) que representam cada
  * operação administrativa. Exportados como constantes para que nenhum
  * serviço precise repetir a string — e para que um código inexistente
  * falhe alto, aqui, em vez de silenciosamente nunca autorizar ninguém.
@@ -79,6 +79,8 @@ const ACOES_ADMINISTRATIVAS = Object.freeze({
   GRUPOS_ACESSO: 'ADMINISTRAR_GRUPOS_ACESSO',
   PERMISSOES_GRUPO: 'ADMINISTRAR_PERMISSOES_GRUPO',
   VINCULOS_GRUPO: 'ADMINISTRAR_VINCULOS_GRUPO',
+  // Migration 047: convidar, alterar, inativar e reativar usuários.
+  USUARIOS: 'GERENCIAR_USUARIOS',
 });
 
 const ACOES_ADMINISTRATIVAS_VALIDAS = new Set(Object.values(ACOES_ADMINISTRATIVAS));

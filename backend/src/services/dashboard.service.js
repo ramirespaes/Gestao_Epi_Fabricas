@@ -1,10 +1,10 @@
 'use strict';
 
 const autorizacao = require('../middleware/autorizacao');
-const estoqueTamanhoRepo = require('../repositories/estoque-tamanho.repository');
-const materialRepo = require('../repositories/material.repository');
+const loteRepo = require('../repositories/estoque-lote.repository');
 const funcionarioRepo = require('../repositories/funcionario.repository');
 const { DIAS_ALERTA_VALIDADE_CA } = require('../schemas/itens-disponiveis.schema');
+const { exigirDataOperacional } = require('../utils/data-operacional');
 
 /**
  * Indicadores do dashboard (Bloco 9, Etapa C, Parte C6) — somente leitura.
@@ -14,15 +14,16 @@ const { DIAS_ALERTA_VALIDADE_CA } = require('../schemas/itens-disponiveis.schema
  * dados, decidida pela MESMA função que autoriza as rotas
  * (autorizacao.avaliarPermissaoRecurso — nenhuma interpretação nova do RBAC):
  *   itensDisponiveis, estoqueAbaixoMinimo -> availableItems (os dados de
- *     Itens Disponíveis, C3: saldo por material ativo × tamanho);
- *   caVencido (+ aVencer)               -> materials (validade do CA é
- *     atributo do cadastro do material);
+ *     Itens Disponíveis: disponível por material ativo × tamanho);
+ *   caVencido (+ aVencer)               -> stockValidity (E9: os lotes com
+ *     saldo e CA vencido ou a vencer, na data operacional, contados como na
+ *     Validade de estoque, inclusive de material inativo);
  *   funcionariosAtivos                  -> employeeHistory.
  * Sem a permissão da fonte: { permitido: false } — nenhum número sai do
  * servidor. Empresa, usuário e perfil vêm só da sessão.
  */
 
-const FONTES = Object.freeze({ estoque: 'availableItems', catalogo: 'materials', funcionarios: 'employeeHistory' });
+const FONTES = Object.freeze({ estoque: 'availableItems', validade: 'stockValidity', funcionarios: 'employeeHistory' });
 const NEGADO = Object.freeze({ permitido: false });
 
 function exigirInteiroPositivo(valor, nome) {
@@ -36,31 +37,32 @@ async function podeVer(pool, contexto, recurso) {
   return decisao.visualizar === true;
 }
 
-async function consultar(pool, { empresaId, usuarioId, perfil }) {
+async function consultar(pool, { empresaId, usuarioId, perfil, hoje }) {
   exigirInteiroPositivo(empresaId, 'identificador de empresa');
+  exigirDataOperacional(hoje);
   exigirInteiroPositivo(usuarioId, 'identificador de usuário');
   if (typeof perfil !== 'string' || perfil.length === 0) {
     throw new TypeError('perfil inválido');
   }
   const contexto = { empresaId, usuarioId, perfil };
 
-  const [estoque, catalogo, funcionarios] = await Promise.all([
+  const [estoque, validade, funcionarios] = await Promise.all([
     podeVer(pool, contexto, FONTES.estoque),
-    podeVer(pool, contexto, FONTES.catalogo),
+    podeVer(pool, contexto, FONTES.validade),
     podeVer(pool, contexto, FONTES.funcionarios),
   ]);
 
-  const [resumo, validade, ativos] = await Promise.all([
-    estoque ? estoqueTamanhoRepo.resumirDisponiveis(pool, empresaId) : null,
-    catalogo ? materialRepo.contarValidadeCa(pool, empresaId, DIAS_ALERTA_VALIDADE_CA) : null,
+  // Os indicadores de estoque saem da mesma consulta; só devolvo o que a fonte permite.
+  const [resumo, ativos] = await Promise.all([
+    estoque || validade ? loteRepo.resumirIndicadores(pool, empresaId, { hoje, diasAlerta: DIAS_ALERTA_VALIDADE_CA }) : null,
     funcionarios ? funcionarioRepo.contarPorEmpresa(pool, empresaId, { ativo: true }) : null,
   ]);
 
   return {
     itensDisponiveis: estoque ? { permitido: true, valor: resumo.disponivel } : { ...NEGADO },
     estoqueAbaixoMinimo: estoque ? { permitido: true, valor: resumo.abaixoMinimo } : { ...NEGADO },
-    caVencido: catalogo
-      ? { permitido: true, valor: validade.vencido, aVencer: validade.aVencer, diasAlerta: DIAS_ALERTA_VALIDADE_CA }
+    caVencido: validade
+      ? { permitido: true, valor: resumo.caVencido, aVencer: resumo.caAVencer, diasAlerta: DIAS_ALERTA_VALIDADE_CA }
       : { ...NEGADO },
     funcionariosAtivos: funcionarios ? { permitido: true, valor: ativos } : { ...NEGADO },
   };

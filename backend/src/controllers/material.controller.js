@@ -26,7 +26,7 @@ function criarMaterialController({ pool: poolInjetado }) {
   return {
     async criar(req, res) {
       const {
-        nome, tipo, fabricante, caNumero, caValidade, prazoUsoDias, unidade, estoqueMinimo,
+        nome, tipo, fabricante, prazoUsoDias, exigeTamanho, oculosComGrau, unidade, estoqueMinimo,
         categoria, codigoInterno, descricao,
       } = req.validado.body;
 
@@ -36,9 +36,9 @@ function criarMaterialController({ pool: poolInjetado }) {
         nome,
         tipo: tipo ?? null,
         fabricante: fabricante ?? null,
-        caNumero: caNumero ?? null,
-        caValidade: caValidade ?? null,
         prazoUsoDias: prazoUsoDias ?? null,
+        exigeTamanho,
+        oculosComGrau: oculosComGrau ?? null,
         unidade,
         estoqueMinimo,
         categoria: categoria ?? null,
@@ -76,7 +76,7 @@ function criarMaterialController({ pool: poolInjetado }) {
 
     /**
      * Só os campos declarados no schema. Campos opcionais do domínio
-     * (tipo, fabricante, caNumero, caValidade, prazoUsoDias) são
+     * (tipo, fabricante, prazoUsoDias e os da Parte C2) são
      * repassados condicionalmente, com a flag `*Informado`, para que o
      * serviço distinga "ausente" (não mexer) de "null" (limpar) — mesmo
      * mecanismo de `descricao` em grupo-acesso.controller.js, repetido
@@ -92,9 +92,9 @@ function criarMaterialController({ pool: poolInjetado }) {
         ...(Object.hasOwn(corpo, 'nome') ? { nome: corpo.nome } : {}),
         ...(Object.hasOwn(corpo, 'tipo') ? { tipo: corpo.tipo, tipoInformado: true } : {}),
         ...(Object.hasOwn(corpo, 'fabricante') ? { fabricante: corpo.fabricante, fabricanteInformado: true } : {}),
-        ...(Object.hasOwn(corpo, 'caNumero') ? { caNumero: corpo.caNumero, caNumeroInformado: true } : {}),
-        ...(Object.hasOwn(corpo, 'caValidade') ? { caValidade: corpo.caValidade, caValidadeInformado: true } : {}),
         ...(Object.hasOwn(corpo, 'prazoUsoDias') ? { prazoUsoDias: corpo.prazoUsoDias, prazoUsoDiasInformado: true } : {}),
+        ...(Object.hasOwn(corpo, 'exigeTamanho') ? { exigeTamanho: corpo.exigeTamanho } : {}),
+        ...(Object.hasOwn(corpo, 'oculosComGrau') ? { oculosComGrau: corpo.oculosComGrau, oculosComGrauInformado: true } : {}),
         // `unidade` não é repassada: o schema de alterar não a aceita (unidade imutável).
         ...(Object.hasOwn(corpo, 'estoqueMinimo') ? { estoqueMinimo: corpo.estoqueMinimo } : {}),
         ...(Object.hasOwn(corpo, 'categoria') ? { categoria: corpo.categoria, categoriaInformado: true } : {}),

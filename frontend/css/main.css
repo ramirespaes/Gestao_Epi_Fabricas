@@ -307,6 +307,15 @@
     .badge-ok{background:rgba(52,199,89,0.12);color:#1A7A35}
     .badge-warning{background:rgba(255,149,0,0.12);color:#C07000}
     .badge-danger{background:rgba(255,59,48,0.12);color:#C0221A}
+    /* Tema escuro (E10, ligado por js/tema.js): cores fixas pensadas para o
+       claro perdem contraste no fundo escuro. Selos, avisos com cor inline e
+       o botão do menu no celular passam a usar os tokens do tema. */
+    html[data-theme="dark"] .badge-ok{color:var(--success)}
+    html[data-theme="dark"] .badge-warning{color:var(--warning)}
+    html[data-theme="dark"] .badge-danger{color:#FF6961}
+    html[data-theme="dark"] .notice{color:var(--on-surface) !important}
+    html[data-theme="dark"] .mobile-global-menu{background:var(--surface-container);border-color:var(--outline)}
+    html[data-theme="dark"] .mobile-global-menu svg line{stroke:var(--on-surface)}
     .role-master{background:rgba(0,122,255,0.10);color:#004A9E}
     .role-admin{background:rgba(88,86,214,0.10);color:#3634A3}
     .role-supervisor{background:rgba(255,149,0,0.10);color:#C07000}

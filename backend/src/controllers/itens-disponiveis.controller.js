@@ -1,18 +1,21 @@
 'use strict';
 
 const estoqueService = require('../services/estoque.service');
+const { dataOperacional } = require('../utils/data-operacional');
 
 /**
  * Itens disponíveis (Bloco 9, Etapa C, Parte C3). Empresa exclusivamente
  * da sessão (req.empresa.id, populado por exigirSessao); a query já chega
- * validada e estrita.
+ * validada e estrita. O relógio é injetável para os testes controlarem a
+ * data operacional.
  */
-function criarItensDisponiveisController({ pool: poolInjetado }) {
+function criarItensDisponiveisController({ pool: poolInjetado, relogio = () => new Date() }) {
   return {
     async listar(req, res) {
       const { categoria, tipo, tamanho, validade, pagina, limite } = req.validado.query;
       const resultado = await estoqueService.listarDisponiveis(poolInjetado, {
         empresaId: req.empresa.id,
+        hoje: dataOperacional(relogio()),
         categoria: categoria ?? null,
         tipo: tipo ?? null,
         tamanho: tamanho ?? null,

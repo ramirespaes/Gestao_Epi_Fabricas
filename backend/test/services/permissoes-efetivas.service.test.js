@@ -43,13 +43,14 @@ describe('permissoes-efetivas.calcular', () => {
   });
 
   test('áreas administrativas vêm da autoridade administrativa (uma pergunta por área), consultar === alterar pelo mesmo critério', async (t) => {
-    const m = mockTudo(t, { admin: async (_p, _e, _u, acaoAdm) => acaoAdm === 'ADMINISTRAR_PERMISSOES_GRUPO' });
+    const m = mockTudo(t, { admin: async (_p, _e, _u, acaoAdm) => ['ADMINISTRAR_PERMISSOES_GRUPO', 'GERENCIAR_USUARIOS'].includes(acaoAdm) });
     const r = await servico.calcular({}, CONTEXTO);
     assert.deepEqual(m.admin.mock.calls.map((c) => c.arguments.slice(1)), [
-      [3, 70, 'ADMINISTRAR_GRUPOS_ACESSO'], [3, 70, 'ADMINISTRAR_PERMISSOES_GRUPO'], [3, 70, 'ADMINISTRAR_VINCULOS_GRUPO'],
+      [3, 70, 'ADMINISTRAR_GRUPOS_ACESSO'], [3, 70, 'ADMINISTRAR_PERMISSOES_GRUPO'], [3, 70, 'ADMINISTRAR_VINCULOS_GRUPO'], [3, 70, 'GERENCIAR_USUARIOS'],
     ]);
     assert.deepEqual(r.administracao.gruposAcesso, { consultar: false, alterar: false });
     assert.deepEqual(r.administracao.permissoesGrupo, { consultar: true, alterar: true });
+    assert.deepEqual(r.administracao.usuarios, { consultar: true, alterar: true });
   });
 
   test('autorizações individuais: consultar = ator ativo; concederDireta = predicado da 3I; delegar = predicado de /delegacao/destinatarios', async (t) => {

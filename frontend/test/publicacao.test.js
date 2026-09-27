@@ -56,7 +56,7 @@ describe('publicação do frontend do cliente por allowlist explícita', () => {
     const legadas = fs.readdirSync(path.join(RAIZ, 'pages'))
       .filter((f) => f.endsWith('.html'))
       .filter((f) => /<script[^>]+src=["']https?:/i.test(fs.readFileSync(path.join(RAIZ, 'pages', f), 'utf8')));
-    assert.equal(legadas.length, 17, 'as 17 páginas legadas continuam no repositório');
+    assert.equal(legadas.length, 13, 'as 13 páginas legadas continuam no repositório (a E7 integrou a Validade de estoque, a E8 as Operações de estoque e a parte F as duas páginas de usuários)');
     for (const pagina of legadas) assert.ok(!publicados.includes(`pages/${pagina}`), `${pagina} não pode ser publicada`);
 
     for (const fora of ['index.html', 'js/main.js', 'js/db-api.js', 'js/auth-session.js', 'package.json', 'vendor/README.md']) {
@@ -72,7 +72,7 @@ describe('publicação do frontend do cliente por allowlist explícita', () => {
     const saida = path.join(base, 'pacote');
     const allowlist = lerAllowlist();
 
-    recusa(() => empacotar({ saida, arquivos: [...allowlist, 'pages/stock-validity.html'] }), 'SCRIPT_EXTERNO');
+    recusa(() => empacotar({ saida, arquivos: [...allowlist, 'pages/delivered-items.html'] }), 'SCRIPT_EXTERNO');
     recusa(() => empacotar({ saida, arquivos: [...allowlist, 'js/main.js'] }), 'NUNCA_PUBLICAR');
     recusa(() => empacotar({ saida, arquivos: [...allowlist, 'js/db-api.js'] }), 'NUNCA_PUBLICAR');
     recusa(() => empacotar({ saida, arquivos: [...allowlist, 'painel-privado/index.html'] }), 'NUNCA_PUBLICAR');
@@ -115,9 +115,9 @@ describe('publicação do frontend do cliente por allowlist explícita', () => {
     empacotar({ saida });
     assert.doesNotThrow(() => verificarPacote(saida));
 
-    fs.writeFileSync(path.join(saida, 'pages', 'stock-validity.html'), '<p>legada</p>');
+    fs.writeFileSync(path.join(saida, 'pages', 'delivered-items.html'), '<p>legada</p>');
     recusa(() => verificarPacote(saida), 'PACOTE_DIVERGENTE');
-    fs.rmSync(path.join(saida, 'pages', 'stock-validity.html'));
+    fs.rmSync(path.join(saida, 'pages', 'delivered-items.html'));
 
     fs.rmSync(path.join(saida, 'js', 'dashboard.js'));
     recusa(() => verificarPacote(saida), 'PACOTE_DIVERGENTE');

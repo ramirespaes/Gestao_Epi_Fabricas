@@ -105,10 +105,10 @@ describe('inspeção estática: pages/dashboard.html', () => {
       assert.equal(proibido.test(semMenuMovel), false, `dashboard.html contém ${proibido}`);
     }
     const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
-    assert.deepEqual(scripts, ['../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/dashboard.js']);
+    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/dashboard.js']);
     assert.match(codigo, /EpiSessaoEmpresarial\.montar\(/);
     assert.match(codigo, /EpiPermissoes\.prepararPagina\(\{\s*pagina: 'dashboard'/);
-    for (const id of ['telaSessao', 'telaSessaoMensagem', 'telaSessaoPortal', 'identidade', 'botaoSair', 'botaoTrocarEmpresa', 'aviso', 'dashboardWelcomeUser']) assert.ok(ids.includes(id), id);
+    for (const id of ['telaSessao', 'telaSessaoMensagem', 'telaSessaoPortal', 'contaNome', 'contaEmpresa', 'botaoEmpresa', 'menuEmpresa', 'botaoSair', 'botaoTrocarEmpresa', 'aviso', 'dashboardWelcomeUser']) assert.ok(ids.includes(id), id);
   });
 
   test('nenhum número fixo nem dado fictício: todos os valores nascem "—"', () => {
@@ -151,7 +151,11 @@ function montarPagina(responder, { acesso = ACESSO } = {}) {
   const html = ler('pages/dashboard.html');
   const script = html.slice(html.lastIndexOf('<script>') + '<script>'.length, html.lastIndexOf('</script>'));
   const mapa = {};
-  const el = (id) => (mapa[id] = mapa[id] || { id, innerHTML: '', textContent: '', style: {}, listeners: {}, addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); } });
+  const el = (id) => (mapa[id] = mapa[id] || {
+    id, innerHTML: '', textContent: '', style: {}, listeners: {}, atributos: {}, focado: false,
+    addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
+    setAttribute(k, v) { this.atributos[k] = String(v); }, removeAttribute(k) { delete this.atributos[k]; }, focus() { this.focado = true; },
+  });
   const sandbox = {
     document: { getElementById: el, querySelectorAll: () => [] },
     window: { SAFEWORK_PORTAL_API_BASE_URL: BASE },
@@ -215,5 +219,32 @@ describe('página (DOM simulado)', () => {
     pg.sandbox.opcoesMontar.aoEncerrar();
     assert.equal(pg.el('kpiDisponiveisValor').textContent, '—');
     assert.equal(pg.el('dashboardWelcomeUser').textContent, '');
+  });
+});
+
+describe('bloco de conta (DOM simulado)', () => {
+  const disparar = async (pg, id, ev, evento = {}) => { for (const fn of (pg.el(id).listeners[ev] || [])) await fn(evento); };
+  const estado = (pg) => [pg.el('menuEmpresa').style.display, pg.el('botaoEmpresa').atributos['aria-expanded']];
+
+  test('o módulo de sessão recebe nome, empresa, Trocar e Sair do bloco; nenhuma identificação antiga', async () => {
+    const pg = montarPagina(resposta(200, { status: 'ok', indicadores: TUDO }));
+    await pg.esperar();
+    const el = pg.sandbox.opcoesMontar.elementos;
+    assert.deepEqual([el.usuario, el.empresa, el.botaoSair, el.botaoTrocar].map((e) => e && e.id), ['contaNome', 'contaEmpresa', 'botaoSair', 'botaoTrocarEmpresa']);
+    assert.equal('identificacao' in el, false);
+  });
+
+  test('o menu da empresa começa fechado, abre e fecha pelo botão e fecha com Esc, devolvendo o foco', async () => {
+    const pg = montarPagina(resposta(200, { status: 'ok', indicadores: TUDO }));
+    await pg.esperar();
+    assert.deepEqual(estado(pg), ['none', 'false']);
+    await disparar(pg, 'botaoEmpresa', 'click');
+    assert.deepEqual(estado(pg), ['', 'true']);
+    await disparar(pg, 'botaoEmpresa', 'click');
+    assert.deepEqual(estado(pg), ['none', 'false']);
+    await disparar(pg, 'botaoEmpresa', 'click');
+    await disparar(pg, 'menuEmpresa', 'keydown', { key: 'Escape' });
+    assert.deepEqual(estado(pg), ['none', 'false']);
+    assert.equal(pg.el('botaoEmpresa').focado, true);
   });
 });

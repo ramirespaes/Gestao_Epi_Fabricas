@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const servico = require('../../src/services/material.service');
 const materialRepo = require('../../src/repositories/material.repository');
 const auditoriaRepo = require('../../src/repositories/auditoria.repository');
+const loteRepo = require('../../src/repositories/estoque-lote.repository');
 const { HttpError } = require('../../src/errors/HttpError');
 
 /**
@@ -30,8 +31,6 @@ const material = (extra = {}) => ({
   nome: 'Botina de segurança',
   tipo: 'Sapatão / Botina',
   fabricante: 'Bracol',
-  caNumero: '38271',
-  caValidade: '2026-08-15',
   prazoUsoDias: 365,
   unidade: 'par',
   estoqueMinimo: 5,
@@ -97,7 +96,7 @@ describe('criar — caminho válido', () => {
     const cliente = criarClienteFalso();
 
     const resultado = await servico.criar(criarPoolFalso(cliente), {
-      empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Botina de segurança',
+      empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Botina de segurança', prazoUsoDias: 180, exigeTamanho: true,
     });
 
     assert.equal(resultado.id, MATERIAL_ID);
@@ -116,7 +115,7 @@ describe('criar — caminho válido', () => {
   test('nome é aparado nas pontas, sem mexer em maiúsculas/minúsculas nem acentos', async (t) => {
     const escritas = mundoValido(t);
 
-    await servico.criar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, nome: '   Botina de segurança   ' });
+    await servico.criar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, nome: '   Botina de segurança   ', prazoUsoDias: 180, exigeTamanho: true });
 
     assert.equal(escritas.criar.mock.calls[0].arguments[1].nome, 'Botina de segurança');
   });
@@ -124,7 +123,7 @@ describe('criar — caminho válido', () => {
   test('campos de texto opcionais ausentes, nulos ou só espaços viram null', async (t) => {
     for (const tipo of [undefined, null, '   ']) {
       const escritas = mundoValido(t);
-      await servico.criar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Botina', tipo });
+      await servico.criar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Botina', prazoUsoDias: 180, exigeTamanho: true, tipo });
       assert.equal(escritas.criar.mock.calls[0].arguments[1].tipo, null);
     }
   });
@@ -132,7 +131,7 @@ describe('criar — caminho válido', () => {
   test('unidade ausente assume "unidade"; estoqueMinimo ausente assume 0', async (t) => {
     const escritas = mundoValido(t);
 
-    await servico.criar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Botina' });
+    await servico.criar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Botina', prazoUsoDias: 180, exigeTamanho: true });
 
     assert.equal(escritas.criar.mock.calls[0].arguments[1].unidade, 'unidade');
     assert.equal(escritas.criar.mock.calls[0].arguments[1].estoqueMinimo, 0);
@@ -145,7 +144,7 @@ describe('criar — recusas de validação: falham antes de abrir transação (f
     const cliente = criarClienteFalso();
 
     await esperarHttpError(
-      servico.criar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, nome: '   ' }),
+      servico.criar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, nome: '   ', prazoUsoDias: 180, exigeTamanho: true }),
       400, 'MATERIAL_NOME_INVALIDO',
     );
     assert.equal(cliente.chamadas.length, 0, 'nenhuma consulta chega a rodar: validação recusa antes de conectar');
@@ -158,7 +157,7 @@ describe('criar — recusas de validação: falham antes de abrir transação (f
       const escritas = mundoValido(t);
       const cliente = criarClienteFalso();
       await esperarHttpError(
-        servico.criar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Botina', prazoUsoDias }),
+        servico.criar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Botina', prazoUsoDias, exigeTamanho: true }),
         400, 'MATERIAL_DADOS_INVALIDOS',
       );
       assert.equal(cliente.chamadas.length, 0);
@@ -170,7 +169,7 @@ describe('criar — recusas de validação: falham antes de abrir transação (f
     const escritas = mundoValido(t);
     const cliente = criarClienteFalso();
     await esperarHttpError(
-      servico.criar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Botina', estoqueMinimo: -1 }),
+      servico.criar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Botina', prazoUsoDias: 180, exigeTamanho: true, estoqueMinimo: -1 }),
       400, 'MATERIAL_DADOS_INVALIDOS',
     );
     assert.equal(cliente.chamadas.length, 0);
@@ -314,7 +313,7 @@ describe('categoria, código interno e descrição — Parte C2', () => {
   test('criar normaliza os três (apara; vazio -> null), grava e audita os três', async (t) => {
     const escritas = mundoValido(t);
     const cliente = criarClienteFalso();
-    const r = await servico.criar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Luva', categoria: ' EPI ', codigoInterno: ' EPI-000245 ', descricao: '   ' });
+    const r = await servico.criar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Luva', prazoUsoDias: 180, exigeTamanho: true, categoria: ' EPI ', codigoInterno: ' EPI-000245 ', descricao: '   ' });
     const dados = escritas.criar.mock.calls[0].arguments[1];
     assert.deepEqual([dados.categoria, dados.codigoInterno, dados.descricao], ['EPI', 'EPI-000245', null]);
     assert.deepEqual([r.categoria, r.codigoInterno], ['EPI', 'EPI-000245']);
@@ -327,7 +326,7 @@ describe('categoria, código interno e descrição — Parte C2', () => {
     const violacao = () => { const e = new Error('duplicate key'); e.code = '23505'; e.constraint = 'uq_materiais_empresa_codigo_interno'; throw e; };
     escritas.criar.mock.mockImplementation(async () => violacao());
     const cliente = criarClienteFalso();
-    await esperarHttpError(servico.criar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Luva', codigoInterno: 'EPI-1' }), 409, 'MATERIAL_CODIGO_INTERNO_DUPLICADO');
+    await esperarHttpError(servico.criar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Luva', prazoUsoDias: 180, exigeTamanho: true, codigoInterno: 'EPI-1' }), 409, 'MATERIAL_CODIGO_INTERNO_DUPLICADO');
     assertRecusaSemRastro(cliente, escritas);
 
     escritas.atualizar.mock.mockImplementation(async () => violacao());
@@ -340,7 +339,7 @@ describe('categoria, código interno e descrição — Parte C2', () => {
     await servico.alterar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, materialId: MATERIAL_ID, codigoInterno: null, codigoInternoInformado: true });
     const campos = escritas.atualizar.mock.calls[0].arguments[3];
     assert.deepEqual([campos.codigoInternoInformado, campos.codigoInterno], [true, null]);
-    await esperarHttpError(servico.criar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'L', descricao: 'x'.repeat(501) }), 400, 'MATERIAL_DADOS_INVALIDOS');
+    await esperarHttpError(servico.criar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'L', prazoUsoDias: 180, exigeTamanho: true, descricao: 'x'.repeat(501) }), 400, 'MATERIAL_DADOS_INVALIDOS');
   });
 });
 
@@ -363,5 +362,267 @@ describe('alterar — unidade de controle imutável (ajuste pós-melhoria C2, 25
     const escritas = mundoValido(t);
     await servico.alterar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, materialId: MATERIAL_ID, fabricante: '3M', fabricanteInformado: true });
     assert.equal(escritas.atualizar.mock.calls[0].arguments[3].unidade, null, 'null = manter a unidade atual');
+  });
+});
+
+describe('prazo de uso obrigatório', () => {
+  test('criar sem prazo, com null, zero ou negativo: 400 MATERIAL_DADOS_INVALIDOS antes de abrir transação', async (t) => {
+    for (const prazoUsoDias of [undefined, null, 0, -30]) {
+      const escritas = mundoValido(t);
+      const cliente = criarClienteFalso();
+      await esperarHttpError(
+        servico.criar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Botina', prazoUsoDias, exigeTamanho: true }),
+        400, 'MATERIAL_DADOS_INVALIDOS',
+      );
+      assert.equal(cliente.chamadas.length, 0, String(prazoUsoDias));
+      assert.equal(escritas.criar.mock.calls.length, 0);
+      assert.equal(escritas.registrar.mock.calls.length, 0);
+    }
+  });
+
+  test('criar com prazo positivo grava o prazo informado', async (t) => {
+    const escritas = mundoValido(t);
+    await servico.criar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Botina', prazoUsoDias: 180, exigeTamanho: true });
+    assert.equal(escritas.criar.mock.calls[0].arguments[1].prazoUsoDias, 180);
+  });
+
+  test('alterar para outro prazo positivo, para mais ou para menos, grava o prazo novo', async (t) => {
+    for (const prazoUsoDias of [240, 90]) {
+      const escritas = mundoValido(t);
+      await servico.alterar(criarPoolFalso(criarClienteFalso()), {
+        empresaId: EMPRESA, atorId: ATOR_ID, materialId: MATERIAL_ID, prazoUsoDias, prazoUsoDiasInformado: true,
+      });
+      const campos = escritas.atualizar.mock.calls[0].arguments[3];
+      assert.deepEqual([campos.prazoUsoDiasInformado, campos.prazoUsoDias], [true, prazoUsoDias]);
+    }
+  });
+
+  test('alterar para null ou zero: 400 MATERIAL_DADOS_INVALIDOS com ROLLBACK, nada gravado', async (t) => {
+    for (const prazoUsoDias of [null, 0]) {
+      const escritas = mundoValido(t);
+      const cliente = criarClienteFalso();
+      await esperarHttpError(
+        servico.alterar(criarPoolFalso(cliente), {
+          empresaId: EMPRESA, atorId: ATOR_ID, materialId: MATERIAL_ID, prazoUsoDias, prazoUsoDiasInformado: true,
+        }),
+        400, 'MATERIAL_DADOS_INVALIDOS',
+      );
+      assert.equal(escritas.atualizar.mock.calls.length, 0, String(prazoUsoDias));
+      assertRecusaSemRastro(cliente, escritas);
+    }
+  });
+
+  test('material legado sem prazo continua editável: alterar outro campo não mexe no prazo', async (t) => {
+    const escritas = mundoValido(t, { existente: material({ prazoUsoDias: null }) });
+    await servico.alterar(criarPoolFalso(criarClienteFalso()), {
+      empresaId: EMPRESA, atorId: ATOR_ID, materialId: MATERIAL_ID, nome: 'Botina reforçada',
+    });
+    assert.equal(escritas.atualizar.mock.calls[0].arguments[3].prazoUsoDiasInformado, false);
+  });
+});
+
+describe('exige tamanho', () => {
+  const novo = (extra) => ({ empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Botina', prazoUsoDias: 180, ...extra });
+  const alteracao = (extra) => ({ empresaId: EMPRESA, atorId: ATOR_ID, materialId: MATERIAL_ID, ...extra });
+  const saldoIncompativel = (t, resposta) => t.mock.method(loteRepo, 'possuiSaldoIncompativel', async () => resposta);
+
+  test('criar sem exigeTamanho, com null ou com valor que não é booleano: 400 MATERIAL_DADOS_INVALIDOS antes de abrir transação', async (t) => {
+    for (const exigeTamanho of [undefined, null, 'sim']) {
+      const escritas = mundoValido(t);
+      const cliente = criarClienteFalso();
+      await esperarHttpError(servico.criar(criarPoolFalso(cliente), novo({ exigeTamanho })), 400, 'MATERIAL_DADOS_INVALIDOS');
+      assert.equal(cliente.chamadas.length, 0, String(exigeTamanho));
+      assert.equal(escritas.criar.mock.calls.length, 0);
+    }
+  });
+
+  test('criar com true ou false grava a escolha e a audita', async (t) => {
+    for (const exigeTamanho of [true, false]) {
+      const escritas = mundoValido(t);
+      await servico.criar(criarPoolFalso(criarClienteFalso()), novo({ exigeTamanho }));
+      assert.equal(escritas.criar.mock.calls[0].arguments[1].exigeTamanho, exigeTamanho);
+    }
+  });
+
+  test('legado sem classificação continua editável: alterar outro campo não mexe na classificação nem consulta saldo', async (t) => {
+    const escritas = mundoValido(t, { existente: material({ exigeTamanho: null }) });
+    const saldo = saldoIncompativel(t, true);
+    await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ nome: 'Botina reforçada' }));
+    assert.equal(escritas.atualizar.mock.calls[0].arguments[3].exigeTamanho, null, 'null = não mexer');
+    assert.equal(saldo.mock.callCount(), 0);
+  });
+
+  test('primeira classificação do legado (NULL para true ou false) não depende do saldo', async (t) => {
+    for (const exigeTamanho of [true, false]) {
+      const escritas = mundoValido(t, { existente: material({ exigeTamanho: null }) });
+      const saldo = saldoIncompativel(t, true);
+      await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ exigeTamanho }));
+      assert.equal(escritas.atualizar.mock.calls[0].arguments[3].exigeTamanho, exigeTamanho);
+      assert.equal(saldo.mock.callCount(), 0);
+    }
+  });
+
+  test('true para false ou false para true com saldo incompatível: 409 MATERIAL_TAMANHO_SALDO_INCOMPATIVEL, ROLLBACK, nada gravado', async (t) => {
+    for (const [atual, novoValor] of [[true, false], [false, true]]) {
+      const escritas = mundoValido(t, { existente: material({ exigeTamanho: atual }) });
+      const saldo = saldoIncompativel(t, true);
+      const cliente = criarClienteFalso();
+      await esperarHttpError(servico.alterar(criarPoolFalso(cliente), alteracao({ exigeTamanho: novoValor })), 409, 'MATERIAL_TAMANHO_SALDO_INCOMPATIVEL');
+      assert.deepEqual(saldo.mock.calls[0].arguments.slice(1), [EMPRESA, MATERIAL_ID, novoValor]);
+      assert.equal(escritas.atualizar.mock.calls.length, 0);
+      assertRecusaSemRastro(cliente, escritas);
+    }
+  });
+
+  test('mudança sem saldo incompatível é gravada; repetir o valor atual não consulta saldo', async (t) => {
+    const escritas = mundoValido(t, { existente: material({ exigeTamanho: true }) });
+    const saldo = saldoIncompativel(t, false);
+    await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ exigeTamanho: false }));
+    assert.equal(escritas.atualizar.mock.calls[0].arguments[3].exigeTamanho, false);
+    assert.equal(saldo.mock.callCount(), 1);
+
+    const mesmo = mundoValido(t, { existente: material({ exigeTamanho: true }) });
+    const semConsulta = saldoIncompativel(t, true);
+    await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ exigeTamanho: true }));
+    assert.equal(mesmo.atualizar.mock.calls[0].arguments[3].exigeTamanho, true);
+    assert.equal(semConsulta.mock.callCount(), 0);
+  });
+
+  test('alterar para null: 400 MATERIAL_DADOS_INVALIDOS, a classificação não pode ser desfeita', async (t) => {
+    const escritas = mundoValido(t, { existente: material({ exigeTamanho: true }) });
+    await esperarHttpError(servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ exigeTamanho: null })), 400, 'MATERIAL_DADOS_INVALIDOS');
+    assert.equal(escritas.atualizar.mock.calls.length, 0);
+  });
+});
+
+describe('óculos com grau (migration 045)', () => {
+  const OCULOS = 'Óculos de proteção';
+  const novo = (extra) => ({ empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Óculos', prazoUsoDias: 180, exigeTamanho: false, ...extra });
+  const alteracao = (extra) => ({ empresaId: EMPRESA, atorId: ATOR_ID, materialId: MATERIAL_ID, ...extra });
+  const oculos = (oculosComGrau) => material({ tipo: OCULOS, oculosComGrau, exigeTamanho: false });
+
+  async function esperarRecusa(promessa, codigo) {
+    await assert.rejects(promessa, (erro) => {
+      assert.ok(HttpError.ehHttpError(erro), `esperado HttpError, veio ${erro && erro.name}: ${erro && erro.message}`);
+      assert.deepEqual([erro.status, erro.codigo], [400, 'VALIDACAO']);
+      assert.deepEqual(erro.detalhes.map((d) => [d.campo, d.codigo]), [['body.oculosComGrau', codigo]]);
+      return true;
+    });
+  }
+
+  test('cadastro de óculos com true ou false: grava e audita o valor escolhido', async (t) => {
+    for (const oculosComGrau of [true, false]) {
+      const escritas = mundoValido(t);
+      await servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipo: OCULOS, oculosComGrau }));
+      assert.equal(escritas.criar.mock.calls[0].arguments[1].oculosComGrau, oculosComGrau);
+      assert.equal(escritas.registrar.mock.calls[0].arguments[1].dadosNovos.oculosComGrau, oculosComGrau);
+    }
+  });
+
+  test('cadastro de óculos sem a informação, ou com null: 400 OCULOS_COM_GRAU_OBRIGATORIO antes de abrir transação', async (t) => {
+    for (const extra of [{}, { oculosComGrau: null }]) {
+      const escritas = mundoValido(t);
+      const cliente = criarClienteFalso();
+      await esperarRecusa(servico.criar(criarPoolFalso(cliente), novo({ tipo: OCULOS, ...extra })), 'OCULOS_COM_GRAU_OBRIGATORIO');
+      assert.deepEqual([cliente.chamadas.length, escritas.criar.mock.calls.length], [0, 0], JSON.stringify(extra));
+    }
+  });
+
+  test('o tipo é comparado exatamente: aparado vale; minúsculo, abreviado ou nome com "óculos" não é óculos de proteção', async (t) => {
+    const aparado = mundoValido(t);
+    await servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipo: `  ${OCULOS}  `, oculosComGrau: true }));
+    assert.equal(aparado.criar.mock.calls[0].arguments[1].oculosComGrau, true);
+    for (const extra of [{ tipo: 'óculos de proteção' }, { tipo: 'Óculos' }, { tipo: 'Luva', nome: 'Óculos de proteção incolor' }]) {
+      const escritas = mundoValido(t);
+      await esperarRecusa(servico.criar(criarPoolFalso(criarClienteFalso()), novo({ ...extra, oculosComGrau: true })), 'OCULOS_COM_GRAU_NAO_SE_APLICA');
+      assert.equal(escritas.criar.mock.calls.length, 0, JSON.stringify(extra));
+    }
+  });
+
+  test('cadastro de outro tipo ou sem tipo: true ou false é 400 OCULOS_COM_GRAU_NAO_SE_APLICA; ausente ou null grava null', async (t) => {
+    for (const tipo of ['Luva', null]) {
+      for (const oculosComGrau of [true, false]) {
+        const escritas = mundoValido(t);
+        await esperarRecusa(servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipo, oculosComGrau })), 'OCULOS_COM_GRAU_NAO_SE_APLICA');
+        assert.equal(escritas.criar.mock.calls.length, 0);
+      }
+      for (const extra of [{}, { oculosComGrau: null }]) {
+        const escritas = mundoValido(t);
+        await servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipo, ...extra }));
+        assert.equal(escritas.criar.mock.calls[0].arguments[1].oculosComGrau, null);
+      }
+    }
+  });
+
+  test('valor que não é booleano nem null: 400 MATERIAL_DADOS_INVALIDOS, no cadastro e na edição', async (t) => {
+    const escritas = mundoValido(t, { existente: oculos(true) });
+    await esperarHttpError(servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipo: OCULOS, oculosComGrau: 'sim' })), 400, 'MATERIAL_DADOS_INVALIDOS');
+    await esperarHttpError(servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ oculosComGrau: 1, oculosComGrauInformado: true })), 400, 'MATERIAL_DADOS_INVALIDOS');
+    assert.deepEqual([escritas.criar.mock.calls.length, escritas.atualizar.mock.calls.length], [0, 0]);
+  });
+
+  test('legado de óculos com NULL: alterar outro campo não mexe na informação', async (t) => {
+    const escritas = mundoValido(t, { existente: oculos(null) });
+    await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ nome: 'Óculos renomeado' }));
+    const campos = escritas.atualizar.mock.calls[0].arguments[3];
+    assert.equal(campos.oculosComGrauInformado, false, 'não informado = não mexer');
+    assert.equal(escritas.registrar.mock.calls[0].arguments[1].dadosAnteriores.oculosComGrau, null);
+  });
+
+  test('legado de óculos com NULL pode ser classificado como true ou false; só essa informação já é uma alteração', async (t) => {
+    for (const oculosComGrau of [true, false]) {
+      const escritas = mundoValido(t, { existente: oculos(null) });
+      await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ oculosComGrau, oculosComGrauInformado: true }));
+      const campos = escritas.atualizar.mock.calls[0].arguments[3];
+      assert.deepEqual([campos.oculosComGrauInformado, campos.oculosComGrau], [true, oculosComGrau]);
+    }
+  });
+
+  test('óculos classificados não voltam a NULL: null explícito é 400 OCULOS_COM_GRAU_OBRIGATORIO, com ROLLBACK', async (t) => {
+    const escritas = mundoValido(t, { existente: oculos(true) });
+    const cliente = criarClienteFalso();
+    await esperarRecusa(servico.alterar(criarPoolFalso(cliente), alteracao({ oculosComGrau: null, oculosComGrauInformado: true })), 'OCULOS_COM_GRAU_OBRIGATORIO');
+    assert.equal(escritas.atualizar.mock.calls.length, 0);
+    assertRecusaSemRastro(cliente, escritas);
+  });
+
+  test('óculos que passam a outro tipo: a informação é limpa para NULL; mandar true ou false junto é 400', async (t) => {
+    const escritas = mundoValido(t, { existente: oculos(true) });
+    await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ tipo: 'Luva', tipoInformado: true }));
+    const campos = escritas.atualizar.mock.calls[0].arguments[3];
+    assert.deepEqual([campos.oculosComGrauInformado, campos.oculosComGrau], [true, null]);
+
+    for (const oculosComGrau of [true, false]) {
+      const recusa = mundoValido(t, { existente: oculos(true) });
+      const cliente = criarClienteFalso();
+      await esperarRecusa(
+        servico.alterar(criarPoolFalso(cliente), alteracao({ tipo: 'Luva', tipoInformado: true, oculosComGrau, oculosComGrauInformado: true })),
+        'OCULOS_COM_GRAU_NAO_SE_APLICA',
+      );
+      assert.equal(recusa.atualizar.mock.calls.length, 0);
+      assertRecusaSemRastro(cliente, recusa);
+    }
+  });
+
+  test('outro tipo que passa a óculos: sem a informação é 400 OCULOS_COM_GRAU_OBRIGATORIO; com true ou false grava', async (t) => {
+    const recusa = mundoValido(t, { existente: material({ tipo: 'Luva', oculosComGrau: null }) });
+    const cliente = criarClienteFalso();
+    await esperarRecusa(servico.alterar(criarPoolFalso(cliente), alteracao({ tipo: OCULOS, tipoInformado: true })), 'OCULOS_COM_GRAU_OBRIGATORIO');
+    assertRecusaSemRastro(cliente, recusa);
+
+    for (const oculosComGrau of [true, false]) {
+      const escritas = mundoValido(t, { existente: material({ tipo: 'Luva', oculosComGrau: null }) });
+      await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ tipo: OCULOS, tipoInformado: true, oculosComGrau, oculosComGrauInformado: true }));
+      const campos = escritas.atualizar.mock.calls[0].arguments[3];
+      assert.deepEqual([campos.tipo, campos.oculosComGrauInformado, campos.oculosComGrau], [OCULOS, true, oculosComGrau]);
+    }
+  });
+
+  test('material que continua de outro tipo: true ou false na edição é 400 OCULOS_COM_GRAU_NAO_SE_APLICA', async (t) => {
+    for (const oculosComGrau of [true, false]) {
+      const escritas = mundoValido(t, { existente: material({ tipo: 'Luva', oculosComGrau: null }) });
+      await esperarRecusa(servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ oculosComGrau, oculosComGrauInformado: true })), 'OCULOS_COM_GRAU_NAO_SE_APLICA');
+      assert.equal(escritas.atualizar.mock.calls.length, 0);
+    }
   });
 });

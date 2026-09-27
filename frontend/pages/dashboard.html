@@ -6,12 +6,29 @@
   <title>Dashboard — Gestão de EPIs</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
   <link rel="stylesheet" href="../css/main.css">
+  <script src="../js/tema.js"></script>
   <style>
     /* Parte C2: itens do menu ainda não integrados ao backend (sem link) */
     .nav a.nav-pendente{cursor:default;opacity:.55}
     .nav a.nav-pendente:hover{background:transparent}
     .estado-integracao{font-size:13px;color:var(--on-surface-variant);text-align:center;padding:32px 12px}
     .nav-etiqueta{margin-left:auto;font-size:10px;font-weight:500;color:var(--on-surface-variant);border:1px solid var(--outline);border-radius:99px;padding:1px 7px;white-space:nowrap}
+    /* E7: o cartão de CA leva à Validade de estoque já filtrada */
+    .kpi-link{display:block;color:inherit;text-decoration:none;border-radius:8px}
+    .kpi-link:not([href]){cursor:default}
+    .kpi-link:hover .kpi-meta,.kpi-link:focus-visible .kpi-meta{text-decoration:underline}
+    .kpi-link:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+    /* Conta: nome e empresa no canto superior direito; a empresa abre Trocar de empresa e Sair */
+    .conta-usuario{position:absolute;top:16px;right:18px;z-index:2;display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+    .conta-botao{display:flex;flex-direction:column;align-items:flex-end;gap:2px;border:none;background:transparent;padding:6px 8px;border-radius:10px;font:inherit;text-align:right;cursor:pointer}
+    .conta-botao:hover,.conta-botao:focus-visible{background:var(--surface-container)}
+    .conta-nome{font-size:13px;font-weight:600;color:var(--on-surface)}
+    .conta-empresa{display:inline-flex;align-items:center;gap:2px;font-size:12px;color:var(--on-surface-variant)}
+    .conta-empresa .material-symbols-outlined{font-size:18px}
+    .conta-menu{margin-top:6px;min-width:190px;display:flex;flex-direction:column;background:var(--surface);border:0.5px solid var(--outline-variant);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:6px}
+    .conta-menu button{display:flex;align-items:center;gap:8px;border:none;background:transparent;padding:8px 10px;border-radius:8px;font:inherit;font-size:13px;color:var(--on-surface);cursor:pointer;text-align:left}
+    .conta-menu button:hover,.conta-menu button:focus-visible{background:var(--surface-container)}
+    @media (max-width: 900px){.conta-usuario{position:static;align-items:flex-start;margin-bottom:12px}.conta-botao{align-items:flex-start;text-align:left}}
   </style>
 </head>
 <!--
@@ -75,14 +92,14 @@
         <div class="nav-section">Visão geral</div>
         <a class="active" href="javascript:void(0)" data-pagina="dashboard" style="display:none"><div class="nav-icon blue">dashboard</div>Dashboard</a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon indigo">analytics</div>Relatórios<span class="nav-etiqueta">Em integração</span></a>
-        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon gray">receipt_long</div>Operações<span class="nav-etiqueta">Em integração</span></a>
         <div class="nav-section">Estoque</div>
-        <a href="materials.html" data-pagina="materials" style="display:none"><div class="nav-icon teal">inventory_2</div>Materiais</a>
-        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor<span class="nav-etiqueta">Em integração</span></a>
-        <a href="employee-groups.html" data-pagina="employeeGroups" style="display:none"><div class="nav-icon purple">group_work</div>GHE e EPIs</a>
+        <a href="materials.html" data-pagina="materials" style="display:none"><div class="nav-icon teal">inventory_2</div>Gestão de estoque</a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon orange">shopping_cart</div>Compras / Entradas<span class="nav-etiqueta">Em integração</span></a>
-        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon red">event_busy</div>Validade do Estoque<span class="nav-etiqueta">Em integração</span></a>
-        <a href="available-items.html" data-pagina="availableItems" style="display:none"><div class="nav-icon green">checklist</div>Itens Disponíveis</a>
+        <a href="stock-validity.html" data-pagina="stockValidity" style="display:none"><div class="nav-icon red">event_busy</div>Validade de estoque</a>
+        <a href="available-items.html" data-pagina="availableItems" style="display:none"><div class="nav-icon green">checklist</div>Análise de estoque</a>
+        <a href="operations.html" data-pagina="operations" style="display:none"><div class="nav-icon gray">receipt_long</div>Operações de estoque</a>
+        <a href="employee-groups.html" data-pagina="employeeGroups" style="display:none"><div class="nav-icon purple">group_work</div>GHE e EPIs</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor<span class="nav-etiqueta">Em integração</span></a>
         <div class="nav-section">Entregas</div>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon green">inventory</div>EPIs Entregues<span class="nav-etiqueta">Em integração</span></a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon brown">description</div>Ficha de EPI<span class="nav-etiqueta">Em integração</span></a>
@@ -98,8 +115,8 @@
         <a href="grupo-usuarios.html" data-pagina="grupo-usuarios" style="display:none"><div class="nav-icon indigo">group_add</div>Integrantes do Grupo</a>
         <a href="autorizacoes-individuais.html" data-pagina="autorizacoes-individuais" style="display:none"><div class="nav-icon indigo">verified_user</div>Autorizações Individuais</a>
         <a href="import-employees.html" data-pagina="importEmployees" style="display:none"><div class="nav-icon green">upload_file</div>Importar Funcionários</a>
-        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon green">person_add</div>Novo Usuário<span class="nav-etiqueta">Em integração</span></a>
-        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon indigo">group</div>Administração de Usuários<span class="nav-etiqueta">Em integração</span></a>
+        <a href="new-user.html" data-pagina="newUser" style="display:none"><div class="nav-icon green">person_add</div>Novo Usuário</a>
+        <a href="user-admin.html" data-pagina="userAdmin" style="display:none"><div class="nav-icon indigo">group</div>Administração de Usuários</a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon gray">settings</div>Configurações<span class="nav-etiqueta">Em integração</span></a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon teal">support_agent</div>Suporte<span class="nav-etiqueta">Em integração</span></a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">mark_email_read</div>Gestão de E-mails<span class="nav-etiqueta">Em integração</span></a>
@@ -111,6 +128,16 @@
     <main class="content">
 <section id="dashboardView" class="view active">
         <section class="dashboard-hero section-menu-anchor">
+          <div id="contaUsuario" class="conta-usuario">
+            <button id="botaoEmpresa" class="conta-botao" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="menuEmpresa">
+              <span id="contaNome" class="conta-nome"></span>
+              <span class="conta-empresa"><span id="contaEmpresa"></span><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></span>
+            </button>
+            <div id="menuEmpresa" class="conta-menu" role="menu" style="display:none">
+              <button id="botaoTrocarEmpresa" type="button" role="menuitem" style="display:none"><span class="material-symbols-outlined" aria-hidden="true">swap_horiz</span>Trocar de empresa</button>
+              <button id="botaoSair" type="button" role="menuitem"><span class="material-symbols-outlined" aria-hidden="true">logout</span>Sair</button>
+            </div>
+          </div><!-- fim do bloco de conta -->
           <div style="display:flex;flex-direction:column;gap:6px;max-width:720px">
             <span style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.72)">Dashboard principal</span>
             <h2 id="dashboardWelcomeTitle">Bem-vindo ao Gestão de EPIs</h2>
@@ -127,11 +154,6 @@
             <button class="dashboard-hero-chip" type="button" disabled title="Em integração" style="border:none;color:var(--primary);opacity:.55">
               <span class="material-symbols-outlined">alarm</span>Alertas de vencimento
             </button>
-          </div>
-          <div class="inline-actions" style="margin-top:14px">
-            <span id="identidade" style="font-size:13px;color:var(--on-surface-variant);align-self:center"></span>
-            <button id="botaoTrocarEmpresa" class="outlined-btn" type="button" style="display:none"><span class="material-symbols-outlined">swap_horiz</span>Trocar de empresa</button>
-            <button id="botaoSair" class="outlined-btn" type="button"><span class="material-symbols-outlined">logout</span>Sair</button>
           </div>
         </section>
 
@@ -188,8 +210,12 @@
               <div class="kpi-title">CA vencido</div>
               <div class="kpi-icon">error</div>
             </div>
-            <div class="kpi-value" id="kpiCaVencidoValor">—</div>
-            <div class="kpi-meta" id="kpiCaVencidoMeta">Validade do CA</div>
+            <a id="linkCaVencidos" class="kpi-link">
+              <div class="kpi-value" id="kpiCaVencidoValor">—</div>
+            </a>
+            <a id="linkCaAVencer" class="kpi-link">
+              <div class="kpi-meta" id="kpiCaVencidoMeta">Validade do CA</div>
+            </a>
           </article>
           <article class="kpi-card warning">
             <div class="kpi-head">
@@ -330,6 +356,9 @@
   var $ = function (id) { return document.getElementById(id); };
   var D = EpiDashboard;
   var CARDS = { disponiveis: 'kpiDisponiveis', abaixoMinimo: 'kpiAbaixoMinimo', caVencido: 'kpiCaVencido', funcionarios: 'kpiFuncionarios' };
+  // Atalhos do cartão de CA para a Validade de estoque. Só ganham destino quando
+  // o servidor liberou o indicador, que segue a mesma permissão da Validade.
+  var ATALHOS_VALIDADE = { linkCaVencidos: 'stock-validity.html?situacao=VENCIDO', linkCaAVencer: 'stock-validity.html?situacao=VENCIMENTO_PROXIMO' };
   var VAZIO = { valor: '—', meta: '' };
 
   // Mesmo endereço do Portal do Cliente (portal/config.js).
@@ -360,6 +389,13 @@
     caixa.style.display = 'block';
   }
 
+  function ligarAtalhosValidade(liberado) {
+    Object.keys(ATALHOS_VALIDADE).forEach(function (id) {
+      if (liberado) $(id).setAttribute('href', ATALHOS_VALIDADE[id]);
+      else $(id).removeAttribute('href');
+    });
+  }
+
   todos(D.render.CARREGANDO);
 
   async function carregar() {
@@ -370,19 +406,39 @@
     if (!r.ok) {
       if (D.mensagens.exigeNovoLogin(r)) { EpiSessaoEmpresarial.sessaoEncerrada(); return; }
       todos({ valor: '—', meta: 'indisponível' }); // falha nunca vira número
+      ligarAtalhosValidade(false);
       mostrarAviso(D.mensagens.erro(r), 'erro');
       return;
     }
-    pintar(D.render.cards(r.dados && r.dados.indicadores));
+    var indicadores = r.dados && r.dados.indicadores;
+    pintar(D.render.cards(indicadores));
+    ligarAtalhosValidade(!!(indicadores && indicadores.caVencido && indicadores.caVencido.permitido === true));
+  }
+
+  // Bloco de conta: nome e empresa abrem e fecham o menu com Trocar de empresa e Sair.
+  function menuEmpresa(aberto) {
+    $('menuEmpresa').style.display = aberto ? '' : 'none';
+    $('botaoEmpresa').setAttribute('aria-expanded', aberto ? 'true' : 'false');
   }
 
   function encerrarTela() {
+    menuEmpresa(false);
     encerrada = true;
     consultaAtual += 1; // invalida qualquer resposta pendente
     todos(VAZIO);
+    ligarAtalhosValidade(false);
     $('dashboardWelcomeUser').textContent = '';
     mostrarAviso('', null);
   }
+
+  menuEmpresa(false);
+  $('botaoEmpresa').addEventListener('click', function () { menuEmpresa($('menuEmpresa').style.display === 'none'); });
+  $('menuEmpresa').addEventListener('keydown', function (evento) {
+    if (evento && evento.key === 'Escape') {
+      menuEmpresa(false);
+      $('botaoEmpresa').focus();
+    }
+  });
 
   // Sessão empresarial real (C0), permissões efetivas (C1) e revalidação ao
   // restaurar pelo histórico (módulo comum). Nada é consultado antes.
@@ -391,7 +447,8 @@
       tela: $('telaSessao'),
       mensagem: $('telaSessaoMensagem'),
       linkPortal: $('telaSessaoPortal'),
-      identificacao: $('identidade'),
+      usuario: $('contaNome'),
+      empresa: $('contaEmpresa'),
       botaoSair: $('botaoSair'),
       botaoTrocar: $('botaoTrocarEmpresa'),
     },

@@ -34,6 +34,11 @@ const { pool } = require('../config/database');
  */
 
 const anteriorEmpresarial = (contexto) => (contexto === null ? null : { empresaId: contexto.empresa.id, sessaoId: contexto.sessao.id });
+// Na seleção, a anterior leva também o usuário e a identidade dela, lidos do
+// servidor: a auditoria só chama de troca o contexto da mesma pessoa.
+const anteriorParaSelecao = (contexto) => (contexto === null ? null : {
+  empresaId: contexto.empresa.id, sessaoId: contexto.sessao.id, usuarioId: contexto.usuario.id, identidadeId: contexto.usuario.identidadeId ?? null,
+});
 const anteriorGlobal = (contexto) => (contexto === null ? null : { sessaoId: contexto.sessao.id });
 const corpoContexto = (contexto) => (contexto === null ? null : { usuario: contexto.usuario, empresa: contexto.empresa });
 
@@ -118,7 +123,7 @@ function criarAuthGlobalController({ pool: poolInjetado }) {
         identidadeId: req.identidade.id,
         sessaoGlobalId: req.sessaoGlobal.id,
         empresaId: req.validado.params.id,
-        sessaoEmpresarialAnterior: anteriorEmpresarial(empresarialAnterior),
+        sessaoEmpresarialAnterior: anteriorParaSelecao(empresarialAnterior),
         ip: req.ip,
         dispositivo: req.headers['user-agent'],
       });

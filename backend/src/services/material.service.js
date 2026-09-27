@@ -2,6 +2,7 @@
 
 const { HttpError } = require('../errors/HttpError');
 const materialRepo = require('../repositories/material.repository');
+const loteRepo = require('../repositories/estoque-lote.repository');
 const auditoriaRepo = require('../repositories/auditoria.repository');
 
 /**
@@ -54,9 +55,53 @@ const MSG_MATERIAL_NAO_ENCONTRADO = 'Material não encontrado';
 const MSG_SEM_ALTERACAO = 'Nenhum campo para alterar';
 const MSG_UNIDADE_NAO_EDITAVEL = 'A unidade de controle de um material existente não pode ser alterada';
 const MSG_DADOS_INVALIDOS = 'Dados de material inválidos';
+const MSG_TAMANHO_SALDO_INCOMPATIVEL = 'Há saldo em estoque incompatível com a nova exigência de tamanho';
 // Parte C2 (migration 039): índice único parcial do código interno por empresa.
 const INDICE_CODIGO_INTERNO = 'uq_materiais_empresa_codigo_interno';
 const MSG_CODIGO_INTERNO_DUPLICADO = 'Já existe um material com este código interno nesta empresa';
+
+// Tipo canônico dos óculos de proteção: o texto da lista de tipos da tela e
+// do CHECK da migration 045. Comparo o tipo gravado, nunca o nome do material.
+const TIPO_OCULOS_PROTECAO = 'Óculos de proteção';
+const MSG_OCULOS_OBRIGATORIO = 'Informe se os óculos de proteção são com grau';
+const MSG_OCULOS_NAO_SE_APLICA = 'Óculos com grau só se aplica ao tipo Óculos de proteção';
+
+function recusarOculos(codigo, mensagem) {
+  return HttpError.validacao([{ campo: 'body.oculosComGrau', codigo, mensagem }]);
+}
+
+function oculosComGrauValido(valor) {
+  return valor === undefined || valor === null || typeof valor === 'boolean';
+}
+
+/** No cadastro, óculos de proteção sempre dizem se são com grau; outro tipo não diz nada. */
+function oculosNoCadastro(tipo, valor) {
+  if (tipo === TIPO_OCULOS_PROTECAO) {
+    if (typeof valor !== 'boolean') throw recusarOculos('OCULOS_COM_GRAU_OBRIGATORIO', MSG_OCULOS_OBRIGATORIO);
+    return valor;
+  }
+  if (valor !== undefined && valor !== null) throw recusarOculos('OCULOS_COM_GRAU_NAO_SE_APLICA', MSG_OCULOS_NAO_SE_APLICA);
+  return null;
+}
+
+/**
+ * Na edição, decido pelo tipo que o material terá depois dela. Óculos que
+ * continuam óculos mantêm o valor quando nada vem, inclusive o NULL do
+ * legado; quem passa a ser óculos precisa ser classificado; e quem deixa de
+ * ser óculos perde a informação. Devolve o que gravar: {informado, valor}.
+ */
+function oculosNaEdicao(anterior, tipoFinal, informado, valor) {
+  if (tipoFinal === TIPO_OCULOS_PROTECAO) {
+    if (informado) {
+      if (typeof valor !== 'boolean') throw recusarOculos('OCULOS_COM_GRAU_OBRIGATORIO', MSG_OCULOS_OBRIGATORIO);
+      return { informado: true, valor };
+    }
+    if (anterior.tipo !== TIPO_OCULOS_PROTECAO) throw recusarOculos('OCULOS_COM_GRAU_OBRIGATORIO', MSG_OCULOS_OBRIGATORIO);
+    return { informado: false, valor: null };
+  }
+  if (informado && valor !== null) throw recusarOculos('OCULOS_COM_GRAU_NAO_SE_APLICA', MSG_OCULOS_NAO_SE_APLICA);
+  return { informado: anterior.oculosComGrau !== null && anterior.oculosComGrau !== undefined, valor: null };
+}
 
 /** Traduz a violação do índice do código interno; qualquer outra violação segue o tratamento anterior. */
 function traduzirViolacao(erro) {
@@ -84,7 +129,7 @@ function normalizarNome(nome) {
   return aparado;
 }
 
-/** Campo de texto opcional (tipo, fabricante, caNumero): aparado; vazio equivale a null. */
+/** Campo de texto opcional (tipo, fabricante e os da Parte C2): aparado; vazio equivale a null. */
 function normalizarTextoOpcional(valor, tamanhoMaximo) {
   if (valor === null || valor === undefined) {
     return null;
@@ -113,8 +158,10 @@ function normalizarUnidade(unidade) {
   return aparada;
 }
 
+// O prazo de uso é obrigatório. Só cadastro legado tem prazo nulo, e a edição
+// não deixa apagá-lo.
 function prazoUsoDiasValido(valor) {
-  return valor === null || valor === undefined || (Number.isInteger(valor) && valor > 0);
+  return Number.isInteger(valor) && valor > 0;
 }
 
 function estoqueMinimoValido(valor) {
@@ -142,14 +189,14 @@ async function emTransacao(pool, operacao) {
   }
 }
 
-/** Dados do material gravados na auditoria — nunca mais do que isto. */
+/** Dados do material gravados na auditoria — nunca mais do que isto. Sem CA: ele é do lote. */
 const instantaneo = (material) => ({
   nome: material.nome,
   tipo: material.tipo,
   fabricante: material.fabricante,
-  caNumero: material.caNumero,
-  caValidade: material.caValidade,
   prazoUsoDias: material.prazoUsoDias,
+  exigeTamanho: material.exigeTamanho,
+  oculosComGrau: material.oculosComGrau ?? null,
   unidade: material.unidade,
   estoqueMinimo: material.estoqueMinimo,
   categoria: material.categoria,
@@ -163,13 +210,14 @@ const instantaneo = (material) => ({
  *
  * @param {import('pg').Pool} pool
  * @param {{empresaId: number, atorId: number, nome: string, tipo?: string|null, fabricante?: string|null,
- *   caNumero?: string|null, caValidade?: string|null, prazoUsoDias?: number|null, unidade?: string,
- *   estoqueMinimo?: number, ip?: string|null, dispositivo?: string|null}} dados
- *   empresaId e atorId DEVEM vir do contexto autenticado do chamador.
+ *   prazoUsoDias: number, exigeTamanho: boolean, oculosComGrau?: boolean|null,
+ *   unidade?: string, estoqueMinimo?: number, ip?: string|null, dispositivo?: string|null}} dados
+ *   empresaId e atorId DEVEM vir do contexto autenticado do chamador. O
+ *   material não tem CA: o CA e a validade são do lote, na entrada.
  */
 async function criar(pool, {
-  empresaId, atorId, nome, tipo = null, fabricante = null, caNumero = null,
-  caValidade = null, prazoUsoDias = null, unidade, estoqueMinimo = 0,
+  empresaId, atorId, nome, tipo = null, fabricante = null,
+  prazoUsoDias = null, exigeTamanho = null, oculosComGrau, unidade, estoqueMinimo = 0,
   categoria = null, codigoInterno = null, descricao = null,
   ip = null, dispositivo = null,
 }) {
@@ -182,19 +230,20 @@ async function criar(pool, {
   const descricaoNormalizada = normalizarTextoOpcional(descricao, materialRepo.TAMANHO_MAXIMO_DESCRICAO);
   const tipoNormalizado = normalizarTextoOpcional(tipo, materialRepo.TAMANHO_MAXIMO_TIPO);
   const fabricanteNormalizado = normalizarTextoOpcional(fabricante, materialRepo.TAMANHO_MAXIMO_FABRICANTE);
-  const caNumeroNormalizado = normalizarTextoOpcional(caNumero, materialRepo.TAMANHO_MAXIMO_CA_NUMERO);
   const unidadeNormalizada = normalizarUnidade(unidade);
 
   if (nomeNormalizado === null) {
     throw HttpError.badRequest('MATERIAL_NOME_INVALIDO', MSG_NOME_INVALIDO);
   }
-  if (tipoNormalizado === undefined || fabricanteNormalizado === undefined || caNumeroNormalizado === undefined
+  if (tipoNormalizado === undefined || fabricanteNormalizado === undefined
     || categoriaNormalizada === undefined || codigoInternoNormalizado === undefined || descricaoNormalizada === undefined) {
     throw HttpError.badRequest('MATERIAL_DADOS_INVALIDOS', MSG_DADOS_INVALIDOS);
   }
-  if (!prazoUsoDiasValido(prazoUsoDias) || unidadeNormalizada === null || !estoqueMinimoValido(estoqueMinimo)) {
+  if (!prazoUsoDiasValido(prazoUsoDias) || typeof exigeTamanho !== 'boolean'
+    || unidadeNormalizada === null || !estoqueMinimoValido(estoqueMinimo) || !oculosComGrauValido(oculosComGrau)) {
     throw HttpError.badRequest('MATERIAL_DADOS_INVALIDOS', MSG_DADOS_INVALIDOS);
   }
+  const oculosNormalizado = oculosNoCadastro(tipoNormalizado, oculosComGrau);
 
   return emTransacao(pool, async (client) => {
     let material;
@@ -204,9 +253,9 @@ async function criar(pool, {
         nome: nomeNormalizado,
         tipo: tipoNormalizado,
         fabricante: fabricanteNormalizado,
-        caNumero: caNumeroNormalizado,
-        caValidade,
         prazoUsoDias: prazoUsoDias ?? null,
+        exigeTamanho,
+        oculosComGrau: oculosNormalizado,
         unidade: unidadeNormalizada,
         estoqueMinimo,
         categoria: categoriaNormalizada,
@@ -288,9 +337,9 @@ async function alterar(pool, {
   empresaId, atorId, materialId,
   nome, tipo, tipoInformado = false,
   fabricante, fabricanteInformado = false,
-  caNumero, caNumeroInformado = false,
-  caValidade, caValidadeInformado = false,
   prazoUsoDias, prazoUsoDiasInformado = false,
+  exigeTamanho,
+  oculosComGrau, oculosComGrauInformado = false,
   unidade, estoqueMinimo,
   categoria, categoriaInformado = false,
   codigoInterno, codigoInternoInformado = false,
@@ -311,8 +360,6 @@ async function alterar(pool, {
   const tipoNormalizado = tipoInformado ? normalizarTextoOpcional(tipo, materialRepo.TAMANHO_MAXIMO_TIPO) : null;
   const fabricanteNormalizado = fabricanteInformado
     ? normalizarTextoOpcional(fabricante, materialRepo.TAMANHO_MAXIMO_FABRICANTE) : null;
-  const caNumeroNormalizado = caNumeroInformado
-    ? normalizarTextoOpcional(caNumero, materialRepo.TAMANHO_MAXIMO_CA_NUMERO) : null;
 
   // Unidade de controle imutável na edição (ajuste pós-melhoria C2,
   // 25/09/2026). A rota já a recusa no schema; esta é a defesa em
@@ -322,9 +369,9 @@ async function alterar(pool, {
     throw HttpError.badRequest('MATERIAL_UNIDADE_NAO_EDITAVEL', MSG_UNIDADE_NAO_EDITAVEL);
   }
 
-  const nenhumCampo = !alterarNome && !tipoInformado && !fabricanteInformado && !caNumeroInformado
-    && !caValidadeInformado && !prazoUsoDiasInformado && estoqueMinimo === undefined
-    && !categoriaInformado && !codigoInternoInformado && !descricaoInformado;
+  const nenhumCampo = !alterarNome && !tipoInformado && !fabricanteInformado
+    && !prazoUsoDiasInformado && exigeTamanho === undefined && estoqueMinimo === undefined
+    && !categoriaInformado && !codigoInternoInformado && !descricaoInformado && !oculosComGrauInformado;
 
   return emTransacao(pool, async (client) => {
     if (nenhumCampo) {
@@ -335,12 +382,13 @@ async function alterar(pool, {
     }
     if ((tipoInformado && tipoNormalizado === undefined)
       || (fabricanteInformado && fabricanteNormalizado === undefined)
-      || (caNumeroInformado && caNumeroNormalizado === undefined)
       || (prazoUsoDiasInformado && !prazoUsoDiasValido(prazoUsoDias))
+      || (exigeTamanho !== undefined && typeof exigeTamanho !== 'boolean')
       || (estoqueMinimo !== undefined && !estoqueMinimoValido(estoqueMinimo))
       || (categoriaInformado && categoriaNormalizada === undefined)
       || (codigoInternoInformado && codigoInternoNormalizado === undefined)
-      || (descricaoInformado && descricaoNormalizada === undefined)) {
+      || (descricaoInformado && descricaoNormalizada === undefined)
+      || (oculosComGrauInformado && !oculosComGrauValido(oculosComGrau))) {
       throw HttpError.badRequest('MATERIAL_DADOS_INVALIDOS', MSG_DADOS_INVALIDOS);
     }
 
@@ -348,6 +396,14 @@ async function alterar(pool, {
     if (anterior === null) {
       throw HttpError.notFound('MATERIAL_NAO_ENCONTRADO', MSG_MATERIAL_NAO_ENCONTRADO);
     }
+    // A primeira classificação do legado é livre. Depois, só troco se nenhum
+    // lote com saldo ficar incompatível; saldo zero é histórico e não impede.
+    // A trava do material acima segura entradas novas até o fim desta troca.
+    const trocaClassificacao = exigeTamanho !== undefined && anterior.exigeTamanho !== null && anterior.exigeTamanho !== exigeTamanho;
+    if (trocaClassificacao && await loteRepo.possuiSaldoIncompativel(client, empresaId, materialId, exigeTamanho)) {
+      throw HttpError.conflict('MATERIAL_TAMANHO_SALDO_INCOMPATIVEL', MSG_TAMANHO_SALDO_INCOMPATIVEL);
+    }
+    const oculos = oculosNaEdicao(anterior, tipoInformado ? tipoNormalizado : anterior.tipo, oculosComGrauInformado, oculosComGrau);
 
     let atualizado;
     try {
@@ -355,14 +411,14 @@ async function alterar(pool, {
         nome: nomeNormalizado,
         tipo: tipoNormalizado, tipoInformado,
         fabricante: fabricanteNormalizado, fabricanteInformado,
-        caNumero: caNumeroNormalizado, caNumeroInformado,
-        caValidade: caValidadeInformado ? caValidade : null, caValidadeInformado,
         prazoUsoDias: prazoUsoDiasInformado ? prazoUsoDias : null, prazoUsoDiasInformado,
         unidade: null, // null = manter a unidade atual (nunca alterada pela edição)
         estoqueMinimo: estoqueMinimo ?? null,
         categoria: categoriaNormalizada, categoriaInformado,
         codigoInterno: codigoInternoNormalizado, codigoInternoInformado,
         descricao: descricaoNormalizada, descricaoInformado,
+        exigeTamanho: exigeTamanho ?? null, // null = manter a classificação atual
+        oculosComGrau: oculos.valor, oculosComGrauInformado: oculos.informado,
       });
     } catch (erro) {
       const traduzido = traduzirViolacao(erro);

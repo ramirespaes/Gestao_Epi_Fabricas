@@ -3,9 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Itens Disponíveis — Gestão de EPIs</title>
+  <title>Análise de estoque — Gestão de EPIs</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
   <link rel="stylesheet" href="../css/main.css">
+  <script src="../js/tema.js"></script>
   <style>
     /* Parte C2: itens do menu ainda não integrados ao backend (sem link) */
     .nav a.nav-pendente{cursor:default;opacity:.55}
@@ -72,14 +73,14 @@
         <div class="nav-section">Visão geral</div>
         <a href="dashboard.html" data-pagina="dashboard" style="display:none"><div class="nav-icon blue">dashboard</div>Dashboard</a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon indigo">analytics</div>Relatórios<span class="nav-etiqueta">Em integração</span></a>
-        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon gray">receipt_long</div>Operações<span class="nav-etiqueta">Em integração</span></a>
         <div class="nav-section">Estoque</div>
-        <a href="materials.html" data-pagina="materials" style="display:none"><div class="nav-icon teal">inventory_2</div>Materiais</a>
-        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor<span class="nav-etiqueta">Em integração</span></a>
-        <a href="employee-groups.html" data-pagina="employeeGroups" style="display:none"><div class="nav-icon purple">group_work</div>GHE e EPIs</a>
+        <a href="materials.html" data-pagina="materials" style="display:none"><div class="nav-icon teal">inventory_2</div>Gestão de estoque</a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon orange">shopping_cart</div>Compras / Entradas<span class="nav-etiqueta">Em integração</span></a>
-        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon red">event_busy</div>Validade do Estoque<span class="nav-etiqueta">Em integração</span></a>
-        <a class="active" href="javascript:void(0)" data-pagina="availableItems" style="display:none"><div class="nav-icon green">checklist</div>Itens Disponíveis</a>
+        <a href="stock-validity.html" data-pagina="stockValidity" style="display:none"><div class="nav-icon red">event_busy</div>Validade de estoque</a>
+        <a class="active" href="javascript:void(0)" data-pagina="availableItems" style="display:none"><div class="nav-icon green">checklist</div>Análise de estoque</a>
+        <a href="operations.html" data-pagina="operations" style="display:none"><div class="nav-icon gray">receipt_long</div>Operações de estoque</a>
+        <a href="employee-groups.html" data-pagina="employeeGroups" style="display:none"><div class="nav-icon purple">group_work</div>GHE e EPIs</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor<span class="nav-etiqueta">Em integração</span></a>
         <div class="nav-section">Entregas</div>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon green">inventory</div>EPIs Entregues<span class="nav-etiqueta">Em integração</span></a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon brown">description</div>Ficha de EPI<span class="nav-etiqueta">Em integração</span></a>
@@ -95,8 +96,8 @@
         <a href="grupo-usuarios.html" data-pagina="grupo-usuarios" style="display:none"><div class="nav-icon indigo">group_add</div>Integrantes do Grupo</a>
         <a href="autorizacoes-individuais.html" data-pagina="autorizacoes-individuais" style="display:none"><div class="nav-icon indigo">verified_user</div>Autorizações Individuais</a>
         <a href="import-employees.html" data-pagina="importEmployees" style="display:none"><div class="nav-icon green">upload_file</div>Importar Funcionários</a>
-        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon green">person_add</div>Novo Usuário<span class="nav-etiqueta">Em integração</span></a>
-        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon indigo">group</div>Administração de Usuários<span class="nav-etiqueta">Em integração</span></a>
+        <a href="new-user.html" data-pagina="newUser" style="display:none"><div class="nav-icon green">person_add</div>Novo Usuário</a>
+        <a href="user-admin.html" data-pagina="userAdmin" style="display:none"><div class="nav-icon indigo">group</div>Administração de Usuários</a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon gray">settings</div>Configurações<span class="nav-etiqueta">Em integração</span></a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon teal">support_agent</div>Suporte<span class="nav-etiqueta">Em integração</span></a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">mark_email_read</div>Gestão de E-mails<span class="nav-etiqueta">Em integração</span></a>
@@ -109,13 +110,8 @@
 <section id="availableItemsView" class="view active">
         <div class="page-actions">
           <div>
-            <h2 style="font-family:var(--font-brand);font-size:22px;line-height:1.1;letter-spacing:-0.4px;font-weight:500">Itens Disponíveis</h2>
-            <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Lista de todos os itens disponíveis em estoque, separados por tipo, tamanho e quantidade.</p>
-          </div>
-          <div class="inline-actions">
-            <span id="identidade" style="font-size:13px;color:var(--on-surface-variant);align-self:center"></span>
-            <button id="botaoTrocarEmpresa" class="outlined-btn" type="button" style="display:none"><span class="material-symbols-outlined">swap_horiz</span>Trocar de empresa</button>
-            <button id="botaoSair" class="outlined-btn" type="button"><span class="material-symbols-outlined">logout</span>Sair</button>
+            <h2 style="font-family:var(--font-brand);font-size:22px;line-height:1.1;letter-spacing:-0.4px;font-weight:500">Análise de estoque</h2>
+            <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Consulte o saldo disponível por categoria, tipo e tamanho, filtre pela validade do CA e identifique itens com saldo baixo ou sem estoque.</p>
           </div>
         </div>
 
@@ -126,8 +122,8 @@
             <div class="card-title">
               <div class="card-icon">checklist</div>
               <div>
-                <h2>Consulta de itens disponíveis</h2>
-                <p>Visualização do saldo disponível para entrega, por categoria e grade de tamanho.</p>
+                <h2>Consulta de estoque</h2>
+                <p>Saldo disponível para entrega, por categoria, tipo e tamanho.</p>
               </div>
             </div>
           </div>
@@ -223,8 +219,8 @@
   var aplicados = {};   // filtros efetivamente consultados (Filtrar/Limpar)
   var pagina = 1;
   // Proteção contra respostas fora de ordem: cada consulta recebe um número;
-  // só a MAIS RECENTE pode tocar a tela. Encerrada a sessão (Sair confirmado
-  // ou restauração com sessão encerrada), nenhuma resposta pendente é aplicada.
+  // só a MAIS RECENTE pode tocar a tela. Encerrada a sessão (restauração pelo
+  // navegador com a sessão já encerrada), nenhuma resposta pendente é aplicada.
   var consultaAtual = 0;
   var encerrada = false;
 
@@ -345,12 +341,8 @@
       tela: $('telaSessao'),
       mensagem: $('telaSessaoMensagem'),
       linkPortal: $('telaSessaoPortal'),
-      identificacao: $('identidade'),
-      botaoSair: $('botaoSair'),
-      botaoTrocar: $('botaoTrocarEmpresa'),
     },
     aoEncerrar: encerrarTela,
-    aoFalharSaida: function (mensagem) { mostrarAviso(mensagem, 'erro'); },
   }).then(function (contexto) {
     if (!contexto) return undefined;
     return EpiPermissoes.prepararPagina({

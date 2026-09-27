@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 
 const { abrirPoolTemporario, inserirEmpresa } = require('./helpers/schema-temporario');
+const { inserirLote, somarDias } = require('./helpers/estoque-lotes');
 const { criarAppTeste } = require('../helpers/app-teste');
 const { criarAuthController } = require('../../src/controllers/auth.controller');
 const { criarAuthRoutes } = require('../../src/routes/auth.routes');
@@ -19,20 +20,23 @@ const { gerarHashSenha } = require('../../src/security/password');
  * PostgreSQL real em schema temporário. GET /api/dashboard/indicadores:
  *   - a rota exige dashboard.visualizar;
  *   - cada indicador só traz número se o usuário vê a FONTE:
- *       itensDisponiveis e estoqueAbaixoMinimo -> availableItems (mesmos dados de Itens Disponíveis, C3)
- *       caVencido (com aVencer em 60 dias)     -> materials (validade do CA é atributo do material)
+ *       itensDisponiveis e estoqueAbaixoMinimo -> availableItems (mesmos dados de Itens Disponíveis)
+ *       caVencido (com aVencer em 60 dias)     -> stockValidity (E9; antes materials)
  *       funcionariosAtivos                     -> employeeHistory
  *     sem a permissão da fonte: { permitido: false }, sem valor;
- *   - regras reutilizadas: materiais ativos, tamanhos cadastrados, disponível = saldo (C3);
- *     abaixo do mínimo = saldo zerado ou menor que o mínimo (C2); CA vencido/a vencer (C3, 60 dias);
+ *   - o estoque vem dos lotes: disponível exclui o bloqueado (CA vencido ou
+ *     ausente em material que exige CA); abaixo do mínimo usa o disponível;
+ *     CA vencido conta lotes com saldo, com a data operacional de São Paulo;
  *   - isolamento: só a empresa da sessão.
  */
 
 const MIGRATIONS = [
   '000', '001', '002', '003', '004', '005', '025', '006', '007', '008', '009', '010', '011',
-  '012', '013', '014', '015', '016', '017', '018', '019', '020', '021', '022', '023', '039', '040',
+  '012', '013', '014', '015', '016', '017', '018', '019', '020', '021', '022', '023', '039', '040', '041', '042', '044', '045',
 ];
 
+const HOJE = '2026-09-30';
+const RELOGIO = () => new Date('2026-09-30T15:00:00Z');
 const SENHA = 'senha-correta-do-teste-bloco9-c6-2026';
 let HASH_SENHA;
 const CNPJ_A = '11222333000181';
@@ -55,14 +59,16 @@ async function conceder(pool, empresaId, perfil, recursos) {
   }
 }
 
-async function material(pool, empresaId, { nome, minimo = 0, ca = null, ativo = true, tamanhos = {} }) {
+// lotes: [tamanho, quantidade, dias até a validade do CA (null = sem CA)]
+async function material(pool, empresaId, { nome, minimo = 0, exigeCa = true, ativo = true, caLegadoVencido = false, lotes = [] }) {
   const { rows } = await pool.query(
-    `INSERT INTO materiais (empresa_id, nome, estoque_minimo, ca_validade, ativo)
-     VALUES ($1, $2, $3, CASE WHEN $4::int IS NULL THEN NULL ELSE CURRENT_DATE + $4::int END, $5) RETURNING id`,
-    [empresaId, nome, minimo, ca, ativo],
+    `INSERT INTO materiais (empresa_id, nome, estoque_minimo, exige_ca, ativo, ca_validade)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+    [empresaId, nome, minimo, exigeCa, ativo, caLegadoVencido ? '2020-01-01' : null],
   );
-  for (const [tamanho, quantidade] of Object.entries(tamanhos)) {
-    await pool.query('INSERT INTO estoque_tamanhos (material_id, tamanho, quantidade) VALUES ($1, $2, $3)', [rows[0].id, tamanho, quantidade]);
+  for (const [tamanho, quantidade, caDias] of lotes) {
+    const validade = caDias === null ? null : somarDias(HOJE, caDias);
+    await inserirLote(pool, { empresaId, materialId: rows[0].id, tamanho, quantidade, ca: validade ? '12345' : null, validade });
   }
 }
 
@@ -96,20 +102,25 @@ describe('GET /api/dashboard/indicadores com PostgreSQL real', () => {
     const empresaA = rows.find((e) => e.cnpj === CNPJ_A).id;
     const empresaB = rows.find((e) => e.cnpj === CNPJ_B).id;
 
-    // Empresa A — valores esperados: disponível 10+3+0+7 = 20; abaixo do mínimo 2
-    // (41: 3 < 5; 42: zerado); CA vencido 1; a vencer em 60 dias 2 (+30 e +60; +61 não; nulo não;
-    // inativo não entra em nada); funcionários ativos 2.
-    await material(pool, empresaA, { nome: 'Botina', minimo: 5, ca: -1, tamanhos: { 40: 10, 41: 3, 42: 0 } });
-    await material(pool, empresaA, { nome: 'Luva', minimo: 0, ca: 30, tamanhos: { U: 7 } });
-    await material(pool, empresaA, { nome: 'Capacete', minimo: 2, ca: 60 });
-    await material(pool, empresaA, { nome: 'Óculos', ca: 61 });
-    await material(pool, empresaA, { nome: 'Protetor sem CA' });
-    await material(pool, empresaA, { nome: 'Inativo', minimo: 50, ca: -10, ativo: false, tamanhos: { U: 100 } });
+    // Empresa A — disponível 10 + 7 + 1 + 2 + 4 = 24 (a Botina 41 está bloqueada por CA vencido);
+    // abaixo do mínimo 2 (Botina 41 com disponível 0; Capacete 1 < 2); CA vencido 2 (lote da Botina 41
+    // e o lote vencido com saldo do material inativo, como na Validade de estoque); a vencer em 60
+    // dias 2 (+30 e +60; +61 não); o inativo continua fora de itens disponíveis e de abaixo do
+    // mínimo; o material sem estoque com CA legado vencido não conta; o material sem mínimo e com
+    // disponível 0 não está abaixo do mínimo; funcionários ativos 2.
+    await material(pool, empresaA, { nome: 'Botina', minimo: 5, lotes: [['40', 10, 200], ['41', 3, -1]] });
+    await material(pool, empresaA, { nome: 'Luva', lotes: [['U', 7, 30]] });
+    await material(pool, empresaA, { nome: 'Capacete', minimo: 2, lotes: [['U', 1, 60]] });
+    await material(pool, empresaA, { nome: 'Óculos', lotes: [['U', 2, 61]] });
+    await material(pool, empresaA, { nome: 'Protetor que dispensa CA', exigeCa: false, lotes: [['U', 4, null]] });
+    await material(pool, empresaA, { nome: 'Inativo', minimo: 50, ativo: false, lotes: [['U', 100, -10]] });
+    await material(pool, empresaA, { nome: 'Sem estoque', caLegadoVencido: true });
+    await material(pool, empresaA, { nome: 'Sem mínimo, saldo sem CA', lotes: [['U', 4, null]] });
     await funcionario(pool, empresaA, 'A1', '52998224725', true);
     await funcionario(pool, empresaA, 'A2', '11144477735', true);
     await funcionario(pool, empresaA, 'A3', '39053344705', false);
     // Empresa B — nada disso pode aparecer em A.
-    await material(pool, empresaB, { nome: 'Máscara B', minimo: 1000, ca: -5, tamanhos: { U: 500 } });
+    await material(pool, empresaB, { nome: 'Máscara B', minimo: 1000, lotes: [['U', 500, -5]] });
     await funcionario(pool, empresaB, 'B1', '52998224725', true);
 
     await inserirUsuario(pool, empresaA, 'master-a.c6@demo.safeworkengenharia.com.br', 'MASTER');
@@ -117,16 +128,16 @@ describe('GET /api/dashboard/indicadores com PostgreSQL real', () => {
     await inserirUsuario(pool, empresaA, 'parcial-a.c6@demo.safeworkengenharia.com.br', 'ADMINISTRADOR');
     await inserirUsuario(pool, empresaA, 'sem-dashboard-a.c6@demo.safeworkengenharia.com.br', 'USUARIO');
     await inserirUsuario(pool, empresaB, 'master-b.c6@demo.safeworkengenharia.com.br', 'MASTER');
-    await conceder(pool, empresaA, 'MASTER', ['dashboard', 'availableItems', 'materials', 'employeeHistory']);
-    await conceder(pool, empresaB, 'MASTER', ['dashboard', 'availableItems', 'materials', 'employeeHistory']);
+    await conceder(pool, empresaA, 'MASTER', ['dashboard', 'availableItems', 'stockValidity', 'employeeHistory']);
+    await conceder(pool, empresaB, 'MASTER', ['dashboard', 'availableItems', 'stockValidity', 'employeeHistory']);
     await conceder(pool, empresaA, 'SUPERVISOR', ['dashboard']);
     await conceder(pool, empresaA, 'ADMINISTRADOR', ['dashboard', 'availableItems']);
-    await conceder(pool, empresaA, 'USUARIO', ['availableItems', 'materials', 'employeeHistory']);
+    await conceder(pool, empresaA, 'USUARIO', ['availableItems', 'stockValidity', 'employeeHistory']);
 
     const exigirSessao = criarExigirSessao({ pool });
     const limitador = criarLimitador({ limite: 1000, janelaSegundos: 60 });
     const authRoutes = criarAuthRoutes({ controller: criarAuthController({ pool }), limitador, exigirSessao });
-    const dashboardRoutes = criarDashboardRoutes({ controller: criarDashboardController({ pool }), exigirSessao, pool });
+    const dashboardRoutes = criarDashboardRoutes({ controller: criarDashboardController({ pool, relogio: RELOGIO }), exigirSessao, pool });
     app = criarAppTeste((a) => { a.use('/api', authRoutes, dashboardRoutes); });
 
     const login = async (cnpj, email) => {
@@ -157,9 +168,9 @@ describe('GET /api/dashboard/indicadores com PostgreSQL real', () => {
     const r = await indicadores(cookie.masterA);
     assert.equal(r.status, 200);
     assert.deepEqual(r.body.indicadores, {
-      itensDisponiveis: { permitido: true, valor: 20 },
+      itensDisponiveis: { permitido: true, valor: 24 },
       estoqueAbaixoMinimo: { permitido: true, valor: 2 },
-      caVencido: { permitido: true, valor: 1, aVencer: 2, diasAlerta: 60 },
+      caVencido: { permitido: true, valor: 2, aVencer: 2, diasAlerta: 60 },
       funcionariosAtivos: { permitido: true, valor: 2 },
     });
   });
@@ -175,22 +186,22 @@ describe('GET /api/dashboard/indicadores com PostgreSQL real', () => {
     });
   });
 
-  test('permissão parcial: com availableItems vê só os indicadores de estoque; CA (materials) e funcionários sem número', async () => {
+  test('permissão parcial: com availableItems vê só os indicadores de estoque; CA (stockValidity) e funcionários sem número', async () => {
     const r = await indicadores(cookie.parcialA);
     assert.equal(r.status, 200);
     assert.deepEqual(r.body.indicadores, {
-      itensDisponiveis: { permitido: true, valor: 20 },
+      itensDisponiveis: { permitido: true, valor: 24 },
       estoqueAbaixoMinimo: { permitido: true, valor: 2 },
       caVencido: { permitido: false },
       funcionariosAtivos: { permitido: false },
     });
   });
 
-  test('multiempresa: a empresa B vê só os próprios números', async () => {
+  test('multiempresa: a empresa B vê só os próprios números (500 físicos, todos bloqueados por CA vencido)', async () => {
     const r = await indicadores(cookie.masterB);
     assert.equal(r.status, 200);
     assert.deepEqual(r.body.indicadores, {
-      itensDisponiveis: { permitido: true, valor: 500 },
+      itensDisponiveis: { permitido: true, valor: 0 },
       estoqueAbaixoMinimo: { permitido: true, valor: 1 },
       caVencido: { permitido: true, valor: 1, aVencer: 0, diasAlerta: 60 },
       funcionariosAtivos: { permitido: true, valor: 1 },

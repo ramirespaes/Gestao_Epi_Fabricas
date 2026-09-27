@@ -26,11 +26,12 @@ const { RECURSOS_CONHECIDOS } = require('../rbac/recursos');
  *                     bloqueio individual; MASTER pelo perfil).
  *   administracao  -> as regras PRÓPRIAS das páginas administrativas,
  *                     que não são permissões de recurso:
- *       gruposAcesso / permissoesGrupo / vinculosGrupo
+ *       gruposAcesso / permissoesGrupo / vinculosGrupo / usuarios
  *                  -> autoridade.temAutoridadeAdministrativaLeitura:
  *                     MASTER ativo, ou ADMINISTRADOR ativo com autorização
  *                     individual efetiva para ADMINISTRAR_GRUPOS_ACESSO /
- *                     ADMINISTRAR_PERMISSOES_GRUPO / ADMINISTRAR_VINCULOS_GRUPO.
+ *                     ADMINISTRAR_PERMISSOES_GRUPO / ADMINISTRAR_VINCULOS_GRUPO /
+ *                     GERENCIAR_USUARIOS (parte F).
  *                     "consultar" e "alterar" usam o MESMO critério nos
  *                     serviços (a escrita só acrescenta FOR UPDATE), por
  *                     isso têm o mesmo valor aqui; são expostos em separado
@@ -94,6 +95,7 @@ async function calcular(pool, { empresaId, usuarioId, perfil }) {
   const gruposAcesso = await autoridade.temAutoridadeAdministrativaLeitura(pool, empresaId, usuarioId, ACOES_ADMINISTRATIVAS.GRUPOS_ACESSO);
   const permissoesGrupo = await autoridade.temAutoridadeAdministrativaLeitura(pool, empresaId, usuarioId, ACOES_ADMINISTRATIVAS.PERMISSOES_GRUPO);
   const vinculosGrupo = await autoridade.temAutoridadeAdministrativaLeitura(pool, empresaId, usuarioId, ACOES_ADMINISTRATIVAS.VINCULOS_GRUPO);
+  const usuarios = await autoridade.temAutoridadeAdministrativaLeitura(pool, empresaId, usuarioId, ACOES_ADMINISTRATIVAS.USUARIOS);
 
   const ator = await usuarioRepo.buscarPorId(pool, empresaId, usuarioId);
   const atorAtivo = ator !== null && ator.ativo === true;
@@ -108,6 +110,8 @@ async function calcular(pool, { empresaId, usuarioId, perfil }) {
       gruposAcesso: { consultar: gruposAcesso, alterar: gruposAcesso },
       permissoesGrupo: { consultar: permissoesGrupo, alterar: permissoesGrupo },
       vinculosGrupo: { consultar: vinculosGrupo, alterar: vinculosGrupo },
+      // Parte F: convidar e administrar usuários (GERENCIAR_USUARIOS, 047).
+      usuarios: { consultar: usuarios, alterar: usuarios },
       autorizacoesIndividuais: {
         consultar: atorAtivo,
         concederDireta: autorizacaoIndividual.atorPodeConcederDireta(ator),

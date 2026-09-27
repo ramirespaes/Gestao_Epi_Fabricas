@@ -2,9 +2,11 @@
 
 const { describe, test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const request = require('supertest');
 
 const { abrirPoolTemporario, inserirEmpresa } = require('./helpers/schema-temporario');
+const { inserirLote } = require('./helpers/estoque-lotes');
 const { criarAppTeste } = require('../helpers/app-teste');
 const { criarAuthController } = require('../../src/controllers/auth.controller');
 const { criarAuthRoutes } = require('../../src/routes/auth.routes');
@@ -38,9 +40,9 @@ const { gerarHashSenha } = require('../../src/security/password');
  */
 
 const MIGRATIONS = [
-  '000', '001', '002', '003', '005', '025', '007', '008', '009', '010', '011',
+  '000', '001', '002', '003', '004', '005', '025', '007', '008', '009', '010', '011',
   '012', '013', '014', '015', '016', '017', '018', '019', '020', '021', '022', '023',
-  '039',
+  '039', '041', '042', '044', '045',
 ];
 
 const SENHA = 'senha-correta-do-teste-bloco9-etapa-a-2026';
@@ -161,8 +163,8 @@ describe('API HTTP de materiais e estoque com PostgreSQL real', () => {
         () => request(app).get('/api/materiais/1'),
         () => request(app).patch('/api/materiais/1').send({ nome: 'Botina' }),
         () => request(app).post('/api/materiais/1/inativar').send({}),
-        () => request(app).get('/api/materiais/1/estoque'),
-        () => request(app).post('/api/materiais/1/estoque/movimentar').send({ tamanho: '40', tipo: 'ENTRADA', quantidade: 1 }),
+        () => request(app).get('/api/materiais/1/estoque/lotes'),
+        () => request(app).post('/api/materiais/1/estoque/entradas').send({ tamanho: '40', quantidade: 1 }),
       ];
       for (const chamar of rotas) {
         const resposta = await chamar();
@@ -193,7 +195,7 @@ describe('API HTTP de materiais e estoque com PostgreSQL real', () => {
 
       const resposta = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send({
         nome: 'Botina de segurança', tipo: 'Sapatão / Botina', fabricante: 'Bracol',
-        caNumero: '38271', caValidade: '2026-08-15', prazoUsoDias: 365, unidade: 'par', estoqueMinimo: 5,
+        prazoUsoDias: 365, exigeTamanho: true, unidade: 'par', estoqueMinimo: 5,
       });
 
       assert.equal(resposta.status, 201);
@@ -210,11 +212,12 @@ describe('API HTTP de materiais e estoque com PostgreSQL real', () => {
     });
 
     test('prazoUsoDias zero: 400 (schema Zod recusa antes do serviço)', async () => {
-      const resposta = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send({ nome: 'Botina', prazoUsoDias: 0 });
+      const resposta = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send({ nome: 'Botina', prazoUsoDias: 0, exigeTamanho: true });
       assert.equal(resposta.status, 400);
     });
 
-    test('ano 0000 na validade do CA (0000-01-01 e 0000-02-29): 400 VALIDACAO com CA_VALIDADE_INVALIDA, nada gravado, nenhuma auditoria — no cadastro e na edição (auditoria v2)', async () => {
+    // E10: o material não tem CA; a validade do CA é do lote, com a mesma checagem estrita de calendário.
+    test('CA no cadastro ou na edição do material, com qualquer valor: 400 VALIDACAO (campo não permitido), nada gravado, nenhuma auditoria', async () => {
       const contarMateriais = async () => {
         const { rows } = await pool.query('SELECT count(*)::int AS total FROM materiais WHERE empresa_id = $1', [empresaA]);
         return rows[0].total;
@@ -223,18 +226,18 @@ describe('API HTTP de materiais e estoque com PostgreSQL real', () => {
       const criadosAntes = await contarAuditoria(pool, empresaA, 'MATERIAL_CRIADO');
       const alteradosAntes = await contarAuditoria(pool, empresaA, 'MATERIAL_ALTERADO');
 
-      for (const caValidade of ['0000-01-01', '0000-02-29']) {
+      for (const [campo, valor] of [['caValidade', '0000-01-01'], ['caValidade', '2030-02-28'], ['caNumero', '38271']]) {
         const criar = await request(app).post('/api/materiais').set('Cookie', cookieMasterA)
-          .send({ nome: 'Material com CA no ano zero', caValidade });
-        assert.equal(criar.status, 400, `${caValidade} no cadastro`);
+          .send({ nome: 'Material com CA', prazoUsoDias: 180, exigeTamanho: true, [campo]: valor });
+        assert.equal(criar.status, 400, `${campo} no cadastro`);
         assert.equal(criar.body.codigo, 'VALIDACAO');
-        assert.ok(criar.body.detalhes.some((d) => d.campo === 'body.caValidade' && d.codigo === 'CA_VALIDADE_INVALIDA'));
+        assert.ok(criar.body.detalhes.some((d) => d.campo === `body.${campo}` && d.codigo === 'CAMPO_NAO_PERMITIDO'));
 
         const alterar = await request(app).patch(`/api/materiais/${materialId}`).set('Cookie', cookieMasterA)
-          .send({ caValidade });
-        assert.equal(alterar.status, 400, `${caValidade} na edição`);
+          .send({ [campo]: valor });
+        assert.equal(alterar.status, 400, `${campo} na edição`);
         assert.equal(alterar.body.codigo, 'VALIDACAO');
-        assert.ok(alterar.body.detalhes.some((d) => d.campo === 'body.caValidade' && d.codigo === 'CA_VALIDADE_INVALIDA'));
+        assert.ok(alterar.body.detalhes.some((d) => d.campo === `body.${campo}` && d.codigo === 'CAMPO_NAO_PERMITIDO'));
       }
 
       assert.equal(await contarMateriais(), materiaisAntes, 'nenhum material gravado');
@@ -297,73 +300,13 @@ describe('API HTTP de materiais e estoque com PostgreSQL real', () => {
     });
   });
 
-  describe('Cenário 5 — estoque: consulta protegida por recurso, movimentação por ação', () => {
-    test('GET estoque com apenas permissão de recurso: 200, lista vazia (nenhuma entrada ainda)', async () => {
-      const resposta = await request(app).get(`/api/materiais/${materialId}/estoque`).set('Cookie', cookieMasterA);
-      assert.equal(resposta.status, 200);
-      assert.deepEqual(resposta.body.saldos, []);
-    });
-
-    test('POST movimentar sem MOVIMENTAR_ESTOQUE concedido: 403 PERMISSAO_NEGADA', async () => {
-      // Admin sem permissão nenhuma nem de recurso nem de ação.
-      const resposta = await request(app).post(`/api/materiais/${materialId}/estoque/movimentar`)
-        .set('Cookie', cookieAdminSemPermissaoA).send({ tamanho: '40', tipo: 'ENTRADA', quantidade: 10 });
-      assert.equal(resposta.status, 403);
-    });
-
-    test('ENTRADA cria o saldo do zero, audita ESTOQUE_MOVIMENTADO', async () => {
-      const antes = await contarAuditoria(pool, empresaA, 'ESTOQUE_MOVIMENTADO');
-
-      const resposta = await request(app).post(`/api/materiais/${materialId}/estoque/movimentar`)
-        .set('Cookie', cookieMasterA).send({ tamanho: '40', tipo: 'ENTRADA', quantidade: 12, motivo: 'Compra inicial' });
-
-      assert.equal(resposta.status, 200);
-      assert.equal(resposta.body.saldo.tamanho, '40');
-      assert.equal(resposta.body.saldo.quantidade, 12);
-      assert.equal(await contarAuditoria(pool, empresaA, 'ESTOQUE_MOVIMENTADO'), antes + 1);
-    });
-
-    test('GET estoque agora reflete o saldo criado', async () => {
-      const resposta = await request(app).get(`/api/materiais/${materialId}/estoque`).set('Cookie', cookieMasterA);
-      assert.equal(resposta.status, 200);
-      assert.deepEqual(resposta.body.saldos.map((s) => ({ tamanho: s.tamanho, quantidade: s.quantidade })), [{ tamanho: '40', quantidade: 12 }]);
-    });
-
-    test('SAIDA menor que o saldo: subtrai corretamente', async () => {
-      const resposta = await request(app).post(`/api/materiais/${materialId}/estoque/movimentar`)
-        .set('Cookie', cookieMasterA).send({ tamanho: '40', tipo: 'SAIDA', quantidade: 5 });
-
-      assert.equal(resposta.status, 200);
-      assert.equal(resposta.body.saldo.quantidade, 7);
-    });
-
-    test('SAIDA maior que o saldo: 409 ESTOQUE_INSUFICIENTE, saldo não muda', async () => {
-      const resposta = await request(app).post(`/api/materiais/${materialId}/estoque/movimentar`)
-        .set('Cookie', cookieMasterA).send({ tamanho: '40', tipo: 'SAIDA', quantidade: 100 });
-
-      assert.equal(resposta.status, 409);
-      assert.equal(resposta.body.codigo, 'ESTOQUE_INSUFICIENTE');
-
-      const conferencia = await request(app).get(`/api/materiais/${materialId}/estoque`).set('Cookie', cookieMasterA);
-      assert.equal(conferencia.body.saldos.find((s) => s.tamanho === '40').quantidade, 7, 'saldo permanece intacto após recusa');
-    });
-
-    test('quantidade zero ou negativa: 400 (schema Zod recusa antes do serviço)', async () => {
-      for (const quantidade of [0, -1]) {
-        const resposta = await request(app).post(`/api/materiais/${materialId}/estoque/movimentar`)
-          .set('Cookie', cookieMasterA).send({ tamanho: '40', tipo: 'ENTRADA', quantidade });
-        assert.equal(resposta.status, 400);
-      }
-    });
-
-    test('tipo inválido: 400', async () => {
-      const resposta = await request(app).post(`/api/materiais/${materialId}/estoque/movimentar`)
-        .set('Cookie', cookieMasterA).send({ tamanho: '40', tipo: 'AJUSTE', quantidade: 1 });
-      assert.equal(resposta.status, 400);
-    });
+  // E10: entrada e baixa por lote têm cenários próprios em estoque-lotes-operacoes.integration.js;
+  // o caminho antigo por tamanho saiu (estoque-legado-removido.integration.js).
+  const entrada = (quantidade) => ({
+    tamanho: '40', quantidade, caNumero: '38271', caValidade: '2030-12-31', chaveIdempotencia: crypto.randomUUID(),
   });
 
-  describe('Cenário 6 — inativação bloqueia movimentação, mesmo para o MASTER (restrição estrutural)', () => {
+  describe('Cenário 6 — inativação bloqueia entrada, mesmo para o MASTER (restrição estrutural)', () => {
     test('inativa o material, audita MATERIAL_INATIVADO', async () => {
       const resposta = await request(app).post(`/api/materiais/${materialId}/inativar`).set('Cookie', cookieMasterA).send({});
       assert.equal(resposta.status, 200);
@@ -379,23 +322,23 @@ describe('API HTTP de materiais e estoque com PostgreSQL real', () => {
       assert.equal(await contarAuditoria(pool, empresaA, 'MATERIAL_INATIVADO'), 1, 'nenhuma auditoria extra');
     });
 
-    test('movimentar estoque de material inativo: 409 MATERIAL_INATIVO, mesmo para o MASTER', async () => {
-      const resposta = await request(app).post(`/api/materiais/${materialId}/estoque/movimentar`)
-        .set('Cookie', cookieMasterA).send({ tamanho: '40', tipo: 'ENTRADA', quantidade: 1 });
+    test('entrada em material inativo: 409 MATERIAL_INATIVO, mesmo para o MASTER', async () => {
+      const resposta = await request(app).post(`/api/materiais/${materialId}/estoque/entradas`)
+        .set('Cookie', cookieMasterA).send(entrada(1));
       assert.equal(resposta.status, 409);
       assert.equal(resposta.body.codigo, 'MATERIAL_INATIVO');
     });
 
-    test('reativa o material, audita MATERIAL_REATIVADO, movimentação volta a funcionar', async () => {
+    test('reativa o material, audita MATERIAL_REATIVADO, a entrada volta a funcionar', async () => {
       const reativar = await request(app).post(`/api/materiais/${materialId}/reativar`).set('Cookie', cookieMasterA).send({});
       assert.equal(reativar.status, 200);
       assert.equal(reativar.body.material.ativo, true);
       assert.equal(await contarAuditoria(pool, empresaA, 'MATERIAL_REATIVADO'), 1);
 
-      const movimentar = await request(app).post(`/api/materiais/${materialId}/estoque/movimentar`)
-        .set('Cookie', cookieMasterA).send({ tamanho: '40', tipo: 'ENTRADA', quantidade: 1 });
-      assert.equal(movimentar.status, 200);
-      assert.equal(movimentar.body.saldo.quantidade, 8);
+      const resposta = await request(app).post(`/api/materiais/${materialId}/estoque/entradas`)
+        .set('Cookie', cookieMasterA).send(entrada(1));
+      assert.equal(resposta.status, 201, JSON.stringify(resposta.body));
+      assert.equal(resposta.body.lote.saldo, 1);
     });
   });
 
@@ -404,7 +347,7 @@ describe('API HTTP de materiais e estoque com PostgreSQL real', () => {
 
     test('cria um material cujo nome contém "%" e "_" literais', async () => {
       const resposta = await request(app).post('/api/materiais').set('Cookie', cookieMasterA)
-        .send({ nome: '100%_algodão' });
+        .send({ nome: '100%_algodão', prazoUsoDias: 180, exigeTamanho: true });
       assert.equal(resposta.status, 201);
       materialPercentualId = resposta.body.material.id;
     });
@@ -435,7 +378,7 @@ describe('API HTTP de materiais e estoque com PostgreSQL real', () => {
     test('MASTER cadastra com categoria, código interno e descrição; os três voltam na resposta e na consulta; auditoria registra os três', async () => {
       const resposta = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send({
         nome: 'Luva nitrílica C2', categoria: 'EPI', codigoInterno: 'EPI-000245', descricao: 'Proteção química leve',
-        caNumero: '55771', caValidade: '2027-04-30', prazoUsoDias: 180, unidade: 'par', estoqueMinimo: 5,
+        prazoUsoDias: 180, exigeTamanho: true, unidade: 'par', estoqueMinimo: 5,
       });
       assert.equal(resposta.status, 201, JSON.stringify(resposta.body));
       assert.deepEqual(
@@ -451,7 +394,7 @@ describe('API HTTP de materiais e estoque com PostgreSQL real', () => {
 
     test('código interno duplicado na MESMA empresa (mesmo com caixa diferente): 409 MATERIAL_CODIGO_INTERNO_DUPLICADO, nada criado', async () => {
       const { rows: antes } = await pool.query('SELECT count(*)::int AS n FROM materiais WHERE empresa_id = $1', [empresaA]);
-      const r = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send({ nome: 'Outra luva', codigoInterno: 'epi-000245' });
+      const r = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send({ nome: 'Outra luva', codigoInterno: 'epi-000245', prazoUsoDias: 180, exigeTamanho: true });
       assert.deepEqual([r.status, r.body.codigo], [409, 'MATERIAL_CODIGO_INTERNO_DUPLICADO']);
       const { rows: depois } = await pool.query('SELECT count(*)::int AS n FROM materiais WHERE empresa_id = $1', [empresaA]);
       assert.equal(depois[0].n, antes[0].n);
@@ -460,7 +403,7 @@ describe('API HTTP de materiais e estoque com PostgreSQL real', () => {
     });
 
     test('empresa B pode usar o mesmo código interno da empresa A', async () => {
-      const r = await request(app).post('/api/materiais').set('Cookie', cookieMasterB).send({ nome: 'Luva da B', codigoInterno: 'EPI-000245' });
+      const r = await request(app).post('/api/materiais').set('Cookie', cookieMasterB).send({ nome: 'Luva da B', codigoInterno: 'EPI-000245', prazoUsoDias: 180, exigeTamanho: true });
       assert.equal(r.status, 201, JSON.stringify(r.body));
     });
 
@@ -472,9 +415,9 @@ describe('API HTTP de materiais e estoque com PostgreSQL real', () => {
     });
 
     test('null nos três campos: 201 com null, e vários materiais sem código não conflitam entre si', async () => {
-      const a = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send({ nome: 'Sem código A', categoria: null, codigoInterno: null, descricao: null });
-      const b = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send({ nome: 'Sem código B', codigoInterno: null });
-      const c = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send({ nome: 'Sem código C' });
+      const a = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send({ nome: 'Sem código A', categoria: null, codigoInterno: null, descricao: null, prazoUsoDias: 180, exigeTamanho: true });
+      const b = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send({ nome: 'Sem código B', codigoInterno: null, prazoUsoDias: 180, exigeTamanho: true });
+      const c = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send({ nome: 'Sem código C', prazoUsoDias: 180, exigeTamanho: true });
       assert.deepEqual([a.status, b.status, c.status], [201, 201, 201]);
       assert.deepEqual([a.body.material.categoria, a.body.material.codigoInterno, a.body.material.descricao], [null, null, null]);
       assert.deepEqual([b.body.material.codigoInterno, c.body.material.codigoInterno], [null, null]);
@@ -500,57 +443,270 @@ describe('API HTTP de materiais e estoque com PostgreSQL real', () => {
     });
   });
 
-  describe('Cenário 8 — concorrência: duas saídas simultâneas nunca produzem estoque negativo (correção pós-auditoria de 23/09/2026)', () => {
-    let materialConcorrenciaId;
+  describe('Cenário 9 — prazo de uso obrigatório no cadastro e na edição', () => {
+    const contarMateriais = async (empresaId) => (await pool.query('SELECT count(*)::int AS n FROM materiais WHERE empresa_id = $1', [empresaId])).rows[0].n;
+    let idPrazo;
 
-    test('prepara um material ativo com saldo inicial de 10 unidades', async () => {
-      const criar = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send({ nome: 'Luva de concorrência' });
-      assert.equal(criar.status, 201);
-      materialConcorrenciaId = criar.body.material.id;
-
-      const entrada = await request(app).post(`/api/materiais/${materialConcorrenciaId}/estoque/movimentar`)
-        .set('Cookie', cookieMasterA).send({ tamanho: 'M', tipo: 'ENTRADA', quantidade: 10 });
-      assert.equal(entrada.status, 200);
-      assert.equal(entrada.body.saldo.quantidade, 10);
+    test('cadastro sem prazo, com null, zero ou negativo: 400 VALIDACAO no campo prazoUsoDias, nada criado', async () => {
+      const antes = await contarMateriais(empresaA);
+      for (const [corpo, codigo] of [
+        [{ nome: 'Sem prazo', exigeTamanho: true }, 'CAMPO_OBRIGATORIO'],
+        [{ nome: 'Prazo nulo', prazoUsoDias: null, exigeTamanho: true }, 'TIPO_INVALIDO'],
+        [{ nome: 'Prazo zero', prazoUsoDias: 0, exigeTamanho: true }, 'TAMANHO_MINIMO'],
+        [{ nome: 'Prazo negativo', prazoUsoDias: -30, exigeTamanho: true }, 'TAMANHO_MINIMO'],
+      ]) {
+        const r = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send(corpo);
+        assert.deepEqual([r.status, r.body.codigo], [400, 'VALIDACAO'], JSON.stringify(corpo));
+        assert.deepEqual(r.body.detalhes.map((d) => [d.campo, d.codigo]), [['body.prazoUsoDias', codigo]]);
+      }
+      assert.equal(await contarMateriais(empresaA), antes);
     });
 
-    test('duas SAÍDAs simultâneas de 6 (total 12, saldo 10): exatamente uma sucede, a outra recusa por saldo insuficiente, saldo final nunca fica negativo', async () => {
-      const disparar = () => request(app).post(`/api/materiais/${materialConcorrenciaId}/estoque/movimentar`)
-        .set('Cookie', cookieMasterA).send({ tamanho: 'M', tipo: 'SAIDA', quantidade: 6 });
-
-      // As duas requisições HTTP partem juntas — o que serializa a decisão
-      // é o FOR UPDATE OF et em estoque-tamanho.repository.js: a segunda
-      // transação só lê o saldo depois que a primeira libera o lock no
-      // COMMIT/ROLLBACK, nunca as duas decidindo sobre o mesmo saldo
-      // "congelado" ao mesmo tempo.
-      const [respostaA, respostaB] = await Promise.all([disparar(), disparar()]);
-
-      const respostas = [respostaA, respostaB];
-      const sucessos = respostas.filter((r) => r.status === 200);
-      const recusas = respostas.filter((r) => r.status === 409);
-
-      assert.equal(sucessos.length, 1, 'exatamente uma das duas saídas concorrentes deve suceder');
-      assert.equal(recusas.length, 1, 'a outra deve ser recusada por saldo insuficiente');
-      assert.equal(recusas[0].body.codigo, 'ESTOQUE_INSUFICIENTE');
-
-      const conferencia = await request(app).get(`/api/materiais/${materialConcorrenciaId}/estoque`).set('Cookie', cookieMasterA);
-      const saldoFinal = conferencia.body.saldos.find((s) => s.tamanho === 'M').quantidade;
-      assert.equal(saldoFinal, 4, '10 - 6 da saída que sucedeu; nunca negativo');
-      assert.ok(saldoFinal >= 0, 'nunca negativo, sob nenhuma circunstância');
+    test('cadastro com prazo positivo: 201 com o prazo gravado', async () => {
+      const r = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send({ nome: 'Botina com prazo', prazoUsoDias: 180, exigeTamanho: true });
+      assert.equal(r.status, 201, JSON.stringify(r.body));
+      assert.equal(r.body.material.prazoUsoDias, 180);
+      idPrazo = r.body.material.id;
     });
 
-    test('duas ENTRADAs simultâneas: as duas sucedem e o saldo final soma as duas (sem perda por corrida)', async () => {
-      const disparar = () => request(app).post(`/api/materiais/${materialConcorrenciaId}/estoque/movimentar`)
-        .set('Cookie', cookieMasterA).send({ tamanho: 'G', tipo: 'ENTRADA', quantidade: 3 });
+    test('edição para mais ou para menos: 200, e o prazo novo passa a ser o do cadastro', async () => {
+      for (const prazoUsoDias of [240, 90]) {
+        const r = await request(app).patch(`/api/materiais/${idPrazo}`).set('Cookie', cookieMasterA).send({ prazoUsoDias });
+        assert.deepEqual([r.status, r.body.material.prazoUsoDias], [200, prazoUsoDias]);
+      }
+      assert.equal((await request(app).get(`/api/materiais/${idPrazo}`).set('Cookie', cookieMasterA)).body.material.prazoUsoDias, 90);
+    });
 
-      const [respostaA, respostaB] = await Promise.all([disparar(), disparar()]);
+    test('edição para null ou zero: 400, e o prazo atual não muda', async () => {
+      for (const [prazoUsoDias, codigo] of [[null, 'TIPO_INVALIDO'], [0, 'TAMANHO_MINIMO']]) {
+        const r = await request(app).patch(`/api/materiais/${idPrazo}`).set('Cookie', cookieMasterA).send({ prazoUsoDias });
+        assert.deepEqual([r.status, r.body.codigo], [400, 'VALIDACAO']);
+        assert.deepEqual(r.body.detalhes.map((d) => [d.campo, d.codigo]), [['body.prazoUsoDias', codigo]]);
+      }
+      assert.equal((await request(app).get(`/api/materiais/${idPrazo}`).set('Cookie', cookieMasterA)).body.material.prazoUsoDias, 90);
+    });
 
-      assert.equal(respostaA.status, 200);
-      assert.equal(respostaB.status, 200);
+    test('material legado sem prazo continua editável sem apagar nada; ao receber um prazo, passa a tê-lo', async () => {
+      const { rows } = await pool.query("INSERT INTO materiais (empresa_id, nome) VALUES ($1, 'Legado sem prazo') RETURNING id", [empresaA]);
+      const legado = rows[0].id;
+      const soNome = await request(app).patch(`/api/materiais/${legado}`).set('Cookie', cookieMasterA).send({ nome: 'Legado renomeado' });
+      assert.deepEqual([soNome.status, soNome.body.material.prazoUsoDias], [200, null]);
+      const comPrazo = await request(app).patch(`/api/materiais/${legado}`).set('Cookie', cookieMasterA).send({ prazoUsoDias: 365 });
+      assert.deepEqual([comPrazo.status, comPrazo.body.material.prazoUsoDias], [200, 365]);
+    });
 
-      const conferencia = await request(app).get(`/api/materiais/${materialConcorrenciaId}/estoque`).set('Cookie', cookieMasterA);
-      const saldoFinal = conferencia.body.saldos.find((s) => s.tamanho === 'G').quantidade;
-      assert.equal(saldoFinal, 6, 'as duas entradas de 3 somam 6 — nenhuma foi perdida por condição de corrida (a segunda cria a linha, ver estoque-tamanho.repository.js:criar, ou a trava serializa a segunda leitura)');
+    test('empresa B não altera o prazo de material da empresa A', async () => {
+      const r = await request(app).patch(`/api/materiais/${idPrazo}`).set('Cookie', cookieMasterB).send({ prazoUsoDias: 30 });
+      assert.equal(r.status, 404);
+      assert.equal((await request(app).get(`/api/materiais/${idPrazo}`).set('Cookie', cookieMasterA)).body.material.prazoUsoDias, 90);
+    });
+  });
+
+  describe('Cenário 10 — exigência de tamanho explícita no material', () => {
+    const cadastro = (extra) => ({ nome: `Material ${Math.random()}`, prazoUsoDias: 180, ...extra });
+    const criarMaterial = async (extra) => {
+      const r = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send(cadastro(extra));
+      assert.equal(r.status, 201, JSON.stringify(r.body));
+      return r.body.material;
+    };
+    const patch = (id, corpo, cookie = cookieMasterA) => request(app).patch(`/api/materiais/${id}`).set('Cookie', cookie).send(corpo);
+    const entrada = (id, extra = {}) => request(app).post(`/api/materiais/${id}/estoque/entradas`).set('Cookie', cookieMasterA)
+      .send({ quantidade: 5, caNumero: '12345', caValidade: '2030-12-31', chaveIdempotencia: crypto.randomUUID(), ...extra });
+    const baixa = (loteId, quantidade) => request(app).post(`/api/estoque/lotes/${loteId}/baixas`).set('Cookie', cookieMasterA)
+      .send({ quantidade, motivo: 'AJUSTE_INVENTARIO', chaveIdempotencia: crypto.randomUUID() });
+    const legado = async () => (await pool.query(
+      "INSERT INTO materiais (empresa_id, nome, prazo_uso_dias) VALUES ($1, 'Legado sem classificação', 180) RETURNING id",
+      [empresaA],
+    )).rows[0].id;
+    const lotesDoMaterial = async (id) => (await pool.query(
+      'SELECT id, tamanho, origem, quantidade_entrada, saldo FROM estoque_lotes WHERE material_id = $1 ORDER BY id', [id],
+    )).rows;
+
+    test('cadastro sem exigeTamanho, com null ou com texto: 400 VALIDACAO no campo exigeTamanho, nada criado', async () => {
+      const antes = (await pool.query('SELECT count(*)::int AS n FROM materiais WHERE empresa_id = $1', [empresaA])).rows[0].n;
+      for (const [extra, codigo] of [[{}, 'CAMPO_OBRIGATORIO'], [{ exigeTamanho: null }, 'TIPO_INVALIDO'], [{ exigeTamanho: 'sim' }, 'TIPO_INVALIDO']]) {
+        const r = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send(cadastro(extra));
+        assert.deepEqual([r.status, r.body.codigo], [400, 'VALIDACAO'], JSON.stringify(extra));
+        assert.deepEqual(r.body.detalhes.map((d) => [d.campo, d.codigo]), [['body.exigeTamanho', codigo]]);
+      }
+      assert.equal((await pool.query('SELECT count(*)::int AS n FROM materiais WHERE empresa_id = $1', [empresaA])).rows[0].n, antes);
+    });
+
+    test('cadastro com true e com false: 201, e o valor volta na resposta e na consulta', async () => {
+      for (const exigeTamanho of [true, false]) {
+        const material = await criarMaterial({ exigeTamanho });
+        assert.equal(material.exigeTamanho, exigeTamanho);
+        const consulta = await request(app).get(`/api/materiais/${material.id}`).set('Cookie', cookieMasterA);
+        assert.equal(consulta.body.material.exigeTamanho, exigeTamanho);
+      }
+    });
+
+    test('legado sem classificação continua editável em outro campo; a classificação fica null e a entrada fica bloqueada', async () => {
+      const id = await legado();
+      const r = await patch(id, { nome: 'Legado renomeado', prazoUsoDias: 200 });
+      assert.deepEqual([r.status, r.body.material.nome, r.body.material.exigeTamanho], [200, 'Legado renomeado', null]);
+      const bloqueada = await entrada(id, { tamanho: '40' });
+      assert.deepEqual([bloqueada.status, bloqueada.body.codigo], [409, 'MATERIAL_TAMANHO_NAO_CLASSIFICADO']);
+    });
+
+    test('primeira classificação do legado, para true ou para false, mesmo com saldo legado de qualquer tamanho; os lotes não mudam', async () => {
+      for (const exigeTamanho of [true, false]) {
+        const id = await legado();
+        await inserirLote(pool, { empresaId: empresaA, materialId: id, tamanho: 'Único', quantidade: 4 });
+        await inserirLote(pool, { empresaId: empresaA, materialId: id, tamanho: null, quantidade: 2 });
+        const lotesAntes = await lotesDoMaterial(id);
+        const r = await patch(id, { exigeTamanho });
+        assert.deepEqual([r.status, r.body.material.exigeTamanho], [200, exigeTamanho]);
+        assert.deepEqual(await lotesDoMaterial(id), lotesAntes, 'nenhum lote é reescrito');
+      }
+    });
+
+    test('mudança posterior com saldo positivo incompatível: 409 MATERIAL_TAMANHO_SALDO_INCOMPATIVEL nos dois sentidos', async () => {
+      const comTamanho = await criarMaterial({ exigeTamanho: true });
+      assert.equal((await entrada(comTamanho.id, { tamanho: '40' })).status, 201);
+      const semTamanho = await criarMaterial({ exigeTamanho: false });
+      assert.equal((await entrada(semTamanho.id)).status, 201);
+
+      for (const [id, novo] of [[comTamanho.id, false], [semTamanho.id, true]]) {
+        const r = await patch(id, { exigeTamanho: novo });
+        assert.deepEqual([r.status, r.body.codigo], [409, 'MATERIAL_TAMANHO_SALDO_INCOMPATIVEL']);
+        assert.equal((await request(app).get(`/api/materiais/${id}`).set('Cookie', cookieMasterA)).body.material.exigeTamanho, !novo);
+      }
+    });
+
+    test('mudança compatível funciona: sem saldo incompatível, de true para false e de volta; repetir o valor atual também', async () => {
+      const material = await criarMaterial({ exigeTamanho: true });
+      for (const exigeTamanho of [false, true, true]) {
+        const r = await patch(material.id, { exigeTamanho });
+        assert.deepEqual([r.status, r.body.material.exigeTamanho], [200, exigeTamanho]);
+      }
+    });
+
+    test('saldo zero histórico não impede a mudança; o lote antigo continua como estava', async () => {
+      const material = await criarMaterial({ exigeTamanho: true });
+      const criada = await entrada(material.id, { tamanho: '41', quantidade: 3 });
+      assert.equal(criada.status, 201);
+      assert.equal((await baixa(criada.body.lote.loteId, 3)).status, 201);
+      const r = await patch(material.id, { exigeTamanho: false });
+      assert.deepEqual([r.status, r.body.material.exigeTamanho], [200, false]);
+      assert.deepEqual(await lotesDoMaterial(material.id), [
+        { id: criada.body.lote.loteId, tamanho: '41', origem: 'ENTRADA', quantidade_entrada: 3, saldo: 0 },
+      ]);
+      assert.equal((await entrada(material.id)).status, 201, 'a partir de agora, entrada sem tamanho');
+    });
+
+    test('edição para null é 400; a empresa B não altera a classificação de material da A', async () => {
+      const material = await criarMaterial({ exigeTamanho: true });
+      const nulo = await patch(material.id, { exigeTamanho: null });
+      assert.deepEqual([nulo.status, nulo.body.detalhes.map((d) => [d.campo, d.codigo])], [400, [['body.exigeTamanho', 'TIPO_INVALIDO']]]);
+      assert.equal((await patch(material.id, { exigeTamanho: false }, cookieMasterB)).status, 404);
+      assert.equal((await request(app).get(`/api/materiais/${material.id}`).set('Cookie', cookieMasterA)).body.material.exigeTamanho, true);
+    });
+  });
+
+  describe('Cenário 11 — óculos de proteção com ou sem grau (migration 045)', () => {
+    const OCULOS = 'Óculos de proteção';
+    const cadastro = (extra) => ({ nome: `Material ${Math.random()}`, prazoUsoDias: 180, exigeTamanho: false, ...extra });
+    const criar = (extra) => request(app).post('/api/materiais').set('Cookie', cookieMasterA).send(cadastro(extra));
+    const patch = (id, corpo, cookie = cookieMasterA) => request(app).patch(`/api/materiais/${id}`).set('Cookie', cookie).send(corpo);
+    const consultar = async (id) => (await request(app).get(`/api/materiais/${id}`).set('Cookie', cookieMasterA)).body.material;
+    const noBanco = async (id) => (await pool.query('SELECT tipo, oculos_com_grau FROM materiais WHERE id = $1', [id])).rows[0];
+    const recusa = (r, codigo) => {
+      assert.deepEqual([r.status, r.body.codigo], [400, 'VALIDACAO'], JSON.stringify(r.body));
+      assert.deepEqual(r.body.detalhes.map((d) => [d.campo, d.codigo]), [['body.oculosComGrau', codigo]]);
+    };
+    const legado = async (tipo = OCULOS) => (await pool.query(
+      "INSERT INTO materiais (empresa_id, nome, tipo, prazo_uso_dias, exige_tamanho) VALUES ($1, 'Óculos legado', $2, 180, false) RETURNING id",
+      [empresaA, tipo],
+    )).rows[0].id;
+
+    test('cadastro de óculos com true e com false: 201; o valor volta no cadastro, na consulta, na lista e fica no banco', async () => {
+      for (const oculosComGrau of [true, false]) {
+        const r = await criar({ tipo: OCULOS, oculosComGrau });
+        assert.equal(r.status, 201, JSON.stringify(r.body));
+        assert.equal(r.body.material.oculosComGrau, oculosComGrau);
+        assert.equal((await consultar(r.body.material.id)).oculosComGrau, oculosComGrau);
+        const lista = await request(app).get('/api/materiais?limite=100').set('Cookie', cookieMasterA);
+        assert.equal(lista.body.materiais.find((m) => m.id === r.body.material.id).oculosComGrau, oculosComGrau);
+        assert.deepEqual(await noBanco(r.body.material.id), { tipo: OCULOS, oculos_com_grau: oculosComGrau });
+      }
+    });
+
+    test('cadastro de óculos sem a informação ou com null: 400 OCULOS_COM_GRAU_OBRIGATORIO, nada criado', async () => {
+      const antes = (await pool.query('SELECT count(*)::int AS n FROM materiais WHERE empresa_id = $1', [empresaA])).rows[0].n;
+      recusa(await criar({ tipo: OCULOS }), 'OCULOS_COM_GRAU_OBRIGATORIO');
+      recusa(await criar({ tipo: OCULOS, oculosComGrau: null }), 'OCULOS_COM_GRAU_OBRIGATORIO');
+      assert.equal((await pool.query('SELECT count(*)::int AS n FROM materiais WHERE empresa_id = $1', [empresaA])).rows[0].n, antes);
+    });
+
+    test('outro tipo: sem a informação grava NULL e a resposta traz oculosComGrau null; true ou false escondido é 400', async () => {
+      const r = await criar({ tipo: 'Luva' });
+      assert.equal(r.status, 201, JSON.stringify(r.body));
+      assert.equal(r.body.material.oculosComGrau, null);
+      assert.equal(Object.hasOwn(r.body.material, 'oculosComGrau'), true);
+      assert.deepEqual(await noBanco(r.body.material.id), { tipo: 'Luva', oculos_com_grau: null });
+      for (const oculosComGrau of [true, false]) recusa(await criar({ tipo: 'Luva', oculosComGrau }), 'OCULOS_COM_GRAU_NAO_SE_APLICA');
+      recusa(await criar({ nome: 'Óculos de proteção incolor', tipo: 'Luva', oculosComGrau: true }), 'OCULOS_COM_GRAU_NAO_SE_APLICA');
+    });
+
+    test('texto no lugar do booleano: 400 VALIDACAO de tipo, antes do serviço', async () => {
+      const r = await criar({ tipo: OCULOS, oculosComGrau: 'true' });
+      assert.deepEqual([r.status, r.body.codigo, r.body.detalhes.map((d) => [d.campo, d.codigo])], [400, 'VALIDACAO', [['body.oculosComGrau', 'TIPO_INVALIDO']]]);
+    });
+
+    test('legado de óculos com NULL: editar outro campo preserva o NULL; depois pode ser classificado como true ou false', async () => {
+      for (const oculosComGrau of [true, false]) {
+        const id = await legado();
+        const outro = await patch(id, { nome: 'Óculos legado renomeado' });
+        assert.deepEqual([outro.status, outro.body.material.oculosComGrau], [200, null]);
+        assert.deepEqual(await noBanco(id), { tipo: OCULOS, oculos_com_grau: null });
+        const classificado = await patch(id, { oculosComGrau });
+        assert.deepEqual([classificado.status, classificado.body.material.oculosComGrau], [200, oculosComGrau]);
+        assert.deepEqual(await noBanco(id), { tipo: OCULOS, oculos_com_grau: oculosComGrau });
+      }
+    });
+
+    test('óculos classificados: null explícito é 400 e o valor fica', async () => {
+      const r = await criar({ tipo: OCULOS, oculosComGrau: true });
+      recusa(await patch(r.body.material.id, { oculosComGrau: null }), 'OCULOS_COM_GRAU_OBRIGATORIO');
+      assert.equal((await noBanco(r.body.material.id)).oculos_com_grau, true);
+    });
+
+    test('óculos que passam a outro tipo: a informação vira NULL; mandar true junto é 400 e nada muda', async () => {
+      const r = await criar({ tipo: OCULOS, oculosComGrau: true });
+      recusa(await patch(r.body.material.id, { tipo: 'Luva', oculosComGrau: true }), 'OCULOS_COM_GRAU_NAO_SE_APLICA');
+      assert.deepEqual(await noBanco(r.body.material.id), { tipo: OCULOS, oculos_com_grau: true });
+      const troca = await patch(r.body.material.id, { tipo: 'Luva' });
+      assert.deepEqual([troca.status, troca.body.material.tipo, troca.body.material.oculosComGrau], [200, 'Luva', null]);
+      assert.deepEqual(await noBanco(r.body.material.id), { tipo: 'Luva', oculos_com_grau: null });
+    });
+
+    test('outro tipo que passa a óculos: sem classificar é 400 e nada muda; classificando, grava', async () => {
+      const r = await criar({ tipo: 'Luva' });
+      recusa(await patch(r.body.material.id, { tipo: OCULOS }), 'OCULOS_COM_GRAU_OBRIGATORIO');
+      assert.deepEqual(await noBanco(r.body.material.id), { tipo: 'Luva', oculos_com_grau: null });
+      const troca = await patch(r.body.material.id, { tipo: OCULOS, oculosComGrau: false });
+      assert.deepEqual([troca.status, troca.body.material.oculosComGrau], [200, false]);
+      assert.deepEqual(await noBanco(r.body.material.id), { tipo: OCULOS, oculos_com_grau: false });
+    });
+
+    test('a auditoria registra o valor anterior e o novo, sem nenhum dado do corpo além dos campos do material', async () => {
+      const id = await legado();
+      await patch(id, { oculosComGrau: true });
+      const { rows } = await pool.query(
+        `SELECT dados_anteriores ? 'oculosComGrau' AS tem_antes, dados_anteriores->'oculosComGrau' AS antes,
+                dados_novos ? 'oculosComGrau' AS tem_depois, dados_novos->'oculosComGrau' AS depois
+           FROM logs_auditoria WHERE empresa_id = $1 AND acao = 'MATERIAL_ALTERADO' AND referencia = $2`,
+        [empresaA, String(id)],
+      );
+      assert.deepEqual(rows, [{ tem_antes: true, antes: null, tem_depois: true, depois: true }]);
+    });
+
+    test('isolamento e permissão: outra empresa recebe 404; perfil sem editar recebe 403; nada muda', async () => {
+      const r = await criar({ tipo: OCULOS, oculosComGrau: false });
+      assert.equal((await patch(r.body.material.id, { oculosComGrau: true }, cookieMasterB)).status, 404);
+      assert.equal((await patch(r.body.material.id, { oculosComGrau: true }, cookieAdminSemPermissaoA)).status, 403);
+      assert.equal((await noBanco(r.body.material.id)).oculos_com_grau, false);
     });
   });
 });

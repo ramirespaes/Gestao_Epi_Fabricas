@@ -8,14 +8,14 @@ const { LIMITES, inteiroQuery, textoCurto } = require('./campos.schema');
  * leitura. A query é estrita: empresa e usuário vêm exclusivamente da
  * sessão, nunca do cliente.
  *
- * `validade` refere-se EXCLUSIVAMENTE à validade do CA do material
- * (materiais.ca_validade) — não à validade física do EPI nem à
- * periodicidade de troca pelo trabalhador. É informativa: CA vencido não
- * bloqueia o estoque.
+ * `validade` refere-se EXCLUSIVAMENTE à validade do CA dos lotes com saldo
+ * (estoque_lotes.ca_validade), a pior entre eles — não à validade física do
+ * EPI nem à periodicidade de troca pelo trabalhador. O saldo de lote com CA
+ * vencido ou sem CA fica bloqueado e não conta como disponível.
  */
 
-// Alerta de CA "próximo do vencimento": mesmo limiar do protótipo em
-// Validade do Estoque. Reutilizável pela Etapa E.
+// Alerta de CA "próximo do vencimento": o mesmo limiar da Validade de
+// estoque e do Dashboard.
 const DIAS_ALERTA_VALIDADE_CA = 60;
 const LIMITE_PADRAO = 50;
 const VALIDADES = Object.freeze(['ok', 'expiring', 'expired']);

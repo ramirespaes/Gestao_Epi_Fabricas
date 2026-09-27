@@ -53,6 +53,17 @@
       // revogar a própria concessão), decidida item a item.
       alterar: [],
     },
+    // Parte F: Novo usuário (convites) e Administração de usuários. As duas
+    // seguem a área usuarios, a autoridade GERENCIAR_USUARIOS; quais perfis
+    // a pessoa pode gerenciar vem do servidor em cada resposta.
+    newUser: {
+      abrir: [['usuarios', 'consultar']],
+      alterar: [['usuarios', 'alterar']],
+    },
+    userAdmin: {
+      abrir: [['usuarios', 'consultar']],
+      alterar: [['usuarios', 'alterar']],
+    },
     // Parte C2: primeira página por RECURSO (não por área administrativa).
     // Abrir = materials.visualizar; salvar = materials.criar. A entrada
     // inicial de estoque é a ação MOVIMENTAR_ESTOQUE, consultada à parte
@@ -86,6 +97,18 @@
       abrir: [{ recurso: 'employeeGroups', operacao: 'visualizar' }],
       alterar: [{ recurso: 'employeeGroups', operacao: 'editar' }],
     },
+    // E7/E9: Validade de estoque, com permissão própria (stockValidity). A
+    // baixa exige MOVIMENTAR_ESTOQUE, conferida pela página.
+    stockValidity: {
+      abrir: [{ recurso: 'stockValidity', operacao: 'visualizar' }],
+      alterar: [],
+    },
+    // E8/E9: Operações de estoque, histórico só de leitura, com permissão
+    // própria (operations).
+    operations: {
+      abrir: [{ recurso: 'operations', operacao: 'visualizar' }],
+      alterar: [],
+    },
     // Parte C6: dashboard (recurso legado `dashboard`), somente leitura.
     // Cada indicador ainda depende da permissão da fonte (decidida no servidor).
     dashboard: {
@@ -100,7 +123,7 @@
     CONTEXTO_DIVERGENTE: 'Sua sessão mudou (outra empresa, outro usuário ou outro perfil), provavelmente em outra aba. Nenhuma operação foi liberada. Recarregue a página.',
   };
 
-  var AREAS = ['gruposAcesso', 'permissoesGrupo', 'vinculosGrupo'];
+  var AREAS = ['gruposAcesso', 'permissoesGrupo', 'vinculosGrupo', 'usuarios'];
   var OPERACOES_RECURSO = ['visualizar', 'criar', 'editar', 'excluir'];
 
   function http() {

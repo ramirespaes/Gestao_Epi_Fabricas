@@ -28,7 +28,7 @@ const { gerarHashSenha } = require('../../src/security/password');
 
 const MIGRATIONS = [
   '000', '001', '002', '003', '004', '005', '025', '006', '007', '008', '009', '010', '011',
-  '012', '013', '014', '015', '016', '017', '018', '019', '020', '021', '022', '023', '039', '041',
+  '012', '013', '014', '015', '016', '017', '018', '019', '020', '021', '022', '023', '039', '041', '042', '044', '045',
 ];
 
 const SENHA = 'senha-correta-do-teste-bloco9-c5-2026';
@@ -163,8 +163,10 @@ describe('API da matriz GHE × EPI com PostgreSQL real', () => {
       assert.equal(r.status, 200);
       assert.deepEqual(r.body.grupo, { id: gheA, nome: 'Soldadores', ativo: true });
       assert.deepEqual(r.body.materiais.map((m) => [m.id, m.vinculado]), [[luva, false], [oculos, false]]);
-      assert.deepEqual(Object.keys(r.body.materiais[0]).sort(), ['ativo', 'caNumero', 'categoria', 'codigoInterno', 'id', 'nome', 'prazoUsoDias', 'tipo', 'unidade', 'vinculado']);
+      // E10: sem CA mestre. O CA real é o do lote, conhecido na entrega (Bloco 10).
+      assert.deepEqual(Object.keys(r.body.materiais[0]).sort(), ['ativo', 'categoria', 'codigoInterno', 'id', 'nome', 'prazoUsoDias', 'tipo', 'unidade', 'vinculado']);
       assert.equal(r.body.materiais[0].prazoUsoDias, 90);
+      assert.equal(JSON.stringify(r.body).includes('12345'), false, 'o CA legado do cadastro não sai na matriz');
     });
 
     test('incluir vínculo: 201, auditado, e a consulta passa a mostrá-lo vinculado', async () => {

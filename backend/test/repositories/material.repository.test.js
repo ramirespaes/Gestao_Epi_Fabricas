@@ -40,8 +40,6 @@ const linha = (extra = {}) => ({
   nome: 'Botina de segurança',
   tipo: 'Sapatão / Botina',
   fabricante: 'Bracol',
-  ca_numero: '38271',
-  ca_validade: '2026-08-15',
   prazo_uso_dias: 365,
   unidade: 'par',
   estoque_minimo: 5,
@@ -60,14 +58,14 @@ const mapeada = {
   nome: 'Botina de segurança',
   tipo: 'Sapatão / Botina',
   fabricante: 'Bracol',
-  caNumero: '38271',
-  caValidade: '2026-08-15',
   prazoUsoDias: 365,
   unidade: 'par',
   estoqueMinimo: 5,
   categoria: null,
   codigoInterno: null,
   descricao: null,
+  exigeTamanho: null,
+  oculosComGrau: null,
   ativo: true,
   criadoEm: new Date('2026-09-23T12:00:00Z'),
   atualizadoEm: new Date('2026-09-23T12:00:00Z'),
@@ -84,7 +82,7 @@ describe('criar', () => {
     assert.match(texto, /returning/i);
     const colunas = texto.slice(texto.indexOf('('), texto.search(/\bvalues\b/i));
     assert.doesNotMatch(colunas, /\bativo\b/i, 'ativo nasce do DEFAULT, não é enviado');
-    assert.deepEqual(valores, [EMPRESA_A, 'Botina de segurança', null, null, null, null, null, 'unidade', 0, null, null, null]);
+    assert.deepEqual(valores, [EMPRESA_A, 'Botina de segurança', null, null, null, 'unidade', 0, null, null, null, null, null]);
     assert.deepEqual(material, mapeada);
   });
 
@@ -96,16 +94,14 @@ describe('criar', () => {
       nome: 'Botina de segurança',
       tipo: 'Sapatão / Botina',
       fabricante: 'Bracol',
-      caNumero: '38271',
-      caValidade: '2026-08-15',
       prazoUsoDias: 365,
       unidade: 'par',
       estoqueMinimo: 5,
     });
 
     assert.deepEqual(executor.chamadas[0].valores, [
-      EMPRESA_A, 'Botina de segurança', 'Sapatão / Botina', 'Bracol', '38271', '2026-08-15', 365, 'par', 5,
-      null, null, null,
+      EMPRESA_A, 'Botina de segurança', 'Sapatão / Botina', 'Bracol', 365, 'par', 5,
+      null, null, null, null, null,
     ]);
   });
 
@@ -275,9 +271,11 @@ describe('atualizar', () => {
     assert.doesNotMatch(set, /\bid\s*=/i);
     assert.deepEqual(valores, [
       EMPRESA_A, 30, 'Botina reforçada',
-      false, null, false, null, false, null, false, null, false, null,
+      false, null, false, null, false, null,
       null, null, null,
       false, null, false, null, false, null,
+      null,
+      false, null,
     ]);
   });
 
@@ -288,9 +286,11 @@ describe('atualizar', () => {
 
     assert.deepEqual(executor.chamadas[0].valores, [
       EMPRESA_A, 30, null,
-      false, null, false, null, false, null, false, null, false, null,
+      false, null, false, null, false, null,
       null, null, null,
       false, null, false, null, false, null,
+      null,
+      false, null,
     ]);
   });
 
@@ -357,17 +357,93 @@ describe('categoria, codigo_interno e descricao — Parte C2 (migration 039)', (
   });
 });
 
-describe('validade do CA como data pura — ajuste pós-melhoria C2 (25/09/2026)', () => {
-  test('toda projeção formata ca_validade no PostgreSQL como AAAA-MM-DD: o valor nunca passa por Date do Node e não depende do fuso do servidor', async () => {
-    const executor = executorFalso([linha()]);
-    await criar(executor, { empresaId: EMPRESA_A, nome: 'Botina de segurança' });
+describe('material sem CA — E10 (o CA é do lote)', () => {
+  test('nenhuma consulta nem escrita do cadastro lê ou grava ca_numero e ca_validade', async () => {
+    const executor = executorFalso([linha({ ca_numero: '38271', ca_validade: '2026-08-15' })]);
+    const criado = await criar(executor, { empresaId: EMPRESA_A, nome: 'Botina de segurança', caNumero: '38271', caValidade: '2026-08-15' });
     await buscarPorId(executor, EMPRESA_A, 30);
     await buscarPorIdParaAtualizacao(executor, EMPRESA_A, 30);
     await listarPorEmpresa(executor, EMPRESA_A);
-    await atualizar(executor, EMPRESA_A, 30, { nome: 'Botina reforçada' });
+    await atualizar(executor, EMPRESA_A, 30, { nome: 'Botina reforçada', caNumero: '1', caNumeroInformado: true });
     assert.equal(executor.chamadas.length, 5);
-    for (const { texto } of executor.chamadas) {
-      assert.match(texto, /to_char\(ca_validade, 'YYYY-MM-DD'\) AS ca_validade/, texto);
+    for (const { texto, valores } of executor.chamadas) {
+      assert.doesNotMatch(texto, /ca_numero|ca_validade/, texto);
+      assert.equal(valores.includes('38271') || valores.includes('2026-08-15'), false);
     }
+    assert.deepEqual(['caNumero' in criado, 'caValidade' in criado], [false, false]);
+  });
+});
+
+describe('exige_tamanho — migration 044', () => {
+  test('a projeção lê exige_tamanho e o mapeamento devolve exigeTamanho, inclusive o null do legado', async () => {
+    for (const valor of [true, false, null]) {
+      const executor = executorFalso([linha({ exige_tamanho: valor })]);
+      const r = await buscarPorId(executor, EMPRESA_A, 30);
+      assert.match(executor.chamadas[0].texto, /\bexige_tamanho\b/);
+      assert.equal(r.exigeTamanho, valor);
+    }
+  });
+
+  test('criar grava exige_tamanho como parâmetro', async () => {
+    const executor = executorFalso([linha({ exige_tamanho: false })]);
+    await criar(executor, { empresaId: EMPRESA_A, nome: 'Óculos', prazoUsoDias: 180, exigeTamanho: false });
+    const { texto, valores } = executor.chamadas[0];
+    assert.match(texto.slice(0, texto.search(/\bvalues\b/i)), /\bexige_tamanho\b/);
+    assert.equal(valores[10], false);
+  });
+
+  test('atualizar: ausente mantém o valor atual; informado grava; nunca apaga para null', async () => {
+    const executor = executorFalso([linha()], [linha({ exige_tamanho: true })]);
+    await atualizar(executor, EMPRESA_A, 30, {});
+    await atualizar(executor, EMPRESA_A, 30, { exigeTamanho: true });
+    const [ausente, informado] = executor.chamadas;
+    assert.match(ausente.texto, /exige_tamanho\s*=\s*COALESCE\(\$19::boolean,\s*exige_tamanho\)/);
+    assert.deepEqual([ausente.valores.length, ausente.valores[18], informado.valores[18]], [21, null, true]);
+  });
+
+  test('recusa valor que não é booleano antes de consultar', async () => {
+    const executor = executorFalso([]);
+    await assert.rejects(() => criar(executor, { empresaId: EMPRESA_A, nome: 'Óculos', exigeTamanho: 'sim' }), /tamanho/);
+    await assert.rejects(() => atualizar(executor, EMPRESA_A, 30, { exigeTamanho: 1 }), /tamanho/);
+    assert.equal(executor.chamadas.length, 0);
+  });
+});
+
+describe('oculos_com_grau — migration 045', () => {
+  test('a projeção lê oculos_com_grau e o mapeamento devolve oculosComGrau, inclusive o null', async () => {
+    for (const valor of [true, false, null]) {
+      const executor = executorFalso([linha({ oculos_com_grau: valor })]);
+      const r = await buscarPorId(executor, EMPRESA_A, 30);
+      assert.match(executor.chamadas[0].texto, /\boculos_com_grau\b/);
+      assert.equal(r.oculosComGrau, valor);
+    }
+  });
+
+  test('criar grava oculos_com_grau como parâmetro; ausente vai null', async () => {
+    const executor = executorFalso([linha({ oculos_com_grau: true })], [linha()]);
+    await criar(executor, { empresaId: EMPRESA_A, nome: 'Óculos', tipo: 'Óculos de proteção', prazoUsoDias: 180, exigeTamanho: false, oculosComGrau: true });
+    await criar(executor, { empresaId: EMPRESA_A, nome: 'Luva', prazoUsoDias: 180, exigeTamanho: true });
+    const [comValor, semValor] = executor.chamadas;
+    assert.match(comValor.texto.slice(0, comValor.texto.search(/\bvalues\b/i)), /\boculos_com_grau\b/);
+    assert.deepEqual([comValor.valores.length, comValor.valores.at(-1), semValor.valores.at(-1)], [12, true, null]);
+  });
+
+  test('atualizar: não informado mantém o valor atual; informado grava true, false ou null', async () => {
+    const executor = executorFalso([linha()], [linha()], [linha()], [linha()]);
+    await atualizar(executor, EMPRESA_A, 30, {});
+    for (const valor of [true, false, null]) {
+      await atualizar(executor, EMPRESA_A, 30, { oculosComGrau: valor, oculosComGrauInformado: true });
+    }
+    const [ausente, ...informados] = executor.chamadas;
+    assert.match(ausente.texto, /oculos_com_grau\s*=\s*CASE WHEN \$20::boolean THEN \$21::boolean ELSE oculos_com_grau END/);
+    assert.deepEqual(ausente.valores.slice(19), [false, null]);
+    assert.deepEqual(informados.map((c) => c.valores.slice(19)), [[true, true], [true, false], [true, null]]);
+  });
+
+  test('recusa valor que não é booleano nem null antes de consultar', async () => {
+    const executor = executorFalso([]);
+    await assert.rejects(() => criar(executor, { empresaId: EMPRESA_A, nome: 'Óculos', oculosComGrau: 'sim' }), /grau/);
+    await assert.rejects(() => atualizar(executor, EMPRESA_A, 30, { oculosComGrau: 1, oculosComGrauInformado: true }), /grau/);
+    assert.equal(executor.chamadas.length, 0);
   });
 });

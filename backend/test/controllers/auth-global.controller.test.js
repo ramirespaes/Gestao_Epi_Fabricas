@@ -136,12 +136,12 @@ describe('me', () => {
 
 describe('selecionarEmpresa', () => {
   test('passa identidade/sessão global da SESSÃO e a anterior do cookie; emite só o cookie empresarial', async (t) => {
-    t.mock.method(autenticacao, 'buscarContextoSessao', async () => ({ empresa: { id: 4 }, sessao: { id: '800' } }));
+    t.mock.method(autenticacao, 'buscarContextoSessao', async () => ({ empresa: { id: 4 }, sessao: { id: '800' }, usuario: { id: 71, identidadeId: 9 } }));
     const selecionar = t.mock.method(contextoService, 'selecionar', async () => contextoEmpresarial);
     const r = await request(montar({ comSessaoGlobal: true })).post('/sel/3');
     assert.equal(r.status, 200);
     const args = selecionar.mock.calls[0].arguments[1];
-    assert.deepEqual([args.identidadeId, args.sessaoGlobalId, args.empresaId, args.sessaoEmpresarialAnterior], [9, '55', 3, { empresaId: 4, sessaoId: '800' }]);
+    assert.deepEqual([args.identidadeId, args.sessaoGlobalId, args.empresaId, args.sessaoEmpresarialAnterior], [9, '55', 3, { empresaId: 4, sessaoId: '800', usuarioId: 71, identidadeId: 9 }]);
     assert.deepEqual(nomes(r), [[C_EMPRESA, false]]);
     assert.deepEqual(Object.keys(r.body).sort(), ['empresa', 'status', 'usuario']);
   });

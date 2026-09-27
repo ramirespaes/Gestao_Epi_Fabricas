@@ -77,30 +77,45 @@
    *
    * 'self-service' (o totem) aparece no menu mas está FORA de
    * `allPages`: não é uma página sujeita a perfil, e por isso também não
-   * entra aqui.
+   * entra aqui. 'employeeGroups' (GHE e EPIs) não está em `allPages`, mas
+   * o servidor protege o GHE com ele desde a Etapa B, e por isso entra.
+   *
+   * SÓ O QUE TEM EFEITO (E9): `operacoes` lista as operações que alguma
+   * rota do servidor exige para aquela página — as mesmas do escopo de
+   * provisionamento do MASTER (backend/src/rbac/recursos.js). Só elas
+   * ganham seletor; as demais aparecem como "não se aplica". Página ainda
+   * não integrada, ou controlada por outra permissão, não tem seletor
+   * nenhum: mostra `nota`, o motivo.
    */
+  var V = 'podeVisualizar';
+  var C = 'podeCriar';
+  var E = 'podeEditar';
+  var SEM_EFEITO = 'Em integração: ainda sem efeito no sistema.';
+  // Parte F: as páginas de usuários seguem a autoridade GERENCIAR_USUARIOS.
+  var GERENCIAR_USUARIOS = 'Controlado pela autorização individual Gerenciar usuários (MASTER ou ADMINISTRADOR autorizado), não pelo grupo.';
   var RECURSOS = [
-    { id: 'dashboard', nome: 'Dashboard' },
-    { id: 'operations', nome: 'Operações' },
-    { id: 'reports', nome: 'Relatórios' },
-    { id: 'materials', nome: 'Materiais' },
-    { id: 'eligibilityRules', nome: 'Regras Função / Setor' },
-    { id: 'purchases', nome: 'Compras / Entradas' },
-    { id: 'stockValidity', nome: 'Validade do Estoque' },
-    { id: 'availableItems', nome: 'Itens Disponíveis' },
-    { id: 'deliveredItems', nome: 'EPIs Entregues' },
-    { id: 'epiFicha', nome: 'Ficha de EPI' },
-    { id: 'employeeHistory', nome: 'Histórico de Funcionários' },
-    { id: 'request', nome: 'Pedido de EPI' },
-    { id: 'supervisorApproval', nome: 'Aprovação do Supervisor' },
-    { id: 'stockRequests', nome: 'Sem Estoque' },
-    { id: 'importEmployees', nome: 'Importar Funcionários' },
-    { id: 'newUser', nome: 'Novo Usuário' },
-    { id: 'userAdmin', nome: 'Administração de Usuários' },
-    { id: 'emailsGestao', nome: 'Gestão de E-mails' },
-    { id: 'config', nome: 'Configurações' },
-    { id: 'support', nome: 'Suporte' },
-    { id: 'lgpd', nome: 'Privacidade / LGPD' },
+    { id: 'dashboard', nome: 'Dashboard', operacoes: [V] },
+    { id: 'operations', nome: 'Operações de estoque', operacoes: [V] },
+    { id: 'reports', nome: 'Relatórios', operacoes: [], nota: SEM_EFEITO },
+    { id: 'materials', nome: 'Gestão de estoque', operacoes: [V, C, E] },
+    { id: 'employeeGroups', nome: 'GHE e EPIs', operacoes: [V, C, E] },
+    { id: 'eligibilityRules', nome: 'Regras Função / Setor', operacoes: [], nota: SEM_EFEITO },
+    { id: 'purchases', nome: 'Compras / Entradas', operacoes: [], nota: SEM_EFEITO },
+    { id: 'stockValidity', nome: 'Validade de estoque', operacoes: [V] },
+    { id: 'availableItems', nome: 'Análise de estoque', operacoes: [V] },
+    { id: 'deliveredItems', nome: 'EPIs Entregues', operacoes: [], nota: SEM_EFEITO },
+    { id: 'epiFicha', nome: 'Ficha de EPI', operacoes: [], nota: SEM_EFEITO },
+    { id: 'employeeHistory', nome: 'Histórico de Funcionários', operacoes: [V, C, E] },
+    { id: 'request', nome: 'Pedido de EPI', operacoes: [], nota: SEM_EFEITO },
+    { id: 'supervisorApproval', nome: 'Aprovação do Supervisor', operacoes: [], nota: SEM_EFEITO },
+    { id: 'stockRequests', nome: 'Sem Estoque', operacoes: [], nota: SEM_EFEITO },
+    { id: 'importEmployees', nome: 'Importar Funcionários', operacoes: [], nota: 'Controlado pela permissão Criar de Histórico de Funcionários.' },
+    { id: 'newUser', nome: 'Novo Usuário', operacoes: [], nota: GERENCIAR_USUARIOS },
+    { id: 'userAdmin', nome: 'Administração de Usuários', operacoes: [], nota: GERENCIAR_USUARIOS },
+    { id: 'emailsGestao', nome: 'Gestão de E-mails', operacoes: [], nota: SEM_EFEITO },
+    { id: 'config', nome: 'Configurações', operacoes: [], nota: SEM_EFEITO },
+    { id: 'support', nome: 'Suporte', operacoes: [], nota: SEM_EFEITO },
+    { id: 'lgpd', nome: 'Privacidade / LGPD', operacoes: [], nota: SEM_EFEITO },
   ];
 
   function caminhoGrupo(grupoId) {
@@ -288,21 +303,36 @@
     },
 
     /**
-     * Uma linha por recurso, com as quatro operações independentes.
+     * Uma linha por recurso, com as operações independentes.
      * `configuracao` pode ser null (recurso ainda sem configuração
-     * nenhuma): as quatro nascem herdando, que é o estado real de quem
-     * não tem linha em grupo_permissoes_recurso.
+     * nenhuma): elas nascem herdando, que é o estado real de quem não tem
+     * linha em grupo_permissoes_recurso. Só as operações de
+     * `recurso.operacoes` ganham seletor (sem a lista, as quatro); lista
+     * vazia é página sem efeito: a linha mostra o motivo e não salva nada.
      */
     linhaRecurso: function (recurso, configuracao) {
       var atual = configuracao || {};
+      var aplicaveis = Array.isArray(recurso.operacoes) ? recurso.operacoes : OPERACOES;
+      var inicio = '<tr data-recurso="' + escaparHtml(recurso.id) + '">'
+        + '<td><strong>' + escaparHtml(recurso.nome) + '</strong>'
+        + '<div style="font-size:11px;color:var(--on-surface-variant)">' + escaparHtml(recurso.id) + '</div></td>';
+
+      if (aplicaveis.length === 0) {
+        return inicio
+          + '<td colspan="' + (OPERACOES.length + 1) + '" class="sem-efeito" style="font-size:12px;color:var(--on-surface-variant)">'
+          + escaparHtml(recurso.nota || SEM_EFEITO) + '</td>'
+          + '</tr>';
+      }
+
       var celulas = OPERACOES.map(function (operacao) {
+        if (aplicaveis.indexOf(operacao) === -1) {
+          return '<td class="nao-se-aplica" title="Não se aplica a esta página" style="text-align:center;color:var(--on-surface-variant)">—</td>';
+        }
         var valor = Object.prototype.hasOwnProperty.call(atual, operacao) ? atual[operacao] : null;
         return '<td>' + render.seletor(operacao, valor, false) + '</td>';
       }).join('');
 
-      return '<tr data-recurso="' + escaparHtml(recurso.id) + '">'
-        + '<td><strong>' + escaparHtml(recurso.nome) + '</strong>'
-        + '<div style="font-size:11px;color:var(--on-surface-variant)">' + escaparHtml(recurso.id) + '</div></td>'
+      return inicio
         + celulas
         + '<td><button class="mini-btn" data-acao="salvar-recurso" data-recurso="' + escaparHtml(recurso.id) + '">Salvar</button></td>'
         + '</tr>';
@@ -653,7 +683,13 @@
     // RECURSOS devolve também objetos novos, para que nem os itens
     // sejam compartilhados.
     get OPERACOES() { return OPERACOES.slice(); },
-    get RECURSOS() { return RECURSOS.map(function (r) { return { id: r.id, nome: r.nome }; }); },
+    get RECURSOS() {
+      return RECURSOS.map(function (r) {
+        var copia = { id: r.id, nome: r.nome, operacoes: r.operacoes.slice() };
+        if (r.nota) copia.nota = r.nota;
+        return copia;
+      });
+    },
   };
 
   if (typeof module !== 'undefined' && module.exports) {

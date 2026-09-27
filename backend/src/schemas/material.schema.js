@@ -2,7 +2,7 @@
 
 const { z } = require('zod');
 const {
-  idParametro, booleanoQuery, paginacaoQuery, textoCurto, dataCalendario, LIMITES,
+  idParametro, booleanoQuery, paginacaoQuery, textoCurto, LIMITES,
 } = require('./campos.schema');
 
 /**
@@ -17,18 +17,27 @@ const {
  * nenhum: inativar e reativar têm rotas próprias, mesmo padrão de
  * grupo-acesso.schema.js.
  *
- * Campos opcionais (`tipo`, `fabricante`, `caNumero`, `caValidade`,
- * `prazoUsoDias`) aceitam `null` explícito, que o serviço interpreta como
- * "limpar o campo"; ausente significa "não mexer" em alterar() — mesmo
- * contrato de `descricao` em grupo-acesso.schema.js.
+ * Campos opcionais (`tipo`, `fabricante`) aceitam `null` explícito, que o
+ * serviço interpreta como "limpar o campo"; ausente significa "não mexer"
+ * em alterar() — mesmo contrato de `descricao` em grupo-acesso.schema.js.
+ *
+ * O material não tem CA (E10): o CA e a validade são do lote, na entrada.
+ * `caNumero` e `caValidade` ficam fora dos dois corpos e recebem 400; as
+ * colunas antigas continuam no banco só como histórico.
+ *
+ * O prazo de uso é obrigatório no cadastro e, na edição, pode mudar mas
+ * não pode ser apagado: não aceita `null`. `exigeTamanho` segue a mesma
+ * regra: o material novo sempre diz se usa tamanho.
+ *
+ * `oculosComGrau` aceita true, false ou null. Se ele é obrigatório ou
+ * proibido depende do tipo do material, e quem decide isso é o serviço.
  */
 
-// materiais.nome VARCHAR(150), tipo/fabricante VARCHAR(100), ca_numero VARCHAR(20),
-// unidade VARCHAR(20) — mesmos tetos da migration 007.
+// materiais.nome VARCHAR(150), tipo/fabricante VARCHAR(100), unidade
+// VARCHAR(20) — mesmos tetos da migration 007.
 const NOME_MAXIMO = 150;
 const TIPO_MAXIMO = 100;
 const FABRICANTE_MAXIMO = 100;
-const CA_NUMERO_MAXIMO = 20;
 const UNIDADE_MAXIMA = 20;
 const BUSCA_MAXIMA = 100;
 // Parte C2 (migration 039): categoria/codigo_interno VARCHAR(30), descricao
@@ -40,22 +49,11 @@ const DESCRICAO_MAXIMA = 500;
 const nome = textoCurto(NOME_MAXIMO, 'NOME_INVALIDO', 'Nome do material inválido');
 const tipo = textoCurto(TIPO_MAXIMO, 'TIPO_INVALIDO', 'Tipo inválido');
 const fabricante = textoCurto(FABRICANTE_MAXIMO, 'FABRICANTE_INVALIDO', 'Fabricante inválido');
-const caNumero = textoCurto(CA_NUMERO_MAXIMO, 'CA_NUMERO_INVALIDO', 'Número do CA inválido');
 const unidade = textoCurto(UNIDADE_MAXIMA, 'UNIDADE_INVALIDA', 'Unidade inválida');
 const busca = textoCurto(BUSCA_MAXIMA, 'BUSCA_INVALIDA', 'Termo de busca inválido');
 const categoria = textoCurto(CATEGORIA_MAXIMA, 'CATEGORIA_INVALIDA', 'Categoria inválida');
 const codigoInterno = textoCurto(CODIGO_INTERNO_MAXIMO, 'CODIGO_INTERNO_INVALIDO', 'Código interno inválido');
 const descricao = textoCurto(DESCRICAO_MAXIMA, 'DESCRICAO_INVALIDA', 'Descrição inválida');
-
-/**
- * Data no formato ISO (YYYY-MM-DD) com verificação estrita de calendário —
- * mês 1-12, dia dentro do teto real do mês, bissexto pela regra completa,
- * ano mínimo 1 (auditorias v1 e v2 da Etapa A). A regra vive em
- * campos.schema.js (`dataCalendario`) desde a Etapa B, quando
- * `dataNascimento` de funcionário passou a precisar dela; aqui só se fixa o
- * código de erro deste campo, preservado: CA_VALIDADE_INVALIDA.
- */
-const caValidade = dataCalendario('CA_VALIDADE_INVALIDA', 'Data de validade do CA inválida');
 
 // prazo_uso_dias e estoque_minimo: number nativo do Zod já produz
 // TAMANHO_MINIMO/TIPO_INVALIDO/CAMPO_OBRIGATORIO em validar.js sem
@@ -65,6 +63,8 @@ const caValidade = dataCalendario('CA_VALIDADE_INVALIDA', 'Data de validade do C
 // de um 400 de validação (correção pós-auditoria de 23/09/2026).
 const prazoUsoDias = z.number().int().positive().max(LIMITES.INTEGER_MAXIMO);
 const estoqueMinimo = z.number().int().nonnegative().max(LIMITES.INTEGER_MAXIMO);
+const exigeTamanho = z.boolean();
+const oculosComGrau = z.boolean().nullable();
 
 const paramsComId = z.strictObject({ id: idParametro });
 
@@ -76,9 +76,9 @@ const criar = {
     descricao: descricao.nullable().optional(),
     tipo: tipo.nullable().optional(),
     fabricante: fabricante.nullable().optional(),
-    caNumero: caNumero.nullable().optional(),
-    caValidade: caValidade.nullable().optional(),
-    prazoUsoDias: prazoUsoDias.nullable().optional(),
+    prazoUsoDias,
+    exigeTamanho,
+    oculosComGrau: oculosComGrau.optional(),
     unidade: unidade.optional(),
     estoqueMinimo: estoqueMinimo.optional(),
   }),
@@ -109,9 +109,9 @@ const alterar = {
     descricao: descricao.nullable().optional(),
     tipo: tipo.nullable().optional(),
     fabricante: fabricante.nullable().optional(),
-    caNumero: caNumero.nullable().optional(),
-    caValidade: caValidade.nullable().optional(),
-    prazoUsoDias: prazoUsoDias.nullable().optional(),
+    prazoUsoDias: prazoUsoDias.optional(),
+    exigeTamanho: exigeTamanho.optional(),
+    oculosComGrau: oculosComGrau.optional(),
     estoqueMinimo: estoqueMinimo.optional(),
   }),
 };

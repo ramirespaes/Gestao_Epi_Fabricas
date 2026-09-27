@@ -6,6 +6,7 @@ const express = require('express');
 const http = require('node:http');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { inserirLote, baixarLote, somarDias } = require('./helpers/estoque-lotes');
 const { criarAuthController } = require('../../src/controllers/auth.controller');
 const { criarAuthRoutes } = require('../../src/routes/auth.routes');
 const { criarAuthGlobalController } = require('../../src/controllers/auth-global.controller');
@@ -38,10 +39,13 @@ const EpiItens = require('../../../frontend/js/itens-disponiveis');
  * Cliente (login global) → sessão empresarial (C0) → permissões efetivas
  * (C1, recurso availableItems) → módulo real da página
  * (frontend/js/itens-disponiveis.js) contra o servidor HTTP real, cadeia
- * /api de produção, PostgreSQL real em schema temporário (000–039).
+ * /api de produção, PostgreSQL real em schema temporário (todas as migrations).
+ * O saldo vem dos lotes, com a data operacional fixada em 30/09/2026.
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 40 }, (_, i) => String(i).padStart(3, '0'));
+const TODAS_AS_MIGRATIONS = Array.from({ length: 46 }, (_, i) => String(i).padStart(3, '0'));
+const HOJE = '2026-09-30';
+const RELOGIO = () => new Date('2026-09-30T15:00:00Z');
 const SENHA = 'senha-forte-da-parte-c3-2026';
 const EMAILS = {
   master: 'master.itens.c3@exemplo-cliente.com.br',       // MASTER em A (provisionado: availableItems visualizar)
@@ -125,17 +129,21 @@ describe('C3 — Itens Disponíveis pela página integrada (PostgreSQL real)', (
     await q("INSERT INTO usuario_permissoes_recurso (empresa_id, usuario_id, recurso, pode_visualizar, concedido_por) VALUES ($1, $2, 'availableItems', true, $3)", [empresa.A, usuario.usuario, usuario.master]);
 
     // Empresa A: 60 materiais ativos × 2 tamanhos = 120 linhas (exportação com mais de uma página de 100),
-    // mais um material com CA vencido e um inativo. Empresa B: um material.
+    // mais um material com CA vencido e um inativo. Empresa B: um material. O tamanho G de cada luva
+    // é um lote que foi baixado por inteiro.
+    const valido = somarDias(HOJE, 200);
     for (let n = 1; n <= 60; n += 1) {
-      const id = (await q("INSERT INTO materiais (empresa_id, nome, tipo, categoria, unidade, estoque_minimo, ca_validade) VALUES ($1, $2, 'Luva', 'EPI', 'par', 5, CURRENT_DATE + 200) RETURNING id", [empresa.A, `Luva ${String(n).padStart(3, '0')}`])).rows[0].id;
-      await q("INSERT INTO estoque_tamanhos (material_id, tamanho, quantidade) VALUES ($1, 'M', $2), ($1, 'G', 0)", [id, n]);
+      const id = (await q("INSERT INTO materiais (empresa_id, nome, tipo, categoria, unidade, estoque_minimo) VALUES ($1, $2, 'Luva', 'EPI', 'par', 5) RETURNING id", [empresa.A, `Luva ${String(n).padStart(3, '0')}`])).rows[0].id;
+      await inserirLote(pool, { empresaId: empresa.A, materialId: id, tamanho: 'M', quantidade: n, ca: '12345', validade: valido });
+      const g = await inserirLote(pool, { empresaId: empresa.A, materialId: id, tamanho: 'G', quantidade: 1, ca: '12345', validade: valido });
+      await baixarLote(pool, { empresaId: empresa.A, loteId: g, quantidade: 1, usuarioId: usuario.master });
     }
-    const vencido = (await q("INSERT INTO materiais (empresa_id, nome, tipo, categoria, codigo_interno, unidade, estoque_minimo, ca_validade) VALUES ($1, 'Capacete vencido', 'Capacete', 'EPI', 'CAP-1', 'unidade', 1, CURRENT_DATE - 1) RETURNING id", [empresa.A])).rows[0].id;
-    await q("INSERT INTO estoque_tamanhos (material_id, tamanho, quantidade) VALUES ($1, 'Único', 7)", [vencido]);
+    const vencido = (await q("INSERT INTO materiais (empresa_id, nome, tipo, categoria, codigo_interno, unidade, estoque_minimo) VALUES ($1, 'Capacete vencido', 'Capacete', 'EPI', 'CAP-1', 'unidade', 1) RETURNING id", [empresa.A])).rows[0].id;
+    await inserirLote(pool, { empresaId: empresa.A, materialId: vencido, tamanho: 'Único', quantidade: 7, ca: '67890', validade: somarDias(HOJE, -1) });
     const inativo = (await q("INSERT INTO materiais (empresa_id, nome, tipo, categoria, unidade, ativo) VALUES ($1, 'Inativo', 'Luva', 'EPI', 'par', false) RETURNING id", [empresa.A])).rows[0].id;
-    await q("INSERT INTO estoque_tamanhos (material_id, tamanho, quantidade) VALUES ($1, 'P', 99)", [inativo]);
+    await inserirLote(pool, { empresaId: empresa.A, materialId: inativo, tamanho: 'P', quantidade: 99, ca: '12345', validade: valido });
     const b = (await q("INSERT INTO materiais (empresa_id, nome, tipo, categoria, unidade) VALUES ($1, 'Material B', 'Luva', 'EPI', 'par') RETURNING id", [empresa.B])).rows[0].id;
-    await q("INSERT INTO estoque_tamanhos (material_id, tamanho, quantidade) VALUES ($1, 'M', 55)", [b]);
+    await inserirLote(pool, { empresaId: empresa.B, materialId: b, tamanho: 'M', quantidade: 55, ca: '12345', validade: valido });
 
     const semLimite = () => criarLimitador({ limite: 100000, janelaSegundos: 60 });
     const exigirSessao = criarExigirSessao({ pool });
@@ -147,7 +155,7 @@ describe('C3 — Itens Disponíveis pela página integrada (PostgreSQL real)', (
       criarAuthRoutes({ controller: criarAuthController({ pool }), limitador: semLimite(), exigirSessao }),
       criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }) }),
       criarMaterialRoutes({ controller: criarMaterialController({ pool }), exigirSessao, pool }),
-      criarItensDisponiveisRoutes({ controller: criarItensDisponiveisController({ pool }), exigirSessao, pool }),
+      criarItensDisponiveisRoutes({ controller: criarItensDisponiveisController({ pool, relogio: RELOGIO }), exigirSessao, pool }),
     );
     app.use(notFoundHandler);
     app.use(errorHandler);
@@ -177,10 +185,10 @@ describe('C3 — Itens Disponíveis pela página integrada (PostgreSQL real)', (
     assert.equal(pagina.nav.chamadas.some((c) => /empresaId|usuarioId/.test(c)), false);
   });
 
-  test('filtro de validade do CA e combinação de filtros reais', async () => {
+  test('filtro de validade do CA e combinação de filtros reais; o saldo com CA vencido fica bloqueado', async () => {
     await abrirPagina(EMAILS.master);
     const vencidos = await EpiItens.acoes.listar({ validade: 'expired' });
-    assert.deepEqual(vencidos.dados.itens.map((i) => [i.material, i.tamanho, i.disponivel, i.validade]), [['Capacete vencido', 'Único', 7, 'expired']]);
+    assert.deepEqual(vencidos.dados.itens.map((i) => [i.material, i.tamanho, i.saldo, i.bloqueado, i.disponivel, i.validade]), [['Capacete vencido', 'Único', 7, 7, 0, 'expired']]);
     const combinados = await EpiItens.acoes.listar({ tipo: 'Luva', tamanho: 'G' });
     assert.equal(combinados.dados.total, 60);
     assert.ok(combinados.dados.itens.every((i) => i.saldo === 0 && i.disponivel === 0));
@@ -195,7 +203,7 @@ describe('C3 — Itens Disponíveis pela página integrada (PostgreSQL real)', (
     assert.equal(linhas.length, 122);
     assert.equal(linhas[0], '"Categoria";"Tipo";"Material";"Tamanho";"Quantidade disponível";"Unidade";"Status"');
     assert.ok(linhas.slice(1).every((l) => l.split('";"').length === 7));
-    assert.ok(linhas.includes('"EPI";"Capacete";"Capacete vencido (CAP-1)";"Único";"7";"Unidade";"Disponível"'));
+    assert.ok(linhas.includes('"EPI";"Capacete";"Capacete vencido (CAP-1)";"Único";"0";"Unidade";"Sem estoque"'));
   });
 
   test('permissão independente: supervisor com materials SEM availableItems não abre e a API recusa (403, mensagem própria)', async () => {

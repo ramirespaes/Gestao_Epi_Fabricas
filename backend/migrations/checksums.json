@@ -42,6 +42,12 @@
     "038_create_triggers_revogar_sessoes_inativacao.sql": "47e1c97f178bc6f1ce1808c6ebb767b0f016d5655a55178299d474e8d1243ce5",
     "039_alter_materiais_add_categoria_codigo_interno_descricao.sql": "940f4e814d5d074a5039b7c54094648de8dbe3a32b63cd5779f4bbb057cc7017",
     "040_alter_funcionarios_add_data_admissao.sql": "7968b1f4b0bbba982740ecfff2f1c9aa270db0d996709e1034a5878464cc122a",
-    "041_create_ghe_materiais.sql": "26950c40b314046c5b6238eb8a3054b25f7f74302cf642693e393ade49e99c0a"
+    "041_create_ghe_materiais.sql": "26950c40b314046c5b6238eb8a3054b25f7f74302cf642693e393ade49e99c0a",
+    "042_create_estoque_lotes_operacoes.sql": "6ece869b7d2ec0d86ddf8837910fd65f42614dcf815f23eeb5ec76d44c74f8fd",
+    "043_migrate_estoque_tamanhos_saldo_inicial.sql": "0ab992ace7abe149bd9bd5292fee6b1b23f321cd5623845910f1e377f1f36af8",
+    "044_alter_materiais_add_exige_tamanho.sql": "ce45c7b507484ce8cd29538b09b4ec23348af8f4832ca14fc09c53ae8223b5db",
+    "045_alter_materiais_add_oculos_com_grau.sql": "2440d422ddb5c2d135c49496ed2fb8bd75710ab7995a7addbb1236e9fc1f283b",
+    "046_create_convites_usuario.sql": "37833d1d57556920a6ab95b3f261ddb6817114e9fed68f726e7f982f04ce783e",
+    "047_alter_acoes_gerenciar_usuarios_obrigatoria.sql": "29b0ac920e5b21245bdd3c9ae31ff69830e655a7822a77cdbff4c22a21ff960f"
   }
 }

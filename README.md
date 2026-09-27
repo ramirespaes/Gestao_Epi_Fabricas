@@ -4,14 +4,14 @@ Sistema para gestão de Equipamentos de Proteção Individual (EPIs), com fronte
 
 ## Estado do projeto
 
-O desenvolvimento é organizado em blocos. Situação em 26/09/2026:
+O desenvolvimento é organizado em blocos. Situação em 27/09/2026:
 
 | Bloco | Situação |
 |---|---|
 | 1 a 7 — migrations de sessões, auditoria e tentativas de login (`013` a `015`), dependências, fundação da autenticação, validação de entrada e segurança HTTP | Concluídos e incorporados à `main` |
 | 8 — Autenticação real e RBAC | **Concluído** e incorporado à `main` (PRs #13 a #18). Encerramento formal na seção seguinte |
 | Autenticação global, Painel Privado, Portal do Cliente e página institucional (planejamento próprio) | Concluídos e incorporados à `main` (PRs #20 a #23 e #26) |
-| 9 — Integração das páginas ao backend real | **Em andamento.** Concluídas: Etapas A e B (backend de materiais, estoque, funcionários e GHE, PR #19), Etapa C, partes C0 a C7 (as partes C4 e C5 executaram a Etapa D), e a rodada de segurança S1/S2/S3 (PR #29). **Etapas E e F ainda não concluídas** |
+| 9 — Integração das páginas ao backend real | Etapas A e B (backend de materiais, estoque, funcionários e GHE, PR #19), Etapa C, partes C0 a C7 (as partes C4 e C5 executaram a Etapa D), e a rodada de segurança S1/S2/S3 (PR #29) na `main`. **Etapas E e F concluídas na branch `feature/bloco-09-etapa-e`**, aguardando revisão e incorporação à `main` (ver "Bloco 9, Etapas E e F") |
 
 ### Encerramento do Bloco 8
 
@@ -32,7 +32,7 @@ Os itens abaixo ficaram fora do Bloco 8 e têm destino formal. Não são pendên
 | Item | Destino |
 |---|---|
 | Cadastro de empresas | Entregue pela autenticação global (Painel Privado, PR #22) |
-| Administração de usuários da empresa | Bloco 9, Etapa F (não concluída) |
+| Administração de usuários da empresa | Entregue no Bloco 9, parte F: convite, edição de nome e tipo de conta, inativação e reativação |
 | Troca de senha | Bloco 11, junto com a recuperação de senha e o restante do ciclo de vida da senha, antes da liberação comercial |
 | Recuperação de senha ("Esqueci minha senha") | Bloco 11, separada da autenticação básica já entregue, antes da liberação comercial |
 | Integração contínua (GitHub Actions) | Requisito obrigatório antes do deploy de homologação e testes na AWS |
@@ -72,7 +72,7 @@ A estrutura interna utiliza caminhos relativos entre `index.html`, `pages/`, `cs
 
 ### Frontend legado
 
-Das 22 páginas originais em `frontend/pages/`, 5 já foram ligadas ao backend real no Bloco 9 (`materials.html`, `available-items.html`, `employee-history.html`, `import-employees.html` e `dashboard.html`). As outras 17 continuam no repositório como protótipo, com `frontend/js/db-api.js` (simulador de API em `localStorage`) e `frontend/js/main.js` (login e RBAC simulados), usando somente dados inequivocamente sintéticos. Elas não entram no pacote publicado (ver "Publicação do frontend do cliente") e serão integradas no Bloco 9 (Etapas E e F) e nos blocos seguintes.
+Das 22 páginas originais em `frontend/pages/`, 9 já foram ligadas ao backend real no Bloco 9 (`materials.html`, `available-items.html`, `employee-history.html`, `import-employees.html`, `dashboard.html`, `stock-validity.html`, `operations.html`, `new-user.html` e `user-admin.html`); a página `employee-groups.html` (GHE e EPIs) foi criada no próprio Bloco 9. As outras 13 continuam no repositório como protótipo, com `frontend/js/db-api.js` (simulador de API em `localStorage`) e `frontend/js/main.js` (login e RBAC simulados), usando somente dados inequivocamente sintéticos. Elas não entram no pacote publicado (ver "Publicação do frontend do cliente") e serão integradas nos blocos seguintes.
 
 ### Frontend administrativo HTTP (Incremento 8)
 
@@ -93,6 +93,16 @@ Seis módulos JavaScript em `frontend/js/` dão suporte a essas páginas: `api-h
 
 **Desde a Parte C2**, a página original `materials.html` (Cadastro de Materiais e EPIs) está ligada ao backend real, com a interface preservada: sessão do Portal (C0), permissões efetivas (C1: abrir exige `materials.visualizar`, salvar exige `materials.criar`) e os contratos de materiais e estoque do Bloco 9, Etapa A. O módulo `js/materiais.js` monta o corpo do `POST /api/materiais` a partir do formulário (prazo de uso convertido para dias no cliente, 1 mês = 30 e 1 ano = 365, com o valor exibido antes de salvar; tipo "Outro" usa o campo livre; campos vazios são omitidos e gravados como `NULL`). "Quantidade comprada" não é atributo do material: quando preenchida, gera uma **entrada de estoque separada** (`POST /api/materiais/:id/estoque/movimentar`, ação `MOVIMENTAR_ESTOQUE`), só depois do cadastro e só se o perfil tiver a ação; recusa da entrada não desfaz o cadastro e é informada explicitamente. A grade de tamanhos mostra o saldo real do material escolhido (sem estoque / abaixo do mínimo / com saldo / falha na consulta). O anexo do documento do CA continua visível e desabilitado ("em desenvolvimento"). Os campos Categoria, Código interno e Descrição passaram a existir no banco pela migration `039` (código interno único por empresa, ignorando maiúsculas). A página usa `js/pagina-base.js` (menu móvel e aviso, copiados de `main.js`) e não carrega `db-api.js`, `main.js` nem a biblioteca de planilhas; o menu lateral mantém a estrutura visual, mas os itens ainda não integrados ficam sem link, com a etiqueta "Em integração".
 
+### Bloco 9, Etapas E e F
+
+Desde a Etapa E o estoque é controlado **por lote** (migrations `042` a `045`): cada entrada cria um lote com CA, validade e tamanho quando o material exige (`POST /api/materiais/:id/estoque/entradas`), a baixa é feita no lote (`POST /api/estoque/lotes/:id/baixas`) e toda operação fica registrada em `estoque_operacoes`, sem edição nem exclusão. O saldo anterior à Etapa E virou saldo inicial por lote. A rota antiga `POST /api/materiais/:id/estoque/movimentar` citada acima foi removida na E10, e o CA saiu do cadastro mestre do material. As páginas Validade de estoque (`stock-validity.html`, recurso `stockValidity`) e Operações de estoque (`operations.html`, recurso `operations`) têm permissão própria, provisionada para o MASTER pelo script `npm run db:provisionar:master`. O menu segue a mesma organização em todas as páginas, e as páginas integradas acompanham o tema claro ou escuro do sistema operacional (`js/tema.js`).
+
+A parte F tornou reais as páginas de usuários da empresa:
+
+- **Novo Usuário** (`new-user.html`): o cadastro é um **convite** (migration `046`). Quem administra informa nome, e-mail e tipo de conta; a pessoa aceita por um link com token opaco (só o SHA-256 fica no banco), de uso único, com prazo e cooldown contra tentativas de senha. Se o e-mail já tiver conta no SafeWork, a identidade global é reaproveitada e só nasce o vínculo com esta empresa. Enquanto não houver envio de e-mail, o link volta para quem convidou, fora de produção.
+- **Administração de Usuários** (`user-admin.html`): lista paginada da empresa da sessão, edição de nome e tipo de conta, inativação lógica (as sessões daquele vínculo nesta empresa são revogadas; as outras empresas da mesma pessoa não mudam) e reativação do mesmo vínculo. O e-mail não é editado aqui, porque é a identidade global da pessoa. O grupo continua em Integrantes do Grupo.
+- **Autoridade**: MASTER ativo, ou ADMINISTRADOR com autorização individual `GERENCIAR_USUARIOS` (migration `047`, modo `OBRIGATORIA`). Só o MASTER gerencia contas MASTER e ADMINISTRADOR; o ADMINISTRADOR autorizado gerencia SUPERVISOR e USUARIO. A empresa nunca fica sem MASTER ativo: inativar ou rebaixar o último é recusado no servidor, também sob concorrência.
+
 ### Portal do Cliente (Autenticação Global — Pacote 4)
 
 `frontend/portal/` é a entrada dos clientes: login **somente por e-mail e senha** (identidade global), seleção de empresa e ambiente inicial autenticado. Usa o backend real, sessões no PostgreSQL e cookies `HttpOnly`; nada de sessão é guardado no navegador.
@@ -105,7 +115,9 @@ Seis módulos JavaScript em `frontend/js/` dão suporte a essas páginas: `api-h
 
 Fluxo: uma empresa autorizada → entra direto; duas ou mais → escolhe; nenhuma → sem acesso operacional. Três cookies distintos: `gepi_sessao_global` (identidade; não dá acesso operacional), `gepi_sessao` (empresa selecionada; o mesmo que o RBAC sempre usou) e `gepi_sessao_admin` (Painel Privado). O login legado por CNPJ recusa vínculos ligados a uma identidade global — há uma única credencial válida por pessoa.
 
-Módulos de `frontend/pages/` ainda baseados em `localStorage` não são apresentados como dados da empresa; a integração das páginas restantes continua no Bloco 9 (Etapas E e F, ainda não concluídas) e nos blocos seguintes.
+Módulos de `frontend/pages/` ainda baseados em `localStorage` não são apresentados como dados da empresa; a integração das páginas restantes continua nos blocos seguintes.
+
+`portal/aceitar-convite.html` é a página pública de aceite do convite de usuário (parte F): o token chega no fragmento do link (`#token=`), nunca vai ao servidor na URL e sai da barra de endereço assim que é lido. Conta nova define a senha; conta já existente confirma a senha atual. O aceite não faz login: depois, a pessoa entra pelo `portal/index.html`.
 
 Em desenvolvimento, sirva `frontend/` em `http://localhost:5500` (Portal: `/portal/`) e em `http://localhost:5501` (Painel Privado: `/painel-privado/`), com o backend em `http://localhost:3000` — cada portal só é aceito pela allowlist de CORS/Origin do seu próprio namespace.
 
@@ -161,7 +173,7 @@ Controle de acesso baseado em papéis, com quatro camadas de decisão, sempre ve
 
 ### Autoridade administrativa granular
 
-Além do `MASTER`, um `ADMINISTRADOR` pode receber, por autorização individual, o direito de administrar grupos, permissões de grupo ou vínculos de usuário — sem qualquer autoridade de administração concedida implicitamente por perfil.
+Além do `MASTER`, um `ADMINISTRADOR` pode receber, por autorização individual, o direito de administrar grupos, permissões de grupo, vínculos de usuário ou, desde o Bloco 9 (parte F), os usuários da empresa (`GERENCIAR_USUARIOS`) — sem qualquer autoridade de administração concedida implicitamente por perfil.
 
 Preservados em toda a extensão do RBAC: **isolamento multiempresa** (nenhuma consulta ou escrita alcança dado de outra empresa — o identificador de empresa vem sempre da sessão) e **auditoria transacional** (toda escrita administrativa é registrada em `logs_auditoria`, na mesma transação da alteração; consultas não geram registro de auditoria).
 
@@ -184,11 +196,15 @@ A API do Incremento 8 soma **23 endpoints**, em **20 caminhos distintos** (três
 | `autorizacao-consulta.routes.js` | Consulta das autorizações individuais de um usuário |
 | `delegacao-destinatarios.routes.js` | `GET /api/delegacao/destinatarios` — a quem um usuário com autorização repassável pode delegar, sem exigir a autoridade administrativa de vínculos de grupo |
 
+O Bloco 9 acrescentou, na mesma cadeia `/api`, as rotas de materiais, estoque por lote, itens disponíveis, GHE, funcionários, dashboard e, na parte F, `usuario-administracao.routes.js` (`/api/administracao/usuarios`) e `convite-usuario.routes.js` (`/api/administracao/convites-usuario` e as duas rotas públicas de aceite, `/api/convite-usuario/consultar` e `/api/convite-usuario/aceitar`, com limite de requisições próprio).
+
 `health` é pública, sem exigência de sessão. O login (`POST /api/auth/login`) também é público — é o próprio ponto de entrada da autenticação. O logout aceita chamada sem sessão válida, por comportamento idempotente. As demais rotas — todas as administrativas do RBAC — exigem sessão autenticada; nenhuma decide autorização por si mesma, apenas autenticação. A autoridade administrativa é sempre resolvida na camada de serviço, relendo o estado do banco a cada chamada.
 
 ## Banco de dados e migrations
 
-O banco do projeto é PostgreSQL 16. As migrations ficam em `backend/migrations/` e existem hoje arquivos versionados de `000` a `039` (40 no total), que devem ser executados em ordem crescente de prefixo.
+O banco do projeto é PostgreSQL 16. As migrations ficam em `backend/migrations/` e existem hoje arquivos versionados de `000` a `047` (48 no total), que devem ser executados em ordem crescente de prefixo.
+
+**Bloco 9, Etapas E e F (27/09/2026):** as migrations `042` a `045` criam o estoque por lote e as operações de estoque, migram o saldo anterior para saldo inicial por lote, e acrescentam a `materiais` a exigência de tamanho e a classificação de óculos com grau. A `046` cria `convites_usuario` e `convite_usuario_tentativas` (convite de usuário, mesmo desenho do convite do MASTER da `033`/`034`, com FKs compostas que impedem quem convida ou o vínculo criado de serem de outra empresa). A `047` coloca `GERENCIAR_USUARIOS` em modo `OBRIGATORIA` e recusa rodar se já existir autorização individual gravada para essa ação, para não ativar concessão que ninguém revisou. Todas estão versionadas, no manifesto de checksums e validadas em schemas temporários; aplicá-las a qualquer banco persistente exige autorização separada.
 
 **Estado em 24/09/2026 (Bloco 9, Etapa C, Parte C2):** a fonte de verdade sobre o que está aplicado em cada banco é a tabela `pgmigrations` daquele banco (`npm run db:migrate:status`); o repositório só diz o que está versionado. A migration `039` (Parte C2) está versionada, registrada no manifesto de checksums e validada apenas em schemas temporários: não está aplicada a nenhum banco persistente (conferido nessa data no banco configurado em `.env`, cujo `public` não tem as três colunas). As migrations `025` a `038` foram versionadas nas etapas posteriores ao Incremento 8 (autenticação global, Portal do Cliente e sessões).
 
@@ -251,7 +267,7 @@ O histórico fica registrado na tabela `pgmigrations`, criada e mantida pela fer
 
 ### Integridade das migrations
 
-As migrations de `000` a `024` são protegidas por um manifesto de checksums SHA-256 em `backend/migrations/checksums.json` (25 entradas, todas íntegras na última verificação). O `npm run db:migrate:verificar` recalcula o digest de cada arquivo e o compara com o registro, detectando alteração de conteúdo, remoção e renomeação.
+As migrations de `000` a `047` são protegidas por um manifesto de checksums SHA-256 em `backend/migrations/checksums.json` (48 entradas, todas íntegras na última verificação). O `npm run db:migrate:verificar` recalcula o digest de cada arquivo e o compara com o registro, detectando alteração de conteúdo, remoção e renomeação.
 
 Uma migration já aplicada não deve ser alterada. O manifesto só aceita registro automático de migration nova, e recusa qualquer atualização que encubra mudança em arquivo histórico. Correções de estrutura entram sempre em uma migration nova.
 

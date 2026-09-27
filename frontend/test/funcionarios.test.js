@@ -417,12 +417,12 @@ describe('inspeção estática das duas páginas', () => {
       assert.equal(proibido.test(codigo), false, `import-employees.html contém ${proibido}`);
     }
     const scripts = [...imp.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
-    assert.deepEqual(scripts, ['../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../vendor/read-excel-file-9.3.10.min.js', '../js/funcionarios.js']);
+    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../vendor/read-excel-file-9.3.10.min.js', '../js/funcionarios.js']);
     assert.match(imp, /<input type="file" id="importFileInput" accept="\.xlsx,\.csv"/);
     assert.match(imp, /salve como \.xlsx/i);
     const declaracao = /<span id="textoDeclaracaoLgpd">([^<]*)<\/span>/.exec(imp);
     assert.equal(declaracao[1], F.DECLARACAO.texto, 'a página mostra exatamente o texto registrado (mesma versão e hash)');
-    for (const id of ['importDropzone', 'botaoBaixarModelo', 'importPreviewCard', 'lgpdConsentImport', 'importSummary', 'importErrorsBox', 'importPreviewBody', 'importConfirmBtn', 'botaoNovoArquivo', 'importResultCard', 'importResultSummary', 'botaoNovaImportacao', 'telaSessao', 'botaoSair', 'aviso']) {
+    for (const id of ['importDropzone', 'botaoBaixarModelo', 'importPreviewCard', 'lgpdConsentImport', 'importSummary', 'importErrorsBox', 'importPreviewBody', 'importConfirmBtn', 'botaoNovoArquivo', 'importResultCard', 'importResultSummary', 'botaoNovaImportacao', 'telaSessao', 'aviso']) {
       assert.match(imp, new RegExp(`id="${id}"`), `falta #${id}`);
     }
     for (const coluna of ['Nome', 'Setor', 'Telefone', 'CPF', 'Matrícula', 'Nascimento', 'Contratação', 'Cargo', 'Status']) assert.match(imp, new RegExp(`<th>${coluna}</th>`));
