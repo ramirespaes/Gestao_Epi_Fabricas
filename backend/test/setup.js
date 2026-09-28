@@ -9,6 +9,14 @@ const crypto = require('node:crypto');
 process.env.NODE_ENV = 'test';
 process.env.LOGIN_COOLDOWN_HMAC_SECRET = crypto.randomBytes(32).toString('hex');
 
+// Chave do MFA no mesmo regime: só em memória, nova a cada rodada. Descarto
+// qualquer MFA_TOTP_KEY_V* herdado para a suíte não depender do .env local.
+for (const nome of Object.keys(process.env)) {
+  if (nome.startsWith('MFA_TOTP_KEY_V')) delete process.env[nome];
+}
+process.env.MFA_TOTP_KEY_V1 = crypto.randomBytes(32).toString('hex');
+process.env.MFA_TOTP_KEY_CURRENT_VERSION = '1';
+
 // Rate limit praticamente desligado para o app real: a suíte faz muitas
 // requisições a /api e o MemoryStore vive enquanto o processo do arquivo de
 // teste existir. O contrato do limitador é exercitado com factories de

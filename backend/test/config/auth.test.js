@@ -28,11 +28,25 @@ const erroDe = (env) => {
 
 const PADRAO = {
   ambiente: 'development',
-  sessao: { cookieNome: 'gepi_sessao', cookieNomeAdmin: 'gepi_sessao_admin', cookieNomeGlobal: 'gepi_sessao_global', cookieSecure: false, cookieSameSite: 'lax', expiracaoMinutos: 720, inatividadeMinutos: 30 },
+  sessao: {
+    cookieNome: 'gepi_sessao',
+    cookieNomeAdmin: 'gepi_sessao_admin',
+    cookieNomeGlobal: 'gepi_sessao_global',
+    cookieSecure: false,
+    cookieSameSite: 'lax',
+    expiracaoMinutos: 720,
+    // Sessão plena do Painel Privado, criada só depois do MFA: prazo próprio.
+    expiracaoMinutosAdmin: 480,
+    inatividadeMinutos: 30,
+  },
   argon2: { memoryKib: 65536, timeCost: 3, parallelism: 1, hashLength: 32 },
   cooldown: { niveis: [{ falhas: 5, janelaMinutos: 15, duracaoMinutos: 15 }, { falhas: 10, janelaMinutos: 60, duracaoMinutos: 60 }], retencaoDias: 30 },
   // Pacote 3 — validade do convite do MASTER.
   conviteMaster: { expiracaoMinutos: 4320 },
+  // Desafio pré-MFA do Painel Privado: cookie próprio e prazos por etapa.
+  desafioMfa: { cookieNome: 'gepi_mfa_admin', verificacaoMinutos: 5, cadastroMinutos: 15, maxFalhas: 5 },
+  // Liberação de cadastro emitida pelo CLI: uso único, prazo curto.
+  liberacaoMfa: { expiracaoMinutos: 30 },
 };
 
 describe('configuração carregada do ambiente de teste', () => {
@@ -174,6 +188,56 @@ describe('carregarConfigAuth com ambiente artificial', () => {
     // Os três nomes são distintos dois a dois na configuração padrão.
     const { sessao } = carregarConfigAuth(base);
     assert.equal(new Set([sessao.cookieNome, sessao.cookieNomeAdmin, sessao.cookieNomeGlobal]).size, 3);
+  });
+
+  test('cookie do desafio MFA: nome próprio, distinto dos três de sessão; sem __Host-, porque o Path não é /', () => {
+    assert.equal(carregarConfigAuth(base).desafioMfa.cookieNome, 'gepi_mfa_admin');
+    assert.match(erroDe({ ...base, SESSAO_MFA_ADMIN_COOKIE_NOME: 'a b' }), /SESSAO_MFA_ADMIN_COOKIE_NOME: formato inválido/);
+    for (const repetido of ['gepi_sessao', 'gepi_sessao_admin', 'gepi_sessao_global']) {
+      assert.match(
+        erroDe({ ...base, SESSAO_MFA_ADMIN_COOKIE_NOME: repetido }),
+        /SESSAO_MFA_ADMIN_COOKIE_NOME: não pode repetir o nome de outro cookie de sessão/,
+        repetido,
+      );
+    }
+    assert.match(
+      erroDe({ ...base, SESSAO_ADMIN_COOKIE_NOME: 'x_admin', SESSAO_MFA_ADMIN_COOKIE_NOME: 'x_admin' }),
+      /SESSAO_MFA_ADMIN_COOKIE_NOME: não pode repetir o nome de outro cookie de sessão/,
+    );
+    assert.match(
+      erroDe({ ...base, SESSAO_MFA_ADMIN_COOKIE_NOME: '__Host-gepi_mfa', SESSAO_COOKIE_SECURE: 'true' }),
+      /SESSAO_MFA_ADMIN_COOKIE_NOME: prefixo __Host- exige Path=\//,
+    );
+    assert.match(erroDe({ ...base, SESSAO_MFA_ADMIN_COOKIE_NOME: '__Secure-gepi_mfa' }), /SESSAO_MFA_ADMIN_COOKIE_NOME: prefixo __Secure- exige cookie Secure/);
+    assert.equal(erroDe({ ...base, SESSAO_MFA_ADMIN_COOKIE_NOME: '__Secure-gepi_mfa', SESSAO_COOKIE_SECURE: 'true' }), null);
+    const { sessao, desafioMfa } = carregarConfigAuth(base);
+    assert.equal(new Set([sessao.cookieNome, sessao.cookieNomeAdmin, sessao.cookieNomeGlobal, desafioMfa.cookieNome]).size, 4);
+  });
+
+  test('prazos do desafio MFA: padrões 5 e 15 minutos, com limites e mensagens sem o valor', () => {
+    assert.deepEqual(
+      carregarConfigAuth({ ...base, MFA_DESAFIO_VERIFICACAO_MINUTOS: '3', MFA_DESAFIO_CADASTRO_MINUTOS: '20' }).desafioMfa,
+      { cookieNome: 'gepi_mfa_admin', verificacaoMinutos: 3, cadastroMinutos: 20, maxFalhas: 5 },
+    );
+    assert.match(erroDe({ ...base, MFA_DESAFIO_VERIFICACAO_MINUTOS: '0' }), /MFA_DESAFIO_VERIFICACAO_MINUTOS: abaixo do mínimo permitido \(1\)/);
+    assert.match(erroDe({ ...base, MFA_DESAFIO_VERIFICACAO_MINUTOS: '16' }), /MFA_DESAFIO_VERIFICACAO_MINUTOS: acima do máximo permitido \(15\)/);
+    assert.match(erroDe({ ...base, MFA_DESAFIO_CADASTRO_MINUTOS: '61' }), /MFA_DESAFIO_CADASTRO_MINUTOS: acima do máximo permitido \(60\)/);
+    const mensagem = erroDe({ ...base, MFA_DESAFIO_CADASTRO_MINUTOS: 'quinze' });
+    assert.match(mensagem, /MFA_DESAFIO_CADASTRO_MINUTOS/);
+    assertSemSensiveis(mensagem, ['quinze'], 'erro');
+  });
+
+  test('falhas por desafio, prazo da liberação e expiração da sessão administrativa: padrões e limites', () => {
+    const config = carregarConfigAuth({ ...base, MFA_DESAFIO_MAX_FALHAS: '3', MFA_LIBERACAO_MINUTOS: '45', SESSAO_ADMIN_EXPIRACAO_MINUTOS: '240' });
+    assert.equal(config.desafioMfa.maxFalhas, 3);
+    assert.deepEqual(config.liberacaoMfa, { expiracaoMinutos: 45 });
+    assert.equal(config.sessao.expiracaoMinutosAdmin, 240);
+    assert.match(erroDe({ ...base, MFA_DESAFIO_MAX_FALHAS: '0' }), /MFA_DESAFIO_MAX_FALHAS: abaixo do mínimo permitido \(1\)/);
+    assert.match(erroDe({ ...base, MFA_DESAFIO_MAX_FALHAS: '21' }), /MFA_DESAFIO_MAX_FALHAS: acima do máximo permitido \(20\)/);
+    assert.match(erroDe({ ...base, MFA_LIBERACAO_MINUTOS: '4' }), /MFA_LIBERACAO_MINUTOS: abaixo do mínimo permitido \(5\)/);
+    assert.match(erroDe({ ...base, MFA_LIBERACAO_MINUTOS: '1441' }), /MFA_LIBERACAO_MINUTOS: acima do máximo permitido \(1440\)/);
+    assert.match(erroDe({ ...base, SESSAO_ADMIN_EXPIRACAO_MINUTOS: '4' }), /SESSAO_ADMIN_EXPIRACAO_MINUTOS: abaixo do mínimo permitido \(5\)/);
+    assert.match(erroDe({ ...base, SESSAO_ADMIN_EXPIRACAO_MINUTOS: '1441' }), /SESSAO_ADMIN_EXPIRACAO_MINUTOS: acima do máximo permitido \(1440\)/);
   });
 
   test('regras cruzadas de sessão e cooldown', () => {

@@ -152,15 +152,18 @@ async function abrirPoolTemporario(prefixosDeMigration) {
  * observável no próprio banco, não uma espera arbitrária torcendo pelo
  * tempo certo. O intervalo entre verificações é curto (10ms) porque a
  * condição normalmente já é verdadeira em poucos milissegundos.
+ *
+ * Devolve o wait_event observado ('advisory', 'transactionid', 'tuple'...),
+ * para o teste provar QUAL lock segurou a conexão.
  */
 async function aguardarEsperaPeloLock(clienteAdmin, pid, { tentativas = 200, intervaloMs = 10 } = {}) {
   for (let i = 0; i < tentativas; i += 1) {
     const { rows } = await clienteAdmin.query(
-      'SELECT wait_event_type FROM pg_stat_activity WHERE pid = $1',
+      'SELECT wait_event_type, wait_event FROM pg_stat_activity WHERE pid = $1',
       [pid],
     );
     if (rows[0]?.wait_event_type === 'Lock') {
-      return;
+      return rows[0].wait_event;
     }
     await new Promise((resolve) => { setTimeout(resolve, intervaloMs); });
   }

@@ -523,12 +523,45 @@ describe('app.js: namespace /api/plataforma (Autenticação Global — Pacote 2)
     assert.deepEqual(r.body, { status: 'error', codigo: 'SESSAO_INVALIDA', message: 'Sessão inválida ou expirada' });
   });
 
-  test('POST /api/plataforma/auth/logout sem cookie, com a origem DA PLATAFORMA: 200 e Set-Cookie de remoção com o nome administrativo', async () => {
+  test('POST /api/plataforma/auth/logout sem cookie, com a origem DA PLATAFORMA: 200 e remoção dos dois cookies, sessão e desafio', async () => {
     const r = await request(app).post('/api/plataforma/auth/logout').set('Origin', PERMITIDA_PLATAFORMA);
     assert.deepEqual([r.status, r.body], [200, { status: 'ok' }]);
-    assert.ok(Array.isArray(r.headers['set-cookie']) && r.headers['set-cookie'].length === 1);
-    assert.match(r.headers['set-cookie'][0], new RegExp(`^${authConfig.sessao.cookieNomeAdmin}=;`));
-    assert.match(r.headers['set-cookie'][0], /Max-Age=0/);
+    const cookies = r.headers['set-cookie'];
+    assert.ok(Array.isArray(cookies) && cookies.length === 2);
+    const sessao = cookies.find((c) => c.startsWith(`${authConfig.sessao.cookieNomeAdmin}=;`));
+    const desafio = cookies.find((c) => c.startsWith(`${authConfig.desafioMfa.cookieNome}=;`));
+    assert.match(sessao, /Max-Age=0/);
+    assert.match(sessao, /Path=\/(;|$)/);
+    assert.match(desafio, /Max-Age=0/);
+    assert.match(desafio, /Path=\/api\/plataforma\/auth/);
+  });
+
+  test('GET /api/plataforma/auth/mfa/estado está montada: sem desafio, 401 DESAFIO_INVALIDO, não 404', async () => {
+    const r = await request(app).get('/api/plataforma/auth/mfa/estado').set('Origin', PERMITIDA_PLATAFORMA);
+    assert.deepEqual(r.body, { status: 'error', codigo: 'DESAFIO_INVALIDO', message: 'Etapa de verificação inválida ou expirada' });
+    assert.equal(r.headers['cache-control'], 'no-store');
+  });
+
+  test('endpoints do cadastro MFA montados: sem desafio, 401 DESAFIO_INVALIDO antes de ler o corpo', async () => {
+    for (const caminho of ['/api/plataforma/auth/mfa/liberacao', '/api/plataforma/auth/mfa/cadastro/reiniciar', '/api/plataforma/auth/mfa/cadastro/confirmar']) {
+      const r = await request(app).post(caminho).set('Origin', PERMITIDA_PLATAFORMA).set('Content-Type', 'application/json').send({});
+      assert.deepEqual([r.status, r.body.codigo], [401, 'DESAFIO_INVALIDO'], caminho);
+      assert.equal(r.headers['cache-control'], 'no-store');
+    }
+  });
+
+  test('os endpoints MFA dos incrementos seguintes ainda não existem', async () => {
+    const caminhos = [
+      '/api/plataforma/auth/mfa/verificar',
+      '/api/plataforma/auth/mfa/recuperacao',
+      '/api/plataforma/auth/mfa/recuperacao/regenerar',
+      '/api/plataforma/auth/mfa/substituicao/iniciar',
+      '/api/plataforma/auth/mfa/substituicao/confirmar',
+    ];
+    for (const caminho of caminhos) {
+      const r = await request(app).post(caminho).set('Origin', PERMITIDA_PLATAFORMA).set('Content-Type', 'application/json').send({});
+      assert.equal(r.status, 404, caminho);
+    }
   });
 
   test('a origem do CLIENTE não é aceita pelo CORS da plataforma, e vice-versa', async () => {

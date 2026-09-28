@@ -8,8 +8,9 @@ const administradorRepo = require('../../src/repositories/administrador-platafor
 const sessaoRepo = require('../../src/repositories/sessao-plataforma.repository');
 const loginTentativaPlataformaRepo = require('../../src/repositories/login-tentativa-plataforma.repository');
 const password = require('../../src/security/password');
+const desafioMfaService = require('../../src/services/desafio-mfa-plataforma.service');
 const { HttpError } = require('../../src/errors/HttpError');
-const { authConfig } = require('../../src/config/auth');
+const { gerarTokenSessao } = require('../../src/security/token');
 
 /**
  * Testes unitários do login do Painel Privado da plataforma, sem
@@ -26,6 +27,10 @@ const { authConfig } = require('../../src/config/auth');
  * identidade"), este serviço abre transação própria (antes não abria) —
  * por isso o "pool" de teste agora precisa de connect()/release(), como em
  * login.service.test.js, e não mais um objeto opaco qualquer.
+ *
+ * Senha correta não cria sessão: abre o desafio pré-MFA pelo serviço de
+ * desafio (mockado aqui; a sequência dele tem teste próprio), na MESMA
+ * transação e depois da trava do cooldown.
  */
 
 const EMAIL = 'admin@safework.com.br';
@@ -33,6 +38,11 @@ const SENHA = 'uma-senha-de-teste-qualquer';
 const ADMIN_ID = 9;
 const SESSAO_ID = '321';
 const AGORA_FIXO = new Date('2026-09-24T12:00:00.000Z');
+const TOKEN_DESAFIO = gerarTokenSessao();
+const DESAFIO_ABERTO = Object.freeze({
+  token: TOKEN_DESAFIO,
+  desafio: { etapa: 'LIBERACAO', expiraEm: new Date('2026-09-24T12:15:00.000Z'), validadeMinutos: 15 },
+});
 
 const administradorBase = Object.freeze({
   id: ADMIN_ID,
@@ -73,7 +83,7 @@ function contar(chamadas, padrao) {
 }
 
 describe('autenticar — login válido', () => {
-  test('registra a tentativa como sucesso, cria a sessão e devolve token/expiração coerentes', async (t) => {
+  test('registra a tentativa como sucesso e abre o desafio pré-MFA; NENHUMA sessão é criada', async (t) => {
     t.mock.method(administradorRepo, 'buscarCredencialPorEmail', async () => administradorBase);
     t.mock.method(password, 'verificarSenha', async () => true);
     t.mock.method(loginTentativaPlataformaRepo, 'buscarCooldownVigente', async () => null);
@@ -82,26 +92,33 @@ describe('autenticar — login válido', () => {
 
     const cliente = criarClienteFalso();
     const pool = criarPoolFalso(cliente);
+    const abrir = t.mock.method(desafioMfaService, 'abrirDesafioAposSenha', async () => {
+      cliente.chamadas.push('ABRIR_DESAFIO');
+      return DESAFIO_ABERTO;
+    });
 
     const resultado = await autenticar(pool, { email: EMAIL, senha: SENHA });
 
-    assert.deepEqual(resultado.administrador, { id: ADMIN_ID, email: EMAIL });
-    assert.equal(resultado.sessao.id, SESSAO_ID);
-    assert.match(resultado.token, /^[A-Za-z0-9_-]{43}$/);
-    assert.equal('empresa' in resultado, false, 'login administrativo nunca devolve empresa alguma');
+    assert.deepEqual(resultado, DESAFIO_ABERTO);
+    assert.equal('administrador' in resultado, false, 'o login não devolve mais o administrador');
+    assert.equal('sessao' in resultado, false);
+    assert.equal(criarSessao.mock.calls.length, 0, 'senha correta nunca cria sessão plena');
 
     assert.equal(registrar.mock.calls.length, 1);
     assert.equal(registrar.mock.calls[0].arguments[1].sucesso, true);
     assert.equal(registrar.mock.calls[0].arguments[1].administradorId, ADMIN_ID);
 
-    assert.equal(criarSessao.mock.calls.length, 1);
-    const argsCriar = criarSessao.mock.calls[0].arguments[1];
-    assert.equal(argsCriar.administradorId, ADMIN_ID);
-    assert.deepEqual(argsCriar.expiraEm, new Date(AGORA_FIXO.getTime() + authConfig.sessao.expiracaoMinutos * 60_000));
+    assert.equal(abrir.mock.calls.length, 1);
+    assert.equal(abrir.mock.calls[0].arguments[0], cliente, 'o desafio nasce na mesma transação da senha');
+    assert.deepEqual(abrir.mock.calls[0].arguments[1], { administradorId: ADMIN_ID });
+
+    const posicaoTravaCooldown = cliente.chamadas.findIndex((c) => /pg_advisory_xact_lock/i.test(c));
+    const posicaoDesafio = cliente.chamadas.indexOf('ABRIR_DESAFIO');
+    assert.ok(posicaoTravaCooldown >= 0 && posicaoTravaCooldown < posicaoDesafio, 'trava do e-mail antes da trava do administrador');
+    assert.ok(posicaoDesafio < cliente.chamadas.indexOf('COMMIT'));
 
     assert.equal(contar(cliente.chamadas, /^BEGIN$/i), 1);
-    assert.equal(contar(cliente.chamadas, /pg_advisory_xact_lock/i), 1);
-    assert.equal(contar(cliente.chamadas, /clock_timestamp/i), 1, 'só o instante da sessão precisa ser buscado no caminho de sucesso');
+    assert.equal(contar(cliente.chamadas, /pg_advisory_xact_lock/i), 1, 'a trava do administrador é do serviço de desafio');
     assert.equal(contar(cliente.chamadas, /^COMMIT$/i), 1);
     assert.equal(contar(cliente.chamadas, /^ROLLBACK$/i), 0);
     assert.equal(cliente.chamadas.includes('RELEASE'), true);
@@ -112,7 +129,7 @@ describe('autenticar — login válido', () => {
     t.mock.method(password, 'verificarSenha', async () => true);
     t.mock.method(loginTentativaPlataformaRepo, 'buscarCooldownVigente', async () => null);
     t.mock.method(loginTentativaPlataformaRepo, 'registrarTentativa', async () => '1');
-    t.mock.method(sessaoRepo, 'criar', async () => SESSAO_ID);
+    t.mock.method(desafioMfaService, 'abrirDesafioAposSenha', async () => DESAFIO_ABERTO);
 
     await autenticar(criarPoolFalso(criarClienteFalso()), { email: '  Admin@SafeWork.com.br  ', senha: SENHA });
 
@@ -163,6 +180,7 @@ describe('autenticar — falhas de credencial, todas com resposta pública gené
       const registrar = t.mock.method(loginTentativaPlataformaRepo, 'registrarTentativa', async () => '1');
       const contarFalhas = t.mock.method(loginTentativaPlataformaRepo, 'contarFalhasRecentes', async () => 0);
       const criarSessao = t.mock.method(sessaoRepo, 'criar', async () => SESSAO_ID);
+      const abrir = t.mock.method(desafioMfaService, 'abrirDesafioAposSenha', async () => DESAFIO_ABERTO);
 
       const cliente = criarClienteFalso();
       const pool = criarPoolFalso(cliente);
@@ -188,6 +206,7 @@ describe('autenticar — falhas de credencial, todas com resposta pública gené
       assert.equal(contexto.senhaFicticia.mock.calls.length, contexto.esperaSenhaFicticia ? 1 : 0);
 
       assert.equal(criarSessao.mock.calls.length, 0, 'nenhuma sessão pode ser criada numa falha de credencial');
+      assert.equal(abrir.mock.calls.length, 0, 'nenhum desafio numa falha de credencial');
       assert.ok(contarFalhas.mock.calls.length >= 1, 'a contagem de falhas por nível deve rodar após registrar a falha');
 
       assert.equal(contar(cliente.chamadas, /^COMMIT$/i), 1, 'a tentativa negada precisa ser persistida (COMMIT), não desfeita');
@@ -204,6 +223,7 @@ describe('autenticar — cooldown vigente', () => {
     const senhaReal = t.mock.method(password, 'verificarSenha', async () => true);
     const senhaFicticia = t.mock.method(password, 'verificarSenhaContraFicticio', async () => false);
     const registrar = t.mock.method(loginTentativaPlataformaRepo, 'registrarTentativa', async () => '1');
+    const abrir = t.mock.method(desafioMfaService, 'abrirDesafioAposSenha', async () => DESAFIO_ABERTO);
 
     const cliente = criarClienteFalso();
     const pool = criarPoolFalso(cliente);
@@ -211,6 +231,7 @@ describe('autenticar — cooldown vigente', () => {
     await assert.rejects(
       () => autenticar(pool, { email: EMAIL, senha: SENHA }),
       (erro) => {
+        assert.equal(abrir.mock.calls.length, 0, 'durante cooldown não nasce desafio, nem com a senha correta');
         assert.ok(HttpError.ehHttpError(erro));
         assert.equal(erro.status, 429);
         assert.equal(erro.codigo, 'LOGIN_EM_COOLDOWN');
@@ -286,14 +307,14 @@ describe('autenticar — ativação de cooldown', () => {
   });
 });
 
-describe('autenticar — falha ao persistir a sessão', () => {
-  test('ROLLBACK, libera a conexão, e nunca retorna sucesso', async (t) => {
+describe('autenticar — falha ao abrir o desafio', () => {
+  test('ROLLBACK (a tentativa bem-sucedida também não fica), libera a conexão, e nunca retorna sucesso', async (t) => {
     t.mock.method(administradorRepo, 'buscarCredencialPorEmail', async () => administradorBase);
     t.mock.method(password, 'verificarSenha', async () => true);
     t.mock.method(loginTentativaPlataformaRepo, 'buscarCooldownVigente', async () => null);
     t.mock.method(loginTentativaPlataformaRepo, 'registrarTentativa', async () => '1');
-    const erroDeSessao = new Error('violação simulada em sessoes_plataforma');
-    t.mock.method(sessaoRepo, 'criar', async () => { throw erroDeSessao; });
+    const erroDeSessao = new Error('violação simulada em desafios_mfa_plataforma');
+    t.mock.method(desafioMfaService, 'abrirDesafioAposSenha', async () => { throw erroDeSessao; });
 
     const cliente = criarClienteFalso();
     const pool = criarPoolFalso(cliente);
@@ -320,7 +341,7 @@ describe('autenticar — ROLLBACK em erros inesperados', () => {
     t.mock.method(loginTentativaPlataformaRepo, 'buscarCooldownVigente', async () => null);
     const erroInesperado = new Error('conexão perdida com o banco');
     t.mock.method(loginTentativaPlataformaRepo, 'registrarTentativa', async () => { throw erroInesperado; });
-    const criarSessao = t.mock.method(sessaoRepo, 'criar', async () => SESSAO_ID);
+    const abrir = t.mock.method(desafioMfaService, 'abrirDesafioAposSenha', async () => DESAFIO_ABERTO);
 
     const cliente = criarClienteFalso();
     const pool = criarPoolFalso(cliente);
@@ -330,7 +351,7 @@ describe('autenticar — ROLLBACK em erros inesperados', () => {
       (erro) => erro === erroInesperado,
     );
 
-    assert.equal(criarSessao.mock.calls.length, 0);
+    assert.equal(abrir.mock.calls.length, 0);
     assert.equal(contar(cliente.chamadas, /^ROLLBACK$/i), 1);
     assert.equal(contar(cliente.chamadas, /^COMMIT$/i), 0);
     assert.equal(cliente.chamadas.includes('RELEASE'), true);
@@ -377,7 +398,7 @@ describe('autenticar — entrada não normalizável, recusada com a mesma respos
     t.mock.method(password, 'verificarSenha', async () => true);
     t.mock.method(loginTentativaPlataformaRepo, 'buscarCooldownVigente', async () => null);
     const registrar = t.mock.method(loginTentativaPlataformaRepo, 'registrarTentativa', async () => '1');
-    t.mock.method(sessaoRepo, 'criar', async () => SESSAO_ID);
+    t.mock.method(desafioMfaService, 'abrirDesafioAposSenha', async () => DESAFIO_ABERTO);
 
     const dispositivoLongo = 'X'.repeat(200);
     await autenticar(criarPoolFalso(criarClienteFalso()), {
@@ -398,12 +419,12 @@ describe('autenticar — entrada não normalizável, recusada com a mesma respos
 });
 
 describe('autenticar — ausência de token em claro nos logs', () => {
-  test('nenhuma chamada a console.log/console.error recebe o token ou a senha', async (t) => {
+  test('nenhuma chamada a console.log/console.error recebe o token do desafio ou a senha', async (t) => {
     t.mock.method(administradorRepo, 'buscarCredencialPorEmail', async () => administradorBase);
     t.mock.method(password, 'verificarSenha', async () => true);
     t.mock.method(loginTentativaPlataformaRepo, 'buscarCooldownVigente', async () => null);
     t.mock.method(loginTentativaPlataformaRepo, 'registrarTentativa', async () => '1');
-    t.mock.method(sessaoRepo, 'criar', async () => SESSAO_ID);
+    t.mock.method(desafioMfaService, 'abrirDesafioAposSenha', async () => DESAFIO_ABERTO);
 
     const logChamadas = [];
     t.mock.method(console, 'log', (...args) => { logChamadas.push(args); });

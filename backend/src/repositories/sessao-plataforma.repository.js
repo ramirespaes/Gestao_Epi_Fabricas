@@ -54,19 +54,37 @@ function exigirInatividade(minutos) {
  * `criado_em`/`ultimo_uso_em` usam `clock_timestamp()`, não o `DEFAULT
  * now()` da migration — mesma razão de sessao.repository.js: a criação
  * pode acontecer depois de uma verificação Argon2id, de duração variável.
+ *
+ * `mfa` ({verificadoEm, metodo}) registra o segundo fator que originou a
+ * sessão (migration 054); ausente, as duas colunas ficam nulas.
  */
-async function criar(executor, { administradorId, tokenHash, expiraEm, ip = null, dispositivo = null }) {
+const METODOS_MFA = new Set(['TOTP', 'CADASTRO', 'RECADASTRO', 'SUBSTITUICAO', 'REAUTENTICACAO']);
+
+function exigirMfaOpcional(mfa) {
+  if (mfa === null) {
+    return;
+  }
+  if (typeof mfa !== 'object' || !(mfa.verificadoEm instanceof Date) || Number.isNaN(mfa.verificadoEm.getTime()) || !METODOS_MFA.has(mfa.metodo)) {
+    throw new TypeError('registro de mfa da sessão inválido');
+  }
+}
+
+async function criar(executor, {
+  administradorId, tokenHash, expiraEm, ip = null, dispositivo = null, mfa = null,
+}) {
   exigirAdministrador(administradorId);
   exigirHash(tokenHash);
   if (!(expiraEm instanceof Date) || Number.isNaN(expiraEm.getTime())) {
     throw new TypeError('expira_em deve ser uma data válida');
   }
+  exigirMfaOpcional(mfa);
 
   const { rows } = await executor.query(
-    `INSERT INTO sessoes_plataforma (administrador_id, token_hash, expira_em, ip, dispositivo, criado_em, ultimo_uso_em)
-     VALUES ($1, $2, $3, $4, $5, clock_timestamp(), clock_timestamp())
+    `INSERT INTO sessoes_plataforma
+       (administrador_id, token_hash, expira_em, ip, dispositivo, mfa_verificado_em, mfa_metodo, criado_em, ultimo_uso_em)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, clock_timestamp(), clock_timestamp())
      RETURNING id`,
-    [administradorId, tokenHash, expiraEm, ip, dispositivo],
+    [administradorId, tokenHash, expiraEm, ip, dispositivo, mfa?.verificadoEm ?? null, mfa?.metodo ?? null],
   );
 
   return rows[0].id;
@@ -137,4 +155,29 @@ async function revogar(executor, sessaoId, motivo) {
   return rowCount > 0;
 }
 
-module.exports = { criar, buscarValidaPorHash, registrarUso, revogar };
+/**
+ * Revoga todas as sessões ainda não revogadas do administrador, inclusive
+ * as vencidas, e devolve quantas foram. Idempotente: quem já estava
+ * revogada mantém motivo e instante. `exceto` preserva uma sessão, quando
+ * o fluxo a trata à parte.
+ */
+async function revogarTodasDoAdministrador(executor, administradorId, motivo, { exceto = null } = {}) {
+  exigirAdministrador(administradorId);
+  exigirMotivo(motivo);
+  if (exceto !== null) {
+    exigirSessao(exceto);
+  }
+
+  const { rowCount } = await executor.query(
+    `UPDATE sessoes_plataforma
+        SET revogada_em = now(), motivo_revogacao = $2
+      WHERE administrador_id = $1
+        AND revogada_em IS NULL
+        AND ($3::bigint IS NULL OR id <> $3::bigint)`,
+    [administradorId, motivo, exceto],
+  );
+
+  return rowCount;
+}
+
+module.exports = { criar, buscarValidaPorHash, registrarUso, revogar, revogarTodasDoAdministrador };

@@ -22,6 +22,8 @@ const { criarGrupoAcessoRoutes } = require('../../src/routes/grupo-acesso.routes
 const { criarExigirSessao } = require('../../src/middleware/autenticacao');
 const { criarExigirSessaoGlobal } = require('../../src/middleware/autenticacao-global');
 const { criarExigirSessaoPlataforma } = require('../../src/middleware/autenticacao-plataforma');
+const { criarExigirDesafioMfa } = require('../../src/middleware/desafio-mfa-plataforma');
+const { criarSessaoAdministrativa } = require('./helpers/sessao-plataforma-teste');
 const { criarLimitador } = require('../../src/middleware/rate-limit');
 const { corsApi, corsPlataforma } = require('../../src/middleware/cors');
 const { semCache } = require('../../src/middleware/cabecalhos');
@@ -58,7 +60,10 @@ const EpiPortal = require('../../../frontend/js/portal-cliente');
  * navegador real faz para localhost, entre as portas 5500 e 5501).
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 40 }, (_, i) => String(i).padStart(3, '0'));
+// 048: auditoria da plataforma com ator e alvo; 049 e 052: o login do
+// Painel abre o desafio pré-MFA; 053: criarInicial emite a liberação do MFA;
+// 054: a sessão administrativa grava o registro do MFA.
+const TODAS_AS_MIGRATIONS = [...Array.from({ length: 40 }, (_, i) => String(i).padStart(3, '0')), '048', '049', '052', '053', '054'];
 const SENHA_ADMIN = 'planeta-nebulosa-ozonio-42';
 const SENHA_MASTER = 'quasar-boreal-91-nebula';
 const EMAIL_MASTER = 'master.teste@exemplo-cliente.com.br';
@@ -101,6 +106,7 @@ describe('Portal do Cliente (frontend real) contra o backend real — META FINAL
   let origemCliente;
   let origemPlataforma;
   let navegador;
+  let administradorId;
   const empresas = {};
 
   /** Requisição "do Painel Privado" (origem 5501) usando o mesmo jar. */
@@ -142,7 +148,13 @@ describe('Portal do Cliente (frontend real) contra o backend real — META FINAL
     app.use(
       '/api/plataforma',
       corsPlataforma, semCache, verificarOrigemPlataforma, exigirJson, parserJson,
-      criarAuthPlataformaRoutes({ controller: criarAuthPlataformaController({ pool }), limitador: semLimite(), exigirSessaoPlataforma }),
+      criarAuthPlataformaRoutes({
+        controller: criarAuthPlataformaController({ pool }),
+        limitador: semLimite(),
+        limitadorMfa: semLimite(),
+        exigirSessaoPlataforma,
+        desafioMfa: (tipos) => criarExigirDesafioMfa({ pool, tipos }),
+      }),
       criarEmpresaCadastroRoutes({ controller: criarEmpresaCadastroController({ pool }), exigirSessaoPlataforma }),
       criarConviteMasterRoutes({ controller: criarConviteMasterController({ pool }), exigirSessaoPlataforma, limitador: semLimite() }),
       notFoundHandler,
@@ -164,7 +176,7 @@ describe('Portal do Cliente (frontend real) contra o backend real — META FINAL
     [origemPlataforma] = httpConfig.plataforma.corsOrigens;
     assert.notEqual(origemCliente, origemPlataforma);
 
-    await criarInicial(pool, { email: 'admin@safework.com.br', senha: SENHA_ADMIN });
+    ({ id: administradorId } = await criarInicial(pool, { email: 'admin@safework.com.br', senha: SENHA_ADMIN }));
     navegador = criarNavegador();
   });
 
@@ -175,9 +187,13 @@ describe('Portal do Cliente (frontend real) contra o backend real — META FINAL
   });
 
   test('1-5, 7: admin cadastra e convida; convite aceito; MASTER entra só com e-mail e senha e cai direto no ambiente da única empresa', async () => {
+    // A senha do Painel só abre o desafio pré-MFA: nenhum cookie de sessão.
     const adm = await plataforma('POST', '/auth/login', { email: 'admin@safework.com.br', senha: SENHA_ADMIN });
-    assert.equal(adm.status, 200);
-    assert.ok(navegador.jar.has(authConfig.sessao.cookieNomeAdmin));
+    assert.deepEqual([adm.status, adm.corpo.etapa], [200, 'LIBERACAO']);
+    assert.ok(navegador.jar.has(authConfig.desafioMfa.cookieNome));
+    assert.equal(navegador.jar.has(authConfig.sessao.cookieNomeAdmin), false);
+    // Até a conclusão do MFA existir, o administrador usa uma sessão já existente.
+    navegador.jar.set(authConfig.sessao.cookieNomeAdmin, (await criarSessaoAdministrativa(contexto.pool, administradorId)).token);
 
     const a = await cadastrarEmpresaEConvidar('555666770001', 'Empresa Alfa');
     empresas.A = a.empresaId;

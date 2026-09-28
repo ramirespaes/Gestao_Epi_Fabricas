@@ -4,11 +4,10 @@ const { HttpError } = require('../errors/HttpError');
 const { authConfig } = require('../config/auth');
 const { normalizarEmail } = require('../utils/normalizacao');
 const administradorRepo = require('../repositories/administrador-plataforma.repository');
-const sessaoRepo = require('../repositories/sessao-plataforma.repository');
 const loginTentativaPlataformaRepo = require('../repositories/login-tentativa-plataforma.repository');
+const desafioMfaService = require('./desafio-mfa-plataforma.service');
 const cooldown = require('../security/cooldown');
 const password = require('../security/password');
-const token = require('../security/token');
 
 /**
  * Serviço de login do Painel Privado da plataforma (Autenticação Global —
@@ -39,8 +38,13 @@ const token = require('../security/token');
  *   para que o tempo de resposta não distinga essas situações de uma
  *   senha incorreta.
  *
- * `administradorRepo`/`sessaoRepo`/`loginTentativaPlataformaRepo`/
- * `cooldown`/`password`/`token` são sempre chamados por namespace, nunca
+ * SENHA NÃO CRIA SESSÃO: a senha correta abre um desafio pré-MFA
+ * (desafio-mfa-plataforma.service), na mesma transação e depois da trava
+ * do e-mail; a sessão plena só nasce quando o segundo fator é concluído.
+ * Ordem das travas: e-mail (cooldown), administrador, linhas.
+ *
+ * `administradorRepo`/`loginTentativaPlataformaRepo`/`desafioMfaService`/
+ * `cooldown`/`password` são sempre chamados por namespace, nunca
  * desestruturados — mesma razão de login.service.js: permite mock.method
  * nos testes sem mudar o comportamento em produção.
  *
@@ -154,38 +158,18 @@ async function resolverCredencial(client, { emailNormalizado, senha, chaveCooldo
     chaveCooldown, administradorId: administrador.id, sucesso: true, ip, dispositivo,
   });
 
-  // Capturado agora — depois do Argon2id e do registro da tentativa, não
-  // antes: expira_em precisa refletir o instante real da criação da sessão.
-  const agoraSessao = await buscarInstanteReal(client);
-  const expiraEm = somarMinutos(agoraSessao, authConfig.sessao.expiracaoMinutos);
+  const resultado = await desafioMfaService.abrirDesafioAposSenha(client, { administradorId: administrador.id });
 
-  const tokenClaro = token.gerarTokenSessao();
-  const tokenHash = token.hashTokenSessao(tokenClaro);
-
-  const sessaoId = await sessaoRepo.criar(client, {
-    administradorId: administrador.id,
-    tokenHash,
-    expiraEm,
-    ip,
-    dispositivo,
-  });
-
-  return {
-    tipo: 'SUCESSO',
-    resultado: {
-      administrador: { id: administrador.id, email: administrador.email },
-      sessao: { id: sessaoId, expiraEm },
-      token: tokenClaro,
-    },
-  };
+  return { tipo: 'SUCESSO', resultado };
 }
 
 /**
- * Autentica um administrador de plataforma por e-mail e senha.
+ * Valida e-mail e senha do administrador e abre o desafio pré-MFA. Nunca
+ * cria sessão. O token do desafio só existe no retorno, para o cookie.
  *
  * @param {import('pg').Pool} pool
  * @param {{email: string, senha: string, ip?: string|null, dispositivo?: string|null}} dados
- * @returns {Promise<{administrador: {id:number, email:string}, sessao: {id:string, expiraEm:Date}, token: string}>}
+ * @returns {Promise<{token: string, desafio: {etapa: string, expiraEm: Date, validadeMinutos: number}}>}
  */
 async function autenticar(pool, { email, senha, ip = null, dispositivo = null }) {
   // Falha cedo, sem qualquer conexão, se o e-mail não for normalizável —

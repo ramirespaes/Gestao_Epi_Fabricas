@@ -192,6 +192,19 @@ function gerarChaveCooldownGlobal(email) {
   }
 }
 
+/**
+ * Chave das tentativas de MFA do Painel Privado, por administrador:
+ * SHA-256("PLATAFORMA_MFA|a<administrador_id>") em hexadecimal. Sem HMAC:
+ * o id não é dado pessoal, e o cooldown só existe depois da senha correta.
+ * O prefixo separa estas linhas das do login por senha na mesma tabela.
+ */
+function gerarChaveCooldownMfaPlataforma(administradorId) {
+  if (!Number.isInteger(administradorId) || administradorId <= 0 || administradorId > 2147483647) {
+    throw new TypeError('identificador de administrador inválido');
+  }
+  return crypto.createHash('sha256').update(`PLATAFORMA_MFA|a${administradorId}`, 'utf8').digest('hex');
+}
+
 /** true somente para string de 64 hex minúsculos. Nunca lança. */
 function chaveCooldownTemFormatoValido(chave) {
   return typeof chave === 'string' && CHAVE_COOLDOWN_FORMATO.test(chave);
@@ -226,6 +239,7 @@ module.exports = {
   gerarChaveCooldownConvite,
   gerarChaveCooldownConviteUsuario,
   gerarChaveCooldownGlobal,
+  gerarChaveCooldownMfaPlataforma,
   chaveCooldownTemFormatoValido,
   derivarAdvisoryLock64,
   idCorrelacaoCooldown,

@@ -23,7 +23,7 @@ const { aplicarMigrations } = require('../../scripts/migrate');
  */
 
 const DIRETORIO_REAL = path.join(__dirname, '..', '..', 'migrations');
-const TOTAL_MIGRATIONS_REAIS = 48; // 000–047 (a 040 é da C4: funcionarios.data_admissao; a 041 é da C5: ghe_materiais; a 042 cria estoque_lotes e estoque_operacoes; a 043 abre o saldo inicial; a 044 cria materiais.exige_tamanho; a 045 cria materiais.oculos_com_grau; a 046 cria os convites de usuário; a 047 põe GERENCIAR_USUARIOS em OBRIGATORIA)
+const TOTAL_MIGRATIONS_REAIS = 55; // 000–054 (a 040 é da C4: funcionarios.data_admissao; a 041 é da C5: ghe_materiais; a 042 cria estoque_lotes e estoque_operacoes; a 043 abre o saldo inicial; a 044 cria materiais.exige_tamanho; a 045 cria materiais.oculos_com_grau; a 046 cria os convites de usuário; a 047 põe GERENCIAR_USUARIOS em OBRIGATORIA; 048–054 são a base do MFA da plataforma)
 
 const criarDiretorio = (arquivos) => {
   const diretorio = fs.mkdtempSync(path.join(os.tmpdir(), 'gestao-epi-migrations-'));
@@ -106,7 +106,7 @@ describe('aplicação das migrations reais em schema vazio', () => {
     assert.deepEqual(rows.map((linha) => linha.table_schema), [contexto.schema]);
   });
 
-  test('aplica e registra as 48 migrations em ordem crescente', async () => {
+  test('aplica e registra as 55 migrations em ordem crescente', async () => {
     const registradas = await nomesRegistrados(contexto.cliente);
 
     assert.equal(registradas.length, TOTAL_MIGRATIONS_REAIS);

@@ -210,3 +210,78 @@ describe('cookie da sessão GLOBAL (Pacote 4)', () => {
     assert.equal(logs.length, 0);
   });
 });
+
+describe('criarPoliticaCookie: Path configurável, sem mudar os cookies existentes', () => {
+  const cookieModulo = require('../../src/security/cookie');
+
+  test('sem path explícito continua Path=/; com path, emissão e remoção usam o mesmo', () => {
+    const base = { nome: 'x', secure: false, sameSite: 'lax', expiracaoMinutos: 1 };
+    assert.equal(analisarSetCookie(criarPoliticaCookie(base).serializarSessao(TOKEN)).atributos.path, '/');
+    const comPath = criarPoliticaCookie({ ...base, path: '/api/x' });
+    assert.equal(analisarSetCookie(comPath.serializarSessao(TOKEN)).atributos.path, '/api/x');
+    assert.equal(analisarSetCookie(comPath.serializarRemocao()).atributos.path, '/api/x');
+  });
+
+  test('os três cookies de sessão seguem com Path=/, HttpOnly, sem Domain e com a SameSite da configuração', () => {
+    const pares = [
+      [cookieModulo.serializarCookieSessao, cookieModulo.serializarRemocaoCookieSessao],
+      [cookieModulo.serializarCookieSessaoPlataforma, cookieModulo.serializarRemocaoCookieSessaoPlataforma],
+      [cookieModulo.serializarCookieSessaoGlobal, cookieModulo.serializarRemocaoCookieSessaoGlobal],
+    ];
+    for (const [emitir, remover] of pares) {
+      for (const cookie of [analisarSetCookie(emitir(TOKEN)), analisarSetCookie(remover())]) {
+        assert.equal(cookie.atributos.path, '/');
+        assert.equal(cookie.atributos.httponly, true);
+        assert.equal('domain' in cookie.atributos, false);
+        assert.equal(cookie.atributos.samesite.toLowerCase(), authConfig.sessao.cookieSameSite);
+      }
+    }
+  });
+
+  test('o cookie da sessão administrativa dura o prazo próprio do Painel; os outros dois seguem o prazo comum', () => {
+    const admin = analisarSetCookie(cookieModulo.serializarCookieSessaoPlataforma(TOKEN));
+    assert.equal(admin.atributos['max-age'], String(authConfig.sessao.expiracaoMinutosAdmin * 60));
+    assert.equal(analisarSetCookie(cookieModulo.serializarCookieSessao(TOKEN)).atributos['max-age'], String(authConfig.sessao.expiracaoMinutos * 60));
+    assert.equal(analisarSetCookie(cookieModulo.serializarCookieSessaoGlobal(TOKEN)).atributos['max-age'], String(authConfig.sessao.expiracaoMinutos * 60));
+  });
+});
+
+describe('cookie do desafio pré-MFA do Painel Privado', () => {
+  const { serializarCookieDesafioMfa, serializarRemocaoCookieDesafioMfa } = require('../../src/security/cookie');
+
+  test('nome próprio, HttpOnly, SameSite=Strict, Path=/api/plataforma/auth, sem Domain e Max-Age igual ao prazo do desafio', () => {
+    for (const minutos of [5, 15]) {
+      const cookie = analisarSetCookie(serializarCookieDesafioMfa(TOKEN, minutos));
+      assert.equal(cookie.nome, authConfig.desafioMfa.cookieNome);
+      assert.equal(cookie.valor, TOKEN);
+      assert.equal(cookie.atributos.httponly, true);
+      assert.equal(cookie.atributos.samesite, 'Strict');
+      assert.equal(cookie.atributos.path, '/api/plataforma/auth');
+      assert.equal('domain' in cookie.atributos, false);
+      assert.equal(cookie.atributos['max-age'], String(minutos * 60));
+      assert.equal(cookie.atributos.secure ?? false, authConfig.sessao.cookieSecure, 'Secure segue a regra de ambiente (obrigatório em production)');
+    }
+  });
+
+  test('nome distinto dos três cookies de sessão', () => {
+    const nomes = [authConfig.sessao.cookieNome, authConfig.sessao.cookieNomeAdmin, authConfig.sessao.cookieNomeGlobal, authConfig.desafioMfa.cookieNome];
+    assert.equal(new Set(nomes).size, 4);
+  });
+
+  test('remoção repete os atributos estruturais (inclusive o Path) e zera o cookie', () => {
+    const emitido = analisarSetCookie(serializarCookieDesafioMfa(TOKEN, 5));
+    const removido = analisarSetCookie(serializarRemocaoCookieDesafioMfa());
+    assert.deepEqual(estruturais(removido), estruturais(emitido));
+    assert.equal(removido.valorBruto, '');
+    assert.equal(removido.atributos['max-age'], '0');
+    assert.ok(new Date(removido.atributos.expires).getTime() < Date.now());
+  });
+
+  test('token ou prazo inválidos: TypeError, sem ecoar o valor', () => {
+    assert.throws(() => serializarCookieDesafioMfa('nao-e-um-token', 5), { name: 'TypeError', message: 'token de sessão inválido' });
+    for (const minutos of [0, -1, 1.5, '5', undefined]) {
+      assert.throws(() => serializarCookieDesafioMfa(TOKEN, minutos), TypeError, String(minutos));
+    }
+    assert.equal(logs.length, 0);
+  });
+});

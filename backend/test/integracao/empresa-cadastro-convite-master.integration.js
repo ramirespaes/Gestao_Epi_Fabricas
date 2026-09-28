@@ -6,9 +6,8 @@ const crypto = require('node:crypto');
 const request = require('supertest');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { criarSessaoAdministrativa } = require('./helpers/sessao-plataforma-teste');
 const { criarAppTeste } = require('../helpers/app-teste');
-const { criarAuthPlataformaController } = require('../../src/controllers/auth-plataforma.controller');
-const { criarAuthPlataformaRoutes } = require('../../src/routes/auth-plataforma.routes');
 const { criarExigirSessaoPlataforma } = require('../../src/middleware/autenticacao-plataforma');
 const { criarEmpresaCadastroController } = require('../../src/controllers/empresa-cadastro.controller');
 const { criarEmpresaCadastroRoutes } = require('../../src/routes/empresa-cadastro.routes');
@@ -33,12 +32,15 @@ const { ESCOPO_PROVISIONAMENTO_MASTER } = require('../../src/rbac/recursos');
  * sucesso: serviços, repositórios, provisionamento e triggers reais.
  *
  * Monta, no mesmo app de teste, as rotas administrativas do Painel Privado
- * (empresas + convites), as rotas de login do Painel Privado (para obter o
- * cookie administrativo) e as rotas de login EMPRESARIAL (para provar que
- * o cookie empresarial não autentica as rotas administrativas).
+ * (empresas + convites) e as rotas de login EMPRESARIAL (para provar que o
+ * cookie empresarial não autentica as rotas administrativas). A sessão
+ * administrativa é uma sessão já existente, criada pelo repositório: a
+ * senha só abre o desafio pré-MFA.
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 35 }, (_, i) => String(i).padStart(3, '0'));
+// 048: a auditoria da plataforma grava ator e alvo; 053: criarInicial emite a
+// liberação do MFA; 054: a sessão administrativa grava o registro do MFA.
+const TODAS_AS_MIGRATIONS = [...Array.from({ length: 35 }, (_, i) => String(i).padStart(3, '0')), '048', '053', '054'];
 const SENHA_ADMIN = 'planeta-nebulosa-ozonio-42';
 const SENHA_MASTER = 'quasar-boreal-91-nebula';
 const SENHA_CLIENTE = 'senha-correta-do-teste-http-2026';
@@ -110,23 +112,18 @@ describe('Pacote 3 — cadastro de empresas e convite do MASTER (HTTP + PostgreS
 
     const exigirSessaoPlataforma = criarExigirSessaoPlataforma({ pool });
     const semLimite = () => criarLimitador({ limite: 100000, janelaSegundos: 60 });
-    const authPlataformaRoutes = criarAuthPlataformaRoutes({
-      controller: criarAuthPlataformaController({ pool }), limitador: semLimite(), exigirSessaoPlataforma,
-    });
     const empresaRoutes = criarEmpresaCadastroRoutes({ controller: criarEmpresaCadastroController({ pool }), exigirSessaoPlataforma });
     const conviteRoutes = criarConviteMasterRoutes({ controller: criarConviteMasterController({ pool }), exigirSessaoPlataforma, limitador: semLimite() });
     const authClienteRoutes = criarAuthRoutes({ controller: criarAuthController({ pool }), limitador: semLimite(), exigirSessao: criarExigirSessao({ pool }) });
 
     app = criarAppTeste((a) => {
       a.use('/api', authClienteRoutes);
-      a.use('/api/plataforma', authPlataformaRoutes, empresaRoutes, conviteRoutes);
+      a.use('/api/plataforma', empresaRoutes, conviteRoutes);
     });
 
     const administrador = await criarInicial(pool, { email: 'admin@safework.com.br', senha: SENHA_ADMIN });
     administradorId = administrador.id;
-    const login = await request(app).post('/api/plataforma/auth/login').send({ email: 'admin@safework.com.br', senha: SENHA_ADMIN });
-    assert.equal(login.status, 200);
-    cookieAdmin = cookieDe(login, authConfig.sessao.cookieNomeAdmin);
+    ({ cookie: cookieAdmin } = await criarSessaoAdministrativa(pool, administradorId));
   });
 
   after(async () => { if (contexto) await contexto.encerrar(); });
