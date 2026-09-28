@@ -19,8 +19,8 @@ const { HttpError } = require('../errors/HttpError');
  *
  * O QUE NÃO FAZ, de propósito: não envia e-mail, não conhece SMTP, não tem
  * credencial, não LOGA o token (CLAUDE.md §24: token nunca em log — a linha
- * de log abaixo registra só que um convite foi gerado, para quem e até
- * quando). NENHUM e-mail real sai deste pacote.
+ * de log abaixo registra só que um convite foi gerado, com empresaId e
+ * conviteId, sem e-mail). NENHUM e-mail real sai deste pacote.
  *
  * DEPENDÊNCIA DE IMPLANTAÇÃO (pendência explícita, ver relatório): antes
  * de produção, esta função deve ser substituída/complementada por um
@@ -68,19 +68,20 @@ function exigirDisponivel(ambiente = httpConfig.ambiente) {
 }
 
 /**
- * @param {{emailConvite: string, token: string, expiraEm: Date, empresa: {id: number, razaoSocial: string}}} dados
+ * @param {{conviteId: string, token: string, expiraEm: Date, empresa: {id: number, razaoSocial: string}}} dados
  * @returns {Promise<{modo: string, linkAceite: string, expiraEm: Date}>}
  */
-async function entregar({ emailConvite, token, expiraEm, empresa }) {
+async function entregar({ conviteId, token, expiraEm, empresa }) {
   exigirDisponivel();
   if (typeof token !== 'string' || token.length === 0) {
     throw new TypeError('token de convite inválido');
   }
   const linkAceite = montarLinkAceite(token);
 
-  // Sem o token, sem o link: só o fato, para rastreabilidade operacional.
+  // Sem o token, sem o link, sem e-mail (SEC-006): só o fato e os
+  // identificadores que ligam a linha ao convite e à auditoria.
   console.log('[convite-master] convite gerado (modo desenvolvimento, sem envio de e-mail)', {
-    empresaId: empresa.id, emailConvite, expiraEm: expiraEm.toISOString(),
+    empresaId: empresa.id, conviteId,
   });
 
   return { modo: MODO, linkAceite, expiraEm };

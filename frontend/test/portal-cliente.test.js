@@ -39,13 +39,13 @@ beforeEach(() => {
 });
 
 describe('acoes: contratos do backend', () => {
-  test('entrar: POST /auth/global/login só com e-mail e senha (sem CNPJ), com credentials', async () => {
-    await acoes.entrar({ email: 'p@x.com', senha: 'segredo-qualquer' });
+  test('entrar: POST /auth/global/login com e-mail, senha e token da verificação (sem CNPJ), com credentials', async () => {
+    await acoes.entrar({ email: 'p@x.com', senha: 'segredo-qualquer', turnstileToken: 'token-de-teste' });
     const [c] = fetch.chamadas;
     assert.equal(c.url, `${BASE}/auth/global/login`);
     assert.equal(c.opcoes.method, 'POST');
     assert.equal(c.opcoes.credentials, 'include');
-    assert.deepEqual(JSON.parse(c.opcoes.body), { email: 'p@x.com', senha: 'segredo-qualquer' });
+    assert.deepEqual(JSON.parse(c.opcoes.body), { email: 'p@x.com', senha: 'segredo-qualquer', turnstileToken: 'token-de-teste' });
   });
 
   test('entrar sem e-mail/senha é recusado antes de qualquer rede', async () => {
@@ -76,12 +76,13 @@ describe('acoes: contratos do backend', () => {
     ]);
   });
 
-  test('o console registra método e caminho, nunca a senha', async (t) => {
+  test('o console registra método e caminho, nunca a senha nem o token da verificação', async (t) => {
     const logs = [];
     t.mock.method(console, 'log', (...a) => logs.push(a.join(' ')));
-    await acoes.entrar({ email: 'p@x.com', senha: 'SenhaSentinela-9f3a' });
+    await acoes.entrar({ email: 'p@x.com', senha: 'SenhaSentinela-9f3a', turnstileToken: 'TokenSentinela-7c1d' });
     assert.ok(logs.some((l) => l.includes('/auth/global/login')));
     assert.equal(logs.join('\n').includes('SenhaSentinela-9f3a'), false);
+    assert.equal(logs.join('\n').includes('TokenSentinela-7c1d'), false);
   });
 });
 

@@ -9,6 +9,8 @@ const grupoRepo = require('../../src/repositories/grupo-acesso.repository');
 const grupoPermissaoRepo = require('../../src/repositories/grupo-permissao.repository');
 const permissaoRepo = require('../../src/repositories/permissao.repository');
 const auditoriaRepo = require('../../src/repositories/auditoria.repository');
+const autorizacaoRepo = require('../../src/repositories/autorizacao-individual.repository');
+const { RECURSOS_CONHECIDOS } = require('../../src/rbac/recursos');
 const { HttpError } = require('../../src/errors/HttpError');
 
 /**
@@ -507,5 +509,108 @@ describe('listagens', () => {
 
     await esperarHttpError(servico.listarRecursos(pool, { empresaId: EMPRESA, atorId: MASTER_ID, grupoId: GRUPO_ID }), 404, 'GRUPO_NAO_ENCONTRADO');
     await esperarHttpError(servico.listarAcoes(pool, { empresaId: EMPRESA, atorId: MASTER_ID, grupoId: GRUPO_ID }), 404, 'GRUPO_NAO_ENCONTRADO');
+  });
+});
+
+// SEC-NOVO-001: o recurso precisa existir no catálogo oficial
+// (rbac/recursos.js), não só ter formato válido.
+describe('SEC-NOVO-001 — recurso fora do catálogo', () => {
+  test('recurso com formato válido mas desconhecido: 400 e nada gravado nem auditado', async (t) => {
+    const escritas = mundoValido(t);
+    for (const recurso of ['recursoInventado', 'constructor', 'toString', 'Materials', 'materials_extra']) {
+      const cliente = criarClienteFalso();
+      await esperarHttpError(
+        servico.configurarRecurso(criarPoolFalso(cliente), dadosRecurso({ recurso, podeVisualizar: true })),
+        400, 'GRUPO_PERMISSAO_RECURSO_INVALIDO',
+      );
+      assertRecusaSemRastro(cliente, escritas);
+    }
+  });
+
+  test('todos os recursos do catálogo continuam configuráveis', async (t) => {
+    const escritas = mundoValido(t);
+    for (const recurso of RECURSOS_CONHECIDOS) {
+      const r = await servico.configurarRecurso(criarPoolFalso(criarClienteFalso()), dadosRecurso({ recurso, podeVisualizar: true }));
+      assert.equal(r.alterado, true, recurso);
+    }
+    assert.equal(escritas.salvarRecurso.mock.calls.length, RECURSOS_CONHECIDOS.length);
+  });
+});
+
+// SEC-001: quem não é MASTER nunca configura as permissões do grupo em que
+// está, nem para ampliar nem para restringir. O grupo do ator é relido do
+// banco, travado, dentro da transação.
+describe('SEC-001 — o próprio grupo', () => {
+  const OUTRO_GRUPO = 77;
+
+  /** ADMINISTRADOR com ADMINISTRAR_PERMISSOES_GRUPO; `grupos` diz o grupo atual de cada usuário. */
+  function adminAutorizado(t, grupos) {
+    t.mock.method(autorizacaoRepo, 'listarPorUsuarioAcaoParaAtualizacao', async (_c, empresaId, id, acao) => (
+      empresaId === EMPRESA && id === ADMIN_ID && acao === 'ADMINISTRAR_PERMISSOES_GRUPO'
+        ? [{ id: 777, empresaId, usuarioId: id, acaoCodigo: acao, podeDelegar: false, origemId: null }]
+        : []
+    ));
+    t.mock.method(permissaoRepo, 'usuarioTemBloqueio', async () => false);
+    return t.mock.method(usuarioRepo, 'buscarVinculoGrupoParaAtualizacao', async (_c, empresaId, id) => (
+      empresaId === EMPRESA ? {
+        id, empresaId, perfil: id === MASTER_ID ? 'MASTER' : 'ADMINISTRADOR', ativo: true, grupoAcessoId: grupos[id] ?? null,
+      } : null
+    ));
+  }
+
+  test('ADMINISTRADOR autorizado não amplia recurso do próprio grupo: 403 e nada gravado nem auditado', async (t) => {
+    const escritas = mundoValido(t);
+    adminAutorizado(t, { [ADMIN_ID]: GRUPO_ID });
+    const cliente = criarClienteFalso();
+
+    await esperarHttpError(
+      servico.configurarRecurso(criarPoolFalso(cliente), dadosRecurso({ atorId: ADMIN_ID, podeVisualizar: true, podeCriar: true, podeEditar: true, podeExcluir: true })),
+      403, 'GRUPO_PERMISSAO_PROPRIO_GRUPO',
+    );
+    assertRecusaSemRastro(cliente, escritas);
+  });
+
+  test('ADMINISTRADOR autorizado não configura ação do próprio grupo, nem para retirar a opinião', async (t) => {
+    const escritas = mundoValido(t);
+    adminAutorizado(t, { [ADMIN_ID]: GRUPO_ID });
+
+    for (const permitido of [true, null]) {
+      const cliente = criarClienteFalso();
+      await esperarHttpError(servico.configurarAcao(criarPoolFalso(cliente), dadosAcao({ atorId: ADMIN_ID, permitido })), 403, 'GRUPO_PERMISSAO_PROPRIO_GRUPO');
+      assertRecusaSemRastro(cliente, escritas);
+    }
+    const cliente = criarClienteFalso();
+    await esperarHttpError(servico.configurarRecurso(criarPoolFalso(cliente), dadosRecurso({ atorId: ADMIN_ID, podeVisualizar: null })), 403, 'GRUPO_PERMISSAO_PROPRIO_GRUPO');
+    assertRecusaSemRastro(cliente, escritas);
+  });
+
+  test('o mesmo ADMINISTRADOR continua configurando o grupo de terceiros', async (t) => {
+    const escritas = mundoValido(t);
+    adminAutorizado(t, { [ADMIN_ID]: OUTRO_GRUPO });
+
+    const recurso = await servico.configurarRecurso(criarPoolFalso(criarClienteFalso()), dadosRecurso({ atorId: ADMIN_ID, podeVisualizar: true }));
+    const acao = await servico.configurarAcao(criarPoolFalso(criarClienteFalso()), dadosAcao({ atorId: ADMIN_ID }));
+    assert.deepEqual([recurso.alterado, acao.alterado], [true, true]);
+    assert.equal(escritas.registrar.mock.calls.length, 2);
+  });
+
+  test('o grupo do ator é lido travado, na transação, na empresa da sessão', async (t) => {
+    mundoValido(t);
+    const leitura = adminAutorizado(t, { [ADMIN_ID]: OUTRO_GRUPO });
+
+    await servico.configurarRecurso(criarPoolFalso(criarClienteFalso()), dadosRecurso({ atorId: ADMIN_ID, podeVisualizar: true }));
+    assert.equal(leitura.mock.calls.length, 1);
+    const [, empresaConsultada, idConsultado] = leitura.mock.calls[0].arguments;
+    assert.deepEqual([empresaConsultada, idConsultado], [EMPRESA, ADMIN_ID]);
+  });
+
+  test('MASTER mantém a autoridade: configura qualquer grupo, inclusive aquele em que estiver', async (t) => {
+    const escritas = mundoValido(t);
+    adminAutorizado(t, { [MASTER_ID]: GRUPO_ID });
+
+    const recurso = await servico.configurarRecurso(criarPoolFalso(criarClienteFalso()), dadosRecurso({ podeVisualizar: true }));
+    const acao = await servico.configurarAcao(criarPoolFalso(criarClienteFalso()), dadosAcao());
+    assert.deepEqual([recurso.alterado, acao.alterado], [true, true]);
+    assert.equal(escritas.salvarRecurso.mock.calls.length, 1);
   });
 });

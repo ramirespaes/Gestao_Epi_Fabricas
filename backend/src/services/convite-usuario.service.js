@@ -197,10 +197,13 @@ async function criar(pool, {
       empresaId, emailConvite: emailN, nome, perfil, tokenHash: token.hashTokenSessao(tokenClaro), criadoPor: ator.id, expiraEm,
     });
 
+    // SEC-023/PRIV-001: e-mail, nome, perfil e expiração já ficam no
+    // registro do convite, que é histórico (ON DELETE RESTRICT) e não tem
+    // esses campos alterados depois. A auditoria só aponta para ele.
     await registrarAuditoria(client, {
       empresaId, usuarioId: ator.id, acao: ACAO.CONVIDADO, referencia: convite.id, ip, dispositivo,
       contexto: { ...ORIGEM_AUDITORIA },
-      dadosNovos: { conviteId: convite.id, emailConvite: emailN, nome, perfil, expiraEm },
+      dadosNovos: { conviteId: convite.id },
     });
 
     return { convite: apresentar(convite), token: tokenClaro };

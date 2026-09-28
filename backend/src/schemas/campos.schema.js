@@ -36,6 +36,7 @@ const LIMITES = Object.freeze({
   EMAIL_ENTRADA_MAXIMO: EMAIL_TAMANHO_MAXIMO + 50,
   // Unidades UTF-16, proteção técnica; a regra em code points é da política.
   SENHA_ENTRADA_MAXIMO: 1024,
+  TURNSTILE_TOKEN_MAXIMO: 2048, // limite documentado pela Cloudflare
   ID_MAXIMO: 2147483647, // SERIAL (int4)
   INTEGER_MAXIMO: 2147483647, // qualquer coluna INTEGER (int4) do banco — mesmo teto de SERIAL, nome próprio para não confundir com identificador
   PAGINA_MAXIMA: 10000,
@@ -81,6 +82,18 @@ const senhaEntrada = z.string().transform((valor, ctx) => {
     return issue(ctx, 'SENHA_MUITO_LONGA', 'Senha excede o tamanho máximo aceito');
   }
   return valor;
+});
+
+/** Token do Turnstile: opaco, só tamanho e ausência de controle; quem valida é o Siteverify. */
+const turnstileToken = z.string().transform((valor, ctx) => {
+  const token = valor.trim();
+  if (token.length === 0) {
+    return issue(ctx, 'VERIFICACAO_SEGURANCA_AUSENTE', 'Verificação de segurança não informada');
+  }
+  if (token.length > LIMITES.TURNSTILE_TOKEN_MAXIMO || CARACTERE_CONTROLE.test(token)) {
+    return issue(ctx, 'VERIFICACAO_SEGURANCA_MALFORMADA', 'Verificação de segurança inválida');
+  }
+  return token;
 });
 
 /** Identificador de rota: string decimal canônica positiva -> Number (int4). */
@@ -212,6 +225,7 @@ module.exports = {
   dataCalendario,
   email,
   senhaEntrada,
+  turnstileToken,
   idParametro,
   idCorpo,
   inteiroQuery,

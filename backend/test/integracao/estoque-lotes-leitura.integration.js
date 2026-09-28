@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { inserirLote, baixarLote, somarDias } = require('./helpers/estoque-lotes');
 const { criarAppTeste } = require('../helpers/app-teste');
 const { criarAuthGlobalController } = require('../../src/controllers/auth-global.controller');
@@ -129,7 +130,7 @@ describe('leitura do estoque por lote (PostgreSQL real, data operacional control
       return criarAppTeste((a) => {
         a.use(
           '/api',
-          criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }) }),
+          criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }), ...turnstileDeTeste() }),
           criarEstoqueRoutes({ controller: criarEstoqueController({ pool, relogio }), exigirSessao, pool }),
           criarItensDisponiveisRoutes({ controller: criarItensDisponiveisController({ pool, relogio }), exigirSessao, pool }),
           criarDashboardRoutes({ controller: criarDashboardController({ pool, relogio }), exigirSessao, pool }),
@@ -139,7 +140,7 @@ describe('leitura do estoque por lote (PostgreSQL real, data operacional control
     app = montar(NOITE_DE_30_09);
     appMadrugada = montar(MADRUGADA_DE_01_10);
     for (const k of Object.keys(EMAILS)) {
-      const login = await request(app).post('/api/auth/global/login').send({ email: EMAILS[k], senha: SENHA });
+      const login = await request(app).post('/api/auth/global/login').send({ email: EMAILS[k], senha: SENHA, turnstileToken: TOKEN_TURNSTILE_TESTE });
       assert.equal(login.status, 200, JSON.stringify(login.body));
       const c = cookiesDe(login);
       cookie[k] = `${C_GLOBAL}=${c[C_GLOBAL]}; ${C_EMPRESA}=${c[C_EMPRESA]}`;

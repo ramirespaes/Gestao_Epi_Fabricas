@@ -6,6 +6,7 @@ const express = require('express');
 const http = require('node:http');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { criarAuthPlataformaController } = require('../../src/controllers/auth-plataforma.controller');
 const { criarAuthPlataformaRoutes } = require('../../src/routes/auth-plataforma.routes');
 const { criarEmpresaCadastroController } = require('../../src/controllers/empresa-cadastro.controller');
@@ -150,7 +151,7 @@ describe('Portal do Cliente (frontend real) contra o backend real — META FINAL
       '/api',
       corsApi, semCache, verificarOrigem, exigirJson, parserJson,
       criarAuthRoutes({ controller: criarAuthController({ pool }), limitador: semLimite(), exigirSessao }),
-      criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal }),
+      criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal, ...turnstileDeTeste() }),
       criarGrupoAcessoRoutes({ controller: criarGrupoAcessoController({ pool }), exigirSessao }),
     );
     app.use(notFoundHandler);
@@ -184,7 +185,7 @@ describe('Portal do Cliente (frontend real) contra o backend real — META FINAL
     assert.equal(aceite.status, 201, JSON.stringify(aceite.corpo));
 
     usarPortal();
-    const login = await EpiPortal.acoes.entrar({ email: EMAIL_MASTER, senha: SENHA_MASTER });
+    const login = await EpiPortal.acoes.entrar({ email: EMAIL_MASTER, senha: SENHA_MASTER, turnstileToken: TOKEN_TURNSTILE_TESTE });
     assert.equal(login.ok, true, JSON.stringify(login));
     assert.equal(EpiPortal.decisao.destino(login.dados), 'inicio', 'uma empresa: seleção automática');
     assert.ok(navegador.jar.has(authConfig.sessao.cookieNomeGlobal));
@@ -210,7 +211,7 @@ describe('Portal do Cliente (frontend real) contra o backend real — META FINAL
     assert.equal(aceite.status, 201, JSON.stringify(aceite.corpo));
 
     usarPortal();
-    const login = await EpiPortal.acoes.entrar({ email: EMAIL_MASTER, senha: SENHA_MASTER });
+    const login = await EpiPortal.acoes.entrar({ email: EMAIL_MASTER, senha: SENHA_MASTER, turnstileToken: TOKEN_TURNSTILE_TESTE });
     assert.equal(login.ok, true);
     assert.equal(EpiPortal.decisao.destino(login.dados), 'selecionar');
     assert.deepEqual(login.dados.empresas.map((e) => e.id).sort(), [empresas.A, empresas.B].sort());

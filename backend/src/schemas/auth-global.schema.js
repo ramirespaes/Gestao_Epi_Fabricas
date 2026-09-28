@@ -1,7 +1,9 @@
 'use strict';
 
 const { z } = require('zod');
-const { email, senhaEntrada, idParametro } = require('./campos.schema');
+const {
+  email, senhaEntrada, turnstileToken, idParametro,
+} = require('./campos.schema');
 
 /**
  * Schemas das rotas de autenticação GLOBAL do Portal do Cliente
@@ -16,12 +18,16 @@ const { email, senhaEntrada, idParametro } = require('./campos.schema');
  * nunca no corpo: o cliente HTTP do frontend recusa, por construção, corpos
  * com `empresaId` (campo de autoridade), e aqui o identificador é uma
  * ESCOLHA entre opções que o servidor revalida — não uma autoridade.
+ *
+ * O login exige também o token do Turnstile, conferido no Siteverify antes
+ * do controller (middleware/turnstile.js). O service nunca o recebe.
  */
 
 const login = {
   body: z.strictObject({
     email,
     senha: senhaEntrada,
+    turnstileToken,
   }),
 };
 

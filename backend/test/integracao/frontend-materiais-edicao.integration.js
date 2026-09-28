@@ -6,6 +6,7 @@ const express = require('express');
 const http = require('node:http');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { criarAuthGlobalController } = require('../../src/controllers/auth-global.controller');
 const { criarAuthGlobalRoutes } = require('../../src/routes/auth-global.routes');
 const { criarMaterialController } = require('../../src/controllers/material.controller');
@@ -92,7 +93,7 @@ describe('Melhoria C2 — edição de material e entrada inicial (PostgreSQL rea
   async function entrar(email, empresaId) {
     const nav = criarNavegador(origem);
     EpiHttp.configurar({ baseUrl: `${base}/api`, fetch: nav });
-    const login = await EpiPortal.acoes.entrar({ email, senha: SENHA });
+    const login = await EpiPortal.acoes.entrar({ email, senha: SENHA, turnstileToken: TOKEN_TURNSTILE_TESTE });
     assert.equal(login.ok, true, JSON.stringify(login));
     if (!(login.dados.contexto && login.dados.contexto.empresa.id === empresaId)) {
       const sel = await EpiPortal.acoes.selecionar(empresaId);
@@ -145,7 +146,7 @@ describe('Melhoria C2 — edição de material e entrada inicial (PostgreSQL rea
     app.use(
       '/api',
       corsApi, semCache, verificarOrigem, exigirJson, parserJson,
-      criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }) }),
+      criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }), ...turnstileDeTeste() }),
       criarMaterialRoutes({ controller: criarMaterialController({ pool }), exigirSessao, pool }),
       criarEstoqueRoutes({ controller: criarEstoqueController({ pool }), exigirSessao, pool }),
       criarItensDisponiveisRoutes({ controller: criarItensDisponiveisController({ pool }), exigirSessao, pool }),

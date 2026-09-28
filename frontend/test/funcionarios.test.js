@@ -372,11 +372,15 @@ describe('histórico: consulta por nome/matrícula ou CPF completo', () => {
     assert.match(F.historico.consulta('cpf', '529.982').mensagem, /completo/i);
   });
 
-  test('acoes.listar monta a query sem nunca misturar CPF na busca livre; inclui ativos e inativos', async () => {
+  test('acoes.listar: busca livre na query; CPF completo só no corpo de um POST, nunca na URL (SEC-008)', async () => {
     servidor(resposta(200, { status: 'ok', funcionarios: [], total: 0, pagina: 1, limite: 20 }));
     await F.acoes.listar({ cpf: '52998224725' });
     await F.acoes.listar({ busca: 'Silva' });
-    assert.deepEqual(chamadas.map((c) => c.caminho), ['/api/funcionarios?cpf=52998224725&pagina=1&limite=20', '/api/funcionarios?busca=Silva&pagina=1&limite=20']);
+    assert.deepEqual(chamadas.map((c) => [c.metodo, c.caminho, c.corpo]), [
+      ['POST', '/api/funcionarios/consulta-cpf', { cpf: '52998224725' }],
+      ['GET', '/api/funcionarios?busca=Silva&pagina=1&limite=20', undefined],
+    ]);
+    assert.equal(chamadas.some((c) => c.caminho.includes('52998224725')), false);
   });
 
   test('render: lista de resultados escapada, com situação; sem entregas mostra a ausência de registros', () => {
@@ -654,7 +658,7 @@ describe('página Histórico de Funcionários (DOM simulado)', () => {
     assert.equal(chamadas.length, 0);
     assert.match(pg.el('aviso').innerHTML, /CPF completo/);
     await consultar(pg, 'cpf', '529.982.247-25');
-    assert.equal(chamadas[0].caminho, '/api/funcionarios?cpf=52998224725&pagina=1&limite=20');
+    assert.deepEqual([chamadas[0].metodo, chamadas[0].caminho, chamadas[0].corpo], ['POST', '/api/funcionarios/consulta-cpf', { cpf: '52998224725' }]);
   });
 
   test('nenhum resultado e falhas: mensagem clara, colaborador vazio; 401 devolve ao Portal', async () => {

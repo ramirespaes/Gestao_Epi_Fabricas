@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const request = require('supertest');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { inserirLote, baixarLote, somarDias } = require('./helpers/estoque-lotes');
 const { criarAppTeste } = require('../helpers/app-teste');
 const { criarAuthGlobalController } = require('../../src/controllers/auth-global.controller');
@@ -123,7 +124,7 @@ describe('E7 — validade de estoque por lote (PostgreSQL real)', () => {
       return criarAppTeste((a) => {
         a.use(
           '/api',
-          criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }) }),
+          criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }), ...turnstileDeTeste() }),
           criarEstoqueRoutes({ controller: criarEstoqueController({ pool, relogio }), exigirSessao, pool }),
           criarDashboardRoutes({ controller: criarDashboardController({ pool, relogio }), exigirSessao, pool }),
         );
@@ -132,7 +133,7 @@ describe('E7 — validade de estoque por lote (PostgreSQL real)', () => {
     app = montar(NOITE_DE_30_09);
     appMadrugada = montar(MADRUGADA_DE_01_10);
     for (const k of Object.keys(EMAILS)) {
-      const login = await request(app).post('/api/auth/global/login').send({ email: EMAILS[k], senha: SENHA });
+      const login = await request(app).post('/api/auth/global/login').send({ email: EMAILS[k], senha: SENHA, turnstileToken: TOKEN_TURNSTILE_TESTE });
       assert.equal(login.status, 200, JSON.stringify(login.body));
       const c = cookiesDe(login);
       cookie[k] = `${C_GLOBAL}=${c[C_GLOBAL]}; ${C_EMPRESA}=${c[C_EMPRESA]}`;

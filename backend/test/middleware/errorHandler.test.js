@@ -16,6 +16,7 @@ const SQL = "select senha_hash from usuarios where email = 'luis@empresa.com'";
 const SENSIVEIS = [SENHA, EMAIL, CNPJ, TOKEN, 'Bearer', 'senha_hash', SQL];
 const CABECALHOS = { 'content-type': 'application/json', authorization: 'Bearer ' + TOKEN, cookie: 'gepi_sessao=' + TOKEN };
 const CORPO_500 = { status: 'error', codigo: 'ERRO_INTERNO', message: 'Erro interno do servidor' };
+const CORPO_404 = { status: 'error', codigo: 'ROTA_NAO_ENCONTRADA', message: 'Rota não encontrada' };
 
 const app = criarAppTeste((a) => {
   a.post('/validacao', (req, res, next) => next(HttpError.validacao([{ campo: 'body.email', codigo: 'EMAIL_INVALIDO', mensagem: 'E-mail inválido' }])));
@@ -172,10 +173,28 @@ describe('delegação e 404', () => {
     assertSemSensiveis(logs[0], [SENHA, 'CORPO_SENTINELA', 'mensagem interna', '"message"', '"stack"', '"body"'], 'log');
   });
 
-  test('notFoundHandler e health inalterados', async () => {
+  // SEC-009: o 404 nunca ecoa método, caminho ou query, que o cliente
+  // controla e podem levar CPF, token de convite ou outro dado.
+  test('notFoundHandler: 404 com corpo fixo, sem log', async () => {
     const r = await request(app).get('/nao-existe');
-    assert.deepEqual([r.status, r.body], [404, { status: 'error', message: 'Rota não encontrada: GET /nao-existe' }]);
+    assert.deepEqual([r.status, r.body], [404, CORPO_404]);
     assert.equal(typeof notFoundHandler, 'function');
+    assert.deepEqual(logs, []);
+  });
+
+  test('notFoundHandler: query e caminho controlados pelo cliente não voltam na resposta', async () => {
+    const token = 'Zm9ybWF0b2Jhc2U2NHVybGRldG9rZW5jb21fNDNjaGFy'.slice(0, 43);
+    for (const caminho of [
+      `/api/inexistente?cpf=52998224725&convite=${token}`,
+      '/api/%3Cscript%3Ealert(1)%3C%2Fscript%3E',
+      `/api/convite/${token}?email=pessoa@exemplo-cliente.com.br`,
+    ]) {
+      for (const metodo of ['get', 'post', 'delete']) {
+        const r = await request(app)[metodo](caminho);
+        assert.deepEqual([r.status, r.body], [404, CORPO_404], `${metodo} ${caminho}`);
+        assertSemSensiveis(JSON.stringify(r.body), ['52998224725', token, 'cpf', 'convite', 'script', 'pessoa@', 'inexistente', '/api'], 'resposta 404');
+      }
+    }
     assert.deepEqual(logs, []);
   });
 });

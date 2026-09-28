@@ -102,3 +102,34 @@ describe('registrar', () => {
     );
   });
 });
+
+// SEC-002: mesma garantia da auditoria da empresa, nas colunas VARCHAR(150)
+// e VARCHAR(45) da migration 029.
+describe('SEC-002 — IP e User-Agent cabem nas colunas', () => {
+  const gravar = async (extra) => {
+    const executor = executorFalso([{ id: '3', criado_em: new Date() }]);
+    await registrar(executor, { administradorId: ADMIN_ID, acao: 'X', ...extra });
+    const valores = executor.chamadas[0].valores;
+    return { ip: valores[5], dispositivo: valores[6] };
+  };
+
+  test('User-Agent com 150 fica igual; com 151 e com 400 é cortado nos primeiros 150', async () => {
+    const ua = (n) => 'curl/8.0 '.repeat(50).slice(0, n);
+    assert.equal((await gravar({ dispositivo: ua(150) })).dispositivo, ua(150));
+    assert.equal((await gravar({ dispositivo: ua(151) })).dispositivo, ua(150));
+    assert.equal((await gravar({ dispositivo: ua(400) })).dispositivo, ua(150));
+  });
+
+  test('IP no limite fica igual; acima de 45 é cortado', async () => {
+    const ipv6 = '0000:0000:0000:0000:0000:ffff:192.168.100.228';
+    assert.equal((await gravar({ ip: ipv6 })).ip, ipv6);
+    assert.equal((await gravar({ ip: `${ipv6}, 198.51.100.7` })).ip, ipv6);
+  });
+
+  test('ausente vira null; tipo que não é texto é erro de programação, antes de consultar', async () => {
+    assert.deepEqual(await gravar({}), { ip: null, dispositivo: null });
+    const executor = executorFalso([]);
+    await assert.rejects(() => registrar(executor, { administradorId: ADMIN_ID, acao: 'X', dispositivo: 5 }), /dispositivo/i);
+    assert.equal(executor.chamadas.length, 0);
+  });
+});

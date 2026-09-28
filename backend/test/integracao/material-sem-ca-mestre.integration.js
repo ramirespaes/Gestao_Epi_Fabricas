@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { criarAppTeste } = require('../helpers/app-teste');
 const { criarAuthGlobalController } = require('../../src/controllers/auth-global.controller');
 const { criarAuthGlobalRoutes } = require('../../src/routes/auth-global.routes');
@@ -68,11 +69,11 @@ describe('E10 — material sem CA mestre na API (PostgreSQL real)', () => {
     app = criarAppTeste((a) => {
       a.use(
         '/api',
-        criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: criarLimitador({ limite: 100000, janelaSegundos: 60 }), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }) }),
+        criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: criarLimitador({ limite: 100000, janelaSegundos: 60 }), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }), ...turnstileDeTeste() }),
         criarMaterialRoutes({ controller: criarMaterialController({ pool }), exigirSessao: criarExigirSessao({ pool }), pool }),
       );
     });
-    const login = await request(app).post('/api/auth/global/login').send({ email: EMAIL, senha: SENHA });
+    const login = await request(app).post('/api/auth/global/login').send({ email: EMAIL, senha: SENHA, turnstileToken: TOKEN_TURNSTILE_TESTE });
     assert.equal(login.status, 200, JSON.stringify(login.body));
     const c = cookiesDe(login);
     cookie = `${C_GLOBAL}=${c[C_GLOBAL]}; ${C_EMPRESA}=${c[C_EMPRESA]}`;

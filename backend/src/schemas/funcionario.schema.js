@@ -67,16 +67,22 @@ const criar = {
   }),
 };
 
+// SEC-008: `cpf` não entra mais na query (URL, histórico, logs de acesso).
+// A consulta por CPF é `consultaCpf`, com o CPF no corpo.
 const listar = {
   query: z.strictObject({
     ...paginacaoQuery,
     ativo: booleanoQuery.optional(),
     busca: busca.optional(),
     grupoHomogeneoId: grupoHomogeneoIdQuery.optional(),
-    // C4 (decisão D5): CPF só COMPLETO, com DV conferido, por igualdade
-    // exata no repositório; nunca parcial. Independente de `busca`.
-    cpf: cpfComDigitosVerificadores.optional(),
   }),
+};
+
+// C4 (decisão D5): CPF só COMPLETO, com DV conferido, por igualdade exata no
+// repositório; nunca parcial. O CPF é único por empresa, então não há
+// paginação a pedir.
+const consultaCpf = {
+  body: z.strictObject({ cpf: cpfComDigitosVerificadores }),
 };
 
 const buscar = { params: paramsComId };
@@ -168,5 +174,5 @@ const importacao = {
 };
 
 module.exports = {
-  criar, listar, buscar, alterar, inativar, reativar, importacao, linhaImportacao, LINHAS_POR_LOTE, LINHAS_POR_ARQUIVO,
+  criar, listar, consultaCpf, buscar, alterar, inativar, reativar, importacao, linhaImportacao, LINHAS_POR_LOTE, LINHAS_POR_ARQUIVO,
 };

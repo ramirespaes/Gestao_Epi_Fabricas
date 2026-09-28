@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const request = require('supertest');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { criarAppTeste } = require('../helpers/app-teste');
 const { criarAuthController } = require('../../src/controllers/auth.controller');
 const { criarAuthRoutes } = require('../../src/routes/auth.routes');
@@ -70,7 +71,7 @@ describe('auditoria da seleção e da troca de empresa (PostgreSQL real)', () =>
   async function entrar(email, userAgent) {
     const req = request(app).post('/api/auth/global/login');
     if (userAgent) req.set('User-Agent', userAgent);
-    const r = await req.send({ email, senha: SENHA });
+    const r = await req.send({ email, senha: SENHA, turnstileToken: TOKEN_TURNSTILE_TESTE });
     assert.equal(r.status, 200, JSON.stringify(r.body));
     const c = cookiesDe(r);
     sensiveis.push(c[C_GLOBAL].valor);
@@ -103,7 +104,7 @@ describe('auditoria da seleção e da troca de empresa (PostgreSQL real)', () =>
       a.use(
         '/api',
         criarAuthRoutes({ controller: criarAuthController({ pool }), limitador: semLimite(), exigirSessao: criarExigirSessao({ pool }) }),
-        criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }) }),
+        criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }), ...turnstileDeTeste() }),
       );
     });
     for (const [chave, nome, cnpj] of [['A', 'Empresa Alfa Troca', '11222333000181'], ['B', 'Empresa Beta Troca', '22333444000100'], ['C', 'Empresa Gama Troca', '33444555000119']]) {

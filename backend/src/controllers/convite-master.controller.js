@@ -26,7 +26,7 @@ function criarConviteMasterController({ pool: poolInjetado, entregar = entregaCo
       const { convite, token, empresa } = await conviteMasterService.criar(poolInjetado, {
         ...comContexto(req), empresaId: req.validado.params.id, email: req.validado.body.email,
       });
-      const entrega = await entregar({ emailConvite: convite.emailConvite, token, expiraEm: convite.expiraEm, empresa });
+      const entrega = await entregar({ conviteId: convite.id, token, expiraEm: convite.expiraEm, empresa });
       res.status(201).json({ status: 'ok', convite, empresa, entrega });
     },
 

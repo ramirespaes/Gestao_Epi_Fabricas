@@ -4,7 +4,9 @@ const { HttpError } = require('../errors/HttpError');
 const grupoRepo = require('../repositories/grupo-acesso.repository');
 const grupoPermissaoRepo = require('../repositories/grupo-permissao.repository');
 const permissaoRepo = require('../repositories/permissao.repository');
+const usuarioRepo = require('../repositories/usuario.repository');
 const auditoriaRepo = require('../repositories/auditoria.repository');
+const recursos = require('../rbac/recursos');
 const autoridade = require('./autoridade-administrativa');
 
 /**
@@ -97,6 +99,14 @@ const autoridade = require('./autoridade-administrativa');
  * mínimo e documentado desta rodada, não uma reabertura da 3K: nenhuma
  * das quatro operações de escrita muda, e a única mudança de contrato é
  * o novo parâmetro `atorId`, agora obrigatório nas duas listagens.
+ *
+ * O PRÓPRIO GRUPO (SEC-001): quem não é MASTER nunca configura as
+ * permissões do grupo em que está — nem para ampliar, nem para restringir.
+ * Sem isso, um ADMINISTRADOR com ADMINISTRAR_PERMISSOES_GRUPO ampliaria o
+ * próprio acesso. O grupo do ator é relido do banco, travado, na mesma
+ * transação. Mudar o próprio grupo já é recusado em grupo-usuario.service.js
+ * (AUTOVINCULO_NAO_PERMITIDO). O MASTER não depende de grupo e mantém a
+ * autoridade prevista.
  */
 
 const MODO_ALTERNATIVA = 'ALTERNATIVA';
@@ -112,6 +122,8 @@ const MSG_GRUPO_NAO_ENCONTRADO = 'Grupo de acesso não encontrado';
 const MSG_SEM_ALTERACAO = 'Nenhuma operação informada para configurar';
 const MSG_ACAO_INVALIDA = 'Ação inválida para configuração de grupo';
 const MSG_ACAO_NAO_ALTERNATIVA = 'Esta ação só aceita configuração de grupo quando seu modo for ALTERNATIVA';
+const MSG_PROPRIO_GRUPO = 'Não é possível configurar as permissões do próprio grupo de acesso';
+const MSG_RECURSO_INVALIDO = 'Recurso inválido para configuração de grupo';
 
 function exigirId(valor, nome) {
   if (!Number.isInteger(valor) || valor <= 0) {
@@ -193,6 +205,22 @@ async function travarGrupoDaEmpresa(client, empresaId, grupoId) {
 }
 
 /**
+ * SEC-001: recusa quando o ator, não sendo MASTER, está no grupo alvo. Lê o
+ * vínculo com FOR UPDATE (a linha do ator já está travada pela autoridade),
+ * então uma mudança de grupo concorrente espera esta transação. Vínculo não
+ * encontrado também recusa (falha fechada).
+ */
+async function exigirGrupoDeTerceiro(client, empresaId, ator, grupoId) {
+  if (ator.perfil === autoridade.PERFIL_MASTER) {
+    return;
+  }
+  const vinculo = await usuarioRepo.buscarVinculoGrupoParaAtualizacao(client, empresaId, ator.id);
+  if (vinculo === null || vinculo.grupoAcessoId === grupoId) {
+    throw HttpError.forbidden('GRUPO_PERMISSAO_PROPRIO_GRUPO', MSG_PROPRIO_GRUPO);
+  }
+}
+
+/**
  * Configuração da ação no catálogo real, aceita para configuração de grupo
  * apenas quando existe, está ativa e tem configuração reconhecível.
  * Devolve null nos demais casos, sem distinguir qual falhou.
@@ -235,7 +263,14 @@ async function configurarRecurso(pool, dados) {
   const informadas = extrairOperacoesInformadas(dados);
 
   return emTransacao(pool, async (client) => {
-    await autoridade.exigirAutoridadeAdministrativa(client, empresaId, atorId, 'GRUPO_PERMISSAO_NAO_AUTORIZADA', MSG_NAO_AUTORIZADO, autoridade.ACOES_ADMINISTRATIVAS.PERMISSOES_GRUPO);
+    const ator = await autoridade.exigirAutoridadeAdministrativa(client, empresaId, atorId, 'GRUPO_PERMISSAO_NAO_AUTORIZADA', MSG_NAO_AUTORIZADO, autoridade.ACOES_ADMINISTRATIVAS.PERMISSOES_GRUPO);
+    await exigirGrupoDeTerceiro(client, empresaId, ator, grupoId);
+
+    // SEC-NOVO-001: só recurso do catálogo oficial, como as ações, que
+    // precisam existir em `acoes`. Formato válido não basta.
+    if (!recursos.recursoConhecido(recurso)) {
+      throw HttpError.badRequest('GRUPO_PERMISSAO_RECURSO_INVALIDO', MSG_RECURSO_INVALIDO);
+    }
 
     if (Object.keys(informadas).length === 0) {
       throw HttpError.badRequest('GRUPO_PERMISSAO_SEM_ALTERACAO', MSG_SEM_ALTERACAO);
@@ -292,7 +327,8 @@ async function configurarAcao(pool, {
   exigirTriState(permitido, 'permitido');
 
   return emTransacao(pool, async (client) => {
-    await autoridade.exigirAutoridadeAdministrativa(client, empresaId, atorId, 'GRUPO_PERMISSAO_NAO_AUTORIZADA', MSG_NAO_AUTORIZADO, autoridade.ACOES_ADMINISTRATIVAS.PERMISSOES_GRUPO);
+    const ator = await autoridade.exigirAutoridadeAdministrativa(client, empresaId, atorId, 'GRUPO_PERMISSAO_NAO_AUTORIZADA', MSG_NAO_AUTORIZADO, autoridade.ACOES_ADMINISTRATIVAS.PERMISSOES_GRUPO);
+    await exigirGrupoDeTerceiro(client, empresaId, ator, grupoId);
 
     await travarGrupoDaEmpresa(client, empresaId, grupoId);
 

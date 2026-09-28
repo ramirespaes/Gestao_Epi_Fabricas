@@ -6,6 +6,7 @@ const express = require('express');
 const http = require('node:http');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { inserirLote, baixarLote, somarDias } = require('./helpers/estoque-lotes');
 const { criarAuthController } = require('../../src/controllers/auth.controller');
 const { criarAuthRoutes } = require('../../src/routes/auth.routes');
@@ -99,7 +100,7 @@ describe('C3 — Itens Disponíveis pela página integrada (PostgreSQL real)', (
   async function abrirPagina(email) {
     const nav = criarNavegador(origem);
     EpiHttp.configurar({ baseUrl: `${base}/api`, fetch: nav });
-    const login = await EpiPortal.acoes.entrar({ email, senha: SENHA });
+    const login = await EpiPortal.acoes.entrar({ email, senha: SENHA, turnstileToken: TOKEN_TURNSTILE_TESTE });
     assert.equal(login.ok, true, JSON.stringify(login));
     const sessao = await EpiSessaoEmpresarial.iniciar({ janela: janela() });
     assert.equal(sessao.autenticado, true, JSON.stringify(sessao));
@@ -153,7 +154,7 @@ describe('C3 — Itens Disponíveis pela página integrada (PostgreSQL real)', (
       '/api',
       corsApi, semCache, verificarOrigem, exigirJson, parserJson,
       criarAuthRoutes({ controller: criarAuthController({ pool }), limitador: semLimite(), exigirSessao }),
-      criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }) }),
+      criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }), ...turnstileDeTeste() }),
       criarMaterialRoutes({ controller: criarMaterialController({ pool }), exigirSessao, pool }),
       criarItensDisponiveisRoutes({ controller: criarItensDisponiveisController({ pool, relogio: RELOGIO }), exigirSessao, pool }),
     );

@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { inserirLote, baixarLote, somarDias } = require('./helpers/estoque-lotes');
 const { criarAppTeste } = require('../helpers/app-teste');
 const { criarAuthGlobalController } = require('../../src/controllers/auth-global.controller');
@@ -62,7 +63,7 @@ describe('C3 — GET /api/estoque/itens-disponiveis (PostgreSQL real)', () => {
   const cookie = {};
 
   async function sessao(email) {
-    const login = await request(app).post('/api/auth/global/login').send({ email, senha: SENHA });
+    const login = await request(app).post('/api/auth/global/login').send({ email, senha: SENHA, turnstileToken: TOKEN_TURNSTILE_TESTE });
     assert.equal(login.status, 200, JSON.stringify(login.body));
     const c = cookiesDe(login);
     return `${C_GLOBAL}=${c[C_GLOBAL]}; ${C_EMPRESA}=${c[C_EMPRESA]}`;
@@ -121,7 +122,7 @@ describe('C3 — GET /api/estoque/itens-disponiveis (PostgreSQL real)', () => {
     app = criarAppTeste((a) => {
       a.use(
         '/api',
-        criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }) }),
+        criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }), ...turnstileDeTeste() }),
         criarMaterialRoutes({ controller: criarMaterialController({ pool }), exigirSessao, pool }),
         criarEstoqueRoutes({ controller: criarEstoqueController({ pool }), exigirSessao, pool }),
         criarItensDisponiveisRoutes({ controller: criarItensDisponiveisController({ pool, relogio: RELOGIO }), exigirSessao, pool }),

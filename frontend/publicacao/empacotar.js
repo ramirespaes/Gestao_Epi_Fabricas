@@ -15,7 +15,8 @@
  *      arquivo regular dentro de frontend/ (link simbólico é recusado);
  *   2. NUNCA_PUBLICAR: os scripts do protótipo e o Painel Privado (outra
  *      origem, com allowlist de CORS disjunta) são recusados mesmo listados;
- *   3. nenhuma página publicada carrega script de fora do pacote;
+ *   3. nenhuma página publicada carrega script de fora do pacote, salvo a
+ *      exceção exata de SCRIPTS_EXTERNOS_PERMITIDOS (página e URL literais);
  *   4. todo recurso carregado por página ou folha de estilo publicada
  *      (script, link, img, url()) também está na allowlist;
  *   5. a saída não existe ou está vazia, e fica fora do código-fonte.
@@ -32,6 +33,11 @@ const RAIZ = path.resolve(__dirname, '..');
 const ARQUIVO_ALLOWLIST = path.join(__dirname, 'allowlist.json');
 const NUNCA_PUBLICAR = ['js/main.js', 'js/db-api.js', 'painel-privado/'];
 const COM_ESQUEMA = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i;
+// Única exceção: o script oficial do Turnstile, só no login do Portal.
+// Comparação literal da página e da URL; nada de prefixo, domínio ou padrão.
+const SCRIPTS_EXTERNOS_PERMITIDOS = new Map([
+  ['portal/index.html', ['https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit']],
+]);
 
 class ErroPublicacao extends Error {
   constructor(codigo, mensagem) {
@@ -127,7 +133,8 @@ function validarConteudo(arquivos, raiz) {
     if (extensao === '.html') {
       const html = texto.replace(/<!--[\s\S]*?-->/g, '');
       const scripts = valoresDoAtributo(html, 'script', 'src');
-      const externo = scripts.find((s) => COM_ESQUEMA.test(s.trim()));
+      const permitidos = SCRIPTS_EXTERNOS_PERMITIDOS.get(entrada) || [];
+      const externo = scripts.find((s) => COM_ESQUEMA.test(s.trim()) && !permitidos.includes(s));
       if (externo) {
         throw new ErroPublicacao('SCRIPT_EXTERNO', `${entrada} carrega script de fora do pacote: ${externo}`);
       }
