@@ -18,6 +18,8 @@ const { criarGrupoAcessoRoutes } = require('../../src/routes/grupo-acesso.routes
 const { criarExigirSessao } = require('../../src/middleware/autenticacao');
 const { criarExigirSessaoGlobal } = require('../../src/middleware/autenticacao-global');
 const { criarExigirSessaoPlataforma } = require('../../src/middleware/autenticacao-plataforma');
+const { criarExigirDesafioMfa } = require('../../src/middleware/desafio-mfa-plataforma');
+const { criarSessaoAdministrativa } = require('./helpers/sessao-plataforma-teste');
 const { criarLimitador } = require('../../src/middleware/rate-limit');
 const { gerarHashSenha } = require('../../src/security/password');
 const { authConfig } = require('../../src/config/auth');
@@ -44,7 +46,9 @@ const { assertSemSensiveis } = require('../helpers/sensiveis');
  * global. CSRF/CORS/Origin da montagem real estão em test/app.test.js.
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 40 }, (_, i) => String(i).padStart(3, '0'));
+// 048: a auditoria da plataforma grava ator e alvo; 053: criarInicial emite a
+// liberação do MFA; 054: a sessão administrativa grava o registro do MFA.
+const TODAS_AS_MIGRATIONS = [...Array.from({ length: 40 }, (_, i) => String(i).padStart(3, '0')), '048', '053', '054'];
 const SENHA = 'senha-forte-do-portal-2026';
 const SENHA_ERRADA = 'senha-errada-do-portal-2026';
 const SENHA_ADMIN = 'planeta-nebulosa-ozonio-42';
@@ -119,7 +123,13 @@ describe('Portal do Cliente — login global, seleção de empresa e sessões (P
         criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal, ...turnstileDeTeste() }),
         criarGrupoAcessoRoutes({ controller: criarGrupoAcessoController({ pool }), exigirSessao }),
       );
-      a.use('/api/plataforma', criarAuthPlataformaRoutes({ controller: criarAuthPlataformaController({ pool }), limitador: semLimite(), exigirSessaoPlataforma }));
+      a.use('/api/plataforma', criarAuthPlataformaRoutes({
+        controller: criarAuthPlataformaController({ pool }),
+        limitador: semLimite(),
+        limitadorMfa: semLimite(),
+        exigirSessaoPlataforma,
+        desafioMfa: (tipos) => criarExigirDesafioMfa({ pool, tipos }),
+      }));
     });
 
     for (const [chave, nome, cnpj] of [['A', 'Empresa A', '11222333000181'], ['B', 'Empresa B', '22333444000100'], ['C', 'Empresa C', '33444555000119']]) {
@@ -564,10 +574,10 @@ describe('Portal do Cliente — login global, seleção de empresa e sessões (P
 
   describe('isolamento do Painel Privado e dos cookies', () => {
     test('cookie global/empresarial nunca autenticam na plataforma; cookie administrativo nunca autentica no Portal; os três nomes são distintos', async () => {
-      await criarInicial(pool, { email: 'admin@safework.com.br', senha: SENHA_ADMIN });
-      const adm = await request(app).post('/api/plataforma/auth/login').send({ email: 'admin@safework.com.br', senha: SENHA_ADMIN });
-      assert.equal(adm.status, 200);
-      const cAdmin = cookiesDe(adm)[C_ADMIN].valor;
+      // Sessão administrativa já existente: a senha só abre o desafio pré-MFA.
+      const administrador = await criarInicial(pool, { email: 'admin@safework.com.br', senha: SENHA_ADMIN });
+      const cAdmin = (await criarSessaoAdministrativa(pool, administrador.id)).token;
+      assert.equal((await request(app).get('/api/plataforma/auth/me').set('Cookie', par(C_ADMIN, cAdmin))).status, 200, 'controle: a sessão administrativa vale no Painel');
       const bruno = await entrar(BRUNO);
       const g = bruno.cookies[C_GLOBAL].valor;
       const e = bruno.cookies[C_EMPRESA].valor;

@@ -31,8 +31,9 @@ const SEGUNDOS_POR_MINUTO = 60;
 const EXPIRACAO_NO_PASSADO = new Date(0);
 const MENSAGEM_TOKEN_INVALIDO = 'token de sessão inválido';
 
-function criarPoliticaCookie({ nome, secure, sameSite, expiracaoMinutos }) {
-  const atributosEstruturais = { httpOnly: true, secure, sameSite, path: '/' };
+// path só muda para o cookie do desafio MFA; os cookies de sessão seguem com Path=/.
+function criarPoliticaCookie({ nome, secure, sameSite, expiracaoMinutos, path = '/' }) {
+  const atributosEstruturais = { httpOnly: true, secure, sameSite, path };
 
   return {
     serializarSessao(token) {
@@ -76,11 +77,13 @@ const serializarRemocaoCookieSessao = () => politicaSessao.serializarRemocao();
  * que este cookie nunca é o mesmo que o middleware empresarial procura, e
  * vice-versa.
  */
+// Max-Age acompanha a expiração própria da sessão plena do Painel, que só
+// nasce depois do segundo fator.
 const politicaSessaoPlataforma = criarPoliticaCookie({
   nome: authConfig.sessao.cookieNomeAdmin,
   secure: authConfig.sessao.cookieSecure,
   sameSite: authConfig.sessao.cookieSameSite,
-  expiracaoMinutos: authConfig.sessao.expiracaoMinutos,
+  expiracaoMinutos: authConfig.sessao.expiracaoMinutosAdmin,
 });
 
 const serializarCookieSessaoPlataforma = (token) => politicaSessaoPlataforma.serializarSessao(token);
@@ -106,6 +109,36 @@ const politicaSessaoGlobal = criarPoliticaCookie({
 const serializarCookieSessaoGlobal = (token) => politicaSessaoGlobal.serializarSessao(token);
 const serializarRemocaoCookieSessaoGlobal = () => politicaSessaoGlobal.serializarRemocao();
 
+/**
+ * Cookie do desafio pré-MFA do Painel Privado. Não é sessão: nome próprio
+ * (authConfig.desafioMfa.cookieNome, distinto dos três de sessão),
+ * SameSite=Strict fixo e Path restrito às rotas de autenticação, que é onde
+ * ficam o estado do MFA e o logout. Secure segue a mesma regra de ambiente
+ * dos cookies de sessão (obrigatório em production). Max-Age é o prazo do
+ * desafio emitido, que varia por etapa.
+ */
+const CAMINHO_COOKIE_DESAFIO_MFA = '/api/plataforma/auth';
+
+function politicaDesafioMfa(expiracaoMinutos) {
+  return criarPoliticaCookie({
+    nome: authConfig.desafioMfa.cookieNome,
+    secure: authConfig.sessao.cookieSecure,
+    sameSite: 'strict',
+    expiracaoMinutos,
+    path: CAMINHO_COOKIE_DESAFIO_MFA,
+  });
+}
+
+function serializarCookieDesafioMfa(token, validadeMinutos) {
+  if (!Number.isInteger(validadeMinutos) || validadeMinutos < 1) {
+    throw new TypeError('prazo do desafio inválido');
+  }
+  return politicaDesafioMfa(validadeMinutos).serializarSessao(token);
+}
+
+// A remoção não depende do prazo: Max-Age=0 e Expires no passado.
+const serializarRemocaoCookieDesafioMfa = () => politicaDesafioMfa(1).serializarRemocao();
+
 module.exports = {
   criarPoliticaCookie,
   serializarCookieSessao,
@@ -114,4 +147,7 @@ module.exports = {
   serializarRemocaoCookieSessaoPlataforma,
   serializarCookieSessaoGlobal,
   serializarRemocaoCookieSessaoGlobal,
+  CAMINHO_COOKIE_DESAFIO_MFA,
+  serializarCookieDesafioMfa,
+  serializarRemocaoCookieDesafioMfa,
 };

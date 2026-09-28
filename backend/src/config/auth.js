@@ -53,6 +53,18 @@ const INTEIROS = Object.freeze({
   // "Prazo curto" (planejamento v2 §8): padrão 3 dias (4320 min); mín 5
   // min (testes/operação controlada), máx 30 dias.
   CONVITE_MASTER_EXPIRACAO_MINUTOS: { min: 5, max: 43200, padrao: 4320 },
+  // Prazo do desafio pré-MFA do Painel Privado: VERIFICACAO (TOTP já
+  // cadastrado) é curto; LIBERACAO e as etapas de cadastro, que pedem
+  // código entregue fora de banda e o app autenticador, usam o maior.
+  MFA_DESAFIO_VERIFICACAO_MINUTOS: { min: 1, max: 15, padrao: 5 },
+  MFA_DESAFIO_CADASTRO_MINUTOS: { min: 1, max: 60, padrao: 15 },
+  // Códigos inválidos aceitos por desafio antes de encerrá-lo.
+  MFA_DESAFIO_MAX_FALHAS: { min: 1, max: 20, padrao: 5 },
+  // Validade da liberação de cadastro emitida pelo CLI.
+  MFA_LIBERACAO_MINUTOS: { min: 5, max: 1440, padrao: 30 },
+  // Expiração absoluta da sessão plena do Painel Privado, que só nasce
+  // depois do segundo fator.
+  SESSAO_ADMIN_EXPIRACAO_MINUTOS: { min: 5, max: 1440, padrao: 480 },
 });
 
 const OPCOES = Object.freeze({
@@ -76,6 +88,8 @@ const MENSAGENS = Object.freeze({
   PREFIXO_HOST: 'prefixo __Host- exige cookie Secure',
   NOME_ADMIN_IGUAL: 'não pode ser igual a SESSAO_COOKIE_NOME',
   NOME_GLOBAL_IGUAL_ADMIN: 'não pode ser igual a SESSAO_ADMIN_COOKIE_NOME',
+  NOME_MFA_REPETIDO: 'não pode repetir o nome de outro cookie de sessão',
+  PREFIXO_HOST_CAMINHO: 'prefixo __Host- exige Path=/, e o cookie do desafio usa /api/plataforma/auth',
 });
 
 const COOKIE_NOME_FORMATO = /^(__Host-|__Secure-)?[A-Za-z0-9_-]{1,64}$/;
@@ -86,6 +100,9 @@ const COOKIE_NOME_ADMIN_PADRAO = 'gepi_sessao_admin';
 // contextos (empresarial, global, administrativo) nunca compartilham cookie
 // (planejamento v2 §6.2, adendo v2.1 §3.2 item 4).
 const COOKIE_NOME_GLOBAL_PADRAO = 'gepi_sessao_global';
+// Cookie do desafio pré-MFA do Painel Privado: quarto nome, distinto dos três
+// de sessão, porque o desafio nunca é sessão.
+const COOKIE_NOME_MFA_ADMIN_PADRAO = 'gepi_mfa_admin';
 const HEX = /^[0-9a-fA-F]+$/;
 
 const esquema = z
@@ -110,6 +127,7 @@ const esquema = z
     // aprovada, só o nome muda.
     SESSAO_ADMIN_COOKIE_NOME: z.string().regex(COOKIE_NOME_FORMATO).default(COOKIE_NOME_ADMIN_PADRAO),
     SESSAO_GLOBAL_COOKIE_NOME: z.string().regex(COOKIE_NOME_FORMATO).default(COOKIE_NOME_GLOBAL_PADRAO),
+    SESSAO_MFA_ADMIN_COOKIE_NOME: z.string().regex(COOKIE_NOME_FORMATO).default(COOKIE_NOME_MFA_ADMIN_PADRAO),
     SESSAO_COOKIE_SECURE: booleanoDeAmbiente.optional(),
     SESSAO_COOKIE_SAMESITE: z.enum(OPCOES.SESSAO_COOKIE_SAMESITE).default('lax'),
     SESSAO_EXPIRACAO_MINUTOS: inteiroDeAmbiente(INTEIROS.SESSAO_EXPIRACAO_MINUTOS),
@@ -128,6 +146,11 @@ const esquema = z
     LOGIN_COOLDOWN_NIVEL2_DURACAO_MINUTOS: inteiroDeAmbiente(INTEIROS.LOGIN_COOLDOWN_NIVEL2_DURACAO_MINUTOS),
     LOGIN_TENTATIVAS_RETENCAO_DIAS: inteiroDeAmbiente(INTEIROS.LOGIN_TENTATIVAS_RETENCAO_DIAS),
     CONVITE_MASTER_EXPIRACAO_MINUTOS: inteiroDeAmbiente(INTEIROS.CONVITE_MASTER_EXPIRACAO_MINUTOS),
+    MFA_DESAFIO_VERIFICACAO_MINUTOS: inteiroDeAmbiente(INTEIROS.MFA_DESAFIO_VERIFICACAO_MINUTOS),
+    MFA_DESAFIO_CADASTRO_MINUTOS: inteiroDeAmbiente(INTEIROS.MFA_DESAFIO_CADASTRO_MINUTOS),
+    MFA_DESAFIO_MAX_FALHAS: inteiroDeAmbiente(INTEIROS.MFA_DESAFIO_MAX_FALHAS),
+    MFA_LIBERACAO_MINUTOS: inteiroDeAmbiente(INTEIROS.MFA_LIBERACAO_MINUTOS),
+    SESSAO_ADMIN_EXPIRACAO_MINUTOS: inteiroDeAmbiente(INTEIROS.SESSAO_ADMIN_EXPIRACAO_MINUTOS),
   })
   .refine((e) => e.SESSAO_INATIVIDADE_MINUTOS <= e.SESSAO_EXPIRACAO_MINUTOS, {
     message: MENSAGENS.INATIVIDADE,
@@ -184,6 +207,18 @@ const esquema = z
   .refine((e) => !(e.SESSAO_GLOBAL_COOKIE_NOME.startsWith('__Host-') && !cookieSecureEfetivo(e)), {
     message: MENSAGENS.PREFIXO_HOST,
     path: ['SESSAO_GLOBAL_COOKIE_NOME'],
+  })
+  .refine(
+    (e) => ![e.SESSAO_COOKIE_NOME, e.SESSAO_ADMIN_COOKIE_NOME, e.SESSAO_GLOBAL_COOKIE_NOME].includes(e.SESSAO_MFA_ADMIN_COOKIE_NOME),
+    { message: MENSAGENS.NOME_MFA_REPETIDO, path: ['SESSAO_MFA_ADMIN_COOKIE_NOME'] },
+  )
+  .refine((e) => !e.SESSAO_MFA_ADMIN_COOKIE_NOME.startsWith('__Host-'), {
+    message: MENSAGENS.PREFIXO_HOST_CAMINHO,
+    path: ['SESSAO_MFA_ADMIN_COOKIE_NOME'],
+  })
+  .refine((e) => !(e.SESSAO_MFA_ADMIN_COOKIE_NOME.startsWith('__Secure-') && !cookieSecureEfetivo(e)), {
+    message: MENSAGENS.PREFIXO_SECURE,
+    path: ['SESSAO_MFA_ADMIN_COOKIE_NOME'],
   });
 
 function cookieSecureEfetivo(e) {
@@ -214,6 +249,7 @@ function analisarConfigAuth(origem) {
       cookieSecure: cookieSecureEfetivo(e),
       cookieSameSite: e.SESSAO_COOKIE_SAMESITE,
       expiracaoMinutos: e.SESSAO_EXPIRACAO_MINUTOS,
+      expiracaoMinutosAdmin: e.SESSAO_ADMIN_EXPIRACAO_MINUTOS,
       inatividadeMinutos: e.SESSAO_INATIVIDADE_MINUTOS,
     },
     argon2: {
@@ -239,6 +275,15 @@ function analisarConfigAuth(origem) {
     },
     conviteMaster: {
       expiracaoMinutos: e.CONVITE_MASTER_EXPIRACAO_MINUTOS,
+    },
+    desafioMfa: {
+      cookieNome: e.SESSAO_MFA_ADMIN_COOKIE_NOME,
+      verificacaoMinutos: e.MFA_DESAFIO_VERIFICACAO_MINUTOS,
+      cadastroMinutos: e.MFA_DESAFIO_CADASTRO_MINUTOS,
+      maxFalhas: e.MFA_DESAFIO_MAX_FALHAS,
+    },
+    liberacaoMfa: {
+      expiracaoMinutos: e.MFA_LIBERACAO_MINUTOS,
     },
   });
 

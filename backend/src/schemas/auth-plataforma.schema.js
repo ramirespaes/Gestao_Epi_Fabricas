@@ -21,4 +21,23 @@ const login = {
   }),
 };
 
-module.exports = { login };
+// Cadastro do MFA. O código de liberação só tem limite de tamanho aqui: a
+// forma canônica (16 símbolos, aliases, hífens e espaços) é do serviço, e
+// um código fora do formato conta como tentativa inválida, não como 400.
+const mfaLiberacao = {
+  body: z.strictObject({
+    codigoLiberacao: z.string().min(1).max(64),
+  }),
+};
+
+const mfaCadastroReiniciar = {
+  body: z.strictObject({}),
+};
+
+const mfaCadastroConfirmar = {
+  body: z.strictObject({
+    codigo: z.string().regex(/^[0-9]{6}$/),
+  }),
+};
+
+module.exports = { login, mfaLiberacao, mfaCadastroReiniciar, mfaCadastroConfirmar };

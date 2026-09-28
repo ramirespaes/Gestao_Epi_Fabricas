@@ -5,6 +5,8 @@ const { normalizarEmail } = require('../utils/normalizacao');
 const passwordPolicy = require('../security/password-policy');
 const administradorRepo = require('../repositories/administrador-plataforma.repository');
 const auditoriaRepo = require('../repositories/auditoria-plataforma.repository');
+const travaRepo = require('../repositories/trava-mfa-plataforma.repository');
+const liberacaoService = require('./liberacao-cadastro-mfa-plataforma.service');
 const password = require('../security/password');
 
 /**
@@ -54,6 +56,12 @@ const password = require('../security/password');
  * PostgreSQL (SQLSTATE 23505) dentro da transação, que é traduzida para o
  * MESMO 409 ADMINISTRADOR_EMAIL_EM_USO da checagem antecipada — nunca um
  * erro genérico de SQL vazando para o operador do script.
+ *
+ * MFA: todo administrador novo nasce com uma liberação de cadastro
+ * (origem CLI_CRIACAO) na MESMA transação, e o primeiro TOTP só é
+ * cadastrado com ela — nunca "quem chegar primeiro". O código volta uma vez
+ * para o CLI imprimir. A auditoria é da operação de CLI, com o novo
+ * administrador como alvo: a criação nunca é atribuída a ele mesmo.
  */
 
 const MSG_EMAIL_INVALIDO = 'E-mail inválido';
@@ -94,7 +102,7 @@ async function emTransacao(pool, operacao) {
  *
  * @param {import('pg').Pool} pool
  * @param {{email: string, senha: string}} dados
- * @returns {Promise<{id: number, email: string, ativo: boolean}>}
+ * @returns {Promise<{id: number, email: string, ativo: boolean, liberacao: {codigo: string, expiraEm: Date}}>}
  */
 async function criarInicial(pool, { email, senha }) {
   const emailNormalizado = normalizarEmail(email);
@@ -118,24 +126,29 @@ async function criarInicial(pool, { email, senha }) {
     return await emTransacao(pool, async (client) => {
       const administrador = await administradorRepo.criar(client, { email: emailNormalizado, senhaHash });
 
-      // Auditoria da própria criação, NA MESMA TRANSAÇÃO do INSERT acima —
-      // sem administrador "responsável" nesta primeira versão (o ator É o
-      // administrador recém-criado, e ele mesmo não pode ter concedido a
-      // si mesmo — é um procedimento de bootstrap, fora do fluxo de
-      // convite entre administradores, que fica para um pacote futuro).
-      // Nenhum dado sensível: só o e-mail (não é segredo) e o
-      // identificador criado. Se este INSERT falhar (inclusive pela
-      // trigger de dado sensível), o ROLLBACK de emTransacao desfaz também
-      // o administrador acima — nunca fica um sem o outro.
-      await auditoriaRepo.registrar(client, {
-        administradorId: administrador.id,
+      // Auditoria da criação, NA MESMA TRANSAÇÃO do INSERT acima. Nenhum
+      // dado sensível: só o e-mail (não é segredo) e o identificador. Se
+      // qualquer passo daqui em diante falhar, o ROLLBACK de emTransacao
+      // desfaz também o administrador — nunca fica um sem o outro.
+      await auditoriaRepo.registrarOperacaoCli(client, {
+        administradorAfetadoId: administrador.id,
         acao: 'ADMINISTRADOR_PLATAFORMA_CRIADO',
         referencia: String(administrador.id),
         contexto: { origem: 'script_administrativo_bootstrap' },
         dadosNovos: { email: administrador.email, ativo: administrador.ativo },
       });
 
-      return administrador;
+      await travaRepo.travarAdministrador(client, administrador.id);
+      const liberacao = await liberacaoService.emitirLiberacaoSobTrava(client, { administradorId: administrador.id, origem: 'CLI_CRIACAO' });
+      await auditoriaRepo.registrarOperacaoCli(client, {
+        administradorAfetadoId: administrador.id,
+        acao: 'LIBERACAO_CADASTRO_CRIADA',
+        referencia: String(liberacao.id),
+        contexto: { origem: 'CLI_CRIACAO' },
+        dadosNovos: { expiraEm: liberacao.expiraEm.toISOString() },
+      });
+
+      return { ...administrador, liberacao: { codigo: liberacao.codigo, expiraEm: liberacao.expiraEm } };
     });
   } catch (erro) {
     if (erro && erro.code === SQLSTATE_VIOLACAO_UNIQUE) {

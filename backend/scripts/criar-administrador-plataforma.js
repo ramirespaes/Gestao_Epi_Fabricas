@@ -154,6 +154,11 @@ async function executarComando({ email, confirmo }, { pool, senha, saida = conso
     const administrador = await administradorPlataformaService.criarInicial(pool, { email, senha });
     saida.log(`Administrador de plataforma criado: id=${administrador.id} email=${administrador.email} ativo=${administrador.ativo}`);
     saida.log(`criado_em=${administrador.criadoEm.toISOString()}`);
+    // Única vez em que o código existe fora do hash: entregue ao
+    // administrador por canal separado. Não é gravado nem exibido de novo.
+    saida.log('Liberação do cadastro do MFA (uso único; entregue fora de banda; não será exibida de novo):');
+    saida.log(`  código: ${administrador.liberacao.codigo}`);
+    saida.log(`  válida até: ${administrador.liberacao.expiraEm.toISOString()}`);
     return SAIDAS.OK;
   } catch (erro) {
     if (erro instanceof administradorPlataformaService.ErroSenhaInvalida) {

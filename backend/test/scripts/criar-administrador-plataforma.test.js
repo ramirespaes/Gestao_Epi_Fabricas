@@ -104,11 +104,13 @@ describe('executarComando', () => {
     assert.equal(criar.mock.calls.length, 0);
   });
 
-  test('sucesso: chama o serviço com email e senha, relata sem expor a senha, devolve OK', async (t) => {
+  test('sucesso: chama o serviço com email e senha, relata sem expor a senha, imprime a liberação de cadastro uma única vez, devolve OK', async (t) => {
     const criadoEm = new Date('2026-09-23T10:00:00Z');
-    const criar = t.mock.method(administradorPlataformaService, 'criarInicial', async () => ({ id: 3, email: 'admin@safework.com.br', ativo: true, criadoEm }));
+    const liberacao = { codigo: 'ABCD-EFGH-JKMN-PQRS', expiraEm: new Date('2026-09-23T10:30:00Z') };
+    const criar = t.mock.method(administradorPlataformaService, 'criarInicial', async () => ({ id: 3, email: 'admin@safework.com.br', ativo: true, criadoEm, liberacao }));
     const logs = [];
-    const saida = { log: (m) => logs.push(m), error: () => {} };
+    const erros = [];
+    const saida = { log: (m) => logs.push(m), error: (m) => erros.push(m) };
 
     const codigo = await script.executarComando(
       { email: 'admin@safework.com.br', confirmo: true },
@@ -121,6 +123,9 @@ describe('executarComando', () => {
     const textoDosLogs = logs.join('\n');
     assert.ok(textoDosLogs.includes('id=3'));
     assert.equal(textoDosLogs.includes('uma-senha-de-teste-valida-123'), false, 'a senha nunca pode ser impressa');
+    assert.equal(textoDosLogs.split(liberacao.codigo).length - 1, 1, 'o código de liberação aparece exatamente uma vez');
+    assert.ok(textoDosLogs.includes(liberacao.expiraEm.toISOString()));
+    assert.equal(erros.join('\n').includes(liberacao.codigo), false);
   });
 
   test('ErroSenhaInvalida: relata cada erro da política, sem a senha, devolve SENHA_INVALIDA', async (t) => {

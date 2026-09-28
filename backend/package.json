@@ -16,7 +16,8 @@
     "db:migrate:status": "node --require dotenv/config scripts/migrate-cli.js status",
     "db:migrate:baseline": "node --require dotenv/config scripts/migrate-cli.js baseline",
     "db:provisionar:master": "node --require dotenv/config scripts/provisionar-permissoes-master.js",
-    "db:criar-administrador-plataforma": "node --require dotenv/config scripts/criar-administrador-plataforma.js"
+    "db:criar-administrador-plataforma": "node --require dotenv/config scripts/criar-administrador-plataforma.js",
+    "db:mfa:liberar-cadastro": "node --require dotenv/config scripts/mfa-liberar-cadastro.js"
   },
   "keywords": [],
   "author": "",
@@ -33,6 +34,7 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",
     "helmet": "^8.3.0",
+    "otpauth": "9.5.2",
     "pg": "^8.23.0",
     "zod": "^4.5.4"
   },

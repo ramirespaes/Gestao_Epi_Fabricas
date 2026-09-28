@@ -29,6 +29,13 @@ const PENDENTES = [
   '045_alter_materiais_add_oculos_com_grau',
   '046_create_convites_usuario',
   '047_alter_acoes_gerenciar_usuarios_obrigatoria',
+  '048_alter_logs_auditoria_plataforma_add_ator',
+  '049_create_fatores_mfa_plataforma',
+  '050_create_lotes_recuperacao_mfa_plataforma',
+  '051_create_codigos_recuperacao_mfa_plataforma',
+  '052_create_desafios_mfa_plataforma',
+  '053_create_liberacoes_cadastro_mfa_plataforma',
+  '054_alter_sessoes_plataforma_add_mfa',
 ];
 const GATILHO_ADIADO = 'trg_estoque_lotes_exigir_entrada';
 const CNPJ = '11222333000181';
@@ -78,12 +85,12 @@ describe('runner real: 042, 043 e 044 numa transação, com saldo em estoque_tam
     assert.equal((await q('SELECT count(*)::int AS n FROM estoque_tamanhos WHERE quantidade > 0')).rows[0].n, 3);
   });
 
-  test('o runner aplica 042 a 047 juntas e registra as 48', async () => {
+  test('o runner aplica 042 a 054 juntas e registra as 55', async () => {
     const aplicadas = await aplicarMigrations({ schema: contexto.schema, diretorio: DIRETORIO_REAL });
 
     assert.deepEqual(aplicadas.map((migration) => migration.name), PENDENTES);
     const linhas = await registradas();
-    assert.equal(linhas.length, 48);
+    assert.equal(linhas.length, 55);
     assert.deepEqual(linhas.slice(-PENDENTES.length).map((linha) => linha.name), PENDENTES);
   });
 

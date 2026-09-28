@@ -6,6 +6,8 @@ const assert = require('node:assert/strict');
 const { criarInicial, ErroSenhaInvalida } = require('../../src/services/administrador-plataforma.service');
 const administradorRepo = require('../../src/repositories/administrador-plataforma.repository');
 const auditoriaRepo = require('../../src/repositories/auditoria-plataforma.repository');
+const travaRepo = require('../../src/repositories/trava-mfa-plataforma.repository');
+const liberacaoService = require('../../src/services/liberacao-cadastro-mfa-plataforma.service');
 const passwordPolicy = require('../../src/security/password-policy');
 const password = require('../../src/security/password');
 const { HttpError } = require('../../src/errors/HttpError');
@@ -52,41 +54,67 @@ function contar(chamadas, padrao) {
 }
 
 describe('administrador-plataforma.service.criarInicial — sucesso e transação', () => {
-  test('normaliza o e-mail, aplica a política de senha, gera hash Argon2id, audita sem dado sensível, e faz TUDO numa única transação', async (t) => {
+  const LIBERACAO = Object.freeze({ id: '5', codigo: 'ABCD-EFGH-JKMN-PQRS', expiraEm: new Date('2026-09-28T10:30:00Z') });
+
+  test('cria o administrador, audita como OPERACAO_CLI com o novo administrador como alvo, emite a liberação CLI_CRIACAO sob a trava dele, tudo numa única transação', async (t) => {
     t.mock.method(passwordPolicy, 'validarPoliticaSenha', () => ({ ok: true, erros: [] }));
     t.mock.method(administradorRepo, 'buscarPorEmail', async () => null);
     const gerarHash = t.mock.method(password, 'gerarHashSenha', async () => 'hash-argon2id-simulado');
     const criar = t.mock.method(administradorRepo, 'criar', async () => administradorCriado);
-    const auditar = t.mock.method(auditoriaRepo, 'registrar', async () => ({ id: '1', criadoEm: new Date() }));
+    const auditarComoAdministrador = t.mock.method(auditoriaRepo, 'registrar', async () => ({ id: '0', criadoEm: new Date() }));
+    const auditar = t.mock.method(auditoriaRepo, 'registrarOperacaoCli', async () => ({ id: '1', criadoEm: new Date() }));
+    const travar = t.mock.method(travaRepo, 'travarAdministrador', async () => {});
+    const emitir = t.mock.method(liberacaoService, 'emitirLiberacaoSobTrava', async () => LIBERACAO);
 
     const cliente = criarClienteFalso();
     const pool = criarPoolFalso(cliente);
 
     const resultado = await criarInicial(pool, { email: '  Admin@SafeWork.com.br  ', senha: SENHA });
 
-    assert.deepEqual(resultado, administradorCriado);
+    assert.deepEqual(resultado, { ...administradorCriado, liberacao: { codigo: LIBERACAO.codigo, expiraEm: LIBERACAO.expiraEm } });
 
     assert.equal(gerarHash.mock.calls.length, 1);
     assert.equal(gerarHash.mock.calls[0].arguments[0], SENHA);
 
-    // criar() e registrar() recebem o CLIENTE da transação, nunca o pool.
-    assert.equal(criar.mock.calls.length, 1);
+    // Tudo recebe o CLIENTE da transação, nunca o pool.
     assert.equal(criar.mock.calls[0].arguments[0], cliente);
     assert.deepEqual(criar.mock.calls[0].arguments[1], { email: EMAIL, senhaHash: 'hash-argon2id-simulado' });
+    assert.deepEqual(travar.mock.calls[0].arguments, [cliente, administradorCriado.id]);
+    assert.deepEqual(emitir.mock.calls[0].arguments, [cliente, { administradorId: administradorCriado.id, origem: 'CLI_CRIACAO' }]);
 
-    assert.equal(auditar.mock.calls.length, 1);
-    assert.equal(auditar.mock.calls[0].arguments[0], cliente);
-    const dadosAuditoria = auditar.mock.calls[0].arguments[1];
-    assert.equal(dadosAuditoria.administradorId, administradorCriado.id);
-    assert.equal(dadosAuditoria.acao, 'ADMINISTRADOR_PLATAFORMA_CRIADO');
-    const textoAuditoria = JSON.stringify(dadosAuditoria);
-    assert.equal(textoAuditoria.includes(SENHA), false, 'a senha em claro nunca vai para auditoria');
-    assert.equal(textoAuditoria.includes('hash-argon2id-simulado'), false, 'o hash nunca vai para auditoria');
+    assert.equal(auditarComoAdministrador.mock.calls.length, 0, 'a criação nunca é atribuída ao próprio administrador criado');
+    assert.deepEqual(auditar.mock.calls.map((c) => c.arguments[1].acao), ['ADMINISTRADOR_PLATAFORMA_CRIADO', 'LIBERACAO_CADASTRO_CRIADA']);
+    for (const chamada of auditar.mock.calls) {
+      assert.equal(chamada.arguments[0], cliente);
+      assert.equal(chamada.arguments[1].administradorAfetadoId, administradorCriado.id);
+      assert.equal('administradorId' in chamada.arguments[1], false);
+      const texto = JSON.stringify(chamada.arguments[1]);
+      for (const proibido of [SENHA, 'hash-argon2id-simulado', LIBERACAO.codigo]) {
+        assert.equal(texto.includes(proibido), false, 'senha, hash e código de liberação nunca vão para auditoria');
+      }
+    }
 
     assert.equal(contar(cliente.chamadas, /^BEGIN$/i), 1);
     assert.equal(contar(cliente.chamadas, /^COMMIT$/i), 1);
     assert.equal(contar(cliente.chamadas, /^ROLLBACK$/i), 0);
     assert.equal(cliente.chamadas.includes('RELEASE'), true);
+  });
+
+  test('falha ao emitir a liberação desfaz também o administrador: sem liberação não existe administrador', async (t) => {
+    t.mock.method(passwordPolicy, 'validarPoliticaSenha', () => ({ ok: true, erros: [] }));
+    t.mock.method(administradorRepo, 'buscarPorEmail', async () => null);
+    t.mock.method(password, 'gerarHashSenha', async () => 'hash-simulado');
+    t.mock.method(administradorRepo, 'criar', async () => administradorCriado);
+    t.mock.method(auditoriaRepo, 'registrarOperacaoCli', async () => ({ id: '1', criadoEm: new Date() }));
+    t.mock.method(travaRepo, 'travarAdministrador', async () => {});
+    const erro = new Error('violação simulada em liberacoes_cadastro_mfa_plataforma');
+    t.mock.method(liberacaoService, 'emitirLiberacaoSobTrava', async () => { throw erro; });
+    const cliente = criarClienteFalso();
+
+    await assert.rejects(() => criarInicial(criarPoolFalso(cliente), { email: EMAIL, senha: SENHA }), (e) => e === erro);
+
+    assert.equal(contar(cliente.chamadas, /^ROLLBACK$/i), 1);
+    assert.equal(contar(cliente.chamadas, /^COMMIT$/i), 0);
   });
 
   test('idempotência (buscarPorEmail) roda ANTES de abrir a transação: nenhuma conexão é aberta se o e-mail já existe', async (t) => {
@@ -115,7 +143,7 @@ describe('administrador-plataforma.service.criarInicial — falha da auditoria: 
     t.mock.method(password, 'gerarHashSenha', async () => 'hash-simulado');
     const criar = t.mock.method(administradorRepo, 'criar', async () => administradorCriado);
     const erroDeAuditoria = new Error('logs_auditoria_plataforma: campo JSONB contém chave sensível');
-    const auditar = t.mock.method(auditoriaRepo, 'registrar', async () => { throw erroDeAuditoria; });
+    const auditar = t.mock.method(auditoriaRepo, 'registrarOperacaoCli', async () => { throw erroDeAuditoria; });
 
     const cliente = criarClienteFalso();
     const pool = criarPoolFalso(cliente);
@@ -138,7 +166,7 @@ describe('administrador-plataforma.service.criarInicial — falha da auditoria: 
     t.mock.method(password, 'gerarHashSenha', async () => 'hash-simulado');
     const erroDeInsercao = new Error('conexão perdida com o banco');
     t.mock.method(administradorRepo, 'criar', async () => { throw erroDeInsercao; });
-    const auditar = t.mock.method(auditoriaRepo, 'registrar', async () => ({ id: '1', criadoEm: new Date() }));
+    const auditar = t.mock.method(auditoriaRepo, 'registrarOperacaoCli', async () => ({ id: '1', criadoEm: new Date() }));
 
     const cliente = criarClienteFalso();
     const pool = criarPoolFalso(cliente);
@@ -162,7 +190,7 @@ describe('administrador-plataforma.service.criarInicial — falha da auditoria: 
     t.mock.method(password, 'gerarHashSenha', async () => 'hash-simulado');
     const erroDeCorrida = Object.assign(new Error('duplicate key value violates unique constraint'), { code: '23505' });
     t.mock.method(administradorRepo, 'criar', async () => { throw erroDeCorrida; });
-    const auditar = t.mock.method(auditoriaRepo, 'registrar', async () => ({ id: '1', criadoEm: new Date() }));
+    const auditar = t.mock.method(auditoriaRepo, 'registrarOperacaoCli', async () => ({ id: '1', criadoEm: new Date() }));
 
     const cliente = criarClienteFalso();
     const pool = criarPoolFalso(cliente);

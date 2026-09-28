@@ -14,6 +14,7 @@ const {
   derivarAdvisoryLock64,
   idCorrelacaoCooldown,
 } = require('../../src/security/cooldown');
+const cooldownModulo = require('../../src/security/cooldown');
 const { obterLoginCooldownHmacSecret } = require('../../src/config/auth');
 const { cnpjTemDigitosVerificadoresValidos } = require('../../src/utils/normalizacao');
 const { assertSemSensiveis } = require('../helpers/sensiveis');
@@ -269,6 +270,28 @@ describe('idCorrelacaoCooldown e validação da chave', () => {
       assert.equal(chaveCooldownTemFormatoValido(ruim), false);
       assert.throws(() => derivarAdvisoryLock64(ruim), { name: 'TypeError', message: 'chave de cooldown com formato inválido' });
       assert.throws(() => idCorrelacaoCooldown(ruim), { name: 'TypeError', message: 'chave de cooldown com formato inválido' });
+    }
+  });
+});
+
+// Tentativas de MFA do Painel Privado: chave por administrador, sem segredo
+// (o id não é dado pessoal), num domínio próprio que não cruza com o login.
+describe('gerarChaveCooldownMfaPlataforma', () => {
+  const gerar = (id) => cooldownModulo.gerarChaveCooldownMfaPlataforma(id);
+
+  test('SHA-256 hexadecimal de "PLATAFORMA_MFA|a<id>"', () => {
+    assert.equal(gerar(42), crypto.createHash('sha256').update('PLATAFORMA_MFA|a42', 'utf8').digest('hex'));
+    assert.equal(chaveCooldownTemFormatoValido(gerar(42)), true);
+  });
+
+  test('uma chave por administrador, distinta da chave do login por senha', () => {
+    assert.notEqual(gerar(42), gerar(43));
+    assert.notEqual(gerar(42), gerarChaveCooldownPlataforma('a42@x.com'));
+  });
+
+  test('id inválido: TypeError antes de derivar', () => {
+    for (const id of [0, -1, '42', 1.5, 2147483648, null]) {
+      assert.throws(() => gerar(id), TypeError, String(id));
     }
   });
 });

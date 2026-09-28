@@ -48,6 +48,13 @@
     "044_alter_materiais_add_exige_tamanho.sql": "ce45c7b507484ce8cd29538b09b4ec23348af8f4832ca14fc09c53ae8223b5db",
     "045_alter_materiais_add_oculos_com_grau.sql": "2440d422ddb5c2d135c49496ed2fb8bd75710ab7995a7addbb1236e9fc1f283b",
     "046_create_convites_usuario.sql": "37833d1d57556920a6ab95b3f261ddb6817114e9fed68f726e7f982f04ce783e",
-    "047_alter_acoes_gerenciar_usuarios_obrigatoria.sql": "29b0ac920e5b21245bdd3c9ae31ff69830e655a7822a77cdbff4c22a21ff960f"
+    "047_alter_acoes_gerenciar_usuarios_obrigatoria.sql": "29b0ac920e5b21245bdd3c9ae31ff69830e655a7822a77cdbff4c22a21ff960f",
+    "048_alter_logs_auditoria_plataforma_add_ator.sql": "89d82d0588b44488427b06d178c928cca04ffc90dcdbf1d72f1eaaefb67eee70",
+    "049_create_fatores_mfa_plataforma.sql": "3e4e321f314c4fca87b70885296849985b4a2ad298ba51c595445bc6ee5e3fc4",
+    "050_create_lotes_recuperacao_mfa_plataforma.sql": "5d4fb954623ed299d867a9deee9a2cb095f10df16148be1b4ead278402913fa5",
+    "051_create_codigos_recuperacao_mfa_plataforma.sql": "99492338f9f1d489a3aba513b368e17bbf32a95d9b355c02efefb309c786067e",
+    "052_create_desafios_mfa_plataforma.sql": "91d4eb478097341a298c171d1499793341e856732f9f41a1ed6e93f3eb18927c",
+    "053_create_liberacoes_cadastro_mfa_plataforma.sql": "18f159c58f0876a15d7b51db8f5bb321a9fc6008232b52aeda05019df602aa20",
+    "054_alter_sessoes_plataforma_add_mfa.sql": "d63aff198654793b35c4af713f1772e5ece7fd68889aa0f4ba0e581845d62f6d"
   }
 }

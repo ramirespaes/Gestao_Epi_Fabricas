@@ -66,6 +66,19 @@ describe('criarExigirSessaoPlataforma', () => {
     assert.equal(buscar.mock.calls.length, 0, 'um cookie de nome diferente do administrativo é, para este middleware, ausência de cookie');
   });
 
+  test('o cookie do desafio pré-MFA nunca é reconhecido como sessão: 401, repositório nunca consultado', async (t) => {
+    const nomeDesafio = authConfig.desafioMfa?.cookieNome;
+    assert.ok(nomeDesafio, 'o cookie do desafio tem nome próprio na configuração');
+    const buscar = t.mock.method(sessaoPlataformaRepo, 'buscarValidaPorHash', async () => CONTEXTO_SESSAO);
+    const middleware = criarExigirSessaoPlataforma({ pool: {} });
+
+    const resposta = await request(montarApp(middleware)).get('/painel').set('Cookie', `${nomeDesafio}=${TOKEN}`);
+
+    assert.equal(resposta.status, 401);
+    assert.equal(resposta.body.codigo, 'SESSAO_INVALIDA');
+    assert.equal(buscar.mock.calls.length, 0);
+  });
+
   test('cookie duplicado (mesmo nome administrativo duas vezes): 401, repositório nunca consultado', async (t) => {
     const buscar = t.mock.method(sessaoPlataformaRepo, 'buscarValidaPorHash', async () => CONTEXTO_SESSAO);
     const middleware = criarExigirSessaoPlataforma({ pool: {} });

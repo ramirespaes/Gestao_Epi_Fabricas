@@ -200,3 +200,13 @@ describe('trust proxy: contrato do Express, sem rate limiter', () => {
     assert.deepEqual(a.body.ips, ['203.0.113.1']);
   });
 });
+
+describe('limitador próprio das rotas de MFA do Painel Privado', () => {
+  test('instância separada: não consome a cota do login por senha nem das outras rotas', () => {
+    const modulo = require('../../src/middleware/rate-limit');
+    assert.equal(typeof modulo.limitadorPlataformaMfa, 'function');
+    for (const outro of ['limitadorPlataformaAutenticacao', 'limitadorPlataformaGeral', 'limitadorPlataformaConvite', 'limitadorAutenticacao']) {
+      assert.notEqual(modulo.limitadorPlataformaMfa, modulo[outro], outro);
+    }
+  });
+});
