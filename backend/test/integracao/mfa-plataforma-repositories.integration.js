@@ -4,6 +4,8 @@ const { describe, test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const { abrirPoolTemporario, aguardarEsperaPeloLock } = require('./helpers/schema-temporario');
+const { criarSessaoAdministrativa } = require('./helpers/sessao-plataforma-teste');
+const { hashTokenSessao } = require('../../src/security/token');
 
 const fatores = require('../../src/repositories/fator-mfa-plataforma.repository');
 const lotes = require('../../src/repositories/lote-recuperacao-mfa-plataforma.repository');
@@ -80,8 +82,13 @@ describe('repositórios do MFA da plataforma (PostgreSQL real)', () => {
     return { ...fator, segredo };
   }
 
+  // Este schema para na 054: o MFA declarado basta para gravar a sessão e exercitar as primitivas.
+  const mfaDeclarado = () => ({ verificadoEm: new Date(Date.now() - 1000), metodo: 'TOTP' });
+
   async function novaSessao(administradorId) {
-    return sessoes.criar(contexto.pool, { administradorId, tokenHash: hashAleatorio(), expiraEm: new Date(Date.now() + 8 * 3600e3) });
+    return sessoes.criar(contexto.pool, {
+      administradorId, tokenHash: hashAleatorio(), expiraEm: new Date(Date.now() + 8 * 3600e3), mfa: mfaDeclarado(),
+    });
   }
 
   before(async () => { contexto = await abrirPoolTemporario(MIGRATIONS); });
@@ -437,14 +444,26 @@ describe('repositórios do MFA da plataforma (PostgreSQL real)', () => {
       assert.deepEqual(segundo, { valor: 0 });
     });
 
-    test('sessão criada pelo caminho atual (sem MFA) ainda é válida: o enforcement não é deste incremento', async () => {
+    test('sessão sem MFA comprovado não é criada pelo repositório nem encontrada na leitura', async () => {
       const admin = await novoAdministrador();
-      const tokenHash = hashAleatorio();
-      await sessoes.criar(contexto.pool, { administradorId: admin, tokenHash, expiraEm: new Date(Date.now() + 3600e3) });
-      const contextoSessao = await sessoes.buscarValidaPorHash(contexto.pool, tokenHash, 30);
-      assert.equal(contextoSessao.administrador.id, admin);
-      const { rows } = await q('SELECT mfa_verificado_em, mfa_metodo FROM sessoes_plataforma WHERE token_hash = $1', [tokenHash]);
-      assert.deepEqual(rows[0], { mfa_verificado_em: null, mfa_metodo: null });
+      const expiraEm = new Date(Date.now() + 3600e3);
+      await assert.rejects(async () => sessoes.criar(contexto.pool, { administradorId: admin, tokenHash: hashAleatorio(), expiraEm }), TypeError);
+
+      // Gravada direto, como antes da exigência: este schema para na 054.
+      const semMfa = hashAleatorio();
+      await q('INSERT INTO sessoes_plataforma (administrador_id, token_hash, expira_em) VALUES ($1, $2, $3)', [admin, semMfa, expiraEm]);
+      assert.equal(await sessoes.buscarValidaPorHash(contexto.pool, semMfa, 30), null);
+
+      const soDeclarado = hashAleatorio();
+      await sessoes.criar(contexto.pool, { administradorId: admin, tokenHash: soDeclarado, expiraEm, mfa: mfaDeclarado() });
+      assert.equal(await sessoes.buscarValidaPorHash(contexto.pool, soDeclarado, 30), null);
+    });
+
+    test('sessão ligada ao desafio concluído que comprova o MFA é encontrada', async () => {
+      const admin = await novoAdministrador();
+      const sessao = await criarSessaoAdministrativa(contexto.pool, admin);
+      const lida = await sessoes.buscarValidaPorHash(contexto.pool, hashTokenSessao(sessao.token), 30);
+      assert.equal(lida.administrador.id, admin);
     });
   });
 

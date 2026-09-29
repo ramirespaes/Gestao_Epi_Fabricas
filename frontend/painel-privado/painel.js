@@ -69,18 +69,22 @@
     confirmarSessao();
   });
 
-  botaoSair.addEventListener('click', function () {
-    botaoSair.disabled = true;
-    // Os dados administrativos somem ANTES do pedido de logout e da
-    // navegação: uma cópia desta página guardada pelo navegador não terá
-    // nada para mostrar.
-    ocultarConteudo();
-    window.EpiHttp.requisitar('POST', '/auth/logout').then(function () {
+  window.SafeworkSair.ligar({
+    botao: botaoSair,
+    requisitar: function () { return window.EpiHttp.requisitar('POST', '/auth/logout'); },
+    aoIniciar: function () {
+      elErro.textContent = '';
+      elErro.style.display = 'none';
+    },
+    aoFalhar: function (mensagem) {
+      elErro.textContent = mensagem;
+      elErro.style.display = 'block';
+    },
+    // Os dados administrativos somem antes da navegação: uma cópia desta
+    // página guardada pelo navegador não terá nada para mostrar.
+    aoConcluir: function () {
+      ocultarConteudo();
       irParaLogin();
-    }).catch(function () {
-      // Logout é idempotente no servidor; mesmo numa falha de rede, o
-      // usuário deve poder tentar novamente pela tela de login.
-      irParaLogin();
-    });
+    },
   });
 })();

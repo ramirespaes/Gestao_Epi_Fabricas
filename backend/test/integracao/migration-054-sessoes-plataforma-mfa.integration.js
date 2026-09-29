@@ -126,8 +126,8 @@ describe('migration 054 — sessoes_plataforma com mfa_verificado_em e mfa_metod
     assert.equal(rows.some((r) => /mfa_obrigatorio/i.test(r.conname)), false);
   });
 
-  test('a 055 não existe neste incremento; a 054 não revoga nem atualiza sessão', () => {
-    assert.equal(migrationExiste('055'), false);
+  test('a 054 não revoga nem atualiza sessão: a exigência é da 055', () => {
+    assert.equal(migrationExiste('055'), true);
     const sql = conteudoDaMigration('054').replace(/^\s*--.*$/gm, '');
     assert.doesNotMatch(sql, /^\s*(UPDATE|DELETE|INSERT)\b/im);
     assert.doesNotMatch(sql, /MFA_OBRIGATORIO/);

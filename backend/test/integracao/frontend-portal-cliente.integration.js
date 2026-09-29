@@ -62,8 +62,8 @@ const EpiPortal = require('../../../frontend/js/portal-cliente');
 
 // 048: auditoria da plataforma com ator e alvo; 049 e 052: o login do
 // Painel abre o desafio pré-MFA; 053: criarInicial emite a liberação do MFA;
-// 054: a sessão administrativa grava o registro do MFA.
-const TODAS_AS_MIGRATIONS = [...Array.from({ length: 40 }, (_, i) => String(i).padStart(3, '0')), '048', '049', '052', '053', '054'];
+// 054: a sessão administrativa grava o registro do MFA; 055: MFA obrigatório.
+const TODAS_AS_MIGRATIONS = [...Array.from({ length: 40 }, (_, i) => String(i).padStart(3, '0')), '048', '049', '052', '053', '054', '055'];
 const SENHA_ADMIN = 'planeta-nebulosa-ozonio-42';
 const SENHA_MASTER = 'quasar-boreal-91-nebula';
 const EMAIL_MASTER = 'master.teste@exemplo-cliente.com.br';

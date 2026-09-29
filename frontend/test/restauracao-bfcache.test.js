@@ -74,7 +74,10 @@ function pagina(arquivo) {
     addEventListener(ev, fn) { (eventosJanela[ev] = eventosJanela[ev] || []).push(fn); },
   };
   const sandbox = { window: janela, document: { getElementById: el, querySelectorAll: () => [] }, console, setTimeout, Promise, Number, String, Array, Object, JSON };
-  vm.runInNewContext(ler(arquivo), sandbox);
+  const contexto = vm.createContext(sandbox);
+  // painel.js usa sair.js, que o HTML carrega antes dele.
+  const scripts = arquivo === 'painel-privado/painel.js' ? ['painel-privado/sair.js', arquivo] : [arquivo];
+  for (const script of scripts) vm.runInContext(ler(script), contexto);
   const esperar = async () => { for (let i = 0; i < 30; i += 1) await new Promise((r) => setImmediate(r)); };
   const pageshow = async (persisted) => { for (const fn of (eventosJanela.pageshow || [])) await fn({ persisted }); await esperar(); };
   return { el, janela, esperar, pageshow, eventosJanela, hrefInicial: janela.location.href };

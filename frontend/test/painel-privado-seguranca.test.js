@@ -70,10 +70,10 @@ async function salvarCodigos(pg) {
 }
 
 describe('acesso à página de segurança', () => {
-  test('painel.html leva à página de segurança e continua com 3 scripts versionados', () => {
+  test('painel.html leva à página de segurança e tem 4 scripts versionados', () => {
     const html = fs.readFileSync(path.join(RAIZ, 'painel-privado/painel.html'), 'utf8');
     assert.match(html, /<a\b[^>]*href="seguranca\.html"/);
-    assert.equal([...html.matchAll(/<script src="([^"]+)"><\/script>/g)].length, 3);
+    assert.equal([...html.matchAll(/<script src="([^"]+)"><\/script>/g)].length, 4);
   });
 
   test('com sessão: conteúdo aparece só depois da confirmação, no menu; sem sessão: nada aparece e vai ao login', async () => {
@@ -87,7 +87,7 @@ describe('acesso à página de segurança', () => {
     assert.deepEqual([semSessao.el('conteudo').hidden, semSessao.navegacoes], [true, ['index.html']]);
   });
 
-  test('Sair: limpa a tela antes do logout e vai ao login', async () => {
+  test('Sair com o logout confirmado: limpa a tela e vai ao login', async () => {
     const pg = await comNovoQr();
     await pg.clicar('sair');
     assert.equal(ultima(pg).chave, 'POST /auth/logout');
@@ -325,7 +325,7 @@ describe('nada sensível fora do lugar', () => {
   test('os scripts da página não usam storage, innerHTML, eval nem escrevem no console; recursos só locais', () => {
     const pg = abrirPagina(PAGINA, { rotas: base() });
     const proprios = pg.scripts.map((s) => s.split('?')[0]).filter((s) => !s.includes('vendor/') && !s.endsWith('js/api-http.js'));
-    assert.deepEqual(proprios, ['config.js', 'mfa.js', 'seguranca.js']);
+    assert.deepEqual(proprios, ['config.js', 'mfa.js', 'sair.js', 'seguranca.js']);
     for (const s of pg.scripts) assert.match(s, /\?v=\d{8,}/, `${s} sem versão`);
     for (const src of proprios) {
       const codigo = fs.readFileSync(path.join(RAIZ, 'painel-privado', src), 'utf8');

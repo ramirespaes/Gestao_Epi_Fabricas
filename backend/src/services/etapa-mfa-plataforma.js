@@ -250,7 +250,10 @@ async function criarSessaoPlena(client, { administradorId, desafioId, agora, met
     ...origem,
     mfa: { verificadoEm: agora, metodo },
   });
-  await desafioRepo.ligarSessaoCriada(client, { desafioId, sessaoId });
+  // Sem o vínculo com o desafio concluído a sessão não vale: o erro desfaz a transação inteira.
+  if (!(await desafioRepo.ligarSessaoCriada(client, { desafioId, sessaoId }))) {
+    throw new Error('sessão não ficou ligada ao desafio de MFA concluído');
+  }
   return { token: tokenSessao, sessao: { id: sessaoId, expiraEm } };
 }
 

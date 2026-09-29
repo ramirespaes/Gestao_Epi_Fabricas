@@ -100,6 +100,8 @@ class Elemento {
 
   focus() { this.ownerDocument.activeElement = this; }
 
+  reset() { this.reinicios = (this.reinicios || 0) + 1; }
+
   addEventListener(tipo, fn) { (this.ouvintes[tipo] = this.ouvintes[tipo] || []).push(fn); }
 
   removeEventListener(tipo, fn) { this.ouvintes[tipo] = (this.ouvintes[tipo] || []).filter((f) => f !== fn); }

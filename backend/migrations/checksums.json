@@ -55,6 +55,8 @@
     "051_create_codigos_recuperacao_mfa_plataforma.sql": "99492338f9f1d489a3aba513b368e17bbf32a95d9b355c02efefb309c786067e",
     "052_create_desafios_mfa_plataforma.sql": "91d4eb478097341a298c171d1499793341e856732f9f41a1ed6e93f3eb18927c",
     "053_create_liberacoes_cadastro_mfa_plataforma.sql": "18f159c58f0876a15d7b51db8f5bb321a9fc6008232b52aeda05019df602aa20",
-    "054_alter_sessoes_plataforma_add_mfa.sql": "d63aff198654793b35c4af713f1772e5ece7fd68889aa0f4ba0e581845d62f6d"
+    "054_alter_sessoes_plataforma_add_mfa.sql": "d63aff198654793b35c4af713f1772e5ece7fd68889aa0f4ba0e581845d62f6d",
+    "055_alter_sessoes_plataforma_exigir_mfa.sql": "500087fe25c610ab9c3a30db28579c42e9f0ab23a04af189df12d6ad65577c75",
+    "056_create_trigger_inativacao_administrador_invalida_artefatos_mfa.sql": "a7a3c5f62b6aed2d09319be8ef8dad883b3801d89d4d6b276a96245ed1815669"
   }
 }

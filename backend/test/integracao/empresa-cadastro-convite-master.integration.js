@@ -39,8 +39,9 @@ const { ESCOPO_PROVISIONAMENTO_MASTER } = require('../../src/rbac/recursos');
  */
 
 // 048: a auditoria da plataforma grava ator e alvo; 053: criarInicial emite a
-// liberação do MFA; 054: a sessão administrativa grava o registro do MFA.
-const TODAS_AS_MIGRATIONS = [...Array.from({ length: 35 }, (_, i) => String(i).padStart(3, '0')), '048', '053', '054'];
+// liberação do MFA; 054: a sessão administrativa grava o registro do MFA;
+// 049, 052 e 055: a sessão só vale ligada a um desafio de MFA concluído.
+const TODAS_AS_MIGRATIONS = [...Array.from({ length: 35 }, (_, i) => String(i).padStart(3, '0')), '048', '049', '052', '053', '054', '055'];
 const SENHA_ADMIN = 'planeta-nebulosa-ozonio-42';
 const SENHA_MASTER = 'quasar-boreal-91-nebula';
 const SENHA_CLIENTE = 'senha-correta-do-teste-http-2026';
