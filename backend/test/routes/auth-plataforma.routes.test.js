@@ -124,7 +124,7 @@ function preparar(t, c = {}) {
     revogar: m(sessaoRepo, 'revogar', true),
     revogarTodas: m(sessaoRepo, 'revogarTodasDoAdministrador', c.sessoesRevogadas ?? 0),
     criarSessao: m(sessaoRepo, 'criar', '777'),
-    ligar: m(desafioRepo, 'ligarSessaoCriada', true),
+    ligar: m(desafioRepo, 'ligarSessaoCriada', c.ligou ?? true),
     auditar: m(auditoriaRepo, 'registrar', { id: '1', criadoEm: AGORA }),
     auditarSistema: m(auditoriaRepo, 'registrarEventoSistema', { id: '2', criadoEm: AGORA }),
   };
@@ -269,6 +269,21 @@ describe('POST /auth/mfa/verificar: TOTP, anti-replay e sessão plena', () => {
     for (const proibido of [codigoDo(STEP), sessao.valor, TOKEN_DESAFIO, SEGREDO.toString('hex')]) assert.equal(texto.includes(proibido), false);
     assert.equal(x.revogarTodas.mock.calls.length, 0);
     assert.deepEqual([contar(transacao, 'COMMIT'), contar(transacao, 'ROLLBACK')], [1, 0]);
+  });
+
+  test('sessão que não fica ligada ao desafio concluído não é entregue: erro, ROLLBACK, nenhum cookie de sessão', async (t) => {
+    t.mock.method(console, 'error', () => {});
+    const x = preparar(t, { ligou: false });
+    const { app, transacao } = montar({ ordem: x.ordem });
+
+    const r = await verificar(app);
+
+    assert.equal(r.status, 500, JSON.stringify(r.body));
+    assert.equal(setCookie(r, COOKIE_SESSAO), null);
+    assert.equal(JSON.stringify(r.body).includes('ligar'), false, 'a resposta não descreve o motivo interno');
+    assert.equal(x.ligar.mock.calls.length, 1);
+    assert.equal(x.auditar.mock.calls.length, 0, 'nenhum login é auditado como concluído');
+    assert.deepEqual([contar(transacao, 'COMMIT'), contar(transacao, 'ROLLBACK')], [0, 1]);
   });
 
   test('código errado: 401 MFA_CODIGO_INVALIDO, falha contada (TOTP_INVALIDO) e COMMITada; sem step e sem sessão', async (t) => {
@@ -633,6 +648,19 @@ describe('RECUPERACAO: reiniciar e confirmar o novo TOTP', () => {
     const texto = JSON.stringify(auditorias);
     for (const proibido of [...r.body.codigosRecuperacao, sessao.valor, codigoDo(STEP)]) assert.equal(texto.includes(proibido), false);
     assert.deepEqual([contar(transacao, 'COMMIT'), contar(transacao, 'ROLLBACK')], [1, 0]);
+  });
+
+  test('recadastro cuja sessão não fica ligada ao desafio: erro, ROLLBACK de tudo, nenhum cookie de sessão nem código de recuperação', async (t) => {
+    t.mock.method(console, 'error', () => {});
+    const x = preparar(t, noDesafio({ ligou: false }));
+    const { app, transacao } = montar({ ordem: x.ordem });
+
+    const r = await postar(app, '/auth/mfa/cadastro/confirmar', { codigo: codigoDo(STEP) });
+
+    assert.equal(r.status, 500, JSON.stringify(r.body));
+    assert.equal(setCookie(r, COOKIE_SESSAO), null);
+    assert.equal(r.body.codigosRecuperacao, undefined);
+    assert.deepEqual([contar(transacao, 'COMMIT'), contar(transacao, 'ROLLBACK')], [0, 1]);
   });
 
   test('TOTP novo errado: 401; fator antigo, lote e sessões intactos', async (t) => {

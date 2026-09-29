@@ -23,6 +23,7 @@
   };
   var SESSAO_ENCERRADA = 'Sua sessão foi encerrada. Salve os códigos e entre novamente.';
   var RECOMECAR = 'Esta etapa expirou ou não é mais válida. Comece de novo.';
+  var GUARDE_OS_CODIGOS = 'Guarde os códigos de recuperação e marque a confirmação antes de sair.';
   var operacao = null;
 
   var tela = mfa.criarTela({
@@ -200,9 +201,24 @@
     });
   });
 
-  aoClicar('sair', function () {
-    ocultar();
-    fila.requisitar('POST', '/auth/logout').then(irParaLogin);
+  // Os códigos só existem nesta tela: sair sem a confirmação os apagaria sem aviso.
+  function podeSair() {
+    if (fila.pendente()) return false;
+    if (el('lista-codigos').firstChild && !el('confirmo-codigos').checked) {
+      tela.avisar(GUARDE_OS_CODIGOS, 'erro');
+      return false;
+    }
+    return true;
+  }
+
+  window.SafeworkSair.ligar({
+    botao: el('sair'),
+    requisitar: function () { return fila.requisitar('POST', '/auth/logout'); },
+    permitir: podeSair,
+    aoIniciar: function () { tela.avisar(''); },
+    aoFalhar: function (mensagem) { tela.avisar(mensagem, 'erro'); },
+    // irParaLogin limpa e oculta a tela antes de navegar.
+    aoConcluir: irParaLogin,
   });
 
   confirmarSessao();

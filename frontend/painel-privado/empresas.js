@@ -20,6 +20,8 @@
 
   function irParaLogin() { window.location.href = 'index.html'; }
   function mensagem(id, texto, classe) { var e = el(id); e.textContent = texto || ''; e.className = 'mensagem ' + (classe || ''); }
+  // Fica fora do conteúdo protegido: aparece mesmo com ele oculto.
+  function avisarSaida(texto) { el('erro').textContent = texto || ''; el('erro').style.display = texto ? 'block' : 'none'; }
   function escapar(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); }
   function tratar(resposta, idMensagem) {
     if (Http.ehNaoAutenticado(resposta)) { irParaLogin(); return false; }
@@ -201,6 +203,7 @@
     el('email-master').value = '';
     empresaAtual = null;
     ['msg-lista', 'msg-form', 'msg-convite', 'provisionamento'].forEach(function (id) { mensagem(id, ''); });
+    avisarSaida('');
     el('carregando').style.display = '';
   }
 
@@ -218,13 +221,17 @@
     });
   }
 
-  el('sair').addEventListener('click', function () {
-    el('sair').disabled = true;
-    // Os dados administrativos somem ANTES do pedido de logout e da
-    // navegação: uma cópia desta página guardada pelo navegador não terá
-    // nada para mostrar.
-    ocultarProtegido();
-    return Http.requisitar('POST', '/auth/logout').then(irParaLogin).catch(irParaLogin);
+  window.SafeworkSair.ligar({
+    botao: el('sair'),
+    requisitar: function () { return Http.requisitar('POST', '/auth/logout'); },
+    aoIniciar: function () { avisarSaida(''); },
+    aoFalhar: avisarSaida,
+    // Os dados administrativos somem antes da navegação: uma cópia desta
+    // página guardada pelo navegador não terá nada para mostrar.
+    aoConcluir: function () {
+      ocultarProtegido();
+      irParaLogin();
+    },
   });
 
   // Página restaurada pelo navegador (BFCache) depois de "Sair" ou de uma

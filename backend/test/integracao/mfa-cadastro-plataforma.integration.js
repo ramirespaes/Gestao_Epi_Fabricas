@@ -37,7 +37,7 @@ const scriptLiberacao = require('../../scripts/mfa-liberar-cadastro');
  * com node:crypto), não a biblioteca que o servidor usa para validar.
  */
 
-const MIGRATIONS = ['000', '001', '002', '005', '012', '014', '027', '028', '029', '030', '031', '048', '049', '050', '051', '052', '053', '054'];
+const MIGRATIONS = ['000', '001', '002', '005', '012', '014', '027', '028', '029', '030', '031', '048', '049', '050', '051', '052', '053', '054', '055', '056'];
 const SENHA = 'planeta-nebulosa-ozonio-42';
 const sha256 = (texto) => crypto.createHash('sha256').update(texto, 'utf8').digest('hex');
 const COOKIE_DESAFIO = () => authConfig.desafioMfa.cookieNome;

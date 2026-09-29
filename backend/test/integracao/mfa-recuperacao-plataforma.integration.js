@@ -32,7 +32,7 @@ const { hashTokenSessao } = require('../../src/security/token');
 const { gerarHashSenha } = require('../../src/security/password');
 const { authConfig } = require('../../src/config/auth');
 
-const MIGRATIONS = ['000', '001', '002', '005', '012', '014', '027', '028', '029', '030', '031', '048', '049', '050', '051', '052', '053', '054'];
+const MIGRATIONS = ['000', '001', '002', '005', '012', '014', '027', '028', '029', '030', '031', '048', '049', '050', '051', '052', '053', '054', '055', '056'];
 const SENHA = 'planeta-nebulosa-ozonio-42';
 const CORPO_INVALIDO = { status: 'error', codigo: 'MFA_CODIGO_INVALIDO', message: 'Código inválido' };
 const COOKIE_DESAFIO = () => authConfig.desafioMfa.cookieNome;

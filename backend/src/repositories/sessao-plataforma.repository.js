@@ -55,16 +55,22 @@ function exigirInatividade(minutos) {
  * now()` da migration — mesma razão de sessao.repository.js: a criação
  * pode acontecer depois de uma verificação Argon2id, de duração variável.
  *
- * `mfa` ({verificadoEm, metodo}) registra o segundo fator que originou a
- * sessão (migration 054); ausente, as duas colunas ficam nulas.
+ * `mfa` ({verificadoEm, metodo}) é obrigatório: registra o segundo fator que
+ * originou a sessão (migrations 054 e 055). Quem chama liga a sessão ao
+ * desafio concluído na mesma transação; sem isso o COMMIT falha.
  */
-const METODOS_MFA = new Set(['TOTP', 'CADASTRO', 'RECADASTRO', 'SUBSTITUICAO', 'REAUTENTICACAO']);
+const METODOS_MFA = new Set(['TOTP', 'CADASTRO', 'RECADASTRO']);
 
-function exigirMfaOpcional(mfa) {
-  if (mfa === null) {
-    return;
-  }
-  if (typeof mfa !== 'object' || !(mfa.verificadoEm instanceof Date) || Number.isNaN(mfa.verificadoEm.getTime()) || !METODOS_MFA.has(mfa.metodo)) {
+// Validade, uso e revogação medem o tempo por clock_timestamp(): dentro de
+// uma transação, now() é o instante em que ela começou.
+
+// A mesma regra da migration 055, na leitura: sessão sem MFA comprovado não é encontrada.
+const MFA_REGISTRADO = (alias) => `${alias}mfa_verificado_em IS NOT NULL
+        AND ${alias}mfa_metodo IN ('TOTP', 'CADASTRO', 'RECADASTRO')
+        AND ${alias}mfa_verificado_em <= ${alias}criado_em`;
+
+function exigirMfa(mfa) {
+  if (mfa === null || typeof mfa !== 'object' || !(mfa.verificadoEm instanceof Date) || Number.isNaN(mfa.verificadoEm.getTime()) || !METODOS_MFA.has(mfa.metodo)) {
     throw new TypeError('registro de mfa da sessão inválido');
   }
 }
@@ -77,14 +83,14 @@ async function criar(executor, {
   if (!(expiraEm instanceof Date) || Number.isNaN(expiraEm.getTime())) {
     throw new TypeError('expira_em deve ser uma data válida');
   }
-  exigirMfaOpcional(mfa);
+  exigirMfa(mfa);
 
   const { rows } = await executor.query(
     `INSERT INTO sessoes_plataforma
        (administrador_id, token_hash, expira_em, ip, dispositivo, mfa_verificado_em, mfa_metodo, criado_em, ultimo_uso_em)
      VALUES ($1, $2, $3, $4, $5, $6, $7, clock_timestamp(), clock_timestamp())
      RETURNING id`,
-    [administradorId, tokenHash, expiraEm, ip, dispositivo, mfa?.verificadoEm ?? null, mfa?.metodo ?? null],
+    [administradorId, tokenHash, expiraEm, ip, dispositivo, mfa.verificadoEm, mfa.metodo],
   );
 
   return rows[0].id;
@@ -95,6 +101,10 @@ async function criar(executor, {
  * for válida sob todos os critérios — inclusive `administrador.ativo`:
  * inativar um administrador derruba, na próxima leitura, todas as sessões
  * dele, sem precisar revogá-las uma a uma.
+ *
+ * A sessão também precisa do desafio de MFA concluído que a criou, do tipo
+ * do método e com o instante do MFA dentro da vida do desafio. Sessão
+ * incompatível não é encontrada, e nada nela é corrigido aqui.
  */
 async function buscarValidaPorHash(executor, tokenHash, inatividadeMinutos) {
   exigirHash(tokenHash);
@@ -107,9 +117,20 @@ async function buscarValidaPorHash(executor, tokenHash, inatividadeMinutos) {
        JOIN administradores_plataforma a ON a.id = s.administrador_id
       WHERE s.token_hash = $1
         AND s.revogada_em IS NULL
-        AND s.expira_em > now()
-        AND s.ultimo_uso_em > now() - ($2 * INTERVAL '1 minute')
-        AND a.ativo`,
+        AND s.expira_em > clock_timestamp()
+        AND s.ultimo_uso_em > clock_timestamp() - ($2 * INTERVAL '1 minute')
+        AND a.ativo
+        AND ${MFA_REGISTRADO('s.')}
+        AND EXISTS (
+          SELECT 1
+            FROM desafios_mfa_plataforma d
+           WHERE d.sessao_criada_id = s.id
+             AND d.administrador_id = s.administrador_id
+             AND d.motivo_encerramento = 'CONCLUIDO'
+             AND d.tipo = CASE s.mfa_metodo WHEN 'TOTP' THEN 'VERIFICACAO' WHEN 'CADASTRO' THEN 'CADASTRO' WHEN 'RECADASTRO' THEN 'RECUPERACAO' END
+             AND d.criado_em <= s.mfa_verificado_em
+             AND s.mfa_verificado_em <= d.encerrado_em
+        )`,
     [tokenHash, inatividadeMinutos],
   );
 
@@ -131,11 +152,12 @@ async function registrarUso(executor, sessaoId, inatividadeMinutos) {
 
   const { rowCount } = await executor.query(
     `UPDATE sessoes_plataforma
-        SET ultimo_uso_em = now()
+        SET ultimo_uso_em = clock_timestamp()
       WHERE id = $1
         AND revogada_em IS NULL
-        AND expira_em > now()
-        AND ultimo_uso_em > now() - ($2 * INTERVAL '1 minute')`,
+        AND expira_em > clock_timestamp()
+        AND ultimo_uso_em > clock_timestamp() - ($2 * INTERVAL '1 minute')
+        AND ${MFA_REGISTRADO('')}`,
     [sessaoId, inatividadeMinutos],
   );
 
@@ -148,7 +170,7 @@ async function revogar(executor, sessaoId, motivo) {
   exigirMotivo(motivo);
 
   const { rowCount } = await executor.query(
-    'UPDATE sessoes_plataforma SET revogada_em = now(), motivo_revogacao = $2 WHERE id = $1 AND revogada_em IS NULL',
+    'UPDATE sessoes_plataforma SET revogada_em = clock_timestamp(), motivo_revogacao = $2 WHERE id = $1 AND revogada_em IS NULL',
     [sessaoId, motivo],
   );
 
@@ -170,7 +192,7 @@ async function revogarTodasDoAdministrador(executor, administradorId, motivo, { 
 
   const { rowCount } = await executor.query(
     `UPDATE sessoes_plataforma
-        SET revogada_em = now(), motivo_revogacao = $2
+        SET revogada_em = clock_timestamp(), motivo_revogacao = $2
       WHERE administrador_id = $1
         AND revogada_em IS NULL
         AND ($3::bigint IS NULL OR id <> $3::bigint)`,

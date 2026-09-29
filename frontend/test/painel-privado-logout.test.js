@@ -9,9 +9,10 @@ const vm = require('node:vm');
 const EpiHttp = require('../js/api-http');
 
 /**
- * Painel Privado — logout e restauração pelo navegador (correção de
- * 25/09/2026, após validação manual): ao clicar em Sair, os dados
- * administrativos somem ANTES da requisição de logout e da navegação;
+ * Painel Privado — logout e restauração pelo navegador: ao clicar em Sair,
+ * os dados administrativos continuam na tela até o servidor confirmar o
+ * logout e somem antes da navegação (sem confirmação a sessão continua
+ * ativa e a página continua utilizável);
  * empresas.html só revela o conteúdo depois de confirmar a sessão; página
  * restaurada pelo histórico revalida antes de revelar qualquer coisa; os
  * scripts das duas páginas levam versão na URL para que o navegador não
@@ -60,7 +61,9 @@ function pagina(arquivo) {
   const eventos = {};
   const janela = { EpiHttp, SAFEWORK_PLATAFORMA_API_BASE_URL: BASE, location: { href: `http://localhost:5501/${arquivo.replace(/\.js$/, '.html')}` }, addEventListener(ev, fn) { (eventos[ev] = eventos[ev] || []).push(fn); } };
   const sandbox = { window: janela, document: { getElementById: el }, console, setTimeout, Promise, Number, String, Array, Object, JSON, Date };
-  vm.runInNewContext(ler(arquivo), sandbox);
+  const contexto = vm.createContext(sandbox);
+  // sair.js vem antes do script da página, como no HTML.
+  for (const script of ['painel-privado/sair.js', arquivo]) vm.runInContext(ler(script), contexto);
   const esperar = async () => { for (let i = 0; i < 30; i += 1) await new Promise((r) => setImmediate(r)); };
   const clicar = async (id) => { for (const fn of (el(id).listeners.click || [])) await fn({ preventDefault() {} }); };
   const pageshow = async (persisted) => { for (const fn of (eventos.pageshow || [])) await fn({ persisted }); await esperar(); };
@@ -68,7 +71,7 @@ function pagina(arquivo) {
 }
 
 describe('painel.js — Sair limpa antes de sair', () => {
-  test('ao clicar em Sair, e-mail e conteúdo somem ANTES de o logout responder; a navegação ao login vem só depois da resposta', async () => {
+  test('ao clicar em Sair, e-mail e conteúdo continuam até o logout responder; confirmado, somem e a página vai ao login', async () => {
     let liberarLogout;
     servidor({ 'GET /painel': ADMIN, 'POST /auth/logout': () => new Promise((res) => { liberarLogout = () => res(OK); }) });
     const pg = pagina('painel-privado/painel.js');
@@ -76,10 +79,11 @@ describe('painel.js — Sair limpa antes de sair', () => {
     assert.deepEqual([pg.el('conteudo').style.display, pg.el('email-administrador').textContent], ['block', 'admin@safework.local']);
     const clique = pg.clicar('sair');
     await new Promise((r) => setImmediate(r));
-    assert.deepEqual([pg.el('conteudo').style.display, pg.el('email-administrador').textContent], ['none', ''], 'limpo imediatamente, com o logout ainda pendente');
+    assert.deepEqual([pg.el('conteudo').style.display, pg.el('email-administrador').textContent], ['block', 'admin@safework.local'], 'sem confirmação nada some');
     assert.equal(pg.janela.location.href, pg.hrefInicial, 'ainda não navegou');
     liberarLogout();
     await clique; await pg.esperar();
+    assert.deepEqual([pg.el('conteudo').style.display, pg.el('email-administrador').textContent], ['none', ''], 'confirmado: limpo antes de navegar');
     assert.equal(pg.janela.location.href, 'index.html');
     assert.deepEqual(chamadas, ['GET /painel', 'POST /auth/logout']);
   });
@@ -113,7 +117,7 @@ describe('empresas.js — conteúdo protegido só com sessão confirmada', () =>
     assert.deepEqual(chamadas, ['GET /auth/me'], 'a lista nem é pedida');
   });
 
-  test('Sair: lista, formulário, detalhe e convites são limpos ANTES do logout responder; depois vai ao login', async () => {
+  test('Sair: lista, formulário, detalhe e convites continuam até o logout responder; confirmado, são limpos e a página vai ao login', async () => {
     const estado = { logado: true };
     let liberar;
     const r = rotas(estado);
@@ -124,10 +128,13 @@ describe('empresas.js — conteúdo protegido só com sessão confirmada', () =>
     pg.el('detalhe').style.display = 'block'; pg.el('convites').innerHTML = '<tr><td>x@y</td></tr>'; pg.el('situacao').textContent = 'ATIVA'; pg.el('link-aceite').textContent = 'http://link';
     const clique = pg.clicar('sair');
     await new Promise((res) => setImmediate(res));
-    assert.deepEqual([pg.el('conteudo').style.display, pg.el('lista').innerHTML, pg.el('convites').innerHTML, pg.el('detalhe').style.display, pg.el('situacao').textContent, pg.el('link-aceite').textContent], ['none', '', '', 'none', '', '']);
-    assert.ok(pg.el('form-empresa').resetado >= 1, 'formulário limpo');
+    assert.deepEqual([pg.el('conteudo').style.display, pg.el('convites').innerHTML, pg.el('detalhe').style.display, pg.el('situacao').textContent, pg.el('link-aceite').textContent], ['block', '<tr><td>x@y</td></tr>', 'block', 'ATIVA', 'http://link'], 'sem confirmação nada some');
+    assert.match(pg.el('lista').innerHTML, /Empresa Demonstração SafeWork/);
+    assert.equal(pg.el('form-empresa').resetado, undefined, 'formulário intacto');
     assert.equal(pg.janela.location.href, pg.hrefInicial, 'ainda não navegou');
     liberar(); await clique; await pg.esperar();
+    assert.deepEqual([pg.el('conteudo').style.display, pg.el('lista').innerHTML, pg.el('convites').innerHTML, pg.el('detalhe').style.display, pg.el('situacao').textContent, pg.el('link-aceite').textContent], ['none', '', '', 'none', '', ''], 'confirmado: limpo antes de navegar');
+    assert.ok(pg.el('form-empresa').resetado >= 1, 'formulário limpo');
     assert.equal(pg.janela.location.href, 'index.html');
   });
 
@@ -163,7 +170,7 @@ describe('páginas do Painel Privado: scripts versionados e conteúdo protegido 
     for (const arquivo of ['painel-privado/painel.html', 'painel-privado/empresas.html']) {
       const html = ler(arquivo);
       const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
-      assert.equal(scripts.length, 3, arquivo);
+      assert.equal(scripts.length, 4, arquivo);
       for (const s of scripts) assert.match(s, /\?v=\d{8,}/, `${arquivo}: ${s} sem versão`);
       assert.equal(/history\.(back|forward|go)\b/.test(html), false, arquivo);
     }

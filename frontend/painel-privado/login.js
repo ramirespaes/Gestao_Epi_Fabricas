@@ -68,6 +68,8 @@
     aoSalvar: function () { window.location.href = 'painel.html'; },
   });
 
+  var ETAPA_NAO_ENCERRADA = 'Não foi possível encerrar esta etapa no servidor. Ela pode continuar aberta. Verifique a conexão e tente de novo.';
+
   // CADASTRO no primeiro cadastro, RECUPERACAO no recadastro: decide o título.
   var tipoDoCadastro = 'CADASTRO';
 
@@ -129,9 +131,15 @@
     campo.focus();
   }
 
+  // Sem a confirmação do servidor o desafio pode continuar aberto: a tela não volta ao login como se ele tivesse acabado.
   function voltarAoLogin() {
     fila.requisitar('POST', '/auth/logout').then(function (resposta) {
-      if (resposta !== null) mostrarLogin();
+      if (resposta === null) return;
+      if (!resposta.ok) {
+        tela.avisar(resposta.status === 429 ? mfa.MENSAGENS.AGUARDE : ETAPA_NAO_ENCERRADA, 'erro');
+        return;
+      }
+      mostrarLogin();
     });
   }
 

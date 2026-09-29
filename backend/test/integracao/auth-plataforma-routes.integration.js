@@ -22,6 +22,7 @@ const { criarInicial } = require('../../src/services/administrador-plataforma.se
 const fatorRepo = require('../../src/repositories/fator-mfa-plataforma.repository');
 const { cifrarSegredoTotp } = require('../../src/security/mfa-cripto');
 const { gerarHashSenha } = require('../../src/security/password');
+const { gerarTokenSessao, hashTokenSessao } = require('../../src/security/token');
 const { authConfig } = require('../../src/config/auth');
 
 /**
@@ -33,8 +34,8 @@ const { authConfig } = require('../../src/config/auth');
  * Senha correta NÃO cria sessão: abre um desafio pré-MFA (LIBERACAO sem
  * TOTP ativo, VERIFICACAO com TOTP ativo) e emite só o cookie do desafio. O
  * desafio não autentica /auth/me nem rota administrativa; só
- * /auth/mfa/estado o aceita. Sessões plenas já existentes (criadas aqui
- * pelo repositório) continuam valendo como antes.
+ * /auth/mfa/estado o aceita. Sessão plena só existe com MFA comprovado: as
+ * criadas aqui nascem ligadas a um desafio concluído.
  *
  * Monta, no MESMO app de teste, as rotas do cliente (/api/auth/*) e as da
  * plataforma (/api/plataforma/*), para provar que o cookie de um contexto
@@ -93,8 +94,9 @@ describe('Painel Privado da plataforma — HTTP completo com PostgreSQL real', (
 
   before(async () => {
     // 048: auditoria com ator e alvo; 049 e 052: fatores e desafios do MFA;
-    // 053: liberação emitida por criarInicial; 054: colunas de MFA da sessão.
-    contexto = await abrirPoolTemporario(['000', '001', '002', '005', '025', '012', '013', '014', '015', '027', '028', '029', '030', '031', '048', '049', '052', '053', '054']);
+    // 053: liberação emitida por criarInicial; 054: colunas de MFA da sessão;
+    // 055: MFA obrigatório na sessão.
+    contexto = await abrirPoolTemporario(['000', '001', '002', '005', '025', '012', '013', '014', '015', '027', '028', '029', '030', '031', '048', '049', '052', '053', '054', '055', '056']);
 
     const authController = criarAuthController({ pool: contexto.pool });
     const exigirSessaoCliente = criarExigirSessao({ pool: contexto.pool });
@@ -374,8 +376,8 @@ describe('Painel Privado da plataforma — HTTP completo com PostgreSQL real', (
     });
   });
 
-  describe('sessões já existentes não são afetadas', () => {
-    test('sessão plena anterior continua valendo em /auth/me e no painel, sem colunas de MFA', async () => {
+  describe('sessão plena exige MFA comprovado', () => {
+    test('sessão nascida de MFA vale em /auth/me e no painel', async () => {
       const sessao = await criarSessaoAdministrativa(contexto.pool, administradorId);
 
       const me = await request(app).get('/api/plataforma/auth/me').set('Cookie', sessao.cookie);
@@ -384,13 +386,39 @@ describe('Painel Privado da plataforma — HTTP completo com PostgreSQL real', (
       assert.deepEqual([me.status, me.body.administrador.id], [200, administradorId]);
       assert.equal(painel.status, 200);
       assert.equal('empresa' in painel.body, false);
-      const { rows } = await q('SELECT mfa_verificado_em, mfa_metodo FROM sessoes_plataforma WHERE id = $1', [sessao.id]);
-      assert.deepEqual(rows[0], { mfa_verificado_em: null, mfa_metodo: null });
+      const { rows } = await q('SELECT mfa_verificado_em IS NOT NULL AS verificado, mfa_metodo FROM sessoes_plataforma WHERE id = $1', [sessao.id]);
+      assert.deepEqual(rows[0], { verificado: true, mfa_metodo: 'TOTP' });
+    });
+
+    test('sessão sem MFA não entra no banco e o token dela não autentica', async () => {
+      const token = gerarTokenSessao();
+      const erro = await q(
+        "INSERT INTO sessoes_plataforma (administrador_id, token_hash, expira_em) VALUES ($1, $2, now() + interval '1 hour')",
+        [administradorId, hashTokenSessao(token)],
+      ).catch((e) => e);
+      assert.deepEqual([erro.code, erro.constraint], ['23514', 'chk_sessoes_plataforma_mfa_obrigatorio']);
+
+      const painel = await request(app).get('/api/plataforma/painel').set('Cookie', `${authConfig.sessao.cookieNomeAdmin}=${token}`);
+      assert.deepEqual([painel.status, painel.body.codigo], [401, 'SESSAO_INVALIDA']);
     });
 
     test('sessão vencida continua recusada', async () => {
       const sessao = await criarSessaoAdministrativa(contexto.pool, administradorId);
-      await q("UPDATE sessoes_plataforma SET criado_em = now() - interval '2 hours', expira_em = now() - interval '1 minute' WHERE id = $1", [sessao.id]);
+      assert.equal((await request(app).get('/api/plataforma/painel').set('Cookie', sessao.cookie)).status, 200);
+
+      // O desafio recua junto: o instante do MFA continua dentro da vida dele.
+      await q(
+        `UPDATE desafios_mfa_plataforma
+            SET criado_em = criado_em - interval '2 hours', expira_em = expira_em - interval '2 hours', encerrado_em = encerrado_em - interval '2 hours'
+          WHERE sessao_criada_id = $1`,
+        [sessao.id],
+      );
+      await q(
+        `UPDATE sessoes_plataforma
+            SET criado_em = criado_em - interval '2 hours', mfa_verificado_em = mfa_verificado_em - interval '2 hours', expira_em = now() - interval '1 minute'
+          WHERE id = $1`,
+        [sessao.id],
+      );
       assert.equal((await request(app).get('/api/plataforma/painel').set('Cookie', sessao.cookie)).status, 401);
     });
   });

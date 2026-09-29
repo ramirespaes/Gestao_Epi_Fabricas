@@ -102,7 +102,7 @@ function preparar(t, cenario = {}) {
     ativar: m(fatorRepo, 'ativarTotp', cenario.ativou ?? true),
     trocar: m(desafioRepo, 'trocarFatorPendente', cenario.trocou ?? true),
     encerrar: m(desafioRepo, 'encerrar', true),
-    ligar: m(desafioRepo, 'ligarSessaoCriada', true),
+    ligar: m(desafioRepo, 'ligarSessaoCriada', cenario.ligou ?? true),
     criarDesafio: m(desafioService, 'criarDesafioSobTrava', async (_, dados) => ({
       token: gerarTokenSessao(), desafio: { etapa: dados.tipo, expiraEm: new Date('2026-09-28T12:15:00Z'), validadeMinutos: dados.validadeMinutos },
     })),
@@ -367,6 +367,20 @@ describe('confirmarCadastro: primeiro TOTP, recovery codes e sessão plena', () 
     assert.ok(texto.includes('MFA_CADASTRO_CONCLUIDO'));
     for (const proibido of [...r.codigosRecuperacao, r.token, '123456']) assert.equal(texto.includes(proibido), false);
     assert.deepEqual([contar(cliente.chamadas, 'COMMIT'), contar(cliente.chamadas, 'ROLLBACK')], [1, 0]);
+  });
+
+  test('sessão que não fica ligada ao desafio concluído: erro e ROLLBACK; nenhum token nem código é devolvido', async (t) => {
+    const x = preparar(t, { desafio: emCadastro(), ligou: false });
+    const cliente = criarCliente();
+
+    await assert.rejects(() => servico.confirmarCadastro(criarPool(cliente), dados()), (erro) => {
+      assert.equal(HttpError.ehHttpError(erro), false, 'falha interna, não resposta pública');
+      return true;
+    });
+
+    assert.equal(x.ligar.mock.calls.length, 1);
+    assert.equal(x.auditar.mock.calls.length, 0);
+    assert.deepEqual([contar(cliente.chamadas, 'COMMIT'), contar(cliente.chamadas, 'ROLLBACK')], [0, 1]);
   });
 
   test('a sessão que este navegador já apresentava é revogada; o token do desafio nunca vira sessão', async (t) => {
