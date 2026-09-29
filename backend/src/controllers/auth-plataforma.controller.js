@@ -3,6 +3,8 @@
 const loginPlataformaService = require('../services/login-plataforma.service');
 const desafioMfaService = require('../services/desafio-mfa-plataforma.service');
 const mfaCadastroService = require('../services/mfa-cadastro-plataforma.service');
+const recuperacaoMfaService = require('../services/recuperacao-mfa-plataforma.service');
+const substituicaoMfaService = require('../services/substituicao-mfa-plataforma.service');
 const sessaoPlataformaRepo = require('../repositories/sessao-plataforma.repository');
 const autenticacaoPlataformaMiddleware = require('../middleware/autenticacao-plataforma');
 const { tokenDoDesafioNaRequisicao } = require('../middleware/desafio-mfa-plataforma');
@@ -34,6 +36,11 @@ const { pool } = require('../config/database');
  * O login por senha não emite sessão: emite só o cookie do desafio pré-MFA
  * e responde a etapa e o prazo, sem administrador, e-mail ou token no corpo.
  */
+
+function tokenSessaoAnterior(req) {
+  const lido = autenticacaoPlataformaMiddleware.extrairTokenDoCookie(req);
+  return lido.presente && !lido.ambiguo ? lido.valor : null;
+}
 
 function criarAuthPlataformaController({ pool: poolInjetado }) {
   return {
@@ -121,19 +128,110 @@ function criarAuthPlataformaController({ pool: poolInjetado }) {
      * não voltam a ser exibidos.
      */
     async mfaCadastroConfirmar(req, res) {
-      const sessaoAnterior = autenticacaoPlataformaMiddleware.extrairTokenDoCookie(req);
-      const resultado = await mfaCadastroService.confirmarCadastro(poolInjetado, {
+      const dados = {
         desafioId: req.desafioMfaPlataforma.id,
         administradorId: req.desafioMfaPlataforma.administradorId,
         codigo: req.validado.body.codigo,
-        tokenSessaoAnterior: sessaoAnterior.presente && !sessaoAnterior.ambiguo ? sessaoAnterior.valor : null,
+        tokenSessaoAnterior: tokenSessaoAnterior(req),
+        ip: req.ip,
+        dispositivo: req.headers['user-agent'],
+      };
+      const resultado = req.desafioMfaPlataforma.tipo === 'RECUPERACAO'
+        ? await recuperacaoMfaService.concluirRecuperacao(poolInjetado, dados)
+        : await mfaCadastroService.confirmarCadastro(poolInjetado, dados);
+
+      res.append('Set-Cookie', serializarCookieSessaoPlataforma(resultado.token));
+      res.append('Set-Cookie', serializarRemocaoCookieDesafioMfa());
+      res.status(200).json({ status: 'ok', codigosRecuperacao: resultado.codigosRecuperacao });
+    },
+
+    async mfaRecuperacao(req, res) {
+      const resultado = await recuperacaoMfaService.iniciarRecuperacao(poolInjetado, {
+        desafioId: req.desafioMfaPlataforma.id,
+        administradorId: req.desafioMfaPlataforma.administradorId,
+        codigoRecuperacao: req.validado.body.codigoRecuperacao,
+        ip: req.ip,
+        dispositivo: req.headers['user-agent'],
+      });
+
+      res.append('Set-Cookie', serializarCookieDesafioMfa(resultado.token, resultado.desafio.validadeMinutos));
+      res.status(200).json({
+        status: 'ok',
+        etapa: resultado.desafio.etapa,
+        expiraEm: resultado.desafio.expiraEm,
+        cadastro: resultado.cadastro,
+      });
+    },
+
+    async mfaSubstituicaoIniciar(req, res) {
+      const resultado = await substituicaoMfaService.iniciarSubstituicao(poolInjetado, {
+        administradorId: req.administradorPlataforma.id,
+        sessaoId: req.sessaoPlataforma.id,
+        tokenSessao: tokenSessaoAnterior(req),
+        senha: req.validado.body.senha,
+        codigo: req.validado.body.codigo,
+        ip: req.ip,
+        dispositivo: req.headers['user-agent'],
+      });
+
+      res.append('Set-Cookie', serializarCookieDesafioMfa(resultado.token, resultado.desafio.validadeMinutos));
+      res.status(200).json({
+        status: 'ok',
+        etapa: resultado.desafio.etapa,
+        expiraEm: resultado.desafio.expiraEm,
+        cadastro: resultado.cadastro,
+      });
+    },
+
+    /**
+     * Substituição e regeneração revogam todas as sessões e não criam outra:
+     * os dois cookies saem e o próximo acesso passa pelo login completo.
+     */
+    async mfaSubstituicaoConfirmar(req, res) {
+      const resultado = await substituicaoMfaService.confirmarSubstituicao(poolInjetado, {
+        desafioId: req.desafioMfaPlataforma.id,
+        administradorId: req.administradorPlataforma.id,
+        sessaoId: req.sessaoPlataforma.id,
+        tokenSessao: tokenSessaoAnterior(req),
+        codigo: req.validado.body.codigo,
+        ip: req.ip,
+        dispositivo: req.headers['user-agent'],
+      });
+
+      res.append('Set-Cookie', serializarRemocaoCookieSessaoPlataforma());
+      res.append('Set-Cookie', serializarRemocaoCookieDesafioMfa());
+      res.status(200).json({ status: 'ok', codigosRecuperacao: resultado.codigosRecuperacao });
+    },
+
+    async mfaRecuperacaoRegenerar(req, res) {
+      const resultado = await substituicaoMfaService.regenerarCodigos(poolInjetado, {
+        administradorId: req.administradorPlataforma.id,
+        sessaoId: req.sessaoPlataforma.id,
+        tokenSessao: tokenSessaoAnterior(req),
+        senha: req.validado.body.senha,
+        codigo: req.validado.body.codigo,
+        ip: req.ip,
+        dispositivo: req.headers['user-agent'],
+      });
+
+      res.append('Set-Cookie', serializarRemocaoCookieSessaoPlataforma());
+      res.append('Set-Cookie', serializarRemocaoCookieDesafioMfa());
+      res.status(200).json({ status: 'ok', codigosRecuperacao: resultado.codigosRecuperacao });
+    },
+
+    async mfaVerificar(req, res) {
+      const resultado = await mfaCadastroService.verificarLogin(poolInjetado, {
+        desafioId: req.desafioMfaPlataforma.id,
+        administradorId: req.desafioMfaPlataforma.administradorId,
+        codigo: req.validado.body.codigo,
+        tokenSessaoAnterior: tokenSessaoAnterior(req),
         ip: req.ip,
         dispositivo: req.headers['user-agent'],
       });
 
       res.append('Set-Cookie', serializarCookieSessaoPlataforma(resultado.token));
       res.append('Set-Cookie', serializarRemocaoCookieDesafioMfa());
-      res.status(200).json({ status: 'ok', codigosRecuperacao: resultado.codigosRecuperacao });
+      res.status(200).json({ status: 'ok' });
     },
 
     /**

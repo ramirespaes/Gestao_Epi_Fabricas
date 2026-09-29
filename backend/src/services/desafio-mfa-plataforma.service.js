@@ -5,6 +5,8 @@ const token = require('../security/token');
 const travaRepo = require('../repositories/trava-mfa-plataforma.repository');
 const fatorRepo = require('../repositories/fator-mfa-plataforma.repository');
 const desafioRepo = require('../repositories/desafio-mfa-plataforma.repository');
+const sessaoRepo = require('../repositories/sessao-plataforma.repository');
+const { emTransacao } = require('./etapa-mfa-plataforma');
 
 /**
  * Desafio pré-MFA do Painel Privado. A senha correta abre um desafio, nunca
@@ -44,7 +46,7 @@ async function abrirDesafioAposSenha(client, { administradorId }) {
  * MFA que encerra um desafio e abre o seguinte).
  */
 async function criarDesafioSobTrava(client, {
-  administradorId, tipo, validadeMinutos, fatorPendenteId = null, desafioAnteriorId = null,
+  administradorId, tipo, validadeMinutos, fatorPendenteId = null, desafioAnteriorId = null, sessaoOrigemId = null,
 }) {
   await desafioRepo.encerrarExpirados(client, administradorId);
   const abertos = await desafioRepo.listarAbertos(client, administradorId, { travar: true });
@@ -56,25 +58,48 @@ async function criarDesafioSobTrava(client, {
 
   const tokenClaro = token.gerarTokenSessao();
   const criado = await desafioRepo.criar(client, {
-    administradorId, tokenHash: token.hashTokenSessao(tokenClaro), tipo, validadeMinutos, fatorPendenteId, desafioAnteriorId,
+    administradorId, tokenHash: token.hashTokenSessao(tokenClaro), tipo, validadeMinutos, fatorPendenteId, desafioAnteriorId, sessaoOrigemId,
   });
 
   return { token: tokenClaro, desafio: { etapa: tipo, expiraEm: criado.expiraEm, validadeMinutos } };
 }
 
+const concluidoComSessao = (desafio) => desafio.motivoEncerramento === 'CONCLUIDO' && desafio.sessaoCriadaId !== null;
+
 /**
- * Logout: encerra com LOGOUT o desafio deste token, se ainda estiver aberto.
- * Token fora do formato não vai ao banco. Devolve se encerrou algum.
+ * Logout: encerra com LOGOUT o desafio deste token, se ainda estiver aberto,
+ * e revoga como ABANDONADO o PENDENTE ligado a ele. Se o desafio já foi
+ * concluído com sessão criada, revoga só essa sessão. Token fora do formato
+ * não vai ao banco. Devolve se encerrou ou revogou algo.
  */
-async function encerrarDesafioPorToken(executor, tokenClaro) {
+async function encerrarDesafioPorToken(pool, tokenClaro) {
   if (!token.tokenSessaoTemFormatoValido(tokenClaro)) {
     return false;
   }
-  const desafio = await desafioRepo.buscarPorHash(executor, token.hashTokenSessao(tokenClaro));
-  if (desafio === null || desafio.encerradoEm !== null) {
+  const tokenHash = token.hashTokenSessao(tokenClaro);
+  const desafio = await desafioRepo.buscarPorHash(pool, tokenHash);
+  if (desafio === null || (desafio.encerradoEm !== null && !concluidoComSessao(desafio))) {
     return false;
   }
-  return desafioRepo.encerrar(executor, { desafioId: desafio.id, motivo: 'LOGOUT' });
+
+  return emTransacao(pool, async (client) => {
+    // Relido sob a trava: a confirmação pode ter concluído o desafio e criado a sessão enquanto o logout esperava.
+    await travaRepo.travarAdministrador(client, desafio.administradorId);
+    const atual = await desafioRepo.buscarPorHash(client, tokenHash);
+    if (concluidoComSessao(atual)) {
+      return sessaoRepo.revogar(client, atual.sessaoCriadaId, 'LOGOUT');
+    }
+    if (!(await desafioRepo.encerrar(client, { desafioId: atual.id, motivo: 'LOGOUT' }))) {
+      return false;
+    }
+    if (atual.fatorPendenteId !== null) {
+      const fator = await fatorRepo.buscarPorId(client, { administradorId: atual.administradorId, fatorId: atual.fatorPendenteId }, { travar: true });
+      if (fator !== null && fator.estado === 'PENDENTE') {
+        await fatorRepo.revogar(client, { administradorId: atual.administradorId, fatorId: fator.id, motivo: 'ABANDONADO' });
+      }
+    }
+    return true;
+  });
 }
 
 module.exports = { abrirDesafioAposSenha, criarDesafioSobTrava, encerrarDesafioPorToken };

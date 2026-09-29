@@ -17,7 +17,8 @@
     "db:migrate:baseline": "node --require dotenv/config scripts/migrate-cli.js baseline",
     "db:provisionar:master": "node --require dotenv/config scripts/provisionar-permissoes-master.js",
     "db:criar-administrador-plataforma": "node --require dotenv/config scripts/criar-administrador-plataforma.js",
-    "db:mfa:liberar-cadastro": "node --require dotenv/config scripts/mfa-liberar-cadastro.js"
+    "db:mfa:liberar-cadastro": "node --require dotenv/config scripts/mfa-liberar-cadastro.js",
+    "db:mfa:redefinir": "node --require dotenv/config scripts/mfa-redefinir.js"
   },
   "keywords": [],
   "author": "",

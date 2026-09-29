@@ -542,25 +542,29 @@ describe('app.js: namespace /api/plataforma (Autenticação Global — Pacote 2)
     assert.equal(r.headers['cache-control'], 'no-store');
   });
 
-  test('endpoints do cadastro MFA montados: sem desafio, 401 DESAFIO_INVALIDO antes de ler o corpo', async () => {
-    for (const caminho of ['/api/plataforma/auth/mfa/liberacao', '/api/plataforma/auth/mfa/cadastro/reiniciar', '/api/plataforma/auth/mfa/cadastro/confirmar']) {
+  test('endpoints MFA montados: sem desafio, 401 DESAFIO_INVALIDO antes de ler o corpo', async () => {
+    for (const caminho of [
+      '/api/plataforma/auth/mfa/liberacao',
+      '/api/plataforma/auth/mfa/cadastro/reiniciar',
+      '/api/plataforma/auth/mfa/cadastro/confirmar',
+      '/api/plataforma/auth/mfa/verificar',
+      '/api/plataforma/auth/mfa/recuperacao',
+    ]) {
       const r = await request(app).post(caminho).set('Origin', PERMITIDA_PLATAFORMA).set('Content-Type', 'application/json').send({});
       assert.deepEqual([r.status, r.body.codigo], [401, 'DESAFIO_INVALIDO'], caminho);
       assert.equal(r.headers['cache-control'], 'no-store');
     }
   });
 
-  test('os endpoints MFA dos incrementos seguintes ainda não existem', async () => {
+  test('endpoints MFA de sessão plena montados: sem sessão, 401 SESSAO_INVALIDA antes de ler o corpo', async () => {
     const caminhos = [
-      '/api/plataforma/auth/mfa/verificar',
-      '/api/plataforma/auth/mfa/recuperacao',
       '/api/plataforma/auth/mfa/recuperacao/regenerar',
       '/api/plataforma/auth/mfa/substituicao/iniciar',
       '/api/plataforma/auth/mfa/substituicao/confirmar',
     ];
     for (const caminho of caminhos) {
       const r = await request(app).post(caminho).set('Origin', PERMITIDA_PLATAFORMA).set('Content-Type', 'application/json').send({});
-      assert.equal(r.status, 404, caminho);
+      assert.deepEqual([r.status, r.body.codigo], [401, 'SESSAO_INVALIDA'], caminho);
     }
   });
 

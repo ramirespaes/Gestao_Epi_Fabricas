@@ -29,8 +29,10 @@ const { pool } = require('../config/database');
  * do corpo, então sem desafio a resposta é 401 sem ler nada.
  *   estado: qualquer tipo;
  *   liberacao: só LIBERACAO;
- *   cadastro/reiniciar e cadastro/confirmar: só CADASTRO (a recuperação
- *   entra num incremento próprio).
+ *   cadastro/reiniciar e cadastro/confirmar: CADASTRO ou RECUPERACAO;
+ *   verificar e recuperacao: só VERIFICACAO;
+ *   substituicao/iniciar e recuperacao/regenerar: sessão plena, sem desafio;
+ *   substituicao/confirmar: sessão plena e desafio SUBSTITUICAO.
  *
  * `desafioMfa(tipos)` e `limitadorMfa` são obrigatórios, sem padrão: um
  * middleware com o pool global, esquecido numa montagem de teste,
@@ -44,6 +46,11 @@ const { pool } = require('../config/database');
  *   POST /api/plataforma/auth/mfa/liberacao
  *   POST /api/plataforma/auth/mfa/cadastro/reiniciar
  *   POST /api/plataforma/auth/mfa/cadastro/confirmar
+ *   POST /api/plataforma/auth/mfa/verificar
+ *   POST /api/plataforma/auth/mfa/recuperacao
+ *   POST /api/plataforma/auth/mfa/substituicao/iniciar
+ *   POST /api/plataforma/auth/mfa/substituicao/confirmar
+ *   POST /api/plataforma/auth/mfa/recuperacao/regenerar
  */
 
 function criarAuthPlataformaRoutes({
@@ -68,11 +75,32 @@ function criarAuthPlataformaRoutes({
   );
   router.post(
     '/auth/mfa/cadastro/reiniciar',
-    limitadorMfa, desafioMfa(['CADASTRO']), validar({ body: authPlataformaSchemas.mfaCadastroReiniciar.body }), controller.mfaCadastroReiniciar,
+    limitadorMfa, desafioMfa(['CADASTRO', 'RECUPERACAO']), validar({ body: authPlataformaSchemas.mfaCadastroReiniciar.body }), controller.mfaCadastroReiniciar,
   );
   router.post(
     '/auth/mfa/cadastro/confirmar',
-    limitadorMfa, desafioMfa(['CADASTRO']), validar({ body: authPlataformaSchemas.mfaCadastroConfirmar.body }), controller.mfaCadastroConfirmar,
+    limitadorMfa, desafioMfa(['CADASTRO', 'RECUPERACAO']), validar({ body: authPlataformaSchemas.mfaCadastroConfirmar.body }), controller.mfaCadastroConfirmar,
+  );
+  router.post(
+    '/auth/mfa/verificar',
+    limitadorMfa, desafioMfa(['VERIFICACAO']), validar({ body: authPlataformaSchemas.mfaVerificar.body }), controller.mfaVerificar,
+  );
+  router.post(
+    '/auth/mfa/recuperacao',
+    limitadorMfa, desafioMfa(['VERIFICACAO']), validar({ body: authPlataformaSchemas.mfaRecuperacao.body }), controller.mfaRecuperacao,
+  );
+  router.post(
+    '/auth/mfa/substituicao/iniciar',
+    limitadorMfa, exigirSessaoInjetado, validar({ body: authPlataformaSchemas.mfaReautenticacao.body }), controller.mfaSubstituicaoIniciar,
+  );
+  router.post(
+    '/auth/mfa/substituicao/confirmar',
+    limitadorMfa, exigirSessaoInjetado, desafioMfa(['SUBSTITUICAO']), validar({ body: authPlataformaSchemas.mfaSubstituicaoConfirmar.body }),
+    controller.mfaSubstituicaoConfirmar,
+  );
+  router.post(
+    '/auth/mfa/recuperacao/regenerar',
+    limitadorMfa, exigirSessaoInjetado, validar({ body: authPlataformaSchemas.mfaReautenticacao.body }), controller.mfaRecuperacaoRegenerar,
   );
 
   return router;

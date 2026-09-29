@@ -40,6 +40,52 @@ describe('mfaCadastroConfirmar', () => {
   });
 });
 
+describe('mfaVerificar', () => {
+  test('existe, com corpo estrito de exatamente 6 dígitos em texto', () => {
+    assert.ok(schemas.mfaVerificar, 'schema mfaVerificar ausente');
+    const body = schemas.mfaVerificar.body;
+    assert.equal(valido(body, { codigo: '000000' }), true);
+    for (const codigo of ['12345', '1234567', '12a456', ' 123456', '123456 ', '12 456', 123456, '', null]) {
+      assert.equal(valido(body, { codigo }), false, String(codigo));
+    }
+    assert.equal(valido(body, {}), false);
+    assert.equal(valido(body, { codigo: '123456', extra: 1 }), false);
+  });
+});
+
+describe('mfaRecuperacao', () => {
+  test('existe; aceita o recovery code como texto de até 64 caracteres, a forma canônica é do serviço', () => {
+    assert.ok(schemas.mfaRecuperacao, 'schema mfaRecuperacao ausente');
+    const body = schemas.mfaRecuperacao.body;
+    assert.equal(valido(body, { codigoRecuperacao: 'ABCD-EFGH-JKMN-PQRS' }), true);
+    assert.equal(valido(body, { codigoRecuperacao: 'abcd efgh jkmn pqrs' }), true);
+    for (const corpo of [{}, { codigoRecuperacao: '' }, { codigoRecuperacao: 'A'.repeat(65) }, { codigoRecuperacao: 1234 }, { codigoRecuperacao: 'ABCD-EFGH-JKMN-PQRS', extra: 1 }]) {
+      assert.equal(valido(body, corpo), false, JSON.stringify(corpo));
+    }
+  });
+});
+
+describe('mfaReautenticacao e mfaSubstituicaoConfirmar', () => {
+  test('reautenticação: senha e TOTP de 6 dígitos, nada além', () => {
+    assert.ok(schemas.mfaReautenticacao, 'schema mfaReautenticacao ausente');
+    const body = schemas.mfaReautenticacao.body;
+    assert.equal(valido(body, { senha: 'uma-senha-qualquer', codigo: '123456' }), true);
+    for (const corpo of [{}, { senha: 'x' }, { codigo: '123456' }, { senha: 'uma-senha-qualquer', codigo: '12345' },
+      { senha: 'uma-senha-qualquer', codigo: 123456 }, { senha: 'uma-senha-qualquer', codigo: '123456', extra: 1 }]) {
+      assert.equal(valido(body, corpo), false, JSON.stringify(corpo));
+    }
+  });
+
+  test('confirmação da substituição: só o TOTP novo de 6 dígitos', () => {
+    assert.ok(schemas.mfaSubstituicaoConfirmar, 'schema mfaSubstituicaoConfirmar ausente');
+    const body = schemas.mfaSubstituicaoConfirmar.body;
+    assert.equal(valido(body, { codigo: '000000' }), true);
+    for (const corpo of [{}, { codigo: ' 12345' }, { codigo: '123456', senha: 'x' }]) {
+      assert.equal(valido(body, corpo), false, JSON.stringify(corpo));
+    }
+  });
+});
+
 describe('mfaCadastroReiniciar', () => {
   test('corpo vazio; qualquer campo é recusado', () => {
     assert.equal(valido(schemas.mfaCadastroReiniciar.body, {}), true);

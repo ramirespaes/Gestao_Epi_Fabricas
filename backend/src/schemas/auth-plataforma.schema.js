@@ -34,10 +34,31 @@ const mfaCadastroReiniciar = {
   body: z.strictObject({}),
 };
 
+const codigoTotp = z.string().regex(/^[0-9]{6}$/);
+
 const mfaCadastroConfirmar = {
+  body: z.strictObject({ codigo: codigoTotp }),
+};
+
+const mfaVerificar = {
+  body: z.strictObject({ codigo: codigoTotp }),
+};
+
+// Como na liberação: a forma canônica é conferida no serviço e conta como tentativa.
+const mfaRecuperacao = {
   body: z.strictObject({
-    codigo: z.string().regex(/^[0-9]{6}$/),
+    codigoRecuperacao: z.string().min(1).max(64),
   }),
 };
 
-module.exports = { login, mfaLiberacao, mfaCadastroReiniciar, mfaCadastroConfirmar };
+const mfaReautenticacao = {
+  body: z.strictObject({ senha: senhaEntrada, codigo: codigoTotp }),
+};
+
+const mfaSubstituicaoConfirmar = {
+  body: z.strictObject({ codigo: codigoTotp }),
+};
+
+module.exports = {
+  login, mfaLiberacao, mfaCadastroReiniciar, mfaCadastroConfirmar, mfaVerificar, mfaRecuperacao, mfaReautenticacao, mfaSubstituicaoConfirmar,
+};

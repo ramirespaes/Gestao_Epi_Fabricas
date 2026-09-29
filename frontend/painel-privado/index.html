@@ -37,29 +37,90 @@
     .voltar-site[hidden] { display: none; }
     @media (max-width: 500px) { .centro { padding: 16px; } .cartao { padding: 26px 20px 22px; border-radius: 15px; } }
   </style>
+  <link rel="stylesheet" href="mfa.css?v=20260928">
 </head>
 <body>
-  <div class="centro">
-    <form id="form-login" class="cartao" novalidate>
+  <main class="centro">
+    <div class="cartao">
       <div class="marca">
         <a id="link-logo-site" class="logo-site" href="#" aria-label="SafeWork Engenharia — voltar ao site" hidden><svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M5 17.3 12.1 24 27 8" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
         <strong class="marca-nome">SafeWork <span>Engenharia</span></strong>
         <span class="marca-sub">Painel Privado · Administração SafeWork</span>
       </div>
-      <h1>Entrar</h1>
-      <div id="mensagem" class="mensagem" role="alert" aria-live="polite"></div>
-      <label for="email">E-mail</label>
-      <input type="email" id="email" name="email" autocomplete="username" required>
-      <label for="senha">Senha</label>
-      <input type="password" id="senha" name="senha" autocomplete="current-password" required>
-      <button type="submit" id="botao-entrar" class="botao">Entrar</button>
-      <a id="link-voltar-site" class="voltar-site" href="#" hidden>Voltar ao site</a>
-    </form>
-  </div>
+      <h1 id="titulo-etapa" tabindex="-1">Entrar</h1>
+      <div id="mensagem" class="mensagem" role="status" aria-live="polite"></div>
 
-  <script src="../js/api-http.js"></script>
-  <script src="config.js"></script>
-  <script src="login.js"></script>
+      <form id="form-login" data-etapa="LOGIN" novalidate>
+        <label for="email">E-mail</label>
+        <input type="email" id="email" name="email" autocomplete="username" required>
+        <label for="senha">Senha</label>
+        <input type="password" id="senha" name="senha" autocomplete="current-password" required>
+        <button type="submit" id="botao-entrar" class="botao">Entrar</button>
+      </form>
+
+      <form id="etapa-verificacao" data-etapa="VERIFICACAO" novalidate hidden>
+        <p class="ajuda">Abra o aplicativo autenticador e digite o código de 6 dígitos.</p>
+        <label for="codigo-verificacao">Código de verificação</label>
+        <input type="text" id="codigo-verificacao" name="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="6" spellcheck="false" required>
+        <button type="submit" id="botao-verificar" class="botao">Verificar código</button>
+        <button type="button" id="botao-usar-recuperacao" class="botao-secundario">Usar código de recuperação</button>
+        <button type="button" id="botao-voltar-verificacao" class="botao-texto">Voltar</button>
+      </form>
+
+      <form id="etapa-recuperacao" data-etapa="RECUPERACAO" novalidate hidden>
+        <p class="ajuda">O código de recuperação não dá acesso direto: depois dele você cadastra um novo autenticador. Cada código vale uma vez.</p>
+        <label for="codigo-recuperacao">Código de recuperação</label>
+        <input type="text" id="codigo-recuperacao" name="codigoRecuperacao" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="64" required>
+        <button type="submit" id="botao-recuperar" class="botao">Continuar</button>
+        <button type="button" id="botao-voltar-recuperacao" class="botao-texto">Voltar</button>
+      </form>
+
+      <form id="etapa-liberacao" data-etapa="LIBERACAO" novalidate hidden>
+        <p class="ajuda">Este administrador ainda não tem autenticador. Digite o código de liberação emitido pela operação da SafeWork.</p>
+        <label for="codigo-liberacao">Código de liberação</label>
+        <input type="text" id="codigo-liberacao" name="codigoLiberacao" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="64" required>
+        <button type="submit" id="botao-liberar" class="botao">Continuar</button>
+        <button type="button" id="botao-voltar-liberacao" class="botao-texto">Voltar</button>
+      </form>
+
+      <form id="etapa-cadastro" data-etapa="CADASTRO" novalidate hidden>
+        <div id="cadastro-material" hidden>
+          <p class="ajuda">Leia o QR Code com o aplicativo autenticador ou digite a chave. Depois informe o código de 6 dígitos que o aplicativo mostrar.</p>
+          <div id="cadastro-qr" class="qr"></div>
+          <code id="cadastro-chave" class="chave"></code>
+          <button type="button" id="botao-copiar-chave" class="botao-secundario">Copiar chave</button>
+          <label for="codigo-cadastro" class="com-espaco">Código do autenticador</label>
+          <input type="text" id="codigo-cadastro" name="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="6" spellcheck="false" required>
+          <button type="submit" id="botao-confirmar-cadastro" class="botao">Verificar código</button>
+        </div>
+        <button type="button" id="botao-novo-qr" class="botao-secundario">Gerar novo QR Code</button>
+        <button type="button" id="botao-voltar-cadastro" class="botao-texto">Voltar</button>
+      </form>
+
+      <section id="etapa-codigos" data-etapa="CODIGOS" hidden>
+        <p class="ajuda">Estes códigos permitem recuperar o acesso se você perder o autenticador. Eles aparecem só agora: guarde-os em local seguro.</p>
+        <ol id="lista-codigos" class="codigos"></ol>
+        <button type="button" id="botao-copiar-codigos" class="botao-secundario">Copiar códigos</button>
+        <div class="confirmacao com-espaco">
+          <input type="checkbox" id="confirmo-codigos">
+          <label for="confirmo-codigos">Guardei os códigos em local seguro</label>
+        </div>
+        <button type="button" id="botao-codigos-salvos" class="botao" disabled>Já salvei meus códigos</button>
+      </section>
+
+      <section id="etapa-encerrada" data-etapa="ENCERRADA" hidden>
+        <button type="button" id="botao-entrar-novamente" class="botao">Entrar novamente</button>
+      </section>
+
+      <a id="link-voltar-site" class="voltar-site" href="#" hidden>Voltar ao site</a>
+    </div>
+  </main>
+
+  <script src="../js/api-http.js?v=20260928"></script>
+  <script src="../vendor/qrcode-generator-2.0.4.js?v=20260928"></script>
+  <script src="config.js?v=20260928"></script>
+  <script src="mfa.js?v=20260928"></script>
+  <script src="login.js?v=20260928"></script>
   <script>
     // Logo e "Voltar ao site": levam à página institucional da SafeWork
     // Engenharia. Ambiente local (localhost, 127.0.0.1, [::1]): a institucional

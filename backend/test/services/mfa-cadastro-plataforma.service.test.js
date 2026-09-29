@@ -298,9 +298,38 @@ describe('reiniciarCadastro', () => {
     assert.equal(contar(cliente.chamadas, 'ROLLBACK'), 1);
   });
 
-  test('só em CADASTRO: outro tipo é 401 DESAFIO_INVALIDO', async (t) => {
-    preparar(t, { desafio: desafio({ tipo: 'RECUPERACAO', fatorPendenteId: FATOR }) });
-    await assert.rejects(() => servico.reiniciarCadastro(criarPool(criarCliente()), dados), erroHttp(401, 'DESAFIO_INVALIDO'));
+  test('só em CADASTRO ou RECUPERACAO: outro tipo é 401 DESAFIO_INVALIDO', async (t) => {
+    for (const d of [desafio(), desafio({ tipo: 'VERIFICACAO' }), desafio({ tipo: 'SUBSTITUICAO', fatorPendenteId: FATOR })]) {
+      preparar(t, { desafio: d });
+      await assert.rejects(() => servico.reiniciarCadastro(criarPool(criarCliente()), dados), erroHttp(401, 'DESAFIO_INVALIDO'), d.tipo);
+      t.mock.restoreAll();
+    }
+  });
+});
+
+describe('desafio no limite de falhas', () => {
+  const limite = authConfig.desafioMfa.maxFalhas;
+  const base = { desafioId: DESAFIO, administradorId: ADMIN, ip: '203.0.113.9', dispositivo: 'teste' };
+
+  test('LIBERACAO, reinício e confirmação do cadastro recusam o desafio sem tocar em nada', async (t) => {
+    const casos = [
+      ['confirmarLiberacao', desafio({ falhas: limite }), { ...base, codigoLiberacao: 'ABCD-EFGH-JKMN-PQRS' }, 'buscarLiberacao'],
+      ['reiniciarCadastro', desafio({ tipo: 'CADASTRO', fatorPendenteId: FATOR, falhas: limite }), base, 'cifrar'],
+      ['confirmarCadastro', desafio({ tipo: 'CADASTRO', fatorPendenteId: FATOR, falhas: limite }), { ...base, codigo: '123456' }, 'buscarFator'],
+    ];
+    for (const [funcao, noLimite, dados, naoChamado] of casos) {
+      const x = preparar(t, { desafio: noLimite });
+      await assert.rejects(() => servico[funcao](criarPool(criarCliente()), dados), erroHttp(401, 'DESAFIO_INVALIDO'), funcao);
+      assert.equal(x[naoChamado].mock.calls.length, 0, funcao);
+      assert.equal(x.incrementar.mock.calls.length, 0, funcao);
+      t.mock.restoreAll();
+    }
+  });
+
+  test('uma falha abaixo do limite ainda conclui o cadastro', async (t) => {
+    preparar(t, { desafio: desafio({ tipo: 'CADASTRO', fatorPendenteId: FATOR, falhas: limite - 1 }) });
+    const r = await servico.confirmarCadastro(criarPool(criarCliente()), { ...base, codigo: '123456' });
+    assert.equal(r.codigosRecuperacao.length, 10);
   });
 });
 
