@@ -32,6 +32,7 @@
     .cartao strong { color: var(--ink); }
     .modulo { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 13px; color: var(--ink); text-decoration: none; font-weight: 600; transition: border-color .15s, background-color .15s; }
     .modulo:hover, .modulo:focus-visible { background: var(--foco); border-color: var(--hover); outline: none; }
+    .modulo + .modulo { margin-top: 10px; }
     .modulo .icone { display: inline-grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: 11px; background: var(--info-fundo); color: var(--accent); }
     .modulo .icone svg { width: 20px; height: 20px; }
     .modulo small { display: block; margin-top: 2px; font-size: 12px; font-weight: 400; color: var(--muted); }
@@ -55,6 +56,7 @@
       <p>Administrador autenticado: <strong id="email-administrador"></strong></p>
       <nav>
         <a class="modulo" href="empresas.html"><span class="icone" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 21V5l8-3 8 3v16M2 21h20M9 21v-6h6v6M8 8h.01M12 8h.01M16 8h.01M8 12h.01M12 12h.01M16 12h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Empresas contratantes<small>cadastro, situação e convite do primeiro MASTER</small></span></a>
+        <a class="modulo" href="seguranca.html"><span class="icone" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3 5 6v5c0 4.4 2.9 8.4 7 10 4.1-1.6 7-5.6 7-10V6l-7-3Zm-2.5 9 2 2 3.5-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>Segurança da conta<small>autenticador e códigos de recuperação</small></span></a>
       </nav>
     </div>
   </main>

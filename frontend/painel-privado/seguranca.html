@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Segurança da conta — Painel Privado — SafeWork</title>
+  <style>
+    /* Identidade visual SafeWork Engenharia — mesmas variáveis, fonte e medidas do painel (painel.html) */
+    :root { color-scheme: light; --ink: #153333; --muted: #617471; --accent: #1f7563; --accent-forte: #153333; --surface: #ffffff; --bg: #f7f8f6; --line: #e3e9e5; --campo: #ffffff; --hover: #8ab5a7; --foco: #e1efe9; --logo-fundo: #153333; --erro: #b3261e; --erro-fundo: #fdecea; --info-fundo: #eaf5ef; --sombra: #173d3720; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100svh; background: var(--bg); color: var(--ink); font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; }
+    header { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px clamp(16px, 4vw, 40px); background: var(--surface); border-bottom: 1px solid var(--line); }
+    .marca { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .marca-logo { display: inline-grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 12px; background: var(--logo-fundo); color: #ffffff; }
+    .marca-logo svg { width: 24px; height: 24px; }
+    .marca-nome { display: block; margin: 0; font-size: 16px; font-weight: 740; letter-spacing: -.04em; color: var(--ink); }
+    .marca-nome span { font-weight: 480; letter-spacing: -.03em; color: var(--muted); }
+    .marca-sub { display: block; margin-top: 2px; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+    .acoes-topo { display: flex; align-items: center; gap: 16px; }
+    .acoes-topo a { color: var(--accent); font-size: 14px; font-weight: 600; text-decoration: none; }
+    .acoes-topo a:hover, .acoes-topo a:focus-visible { text-decoration: underline; color: var(--accent-forte); }
+    button { font: inherit; font-size: 14px; font-weight: 600; color: #ffffff; background: var(--accent); border: 1px solid var(--accent); border-radius: 11px; padding: 9px 16px; cursor: pointer; transition: background-color .15s, box-shadow .15s; }
+    button:hover, button:focus-visible { background: var(--accent-forte); border-color: var(--accent-forte); outline: none; box-shadow: 0 0 0 3px var(--foco); }
+    button.secundario { color: var(--accent); background: var(--surface); border-color: var(--line); }
+    button.secundario:hover, button.secundario:focus-visible { color: var(--accent-forte); background: var(--foco); border-color: var(--hover); }
+    button:disabled { opacity: .6; cursor: default; box-shadow: none; }
+    main { padding: 24px clamp(16px, 4vw, 40px); max-width: 480px; }
+    .cartao { background: var(--surface); border: 1px solid var(--line); border-radius: 17px; padding: 24px; box-shadow: 0 22px 55px var(--sombra); }
+    h2 { margin: 0 0 14px; font-size: 20px; font-weight: 740; letter-spacing: -.03em; color: var(--ink); }
+    h2:focus { outline: none; }
+    .mensagem { min-height: 1.2rem; margin-bottom: 12px; font-size: 13px; border-radius: 11px; }
+    .mensagem.erro { padding: 9px 12px; color: var(--erro); background: var(--erro-fundo); }
+    .mensagem.info { padding: 9px 12px; color: var(--ink); background: var(--info-fundo); }
+    .mensagem:empty { padding: 0; background: none; }
+    label { display: block; margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+    input { width: 100%; height: 44px; padding: 0 12px; margin-bottom: 14px; font: inherit; font-size: 15px; color: var(--ink); background: var(--campo); border: 1px solid var(--line); border-radius: 11px; outline: none; transition: border-color .15s, box-shadow .15s; }
+    input:hover { border-color: var(--hover); }
+    input:focus-visible { border-color: var(--hover); box-shadow: 0 0 0 3px var(--foco); }
+    .botao { width: 100%; height: 46px; margin-top: 4px; font-size: 15px; }
+  </style>
+  <link rel="stylesheet" href="mfa.css?v=20260928">
+</head>
+<body>
+  <header>
+    <div class="marca">
+      <span class="marca-logo" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M5 17.3 12.1 24 27 8" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <div>
+        <h1 class="marca-nome">SafeWork <span>Engenharia</span></h1>
+        <span class="marca-sub">Painel Privado · Segurança da conta</span>
+      </div>
+    </div>
+    <div class="acoes-topo">
+      <a href="painel.html">Voltar ao painel</a>
+      <button id="sair" type="button" class="secundario">Sair</button>
+    </div>
+  </header>
+  <main>
+    <div id="mensagem" class="mensagem" role="status" aria-live="polite"></div>
+    <div id="conteudo" class="cartao" hidden>
+      <h2 id="titulo-etapa" tabindex="-1">Segurança da conta</h2>
+
+      <section id="etapa-menu" data-etapa="MENU">
+        <p class="ajuda">As duas operações pedem sua senha e o código atual do autenticador. Ao concluir, todas as sessões são encerradas e você entra de novo.</p>
+        <button type="button" id="botao-trocar-autenticador" class="botao">Trocar autenticador</button>
+        <button type="button" id="botao-gerar-codigos" class="botao-secundario">Gerar novos códigos de recuperação</button>
+      </section>
+
+      <form id="etapa-reautenticacao" data-etapa="REAUTENTICACAO" novalidate hidden>
+        <p class="ajuda">Confirme que é você.</p>
+        <label for="senha-atual">Senha atual</label>
+        <input type="password" id="senha-atual" name="senha" autocomplete="current-password" required>
+        <label for="codigo-atual">Código do autenticador atual</label>
+        <input type="text" id="codigo-atual" name="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="6" spellcheck="false" required>
+        <button type="submit" id="botao-reautenticar" class="botao">Continuar</button>
+        <button type="button" id="botao-voltar-reautenticacao" class="botao-texto">Voltar</button>
+      </form>
+
+      <form id="etapa-cadastro" data-etapa="CADASTRO" novalidate hidden>
+        <div id="cadastro-material" hidden>
+          <p class="ajuda">Leia o QR Code com o novo aplicativo autenticador ou digite a chave. O autenticador atual continua valendo até você confirmar o código novo.</p>
+          <div id="cadastro-qr" class="qr"></div>
+          <code id="cadastro-chave" class="chave"></code>
+          <button type="button" id="botao-copiar-chave" class="botao-secundario">Copiar chave</button>
+          <label for="codigo-cadastro" class="com-espaco">Código do novo autenticador</label>
+          <input type="text" id="codigo-cadastro" name="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="6" spellcheck="false" required>
+          <button type="submit" id="botao-confirmar-cadastro" class="botao">Verificar código</button>
+        </div>
+        <button type="button" id="botao-voltar-cadastro" class="botao-texto">Voltar</button>
+      </form>
+
+      <section id="etapa-codigos" data-etapa="CODIGOS" hidden>
+        <p class="ajuda">Estes são os novos códigos de recuperação; os anteriores deixaram de valer. Eles aparecem só agora: guarde-os em local seguro.</p>
+        <ol id="lista-codigos" class="codigos"></ol>
+        <button type="button" id="botao-copiar-codigos" class="botao-secundario">Copiar códigos</button>
+        <div class="confirmacao com-espaco">
+          <input type="checkbox" id="confirmo-codigos">
+          <label for="confirmo-codigos">Guardei os códigos em local seguro</label>
+        </div>
+        <button type="button" id="botao-codigos-salvos" class="botao" disabled>Já salvei meus códigos</button>
+      </section>
+    </div>
+  </main>
+
+  <script src="../js/api-http.js?v=20260928"></script>
+  <script src="../vendor/qrcode-generator-2.0.4.js?v=20260928"></script>
+  <script src="config.js?v=20260928"></script>
+  <script src="mfa.js?v=20260928"></script>
+  <script src="seguranca.js?v=20260928"></script>
+</body>
+</html>
