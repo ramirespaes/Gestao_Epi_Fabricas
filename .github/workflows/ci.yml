@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+# Mesmo fuso das execuções locais e dos usuários. Os testes que exercitam
+# outros fusos definem TZ por conta própria.
+env:
+  TZ: America/Sao_Paulo
+
+jobs:
+  verificacoes-sem-banco:
+    name: Backend unitário, checksums e frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Backend - instalar dependências
+        working-directory: backend
+        run: npm ci
+
+      - name: Backend - testes unitários com cobertura mínima
+        working-directory: backend
+        run: npm run test:ci
+
+      - name: Backend - checksums das migrations
+        working-directory: backend
+        run: npm run db:migrate:verificar
+
+      - name: Frontend - testes
+        working-directory: frontend
+        run: npm test
+
+  integracao-postgresql:
+    name: Integração com PostgreSQL 16 efêmero
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # Banco criado dentro do runner e descartado ao fim do job. Credenciais
+    # sintéticas, sem secrets; os testes isolam cada execução em schema
+    # temporário próprio.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: gestao_epi_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d gestao_epi_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_NAME: gestao_epi_ci
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Backend - instalar dependências
+        working-directory: backend
+        run: npm ci
+
+      - name: Backend - testes de integração
+        working-directory: backend
+        run: npm run test:integracao
