@@ -122,11 +122,8 @@ describe('rotas da entrega de EPI — 10E e 10F (PostgreSQL real)', () => {
     await vinculo('semNadaA', empresa.A, EMAILS.semNadaA, 'USUARIO');
     await vinculo('masterB', empresa.B, EMAILS.masterB, 'MASTER');
 
-    // Concessões explícitas do cenário (o provisionamento do MASTER não é alterado nesta etapa).
-    for (const k of ['A', 'B']) {
-      await q("INSERT INTO permissoes_acao (empresa_id, perfil, acao_codigo, permitido) VALUES ($1, 'MASTER', 'REALIZAR_ENTREGA', true) ON CONFLICT (empresa_id, perfil, acao_codigo) DO UPDATE SET permitido = true", [empresa[k]]);
-      await q("INSERT INTO permissoes_recurso (empresa_id, perfil, recurso, pode_visualizar) VALUES ($1, 'MASTER', 'epiFicha', true) ON CONFLICT (empresa_id, perfil, recurso) DO UPDATE SET pode_visualizar = true", [empresa[k]]);
-    }
+    // 10I: o MASTER depende SÓ do provisionamento oficial (nenhuma linha
+    // inserida à mão); as concessões abaixo são dos usuários comuns.
     await q("INSERT INTO usuario_autorizacoes (empresa_id, usuario_id, acao_codigo, autorizado_por) VALUES ($1, $2, 'REALIZAR_ENTREGA', $3)", [empresa.A, u.entregadorA, u.masterA]);
     await q("INSERT INTO usuario_permissoes_recurso (empresa_id, usuario_id, recurso, pode_visualizar, concedido_por) VALUES ($1, $2, 'epiFicha', true, $3)", [empresa.A, u.leitorA, u.masterA]);
 
@@ -187,6 +184,43 @@ describe('rotas da entrega de EPI — 10E e 10F (PostgreSQL real)', () => {
   });
 
   after(async () => { if (contexto) await contexto.encerrar(); });
+
+  describe('10I — provisionamento oficial do MASTER cobre ficha e entrega', () => {
+    test('empresa provisionada só pelo serviço: linhas de perfil MASTER para epiFicha (visualizar) e REALIZAR_ENTREGA; MASTER acessa ficha e contexto', async () => {
+      const { rows: recursosMaster } = await q(
+        "SELECT recurso, pode_visualizar v, pode_criar c, pode_editar e, pode_excluir x FROM permissoes_recurso WHERE empresa_id = $1 AND perfil = 'MASTER' AND recurso = 'epiFicha'",
+        [empresa.A],
+      );
+      assert.deepEqual(recursosMaster, [{ recurso: 'epiFicha', v: true, c: false, e: false, x: false }]);
+      const { rows: acoesMaster } = await q(
+        "SELECT acao_codigo, permitido FROM permissoes_acao WHERE empresa_id = $1 AND perfil = 'MASTER' ORDER BY acao_codigo",
+        [empresa.A],
+      );
+      assert.deepEqual(acoesMaster, [{ acao_codigo: 'MOVIMENTAR_ESTOQUE', permitido: true }, { acao_codigo: 'REALIZAR_ENTREGA', permitido: true }]);
+      assert.equal((await get('masterA', '/api/fichas-epi')).status, 200);
+      assert.equal((await get('masterA', '/api/entregas-epi/contexto/funcionarios')).status, 200);
+      assert.equal((await get('masterB', '/api/fichas-epi')).status, 200);
+      assert.equal((await get('masterB', '/api/entregas-epi/contexto/funcionarios')).status, 200);
+    });
+
+    test('empresa antiga sem as linhas: provisionar a empresa existente insere epiFicha e REALIZAR_ENTREGA; repetir não duplica; nenhum outro perfil ganha', async () => {
+      const empresaC = (await q(
+        "INSERT INTO empresas (nome, cnpj, endereco, numero, bairro, cidade, uf) VALUES ('Empresa Gama Antiga Ltda', '33444555000160', 'Rua Fictícia', '300', 'Industrial', 'Cidade Fictícia', 'SP') RETURNING id",
+      )).rows[0].id;
+      const primeira = await provisionamento.provisionar(pool, { empresaId: empresaC, dryRun: false });
+      assert.ok(primeira.inseridos.recursos.includes('epiFicha'));
+      assert.ok(primeira.inseridos.acoes.includes('REALIZAR_ENTREGA'));
+      const segunda = await provisionamento.provisionar(pool, { empresaId: empresaC, dryRun: false });
+      assert.deepEqual(segunda.inseridos, { recursos: [], acoes: [] });
+      const situacao = Object.fromEntries(segunda.plano.recursos.map((r) => [r.recurso, r.situacao]));
+      assert.equal(situacao.epiFicha, 'ADEQUADA');
+      const n = (await q("SELECT count(*)::int AS n FROM permissoes_recurso WHERE empresa_id = $1 AND recurso = 'epiFicha'", [empresaC])).rows[0].n;
+      assert.equal(n, 1);
+      // Fora do provisionamento nada muda: nenhum outro perfil ganha a ficha.
+      const outros = (await q("SELECT count(*)::int AS n FROM permissoes_recurso WHERE perfil <> 'MASTER' AND recurso = 'epiFicha'")).rows[0].n;
+      assert.equal(outros, 0);
+    });
+  });
 
   describe('montagem e cadeia de segurança', () => {
     test('sem sessão: 401 em todos os endpoints novos, mesmo com corpo inválido; rota inexistente sob /api: 404 ROTA_NAO_ENCONTRADA', async () => {

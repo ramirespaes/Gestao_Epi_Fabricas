@@ -115,6 +115,15 @@
       abrir: [{ recurso: 'dashboard', operacao: 'visualizar' }],
       alterar: [],
     },
+    // Bloco 10 (10I): Ficha de EPI. Duas autoridades independentes — consultar
+    // fichas (recurso epiFicha) e realizar entrega (ação REALIZAR_ENTREGA) —
+    // e QUALQUER uma abre a página (abrirComQualquer); a página mostra só o
+    // que cada uma dá. Registrar entrega é alterar: só a ação.
+    epiFicha: {
+      abrir: [{ recurso: 'epiFicha', operacao: 'visualizar' }, { acao: 'REALIZAR_ENTREGA' }],
+      abrirComQualquer: true,
+      alterar: [{ acao: 'REALIZAR_ENTREGA' }],
+    },
   };
 
   var MENSAGENS = {
@@ -256,19 +265,31 @@
       && permissoes.acoes[codigo] === true);
   }
 
-  /** Exigência: [area, operacao] (administrativa) ou {recurso, operacao} (recurso). */
+  /** Exigência: [area, operacao] (administrativa), {recurso, operacao} (recurso) ou {acao} (ação). */
+  function atende(permissoes, e) {
+    if (Array.isArray(e)) return administra(permissoes, e[0], e[1]);
+    if (e && typeof e.acao === 'string') return acao(permissoes, e.acao);
+    return recurso(permissoes, e.recurso, e.operacao);
+  }
+
   function todas(permissoes, exigencias) {
     for (var i = 0; i < exigencias.length; i += 1) {
-      var e = exigencias[i];
-      var ok = Array.isArray(e) ? administra(permissoes, e[0], e[1]) : recurso(permissoes, e.recurso, e.operacao);
-      if (!ok) return false;
+      if (!atende(permissoes, exigencias[i])) return false;
     }
     return true;
   }
 
+  function alguma(permissoes, exigencias) {
+    for (var i = 0; i < exigencias.length; i += 1) {
+      if (atende(permissoes, exigencias[i])) return true;
+    }
+    return false;
+  }
+
   function podeAbrir(permissoes, pagina) {
     var p = Object.prototype.hasOwnProperty.call(PAGINAS, pagina) ? PAGINAS[pagina] : null;
-    return !!(p && permissoes && todas(permissoes, p.abrir));
+    if (!p || !permissoes) return false;
+    return p.abrirComQualquer === true ? alguma(permissoes, p.abrir) : todas(permissoes, p.abrir);
   }
 
   function podeAlterar(permissoes, pagina) {

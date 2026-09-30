@@ -765,3 +765,136 @@ describe('página integrada — epi-ficha.html (estático)', () => {
     assert.equal((script.match(/descartarTentativaIncerta/g) || []).length, 1);
   });
 });
+
+// ───────────────────────────────────────────────────────────────────
+// 10I + 10J — Ficha de EPI oficial: fluxo central de páginas, menus,
+// Portal, editor de permissões, escopo do MASTER e publicação
+// ───────────────────────────────────────────────────────────────────
+const vm = require('node:vm');
+const G = require('../js/grupo-permissoes');
+const { ESCOPO_PROVISIONAMENTO_MASTER, RECURSOS_CONHECIDOS } = require('../../backend/src/rbac/recursos');
+
+const NENHUMA_OP = { visualizar: false, criar: false, editar: false, excluir: false };
+function permissoesDaEmpresa({ ficha = false, entrega = false, perfil = 'USUARIO' } = {}) {
+  const recursos = {};
+  for (const r of RECURSOS_CONHECIDOS) recursos[r] = { ...NENHUMA_OP };
+  recursos.epiFicha = { ...NENHUMA_OP, visualizar: ficha };
+  const area = { consultar: false, alterar: false };
+  return {
+    status: 'ok', empresaId: 3, usuarioId: 7, perfil, recursos, acoes: { MOVIMENTAR_ESTOQUE: false, REALIZAR_ENTREGA: entrega },
+    administracao: { gruposAcesso: area, permissoesGrupo: area, vinculosGrupo: area, usuarios: area, autorizacoesIndividuais: { consultar: false, concederDireta: false, delegar: false } },
+  };
+}
+
+/** Roda o script real da página com DOM mínimo; devolve elementos, links do menu e chamadas HTTP. */
+function abrirPaginaDaFicha(permissoes, perfil = 'USUARIO') {
+  const html = ler('pages/epi-ficha.html');
+  const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const chamadasHttp = [];
+  EpiHttp.configurar({
+    baseUrl: BASE,
+    fetch: async (url, opcoes) => {
+      const u = new URL(url);
+      chamadasHttp.push(`${opcoes.method} ${u.pathname}`);
+      if (u.pathname === '/api/auth/permissoes') return resposta(200, permissoes);
+      return resposta(200, { status: 'ok', fichas: [], total: 0, pagina: 1, limite: 20 });
+    },
+  });
+  const ocultos = new Set([...html.matchAll(/<[^>]*\sid="([^"]+)"[^>]*display:none[^>]*>/g)].map((m) => m[1]));
+  const mapa = {};
+  const el = (id) => (mapa[id] = mapa[id] || {
+    id, value: '', textContent: '', innerHTML: '', disabled: false, checked: false, style: { display: ocultos.has(id) ? 'none' : '' },
+    classList: { add() {}, remove() {} }, addEventListener() {}, appendChild() {}, scrollIntoView() {},
+    getContext: () => ({ clearRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {} }),
+  });
+  const links = ['dashboard', 'materials', 'epiFicha', 'employeeHistory'].map((p) => ({ style: { display: 'none' }, getAttribute: (k) => (k === 'data-pagina' ? p : null) }));
+  const contexto = { empresa: { id: 3, nome: 'Empresa', cnpj: '11222333000181' }, usuario: { id: 7, nome: 'Pessoa', email: 'p@exemplo.invalid', perfil } };
+  const sessao = { montar: async () => contexto, sessaoEncerrada() { chamadasHttp.push('sessaoEncerrada'); } };
+  const sandbox = {
+    document: { getElementById: el, createElement: () => ({ value: '', textContent: '' }), querySelectorAll: () => links },
+    window: { SAFEWORK_PORTAL_API_BASE_URL: BASE },
+    EpiHttp, EpiPermissoes, EpiFicha: F, EpiSessaoEmpresarial: sessao,
+    console, Promise, String, Number, Array, Object, JSON, Math, crypto: globalThis.crypto,
+  };
+  // No navegador os módulos e a página compartilham o window; aqui os módulos vivem no realm do teste.
+  globalThis.EpiSessaoEmpresarial = sessao;
+  vm.runInNewContext(script, sandbox);
+  const esperar = async () => { for (let i = 0; i < 40; i += 1) await new Promise((r) => setImmediate(r)); };
+  const visivel = (id) => el(id).style.display !== 'none';
+  return { el, links, chamadasHttp, esperar, visivel };
+}
+
+describe('10I — Ficha de EPI no fluxo oficial de páginas', () => {
+  const html = ler('pages/epi-ficha.html');
+
+  test('a página usa EpiPermissoes.prepararPagina com pagina epiFicha, mantém as duas capacidades separadas e tem o próprio link com data-pagina', () => {
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+    assert.match(script, /EpiPermissoes\.prepararPagina\(\{\s*pagina: 'epiFicha'/);
+    assert.match(script, /EpiPermissoes\.recurso\([^)]*'epiFicha', 'visualizar'\)/);
+    assert.match(script, /EpiPermissoes\.acao\([^)]*'REALIZAR_ENTREGA'\)/);
+    assert.doesNotMatch(script, /EpiPermissoes\.carregar\(/, 'a consulta é do fluxo central');
+    assert.match(html, /<a class="active" href="javascript:void\(0\)" data-pagina="epiFicha" style="display:none"><div class="nav-icon brown">description<\/div>Ficha de EPI<\/a>/);
+    assert.doesNotMatch(html, /Ficha de EPI<span class="nav-etiqueta">/);
+  });
+
+  test('URL direta: sem nenhuma das duas autoridades a página avisa e não consulta; A/B/C abrem só o que a autoridade dá; MASTER com ambas usa tudo', async () => {
+    const casos = [
+      ['D) nenhuma', permissoesDaEmpresa(), 'USUARIO', { busca: false, entrega: false, negado: true, link: 'none' }],
+      ['A) só consulta', permissoesDaEmpresa({ ficha: true }), 'USUARIO', { busca: true, entrega: false, negado: false, link: '' }],
+      ['B) só entrega', permissoesDaEmpresa({ entrega: true }), 'USUARIO', { busca: false, entrega: true, negado: false, link: '' }],
+      ['C) ambas', permissoesDaEmpresa({ ficha: true, entrega: true }), 'USUARIO', { busca: true, entrega: true, negado: false, link: '' }],
+      ['MASTER', permissoesDaEmpresa({ ficha: true, entrega: true, perfil: 'MASTER' }), 'MASTER', { busca: true, entrega: true, negado: false, link: '' }],
+    ];
+    for (const [nome, permissoes, perfil, esperado] of casos) {
+      const pg = abrirPaginaDaFicha(permissoes, perfil);
+      await pg.esperar();
+      assert.deepEqual(
+        { busca: pg.visivel('fichaBuscaCard'), entrega: pg.visivel('btnNovaEntrega'), negado: pg.visivel('acessoNegado'), link: pg.links[2].style.display },
+        esperado, nome,
+      );
+      assert.deepEqual(pg.chamadasHttp.filter((c) => c !== 'GET /api/auth/permissoes'), [], `${nome}: nada além das permissões é consultado ao abrir`);
+      assert.equal(pg.links[3].style.display, 'none', `${nome}: o Histórico segue a própria permissão`);
+    }
+  });
+
+  test('sessão sem permissões (401) devolve ao Portal; consulta falha fecha tudo', async () => {
+    const fechada = abrirPaginaDaFicha(null);
+    EpiHttp.configurar({ baseUrl: BASE, fetch: async () => resposta(401, { status: 'error', codigo: 'SESSAO_INVALIDA' }) });
+    await fechada.esperar();
+    assert.ok(fechada.chamadasHttp.includes('sessaoEncerrada'));
+    assert.deepEqual([fechada.visivel('fichaBuscaCard'), fechada.visivel('btnNovaEntrega')], [false, false]);
+  });
+});
+
+describe('10I — editor de permissões e escopo do MASTER', () => {
+  test('Ficha de EPI é concedível a grupos só em Visualizar; realizar entrega continua a ação REALIZAR_ENTREGA (tabela de ações, modo ALTERNATIVA)', () => {
+    const recurso = G.RECURSOS.find((r) => r.id === 'epiFicha');
+    assert.deepEqual(recurso, { id: 'epiFicha', nome: 'Ficha de EPI', operacoes: ['podeVisualizar'] });
+    const linha = G.render.linhaRecurso(recurso, null);
+    assert.equal((linha.match(/<select/g) || []).length, 1);
+    assert.match(linha, /data-campo="podeVisualizar"/);
+    assert.equal((linha.match(/class="nao-se-aplica"/g) || []).length, 3);
+    assert.match(linha, /data-acao="salvar-recurso"/);
+    const acao = G.render.linhaAcao({ codigo: 'REALIZAR_ENTREGA', nome: 'Realizar entrega de EPI', ativo: true, exigeSst: false, modoAutorizacaoIndividual: 'ALTERNATIVA' }, null);
+    assert.match(acao, /data-acao="salvar-acao"|<select/);
+  });
+
+  test('o escopo oficial do MASTER cobre a ficha (visualizar) e a entrega (REALIZAR_ENTREGA), coerente com o editor', () => {
+    const escopo = Object.fromEntries(ESCOPO_PROVISIONAMENTO_MASTER.recursos.map((r) => [r.recurso, [...r.operacoes]]));
+    assert.deepEqual(escopo.epiFicha, ['visualizar']);
+    assert.deepEqual([...ESCOPO_PROVISIONAMENTO_MASTER.acoes], ['MOVIMENTAR_ESTOQUE', 'REALIZAR_ENTREGA']);
+  });
+});
+
+describe('10J — publicação da Ficha de EPI', () => {
+  test('allowlist traz a página e o módulo, uma vez cada, em ordem', () => {
+    const arquivos = JSON.parse(ler('publicacao/allowlist.json')).arquivos;
+    assert.ok(arquivos.includes('pages/epi-ficha.html'));
+    assert.ok(arquivos.includes('js/epi-ficha.js'));
+    assert.equal(new Set(arquivos).size, arquivos.length);
+    assert.deepEqual(arquivos, [...arquivos].sort());
+    for (const src of [...ler('pages/epi-ficha.html').matchAll(/<script src="\.\.\/([^"]+)"><\/script>/g)].map((m) => m[1])) {
+      assert.ok(arquivos.includes(src), `${src} carregado pela página precisa estar na allowlist`);
+    }
+  });
+});

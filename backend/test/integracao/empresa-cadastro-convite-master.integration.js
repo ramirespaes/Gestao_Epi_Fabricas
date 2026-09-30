@@ -166,8 +166,8 @@ describe('Pacote 3 — cadastro de empresas e convite do MASTER (HTTP + PostgreS
       assert.equal(r.body.provisionamento.prontaParaMaster, true);
       const { rows: perms } = await contexto.pool.query("SELECT recurso FROM permissoes_recurso WHERE empresa_id = $1 AND perfil = 'MASTER' ORDER BY recurso", [empresaA.id]);
       assert.deepEqual(perms.map((p) => p.recurso).sort(), ESCOPO_PROVISIONAMENTO_MASTER.recursos.map((x) => x.recurso).sort());
-      const { rows: acoes } = await contexto.pool.query("SELECT acao_codigo, permitido FROM permissoes_acao WHERE empresa_id = $1 AND perfil = 'MASTER'", [empresaA.id]);
-      assert.deepEqual(acoes, [{ acao_codigo: 'MOVIMENTAR_ESTOQUE', permitido: true }]);
+      const { rows: acoes } = await contexto.pool.query("SELECT acao_codigo, permitido FROM permissoes_acao WHERE empresa_id = $1 AND perfil = 'MASTER' ORDER BY acao_codigo", [empresaA.id]);
+      assert.deepEqual(acoes, [{ acao_codigo: 'MOVIMENTAR_ESTOQUE', permitido: true }, { acao_codigo: 'REALIZAR_ENTREGA', permitido: true }]);
 
       // Auditoria: trilha da PLATAFORMA, com o administrador da sessão e a empresa afetada.
       const { rows: audit } = await contexto.pool.query("SELECT administrador_id, empresa_afetada_id, acao, dados_novos FROM logs_auditoria_plataforma WHERE acao = 'EMPRESA_CRIADA' AND empresa_afetada_id = $1", [empresaA.id]);

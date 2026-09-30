@@ -89,7 +89,7 @@
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor<span class="nav-etiqueta">Em integração</span></a>
         <div class="nav-section">Entregas</div>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon green">inventory</div>EPIs Entregues<span class="nav-etiqueta">Em integração</span></a>
-        <a class="active" href="javascript:void(0)"><div class="nav-icon brown">description</div>Ficha de EPI</a>
+        <a class="active" href="javascript:void(0)" data-pagina="epiFicha" style="display:none"><div class="nav-icon brown">description</div>Ficha de EPI</a>
         <a href="employee-history.html" data-pagina="employeeHistory" style="display:none"><div class="nav-icon blue">history</div>Histórico de Funcionários</a>
         <div class="nav-section">Solicitações</div>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">badge</div>Autoatendimento (Totem)<span class="nav-etiqueta">Em integração</span></a>
@@ -947,21 +947,22 @@
   }).then(function (contexto) {
     if (!contexto) return undefined;
     contextoSessao = contexto;
-    return EpiPermissoes.carregar(EpiPermissoes.esperadoDoContexto(contexto)).then(function (r) {
-      var links = document.querySelectorAll('.nav a[data-pagina]');
-      if (!r.ok) {
-        EpiPermissoes.aplicarMenu(null, links);
-        if (r.motivo === 'SEM_SESSAO') { EpiSessaoEmpresarial.sessaoEncerrada(); return undefined; }
-        mostrarAviso(r.motivo === 'CONTEXTO_DIVERGENTE' ? EpiPermissoes.MENSAGENS.CONTEXTO_DIVERGENTE : EpiPermissoes.MENSAGENS.FALHA, 'erro');
-        return undefined;
-      }
-      EpiPermissoes.aplicarMenu(r.permissoes, links);
-      // Duas autoridades independentes: uma nunca libera a outra.
+    // Fluxo central (10I): a página abre com qualquer uma das duas
+    // autoridades; abaixo cada uma libera só a sua parte.
+    return EpiPermissoes.prepararPagina({
+      pagina: 'epiFicha',
+      contexto: contexto,
+      links: document.querySelectorAll('.nav a[data-pagina]'),
+      aviso: function (m) {
+        if (m === EpiPermissoes.MENSAGENS.SEM_ACESSO) mostrar('acessoNegado', true);
+        else mostrarAviso(m, 'erro');
+      },
+    }).then(function (r) {
+      if (!r) return undefined;
       capacidades = {
         consultar: EpiPermissoes.recurso(r.permissoes, 'epiFicha', 'visualizar'),
         entregar: EpiPermissoes.acao(r.permissoes, 'REALIZAR_ENTREGA'),
       };
-      if (!capacidades.consultar && !capacidades.entregar) { mostrar('acessoNegado', true); return undefined; }
       mostrar('fichaBuscaCard', capacidades.consultar);
       mostrar('btnNovaEntrega', capacidades.entregar);
       if (capacidades.consultar) alternarPainel(true);

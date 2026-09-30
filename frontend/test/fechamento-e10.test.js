@@ -106,8 +106,22 @@ describe('menu: Operações de estoque em ESTOQUE, na mesma ordem em todas as p�
   test('Portal: os módulos integrados na ordem do menu', () => {
     const inicio = ler('portal/inicio.html');
     const paginas = [...inicio.matchAll(/<a href="\.\.\/pages\/[^"]+" data-pagina="([^"]+)" style="display:none">/g)].map((m) => m[1]);
-    assert.deepEqual(paginas, ['dashboard', 'materials', 'stockValidity', 'availableItems', 'operations', 'employeeGroups', 'employeeHistory',
+    assert.deepEqual(paginas, ['dashboard', 'materials', 'stockValidity', 'availableItems', 'operations', 'employeeGroups', 'epiFicha', 'employeeHistory',
       'grupos-acesso', 'grupo-permissoes', 'grupo-usuarios', 'autorizacoes-individuais', 'importEmployees', 'newUser', 'userAdmin']);
+    assert.match(inicio, /<a href="\.\.\/pages\/epi-ficha\.html" data-pagina="epiFicha" style="display:none">Ficha de EPI<\/a>/);
+    assert.doesNotMatch(inicio, /Entregas e fichas de EPI/, 'a Ficha deixou de ser módulo futuro');
+  });
+
+  test('10I: Ficha de EPI é link real com data-pagina em todas as páginas integradas; "Em integração" só nos protótipos', () => {
+    for (const arquivo of INTEGRADAS) {
+      const itens = secao(ler(`pages/${arquivo}`), 'Entregas').itens;
+      const item = itens.find((i) => i.rotulo === 'Ficha de EPI');
+      const esperado = arquivo === 'epi-ficha.html'
+        ? '<a class="active" href="javascript:void(0)" data-pagina="epiFicha" style="display:none">'
+        : '<a href="epi-ficha.html" data-pagina="epiFicha" style="display:none">';
+      assert.ok(item && item.html.startsWith(esperado), `${arquivo}: ${item && item.html}`);
+      assert.doesNotMatch(item.html, /nav-pendente|Em integração/, arquivo);
+    }
   });
 });
 

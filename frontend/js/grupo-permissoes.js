@@ -104,7 +104,8 @@
     { id: 'stockValidity', nome: 'Validade de estoque', operacoes: [V] },
     { id: 'availableItems', nome: 'Análise de estoque', operacoes: [V] },
     { id: 'deliveredItems', nome: 'EPIs Entregues', operacoes: [], nota: SEM_EFEITO },
-    { id: 'epiFicha', nome: 'Ficha de EPI', operacoes: [], nota: SEM_EFEITO },
+    // 10I: consultar fichas é Visualizar; realizar entrega é a ação REALIZAR_ENTREGA (tabela de ações).
+    { id: 'epiFicha', nome: 'Ficha de EPI', operacoes: [V] },
     { id: 'employeeHistory', nome: 'Histórico de Funcionários', operacoes: [V, C, E] },
     { id: 'request', nome: 'Pedido de EPI', operacoes: [], nota: SEM_EFEITO },
     { id: 'supervisorApproval', nome: 'Aprovação do Supervisor', operacoes: [], nota: SEM_EFEITO },

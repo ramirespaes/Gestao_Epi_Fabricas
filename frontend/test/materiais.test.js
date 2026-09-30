@@ -378,11 +378,11 @@ describe('inspeção estática: pages/materials.html integrada, com a interface 
   test('menu: estrutura original preservada; integrados com data-pagina ocultos; demais sem link e com "Em integração"; nenhum link para o protótipo', () => {
     for (const secao of ['Visão geral', 'Estoque', 'Entregas', 'Solicitações', 'Administração']) assert.match(html, new RegExp(`<div class="nav-section">${secao}</div>`));
     const links = [...html.matchAll(/<a [^>]*data-pagina="([^"]+)"[^>]*>/g)];
-    assert.deepEqual(links.map((m) => m[1]).sort(), ['autorizacoes-individuais', 'availableItems', 'dashboard', 'employeeGroups', 'employeeHistory', 'grupo-permissoes', 'grupo-usuarios', 'grupos-acesso', 'importEmployees', 'materials', 'newUser', 'operations', 'stockValidity', 'userAdmin']);
+    assert.deepEqual(links.map((m) => m[1]).sort(), ['autorizacoes-individuais', 'availableItems', 'dashboard', 'employeeGroups', 'employeeHistory', 'epiFicha', 'grupo-permissoes', 'grupo-usuarios', 'grupos-acesso', 'importEmployees', 'materials', 'newUser', 'operations', 'stockValidity', 'userAdmin']);
     for (const m of links) assert.match(m[0], /style="display:none"/, `${m[1]} deve nascer oculto`);
     assert.equal(/data-page=/.test(html), false, 'o mapa de arquivos do protótipo saiu');
     const pendentes = [...html.matchAll(/<a class="nav-pendente"[^>]*>[\s\S]*?<\/a>/g)];
-    assert.ok(pendentes.length >= 13, `itens não integrados presentes (${pendentes.length})`); // E7: Validade; E8: Operações; F: Novo Usuário e Administração de Usuários
+    assert.ok(pendentes.length >= 12, `itens não integrados presentes (${pendentes.length})`); // E7: Validade; E8: Operações; F: Novo Usuário e Administração de Usuários; 10I: Ficha de EPI
     for (const m of pendentes) {
       assert.equal(/href=/.test(m[0]), false, 'não integrado não tem link');
       assert.match(m[0], /Em integração/);
@@ -391,7 +391,7 @@ describe('inspeção estática: pages/materials.html integrada, com a interface 
       assert.ok(html.includes(rotulo), `rótulo ${rotulo} preservado`);
     }
     const hrefs = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]).filter((h) => !h.startsWith('http') && !h.startsWith('../css/') && h !== 'javascript:void(0)');
-    const permitidos = new Set(['available-items.html', 'stock-validity.html', 'operations.html', 'dashboard.html', 'employee-groups.html', 'employee-history.html', 'import-employees.html', 'grupos-acesso.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'autorizacoes-individuais.html', 'new-user.html', 'user-admin.html', '../portal/index.html', '../portal/inicio.html']);
+    const permitidos = new Set(['available-items.html', 'stock-validity.html', 'operations.html', 'dashboard.html', 'employee-groups.html', 'epi-ficha.html', 'employee-history.html', 'import-employees.html', 'grupos-acesso.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'autorizacoes-individuais.html', 'new-user.html', 'user-admin.html', '../portal/index.html', '../portal/inicio.html']);
     for (const h of hrefs) assert.ok(permitidos.has(h), `materials.html aponta para ${h}`);
     assert.match(html, /onclick="toggleSidebar\(\)"/);
     assert.match(html, /onclick="closeMobileMenu\(\)"/);
