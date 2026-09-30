@@ -6,160 +6,50 @@
   <title>Ficha de EPI — Gestão de EPIs</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
   <link rel="stylesheet" href="../css/main.css">
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="../js/tema.js"></script>
+  <style>
+    .nav a.nav-pendente{cursor:default;opacity:.55}
+    .nav a.nav-pendente:hover{background:transparent}
+    .nav-etiqueta{margin-left:auto;font-size:10px;font-weight:500;color:var(--on-surface-variant);border:1px solid var(--outline);border-radius:99px;padding:1px 7px;white-space:nowrap}
+    .ficha-rotulo{background:#eef2f9;font-weight:600;font-size:11px;padding:6px 8px;min-width:80px;color:#1a3a6b;border-right:0.5px solid #ccc}
+    .ficha-valor{padding:6px 8px;font-size:12px}
+    .ficha-celula{display:flex;border-bottom:0.5px solid #ccc}
+    .ficha-secao{background:#2b5ca8;color:#fff;font-weight:700;font-size:11px;padding:4px 8px;margin-bottom:6px;border-radius:4px;display:flex;align-items:center;justify-content:space-between}
+    .ficha-tabela th{padding:6px;border:0.5px solid #555;text-align:center;background:#1a3a6b;color:#fff;font-size:11px}
+    .ficha-tabela td{padding:6px;border:0.5px solid #ccc;font-size:11px}
+    .ficha-tabela tr.linha-entrega-inicio td{border-top:1.5px solid #1a3a6b}
+    .paginacao{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;font-size:12px;color:var(--on-surface-variant);flex-wrap:wrap}
+    .modo-btn{padding:8px 16px;border-radius:99px;border:1.5px solid var(--outline-variant);background:transparent;color:var(--on-surface);font-size:12px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:6px}
+    .modo-btn.ativo{border-color:var(--primary);background:var(--primary);color:#fff}
+    #assinaturaCanvas{touch-action:none;background:#fff;border:1.5px dashed var(--outline-variant);border-radius:12px;width:100%;max-width:520px;height:200px;display:block}
+    .passo{border:0.5px solid var(--outline-variant);border-radius:12px;padding:12px;margin-bottom:12px}
+    .passo h3{font-size:13px;font-weight:600;margin:0 0 8px;display:flex;align-items:center;gap:8px}
+    .passo h3 .num{width:22px;height:22px;border-radius:50%;background:#1a3a6b;color:#fff;font-size:12px;display:inline-flex;align-items:center;justify-content:center}
+  </style>
 </head>
+<!--
+  Ficha de EPI (Bloco 10, 10G + 10H). Página ORIGINAL ligada ao backend real:
+  sessão empresarial do Portal, permissões efetivas (epiFicha.visualizar
+  para consultar; REALIZAR_ENTREGA para entregar) e as APIs de ficha e
+  entrega. As regras, mensagens e HTML escapado vivem em js/epi-ficha.js.
+-->
 <body>
 
-<div id="loginScreen" style="position:fixed;inset:0;z-index:10000;
-       background:var(--surface);display:flex;align-items:center;justify-content:center;
-       padding:20px">
-
-    <div style="width:100%;max-width:400px">
-
-      <!-- Logo -->
-      <div style="text-align:center;margin-bottom:28px">
-        <div style="width:64px;height:64px;border-radius:20px;background:#1a3a6b;
-                    display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
-          <span class="material-symbols-outlined" style="font-size:32px;color:#fff">safety_check</span>
-        </div>
-        <h1 style="font-size:20px;font-weight:700;margin:0">Gestão de EPIs</h1>
-        <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Cobresul Metais LTDA</p>
-      </div>
-
-      <!-- ── PAINEL 1: LOGIN ────────────────────────────────────────────── -->
-      <section class="card" id="loginPanel">
-        <div class="form-grid" style="margin-bottom:4px">
-          <div class="field full">
-            <label for="loginEmail">E-mail corporativo</label>
-            <input id="loginEmail" class="input" type="email" placeholder="seu.nome@example.invalid" autocomplete="username">
-          </div>
-          <div class="field full">
-            <label for="loginPassword">Senha</label>
-            <input id="loginPassword" class="input" type="password" placeholder="••••••••" autocomplete="current-password"
-                   onkeydown="if(event.key==='Enter') doLogin()">
-          </div>
-        </div>
-
-        <div id="loginError" style="display:none;margin-bottom:10px">
-          <div class="notice" style="background:rgba(255,59,48,0.06);color:#FF3B30;border-color:rgba(255,59,48,0.2)">
-            E-mail ou senha incorretos.
-          </div>
-        </div>
-
-        <button class="filled-btn" style="width:100%;height:48px" onclick="doLogin()">
-          <span class="material-symbols-outlined">login</span>Entrar
-        </button>
-
-        <!-- Login biométrico -->
-        <button class="outlined-btn" id="biometricLoginBtn" style="width:100%;height:48px;margin-top:10px;display:none"
-                onclick="loginWithBiometrics()">
-          <span class="material-symbols-outlined">fingerprint</span>Entrar com biometria
-        </button>
-
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
-          <button type="button" onclick="showLoginPanel('recoverPanel')"
-                  style="background:none;border:none;color:#007AFF;font-size:12px;cursor:pointer;padding:0">
-            Esqueci minha senha
-          </button>
-          <button type="button" onclick="showLoginPanel('biometricSetupPanel')"
-                  style="background:none;border:none;color:#007AFF;font-size:12px;cursor:pointer;padding:0">
-            Configurar biometria
-          </button>
-        </div>
-      </section>
-
-      <!-- ── PAINEL 2: RECUPERAÇÃO DE SENHA ─────────────────────────────── -->
-      <section class="card" id="recoverPanel" style="display:none">
-        <div class="card-header">
-          <div class="card-title">
-            <div class="card-icon" style="background:rgba(255,149,0,0.1);color:#FF9500">mail</div>
-            <div>
-              <h2>Recuperar senha</h2>
-              <p>Informe seu e-mail corporativo para receber o código de verificação.</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Etapa 1: pedir e-mail -->
-        <div id="recoverStep1">
-          <div class="field full">
-            <label for="recoverEmail">E-mail corporativo</label>
-            <input id="recoverEmail" class="input" type="email" placeholder="seu.nome@example.invalid">
-          </div>
-          <button class="filled-btn" style="width:100%;height:46px;margin-top:12px" onclick="sendRecoveryCode()">
-            <span class="material-symbols-outlined">send</span>Enviar código
-          </button>
-        </div>
-
-        <!-- Etapa 2: código + nova senha -->
-        <div id="recoverStep2" style="display:none">
-          <div class="notice" style="margin-bottom:12px">
-            Código enviado para <strong id="recoverEmailDisplay"></strong>.
-            <span style="display:block;margin-top:4px;font-size:11px">(Simulação: o código aparece no console do navegador — F12)</span>
-          </div>
-          <div class="field full">
-            <label for="recoverCode">Código de verificação</label>
-            <input id="recoverCode" class="input" type="text" maxlength="6" placeholder="000000">
-          </div>
-          <div class="field full">
-            <label for="recoverNewPassword">Nova senha</label>
-            <input id="recoverNewPassword" class="input" type="password" placeholder="Mínimo 8 caracteres">
-          </div>
-          <button class="filled-btn" style="width:100%;height:46px;margin-top:8px" onclick="confirmPasswordReset()">
-            <span class="material-symbols-outlined">check</span>Redefinir senha
-          </button>
-        </div>
-
-        <button type="button" onclick="showLoginPanel('loginPanel')"
-                style="background:none;border:none;color:#007AFF;font-size:12px;cursor:pointer;padding:0;margin-top:14px">
-          ← Voltar ao login
-        </button>
-      </section>
-
-      <!-- ── PAINEL 3: CONFIGURAR BIOMETRIA ─────────────────────────────── -->
-      <section class="card" id="biometricSetupPanel" style="display:none">
-        <div class="card-header">
-          <div class="card-title">
-            <div class="card-icon" style="background:rgba(0,122,255,0.1);color:#007AFF">fingerprint</div>
-            <div>
-              <h2>Configurar login biométrico</h2>
-              <p>Use Touch ID, Face ID, Windows Hello ou leitor de digital para entrar sem senha.</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="form-grid">
-          <div class="field full">
-            <label for="biometricEmail">E-mail corporativo</label>
-            <input id="biometricEmail" class="input" type="email" placeholder="seu.nome@example.invalid">
-          </div>
-          <div class="field full">
-            <label for="biometricPassword">Senha (confirmação)</label>
-            <input id="biometricPassword" class="input" type="password" placeholder="••••••••">
-          </div>
-        </div>
-
-        <div id="biometricUnsupported" style="display:none;margin-top:8px">
-          <div class="notice" style="background:rgba(255,59,48,0.06);color:#FF3B30;border-color:rgba(255,59,48,0.2)">
-            Este navegador/dispositivo não tem suporte a biometria (WebAuthn).
-          </div>
-        </div>
-
-        <button class="filled-btn" style="width:100%;height:46px;margin-top:8px" onclick="registerBiometrics()">
-          <span class="material-symbols-outlined">fingerprint</span>Cadastrar biometria deste dispositivo
-        </button>
-
-        <button type="button" onclick="showLoginPanel('loginPanel')"
-                style="background:none;border:none;color:#007AFF;font-size:12px;cursor:pointer;padding:0;margin-top:14px">
-          ← Voltar ao login
-        </button>
-      </section>
-
-      <p style="text-align:center;font-size:11px;color:var(--on-surface-variant);margin-top:20px">
-        Acesso restrito a colaboradores autorizados · NR-06 / NR-01 / LGPD
-      </p>
+<div id="telaSessao" style="position:fixed;inset:0;z-index:10000;background:var(--surface);
+     display:flex;align-items:center;justify-content:center;padding:20px">
+  <div style="width:100%;max-width:400px;text-align:center">
+    <div style="width:64px;height:64px;border-radius:20px;background:#1a3a6b;
+                display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
+      <span class="material-symbols-outlined" style="font-size:32px;color:#fff">safety_check</span>
     </div>
+    <h1 style="font-size:20px;font-weight:700;margin:0">Gestão de EPIs</h1>
+    <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">SafeWork Engenharia</p>
+    <p id="telaSessaoMensagem" role="status" aria-live="polite" style="font-size:13px;color:var(--on-surface-variant);margin-top:8px">Verificando sua sessão…</p>
+    <a id="telaSessaoPortal" href="../portal/index.html" class="filled-btn" style="display:none;margin-top:16px">
+      <span class="material-symbols-outlined">login</span>Ir para o Portal do Cliente
+    </a>
   </div>
+</div>
 
 <div class="mobile-overlay" onclick="closeMobileMenu()"></div>
 <div class="mobile-topbar">
@@ -187,33 +77,38 @@
 
       <nav class="nav">
         <div class="nav-section">Visão geral</div>
-        <a class="active" data-page="dashboard" href="javascript:void(0)" onclick="showView('dashboardView'); setActiveNav(this); return false;"><div class="nav-icon blue">dashboard</div>Dashboard</a>
-        <a data-page="reports" href="javascript:void(0)" onclick="showView('reportsView'); setActiveNav(this); return false;"><div class="nav-icon indigo">analytics</div>Relatórios</a>
+        <a href="dashboard.html" data-pagina="dashboard" style="display:none"><div class="nav-icon blue">dashboard</div>Dashboard</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon indigo">analytics</div>Relatórios<span class="nav-etiqueta">Em integração</span></a>
         <div class="nav-section">Estoque</div>
-        <a data-page="materials" href="javascript:void(0)" onclick="showView('materialsView'); setActiveNav(this); return false;"><div class="nav-icon teal">inventory_2</div>Gestão de estoque</a>
-        <a data-page="purchases" href="javascript:void(0)" onclick="showView('purchasesView'); setActiveNav(this); return false;"><div class="nav-icon orange">shopping_cart</div>Compras / Entradas</a>
-        <a data-page="stockValidity" href="javascript:void(0)" onclick="showView('stockValidityView'); setActiveNav(this); return false;"><div class="nav-icon red">event_busy</div>Validade de estoque</a>
-        <a data-page="availableItems" href="javascript:void(0)" onclick="showView('availableItemsView'); setActiveNav(this); return false;"><div class="nav-icon green">checklist</div>Análise de estoque</a>
-        <a data-page="operations" href="javascript:void(0)" onclick="showView('operationsView'); setActiveNav(this); return false;"><div class="nav-icon gray">receipt_long</div>Operações de estoque</a>
-        <a href="employee-groups.html"><div class="nav-icon purple">group_work</div>GHE e EPIs</a>
-        <a data-page="eligibilityRules" href="javascript:void(0)" onclick="showView('eligibilityRulesView'); setActiveNav(this); return false;"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor</a>
+        <a href="materials.html" data-pagina="materials" style="display:none"><div class="nav-icon teal">inventory_2</div>Gestão de estoque</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon orange">shopping_cart</div>Compras / Entradas<span class="nav-etiqueta">Em integração</span></a>
+        <a href="stock-validity.html" data-pagina="stockValidity" style="display:none"><div class="nav-icon red">event_busy</div>Validade de estoque</a>
+        <a href="available-items.html" data-pagina="availableItems" style="display:none"><div class="nav-icon green">checklist</div>Análise de estoque</a>
+        <a href="operations.html" data-pagina="operations" style="display:none"><div class="nav-icon gray">receipt_long</div>Operações de estoque</a>
+        <a href="employee-groups.html" data-pagina="employeeGroups" style="display:none"><div class="nav-icon purple">group_work</div>GHE e EPIs</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor<span class="nav-etiqueta">Em integração</span></a>
         <div class="nav-section">Entregas</div>
-        <a data-page="deliveredItems" href="javascript:void(0)" onclick="showView('deliveredItemsView'); setActiveNav(this); return false;"><div class="nav-icon green">inventory</div>EPIs Entregues</a>
-        <a data-page="epiFicha" href="javascript:void(0)" onclick="showView('epiFichaView'); setActiveNav(this); return false;"><div class="nav-icon brown">description</div>Ficha de EPI</a>
-        <a data-page="employeeHistory" href="javascript:void(0)" onclick="showView('employeeHistoryView'); setActiveNav(this); return false;"><div class="nav-icon blue">history</div>Histórico de Funcionários</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon green">inventory</div>EPIs Entregues<span class="nav-etiqueta">Em integração</span></a>
+        <a class="active" href="javascript:void(0)"><div class="nav-icon brown">description</div>Ficha de EPI</a>
+        <a href="employee-history.html" data-pagina="employeeHistory" style="display:none"><div class="nav-icon blue">history</div>Histórico de Funcionários</a>
         <div class="nav-section">Solicitações</div>
-        <a data-page="self-service" href="javascript:void(0)" onclick="showView('selfServiceView'); setActiveNav(this); return false;"><div class="nav-icon blue">badge</div>Autoatendimento (Totem)</a>
-        <a data-page="request" href="javascript:void(0)" onclick="showView('requestView'); setActiveNav(this); return false;"><div class="nav-icon blue">assignment</div>Pedido de EPI</a>
-        <a data-page="supervisorApproval" href="javascript:void(0)" onclick="showView('supervisorApprovalView'); setActiveNav(this); return false;"><div class="nav-icon orange">fact_check</div>Aprovação do Supervisor</a>
-        <a data-page="stockRequests" href="javascript:void(0)" onclick="showView('stockRequestsView'); setActiveNav(this); return false;"><div class="nav-icon red">playlist_add_check_circle</div>Sem Estoque</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">badge</div>Autoatendimento (Totem)<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">assignment</div>Pedido de EPI<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon orange">fact_check</div>Aprovação do Supervisor<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon red">playlist_add_check_circle</div>Sem Estoque<span class="nav-etiqueta">Em integração</span></a>
         <div class="nav-section">Administração</div>
-        <a data-page="importEmployees" href="javascript:void(0)" onclick="showView('importEmployeesView'); setActiveNav(this); return false;"><div class="nav-icon green">upload_file</div>Importar Funcionários</a>
-        <a data-page="newUser" href="javascript:void(0)" onclick="showView('newUserView'); setActiveNav(this); return false;"><div class="nav-icon green">person_add</div>Novo Usuário</a>
-        <a data-page="userAdmin" href="javascript:void(0)" onclick="showView('userAdminView'); setActiveNav(this); return false;"><div class="nav-icon indigo">group</div>Administração de Usuários</a>
-        <a data-page="config" href="javascript:void(0)" onclick="showView('configView'); setActiveNav(this); return false;"><div class="nav-icon gray">settings</div>Configurações</a>
-        <a data-page="support" href="javascript:void(0)" onclick="showView('supportView'); setActiveNav(this); return false;"><div class="nav-icon teal">support_agent</div>Suporte</a>
-        <a data-page="emailsGestao" href="javascript:void(0)" onclick="showView('emailsGestaoView'); setActiveNav(this); return false;"><div class="nav-icon blue">mark_email_read</div>Gestão de E-mails</a>
-        <a data-page="lgpd" href="javascript:void(0)" onclick="showView('lgpdView'); setActiveNav(this); return false;"><div class="nav-icon indigo">privacy_tip</div>Privacidade / LGPD</a>
+        <a href="grupos-acesso.html" data-pagina="grupos-acesso" style="display:none"><div class="nav-icon indigo">groups</div>Grupos de Acesso</a>
+        <a href="grupo-permissoes.html" data-pagina="grupo-permissoes" style="display:none"><div class="nav-icon indigo">lock_person</div>Permissões do Grupo</a>
+        <a href="grupo-usuarios.html" data-pagina="grupo-usuarios" style="display:none"><div class="nav-icon indigo">group_add</div>Integrantes do Grupo</a>
+        <a href="autorizacoes-individuais.html" data-pagina="autorizacoes-individuais" style="display:none"><div class="nav-icon indigo">verified_user</div>Autorizações Individuais</a>
+        <a href="import-employees.html" data-pagina="importEmployees" style="display:none"><div class="nav-icon green">upload_file</div>Importar Funcionários</a>
+        <a href="new-user.html" data-pagina="newUser" style="display:none"><div class="nav-icon green">person_add</div>Novo Usuário</a>
+        <a href="user-admin.html" data-pagina="userAdmin" style="display:none"><div class="nav-icon indigo">group</div>Administração de Usuários</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon gray">settings</div>Configurações<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon teal">support_agent</div>Suporte<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">mark_email_read</div>Gestão de E-mails<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon indigo">privacy_tip</div>Privacidade / LGPD<span class="nav-etiqueta">Em integração</span></a>
+        <a href="../portal/inicio.html"><div class="nav-icon blue">home</div>Início</a>
       </nav>
     </aside>
 
@@ -224,388 +119,856 @@
             <h2 style="font-family:var(--font-brand);font-size:22px;font-weight:500;letter-spacing:-0.4px">Ficha de Entrega de EPI</h2>
             <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Documento eletrônico — NR-06 / Portaria MTB nº 3.214/78</p>
           </div>
-          <span class="badge" style="background:rgba(255,59,48,0.10);color:#FF3B30;font-size:11px">NR-06 obrigatório</span>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <span class="badge" style="background:rgba(255,59,48,0.10);color:#FF3B30;font-size:11px">NR-06 obrigatório</span>
+            <button class="filled-btn" type="button" id="btnNovaEntrega" style="display:none">
+              <span class="material-symbols-outlined">add</span>Nova entrega
+            </button>
+          </div>
         </div>
 
-        <!-- BUSCA DE FICHAS — colapsável -->
-        <section class="card" style="padding:0;overflow:hidden">
+        <div id="aviso" style="display:none;margin-bottom:18px"></div>
 
-          <!-- Cabeçalho clicável com lupa -->
-          <div onclick="toggleFichaSearch()" id="fichaSearchToggle"
-            style="display:flex;align-items:center;justify-content:space-between;
-                   padding:14px 16px;cursor:pointer;user-select:none;
-                   background:var(--surface-container);
-                   transition:background .15s">
+        <!-- ACESSO NEGADO: nenhuma das duas capacidades -->
+        <section class="card" id="acessoNegado" style="display:none">
+          <div class="notice" style="background:var(--error-container);color:var(--error);border-color:rgba(255,59,48,0.2)">
+            Seu perfil não tem acesso à Ficha de EPI nesta empresa: nem para consultar fichas nem para realizar entregas.
+          </div>
+        </section>
+
+        <!-- BUSCA DE FICHAS (epiFicha.visualizar) -->
+        <section class="card" id="fichaBuscaCard" style="padding:0;overflow:hidden;display:none">
+          <div id="fichaSearchToggle" style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;cursor:pointer;user-select:none;background:var(--surface-container)">
             <div style="display:flex;align-items:center;gap:10px">
               <div class="card-icon" style="background:rgba(0,122,255,0.10);color:#007AFF;flex-shrink:0">search</div>
               <div>
                 <div style="font-size:14px;font-weight:600">Buscar ficha de EPI</div>
-                <div style="font-size:12px;color:var(--on-surface-variant);margin-top:1px">
-                  Busque por funcionário, CPF, matrícula, EPI, data ou status
-                </div>
+                <div style="font-size:12px;color:var(--on-surface-variant);margin-top:1px">Busque por trabalhador, matrícula, EPI, código, número da ficha, situação ou período</div>
               </div>
             </div>
-            <!-- Ícone expansão -->
-            <span id="fichaSearchChevron" class="material-symbols-outlined"
-              style="font-size:20px;color:var(--on-surface-variant);
-                     transition:transform .25s ease;flex-shrink:0">
-              expand_more
-            </span>
+            <span id="fichaSearchChevron" class="material-symbols-outlined" style="font-size:20px;color:var(--on-surface-variant);transition:transform .25s ease;flex-shrink:0">expand_more</span>
           </div>
 
-          <!-- Painel colapsável -->
-          <div id="fichaSearchPanel"
-            style="max-height:0;overflow:hidden;transition:max-height .3s ease;padding:0 16px">
+          <div id="fichaSearchPanel" style="max-height:0;overflow:hidden;transition:max-height .3s ease;padding:0 16px">
             <div style="padding:14px 0">
               <div class="ficha-search-grid">
                 <div class="field" style="margin:0">
-                  <label>Funcionário / CPF / Matrícula</label>
-                  <input class="input" id="fichaSearchFunc" type="text"
-                    placeholder="Ex.: Tício de Tal ou MAT-000171"
-                    onkeydown="if(event.key==='Enter') renderFichaSearch()">
+                  <label for="fichaSearchFunc">Funcionário / matrícula / EPI / código</label>
+                  <input class="input" id="fichaSearchFunc" type="text" placeholder="Nome, matrícula, EPI ou código interno" maxlength="100">
                 </div>
                 <div class="field" style="margin:0">
-                  <label>EPI</label>
-                  <input class="input" id="fichaSearchEpi" type="text"
-                    placeholder="Ex.: Botina, Capacete..."
-                    onkeydown="if(event.key==='Enter') renderFichaSearch()">
+                  <label for="fichaSearchNum">Nº da ficha</label>
+                  <input class="input" id="fichaSearchNum" type="text" inputmode="numeric" placeholder="Ex.: 12">
                 </div>
                 <div class="field" style="margin:0">
-                  <label>Status de assinatura</label>
-                  <select class="select" id="fichaSearchStatus">
+                  <label for="fichaSearchAtivo">Situação atual do trabalhador</label>
+                  <select class="select" id="fichaSearchAtivo">
                     <option value="">Todos</option>
-                    <option value="manual">Assinado</option>
-                    <option value="digital">Aceite digital</option>
-                    <option value="pendente">Pendente</option>
+                    <option value="true">Ativo</option>
+                    <option value="false">Inativo</option>
                   </select>
                 </div>
                 <div class="field" style="margin:0">
-                  <label>Data (dd/mm/aaaa)</label>
-                  <input class="input" id="fichaSearchData" type="text"
-                    placeholder="Ex.: 12/04/2026"
-                    onkeydown="if(event.key==='Enter') renderFichaSearch()">
+                  <label for="fichaSearchDe">Entregas de</label>
+                  <input class="input" id="fichaSearchDe" type="date">
                 </div>
                 <div class="field" style="margin:0">
-                  <label>Nº da ficha</label>
-                  <input class="input" id="fichaSearchNum" type="text"
-                    placeholder="Ex.: 0171"
-                    onkeydown="if(event.key==='Enter') renderFichaSearch()">
+                  <label for="fichaSearchAte">Entregas até</label>
+                  <input class="input" id="fichaSearchAte" type="date">
                 </div>
                 <div style="display:flex;gap:8px;align-items:flex-end">
-                  <button class="outlined-btn" onclick="clearFichaSearch()" style="flex:1;white-space:nowrap">
-                    Limpar
-                  </button>
-                  <button class="filled-btn" onclick="renderFichaSearch()" style="flex:1;white-space:nowrap">
+                  <button class="outlined-btn" type="button" id="btnLimparBusca" style="flex:1;white-space:nowrap">Limpar</button>
+                  <button class="filled-btn" type="button" id="btnBuscarFichas" style="flex:1;white-space:nowrap">
                     <span class="material-symbols-outlined">search</span>Buscar
                   </button>
                 </div>
               </div>
+              <div style="display:flex;gap:8px;align-items:flex-end;margin-top:12px;flex-wrap:wrap">
+                <div class="field" style="margin:0;flex:1;min-width:200px">
+                  <label for="fichaSearchCpf">CPF do trabalhador (consulta separada, nunca na busca)</label>
+                  <input class="input" id="fichaSearchCpf" type="text" inputmode="numeric" placeholder="000.000.000-00" autocomplete="off" maxlength="14">
+                </div>
+                <button class="outlined-btn" type="button" id="btnConsultarCpf" style="white-space:nowrap">
+                  <span class="material-symbols-outlined">badge</span>Consultar CPF
+                </button>
+              </div>
             </div>
           </div>
 
-          <!-- Resultados (fora do painel colapsável) -->
           <div id="fichaSearchResults" style="display:none;padding:0 16px 16px">
             <div style="height:0.5px;background:var(--outline-variant);margin-bottom:14px"></div>
             <div class="table-wrap">
-              <table style="min-width:520px">
+              <table style="min-width:640px">
                 <thead>
                   <tr>
-                    <th>Nº Ficha</th><th>Funcionário</th><th>EPI</th>
-                    <th>Data</th><th>Assinatura</th><th>Status</th><th>Ação</th>
+                    <th>Nº Ficha</th><th>Trabalhador</th><th>Matrícula</th><th>Situação</th>
+                    <th>Entregas</th><th>Itens</th><th>Última entrega</th><th>Ação</th>
                   </tr>
                 </thead>
                 <tbody id="fichaSearchBody"></tbody>
               </table>
             </div>
+            <div class="paginacao">
+              <span id="fichaSearchInfo"></span>
+              <div style="display:flex;gap:8px">
+                <button class="outlined-btn" type="button" id="btnFichasAnterior" style="padding:4px 10px;font-size:12px">Anterior</button>
+                <button class="outlined-btn" type="button" id="btnFichasProxima" style="padding:4px 10px;font-size:12px">Próxima</button>
+              </div>
+            </div>
           </div>
-
         </section>
 
-        <!-- FICHA VISUAL -->
-        <section class="card" style="padding:0;overflow:hidden" id="fichaEpiCard">
-
-          <!-- Cabeçalho azul -->
+        <!-- FICHA VISUAL (cumulativa) -->
+        <section class="card" style="padding:0;overflow:hidden;display:none" id="fichaEpiCard">
           <div style="background:#1a3a6b;color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
             <div style="flex:1;text-align:center;min-width:200px">
               <div style="font-size:14px;font-weight:700;letter-spacing:.3px">FICHA DE ENTREGA DE EQUIPAMENTOS DE PROTEÇÃO INDIVIDUAL (EPI)</div>
               <div style="font-size:11px;opacity:.85;margin-top:2px;font-style:italic">Em conformidade com a NR-6 — Portaria MTB nº 3.214/78</div>
             </div>
-            <button onclick="openFichaEmpresaModal()" type="button"
-              style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:#fff;
-                     border-radius:8px;padding:6px 12px;font-size:11px;cursor:pointer;
-                     display:flex;align-items:center;gap:5px;flex-shrink:0;white-space:nowrap">
-              <span class="material-symbols-outlined" style="font-size:14px">edit</span>Editar empresa
+            <button type="button" id="btnFecharFicha" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:#fff;border-radius:8px;padding:6px 12px;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:5px;flex-shrink:0;white-space:nowrap">
+              <span class="material-symbols-outlined" style="font-size:14px">close</span>Fechar ficha
             </button>
           </div>
 
           <div style="padding:16px" id="fichaEpiPadding">
-
-            <!-- DADOS DA EMPRESA -->
-            <div style="background:#2b5ca8;color:#fff;font-weight:700;font-size:11px;padding:4px 8px;margin-bottom:6px;border-radius:4px">DADOS DA EMPRESA</div>
+            <div class="ficha-secao"><span>DADOS DA EMPRESA</span><span id="fichaNumLabel" style="font-weight:600"></span></div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;border:0.5px solid #ccc;border-radius:6px;overflow:hidden;margin-bottom:10px">
-              <div style="display:flex;border-bottom:0.5px solid #ccc">
-                <div style="background:#eef2f9;font-weight:600;font-size:11px;padding:6px 8px;min-width:80px;color:#1a3a6b;border-right:0.5px solid #ccc">Empresa</div>
-                <div style="padding:6px 8px;font-size:12px;font-weight:500" id="fichaEmpresa">RAMIRES / COBRESUL</div>
-              </div>
-              <div style="display:flex;border-bottom:0.5px solid #ccc;border-left:0.5px solid #ccc">
-                <div style="background:#eef2f9;font-weight:600;font-size:11px;padding:6px 8px;min-width:60px;color:#1a3a6b;border-right:0.5px solid #ccc">CNPJ</div>
-                <div style="padding:6px 8px;font-size:12px" id="fichaCnpj">00.000.000/0000-00</div>
-              </div>
-              <div style="display:flex;border-bottom:0.5px solid #ccc">
-                <div style="background:#eef2f9;font-weight:600;font-size:11px;padding:6px 8px;min-width:80px;color:#1a3a6b;border-right:0.5px solid #ccc">Endereço</div>
-                <div style="padding:6px 8px;font-size:12px" id="fichaEndereco"></div>
-              </div>
-              <div style="display:flex;border-bottom:0.5px solid #ccc;border-left:0.5px solid #ccc">
-                <div style="background:#eef2f9;font-weight:600;font-size:11px;padding:6px 8px;min-width:60px;color:#1a3a6b;border-right:0.5px solid #ccc">Cidade/UF</div>
-                <div style="padding:6px 8px;font-size:12px" id="fichaCidade">Joinville — SC</div>
-              </div>
-              <div style="display:flex">
-                <div style="background:#eef2f9;font-weight:600;font-size:11px;padding:6px 8px;min-width:80px;color:#1a3a6b;border-right:0.5px solid #ccc">REV</div>
-                <div style="padding:6px 8px;font-size:12px">00</div>
-              </div>
-              <div style="display:flex;border-left:0.5px solid #ccc">
-                <div style="background:#eef2f9;font-weight:600;font-size:11px;padding:6px 8px;min-width:60px;color:#1a3a6b;border-right:0.5px solid #ccc">Data</div>
-                <div style="padding:6px 8px;font-size:12px" id="fichaData">18/04/2026</div>
-              </div>
+              <div class="ficha-celula"><div class="ficha-rotulo">Empresa</div><div class="ficha-valor" style="font-weight:500" id="fichaEmpresa"></div></div>
+              <div class="ficha-celula" style="border-left:0.5px solid #ccc"><div class="ficha-rotulo" style="min-width:60px">CNPJ</div><div class="ficha-valor" id="fichaCnpj"></div></div>
+              <div class="ficha-celula" style="border-bottom:0"><div class="ficha-rotulo">Ficha criada em</div><div class="ficha-valor" id="fichaData"></div></div>
+              <div class="ficha-celula" style="border-left:0.5px solid #ccc;border-bottom:0"><div class="ficha-rotulo" style="min-width:60px">Fonte</div><div class="ficha-valor">Sessão da empresa; cada entrega guarda os dados da empresa da época</div></div>
             </div>
 
-            <!-- DADOS DO TRABALHADOR -->
-            <div style="background:#2b5ca8;color:#fff;font-weight:700;font-size:11px;padding:4px 8px;margin-bottom:6px;border-radius:4px">DADOS DO TRABALHADOR</div>
+            <div class="ficha-secao"><span>DADOS DO TRABALHADOR (cadastro atual)</span><span id="fichaSituacao"></span></div>
             <div style="border:0.5px solid #ccc;border-radius:6px;overflow:hidden;margin-bottom:10px">
               <div style="display:grid;grid-template-columns:1fr 1fr">
-                <div style="display:flex;border-bottom:0.5px solid #ccc">
-                  <div style="background:#eef2f9;font-weight:600;font-size:11px;padding:6px 8px;min-width:70px;color:#1a3a6b;border-right:0.5px solid #ccc">Nome</div>
-                  <div style="padding:6px 8px;font-size:12px;font-weight:500" id="fichaNome">Tício de Tal</div>
-                </div>
-                <div style="display:flex;border-bottom:0.5px solid #ccc;border-left:0.5px solid #ccc">
-                  <div style="background:#eef2f9;font-weight:600;font-size:11px;padding:6px 8px;min-width:50px;color:#1a3a6b;border-right:0.5px solid #ccc">CPF</div>
-                  <div style="padding:6px 8px;font-size:12px" id="fichaCpf">***.***.789-45</div>
-                </div>
-                <div style="display:flex;border-bottom:0.5px solid #ccc">
-                  <div style="background:#eef2f9;font-weight:600;font-size:11px;padding:6px 8px;min-width:70px;color:#1a3a6b;border-right:0.5px solid #ccc">Função</div>
-                  <div style="padding:6px 8px;font-size:12px" id="fichaFuncao">Mecânico</div>
-                </div>
-                <div style="display:flex;border-bottom:0.5px solid #ccc;border-left:0.5px solid #ccc">
-                  <div style="background:#eef2f9;font-weight:600;font-size:11px;padding:6px 8px;min-width:50px;color:#1a3a6b;border-right:0.5px solid #ccc">Setor</div>
-                  <div style="padding:6px 8px;font-size:12px" id="fichaSetor">Manutenção</div>
-                </div>
-                <div style="display:flex;grid-column:span 2">
-                  <div style="background:#eef2f9;font-weight:600;font-size:11px;padding:6px 8px;min-width:70px;color:#1a3a6b;border-right:0.5px solid #ccc">Matrícula</div>
-                  <div style="padding:6px 8px;font-size:12px" id="fichaMatricula">MAT-000171</div>
-                </div>
+                <div class="ficha-celula"><div class="ficha-rotulo" style="min-width:70px">Nome</div><div class="ficha-valor" style="font-weight:500" id="fichaNome"></div></div>
+                <div class="ficha-celula" style="border-left:0.5px solid #ccc"><div class="ficha-rotulo" style="min-width:50px">CPF</div><div class="ficha-valor" id="fichaCpf"></div></div>
+                <div class="ficha-celula"><div class="ficha-rotulo" style="min-width:70px">Função</div><div class="ficha-valor" id="fichaFuncao"></div></div>
+                <div class="ficha-celula" style="border-left:0.5px solid #ccc"><div class="ficha-rotulo" style="min-width:50px">Setor</div><div class="ficha-valor" id="fichaSetor"></div></div>
+                <div class="ficha-celula" style="border-bottom:0"><div class="ficha-rotulo" style="min-width:70px">Matrícula</div><div class="ficha-valor" id="fichaMatricula"></div></div>
+                <div class="ficha-celula" style="border-left:0.5px solid #ccc;border-bottom:0"><div class="ficha-rotulo" style="min-width:50px">GHE</div><div class="ficha-valor" id="fichaGhe"></div></div>
               </div>
             </div>
 
-            <!-- TEXTO LEGAL -->
+            <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--on-surface-variant);margin-bottom:10px">
+              <span>Entregas: <strong id="fichaTotalEntregas"></strong></span>
+              <span>Itens entregues: <strong id="fichaTotalItens"></strong></span>
+              <span>Última entrega: <strong id="fichaUltimaEntrega"></strong></span>
+            </div>
+
             <div style="border:0.5px solid #ccc;background:#fafbff;border-radius:6px;padding:8px 10px;font-size:10.5px;line-height:1.6;text-align:justify;margin-bottom:10px;color:#333">
               Esta ficha de entrega de EPIs está em conformidade com a NR-6. O empregador é obrigado a fornecer gratuitamente os EPIs adequados. <i>Portaria MTB nº 3.214/78.</i>
             </div>
 
-            <!-- TABELA DE EPIs — dinâmica, cada linha tem sua própria assinatura -->
-            <div style="background:#2b5ca8;color:#fff;font-weight:700;font-size:11px;padding:4px 8px;margin-bottom:6px;border-radius:4px;display:flex;align-items:center;justify-content:space-between">
-              <span>EPIs ENTREGUES</span>
-              <button onclick="addNovoEpiNaFicha()" type="button"
-                style="background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.3);
-                       color:#fff;border-radius:6px;padding:3px 10px;font-size:11px;cursor:pointer;
-                       display:flex;align-items:center;gap:4px">
-                <span class="material-symbols-outlined" style="font-size:13px">add</span>Novo EPI
-              </button>
-            </div>
-            <div class="table-wrap" style="margin-bottom:10px">
-              <table id="fichaEpiTable" style="font-size:11px;border-collapse:collapse;width:100%;min-width:600px">
+            <div class="ficha-secao"><span>EPIs ENTREGUES (histórico — cada entrega tem seus itens e uma confirmação)</span></div>
+            <div class="table-wrap" style="margin-bottom:6px">
+              <table id="fichaEpiTable" class="ficha-tabela" style="border-collapse:collapse;width:100%;min-width:900px">
                 <thead>
-                  <tr style="background:#1a3a6b;color:#fff">
-                    <th style="padding:6px;border:0.5px solid #555;text-align:center">Data da Entrega</th>
-                    <th style="padding:6px;border:0.5px solid #555">Nome do EPI</th>
-                    <th style="padding:6px;border:0.5px solid #555;text-align:center">CA</th>
-                    <th style="padding:6px;border:0.5px solid #555;text-align:center">Validade CA</th>
-                    <th style="padding:6px;border:0.5px solid #555;text-align:center">Qtd.</th>
-                    <th style="padding:6px;border:0.5px solid #555;text-align:center">Cond.</th>
-                    <th style="padding:6px;border:0.5px solid #555;text-align:center;min-width:110px">Assinatura da Entrega</th>
-                    <th style="padding:6px;border:0.5px solid #555;text-align:center">Devolução</th>
+                  <tr>
+                    <th>Data/hora</th><th>EPI (histórico)</th><th>Tamanho</th><th>CA</th><th>Validade CA</th><th>Qtd.</th>
+                    <th>Motivo</th><th>GHE</th><th>Responsável</th><th>Confirmação</th>
                   </tr>
                 </thead>
-                <tbody id="fichaEpiTableBody">
-                  <!-- Preenchido por renderFichaTable() -->
-                </tbody>
+                <tbody id="fichaEpiTableBody"></tbody>
               </table>
             </div>
-
-            <!-- DECLARAÇÃO -->
-            <div style="background:#fff3cd;border:0.5px solid #ffc107;border-radius:6px;padding:8px 10px;font-size:11px;line-height:1.6;text-align:justify;margin-bottom:12px">
-              <strong>Declaro</strong> ter recebido os EPIs listados, em perfeito estado, comprometendo-me a utilizá-los conforme instruções e a comunicar qualquer necessidade de substituição.
-            </div>
-
-            <!-- ASSINATURA DIGITAL -->
-            <div style="border-top:0.5px solid var(--outline-variant);padding:14px 0 6px;margin-top:4px">
-              <div style="font-size:11px;font-weight:600;color:var(--on-surface-variant);text-transform:uppercase;letter-spacing:.05em;text-align:center;margin-bottom:12px">
-                Confirmação de recebimento — EPI
-              </div>
-              <!-- Seletor de modo -->
-              <div style="display:flex;gap:8px;justify-content:center;margin-bottom:14px;flex-wrap:wrap">
-                <button id="btnModoAssinatura" onclick="setModoAssinatura('assinatura')" type="button"
-                  style="padding:8px 16px;border-radius:99px;border:1.5px solid var(--primary);
-                         background:var(--primary);color:#fff;font-size:12px;font-weight:500;cursor:pointer;
-                         display:flex;align-items:center;gap:6px">
-                  <span class="material-symbols-outlined" style="font-size:15px">gesture</span>Assinar
-                </button>
-                <button id="btnModoDigital" onclick="setModoAssinatura('digital')" type="button"
-                  style="padding:8px 16px;border-radius:99px;border:1.5px solid var(--outline-variant);
-                         background:transparent;color:var(--on-surface);font-size:12px;font-weight:500;cursor:pointer;
-                         display:flex;align-items:center;gap:6px">
-                  <span class="material-symbols-outlined" style="font-size:15px">fingerprint</span>Não sabe assinar — usar digital
-                </button>
-              </div>
-              <!-- MODO ASSINATURA -->
-              <div id="modoAssinaturaArea" style="display:flex;flex-direction:column;align-items:center;gap:8px">
-                <div id="fichaAssinaturaPreview"
-                  style="width:min(320px,90%);min-height:72px;border:1.5px dashed var(--outline-variant);border-radius:12px;
-                         display:flex;align-items:center;justify-content:center;background:var(--surface);cursor:pointer"
-                  onclick="openSignatureModal()" title="Clique para assinar">
-                  <span style="font-size:11px;color:var(--on-surface-variant)">— toque para assinar —</span>
-                </div>
-                <div style="font-size:11px;color:var(--on-surface-variant)">Desenhe com o dedo ou mouse</div>
-              </div>
-              <!-- MODO DIGITAL -->
-              <div id="modoDigitalArea" style="display:none;flex-direction:column;align-items:center;gap:10px">
-                <div style="font-size:12px;color:var(--on-surface-variant);text-align:center;max-width:300px;line-height:1.5">
-                  Pressione e segure por <strong>3 segundos</strong> para confirmar.
-                </div>
-                <div style="position:relative;width:140px;height:140px">
-                  <svg viewBox="0 0 160 160" style="position:absolute;top:0;left:0;width:140px;height:140px;transform:rotate(-90deg)">
-                    <circle cx="80" cy="80" r="70" fill="none" stroke="var(--outline-variant)" stroke-width="6"/>
-                    <circle id="digitalProgressRing" cx="80" cy="80" r="70" fill="none" stroke="#007AFF" stroke-width="6"
-                      stroke-linecap="round" stroke-dasharray="439.8" stroke-dashoffset="439.8" style="transition:stroke-dashoffset .1s linear"/>
-                  </svg>
-                  <button id="digitalBtn" type="button"
-                    style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-                           width:108px;height:108px;border-radius:50%;border:none;
-                           background:linear-gradient(135deg,#007AFF,#5856D6);color:#fff;cursor:pointer;
-                           display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
-                           box-shadow:0 4px 20px rgba(0,122,255,0.4);-webkit-user-select:none;user-select:none"
-                    onmousedown="startDigitalPress()" ontouchstart="startDigitalPress(event)"
-                    onmouseup="cancelDigitalPress()" onmouseleave="cancelDigitalPress()"
-                    ontouchend="cancelDigitalPress()" ontouchcancel="cancelDigitalPress()">
-                    <span class="material-symbols-outlined" style="font-size:34px">fingerprint</span>
-                    <span id="digitalBtnLabel" style="font-size:11px;font-weight:600">SEGURAR</span>
-                  </button>
-                </div>
-                <div id="digitalStatusMsg" style="font-size:12px;color:var(--on-surface-variant)">Pressione e segure para confirmar</div>
-              </div>
-              <!-- Nome + data + badge -->
-              <div style="text-align:center;line-height:1.7;margin-top:12px">
-                <div style="font-size:13px;font-weight:600" id="fichaNomeSig">Tício de Tal</div>
-                <div style="font-size:11px;color:var(--on-surface-variant)" id="fichaCargo">Mecânico · Manutenção</div>
-                <div style="font-size:11px;color:var(--on-surface-variant)">Data: <span id="fichaDataSig">18/04/2026 14:20</span></div>
-              </div>
-              <div id="fichaStatusTrabBadge" style="text-align:center;margin-top:8px">
-                <span class="badge role-supervisor" style="font-size:11px">Pendente — escolha o modo de confirmação</span>
-              </div>
-              <!-- Status -->
-              <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;border:0.5px solid var(--outline-variant);margin-top:10px;flex-wrap:wrap">
-                <span id="fichaStatusTrab" style="font-size:12px">Trabalhador: <span class="badge role-supervisor">Pendente</span></span>
+            <div id="fichaHistoricoVazio" class="helper" style="display:none">Nenhuma entrega registrada nesta ficha.</div>
+            <div class="paginacao">
+              <span id="fichaEntregasInfo"></span>
+              <div style="display:flex;gap:8px">
+                <button class="outlined-btn" type="button" id="btnEntregasAnterior" style="padding:4px 10px;font-size:12px">Anterior</button>
+                <button class="outlined-btn" type="button" id="btnEntregasProxima" style="padding:4px 10px;font-size:12px">Próxima</button>
               </div>
             </div>
 
-          </div><!-- /fichaEpiPadding -->
-        </section><!-- /fichaEpiCard -->
+            <div style="background:#fff3cd;border:0.5px solid #ffc107;border-radius:6px;padding:8px 10px;font-size:11px;line-height:1.6;text-align:justify;margin:12px 0 0">
+              <strong>Declaração confirmada em cada entrega:</strong> <span id="fichaDeclaracaoTexto"></span>
+            </div>
+          </div>
+        </section>
 
-        <!-- Botões inferiores -->
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding-top:4px">
+        <!-- NOVA ENTREGA (REALIZAR_ENTREGA) -->
+        <section class="card" id="novaEntregaCard" style="display:none">
+          <div class="card-header">
+            <div class="card-title">
+              <div class="card-icon" style="background:rgba(52,199,89,0.12);color:#1f8f3a">assignment_turned_in</div>
+              <div>
+                <h2>Nova entrega de EPI</h2>
+                <p>Selecione o trabalhador, escolha os materiais e os lotes, e registre a confirmação de recebimento.</p>
+              </div>
+            </div>
+            <button class="outlined-btn" type="button" id="btnCancelarEntrega">Cancelar</button>
+          </div>
+
+          <div class="passo" id="passoTrabalhador">
+            <h3><span class="num">1</span>Trabalhador</h3>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+              <div class="field" style="margin:0;flex:2;min-width:200px">
+                <label for="entregaBuscaTrab">Nome ou matrícula</label>
+                <input class="input" id="entregaBuscaTrab" type="text" placeholder="Digite o nome ou a matrícula" maxlength="100">
+              </div>
+              <button class="filled-btn" type="button" id="btnBuscarTrab"><span class="material-symbols-outlined">search</span>Buscar</button>
+              <div class="field" style="margin:0;flex:1;min-width:180px">
+                <label for="entregaCpfTrab">CPF (consulta separada)</label>
+                <input class="input" id="entregaCpfTrab" type="text" inputmode="numeric" placeholder="000.000.000-00" autocomplete="off" maxlength="14">
+              </div>
+              <button class="outlined-btn" type="button" id="btnCpfTrab"><span class="material-symbols-outlined">badge</span>Consultar CPF</button>
+            </div>
+            <div id="entregaTrabResultados" style="display:none;margin-top:10px" class="table-wrap">
+              <table style="min-width:640px">
+                <thead><tr><th>Nome</th><th>Matrícula</th><th>CPF</th><th>Setor · Função</th><th>GHE</th><th></th></tr></thead>
+                <tbody id="entregaTrabBody"></tbody>
+              </table>
+              <div class="helper" id="entregaTrabInfo"></div>
+            </div>
+            <div id="entregaTrabSelecionado" style="display:none;margin-top:10px;font-size:12px;line-height:1.7"></div>
+          </div>
+
+          <div class="passo" id="passoMaterial" style="display:none">
+            <h3><span class="num">2</span>Material</h3>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+              <div class="field" style="margin:0;flex:2;min-width:200px">
+                <label for="entregaBuscaMat">Nome ou código interno</label>
+                <input class="input" id="entregaBuscaMat" type="text" placeholder="Ex.: botina, LUV-07" maxlength="100">
+              </div>
+              <div class="field" style="margin:0;min-width:160px">
+                <label for="entregaPrevisto">Filtro do GHE</label>
+                <select class="select" id="entregaPrevisto">
+                  <option value="">Todos os materiais</option>
+                  <option value="true">Só previstos no GHE</option>
+                  <option value="false">Só fora do GHE</option>
+                </select>
+              </div>
+              <button class="filled-btn" type="button" id="btnBuscarMat"><span class="material-symbols-outlined">search</span>Buscar</button>
+            </div>
+            <div class="table-wrap" style="margin-top:10px">
+              <table style="min-width:820px">
+                <thead><tr><th>Material</th><th>Tipo</th><th>Unidade</th><th>Prazo de uso</th><th>Exige tamanho</th><th>Exige CA</th><th>GHE</th><th></th></tr></thead>
+                <tbody id="entregaMatBody"></tbody>
+              </table>
+            </div>
+            <div class="paginacao">
+              <span id="entregaMatInfo"></span>
+              <div style="display:flex;gap:8px">
+                <button class="outlined-btn" type="button" id="btnMatAnterior" style="padding:4px 10px;font-size:12px">Anterior</button>
+                <button class="outlined-btn" type="button" id="btnMatProxima" style="padding:4px 10px;font-size:12px">Próxima</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="passo" id="passoLote" style="display:none">
+            <h3><span class="num">3</span>Lote <span id="entregaLoteMaterial" style="font-weight:400;color:var(--on-surface-variant)"></span></h3>
+            <div id="entregaMatAviso" class="helper" style="display:none"></div>
+            <div class="table-wrap">
+              <table style="min-width:640px">
+                <thead><tr><th>Tamanho</th><th>CA</th><th>Validade CA</th><th>Saldo</th><th>Situação</th><th></th></tr></thead>
+                <tbody id="entregaLoteBody"></tbody>
+              </table>
+            </div>
+            <div class="helper" id="entregaLoteVazio" style="display:none">Nenhum lote com saldo para este material.</div>
+          </div>
+
+          <div class="passo" id="passoItem" style="display:none">
+            <h3><span class="num">4</span>Item <span id="entregaItemResumo" style="font-weight:400;color:var(--on-surface-variant)"></span></h3>
+            <div class="form-grid">
+              <div class="field"><label for="itemQuantidade">Quantidade</label><input class="input" id="itemQuantidade" type="number" min="1" step="1" value="1"></div>
+              <div class="field"><label for="itemMotivo">Motivo</label><select class="select" id="itemMotivo"></select></div>
+              <div class="field full" id="campoJustificativa"><label for="itemJustificativa">Justificativa (obrigatória para "Outro")</label><input class="input" id="itemJustificativa" type="text" maxlength="500"></div>
+              <div class="field full" id="campoJustificativaForaGhe" style="display:none">
+                <label for="itemJustificativaForaGhe">Justificativa da exceção — EPI fora do GHE do trabalhador (obrigatória)</label>
+                <input class="input" id="itemJustificativaForaGhe" type="text" maxlength="500">
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end">
+              <button class="filled-btn" type="button" id="btnAdicionarItem"><span class="material-symbols-outlined">add</span>Adicionar item</button>
+            </div>
+          </div>
+
+          <div class="passo" id="passoItens" style="display:none">
+            <h3><span class="num">5</span>Itens da entrega <span id="entregaItensContagem" style="font-weight:400;color:var(--on-surface-variant)"></span></h3>
+            <div class="table-wrap">
+              <table style="min-width:760px">
+                <thead><tr><th>Material</th><th>Tamanho</th><th>CA</th><th>Qtd.</th><th>Motivo</th><th>GHE</th><th></th></tr></thead>
+                <tbody id="entregaItensBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="passo" id="passoConfirmacao" style="display:none">
+            <h3><span class="num">6</span>Confirmação de recebimento</h3>
+            <div style="background:#fff3cd;border:0.5px solid #ffc107;border-radius:6px;padding:8px 10px;font-size:12px;line-height:1.6;text-align:justify;margin-bottom:12px" id="entregaDeclaracao"></div>
+            <div style="display:flex;gap:8px;justify-content:center;margin-bottom:14px;flex-wrap:wrap">
+              <button id="btnModoDesenho" type="button" class="modo-btn ativo"><span class="material-symbols-outlined" style="font-size:15px">gesture</span>Assinatura desenhada</button>
+              <button id="btnModoAceite" type="button" class="modo-btn"><span class="material-symbols-outlined" style="font-size:15px">how_to_reg</span>Aceite presencial</button>
+            </div>
+            <div id="modoDesenhoArea" style="display:flex;flex-direction:column;align-items:center;gap:8px">
+              <div id="assinaturaPreview" style="width:min(320px,90%);min-height:72px;border:1.5px dashed var(--outline-variant);border-radius:12px;display:flex;align-items:center;justify-content:center;background:var(--surface);cursor:pointer" title="Clique para assinar">
+                <span style="font-size:11px;color:var(--on-surface-variant)" id="assinaturaPreviewTexto">— toque para o trabalhador assinar —</span>
+              </div>
+              <div style="font-size:11px;color:var(--on-surface-variant)">O trabalhador desenha a assinatura com o dedo ou o mouse.</div>
+            </div>
+            <div id="modoAceiteArea" style="display:none;flex-direction:column;align-items:center;gap:10px">
+              <div style="font-size:12px;color:var(--on-surface-variant);text-align:center;max-width:420px;line-height:1.5">
+                O responsável registra que o trabalhador, presente, confirmou o recebimento dos EPIs listados. Não é assinatura desenhada nem verificação de identidade.
+              </div>
+              <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+                <input type="checkbox" id="aceitePresencial"> O trabalhador confirmou presencialmente o recebimento.
+              </label>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap">
+              <button class="outlined-btn" type="button" id="btnTentarNovamente" style="display:none"><span class="material-symbols-outlined">refresh</span>Tentar novamente</button>
+              <button class="filled-btn" type="button" id="btnRegistrarEntrega"><span class="material-symbols-outlined">check</span>Registrar entrega</button>
+            </div>
+            <div id="entregaStatus" style="margin-top:10px;font-size:12px" role="status" aria-live="polite"></div>
+          </div>
+        </section>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding-top:4px" id="fichaRodape">
           <div style="display:flex;gap:10px;flex-wrap:wrap">
-            <button class="outlined-btn" onclick="epiFichaPrint()">
-              <span class="material-symbols-outlined">print</span>Imprimir 2 vias
-            </button>
-            <button class="outlined-btn" onclick="epiFichaGeneratePDF()">
-              <span class="material-symbols-outlined">picture_as_pdf</span>Gerar PDF
+            <button class="outlined-btn" type="button" id="btnImprimir" disabled title="Impressão em 2 vias ficará disponível em etapa posterior">
+              <span class="material-symbols-outlined">print</span>Imprimir 2 vias (em breve)
             </button>
           </div>
-          <span style="font-size:12px;color:var(--on-surface-variant)" id="fichaNumLabel">Ficha #0171 — 18/04/2026</span>
+          <span style="font-size:12px;color:var(--on-surface-variant)" id="fichaRodapeTexto"></span>
         </div>
-
       </section>
     </main>
   </div>
 
-<!-- ═══ MODAL: ATIVAR MODO QUIOSQUE ═══════════════════════════════ -->
-      <div class="modal-overlay" id="kioskActivateModal" onclick="closeKioskActivateModal(event)">
-        <div class="modal-card" style="width:min(100%,420px)" onclick="event.stopPropagation()">
-          <div class="modal-header">
-            <div class="modal-title">
-              <div class="card-icon" style="background:rgba(0,122,255,0.1);color:#007AFF">lock</div>
-              <div>
-                <h2 style="font-family:var(--font-brand);font-size:17px;font-weight:500">Ativar Modo Quiosque</h2>
-                <p style="font-size:12px;color:var(--on-surface-variant);margin-top:2px">A sidebar e a navegação serão bloqueadas. Só será possível desbloquear com a senha de administrador.</p>
-              </div>
-            </div>
-            <button class="modal-close" onclick="closeKioskActivateModal()">close</button>
-          </div>
-          <div class="field full" style="margin-top:8px">
-            <label>Defina a senha de desbloqueio</label>
-            <input id="kioskPassword" class="input" type="password" placeholder="Mínimo 4 dígitos" autocomplete="new-password">
-          </div>
-          <div class="notice" style="margin-top:10px;background:rgba(255,149,0,0.06);color:#C07000;border-color:rgba(255,149,0,0.2)">
-            Guarde esta senha. Ela será exigida para sair do modo quiosque neste dispositivo.
-          </div>
-          <div class="footer-actions">
-            <button class="outlined-btn" onclick="closeKioskActivateModal()">Cancelar</button>
-            <button class="filled-btn" onclick="activateKioskMode()">
-              <span class="material-symbols-outlined">lock</span>Ativar agora
-            </button>
-          </div>
+<!-- MODAL: assinatura desenhada -->
+<div class="modal-overlay" id="assinaturaModal">
+  <div class="modal-card" style="width:min(100%,600px)">
+    <div class="modal-header">
+      <div class="modal-title">
+        <div class="card-icon" style="background:rgba(0,122,255,0.1);color:#007AFF">gesture</div>
+        <div>
+          <h2 style="font-family:var(--font-brand);font-size:17px;font-weight:500">Assinatura desenhada</h2>
+          <p style="font-size:12px;color:var(--on-surface-variant);margin-top:2px">O trabalhador desenha a assinatura na área abaixo.</p>
         </div>
       </div>
+      <button class="modal-close" type="button" id="btnAssinaturaFechar">close</button>
+    </div>
+    <canvas id="assinaturaCanvas" width="1040" height="400"></canvas>
+    <div id="assinaturaModalDeclaracao" style="font-size:11px;color:var(--on-surface-variant);margin-top:8px;line-height:1.5"></div>
+    <div class="footer-actions">
+      <button class="outlined-btn" type="button" id="btnAssinaturaLimpar">Limpar</button>
+      <button class="outlined-btn" type="button" id="btnAssinaturaCancelar">Cancelar</button>
+      <button class="filled-btn" type="button" id="btnAssinaturaConfirmar"><span class="material-symbols-outlined">check</span>Usar esta assinatura</button>
+    </div>
+  </div>
+</div>
 
-      <!-- ═══ OVERLAY: MODO QUIOSQUE ATIVO (bloqueia tudo) ═══════════════ -->
-      <div id="kioskLockOverlay" style="display:none;position:fixed;inset:0;z-index:9999;
-           background:var(--surface);align-items:center;justify-content:center;flex-direction:column;gap:16px">
-        <div style="width:72px;height:72px;border-radius:22px;background:rgba(0,122,255,0.1);
-                    display:flex;align-items:center;justify-content:center">
-          <span class="material-symbols-outlined" style="font-size:36px;color:#007AFF">lock</span>
-        </div>
-        <div style="text-align:center">
-          <div style="font-size:16px;font-weight:600">Modo Quiosque Ativo</div>
-          <div style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">
-            Este dispositivo está em modo de autoatendimento.<br>Digite a senha de administrador para liberar.
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input id="kioskUnlockInput" class="input" type="password" placeholder="Senha de desbloqueio"
-                 style="width:220px" onkeydown="if(event.key==='Enter') unlockKioskMode()">
-          <button class="filled-btn" onclick="unlockKioskMode()">
-            <span class="material-symbols-outlined">lock_open</span>Desbloquear
-          </button>
-        </div>
-        <div id="kioskUnlockError" style="display:none;color:#FF3B30;font-size:12px">Senha incorreta.</div>
-      </div>
-
-<script src="../js/db-api.js"></script>
-<script src="../js/main.js"></script>
+<script src="../js/api-http.js"></script>
+<script src="../portal/config.js"></script>
+<script src="../js/sessao-empresarial.js"></script>
+<script src="../js/permissoes-efetivas.js"></script>
+<script src="../js/pagina-base.js"></script>
+<script src="../js/epi-ficha.js"></script>
 <script>
-  document.addEventListener('DOMContentLoaded', () => {
-    if (typeof loadFichaFromAPI === "function") loadFichaFromAPI(1);
-    var navLink = document.querySelector('.nav a[data-page="epiFicha"]');
-    if (navLink && typeof setActiveNav === 'function') setActiveNav(navLink);
-    document.querySelectorAll('.nav a[data-page]').forEach(function(a) {
-      var page = a.getAttribute('data-page');
-      var fileMap = {
-        'self-service':'self-service.html','dashboard':'dashboard.html','config':'config.html',
-        'supervisorApproval':'supervisor-approval.html','request':'request.html',
-        'stockRequests':'stock-requests.html','userAdmin':'user-admin.html',
-        'operations':'operations.html','eligibilityRules':'eligibility-rules.html',
-        'materials':'materials.html','purchases':'purchases.html',
-        'stockValidity':'stock-validity.html','availableItems':'available-items.html',
-        'epiFicha':'epi-ficha.html','deliveredItems':'delivered-items.html',
-        'reports':'reports.html','employeeHistory':'employee-history.html',
-        'newUser':'new-user.html','support':'support.html',
-        'importEmployees':'import-employees.html','lgpd':'lgpd.html','emailsGestao':'emails-gestao.html'
-      };
-      if (fileMap[page]) {
-        a.setAttribute('href', fileMap[page]);
-        a.removeAttribute('onclick');
+/*
+  Ligação com o DOM. Regras, mensagens, rascunho, traços, idempotência e
+  HTML escapado vivem em js/epi-ficha.js (testado sem navegador).
+*/
+(function () {
+  'use strict';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var F = EpiFicha;
+  var e = F.render.escaparHtml;
+
+  EpiHttp.configurar({ baseUrl: window.SAFEWORK_PORTAL_API_BASE_URL });
+
+  var capacidades = { consultar: false, entregar: false };
+  var encerrada = false;
+  var contextoSessao = null;
+  var consulta = F.consulta.criar();
+  var fluxo = F.fluxo.criar();
+  var coletor = F.tracos.criarColetor();
+  var modo = 'DESENHO';
+  var paginaFichas = 1;
+  var paginaEntregas = 1;
+  var paginaMateriais = 1;
+  var materialEscolhido = null;
+  var loteEscolhido = null;
+  var LIMITE = F.LIMITES.limitePagina;
+
+  function mostrarAviso(texto, tipo) {
+    var caixa = $('aviso');
+    if (!texto) { caixa.style.display = 'none'; caixa.innerHTML = ''; return; }
+    var cor = tipo === 'erro'
+      ? 'background:var(--error-container);color:var(--error);border-color:rgba(255,59,48,0.2)'
+      : tipo === 'sucesso' ? 'background:rgba(52,199,89,0.10);color:#1f8f3a;border-color:rgba(52,199,89,0.3)'
+        : 'background:rgba(255,149,0,0.08);color:#C07000;border-color:rgba(255,149,0,0.25)';
+    caixa.innerHTML = '<div class="notice" style="' + cor + '">' + e(texto) + '</div>';
+    caixa.style.display = 'block';
+  }
+  function tratarFalha(r) {
+    if (r && r.sessaoEncerrada) { EpiSessaoEmpresarial.sessaoEncerrada(); return true; }
+    if (r && !r.ok && !r.descartada) { mostrarAviso(r.mensagem || F.mensagens.erro(r), 'erro'); return true; }
+    return false;
+  }
+  function mostrar(id, visivel) { $(id).style.display = visivel ? '' : 'none'; }
+  function paginacaoInfo(el, pagina, limite, total) {
+    var inicio = total === 0 ? 0 : (pagina - 1) * limite + 1;
+    var fim = Math.min(total, pagina * limite);
+    el.textContent = total === 0 ? 'Nenhum resultado' : 'Mostrando ' + inicio + '–' + fim + ' de ' + total;
+  }
+
+  // ── Busca de fichas (epiFicha.visualizar) ──
+  var painelAberto = false;
+  function alternarPainel(abrir) {
+    painelAberto = abrir;
+    $('fichaSearchPanel').style.maxHeight = abrir ? '600px' : '0';
+    $('fichaSearchChevron').style.transform = abrir ? 'rotate(180deg)' : '';
+  }
+  $('fichaSearchToggle').addEventListener('click', function () { alternarPainel(!painelAberto); });
+
+  function filtroDaTela(pagina) {
+    return F.filtros.fichas({
+      busca: $('fichaSearchFunc').value, numero: $('fichaSearchNum').value, ativo: $('fichaSearchAtivo').value,
+      de: $('fichaSearchDe').value, ate: $('fichaSearchAte').value, pagina: pagina, limite: LIMITE,
+    });
+  }
+  async function buscarFichas(pagina) {
+    if (!capacidades.consultar || encerrada) return;
+    var f = filtroDaTela(pagina || 1);
+    if (!f.ok) { mostrarAviso(f.mensagem, 'erro'); return; }
+    mostrarAviso('', null);
+    $('fichaSearchBody').innerHTML = '<tr><td colspan="8" class="helper">Carregando…</td></tr>';
+    mostrar('fichaSearchResults', true);
+    var r = await consulta.listar(f.filtro);
+    if (encerrada || r.descartada) return;
+    if (tratarFalha(r)) { $('fichaSearchBody').innerHTML = ''; return; }
+    paginaFichas = f.filtro.pagina;
+    var st = consulta.estado();
+    $('fichaSearchBody').innerHTML = st.lista.length ? F.render.linhasFichas(st.lista) : '<tr><td colspan="8" class="helper">Nenhuma ficha encontrada com esses critérios.</td></tr>';
+    paginacaoInfo($('fichaSearchInfo'), paginaFichas, LIMITE, st.total);
+    $('btnFichasAnterior').disabled = paginaFichas <= 1;
+    $('btnFichasProxima').disabled = paginaFichas * LIMITE >= st.total;
+  }
+  async function consultarCpfFicha() {
+    if (!capacidades.consultar || encerrada) return;
+    var campo = $('fichaSearchCpf');
+    var r = await consulta.consultarPorCpf(campo.value);
+    campo.value = '';
+    if (encerrada || r.descartada) return;
+    if (r.codigo === 'CPF_INVALIDO') { mostrarAviso(r.mensagem, 'erro'); return; }
+    if (tratarFalha(r)) return;
+    if (!r.ficha) {
+      mostrarAviso('Trabalhador ' + (r.funcionario ? r.funcionario.nome + ' (' + r.funcionario.cpfMascarado + ')' : '') + ' encontrado, mas ainda sem ficha de EPI: a ficha nasce na primeira entrega.', 'atencao');
+      return;
+    }
+    mostrarAviso('', null);
+    abrirFicha(r.ficha.id);
+  }
+  $('btnBuscarFichas').addEventListener('click', function () { buscarFichas(1); });
+  $('btnFichasAnterior').addEventListener('click', function () { buscarFichas(paginaFichas - 1); });
+  $('btnFichasProxima').addEventListener('click', function () { buscarFichas(paginaFichas + 1); });
+  $('btnConsultarCpf').addEventListener('click', consultarCpfFicha);
+  $('btnLimparBusca').addEventListener('click', function () {
+    ['fichaSearchFunc', 'fichaSearchNum', 'fichaSearchDe', 'fichaSearchAte', 'fichaSearchCpf'].forEach(function (id) { $(id).value = ''; });
+    $('fichaSearchAtivo').value = '';
+    $('fichaSearchBody').innerHTML = '';
+    mostrar('fichaSearchResults', false);
+    mostrarAviso('', null);
+  });
+  ['fichaSearchFunc', 'fichaSearchNum'].forEach(function (id) {
+    $(id).addEventListener('keydown', function (ev) { if (ev && ev.key === 'Enter') buscarFichas(1); });
+  });
+  $('fichaSearchCpf').addEventListener('keydown', function (ev) { if (ev && ev.key === 'Enter') consultarCpfFicha(); });
+  $('fichaSearchBody').addEventListener('click', function (ev) {
+    var alvo = ev && ev.target && typeof ev.target.closest === 'function' ? ev.target.closest('[data-abrir]') : null;
+    if (alvo) abrirFicha(Number(alvo.getAttribute('data-abrir')));
+  });
+
+  // ── Ficha aberta: cadastro atual + histórico (snapshots) ──
+  function renderizarHistorico() {
+    var st = consulta.estado();
+    var corpo = $('fichaEpiTableBody');
+    corpo.innerHTML = F.render.linhasHistorico(st.entregas);
+    mostrar('fichaHistoricoVazio', st.entregas.length === 0);
+    paginacaoInfo($('fichaEntregasInfo'), st.paginaEntregas, LIMITE, st.totalEntregas);
+    $('btnEntregasAnterior').disabled = st.paginaEntregas <= 1;
+    $('btnEntregasProxima').disabled = st.paginaEntregas * LIMITE >= st.totalEntregas;
+    if (st.entregas.length && st.entregas[0].empresa) {
+      var emp = st.entregas[0].empresa;
+      $('fichaEmpresa').textContent = emp.nome || (contextoSessao ? contextoSessao.empresa.nome : '');
+      $('fichaCnpj').textContent = emp.cnpj || '';
+    }
+  }
+  async function abrirFicha(id, manterAviso) {
+    if (!capacidades.consultar || encerrada) return;
+    if (!manterAviso) mostrarAviso('', null);
+    var r = await consulta.abrir(id, { pagina: 1, limite: LIMITE });
+    if (encerrada || r.descartada) return;
+    if (tratarFalha(r)) return;
+    paginaEntregas = 1;
+    var c = F.render.cabecalhoFicha({ ficha: r.ficha, funcionarioAtual: r.funcionarioAtual, resumo: r.resumo });
+    $('fichaNumLabel').innerHTML = c.numero;
+    $('fichaData').innerHTML = c.criadaEm;
+    $('fichaEmpresa').textContent = contextoSessao ? contextoSessao.empresa.nome : '';
+    $('fichaCnpj').textContent = contextoSessao && contextoSessao.empresa.cnpj ? contextoSessao.empresa.cnpj : '—';
+    $('fichaNome').innerHTML = c.nome;
+    $('fichaCpf').innerHTML = c.cpf;
+    $('fichaFuncao').innerHTML = c.funcao;
+    $('fichaSetor').innerHTML = c.setor;
+    $('fichaMatricula').innerHTML = c.matricula;
+    $('fichaGhe').innerHTML = c.ghe;
+    $('fichaSituacao').innerHTML = c.situacao;
+    $('fichaTotalEntregas').innerHTML = c.totalEntregas;
+    $('fichaTotalItens').innerHTML = c.totalItens;
+    $('fichaUltimaEntrega').innerHTML = c.ultimaEntrega;
+    $('fichaRodapeTexto').textContent = 'Ficha nº ' + r.ficha.numero + ' — criada em ' + F.render.dataHoraBr(r.ficha.criadaEm);
+    $('fichaEpiTableBody').innerHTML = '<tr><td colspan="10" class="helper">Carregando entregas…</td></tr>';
+    mostrar('fichaEpiCard', true);
+    var h = await r.entregas;
+    if (encerrada || (h && h.descartada)) return;
+    if (tratarFalha(h)) return;
+    renderizarHistorico();
+  }
+  async function paginarEntregas(pagina) {
+    var r = await consulta.paginaEntregas({ pagina: pagina, limite: LIMITE });
+    if (encerrada || r.descartada) return;
+    if (tratarFalha(r)) return;
+    paginaEntregas = pagina;
+    renderizarHistorico();
+  }
+  $('btnEntregasAnterior').addEventListener('click', function () { paginarEntregas(paginaEntregas - 1); });
+  $('btnEntregasProxima').addEventListener('click', function () { paginarEntregas(paginaEntregas + 1); });
+  $('btnFecharFicha').addEventListener('click', function () {
+    consulta.fechar();
+    mostrar('fichaEpiCard', false);
+    $('fichaRodapeTexto').textContent = '';
+  });
+  $('fichaDeclaracaoTexto').textContent = F.DECLARACAO.texto;
+
+  // ── Nova entrega (REALIZAR_ENTREGA) ──
+  var selectMotivo = $('itemMotivo');
+  F.MOTIVOS.forEach(function (m) {
+    var o = document.createElement('option');
+    o.value = m.codigo;
+    o.textContent = m.rotulo;
+    selectMotivo.appendChild(o);
+  });
+  $('entregaDeclaracao').textContent = F.DECLARACAO.texto;
+  $('assinaturaModalDeclaracao').textContent = F.DECLARACAO.texto;
+
+  function abrirNovaEntrega() {
+    if (!capacidades.entregar || encerrada) return;
+    var r = fluxo.limpar();
+    if (!r.ok) { mostrarAviso(r.mensagem, 'erro'); return; }
+    limparEntregaTela();
+    mostrar('novaEntregaCard', true);
+    $('novaEntregaCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  // Passos que dependem do trabalhador: material, lote, item, itens e confirmação.
+  function limparPassosDoTrabalhador() {
+    ['entregaBuscaMat', 'itemJustificativa', 'itemJustificativaForaGhe'].forEach(function (id) { $(id).value = ''; });
+    $('entregaPrevisto').value = '';
+    $('itemQuantidade').value = '1';
+    $('entregaMatBody').innerHTML = '';
+    $('entregaLoteBody').innerHTML = '';
+    ['passoMaterial', 'passoLote', 'passoItem', 'passoItens', 'passoConfirmacao', 'entregaMatAviso', 'entregaLoteVazio'].forEach(function (id) { mostrar(id, false); });
+    $('entregaStatus').textContent = '';
+    materialEscolhido = null;
+    loteEscolhido = null;
+    coletor.limpar();
+    definirModo('DESENHO');
+  }
+  function limparEntregaTela() {
+    ['entregaBuscaTrab', 'entregaCpfTrab'].forEach(function (id) { $(id).value = ''; });
+    $('entregaTrabBody').innerHTML = '';
+    mostrar('entregaTrabResultados', false);
+    mostrar('entregaTrabSelecionado', false);
+    limparPassosDoTrabalhador();
+  }
+  $('btnNovaEntrega').addEventListener('click', abrirNovaEntrega);
+  $('btnCancelarEntrega').addEventListener('click', function () {
+    var r = fluxo.limpar();
+    if (!r.ok) { mostrarAviso(r.mensagem, 'erro'); return; }
+    limparEntregaTela();
+    mostrar('novaEntregaCard', false);
+  });
+
+  async function buscarTrabalhadores() {
+    if (!capacidades.entregar || encerrada) return;
+    var r = await fluxo.localizar({ busca: $('entregaBuscaTrab').value, pagina: 1, limite: LIMITE });
+    if (encerrada || r.descartada) return;
+    if (tratarFalha(r)) return;
+    $('entregaTrabBody').innerHTML = r.funcionarios.length ? F.render.linhasTrabalhadores(r.funcionarios) : '<tr><td colspan="6" class="helper">Nenhum trabalhador ativo encontrado.</td></tr>';
+    $('entregaTrabInfo').textContent = r.total > r.funcionarios.length ? 'Mostrando ' + r.funcionarios.length + ' de ' + r.total + '. Refine a busca.' : '';
+    mostrar('entregaTrabResultados', true);
+  }
+  async function consultarCpfTrabalhador() {
+    if (!capacidades.entregar || encerrada) return;
+    var campo = $('entregaCpfTrab');
+    var r = await fluxo.localizarPorCpf(campo.value);
+    campo.value = '';
+    if (encerrada || r.descartada) return;
+    if (r.codigo === 'CPF_INVALIDO') { mostrarAviso(r.mensagem, 'erro'); return; }
+    if (tratarFalha(r)) return;
+    mostrarAviso('', null);
+    selecionarTrabalhador(r.funcionario.id);
+  }
+  async function selecionarTrabalhador(id) {
+    var r = await fluxo.selecionarTrabalhador(id);
+    if (encerrada || r.descartada) return;
+    if (tratarFalha(r)) return;
+    mostrarAviso('', null);
+    limparPassosDoTrabalhador();
+    var st = fluxo.estado();
+    var t = st.trabalhador;
+    $('entregaTrabSelecionado').innerHTML = '<strong>' + e(t.nome) + '</strong> · matrícula ' + e(t.matricula) + ' · CPF ' + e(t.cpfMascarado)
+      + '<br>Setor: ' + e(t.setor || '—') + ' · Função: ' + e(t.funcao || '—') + ' · GHE: ' + e(st.ghe ? st.ghe.nome : 'sem GHE (todo EPI exige justificativa)')
+      + '<br>' + (st.ficha ? 'Ficha nº ' + e(st.ficha.numero) + ' já existente: a entrega entra nela.' : 'Sem ficha ainda: a ficha será criada nesta entrega.');
+    mostrar('entregaTrabSelecionado', true);
+    mostrar('entregaTrabResultados', false);
+    mostrar('passoMaterial', true);
+    paginaMateriais = 1;
+    carregarMateriais(1);
+  }
+  $('btnBuscarTrab').addEventListener('click', buscarTrabalhadores);
+  $('entregaBuscaTrab').addEventListener('keydown', function (ev) { if (ev && ev.key === 'Enter') buscarTrabalhadores(); });
+  $('btnCpfTrab').addEventListener('click', consultarCpfTrabalhador);
+  $('entregaCpfTrab').addEventListener('keydown', function (ev) { if (ev && ev.key === 'Enter') consultarCpfTrabalhador(); });
+  $('entregaTrabBody').addEventListener('click', function (ev) {
+    var alvo = ev && ev.target && typeof ev.target.closest === 'function' ? ev.target.closest('[data-funcionario]') : null;
+    if (alvo) selecionarTrabalhador(Number(alvo.getAttribute('data-funcionario')));
+  });
+
+  async function carregarMateriais(pagina) {
+    var previsto = $('entregaPrevisto').value;
+    var r = await fluxo.carregarMateriais({
+      busca: $('entregaBuscaMat').value, previstoNoGhe: previsto === '' ? null : previsto === 'true', pagina: pagina, limite: LIMITE,
+    });
+    if (encerrada || r.descartada) return;
+    if (tratarFalha(r)) return;
+    paginaMateriais = pagina;
+    $('entregaMatBody').innerHTML = r.materiais.length ? F.render.linhasMateriais(r.materiais) : '<tr><td colspan="8" class="helper">Nenhum material ativo encontrado.</td></tr>';
+    paginacaoInfo($('entregaMatInfo'), pagina, LIMITE, r.total);
+    $('btnMatAnterior').disabled = pagina <= 1;
+    $('btnMatProxima').disabled = pagina * LIMITE >= r.total;
+  }
+  $('btnBuscarMat').addEventListener('click', function () { carregarMateriais(1); });
+  $('entregaBuscaMat').addEventListener('keydown', function (ev) { if (ev && ev.key === 'Enter') carregarMateriais(1); });
+  $('entregaPrevisto').addEventListener('change', function () { carregarMateriais(1); });
+  $('btnMatAnterior').addEventListener('click', function () { carregarMateriais(paginaMateriais - 1); });
+  $('btnMatProxima').addEventListener('click', function () { carregarMateriais(paginaMateriais + 1); });
+  $('entregaMatBody').addEventListener('click', function (ev) {
+    var alvo = ev && ev.target && typeof ev.target.closest === 'function' ? ev.target.closest('[data-material]') : null;
+    if (!alvo) return;
+    var id = Number(alvo.getAttribute('data-material'));
+    var m = fluxo.estado().materiais.filter(function (x) { return x.id === id; })[0];
+    if (m) escolherMaterial(m);
+  });
+
+  async function escolherMaterial(m) {
+    materialEscolhido = m;
+    loteEscolhido = null;
+    $('entregaLoteMaterial').textContent = '— ' + m.nome;
+    var aviso = $('entregaMatAviso');
+    if (!F.rascunho.materialCompleto(m)) {
+      aviso.textContent = 'Cadastro incompleto: este material não pode ser entregue até que o cadastro seja completado.';
+      mostrar('entregaMatAviso', true);
+    } else if (!m.previstoNoGhe) {
+      aviso.textContent = 'Este EPI não está previsto no GHE do trabalhador: a entrega exige justificativa da exceção.';
+      mostrar('entregaMatAviso', true);
+    } else {
+      mostrar('entregaMatAviso', false);
+    }
+    mostrar('passoLote', true);
+    mostrar('passoItem', false);
+    $('entregaLoteBody').innerHTML = '<tr><td colspan="6" class="helper">Carregando lotes…</td></tr>';
+    var r = await fluxo.selecionarMaterial(m);
+    if (encerrada || r.descartada) return;
+    if (tratarFalha(r)) return;
+    renderizarLotes();
+  }
+  function renderizarLotes() {
+    var st = fluxo.estado();
+    $('entregaLoteBody').innerHTML = F.render.linhasLotes(st.lotes, st.material);
+    mostrar('entregaLoteVazio', st.lotes.length === 0);
+  }
+  $('entregaLoteBody').addEventListener('click', function (ev) {
+    var alvo = ev && ev.target && typeof ev.target.closest === 'function' ? ev.target.closest('[data-lote]') : null;
+    if (!alvo || alvo.disabled) return;
+    var id = Number(alvo.getAttribute('data-lote'));
+    var l = fluxo.estado().lotes.filter(function (x) { return x.loteId === id; })[0];
+    if (!l) return;
+    loteEscolhido = l;
+    $('entregaItemResumo').textContent = '— ' + materialEscolhido.nome + ' · lote ' + (l.tamanho ? 'tamanho ' + l.tamanho : 'sem tamanho') + ' · CA ' + (l.caNumero || '—') + ' · saldo ' + l.saldo;
+    $('itemQuantidade').max = String(l.saldo);
+    $('itemQuantidade').value = '1';
+    mostrar('campoJustificativaForaGhe', !materialEscolhido.previstoNoGhe);
+    mostrar('passoItem', true);
+  });
+
+  // Itens, confirmação e congelamento saem sempre do estado do fluxo.
+  function renderizarEntrega(st) {
+    var itens = st.rascunho ? st.rascunho.itens : [];
+    var conf = st.confirmacao;
+    var congelado = !!st.tentativaIncerta;
+    $('entregaItensBody').innerHTML = F.render.linhasItens(st.rascunho);
+    $('entregaItensContagem').textContent = '(' + itens.length + ' de ' + F.LIMITES.itens + ')';
+    mostrar('passoItens', itens.length > 0);
+    mostrar('passoConfirmacao', itens.length > 0);
+    $('assinaturaPreviewTexto').textContent = conf && conf.modo === 'DESENHO'
+      ? 'Assinatura desenhada capturada (' + conf.tracos.length + ' traço(s)). Toque para refazer.'
+      : '— toque para o trabalhador assinar —';
+    $('aceitePresencial').checked = !!(conf && conf.modo === 'ACEITE_PRESENCIAL');
+    ['btnCancelarEntrega', 'btnBuscarTrab', 'btnCpfTrab', 'btnAdicionarItem', 'btnModoDesenho', 'btnModoAceite', 'aceitePresencial'].forEach(function (id) {
+      $(id).disabled = congelado || st.enviando;
+    });
+    $('btnRegistrarEntrega').disabled = congelado || st.enviando;
+    mostrar('btnTentarNovamente', congelado);
+    $('btnTentarNovamente').disabled = st.enviando;
+  }
+  fluxo.aoMudar(renderizarEntrega);
+  function sincronizar() { renderizarEntrega(fluxo.estado()); }
+
+  $('btnAdicionarItem').addEventListener('click', function () {
+    if (!materialEscolhido || !loteEscolhido) return;
+    var r = fluxo.adicionarItem({
+      material: materialEscolhido, lote: loteEscolhido, quantidade: Number($('itemQuantidade').value), motivo: $('itemMotivo').value,
+      justificativa: $('itemJustificativa').value, justificativaForaGhe: $('itemJustificativaForaGhe').value,
+    });
+    if (!r.ok) { mostrarAviso(r.mensagem, 'erro'); return; }
+    mostrarAviso('', null);
+    $('itemJustificativa').value = '';
+    $('itemJustificativaForaGhe').value = '';
+    loteEscolhido = null;
+    mostrar('passoItem', false);
+  });
+  $('entregaItensBody').addEventListener('click', function (ev) {
+    var alvo = ev && ev.target && typeof ev.target.closest === 'function' ? ev.target.closest('[data-remover]') : null;
+    if (!alvo) return;
+    var r = fluxo.removerItem(Number(alvo.getAttribute('data-remover')));
+    if (!r.ok) { mostrarAviso(r.mensagem, 'erro'); return; }
+    mostrarAviso('', null);
+  });
+
+  // ── Confirmação: assinatura desenhada ou aceite presencial ──
+  function definirModo(novo) {
+    modo = novo;
+    $('btnModoDesenho').className = 'modo-btn' + (modo === 'DESENHO' ? ' ativo' : '');
+    $('btnModoAceite').className = 'modo-btn' + (modo === 'ACEITE_PRESENCIAL' ? ' ativo' : '');
+    $('modoDesenhoArea').style.display = modo === 'DESENHO' ? 'flex' : 'none';
+    $('modoAceiteArea').style.display = modo === 'ACEITE_PRESENCIAL' ? 'flex' : 'none';
+  }
+  function trocarModo(novo) {
+    if (novo !== modo) {
+      var r = fluxo.limparConfirmacao();
+      if (!r.ok) { mostrarAviso(r.mensagem, 'erro'); return; }
+    }
+    definirModo(novo);
+  }
+  $('btnModoDesenho').addEventListener('click', function () { trocarModo('DESENHO'); });
+  $('btnModoAceite').addEventListener('click', function () { trocarModo('ACEITE_PRESENCIAL'); });
+  $('aceitePresencial').addEventListener('change', function (ev) {
+    var marcado = !!(ev && ev.target && ev.target.checked);
+    var r = marcado ? fluxo.definirConfirmacao({ modo: 'ACEITE_PRESENCIAL' }) : fluxo.limparConfirmacao();
+    if (!r.ok) { mostrarAviso(r.mensagem, 'erro'); sincronizar(); return; }
+    mostrarAviso('', null);
+  });
+
+  var canvas = $('assinaturaCanvas');
+  var ctx = canvas.getContext('2d');
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#1a3a6b';
+  // Ouvintes instalados UMA vez; abrir e fechar o modal só alterna a visibilidade.
+  var instalacao = F.assinatura.instalar(canvas, coletor);
+  function abrirModalAssinatura() {
+    instalacao.limpar();
+    $('assinaturaModal').classList.add('open');
+  }
+  function fecharModalAssinatura() { $('assinaturaModal').classList.remove('open'); }
+  $('assinaturaPreview').addEventListener('click', abrirModalAssinatura);
+  $('btnAssinaturaLimpar').addEventListener('click', function () { instalacao.limpar(); });
+  $('btnAssinaturaCancelar').addEventListener('click', fecharModalAssinatura);
+  $('btnAssinaturaFechar').addEventListener('click', fecharModalAssinatura);
+  $('btnAssinaturaConfirmar').addEventListener('click', function () {
+    if (coletor.vazio()) { mostrarAviso('A assinatura está vazia: o trabalhador precisa desenhar antes de confirmar.', 'erro'); return; }
+    var r = fluxo.definirConfirmacao({ modo: 'DESENHO', tracos: coletor.valores() });
+    if (!r.ok) { mostrarAviso(r.mensagem, 'erro'); return; }
+    mostrarAviso('', null);
+    fecharModalAssinatura();
+  });
+
+  function aoResultado(r) {
+    if (r.sessaoEncerrada) { EpiSessaoEmpresarial.sessaoEncerrada(); return; }
+    if (!r.ok) {
+      if (r.status === undefined) { mostrarAviso(r.mensagem, 'erro'); return; }
+      $('entregaStatus').textContent = r.mensagem;
+      if (r.recarregarLotes) { fluxo.recarregarLotes().then(function (x) { if (x && x.ok) renderizarLotes(); }); }
+      return;
+    }
+    $('entregaStatus').textContent = '';
+    limparEntregaTela();
+    mostrar('novaEntregaCard', false);
+    var ficha = r.entrega && r.entrega.ficha;
+    mostrarAviso(r.mensagem + (ficha ? ' Ficha nº ' + ficha.numero + '.' : ''), 'sucesso');
+    if (capacidades.consultar && ficha) abrirFicha(ficha.id, true);
+  }
+  $('btnRegistrarEntrega').addEventListener('click', async function () {
+    if (!capacidades.entregar || encerrada) return;
+    mostrarAviso('', null);
+    $('entregaStatus').textContent = 'Registrando a entrega…';
+    var r = await fluxo.confirmar();
+    if (encerrada) return;
+    if (r.codigo === 'ENVIO_EM_ANDAMENTO') return;
+    if (!r.ok && r.status === undefined) $('entregaStatus').textContent = '';
+    aoResultado(r);
+  });
+  $('btnTentarNovamente').addEventListener('click', async function () {
+    $('entregaStatus').textContent = 'Reenviando a mesma tentativa…';
+    var r = await fluxo.tentarNovamente();
+    if (encerrada) return;
+    aoResultado(r);
+  });
+
+  // ── Sessão e permissões ──
+  function encerrarTela() {
+    encerrada = true;
+    capacidades = { consultar: false, entregar: false };
+    consulta.limpar();
+    fluxo.limpar({ descartarTentativaIncerta: true });
+    mostrar('fichaBuscaCard', false);
+    mostrar('fichaEpiCard', false);
+    mostrar('novaEntregaCard', false);
+    mostrar('btnNovaEntrega', false);
+    mostrarAviso('', null);
+  }
+
+  EpiSessaoEmpresarial.montar({
+    elementos: { tela: $('telaSessao'), mensagem: $('telaSessaoMensagem'), linkPortal: $('telaSessaoPortal') },
+    aoEncerrar: encerrarTela,
+  }).then(function (contexto) {
+    if (!contexto) return undefined;
+    contextoSessao = contexto;
+    return EpiPermissoes.carregar(EpiPermissoes.esperadoDoContexto(contexto)).then(function (r) {
+      var links = document.querySelectorAll('.nav a[data-pagina]');
+      if (!r.ok) {
+        EpiPermissoes.aplicarMenu(null, links);
+        if (r.motivo === 'SEM_SESSAO') { EpiSessaoEmpresarial.sessaoEncerrada(); return undefined; }
+        mostrarAviso(r.motivo === 'CONTEXTO_DIVERGENTE' ? EpiPermissoes.MENSAGENS.CONTEXTO_DIVERGENTE : EpiPermissoes.MENSAGENS.FALHA, 'erro');
+        return undefined;
       }
+      EpiPermissoes.aplicarMenu(r.permissoes, links);
+      // Duas autoridades independentes: uma nunca libera a outra.
+      capacidades = {
+        consultar: EpiPermissoes.recurso(r.permissoes, 'epiFicha', 'visualizar'),
+        entregar: EpiPermissoes.acao(r.permissoes, 'REALIZAR_ENTREGA'),
+      };
+      if (!capacidades.consultar && !capacidades.entregar) { mostrar('acessoNegado', true); return undefined; }
+      mostrar('fichaBuscaCard', capacidades.consultar);
+      mostrar('btnNovaEntrega', capacidades.entregar);
+      if (capacidades.consultar) alternarPainel(true);
+      return undefined;
     });
   });
+})();
 </script>
 </body>
 </html>

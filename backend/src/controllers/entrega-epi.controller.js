@@ -31,6 +31,22 @@ function criarEntregaEpiController({ pool: poolInjetado, relogio = () => new Dat
       res.status(resultado.repetida ? 200 : 201).json({ status: 'ok', repetida: resultado.repetida, entrega: entregaPublica(resultado) });
     },
 
+    async contextoFuncionarios(req, res) {
+      const { busca, pagina, limite } = req.validado.query;
+      const resultado = await consultaService.localizarTrabalhadores(poolInjetado, {
+        empresaId: req.empresa.id, busca: busca ?? null, pagina, limite,
+      });
+      res.status(200).json({ status: 'ok', ...resultado });
+    },
+
+    // CPF só no corpo, nunca na URL; a resposta sai mascarada.
+    async contextoConsultaCpf(req, res) {
+      const resultado = await consultaService.localizarTrabalhadorPorCpf(poolInjetado, {
+        empresaId: req.empresa.id, cpf: req.validado.body.cpf,
+      });
+      res.status(200).json({ status: 'ok', ...resultado });
+    },
+
     async contexto(req, res) {
       const resultado = await consultaService.contextoDoTrabalhador(poolInjetado, {
         empresaId: req.empresa.id, funcionarioId: req.validado.params.funcionarioId,

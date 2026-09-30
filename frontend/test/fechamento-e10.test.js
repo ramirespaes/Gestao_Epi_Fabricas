@@ -49,7 +49,8 @@ const ESTOQUE = ['Gestão de estoque', 'Compras / Entradas', 'Validade de estoqu
 const ADMINISTRATIVAS = ['autorizacoes-individuais.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'grupos-acesso.html'];
 const COM_MENU_COMPLETO = fs.readdirSync(path.join(RAIZ, 'pages')).filter((f) => f.endsWith('.html') && !ADMINISTRATIVAS.includes(f)).sort();
 // Parte F: Novo Usuário e Administração de Usuários deixaram de ser protótipo.
-const INTEGRADAS = ['available-items.html', 'dashboard.html', 'employee-groups.html', 'employee-history.html', 'import-employees.html', 'materials.html', 'new-user.html', 'operations.html', 'stock-validity.html', 'user-admin.html'];
+// Bloco 10 (10G): a Ficha de EPI passou a ser integrada.
+const INTEGRADAS = ['available-items.html', 'dashboard.html', 'employee-groups.html', 'employee-history.html', 'epi-ficha.html', 'import-employees.html', 'materials.html', 'new-user.html', 'operations.html', 'stock-validity.html', 'user-admin.html'];
 
 /** Seções do menu lateral: [{ nome, itens: [{ rotulo, html }] }]. */
 function secoesDoMenu(html) {
@@ -156,8 +157,8 @@ describe('tema claro e escuro automático', () => {
     assert.equal(/localStorage|sessionStorage|document\.cookie|indexedDB|addEventListener\('click'/.test(codigo), false);
   });
 
-  test('as 14 páginas integradas carregam o tema no <head>, logo depois do CSS, antes de pintar', () => {
-    assert.equal(PAGINAS_INTEGRADAS.length, 14);
+  test('as 15 páginas integradas carregam o tema no <head>, logo depois do CSS, antes de pintar', () => {
+    assert.equal(PAGINAS_INTEGRADAS.length, 15);
     for (const arquivo of PAGINAS_INTEGRADAS) {
       const head = ler(`pages/${arquivo}`).split('</head>')[0];
       assert.match(head, /<link rel="stylesheet" href="\.\.\/css\/main\.css">\s*<script src="\.\.\/js\/tema\.js"><\/script>/, arquivo);

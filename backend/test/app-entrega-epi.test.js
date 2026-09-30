@@ -19,6 +19,8 @@ describe('app.js — rotas da entrega de EPI e da ficha (10E/10F)', () => {
       ['get', '/api/entregas-epi/contexto/1'],
       ['get', '/api/entregas-epi/contexto/1/materiais'],
       ['get', '/api/entregas-epi/contexto/1/materiais/1/lotes'],
+      ['get', '/api/entregas-epi/contexto/funcionarios'],
+      ['post', '/api/entregas-epi/contexto/consulta-cpf'],
       ['get', '/api/entregas-epi/1'],
       ['get', '/api/fichas-epi'],
       ['get', '/api/fichas-epi/1'],

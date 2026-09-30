@@ -96,4 +96,47 @@ async function listarLotes(executor, empresaId, materialId, hoje) {
   }));
 }
 
-module.exports = { listarMateriais, contarMateriais, listarLotes };
+// Só trabalhadores ATIVOS, por nome ou matrícula (nunca CPF); o GHE atual vem junto.
+const FILTRO_FUNCIONARIOS = `FROM funcionarios f
+  LEFT JOIN grupos_homogeneos_exposicao g ON g.empresa_id = f.empresa_id AND g.id = f.grupo_homogeneo_id
+  WHERE f.empresa_id = $1 AND f.ativo
+    AND ($2::text IS NULL OR f.nome ILIKE '%' || $2::text || '%' OR f.matricula ILIKE '%' || $2::text || '%')`;
+
+function filtrosDeFuncionarios(empresaId, { busca = null } = {}) {
+  exigirId(empresaId, 'identificador de empresa');
+  if (busca !== null && (typeof busca !== 'string' || busca.length === 0)) throw new TypeError('busca inválida');
+  return [empresaId, busca === null ? null : escaparCoringasLike(busca)];
+}
+
+const mapearFuncionario = (l) => ({
+  id: l.id,
+  nome: l.nome,
+  matricula: l.matricula,
+  cpf: l.cpf,
+  setor: l.setor,
+  funcao: l.funcao,
+  ativo: l.ativo,
+  ghe: l.ghe_id === null ? null : { id: l.ghe_id, nome: l.ghe_nome },
+});
+
+/** Trabalhadores ativos da empresa para seleção na entrega, por nome. */
+async function listarFuncionarios(executor, empresaId, { pagina, limite, ...filtros }) {
+  const parametros = filtrosDeFuncionarios(empresaId, filtros);
+  exigirId(pagina, 'página');
+  if (!Number.isInteger(limite) || limite < 1 || limite > LIMITE_MAXIMO) throw new TypeError('limite inválido');
+  const { rows } = await executor.query(
+    `SELECT f.id, f.nome, f.matricula, f.cpf, f.setor, f.funcao, f.ativo, g.id AS ghe_id, g.nome AS ghe_nome
+       ${FILTRO_FUNCIONARIOS}
+      ORDER BY lower(f.nome), f.id
+      LIMIT $3 OFFSET $4`,
+    [...parametros, limite, (pagina - 1) * limite],
+  );
+  return rows.map(mapearFuncionario);
+}
+
+async function contarFuncionarios(executor, empresaId, filtros) {
+  const { rows } = await executor.query(`SELECT count(*)::int AS total ${FILTRO_FUNCIONARIOS}`, filtrosDeFuncionarios(empresaId, filtros));
+  return rows[0].total;
+}
+
+module.exports = { listarMateriais, contarMateriais, listarLotes, listarFuncionarios, contarFuncionarios };

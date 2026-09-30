@@ -13,6 +13,8 @@ const { criarAuthGlobalController } = require('../../src/controllers/auth-global
 const { criarAuthGlobalRoutes } = require('../../src/routes/auth-global.routes');
 const { criarEstoqueController } = require('../../src/controllers/estoque.controller');
 const { criarEstoqueRoutes } = require('../../src/routes/estoque.routes');
+const { criarFuncionarioController } = require('../../src/controllers/funcionario.controller');
+const { criarFuncionarioRoutes } = require('../../src/routes/funcionario.routes');
 const { criarEntregaEpiController } = require('../../src/controllers/entrega-epi.controller');
 const { criarEntregaEpiRoutes } = require('../../src/routes/entrega-epi.routes');
 const { criarExigirSessao } = require('../../src/middleware/autenticacao');
@@ -163,6 +165,7 @@ describe('rotas da entrega de EPI — 10E e 10F (PostgreSQL real)', () => {
         '/api',
         criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }), ...turnstileDeTeste() }),
         criarEstoqueRoutes({ controller: criarEstoqueController({ pool }), exigirSessao, pool }),
+        criarFuncionarioRoutes({ controller: criarFuncionarioController({ pool }), exigirSessao, pool }),
         criarEntregaEpiRoutes({ controller: criarEntregaEpiController({ pool }), exigirSessao, pool }),
       );
     });
@@ -221,6 +224,7 @@ describe('rotas da entrega de EPI — 10E e 10F (PostgreSQL real)', () => {
 
   describe('autorização', () => {
     const contextoRotas = () => [
+      '/api/entregas-epi/contexto/funcionarios',
       `/api/entregas-epi/contexto/${d.funcA1}`,
       `/api/entregas-epi/contexto/${d.funcA1}/materiais`,
       `/api/entregas-epi/contexto/${d.funcA1}/materiais/${d.botina}/lotes`,
@@ -243,12 +247,14 @@ describe('rotas da entrega de EPI — 10E e 10F (PostgreSQL real)', () => {
       assert.equal(r.status, 201, JSON.stringify(r.body));
     });
 
-    test('B) sem REALIZAR_ENTREGA (inclusive quem só lê fichas): 403 nos três endpoints de contexto e no POST', async () => {
+    test('B) sem REALIZAR_ENTREGA (inclusive quem só lê fichas): 403 nos endpoints de contexto, na consulta de CPF do contexto e no POST', async () => {
       for (const quem of ['semNadaA', 'leitorA']) {
         for (const rota of contextoRotas()) {
           const r = await get(quem, rota);
           assert.deepEqual([r.status, r.body.codigo], [403, 'PERMISSAO_NEGADA'], `${quem} ${rota}`);
         }
+        const cpf = await post(quem, '/api/entregas-epi/contexto/consulta-cpf', { cpf: CPF.a1 });
+        assert.deepEqual([cpf.status, cpf.body.codigo], [403, 'PERMISSAO_NEGADA'], quem);
         const r = await post(quem, '/api/entregas-epi', corpo());
         assert.deepEqual([r.status, r.body.codigo], [403, 'PERMISSAO_NEGADA'], quem);
       }
@@ -389,6 +395,60 @@ describe('rotas da entrega de EPI — 10E e 10F (PostgreSQL real)', () => {
       }));
       assert.equal(r.status, 201, JSON.stringify(r.body).slice(0, 300));
       assert.deepEqual([r.body.entrega.itens.length, r.body.entrega.confirmacao.declaracaoTexto === astral], [20, true]);
+    });
+  });
+
+  describe('localizar trabalhador para a entrega (10H)', () => {
+    test('GET /entregas-epi/contexto/funcionarios: só ativos da empresa, com GHE e CPF mascarado; busca por nome ou matrícula; paginação; sem depender de employeeHistory', async () => {
+      const r = await get('entregadorA', '/api/entregas-epi/contexto/funcionarios?limite=100');
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      const ids = r.body.funcionarios.map((f) => f.id);
+      assert.deepEqual([ids.includes(d.funcA1), ids.includes(d.funcA2), ids.includes(d.funcInativo), ids.includes(d.funcB1)], [true, true, false, false]);
+      const ana = r.body.funcionarios.find((f) => f.id === d.funcA1);
+      assert.deepEqual(ana, { id: d.funcA1, nome: 'Ana Fictícia', matricula: 'A-001', cpfMascarado: '***.***.***-25', setor: 'Produção', funcao: 'Operadora', ghe: { id: d.gheA, nome: 'GHE Produção' } });
+      assert.equal(r.body.funcionarios.find((f) => f.id === d.funcA2).ghe, null);
+      assert.deepEqual([r.body.pagina, r.body.limite, r.body.total], [1, 100, r.body.funcionarios.length]);
+      semDadosSensiveis(r.body, 'contexto/funcionarios');
+      const semPermissaoDeHistorico = await get('entregadorA', '/api/funcionarios?busca=Ana');
+      assert.deepEqual([semPermissaoDeHistorico.status, semPermissaoDeHistorico.body.codigo], [403, 'PERMISSAO_NEGADA'], 'employeeHistory continua negado a quem só entrega');
+
+      const porNome = await get('entregadorA', `/api/entregas-epi/contexto/funcionarios?busca=${encodeURIComponent('ana f')}`);
+      assert.deepEqual(porNome.body.funcionarios.map((f) => f.id), [d.funcA1]);
+      const porMatricula = await get('entregadorA', '/api/entregas-epi/contexto/funcionarios?busca=A-002');
+      assert.deepEqual(porMatricula.body.funcionarios.map((f) => f.id), [d.funcA2]);
+      for (const coringa of ['%', '_', '\\']) {
+        const c = await get('entregadorA', `/api/entregas-epi/contexto/funcionarios?busca=${encodeURIComponent(coringa)}`);
+        assert.deepEqual([c.status, c.body.total], [200, 0], coringa);
+      }
+      const porCpf = await get('entregadorA', `/api/entregas-epi/contexto/funcionarios?busca=${CPF.a1}`);
+      assert.deepEqual([porCpf.status, porCpf.body.total], [200, 0], 'CPF não é critério de busca');
+      const naQuery = await get('entregadorA', `/api/entregas-epi/contexto/funcionarios?cpf=${CPF.a1}`);
+      assert.equal(naQuery.status, 400);
+      const pagina = await get('entregadorA', '/api/entregas-epi/contexto/funcionarios?limite=1&pagina=2');
+      assert.deepEqual([pagina.body.funcionarios.length, pagina.body.pagina, pagina.body.total], [1, 2, r.body.total]);
+      const daBeta = await get('masterB', '/api/entregas-epi/contexto/funcionarios?limite=100');
+      assert.deepEqual(daBeta.body.funcionarios.map((f) => f.nome), ['Beatriz da Beta']);
+    });
+
+    test('POST /entregas-epi/contexto/consulta-cpf: CPF só no corpo, com DV; resposta mascarada; outra empresa 404; inativo 409; CPF na URL não existe', async () => {
+      const r = await post('entregadorA', '/api/entregas-epi/contexto/consulta-cpf', { cpf: '529.982.247-25' });
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      assert.deepEqual(r.body.funcionario, { id: d.funcA1, nome: 'Ana Fictícia', matricula: 'A-001', cpfMascarado: '***.***.***-25', setor: 'Produção', funcao: 'Operadora', ghe: { id: d.gheA, nome: 'GHE Produção' } });
+      semDadosSensiveis(r.body, 'contexto/consulta-cpf');
+      const outraEmpresa = await post('entregadorA', '/api/entregas-epi/contexto/consulta-cpf', { cpf: CPF.b1 });
+      assert.deepEqual([outraEmpresa.status, outraEmpresa.body.codigo], [404, 'FUNCIONARIO_NAO_ENCONTRADO']);
+      const daBeta = await post('masterB', '/api/entregas-epi/contexto/consulta-cpf', { cpf: CPF.a1 });
+      assert.equal(daBeta.status, 404);
+      const inativo = await post('entregadorA', '/api/entregas-epi/contexto/consulta-cpf', { cpf: CPF.inativo });
+      assert.deepEqual([inativo.status, inativo.body.codigo], [409, 'FUNCIONARIO_INATIVO']);
+      const dvInvalido = await post('entregadorA', '/api/entregas-epi/contexto/consulta-cpf', { cpf: '52998224726' });
+      assert.equal(dvInvalido.status, 400);
+      const extra = await post('entregadorA', '/api/entregas-epi/contexto/consulta-cpf', { cpf: CPF.a1, empresaId: empresa.B });
+      assert.equal(extra.status, 400);
+      const naUrl = await get('entregadorA', `/api/entregas-epi/contexto/consulta-cpf/${CPF.a1}`);
+      assert.notEqual(naUrl.status, 200);
+      const semSessao = await request(app).post('/api/entregas-epi/contexto/consulta-cpf').send({ cpf: CPF.a1 });
+      assert.equal(semSessao.status, 401);
     });
   });
 
