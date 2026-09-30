@@ -45,6 +45,19 @@ async function buscarPorEntrega(executor, empresaId, entregaId) {
   return mapear(rows[0]);
 }
 
+/** Confirmações de várias entregas da empresa. */
+async function listarPorEntregas(executor, empresaId, entregaIds) {
+  exigirId(empresaId, 'identificador de empresa');
+  if (!Array.isArray(entregaIds)) throw new TypeError('lista de entregas inválida');
+  if (entregaIds.length === 0) return [];
+  for (const id of entregaIds) exigirId(id, 'identificador de entrega');
+  const { rows } = await executor.query(
+    `SELECT ${COLUNAS} FROM entregas_epi_confirmacoes WHERE empresa_id = $1 AND entrega_id = ANY($2::int[]) ORDER BY entrega_id`,
+    [empresaId, entregaIds],
+  );
+  return rows.map(mapear);
+}
+
 /**
  * Grava a confirmação. `tracos` já validados pelo serviço (lista de traços,
  * cada um lista de pontos [x, y]); vão como JSON em texto para o JSONB.
@@ -75,4 +88,6 @@ async function criar(executor, {
   return mapear(rows[0]);
 }
 
-module.exports = { MODOS, DECLARACAO_VERSAO_FORMATO, DECLARACAO_TEXTO_MAXIMO, buscarPorEntrega, criar };
+module.exports = {
+  MODOS, DECLARACAO_VERSAO_FORMATO, DECLARACAO_TEXTO_MAXIMO, buscarPorEntrega, listarPorEntregas, criar,
+};

@@ -107,4 +107,17 @@ async function listarPorEntrega(executor, empresaId, entregaId) {
   return rows.map(mapearLeitura);
 }
 
-module.exports = { MOTIVOS, JUSTIFICATIVA_MAXIMA, criar, listarPorEntrega };
+/** Itens de várias entregas da empresa, agrupáveis por entregaId, na ordem de gravação. */
+async function listarPorEntregas(executor, empresaId, entregaIds) {
+  exigirId(empresaId, 'identificador de empresa');
+  if (!Array.isArray(entregaIds)) throw new TypeError('lista de entregas inválida');
+  if (entregaIds.length === 0) return [];
+  for (const id of entregaIds) exigirId(id, 'identificador de entrega');
+  const { rows } = await executor.query(
+    `SELECT ${COLUNAS_LEITURA} ${JUNCAO_LEITURA} WHERE i.empresa_id = $1 AND i.entrega_id = ANY($2::int[]) ORDER BY i.entrega_id, i.id`,
+    [empresaId, entregaIds],
+  );
+  return rows.map(mapearLeitura);
+}
+
+module.exports = { MOTIVOS, JUSTIFICATIVA_MAXIMA, criar, listarPorEntrega, listarPorEntregas };

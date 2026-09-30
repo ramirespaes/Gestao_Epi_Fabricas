@@ -459,5 +459,5 @@ async function registrarEntrega(pool, {
 }
 
 module.exports = {
-  LIMITE_ITENS, registrarEntrega, hashDaRequisicao, calcularHashConteudo, normalizarTracos,
+  LIMITE_ITENS, registrarEntrega, hashDaRequisicao, calcularHashConteudo, normalizarTracos, declaracaoValida,
 };

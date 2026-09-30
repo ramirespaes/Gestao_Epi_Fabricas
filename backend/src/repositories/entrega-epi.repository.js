@@ -81,6 +81,42 @@ async function buscarPorId(executor, empresaId, id) {
   return mapear(rows[0]);
 }
 
+const DATA_FORMATO = /^\d{4}-\d{2}-\d{2}$/;
+const LIMITE_MAXIMO = 100;
+
+function filtrosDaFicha(empresaId, fichaId, { de = null, ate = null } = {}) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirId(fichaId, 'identificador de ficha');
+  for (const data of [de, ate]) {
+    if (data !== null && (typeof data !== 'string' || !DATA_FORMATO.test(data))) throw new TypeError('período inválido');
+  }
+  return [empresaId, fichaId, de, ate];
+}
+
+const FILTRO_FICHA = `WHERE empresa_id = $1 AND ficha_id = $2
+    AND ($3::date IS NULL OR data_operacional >= $3::date)
+    AND ($4::date IS NULL OR data_operacional <= $4::date)`;
+
+/** Uma página das entregas da ficha, da mais recente para a mais antiga (entregue_em, id). */
+async function listarPorFicha(executor, empresaId, fichaId, { pagina, limite, ...periodo }) {
+  const filtros = filtrosDaFicha(empresaId, fichaId, periodo);
+  exigirId(pagina, 'página');
+  if (!Number.isInteger(limite) || limite < 1 || limite > LIMITE_MAXIMO) throw new TypeError('limite inválido');
+  const { rows } = await executor.query(
+    `SELECT ${COLUNAS} FROM entregas_epi ${FILTRO_FICHA} ORDER BY entregue_em DESC, id DESC LIMIT $5 OFFSET $6`,
+    [...filtros, limite, (pagina - 1) * limite],
+  );
+  return rows.map(mapear);
+}
+
+async function contarPorFicha(executor, empresaId, fichaId, periodo) {
+  const { rows } = await executor.query(
+    `SELECT count(*)::int AS total FROM entregas_epi ${FILTRO_FICHA}`,
+    filtrosDaFicha(empresaId, fichaId, periodo),
+  );
+  return rows[0].total;
+}
+
 /** Dia operacional da transação em São Paulo: o mesmo que os DEFAULTs da entrega vão gravar. */
 async function dataOperacionalDaTransacao(executor) {
   const { rows } = await executor.query("SELECT to_char((now() AT TIME ZONE 'America/Sao_Paulo')::date, 'YYYY-MM-DD') AS hoje");
@@ -124,4 +160,6 @@ async function criar(executor, {
   return mapear(rows[0]);
 }
 
-module.exports = { travarChave, buscarPorChave, buscarPorId, dataOperacionalDaTransacao, criar };
+module.exports = {
+  travarChave, buscarPorChave, buscarPorId, listarPorFicha, contarPorFicha, dataOperacionalDaTransacao, criar,
+};

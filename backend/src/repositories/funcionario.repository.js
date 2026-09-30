@@ -168,6 +168,19 @@ async function buscarPorIdParaAtualizacao(executor, empresaId, id) {
   return mapear(rows[0]);
 }
 
+/** Funcionário da empresa pelo CPF exato (11 dígitos já normalizados); nunca parcial. */
+async function buscarPorCpf(executor, empresaId, cpf) {
+  exigirEmpresa(empresaId);
+  exigirCpf(cpf);
+
+  const { rows } = await executor.query(
+    `SELECT ${PROJECAO} FROM funcionarios WHERE empresa_id = $1 AND cpf = $2`,
+    [empresaId, cpf],
+  );
+
+  return mapear(rows[0]);
+}
+
 /**
  * Igual a buscarPorId, com FOR NO KEY UPDATE (dentro de transação), para a
  * entrega de EPI: serializa a criação da primeira ficha do mesmo trabalhador,
@@ -355,6 +368,7 @@ async function atualizar(executor, empresaId, id, campos = {}) {
 module.exports = {
   criar,
   buscarPorId,
+  buscarPorCpf,
   buscarPorIdParaAtualizacao,
   buscarPorIdParaEntrega,
   listarPorEmpresa,
