@@ -93,25 +93,33 @@ async function criarGhe(executor, empresaId, nome) {
   return (await inserir(executor, 'grupos_homogeneos_exposicao', { empresa_id: empresaId, nome })).id;
 }
 
-async function criarFuncionario(executor, empresaId, { matricula, cpf, gheId = null }) {
+async function criarFuncionario(executor, empresaId, {
+  matricula, cpf, gheId = null, ativo = true, setor = null, funcao = null,
+}) {
   const funcionario = await inserir(executor, 'funcionarios', {
-    empresa_id: empresaId, matricula, nome: `Trabalhador ${matricula}`, cpf, grupo_homogeneo_id: gheId,
+    empresa_id: empresaId, matricula, nome: `Trabalhador ${matricula}`, cpf, grupo_homogeneo_id: gheId, ativo, setor, funcao,
   });
   return funcionario.id;
 }
 
-async function criarMaterial(executor, empresaId, nome, { exigeCa = true, exigeTamanho = true, prazo = 180 } = {}) {
+async function criarMaterial(executor, empresaId, nome, {
+  exigeCa = true, exigeTamanho = true, prazo = 180, tipo = null, oculosComGrau = null, codigoInterno = null, unidade = 'unidade', ativo = true,
+} = {}) {
   const material = await inserir(executor, 'materiais', {
     empresa_id: empresaId, nome, exige_ca: exigeCa, exige_tamanho: exigeTamanho, prazo_uso_dias: prazo,
+    tipo, oculos_com_grau: oculosComGrau, codigo_interno: codigoInterno, unidade, ativo,
   });
   return material.id;
 }
 
-// Lote de saldo inicial, com a sua operação, numa transação própria.
-async function criarLote(executor, { empresaId, materialId, quantidade, tamanho = '40' }) {
+// Lote de saldo inicial, com a sua operação, numa transação própria. CA e
+// tamanho podem ser null: o saldo inicial aceita os dois.
+async function criarLote(executor, {
+  empresaId, materialId, quantidade, tamanho = '40', caNumero = '12345', caValidade = '2099-12-31',
+}) {
   return transacao(executor, async (c) => {
     const lote = await inserir(c, 'estoque_lotes', {
-      empresa_id: empresaId, material_id: materialId, tamanho, ca_numero: '12345', ca_validade: '2099-12-31',
+      empresa_id: empresaId, material_id: materialId, tamanho, ca_numero: caNumero, ca_validade: caValidade,
       origem: 'SALDO_INICIAL', quantidade_entrada: quantidade,
     });
     await inserir(c, 'estoque_operacoes', {

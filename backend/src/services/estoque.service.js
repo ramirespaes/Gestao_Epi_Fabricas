@@ -1,6 +1,5 @@
 'use strict';
 
-const crypto = require('node:crypto');
 const { HttpError } = require('../errors/HttpError');
 const materialRepo = require('../repositories/material.repository');
 const loteRepo = require('../repositories/estoque-lote.repository');
@@ -11,6 +10,7 @@ const {
   MOTIVOS_BAIXA, TAMANHO_MAXIMO, CA_NUMERO_MAXIMO, JUSTIFICATIVA_MAXIMA,
 } = require('../schemas/estoque.schema');
 const { exigirDataOperacional } = require('../utils/data-operacional');
+const idempotencia = require('../utils/idempotencia');
 
 /**
  * Serviço de estoque por lote (Bloco 9).
@@ -156,7 +156,6 @@ const ACAO_AUDITORIA_BAIXA = 'ESTOQUE_BAIXA';
 // Tamanhos de logs_auditoria.ip e logs_auditoria.dispositivo (migration 012).
 const TAMANHO_MAXIMO_IP = 45;
 const TAMANHO_MAXIMO_DISPOSITIVO = 150;
-const CHAVE_FORMATO = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DATA_FORMATO = /^\d{4}-\d{2}-\d{2}$/;
 const CARACTERE_CONTROLE = /\p{Cc}/u;
 
@@ -189,20 +188,15 @@ function exigirQuantidade(quantidade) {
 }
 
 function chaveCanonica(chave) {
-  const minuscula = typeof chave === 'string' ? chave.toLowerCase() : '';
-  if (!CHAVE_FORMATO.test(minuscula)) {
+  const canonica = idempotencia.chaveCanonica(chave);
+  if (canonica === null) {
     throw recusar('chaveIdempotencia', 'FORMATO_INVALIDO', 'Formato inválido');
   }
-  return minuscula;
+  return canonica;
 }
 
 const limitar = (valor, maximo) => (typeof valor === 'string' ? valor.slice(0, maximo) : null);
-
-// Hash da requisição lógica, com os valores já normalizados: é ele que diz se
-// uma chave repetida é a mesma operação ou outra. O corpo cru não entra.
-function hashRequisicao(partes) {
-  return crypto.createHash('sha256').update(JSON.stringify(partes)).digest('hex');
-}
+const { hashRequisicao } = idempotencia;
 
 // Consulto a chave antes de qualquer regra: se a operação já foi feita, a
 // repetição recebe o resultado original, mesmo que o material tenha sido

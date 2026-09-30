@@ -25,6 +25,7 @@ const { dashboardRoutes } = require('./routes/dashboard.routes');
 const { funcionarioRoutes } = require('./routes/funcionario.routes');
 const { usuarioAdministracaoRoutes } = require('./routes/usuario-administracao.routes');
 const { conviteUsuarioRoutes } = require('./routes/convite-usuario.routes');
+const { entregaEpiRoutes } = require('./routes/entrega-epi.routes');
 const { cabecalhosSeguranca, semCache } = require('./middleware/cabecalhos');
 const { corsApi, corsPlataforma } = require('./middleware/cors');
 const { exigirJson, parserJson } = require('./middleware/conteudo');
@@ -136,7 +137,7 @@ app.use(
 // autoridade GERENCIAR_USUARIOS é decidida no serviço, como nas telas de
 // grupos. As duas rotas públicas de aceite de convite passam pela mesma
 // verificação de origem e têm limitador próprio.
-app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeral, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, estoqueRoutes, itensDisponiveisRoutes, grupoHomogeneoExposicaoRoutes, gheMaterialRoutes, funcionarioRoutes, dashboardRoutes, usuarioAdministracaoRoutes, conviteUsuarioRoutes);
+app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeral, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, estoqueRoutes, itensDisponiveisRoutes, grupoHomogeneoExposicaoRoutes, gheMaterialRoutes, funcionarioRoutes, dashboardRoutes, usuarioAdministracaoRoutes, conviteUsuarioRoutes, entregaEpiRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

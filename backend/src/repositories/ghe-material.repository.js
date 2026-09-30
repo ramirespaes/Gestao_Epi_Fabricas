@@ -73,6 +73,18 @@ async function inserir(executor, { empresaId, gheId, materialId }) {
   return { grupoHomogeneoId: rows[0].grupo_homogeneo_id, materialId: rows[0].material_id, criadoEm: rows[0].criado_em };
 }
 
+/** Ids dos materiais previstos no GHE, para decidir previsto_no_ghe na entrega. */
+async function listarMaterialIdsVinculados(executor, empresaId, gheId) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirId(gheId, 'identificador de GHE');
+
+  const { rows } = await executor.query(
+    'SELECT material_id FROM ghe_materiais WHERE empresa_id = $1 AND grupo_homogeneo_id = $2 ORDER BY material_id',
+    [empresaId, gheId],
+  );
+  return rows.map((l) => l.material_id);
+}
+
 /** @returns {Promise<boolean>} true se havia vínculo e ele foi removido */
 async function remover(executor, { empresaId, gheId, materialId }) {
   exigirId(empresaId, 'identificador de empresa');
@@ -87,4 +99,4 @@ async function remover(executor, { empresaId, gheId, materialId }) {
   return rowCount === 1;
 }
 
-module.exports = { listarMatriz, inserir, remover };
+module.exports = { listarMatriz, listarMaterialIdsVinculados, inserir, remover };

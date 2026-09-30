@@ -1,7 +1,7 @@
 'use strict';
 
-const crypto = require('node:crypto');
 const { escaparCoringasLike } = require('../utils/like');
+const { lockDaChave, ESPACO_ESTOQUE } = require('../utils/idempotencia');
 
 /**
  * Escrita do estoque por lote e leitura do histórico de operações. Eu só
@@ -83,17 +83,15 @@ function mapearOperacao(o) {
   };
 }
 
-// Lock de 64 bits por empresa e chave. Entrada e baixa usam o mesmo espaço,
-// porque a chave vale uma vez só por empresa, qualquer que seja a operação.
-function lockDaChave(empresaId, chave) {
-  return crypto.createHash('sha256').update(`estoque_operacoes\n${empresaId}\n${chave}`).digest().readBigInt64BE(0).toString();
-}
-
-/** Serializa, até o fim da transação, quem usa a mesma chave na mesma empresa. */
+/**
+ * Serializa, até o fim da transação, quem usa a mesma chave na mesma empresa.
+ * Entrada e baixa usam o mesmo espaço, porque a chave vale uma vez só por
+ * empresa, qualquer que seja a operação.
+ */
 async function travarChave(executor, empresaId, chave) {
   exigirId(empresaId, 'empresa');
   exigirChave(chave);
-  await executor.query('SELECT pg_advisory_xact_lock($1::bigint)', [lockDaChave(empresaId, chave)]);
+  await executor.query('SELECT pg_advisory_xact_lock($1::bigint)', [lockDaChave(ESPACO_ESTOQUE, empresaId, chave)]);
 }
 
 /** Operação já registrada com a chave, com o hash da requisição que a criou. */
@@ -151,6 +149,59 @@ async function registrarEntrada(executor, dados) {
     [empresaId, lote.rows[0].id, quantidade, usuarioId, chave, requisicaoHash],
   );
   return { operacao: mapearOperacao(operacao.rows[0]), lote: mapearLote(lote.rows[0]) };
+}
+
+function exigirIds(ids, nome) {
+  if (!Array.isArray(ids) || ids.length === 0) throw new TypeError(`lista de ${nome} inválida`);
+  for (const id of ids) exigirId(id, nome);
+}
+
+/**
+ * Trava os lotes da entrega, em ordem crescente de id, para decidir cada
+ * quantidade sobre o saldo atual. Devolve só os lotes da empresa; quem
+ * chama confere o que faltou.
+ */
+async function travarLotesParaEntrega(executor, empresaId, loteIds) {
+  exigirId(empresaId, 'empresa');
+  exigirIds(loteIds, 'lote');
+  const { rows } = await executor.query(
+    `SELECT ${COLUNAS_LOTE} FROM estoque_lotes WHERE empresa_id = $1 AND id = ANY($2::int[]) ORDER BY id FOR UPDATE`,
+    [empresaId, loteIds],
+  );
+  return rows.map(mapearLote);
+}
+
+/** Os lotes, sem trava, em ordem de id. */
+async function listarLotes(executor, empresaId, loteIds) {
+  exigirId(empresaId, 'empresa');
+  exigirIds(loteIds, 'lote');
+  const { rows } = await executor.query(
+    `SELECT ${COLUNAS_LOTE} FROM estoque_lotes WHERE empresa_id = $1 AND id = ANY($2::int[]) ORDER BY id`,
+    [empresaId, loteIds],
+  );
+  return rows.map(mapearLote);
+}
+
+/**
+ * Grava a ENTREGA de um item; o trigger soma a quantidade entregue do lote.
+ * Sem chave nem hash próprios: a idempotência é do cabeçalho da entrega, e a
+ * FK composta da 059 prende a operação ao item, ao lote e à quantidade.
+ */
+async function registrarEntrega(executor, { empresaId, loteId, usuarioId, quantidade, entregaItemId }) {
+  exigirId(empresaId, 'empresa');
+  exigirId(loteId, 'lote');
+  exigirId(usuarioId, 'usuário');
+  exigirId(entregaItemId, 'item da entrega');
+  if (!Number.isInteger(quantidade) || quantidade <= 0 || quantidade > INTEGER_MAXIMO) {
+    throw new TypeError('quantidade inválida');
+  }
+  const { rows } = await executor.query(
+    `INSERT INTO estoque_operacoes (empresa_id, lote_id, tipo, quantidade, usuario_id, entrega_item_id)
+     VALUES ($1, $2, 'ENTREGA', $3, $4, $5)
+     RETURNING ${COLUNAS_OPERACAO}`,
+    [empresaId, loteId, quantidade, usuarioId, entregaItemId],
+  );
+  return mapearOperacao(rows[0]);
 }
 
 /** Grava a BAIXA; o trigger soma a quantidade baixada do lote. */
@@ -249,6 +300,9 @@ module.exports = {
   buscarPorChave,
   buscarLote,
   buscarLoteParaBaixa,
+  travarLotesParaEntrega,
+  listarLotes,
   registrarEntrada,
   registrarBaixa,
+  registrarEntrega,
 };
