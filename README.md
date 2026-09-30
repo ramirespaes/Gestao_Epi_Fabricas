@@ -4,14 +4,29 @@ Sistema para gestão de Equipamentos de Proteção Individual (EPIs), com fronte
 
 ## Estado do projeto
 
-O desenvolvimento é organizado em blocos. Situação em 27/09/2026:
+O desenvolvimento é organizado em blocos. Situação em 29/09/2026:
 
 | Bloco | Situação |
 |---|---|
 | 1 a 7 — migrations de sessões, auditoria e tentativas de login (`013` a `015`), dependências, fundação da autenticação, validação de entrada e segurança HTTP | Concluídos e incorporados à `main` |
 | 8 — Autenticação real e RBAC | **Concluído** e incorporado à `main` (PRs #13 a #18). Encerramento formal na seção seguinte |
 | Autenticação global, Painel Privado, Portal do Cliente e página institucional (planejamento próprio) | Concluídos e incorporados à `main` (PRs #20 a #23 e #26) |
-| 9 — Integração das páginas ao backend real | Etapas A e B (backend de materiais, estoque, funcionários e GHE, PR #19), Etapa C, partes C0 a C7 (as partes C4 e C5 executaram a Etapa D), e a rodada de segurança S1/S2/S3 (PR #29) na `main`. **Etapas E e F concluídas na branch `feature/bloco-09-etapa-e`**, aguardando revisão e incorporação à `main` (ver "Bloco 9, Etapas E e F") |
+| 9 — Integração das páginas ao backend real | Etapas A a F incorporadas à `main`: Etapas A e B (backend de materiais, estoque, funcionários e GHE, PR #19), Etapa C, partes C0 a C7 (PRs #24, #25, #27 e #28; as partes C4 e C5 executaram a Etapa D), rodada de segurança S1/S2/S3 (PR #29) e Etapas E e F (estoque por lote, permissões próprias das áreas de estoque e gestão de usuários, PR #32). Ver "Bloco 9, Etapas E e F" |
+| Correções de segurança pós-auditoria e Cloudflare Turnstile no login do Portal do Cliente | Incorporados à `main` (PR #33) |
+| MFA TOTP do Painel Privado (MFA-1 a MFA-10) | Incorporado à `main` (PRs #34, #35 e #36; merge `427102a`). Ver "Painel Privado e MFA TOTP" |
+| Gate de segurança pré-Bloco 10 — CI no GitHub Actions, portabilidade dos testes de migration, logout seguro do Portal e atualização documental | Implementado no PR #37 |
+| 10 — Entrega real de EPI, ficha, assinatura e baixa de estoque por lote | Próximo marco funcional, após o gate de segurança pré-Bloco 10 |
+
+### Próximos marcos e itens futuros
+
+Nada desta lista está implementado:
+
+- **Bloco 10:** entrega real de EPI ao funcionário, ficha de EPI, assinatura e baixa de estoque por lote.
+- **Bloco 11:** ciclo de vida da senha (troca e recuperação "Esqueci minha senha" no Portal do Cliente e no Painel Privado), medição da cobertura do frontend (meta de 25%), testes finais e fechamento acadêmico.
+- **Homologação e produção na AWS:** deploy, requisitos de publicação do frontend (entre eles a CSP no servidor estático), `TRUST_PROXY_HOPS` conforme a topologia real, chaves reais do Turnstile e do MFA e aplicação autorizada das migrations em cada banco.
+- **Antes da produção:** limpeza e retenção das tabelas de sessões e de tentativas de login.
+- **Backlog:** envio real de e-mail (convites) e notificações, página "Acesso negado" com "Solicitar acesso" e reorganização de pastas.
+- **Melhoria futura opcional:** Cloudflare Turnstile também no login do Painel Privado, a reconsiderar só se logs ou padrões de ataque justificarem.
 
 ### Encerramento do Bloco 8
 
@@ -35,7 +50,7 @@ Os itens abaixo ficaram fora do Bloco 8 e têm destino formal. Não são pendên
 | Administração de usuários da empresa | Entregue no Bloco 9, parte F: convite, edição de nome e tipo de conta, inativação e reativação |
 | Troca de senha | Bloco 11, junto com a recuperação de senha e o restante do ciclo de vida da senha, antes da liberação comercial |
 | Recuperação de senha ("Esqueci minha senha") | Bloco 11, separada da autenticação básica já entregue, antes da liberação comercial |
-| Integração contínua (GitHub Actions) | Requisito obrigatório antes do deploy de homologação e testes na AWS |
+| Integração contínua (GitHub Actions) | Criada no gate de segurança pré-Bloco 10 (PR #37): `.github/workflows/ci.yml`, ver "Integração contínua (GitHub Actions)" |
 | Cobertura mínima de 25% no frontend | Bloco 11, com os testes finais, o fechamento acadêmico e a documentação |
 | Limpeza e retenção das tabelas de sessões e de tentativas de login | Requisito de hardening do deploy, antes da produção |
 | Página "Acesso negado", botão "Solicitar acesso" e notificações de pedidos de acesso | Backlog formal |
@@ -43,22 +58,34 @@ Os itens abaixo ficaram fora do Bloco 8 e têm destino formal. Não são pendên
 
 ## Estrutura do projeto
 
+Árvore resumida às áreas principais:
+
 ```text
 gestao-epi/
-├── backend/                # API, banco de dados, migrations e regras de negócio
-├── frontend/               # Interface web
-│   ├── IMAGEN/             # Imagens utilizadas na documentação/interface
-│   ├── css/
-│   │   └── main.css
-│   ├── js/
-│   │   ├── db-api.js
-│   │   └── main.js
-│   ├── pages/              # Páginas HTML do sistema
-│   └── index.html
-├── RFC-V1                  # Especificação funcional do sistema
+├── .github/workflows/ci.yml  # CI: testes, checksums e integração com PostgreSQL 16
+├── backend/                  # API, banco de dados, migrations e regras de negócio
+│   ├── migrations/           # 000 a 056 e o manifesto checksums.json
+│   ├── scripts/              # runner de migrations e comandos administrativos (CLI)
+│   ├── src/                  # app, config, routes, controllers, services, repositories,
+│   │                         # middleware, schemas, security, rbac, db, errors e utils
+│   └── test/                 # suíte padrão (*.test.js) e integração (integracao/*.integration.js)
+├── frontend/                 # Interface web
+│   ├── portal/               # Portal do Cliente: login, seleção de empresa, início e aceite de convite
+│   ├── painel-privado/       # Painel Privado da plataforma: login com MFA, empresas e segurança da conta
+│   ├── institucional/        # Página institucional
+│   ├── pages/                # Páginas do sistema (integradas ao backend e protótipo)
+│   ├── js/                   # Módulos compartilhados (HTTP, sessão, permissões, páginas)
+│   ├── css/                  # Estilos
+│   ├── publicacao/           # Allowlist e empacotador do pacote publicado do cliente
+│   ├── vendor/               # Biblioteca de terceiros versionada (leitura de planilhas)
+│   ├── test/                 # Testes do frontend (node:test)
+│   ├── IMAGEN/               # Imagens utilizadas na documentação/interface
+│   └── index.html            # Redirecionamento do protótipo (só em desenvolvimento)
+├── RFC-V1                    # Especificação funcional do sistema
 ├── RFC-V1.md.docx
 ├── README.md
-├── CLAUDE.md               # Regras obrigatórias de desenvolvimento do projeto
+├── CLAUDE.md                 # Regras obrigatórias de desenvolvimento do projeto
+├── .gitattributes
 └── .gitignore
 ```
 
@@ -87,15 +114,15 @@ Quatro páginas novas em `frontend/pages/` consomem a API HTTP real, com autenti
 
 Seis módulos JavaScript em `frontend/js/` dão suporte a essas páginas: `api-http.js` e `auth-session.js` (fundação HTTP e sessão) mais um módulo por página (`grupos-acesso.js`, `grupo-permissoes.js`, `grupo-usuarios.js`, `autorizacoes-individuais.js`).
 
-**Desde o Bloco 9, Etapa C, Parte C0**, essas quatro páginas não têm mais login próprio (o formulário por CNPJ foi removido) nem carregam `auth-session.js`. A sessão é a do Portal do Cliente, confirmada no servidor pelo módulo comum `js/sessao-empresarial.js` (`GET /api/auth/me`). Sem sessão válida, a pessoa é levada ao Portal. "Sair" encerra as sessões global e empresarial; "Trocar de empresa" leva à seleção do Portal. O módulo também remove os rastros do protótipo que poderiam se passar por sessão (a chave `epi-session-user` e o parâmetro `?_s=`), sem tocar no banco simulado das páginas ainda não integradas. As páginas continuam sem `db-api.js` e `main.js`.
+**Desde o Bloco 9, Etapa C, Parte C0**, essas quatro páginas não têm mais login próprio (o formulário por CNPJ foi removido) nem carregam `auth-session.js`. A sessão é a do Portal do Cliente, confirmada no servidor pelo módulo comum `js/sessao-empresarial.js` (`GET /api/auth/me`). Sem sessão válida, a pessoa é levada ao Portal. "Sair" encerra as sessões global e empresarial e só leva ao Portal depois que o servidor confirma a saída; "Trocar de empresa" leva à seleção do Portal. O módulo também remove os rastros do protótipo que poderiam se passar por sessão (a chave `epi-session-user` e o parâmetro `?_s=`), sem tocar no banco simulado das páginas ainda não integradas. As páginas continuam sem `db-api.js` e `main.js`.
 
 **Desde a Parte C1**, o menu e os botões dessas páginas (e os módulos listados no início do Portal) refletem as **permissões efetivas** do usuário na empresa selecionada, obtidas de `GET /api/auth/permissoes`. O endpoint é somente leitura e usa empresa e usuário da sessão. Ele não reinterpreta o RBAC: responde com as mesmas funções que autorizam cada operação real (a decisão por recurso e por ação do middleware de autorização, a autoridade administrativa das páginas de acesso e as regras de concessão e delegação). O módulo `js/permissoes-efetivas.js` falha fechado: se a consulta falhar, vier de outra empresa ou fora do formato, nada é exibido nem liberado. Nada é guardado no navegador, e a consulta é refeita a cada carregamento. O backend continua sendo a autoridade final: chamadas diretas proibidas recebem 403.
 
-**Desde a Parte C2**, a página original `materials.html` (Cadastro de Materiais e EPIs) está ligada ao backend real, com a interface preservada: sessão do Portal (C0), permissões efetivas (C1: abrir exige `materials.visualizar`, salvar exige `materials.criar`) e os contratos de materiais e estoque do Bloco 9, Etapa A. O módulo `js/materiais.js` monta o corpo do `POST /api/materiais` a partir do formulário (prazo de uso convertido para dias no cliente, 1 mês = 30 e 1 ano = 365, com o valor exibido antes de salvar; tipo "Outro" usa o campo livre; campos vazios são omitidos e gravados como `NULL`). "Quantidade comprada" não é atributo do material: quando preenchida, gera uma **entrada de estoque separada** (`POST /api/materiais/:id/estoque/movimentar`, ação `MOVIMENTAR_ESTOQUE`), só depois do cadastro e só se o perfil tiver a ação; recusa da entrada não desfaz o cadastro e é informada explicitamente. A grade de tamanhos mostra o saldo real do material escolhido (sem estoque / abaixo do mínimo / com saldo / falha na consulta). O anexo do documento do CA continua visível e desabilitado ("em desenvolvimento"). Os campos Categoria, Código interno e Descrição passaram a existir no banco pela migration `039` (código interno único por empresa, ignorando maiúsculas). A página usa `js/pagina-base.js` (menu móvel e aviso, copiados de `main.js`) e não carrega `db-api.js`, `main.js` nem a biblioteca de planilhas; o menu lateral mantém a estrutura visual, mas os itens ainda não integrados ficam sem link, com a etiqueta "Em integração".
+**Desde a Parte C2**, a página original `materials.html` (Cadastro de Materiais e EPIs) está ligada ao backend real, com a interface preservada: sessão do Portal (C0), permissões efetivas (C1: abrir exige `materials.visualizar`, salvar exige `materials.criar`) e os contratos de materiais e estoque do Bloco 9, Etapa A. O módulo `js/materiais.js` monta o corpo do `POST /api/materiais` a partir do formulário (prazo de uso convertido para dias no cliente, 1 mês = 30 e 1 ano = 365, com o valor exibido antes de salvar; tipo "Outro" usa o campo livre; campos vazios são omitidos e gravados como `NULL`). "Quantidade comprada" não é atributo do material: quando preenchida, gera a **entrada inicial de estoque em lote** (`POST /api/materiais/:id/estoque/entradas`, ação `MOVIMENTAR_ESTOQUE`, com CA e validade do lote, desde a Etapa E), só depois do cadastro e só se o perfil tiver a ação; recusa da entrada não desfaz o cadastro e é informada explicitamente. O quadro de estoque mostra o saldo real do material escolhido, lote a lote (físico, bloqueado e disponível). O anexo do documento do CA continua visível e desabilitado ("em desenvolvimento"). Os campos Categoria, Código interno e Descrição passaram a existir no banco pela migration `039` (código interno único por empresa, ignorando maiúsculas). A página usa `js/pagina-base.js` (menu móvel e aviso, copiados de `main.js`) e não carrega `db-api.js`, `main.js` nem a biblioteca de planilhas; o menu lateral mantém a estrutura visual, mas os itens ainda não integrados ficam sem link, com a etiqueta "Em integração".
 
 ### Bloco 9, Etapas E e F
 
-Desde a Etapa E o estoque é controlado **por lote** (migrations `042` a `045`): cada entrada cria um lote com CA, validade e tamanho quando o material exige (`POST /api/materiais/:id/estoque/entradas`), a baixa é feita no lote (`POST /api/estoque/lotes/:id/baixas`) e toda operação fica registrada em `estoque_operacoes`, sem edição nem exclusão. O saldo anterior à Etapa E virou saldo inicial por lote. A rota antiga `POST /api/materiais/:id/estoque/movimentar` citada acima foi removida na E10, e o CA saiu do cadastro mestre do material. As páginas Validade de estoque (`stock-validity.html`, recurso `stockValidity`) e Operações de estoque (`operations.html`, recurso `operations`) têm permissão própria, provisionada para o MASTER pelo script `npm run db:provisionar:master`. O menu segue a mesma organização em todas as páginas, e as páginas integradas acompanham o tema claro ou escuro do sistema operacional (`js/tema.js`).
+Desde a Etapa E o estoque é controlado **por lote** (migrations `042` a `045`): cada entrada cria um lote com CA, validade e tamanho quando o material exige (`POST /api/materiais/:id/estoque/entradas`), a baixa é feita no lote (`POST /api/estoque/lotes/:id/baixas`) e toda operação fica registrada em `estoque_operacoes`, sem edição nem exclusão. O saldo anterior à Etapa E virou saldo inicial por lote. A rota antiga `POST /api/materiais/:id/estoque/movimentar`, usada pela Parte C2, foi removida na E10, e o CA saiu do cadastro mestre do material. As páginas Validade de estoque (`stock-validity.html`, recurso `stockValidity`) e Operações de estoque (`operations.html`, recurso `operations`) têm permissão própria, provisionada para o MASTER pelo script `npm run db:provisionar:master`. O menu segue a mesma organização em todas as páginas, e as páginas integradas acompanham o tema claro ou escuro do sistema operacional (`js/tema.js`).
 
 A parte F tornou reais as páginas de usuários da empresa:
 
@@ -105,15 +132,19 @@ A parte F tornou reais as páginas de usuários da empresa:
 
 ### Portal do Cliente (Autenticação Global — Pacote 4)
 
-`frontend/portal/` é a entrada dos clientes: login **somente por e-mail e senha** (identidade global), seleção de empresa e ambiente inicial autenticado. Usa o backend real, sessões no PostgreSQL e cookies `HttpOnly`; nada de sessão é guardado no navegador.
+`frontend/portal/` é a entrada dos clientes: login por **e-mail, senha e verificação Cloudflare Turnstile** (identidade global, sem TOTP), seleção de empresa e ambiente inicial autenticado. Usa o backend real, sessões no PostgreSQL e cookies `HttpOnly`; nada de sessão é guardado no navegador.
 
 | Página | Função |
 |---|---|
-| `portal/index.html` | Login (e-mail, senha, Entrar) |
+| `portal/index.html` | Login (e-mail, senha, verificação Turnstile, Entrar) |
 | `portal/empresas.html` | "Selecione sua empresa" (e troca de empresa); mensagem própria quando não há empresa ativa vinculada |
 | `portal/inicio.html` | Usuário, perfil e empresa ativa; **TROCAR DE EMPRESA**, **Sair da empresa** e **Sair**; módulos já integrados e módulos em integração |
 
-Fluxo: uma empresa autorizada → entra direto; duas ou mais → escolhe; nenhuma → sem acesso operacional. Três cookies distintos: `gepi_sessao_global` (identidade; não dá acesso operacional), `gepi_sessao` (empresa selecionada; o mesmo que o RBAC sempre usou) e `gepi_sessao_admin` (Painel Privado). O login legado por CNPJ recusa vínculos ligados a uma identidade global — há uma única credencial válida por pessoa.
+Fluxo: uma empresa autorizada → entra direto; duas ou mais → escolhe; nenhuma → sem acesso operacional. O Portal usa dois cookies: `gepi_sessao_global` (identidade; não dá acesso operacional) e `gepi_sessao` (empresa selecionada; o mesmo que o RBAC sempre usou). Os cookies do Painel Privado são outros (ver "Origens, namespaces e cookies"). O login legado por CNPJ recusa vínculos ligados a uma identidade global — há uma única credencial válida por pessoa.
+
+**Turnstile.** O widget da Cloudflare é carregado só no login do Portal. A página obtém a site key e a action em `GET /api/auth/global/turnstile`, e `POST /api/auth/global/login` só chega à verificação de senha com um token válido, conferido no Siteverify com action e hostname esperados. Em `production`, as duas chaves reais (`TURNSTILE_PORTAL_SITE_KEY` e `TURNSTILE_PORTAL_SECRET_KEY`) são obrigatórias e chaves de teste são recusadas; fora de `production`, sem chaves configuradas, valem as chaves oficiais de teste da Cloudflare.
+
+**Sair.** "Sair" (`POST /api/auth/global/logout`) e "Sair da empresa" (`POST /api/auth/logout`) só são dados como concluídos com resposta 2xx do servidor, que é quem revoga a sessão e remove o cookie `HttpOnly`. Sem essa confirmação (falha de rede, 403, 429, 5xx ou resposta inválida), a página não navega nem finge que a sessão acabou: mantém o conteúdo, avisa que a saída não foi confirmada e que a sessão pode continuar ativa, e reabilita o botão para nova tentativa. Enquanto o pedido está pendente, os botões de saída ficam desabilitados. Página restaurada pelo histórico do navegador revalida a sessão no servidor antes de mostrar qualquer dado.
 
 Módulos de `frontend/pages/` ainda baseados em `localStorage` não são apresentados como dados da empresa; a integração das páginas restantes continua nos blocos seguintes.
 
@@ -121,11 +152,55 @@ Módulos de `frontend/pages/` ainda baseados em `localStorage` não são apresen
 
 Em desenvolvimento, sirva `frontend/` em `http://localhost:5500` (Portal: `/portal/`) e em `http://localhost:5501` (Painel Privado: `/painel-privado/`), com o backend em `http://localhost:3000` — cada portal só é aceito pela allowlist de CORS/Origin do seu próprio namespace.
 
+### Painel Privado e MFA TOTP
+
+`frontend/painel-privado/` é o ambiente dos administradores da plataforma: cadastro de empresas, convite do primeiro MASTER de cada empresa e segurança da própria conta. Usa a API `/api/plataforma`, uma cadeia separada da API do cliente, com CORS, verificação de origem, validação de Host e rate limit próprios.
+
+O acesso exige **senha e MFA TOTP**. A senha correta não cria sessão: cria um **desafio pré-MFA** (cookie `gepi_mfa_admin`), aceito apenas pelas rotas `/api/plataforma/auth/mfa/*`. A **sessão administrativa plena** (cookie `gepi_sessao_admin`, com token novo) só nasce quando o segundo fator é concluído:
+
+| Situação do administrador | Etapa depois da senha |
+|---|---|
+| TOTP ativo | Código de 6 dígitos do autenticador ou, na falta dele, um recovery code |
+| Sem TOTP ativo (primeiro acesso ou depois de um reset) | Código de liberação de uso único, emitido por CLI, e cadastro do autenticador |
+| Entrou com recovery code | Recadastro obrigatório de um autenticador novo |
+
+- **TOTP:** RFC 6238 (SHA-1, 6 dígitos, período de 30 s, tolerância de ±1 período), pela biblioteca `otpauth`. Anti-replay: um código só é aceito se o seu período for posterior ao do último aceito.
+- **Segredo TOTP:** cifrado em repouso com AES-256-GCM, com chave versionada (`MFA_TOTP_KEY_V<n>` e `MFA_TOTP_KEY_CURRENT_VERSION`). Sem as chaves, o backend não sobe.
+- **Recovery codes:** 10 por lote, exibidos uma única vez; no banco fica só o hash. Gerar um lote novo revoga o anterior.
+- **Troca do autenticador e novos recovery codes:** exigem sessão plena e reautenticação com senha e código TOTP.
+- **Operação por CLI**, sem rota HTTP: `npm run db:criar-administrador-plataforma` (cria o administrador), `npm run db:mfa:liberar-cadastro` (emite a liberação do primeiro cadastro) e `npm run db:mfa:redefinir` (reset operacional: revoga fatores, recovery codes, desafios e sessões e emite uma liberação nova). Todos exigem `--email <email> --confirmo`.
+- **Banco:** a migration `055` faz o PostgreSQL recusar, no COMMIT, sessão administrativa não revogada sem MFA comprovado; a `056` encerra desafios abertos, fatores pendentes e liberações abertas quando o administrador é inativado.
+
+"Sair" do Painel Privado segue a mesma regra do Portal: só a resposta 2xx do servidor conclui a saída.
+
+O Painel Privado não usa Cloudflare Turnstile. Isso é melhoria futura opcional, não requisito atual.
+
+### Origens, namespaces e cookies
+
+| Área | Desenvolvimento | Previsto em produção | API |
+|---|---|---|---|
+| Página institucional | servida junto com `frontend/` | `www.safeworkengenharia.com.br` | — |
+| Portal do Cliente | `http://localhost:5500/portal/` | `app.safeworkengenharia.com.br` | `/api` (em desenvolvimento, `http://localhost:3000/api`) |
+| Painel Privado | `http://localhost:5501/painel-privado/` | `admin.safeworkengenharia.com.br` | `/api/plataforma` (em desenvolvimento, `http://localhost:3000/api/plataforma`) |
+
+Cada namespace só aceita as origens da sua própria allowlist (`CORS_ORIGIN` para o cliente, `PLATAFORMA_CORS_ORIGIN` para o Painel Privado), sem curinga e com `https` obrigatório em produção. Os subdomínios de produção ainda não estão publicados.
+
+Cookies de sessão, todos `HttpOnly`, com `Secure` obrigatório em produção. Os nomes abaixo são os padrões, configuráveis em `backend/.env`, e a configuração recusa nomes repetidos entre eles:
+
+| Cookie | Uso |
+|---|---|
+| `gepi_sessao_global` | Identidade global do Portal do Cliente; sozinho não dá acesso operacional |
+| `gepi_sessao` | Empresa selecionada no Portal; é o cookie que o RBAC usa |
+| `gepi_mfa_admin` | Desafio pré-MFA do Painel Privado; não é sessão |
+| `gepi_sessao_admin` | Sessão administrativa plena do Painel Privado, criada só depois do MFA |
+
+O navegador recebe apenas um token opaco; o banco guarda somente o SHA-256 dele.
+
 ### Conexão futura da página institucional
 
-`frontend/institucional/` já prevê os dois botões de acesso (`linkEmpresas`, `linkAdmin`), alimentados pelo objeto `PORTAIS` do próprio arquivo; com os valores vazios, a página mostra um aviso em vez de navegar. Quando os subdomínios estiverem publicados (não estão hoje), a conexão será apenas preencher, com autorização específica para alterar aquela página:
+`frontend/institucional/` já prevê os dois botões de acesso (`linkEmpresas`, `linkAdmin`), alimentados pelo objeto `PORTAIS` do próprio arquivo. Em ambiente local (`localhost`, `127.0.0.1` ou `[::1]`), os botões apontam para o Portal (porta 5500) e o Painel Privado (porta 5501). Em qualquer outro host valem só os destinos de `PORTAIS_PRODUCAO`, hoje vazios: a página mostra um aviso em vez de navegar. Quando os subdomínios estiverem publicados (não estão hoje), a conexão será apenas preencher `PORTAIS_PRODUCAO`, com autorização específica para alterar aquela página:
 
-| Botão | Valor de `PORTAIS` | Destino previsto |
+| Botão | Valor de `PORTAIS_PRODUCAO` | Destino previsto |
 |---|---|---|
 | Acesso Empresas | `empresas` | Portal do Cliente em `app.safeworkengenharia.com.br` (caminho final conforme a publicação, por exemplo `/portal/`) |
 | Acesso Restrito | `restrito` | Painel Privado em `admin.safeworkengenharia.com.br` (por exemplo `/painel-privado/`) |
@@ -177,11 +252,29 @@ Além do `MASTER`, um `ADMINISTRADOR` pode receber, por autorização individual
 
 Preservados em toda a extensão do RBAC: **isolamento multiempresa** (nenhuma consulta ou escrita alcança dado de outra empresa — o identificador de empresa vem sempre da sessão) e **auditoria transacional** (toda escrita administrativa é registrada em `logs_auditoria`, na mesma transação da alteração; consultas não geram registro de auditoria).
 
-Ficaram fora do Incremento 8, com destino registrado em "Encerramento do Bloco 8": a página de acesso negado com indicação de quem pode conceder a autorização, o botão de solicitação de acesso e as notificações de pedidos (backlog formal), e o workflow de CI (requisito obrigatório antes do deploy de homologação e testes na AWS).
+Ficaram fora do Incremento 8, com destino registrado em "Encerramento do Bloco 8": a página de acesso negado com indicação de quem pode conceder a autorização, o botão de solicitação de acesso e as notificações de pedidos (backlog formal). O workflow de CI, que também constava ali, já existe (ver "Integração contínua (GitHub Actions)").
+
+## Segurança implementada
+
+Resumo do que já está em vigor, sempre decidido no servidor:
+
+- **Cabeçalhos HTTP:** Helmet (`backend/src/middleware/cabecalhos.js`) e `x-powered-by` desligado.
+- **CORS por allowlist**, separada para o cliente (`/api`) e para o Painel Privado (`/api/plataforma`), sem curinga.
+- **Verificação de `Origin`** nos métodos que alteram estado, antes de consumir cota de rate limit.
+- **Rate limiting** geral e limitadores próprios para login, MFA e aceite de convites.
+- **Payload limitado:** só JSON, até 32 KiB, validado por schemas Zod.
+- **Senhas com Argon2id**, cooldown persistente de login com chave HMAC-SHA-256 e resposta pública genérica contra enumeração.
+- **Sessões reais no PostgreSQL:** token opaco de 256 bits em cookie `HttpOnly`; no banco, só o SHA-256 do token.
+- **Portal do Cliente:** Cloudflare Turnstile no login. **Painel Privado:** MFA TOTP obrigatório.
+- **Logout** do Portal, das páginas integradas e do Painel Privado só é dado como concluído com resposta 2xx do servidor.
+- **RBAC** (perfil, grupo, exceção individual e autorização individual) e **isolamento multiempresa**: a empresa vem sempre da sessão, e FKs compostas impedem associação entre empresas no banco.
+- **Auditoria transacional** em `logs_auditoria` e `logs_auditoria_plataforma`, cujos gatilhos recusam chaves JSON sensíveis.
+- **Publicação do frontend do cliente por allowlist**, fail-closed (`frontend/publicacao/`).
+- **Migrations protegidas por checksum** SHA-256 e **CI** em todo pull request e push na `main`.
 
 ## API HTTP
 
-A API do Incremento 8 soma **23 endpoints**, em **20 caminhos distintos** (três caminhos aceitam dois métodos HTTP cada), distribuídos em **10 arquivos de rota** (`backend/src/routes/`), todos montados na mesma cadeia `/api` de `backend/src/app.js`, com CORS restrito, verificação de origem, rate limit e validação de conteúdo aplicados uma única vez para todas as rotas.
+A API do Incremento 8 (fotografia histórica, não o total atual da API) soma **23 endpoints**, em **20 caminhos distintos** (três caminhos aceitam dois métodos HTTP cada), distribuídos em **10 arquivos de rota** (`backend/src/routes/`), todos montados na mesma cadeia `/api` de `backend/src/app.js`, com CORS restrito, verificação de origem, rate limit e validação de conteúdo aplicados uma única vez para todas as rotas.
 
 | Arquivo de rota | Endpoints |
 |---|---|
@@ -198,23 +291,29 @@ A API do Incremento 8 soma **23 endpoints**, em **20 caminhos distintos** (três
 
 O Bloco 9 acrescentou, na mesma cadeia `/api`, as rotas de materiais, estoque por lote, itens disponíveis, GHE, funcionários, dashboard e, na parte F, `usuario-administracao.routes.js` (`/api/administracao/usuarios`) e `convite-usuario.routes.js` (`/api/administracao/convites-usuario` e as duas rotas públicas de aceite, `/api/convite-usuario/consultar` e `/api/convite-usuario/aceitar`, com limite de requisições próprio).
 
-`health` é pública, sem exigência de sessão. O login (`POST /api/auth/login`) também é público — é o próprio ponto de entrada da autenticação. O logout aceita chamada sem sessão válida, por comportamento idempotente. As demais rotas — todas as administrativas do RBAC — exigem sessão autenticada; nenhuma decide autorização por si mesma, apenas autenticação. A autoridade administrativa é sempre resolvida na camada de serviço, relendo o estado do banco a cada chamada.
+Também na cadeia `/api`, `auth-global.routes.js` atende o Portal do Cliente: `POST /api/auth/global/login` (e-mail, senha e token do Turnstile), `GET /api/auth/global/turnstile` (site key e action públicas do widget), `GET /api/auth/global/me`, `POST /api/auth/global/empresas/:id/selecionar` e `POST /api/auth/global/logout`.
+
+A cadeia `/api/plataforma`, montada antes de `/api` e separada dela, atende o Painel Privado: login, sessão e logout da plataforma, as rotas do MFA em `/api/plataforma/auth/mfa/*`, o resumo do painel, o cadastro de empresas e o convite do MASTER (com duas rotas públicas de aceite).
+
+`health` é pública, sem exigência de sessão. O login (`POST /api/auth/login`) também é público — é o próprio ponto de entrada da autenticação; o login global do Portal é público, mas exige o token do Turnstile. O logout aceita chamada sem sessão válida, por comportamento idempotente. As demais rotas — todas as administrativas do RBAC — exigem sessão autenticada; nenhuma decide autorização por si mesma, apenas autenticação. A autoridade administrativa é sempre resolvida na camada de serviço, relendo o estado do banco a cada chamada.
 
 ## Banco de dados e migrations
 
-O banco do projeto é PostgreSQL 16. As migrations ficam em `backend/migrations/` e existem hoje arquivos versionados de `000` a `047` (48 no total), que devem ser executados em ordem crescente de prefixo.
+O banco do projeto é PostgreSQL 16. As migrations ficam em `backend/migrations/` e existem hoje arquivos versionados de `000` a `056` (57 no total, sem lacunas), que devem ser executados em ordem crescente de prefixo.
+
+**MFA TOTP do Painel Privado (PRs #34 a #36):** a `048` acrescenta ator e alvo à auditoria da plataforma, para registrar operações de CLI e eventos sem autor humano. A `049` cria os fatores de MFA (por ora só TOTP, com o segredo cifrado e o último período aceito para o anti-replay). A `050` e a `051` criam os lotes e os recovery codes, guardados só como hash. A `052` cria os desafios pré-MFA, separados da sessão. A `053` cria as liberações de cadastro de uso único emitidas por CLI. A `054` registra na sessão da plataforma o instante e o método do MFA. A `055` torna o MFA obrigatório em toda sessão não revogada do Painel Privado, conferido pelo PostgreSQL no COMMIT; ao ser aplicada, revoga com o motivo `MFA_OBRIGATORIO` as sessões anteriores que não comprovam o MFA. A `056` cria o gatilho que, na inativação de um administrador, encerra desafios abertos, revoga fatores pendentes (apagando o segredo cifrado) e revoga liberações de cadastro abertas. Todas estão versionadas, no manifesto de checksums e validadas em schemas temporários, inclusive no CI; aplicá-las a qualquer banco persistente exige autorização separada.
 
 **Bloco 9, Etapas E e F (27/09/2026):** as migrations `042` a `045` criam o estoque por lote e as operações de estoque, migram o saldo anterior para saldo inicial por lote, e acrescentam a `materiais` a exigência de tamanho e a classificação de óculos com grau. A `046` cria `convites_usuario` e `convite_usuario_tentativas` (convite de usuário, mesmo desenho do convite do MASTER da `033`/`034`, com FKs compostas que impedem quem convida ou o vínculo criado de serem de outra empresa). A `047` coloca `GERENCIAR_USUARIOS` em modo `OBRIGATORIA` e recusa rodar se já existir autorização individual gravada para essa ação, para não ativar concessão que ninguém revisou. Todas estão versionadas, no manifesto de checksums e validadas em schemas temporários; aplicá-las a qualquer banco persistente exige autorização separada.
 
-**Estado em 24/09/2026 (Bloco 9, Etapa C, Parte C2):** a fonte de verdade sobre o que está aplicado em cada banco é a tabela `pgmigrations` daquele banco (`npm run db:migrate:status`); o repositório só diz o que está versionado. A migration `039` (Parte C2) está versionada, registrada no manifesto de checksums e validada apenas em schemas temporários: não está aplicada a nenhum banco persistente (conferido nessa data no banco configurado em `.env`, cujo `public` não tem as três colunas). As migrations `025` a `038` foram versionadas nas etapas posteriores ao Incremento 8 (autenticação global, Portal do Cliente e sessões).
+**Onde cada migration está aplicada:** o repositório define quais migrations estão versionadas; a tabela `pgmigrations` de cada banco (`npm run db:migrate:status`) é a fonte de verdade sobre o que está aplicado nele. O registro operacional de 24/09/2026 (Bloco 9, Etapa C, Parte C2) documenta que a migration `039` foi aplicada especificamente à `gestao_epi_demo`, com autorização específica e depois de backup validado, e que esse banco ficou, naquele momento, com 40 de 40 migrations aplicadas e nenhuma pendente. Esse registro não implica aplicação aos demais bancos persistentes. Qualquer aplicação futura a banco persistente exige verificar o alvo e autorização específica. As migrations `025` a `038` foram versionadas nas etapas posteriores ao Incremento 8 (autenticação global, Portal do Cliente e sessões).
 
-**Registro histórico (Incremento 8, 22/09/2026):** as migrations `000` a `016` já estavam incorporadas à `main` e aplicadas ao banco principal. As migrations `017` a `024` pertencem ao Incremento 8 (estrutura de SST, autorizações individuais e delegação, grupos de acesso e suas permissões, e as ações administrativas granulares) e **ainda não foram aplicadas ao banco principal** — foram validadas apenas em schemas temporários pela suíte de integração (ver seção de testes). A existência dos arquivos `.sql` no repositório não significa que a estrutura já exista no `public` de nenhum banco além dos schemas de teste.
+**Registro histórico (Incremento 8, 22/09/2026):** naquele momento, as migrations `000` a `016` estavam incorporadas à `main` e aplicadas ao banco então tratado como principal. As migrations `017` a `024`, do Incremento 8 (estrutura de SST, autorizações individuais e delegação, grupos de acesso e suas permissões, e as ações administrativas granulares), ainda não haviam sido aplicadas a esse banco naquela fotografia; haviam sido validadas em schemas temporários pela suíte de integração (ver seção de testes). Este é um registro histórico e não representa, por si só, o estado posterior deste ou de outros bancos. O registro operacional de 24/09/2026, acima, documenta separadamente que a `gestao_epi_demo` chegou a `000` a `039` (40 de 40 aplicadas), depois de aplicação autorizada e backup validado. O estado atual de cada banco continua sendo o da sua tabela `pgmigrations`.
 
 Versionar uma migration não significa que ela já foi aplicada. O schema `public` de um banco só passa a ter a estrutura depois de uma execução explícita e autorizada. Criar a migration e aplicá-la são decisões separadas.
 
 Migrations já incorporadas ao histórico não são alteradas retroativamente. Quando uma estrutura precisa mudar, a correção entra em uma migration nova.
 
-A migration `039_alter_materiais_add_categoria_codigo_interno_descricao.sql` (Bloco 9, Etapa C, Parte C2) acrescenta a `materiais` as colunas nuláveis `categoria`, `codigo_interno` e `descricao`, com CHECKs que recusam vazio e espaços nas pontas, teto de 500 caracteres na descrição e índice único parcial `(empresa_id, upper(codigo_interno))` para linhas com código. É aditiva: nenhum registro existente é alterado. Como as demais, está apenas versionada e validada em schemas temporários; aplicá-la a qualquer banco exige autorização separada.
+A migration `039_alter_materiais_add_categoria_codigo_interno_descricao.sql` (Bloco 9, Etapa C, Parte C2) acrescenta a `materiais` as colunas nuláveis `categoria`, `codigo_interno` e `descricao`, com CHECKs que recusam vazio e espaços nas pontas, teto de 500 caracteres na descrição e índice único parcial `(empresa_id, upper(codigo_interno))` para linhas com código. É aditiva: nenhum registro existente é alterado. Onde ela foi aplicada está no registro de 24/09/2026 acima; aplicá-la a outro banco persistente exige verificar o alvo e autorização específica.
 
 A migration `016_alter_empresas_cnpj_alfanumerico.sql` altera a constraint estrutural de `empresas.cnpj` para aceitar 12 posições `[0-9A-Z]` seguidas de 2 dígitos numéricos. Ela substitui apenas a expressão da constraint e preserva o nome dela, o tipo `VARCHAR(14)`, o `NOT NULL` da coluna, a UNIQUE e a chave primária. A constraint verifica somente o formato. A conferência dos dígitos verificadores não é responsabilidade do banco.
 
@@ -234,6 +333,8 @@ O acesso é configurado por cinco variáveis de ambiente, lidas de `backend/.env
 
 O arquivo `backend/.env.example` lista todas as variáveis do projeto e não contém valores reais. O `.env` não é versionado, e nenhuma credencial deve ser escrita em código, em documentação ou em argumento de linha de comando.
 
+Além das cinco de banco, o `.env.example` traz, entre outras: o segredo do cooldown de login (`LOGIN_COOLDOWN_HMAC_SECRET`), as chaves do MFA (`MFA_TOTP_KEY_CURRENT_VERSION` e `MFA_TOTP_KEY_V1`, obrigatórias em qualquer ambiente), as chaves do Turnstile (`TURNSTILE_PORTAL_SITE_KEY` e `TURNSTILE_PORTAL_SECRET_KEY`, obrigatórias em `production`), as origens (`CORS_ORIGIN`, `PLATAFORMA_CORS_ORIGIN`, `PLATAFORMA_HOST`), os nomes dos cookies, o número de proxies confiáveis (`TRUST_PROXY_HOPS`) e os limites de requisição. Os valores reais vêm do ambiente ou de um serviço de secrets, nunca do repositório.
+
 ### Preparação de um ambiente novo
 
 A sequência abaixo parte de um banco vazio e recém-criado.
@@ -248,6 +349,8 @@ npm run db:migrate           # aplica as migrations pendentes
 ```
 
 Em um banco vazio, a primeira execução de `npm run db:migrate:status` apresenta todas as migrations versionadas como pendentes e pode terminar com código de saída 2. Esse código sinaliza pendência, não erro de configuração, e é o resultado esperado antes da primeira aplicação. Ao final da sequência, `npm run db:migrate:status` deve relatar todas as migrations aplicadas, nenhuma pendente e código de saída 0.
+
+O primeiro acesso ao Painel Privado também é preparado por linha de comando, dentro de `backend/`: `npm run db:criar-administrador-plataforma -- --email <email> --confirmo` cria o administrador (a senha vem da variável de ambiente `ADMINISTRADOR_PLATAFORMA_SENHA`, nunca de argumento) e `npm run db:mfa:liberar-cadastro -- --email <email> --confirmo` emite o código de liberação, exibido uma única vez, com o qual o administrador cadastra o TOTP depois de entrar com a senha.
 
 As migrations `017` a `024`, do Incremento 8, estão na `main` desde o PR #18.
 
@@ -267,7 +370,7 @@ O histórico fica registrado na tabela `pgmigrations`, criada e mantida pela fer
 
 ### Integridade das migrations
 
-As migrations de `000` a `047` são protegidas por um manifesto de checksums SHA-256 em `backend/migrations/checksums.json` (48 entradas, todas íntegras na última verificação). O `npm run db:migrate:verificar` recalcula o digest de cada arquivo e o compara com o registro, detectando alteração de conteúdo, remoção e renomeação.
+As migrations de `000` a `056` são protegidas por um manifesto de checksums SHA-256 em `backend/migrations/checksums.json` (57 entradas, todas íntegras na verificação do CI de 29/09/2026). O `npm run db:migrate:verificar` recalcula o digest de cada arquivo e o compara com o registro, detectando alteração de conteúdo, remoção e renomeação.
 
 Uma migration já aplicada não deve ser alterada. O manifesto só aceita registro automático de migration nova, e recusa qualquer atualização que encubra mudança em arquivo histórico. Correções de estrutura entram sempre em uma migration nova.
 
@@ -283,11 +386,11 @@ O sinalizador de confirmação registra a intenção de quem executa, e não com
 
 ## Testes e cobertura do backend
 
-O backend usa o runner nativo `node:test` com `node:assert/strict`, e `supertest` para os testes HTTP. A cobertura é medida pela instrumentação nativa do Node 24, sem biblioteca adicional.
+O backend usa o runner nativo `node:test` com `node:assert/strict`, e `supertest` para os testes HTTP. A cobertura é medida pela instrumentação nativa do Node (`--experimental-test-coverage`), sem biblioteca adicional. A versão mínima do backend é o Node 22 (`engines`: `>=22`), a mesma usada no CI.
 
 Atualmente existem testes permanentes para a fundação da autenticação (Bloco 5: configuração, normalização, senha, política de senha, token de sessão, cooldown e erros HTTP), para a camada de validação de entrada (Bloco 6: schemas Zod, middleware de validação e tratamento de erros) e para a segurança HTTP (Bloco 7: cabeçalhos, CORS, verificação de origem, política de conteúdo, limite de payload, rate limit e cookies). O Incremento 8 acrescentou a suíte completa do RBAC — repositories, services, controllers, rotas e middleware de autorização.
 
-Além dessa suíte padrão existe uma suíte separada de integração, que valida migrations contra um PostgreSQL real e não roda junto com `npm test`. O Incremento 8 também criou uma suíte de testes de frontend própria (`frontend/test/`, runner nativo `node:test`), inexistente até então — ver "Estado atual" abaixo.
+Além dessa suíte padrão existe uma suíte separada de integração, que valida migrations, repositórios, rotas e concorrência contra um PostgreSQL real e não roda junto com `npm test`. O Incremento 8 também criou uma suíte de testes de frontend própria (`frontend/test/`, runner nativo `node:test`), inexistente até então — ver "Estado atual" abaixo.
 
 ### Comandos oficiais
 
@@ -295,16 +398,16 @@ Além dessa suíte padrão existe uma suíte separada de integração, que valid
 npm test                # executa a suíte padrão, sem cobertura
 npm run test:cobertura  # executa a suíte padrão e imprime a cobertura por arquivo (linhas, ramos e funções)
 npm run test:ci         # executa a suíte padrão com cobertura, exige no mínimo 75% de linhas e grava coverage/lcov.info
-npm run test:integracao # executa os testes de migration contra PostgreSQL real, fora da suíte padrão
+npm run test:integracao # executa a suíte de integração contra PostgreSQL real, fora da suíte padrão
 ```
 
 Todos devem ser executados dentro de `backend/`.
 
 Os três primeiros não precisam de banco. O `npm run test:integracao` exige um PostgreSQL acessível e as variáveis `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` e `DB_PASSWORD` no ambiente.
 
-### Testes de integração de migrations
+### Testes de integração
 
-Os arquivos com sufixo `.integration.js`, em `backend/test/integracao/`, validam migrations contra um PostgreSQL real. Eles ficam fora do glob de `npm test`, que carrega somente `test/**/*.test.js`, e por isso nunca rodam junto com a suíte padrão.
+Os arquivos com sufixo `.integration.js`, em `backend/test/integracao/`, validam migrations, repositórios, rotas e concorrência contra um PostgreSQL real. Eles ficam fora do glob de `npm test`, que carrega somente `test/**/*.test.js`, e por isso nunca rodam junto com a suíte padrão.
 
 Cada execução:
 
@@ -313,7 +416,7 @@ Cada execução:
 - aplica ali apenas as migrations necessárias ao caso testado;
 - remove o schema com `DROP SCHEMA ... CASCADE` ao final, inclusive quando o teste falha.
 
-As migrations dos ensaios são aplicadas exclusivamente em schemas temporários. Os testes podem consultar o estado do schema `public` para comprovar o isolamento, comparando a estrutura antes e depois da execução, mas não modificam seus objetos nem seus dados. As credenciais vêm exclusivamente do ambiente e não aparecem no código nem na saída dos testes.
+As migrations dos ensaios são aplicadas exclusivamente em schemas temporários. Os testes podem consultar o estado do schema `public` para comprovar o isolamento, comparando a estrutura antes e depois da execução, mas não modificam seus objetos nem seus dados. Um `public` vazio, como o do PostgreSQL efêmero do CI, é uma linha de base válida: o que se exige é que ela seja lida do `public` real e que nada nele mude. As credenciais vêm exclusivamente do ambiente e não aparecem no código nem na saída dos testes.
 
 Os arquivos de integração são executados em série, com `--test-concurrency=1`. O motivo é o advisory lock do runner de migrations, que tem alcance de banco inteiro e permite apenas uma execução por vez. Em paralelo, um arquivo bloquearia o outro. A serialização reflete essa restrição real da ferramenta e não contorna nenhuma falha intermitente.
 
@@ -324,7 +427,7 @@ A cobertura mínima obrigatória do projeto é:
 - Backend: 75% de linhas.
 - Frontend: 25%.
 
-O backend já aplica o limiar de 75% em `npm run test:ci`, que termina com código de saída diferente de zero quando qualquer teste falha ou quando a cobertura de linhas fica abaixo do mínimo. O pipeline de integração contínua deverá executar `npm ci` e `npm run test:ci`, e qualquer uma dessas duas condições deve bloquear o CI. O workflow do GitHub Actions ainda não existe; é requisito obrigatório antes do deploy de homologação e testes na AWS.
+O backend aplica o limiar de 75% em `npm run test:ci`, que termina com código de saída diferente de zero quando qualquer teste falha ou quando a cobertura de linhas fica abaixo do mínimo. O CI executa `npm ci` e `npm run test:ci` em todo pull request e em todo push na `main`, e qualquer uma dessas duas condições reprova o job (ver "Integração contínua (GitHub Actions)").
 
 O frontend passou a ter suíte de testes própria no Incremento 8 (`frontend/package.json`, runner nativo `node:test`, sem dependências externas — ver "Estado atual" abaixo), mas ainda sem instrumentação de cobertura. A meta obrigatória de 25% de cobertura do frontend ainda não é medida; a instrumentação e a medição estão destinadas ao Bloco 11, com os testes finais, o fechamento acadêmico e a documentação.
 
@@ -332,50 +435,37 @@ O frontend passou a ter suíte de testes própria no Incremento 8 (`frontend/pac
 
 A cobertura mede `backend/src/**`. A única exclusão é `backend/src/server.js`, e ela existe apenas porque esse arquivo é o entrypoint da aplicação: carrega as variáveis de ambiente, importa `app.js` e abre a porta, sem nenhuma regra de negócio. Nenhum arquivo é excluído para aumentar artificialmente a porcentagem, e novos módulos com regra de negócio devem permanecer no escopo de cobertura. A suíte carrega todos os módulos de `src/` para que cada um apareça no relatório com seu percentual real, inclusive os que ainda não têm teste dedicado.
 
-Os testes `.integration.js` não entram no cálculo da cobertura. A medição acontece em `npm run test:cobertura` e `npm run test:ci`, que carregam apenas `test/**/*.test.js`. A suíte de integração valida estrutura de banco, não código de `src/`.
+Os testes `.integration.js` não entram no cálculo da cobertura. A medição acontece em `npm run test:cobertura` e `npm run test:ci`, que carregam apenas `test/**/*.test.js`. A suíte de integração também exercita código de `src/` contra o banco real, mas fica fora dessa medição.
+
+### Integração contínua (GitHub Actions)
+
+O workflow `.github/workflows/ci.yml` roda em todo pull request e em todo push na `main`, com permissão só de leitura do repositório (`contents: read`), Node 22 e fuso `America/Sao_Paulo`. Não usa secrets nem `.env`, e qualquer comando que falhe reprova o job. São dois jobs:
+
+| Job | Etapas |
+|---|---|
+| Backend unitário, checksums e frontend | `npm ci`, `npm run test:ci` e `npm run db:migrate:verificar` em `backend/`; `npm test` em `frontend/` |
+| Integração com PostgreSQL 16 efêmero | serviço `postgres:16` criado dentro do runner, com credenciais sintéticas e health check; `npm ci` e `npm run test:integracao` em `backend/` |
+
+O PostgreSQL do segundo job existe só durante a execução e é descartado ao fim. Os testes continuam isolados em schemas temporários, e nenhum passo do workflow aplica migrations fora deles.
 
 ### Estado atual
 
-**Backend, fim do Incremento 7** — última medição de cobertura, por `npm run test:ci`:
+Resultado do CI no commit `dcca3b8` (run `36656243643`, 29/09/2026):
 
-| Métrica | Valor |
-|---|---|
-| Testes | 310 |
-| Aprovados | 310 |
-| Falhas | 0 |
-| Linhas | 99,60% |
-| Ramos | 97,42% |
-| Funções | 99,37% |
+| Suíte | Testes | Suites | Aprovados | Falhas |
+|---|---:|---:|---:|---:|
+| Backend — unitário (`npm run test:ci`) | 1978 | 481 | 1978 | 0 |
+| Backend — integração PostgreSQL 16 (`npm run test:integracao`) | 1671 | 400 | 1671 | 0 |
+| Frontend (`npm test`, dentro de `frontend/`) | 1047 | 213 | 1047 | 0 |
+| Checksums das migrations (`npm run db:migrate:verificar`) | 57 | — | 57 íntegras | — |
 
-| Métrica (integração) | Valor |
-|---|---|
-| Testes | 45 |
-| Aprovados | 45 |
-| Falhas | 0 |
+Cobertura do backend no mesmo run, pelo relatório de `npm run test:ci` (linha "all files"):
 
-**Backend e frontend, Incremento 8** — resultado da validação registrada em 22/09/2026 (execução direta de `npm test` e `npm run test:integracao` no backend, `npm test` no frontend, e `node scripts/verificar-checksums.js`; números apenas documentados aqui, não reexecutados nesta atualização do README):
+| `line %` | `branch %` | `funcs %` |
+|---:|---:|---:|
+| 92,07 | 94,27 | 84,66 |
 
-| Suíte | Testes | Aprovados | Falhas |
-|---|---:|---:|---:|
-| Backend — unitário (`npm test`) | 978 | 978 | 0 |
-| Backend — integração PostgreSQL (`npm run test:integracao`) | 716 | 716 | 0 |
-| Frontend (`npm test`, dentro de `frontend/`) | 301 | 301 | 0 |
-| Checksums das migrations | 25 | 25 íntegras | — |
-
-Os 978 testes unitários do backend substituem os 310 anteriores (o Incremento 8 soma às suítes de autenticação/validação/segurança já existentes toda a suíte do RBAC). **A cobertura de linhas/ramos/funções não foi remedida para esse total** — a tabela de percentuais acima permanece a última disponível, referente aos 310 testes do fim do Incremento 7. A medição seguinte, feita no Bloco 9 (Parte C2), está registrada abaixo. Da mesma forma, os 716 testes de integração e os 25 checksums substituem, por serem mais recentes, os números de 45 testes e 17 migrations do estado anterior.
-
-**Bloco 9, Etapa C, Parte C2 e correções da auditoria — 24/09/2026** (suítes reexecutadas nesta atualização do README, mesmos comandos):
-
-| Suíte | Testes | Aprovados | Falhas |
-|---|---:|---:|---:|
-| Backend — unitário (`npm test`) | 1484 | 1484 | 0 |
-| Backend — integração PostgreSQL (`npm run test:integracao`) | 1051 | 1051 | 0 |
-| Frontend (`npm test`, dentro de `frontend/`) | 417 | 417 | 0 |
-| Checksums das migrations | 40 | 40 íntegras | — |
-
-Testes acrescentados pela Parte C2 (cadastro real de materiais): frontend +29; backend unitário +11 (schema 4, repositório 4, serviço 3); integração +33 (17 ponta a ponta em `frontend-materiais.integration.js`, 8 no Cenário 9 de `material-estoque-routes.integration.js`, 8 em `migration-039-materiais-categoria-codigo-descricao.integration.js`). Correções da auditoria da C2: frontend +12 (unitários e testes de página com DOM simulado), integração +4. Cobertura unitária do backend medida na C2 (`npm run test:cobertura`): 95,65% de linhas e 93,70% de ramos; as correções não alteraram código de `backend/src`.
-
-O requisito permanente continua sendo no mínimo 75% de linhas no backend.
+O limiar do CI (`--test-coverage-lines=75`) vale para `line %`. Medições anteriores ficam no histórico do Git.
 
 ### Histórico e adoção de TDD
 
@@ -388,6 +478,6 @@ A partir do Bloco 7 o desenvolvimento adota o ciclo: escrever o teste, observar 
 - A suíte padrão não depende do `.env` real, de PostgreSQL nem de serviços externos.
 - A suíte de integração depende de um PostgreSQL real e lê as credenciais exclusivamente do ambiente.
 - Nos testes de integração as migrations são executadas somente em schema temporário exclusivo, removido em cascata ao final. O schema `public` não é alterado.
-- O segredo HMAC usado nos testes é gerado em memória a cada execução, em `backend/test/setup.js`, e nunca é gravado em disco.
+- O segredo HMAC e a chave do MFA usados nos testes são gerados em memória a cada execução, em `backend/test/setup.js`, e nunca são gravados em disco.
 - A suíte não persiste dados sensíveis e verifica que senhas, e-mails, CNPJs, tokens, cookies e cabeçalhos de autorização não aparecem em respostas nem em logs.
 - O diretório `coverage/` não é versionado.

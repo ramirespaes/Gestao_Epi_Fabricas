@@ -59,11 +59,25 @@ const existe = async (cliente, objeto) => {
 const assinaturaPublic = async (cliente) => {
   const { rows } = await cliente.query(`
     SELECT
+      (SELECT oid::text FROM pg_namespace WHERE nspname = 'public') AS esquema,
       (SELECT coalesce(string_agg(tablename, ',' ORDER BY tablename), '') FROM pg_tables WHERE schemaname = 'public') AS tabelas,
       (SELECT coalesce(string_agg(c.conname, ',' ORDER BY c.conname), '') FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace WHERE n.nspname = 'public') AS constraints,
       (SELECT coalesce(string_agg(p.proname, ',' ORDER BY p.proname), '') FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public') AS funcoes
   `);
   return rows[0];
+};
+
+// public vazio (PostgreSQL efêmero do CI) é linha de base válida. O que se
+// exige é que a assinatura venha do public real: o schema existe e as tabelas
+// dela batem com uma leitura independente, feita pelo oid do schema.
+const conferirLinhaDeBase = async (cliente, assinatura) => {
+  assert.equal(typeof assinatura.esquema, 'string', 'o schema public precisa existir neste banco');
+  for (const [campo, valor] of Object.entries(assinatura)) assert.equal(typeof valor, 'string', `assinatura incompleta: ${campo}`);
+  const { rows } = await cliente.query(
+    "SELECT coalesce(string_agg(relname, ',' ORDER BY relname), '') AS tabelas FROM pg_class WHERE relnamespace = $1::oid AND relkind IN ('r', 'p')",
+    [assinatura.esquema],
+  );
+  assert.equal(rows[0].tabelas, assinatura.tabelas, 'a assinatura enxerga as tabelas do public real, vazio ou não');
 };
 
 const contarPgmigrationsEmPublic = async (cliente) => {
@@ -83,7 +97,7 @@ describe('linha de base do schema public', () => {
 
   test('captura a assinatura de public antes dos ensaios operacionais', async () => {
     publicAntes = await assinaturaPublic(contexto.cliente);
-    assert.match(publicAntes.tabelas, /empresas/);
+    await conferirLinhaDeBase(contexto.cliente, publicAntes);
     pgmigrationsEmPublicAntes = await contarPgmigrationsEmPublic(contexto.cliente);
   });
 });

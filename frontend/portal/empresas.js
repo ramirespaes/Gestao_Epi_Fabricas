@@ -21,6 +21,21 @@
   function mostrar(texto, classe) { var m = el('mensagem'); m.textContent = texto || ''; m.className = 'mensagem ' + (classe || ''); }
   function ir(destino) { window.location.href = Portal.decisao.pagina(destino); }
 
+  var SAIDA_NAO_CONFIRMADA = 'Não foi possível confirmar a saída com o servidor. Sua sessão pode continuar ativa. Verifique a conexão, aguarde um instante e clique em Sair novamente.';
+  var saindo = false;
+
+  function habilitarSaida(habilitar) {
+    saindo = !habilitar;
+    el('botao-sair').disabled = !habilitar;
+  }
+
+  // Sem empresa, #mensagem fica oculto junto com a lista: o aviso vai ao bloco visível.
+  function avisarSaida(texto) {
+    if (el('sem-empresa').classList.contains('oculto')) { mostrar(texto, texto ? 'erro' : ''); return; }
+    el('mensagem-sem-empresa').textContent = texto || Portal.mensagens.SEM_EMPRESA;
+    el('mensagem-sem-empresa').className = texto ? 'mensagem erro' : 'mensagem info';
+  }
+
   function carregar(aviso) {
     Portal.acoes.sessao().then(function (r) {
       el('carregando').classList.add('oculto');
@@ -69,6 +84,7 @@
   // Nenhum bloqueio do histórico do navegador.
   window.addEventListener('pageshow', function (evento) {
     if (!evento || !evento.persisted) return;
+    habilitarSaida(true);
     ocultarProtegido();
     carregar();
   });
@@ -91,9 +107,17 @@
     });
   });
 
+  // O cookie é HttpOnly: só a resposta 2xx do servidor confirma que a
+  // sessão foi revogada. Sem ela a página continua como está e avisa.
   el('botao-sair').addEventListener('click', function () {
-    el('botao-sair').disabled = true;
-    Portal.acoes.sairCompletamente().then(function () { ir('login'); }).catch(function () { ir('login'); });
+    if (saindo) return;
+    habilitarSaida(false);
+    avisarSaida('');
+    Promise.resolve().then(function () { return Portal.acoes.sairCompletamente(); }).then(function (r) { return !!(r && r.ok === true); }, function () { return false; }).then(function (confirmada) {
+      if (confirmada) { ir('login'); return; }
+      habilitarSaida(true);
+      avisarSaida(SAIDA_NAO_CONFIRMADA);
+    });
   });
 
   carregar();

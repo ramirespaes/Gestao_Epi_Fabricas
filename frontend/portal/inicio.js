@@ -20,6 +20,12 @@
   function ir(destino) { window.location.href = Portal.decisao.pagina(destino); }
 
   var CAMPOS_DA_SESSAO = ['empresa-cnpj', 'usuario-nome', 'usuario-email', 'usuario-perfil', 'empresa-ativa'];
+  var BOTOES_DE_SAIDA = ['botao-sair-empresa', 'botao-sair'];
+  var SAIDA_NAO_CONFIRMADA = {
+    empresa: 'Não foi possível confirmar a saída da empresa com o servidor. A sessão desta empresa pode continuar ativa. Verifique a conexão, aguarde um instante e clique em Sair da empresa novamente.',
+    tudo: 'Não foi possível confirmar a saída com o servidor. Sua sessão pode continuar ativa. Verifique a conexão, aguarde um instante e clique em Sair novamente.',
+  };
+  var saindo = false;
 
   /** Nada da sessão fica visível enquanto ela não é confirmada de novo. */
   function ocultarProtegido() {
@@ -93,19 +99,38 @@
   // ATUAL. Nenhum bloqueio do histórico do navegador.
   window.addEventListener('pageshow', function (evento) {
     if (!evento || !evento.persisted) return;
+    habilitarSaida(true);
     ocultarProtegido();
     carregar();
   });
 
+  function habilitarSaida(habilitar) {
+    saindo = !habilitar;
+    BOTOES_DE_SAIDA.forEach(function (id) { el(id).disabled = !habilitar; });
+  }
+
+  // O cookie é HttpOnly: só a resposta 2xx do servidor confirma que a
+  // sessão foi revogada. Sem ela a página continua como está e avisa.
+  function sair(requisitar, destino, aviso) {
+    if (saindo) return;
+    habilitarSaida(false);
+    el('mensagem').textContent = '';
+    el('mensagem').className = 'mensagem';
+    Promise.resolve().then(requisitar).then(function (r) { return !!(r && r.ok === true); }, function () { return false; }).then(function (confirmada) {
+      if (confirmada) { ir(destino); return; }
+      habilitarSaida(true);
+      el('mensagem').textContent = aviso;
+      el('mensagem').className = 'mensagem erro';
+    });
+  }
+
   el('botao-trocar').addEventListener('click', function () { ir('selecionar'); });
 
   el('botao-sair-empresa').addEventListener('click', function () {
-    el('botao-sair-empresa').disabled = true;
-    Portal.acoes.sairDaEmpresa().then(function () { ir('selecionar'); }).catch(function () { ir('selecionar'); });
+    sair(function () { return Portal.acoes.sairDaEmpresa(); }, 'selecionar', SAIDA_NAO_CONFIRMADA.empresa);
   });
 
   el('botao-sair').addEventListener('click', function () {
-    el('botao-sair').disabled = true;
-    Portal.acoes.sairCompletamente().then(function () { ir('login'); }).catch(function () { ir('login'); });
+    sair(function () { return Portal.acoes.sairCompletamente(); }, 'login', SAIDA_NAO_CONFIRMADA.tudo);
   });
 })();
