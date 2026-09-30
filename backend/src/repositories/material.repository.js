@@ -215,6 +215,27 @@ async function buscarPorIdParaVinculo(executor, empresaId, id) {
 }
 
 /**
+ * Os materiais pedidos, da empresa, com FOR SHARE em ordem crescente de id
+ * (dentro de transação): a entrega de EPI precisa que `ativo` e a
+ * classificação lidos valham até o COMMIT, e trava sempre na mesma ordem
+ * para não formar ciclo com outra entrega. Devolve só os que existem na
+ * empresa; quem chama confere o que faltou.
+ */
+async function listarPorIdsParaVinculo(executor, empresaId, ids) {
+  exigirEmpresa(empresaId);
+  if (!Array.isArray(ids) || ids.length === 0) throw new TypeError('lista de identificadores de material inválida');
+  for (const id of ids) exigirId(id, 'identificador de material');
+
+  // exige_ca (042) entra só aqui: a entrega decide pelo CA do lote com ele.
+  const { rows } = await executor.query(
+    `SELECT ${PROJECAO}, exige_ca FROM materiais WHERE empresa_id = $1 AND id = ANY($2::int[]) ORDER BY id FOR SHARE`,
+    [empresaId, ids],
+  );
+
+  return rows.map((linha) => ({ ...mapear(linha), exigeCa: linha.exige_ca }));
+}
+
+/**
  * Lista os materiais de uma empresa, paginados e ordenados por nome
  * (comparação sem diferenciar maiúsculas).
  *
@@ -386,6 +407,7 @@ module.exports = {
   buscarPorId,
   buscarPorIdParaAtualizacao,
   buscarPorIdParaVinculo,
+  listarPorIdsParaVinculo,
   listarPorEmpresa,
   contarPorEmpresa,
   atualizar,

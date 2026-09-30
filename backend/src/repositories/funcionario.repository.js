@@ -169,6 +169,24 @@ async function buscarPorIdParaAtualizacao(executor, empresaId, id) {
 }
 
 /**
+ * Igual a buscarPorId, com FOR NO KEY UPDATE (dentro de transação), para a
+ * entrega de EPI: serializa a criação da primeira ficha do mesmo trabalhador,
+ * faz a inativação concorrente esperar o COMMIT e não conflita com o KEY
+ * SHARE que as FKs para funcionarios tomam.
+ */
+async function buscarPorIdParaEntrega(executor, empresaId, id) {
+  exigirEmpresa(empresaId);
+  exigirId(id, 'identificador de funcionário');
+
+  const { rows } = await executor.query(
+    `SELECT ${PROJECAO} FROM funcionarios WHERE empresa_id = $1 AND id = $2 FOR NO KEY UPDATE`,
+    [empresaId, id],
+  );
+
+  return mapear(rows[0]);
+}
+
+/**
  * Lista os funcionários de uma empresa, paginados e ordenados por nome.
  * `busca` filtra por nome OU matrícula (texto literal, sem coringas);
  * `grupoHomogeneoId` filtra por GHE. CPF NÃO é critério de busca livre
@@ -338,6 +356,7 @@ module.exports = {
   criar,
   buscarPorId,
   buscarPorIdParaAtualizacao,
+  buscarPorIdParaEntrega,
   listarPorEmpresa,
   contarPorEmpresa,
   atualizar,

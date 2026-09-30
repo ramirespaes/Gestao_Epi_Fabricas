@@ -1,0 +1,127 @@
+'use strict';
+
+const { lockDaChave, ESPACO_ENTREGAS, CHAVE_FORMATO, HASH_FORMATO } = require('../utils/idempotencia');
+
+/**
+ * Cabeçalho da entrega de EPI (entregas_epi, migration 058): o evento dentro
+ * da ficha, com as cópias congeladas do documento. Só INSERT e leitura; a
+ * entrega não muda nem some. Toda consulta filtra pela empresa.
+ *
+ * entregue_em e data_operacional vêm dos DEFAULTs da tabela, isto é, do
+ * relógio do banco na transação: nunca do cliente.
+ */
+
+const COLUNAS = `id, empresa_id, ficha_id, responsavel_id, ghe_id, origem, entregue_em,
+  to_char(entregue_em AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS entregue_em_canonico,
+  to_char(data_operacional, 'YYYY-MM-DD') AS data_operacional, chave_idempotencia, requisicao_hash,
+  empresa_nome, empresa_cnpj, empresa_endereco, empresa_cidade, empresa_uf,
+  trabalhador_nome, trabalhador_matricula, trabalhador_funcao, trabalhador_setor, ghe_nome, responsavel_nome`;
+
+function exigirId(valor, nome) {
+  if (!Number.isInteger(valor) || valor <= 0) {
+    throw new TypeError(`${nome} inválido`);
+  }
+}
+
+function exigirChave(chave) {
+  if (typeof chave !== 'string' || !CHAVE_FORMATO.test(chave)) {
+    throw new TypeError('chave de idempotência inválida');
+  }
+}
+
+function exigirTexto(valor, nome, maximo) {
+  if (typeof valor !== 'string' || valor.length === 0 || valor.length > maximo) {
+    throw new TypeError(`${nome} inválido`);
+  }
+}
+
+function exigirTextoOpcional(valor, nome, maximo) {
+  if (valor !== null) exigirTexto(valor, nome, maximo);
+}
+
+const mapear = (l) => (l === undefined ? null : {
+  id: l.id,
+  empresaId: l.empresa_id,
+  fichaId: l.ficha_id,
+  responsavelId: l.responsavel_id,
+  gheId: l.ghe_id,
+  origem: l.origem,
+  entregueEm: l.entregue_em,
+  entregueEmCanonico: l.entregue_em_canonico,
+  dataOperacional: l.data_operacional,
+  chaveIdempotencia: l.chave_idempotencia,
+  requisicaoHash: l.requisicao_hash,
+  empresa: { nome: l.empresa_nome, cnpj: l.empresa_cnpj, endereco: l.empresa_endereco, cidade: l.empresa_cidade, uf: l.empresa_uf },
+  trabalhador: { nome: l.trabalhador_nome, matricula: l.trabalhador_matricula, funcao: l.trabalhador_funcao, setor: l.trabalhador_setor },
+  ghe: l.ghe_id === null ? null : { id: l.ghe_id, nome: l.ghe_nome },
+  responsavel: { id: l.responsavel_id, nome: l.responsavel_nome },
+});
+
+/** Serializa, até o fim da transação, quem usa a mesma chave na mesma empresa (espaço das entregas). */
+async function travarChave(executor, empresaId, chave) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirChave(chave);
+  await executor.query('SELECT pg_advisory_xact_lock($1::bigint)', [lockDaChave(ESPACO_ENTREGAS, empresaId, chave)]);
+}
+
+async function buscarPorChave(executor, empresaId, chave) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirChave(chave);
+  const { rows } = await executor.query(
+    `SELECT ${COLUNAS} FROM entregas_epi WHERE empresa_id = $1 AND chave_idempotencia = $2`,
+    [empresaId, chave],
+  );
+  return mapear(rows[0]);
+}
+
+async function buscarPorId(executor, empresaId, id) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirId(id, 'identificador de entrega');
+  const { rows } = await executor.query(`SELECT ${COLUNAS} FROM entregas_epi WHERE empresa_id = $1 AND id = $2`, [empresaId, id]);
+  return mapear(rows[0]);
+}
+
+/** Dia operacional da transação em São Paulo: o mesmo que os DEFAULTs da entrega vão gravar. */
+async function dataOperacionalDaTransacao(executor) {
+  const { rows } = await executor.query("SELECT to_char((now() AT TIME ZONE 'America/Sao_Paulo')::date, 'YYYY-MM-DD') AS hoje");
+  return rows[0].hoje;
+}
+
+/** Grava o cabeçalho com as cópias congeladas lidas na mesma transação. Só dentro de transação. */
+async function criar(executor, {
+  empresaId, fichaId, responsavelId, gheId, chave, requisicaoHash, empresa, trabalhador, gheNome, responsavelNome,
+}) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirId(fichaId, 'identificador de ficha');
+  exigirId(responsavelId, 'identificador de responsável');
+  if (gheId !== null) exigirId(gheId, 'identificador de GHE');
+  exigirChave(chave);
+  if (typeof requisicaoHash !== 'string' || !HASH_FORMATO.test(requisicaoHash)) throw new TypeError('hash da requisição inválido');
+  exigirTexto(empresa.nome, 'nome da empresa', 150);
+  exigirTexto(empresa.cnpj, 'CNPJ da empresa', 14);
+  exigirTextoOpcional(empresa.endereco, 'endereço da empresa', 500);
+  exigirTextoOpcional(empresa.cidade, 'cidade da empresa', 100);
+  exigirTextoOpcional(empresa.uf, 'UF da empresa', 2);
+  exigirTexto(trabalhador.nome, 'nome do trabalhador', 150);
+  exigirTexto(trabalhador.matricula, 'matrícula do trabalhador', 30);
+  exigirTextoOpcional(trabalhador.funcao, 'função do trabalhador', 100);
+  exigirTextoOpcional(trabalhador.setor, 'setor do trabalhador', 100);
+  if ((gheId === null) !== (gheNome === null)) throw new TypeError('GHE e nome do GHE andam juntos');
+  exigirTextoOpcional(gheNome, 'nome do GHE', 150);
+  exigirTexto(responsavelNome, 'nome do responsável', 150);
+
+  const { rows } = await executor.query(
+    `INSERT INTO entregas_epi
+       (empresa_id, ficha_id, responsavel_id, ghe_id, origem, chave_idempotencia, requisicao_hash,
+        empresa_nome, empresa_cnpj, empresa_endereco, empresa_cidade, empresa_uf,
+        trabalhador_nome, trabalhador_matricula, trabalhador_funcao, trabalhador_setor, ghe_nome, responsavel_nome)
+     VALUES ($1, $2, $3, $4, 'DIRETA', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+     RETURNING ${COLUNAS}`,
+    [empresaId, fichaId, responsavelId, gheId, chave, requisicaoHash,
+      empresa.nome, empresa.cnpj, empresa.endereco, empresa.cidade, empresa.uf,
+      trabalhador.nome, trabalhador.matricula, trabalhador.funcao, trabalhador.setor, gheNome, responsavelNome],
+  );
+  return mapear(rows[0]);
+}
+
+module.exports = { travarChave, buscarPorChave, buscarPorId, dataOperacionalDaTransacao, criar };
