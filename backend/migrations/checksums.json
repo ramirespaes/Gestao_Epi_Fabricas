@@ -57,6 +57,10 @@
     "053_create_liberacoes_cadastro_mfa_plataforma.sql": "18f159c58f0876a15d7b51db8f5bb321a9fc6008232b52aeda05019df602aa20",
     "054_alter_sessoes_plataforma_add_mfa.sql": "d63aff198654793b35c4af713f1772e5ece7fd68889aa0f4ba0e581845d62f6d",
     "055_alter_sessoes_plataforma_exigir_mfa.sql": "500087fe25c610ab9c3a30db28579c42e9f0ab23a04af189df12d6ad65577c75",
-    "056_create_trigger_inativacao_administrador_invalida_artefatos_mfa.sql": "a7a3c5f62b6aed2d09319be8ef8dad883b3801d89d4d6b276a96245ed1815669"
+    "056_create_trigger_inativacao_administrador_invalida_artefatos_mfa.sql": "a7a3c5f62b6aed2d09319be8ef8dad883b3801d89d4d6b276a96245ed1815669",
+    "057_alter_funcionarios_estoque_lotes_add_unicidades.sql": "5c4cba4ce07940fe999d3b4bacaef47e845b6573a5921fc7809cfe8202134c39",
+    "058_create_fichas_entregas_epi.sql": "0ba43bf26d86365d7963f973578dcb302008341b081bf9486e9438ab5a74b1a9",
+    "059_alter_estoque_operacoes_add_entrega.sql": "55a84604ae31f9e0384c5cfa94595aab59b8e8ba66bd1c77eb8a5935db4397aa",
+    "060_create_entregas_epi_confirmacoes.sql": "0b090811fd36fed820cf8ed0002e7e0fc851f9e12aeb9b5fcf31998c2d974285"
   }
 }

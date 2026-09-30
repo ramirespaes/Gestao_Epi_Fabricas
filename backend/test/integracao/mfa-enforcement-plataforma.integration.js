@@ -38,7 +38,9 @@ const { authConfig } = require('../../src/config/auth');
 
 const ATE_A_054 = ['000', '001', '002', '005', '012', '014', '027', '028', '029', '030', '031', '048', '049', '050', '051', '052', '053', '054'];
 const DIRETORIO = path.join(__dirname, '..', '..', 'migrations');
-const POSTERIORES = fs.readdirSync(DIRETORIO).map((n) => n.match(/^(\d{3})_.*\.sql$/)?.[1]).filter((p) => p !== undefined && p > '054').sort();
+// Só as migrations da plataforma que vêm depois da 054: as da entrega de EPI
+// (057 em diante) alteram tabelas que este schema não monta.
+const POSTERIORES = ['055', '056'];
 const SENHA = 'planeta-nebulosa-ozonio-42';
 const COOKIE_SESSAO = () => authConfig.sessao.cookieNomeAdmin;
 const COOKIE_DESAFIO = () => authConfig.desafioMfa.cookieNome;

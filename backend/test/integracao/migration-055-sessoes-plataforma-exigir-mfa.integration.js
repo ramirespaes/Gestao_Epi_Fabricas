@@ -21,7 +21,9 @@ const mfaCripto = require('../../src/security/mfa-cripto');
 const ATE_A_054 = ['000', '001', '002', '005', '012', '014', '027', '028', '029', '030', '031', '048', '049', '050', '051', '052', '053', '054'];
 const DIRETORIO = path.join(__dirname, '..', '..', 'migrations');
 const ARQUIVOS = fs.readdirSync(DIRETORIO).filter((n) => /^\d{3}_.*\.sql$/.test(n)).sort();
-const POSTERIORES = ARQUIVOS.map((n) => n.slice(0, 3)).filter((p) => p > '054');
+// Só as migrations da plataforma que vêm depois da 054: as da entrega de EPI
+// (057 em diante) alteram tabelas que este schema não monta.
+const POSTERIORES = ['055', '056'];
 const VIOLACAO_CHECK = '23514';
 const TIPO_DO_METODO = { TOTP: 'VERIFICACAO', CADASTRO: 'CADASTRO', RECADASTRO: 'RECUPERACAO' };
 const hashAleatorio = () => crypto.randomBytes(32).toString('hex');
@@ -179,8 +181,10 @@ describe('migration 055 — MFA obrigatório nas sessões do Painel Privado', ()
     for (const arquivo of ARQUIVOS) {
       assert.equal(manifesto.migrations[arquivo], crypto.createHash('sha256').update(fs.readFileSync(path.join(DIRETORIO, arquivo))).digest('hex'), arquivo);
     }
-    assert.deepEqual(POSTERIORES, ['055', '056']);
-    assert.equal(ARQUIVOS.length, 57);
+    for (const prefixo of POSTERIORES) {
+      assert.ok(ARQUIVOS.some((n) => n.startsWith(`${prefixo}_`)), prefixo);
+    }
+    assert.equal(ARQUIVOS.length, 61);
   });
 });
 
