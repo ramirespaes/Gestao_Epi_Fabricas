@@ -14,18 +14,18 @@
  *
  * RECURSOS_LEGADOS reproduz `allPages` de frontend/js/main.js (a matriz que
  * a migration 009 diz substituir). RECURSOS_BLOCO_9 são os identificadores
- * criados pelo backend do Bloco 9 que ainda não existem no frontend
- * ('employeeGroups' precisa entrar em `RECURSOS` de js/grupo-permissoes.js
- * na Etapa D/E — pendência registrada).
+ * criados pelo backend do Bloco 9 ('employeeGroups', presente em `RECURSOS`
+ * de js/grupo-permissoes.js desde a Etapa E9).
  *
  * ESCOPO_PROVISIONAMENTO_MASTER é deliberadamente MENOR que a lista de
- * conhecidos: contém SÓ o que o Bloco 9 (Etapas A e B) protege hoje com
+ * conhecidos: contém SÓ o que as rotas de produção protegem hoje com
  * criarExigirPermissaoRecurso/criarExigirPermissaoAcao, e só as operações
  * que alguma rota exige. Nenhum recurso legado sem rota no backend, nenhum
- * `excluir` (nenhuma rota usa) e nenhuma ação além de MOVIMENTAR_ESTOQUE
+ * `excluir` (nenhuma rota usa) e nenhuma ação além das exigidas por rota
  * entram — conceder o que não existe seria concessão vazia, e conceder
- * "tudo, atual e futuro" ao MASTER foi expressamente vedado. Etapas
- * posteriores ampliam este escopo por decisão explícita, uma a uma.
+ * "tudo, atual e futuro" ao MASTER foi expressamente vedado. Cada ampliação
+ * é decisão explícita, uma a uma (Bloco 9: Etapas A/B, C3, C6, E9; Bloco 10:
+ * 10I, ficha e entrega de EPI).
  */
 
 // Mesmo formato de permissao.repository.js / middleware/autorizacao.js.
@@ -52,6 +52,7 @@ const RECURSOS_CONHECIDOS = Object.freeze([...RECURSOS_LEGADOS, ...RECURSOS_BLOC
 //   dashboard       -> dashboard.routes.js (visualizar) — Parte C6
 //   stockValidity   -> estoque.routes.js GET /estoque/validade (visualizar) — E9
 //   operations      -> estoque.routes.js GET /estoque/operacoes (visualizar) — E9
+//   epiFicha        -> entrega-epi.routes.js GET /fichas-epi* e /entregas-epi/:id (visualizar) — Bloco 10 (10I)
 const ESCOPO_PROVISIONAMENTO_MASTER = Object.freeze({
   perfil: 'MASTER',
   recursos: Object.freeze([
@@ -65,9 +66,11 @@ const ESCOPO_PROVISIONAMENTO_MASTER = Object.freeze({
     // E9: Validade e Operações de estoque são consultas com permissão própria — só visualizar.
     Object.freeze({ recurso: 'stockValidity', operacoes: Object.freeze(['visualizar']) }),
     Object.freeze({ recurso: 'operations', operacoes: Object.freeze(['visualizar']) }),
+    // 10I: a ficha e o histórico de entregas são consulta — só visualizar; entregar é a ação abaixo.
+    Object.freeze({ recurso: 'epiFicha', operacoes: Object.freeze(['visualizar']) }),
   ]),
-  // estoque.routes.js: entradas e baixas por lote (migrations 003/017)
-  acoes: Object.freeze(['MOVIMENTAR_ESTOQUE']),
+  // estoque.routes.js: entradas e baixas por lote; entrega-epi.routes.js: entrega e seu contexto (migrations 003/017)
+  acoes: Object.freeze(['MOVIMENTAR_ESTOQUE', 'REALIZAR_ENTREGA']),
 });
 
 for (const recurso of RECURSOS_CONHECIDOS) {

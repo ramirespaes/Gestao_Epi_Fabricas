@@ -185,6 +185,28 @@ describe('decisões: só `true` explícito libera', () => {
     servidor(resposta(200, corpo({ administracao: { ...corpo().administracao, usuarios: { consultar: 'true', alterar: true } } })));
     assert.deepEqual(await P.carregar(ESPERADO), { ok: false, motivo: 'RESPOSTA_INVALIDA' });
   });
+
+  test('10I: Ficha de EPI abre com epiFicha.visualizar OU REALIZAR_ENTREGA (duas autoridades independentes); alterar só com a ação', () => {
+    assert.deepEqual(P.PAGINAS.epiFicha, {
+      abrir: [{ recurso: 'epiFicha', operacao: 'visualizar' }, { acao: 'REALIZAR_ENTREGA' }],
+      abrirComQualquer: true,
+      alterar: [{ acao: 'REALIZAR_ENTREGA' }],
+    });
+    const com = (ficha, entrega) => corpo({ recursos: { ...corpo().recursos, epiFicha: { visualizar: ficha, criar: false, editar: false, excluir: false } }, acoes: { MOVIMENTAR_ESTOQUE: false, REALIZAR_ENTREGA: entrega } });
+    const A = com(true, false); const B = com(false, true); const C = com(true, true); const D = com(false, false);
+    assert.deepEqual([P.podeAbrir(A, 'epiFicha'), P.podeAlterar(A, 'epiFicha')], [true, false], 'A) só consulta');
+    assert.deepEqual([P.podeAbrir(B, 'epiFicha'), P.podeAlterar(B, 'epiFicha')], [true, true], 'B) só entrega');
+    assert.deepEqual([P.podeAbrir(C, 'epiFicha'), P.podeAlterar(C, 'epiFicha')], [true, true], 'C) ambas');
+    assert.deepEqual([P.podeAbrir(D, 'epiFicha'), P.podeAlterar(D, 'epiFicha')], [false, false], 'D) nenhuma');
+    assert.equal(P.podeAbrir(corpo({ recursos: { ...corpo().recursos, epiFicha: { visualizar: true, criar: true, editar: true, excluir: true } } }), 'epiFicha'), true);
+    const links = ['epiFicha', 'employeeHistory'].map(linkFalso);
+    P.aplicarMenu(B, links);
+    assert.deepEqual(links.map((l) => l.style.display), ['', 'none'], 'quem só entrega vê a Ficha, não o Histórico');
+    P.aplicarMenu(D, links);
+    assert.deepEqual(links.map((l) => l.style.display), ['none', 'none']);
+    // A regra "qualquer uma" é exclusiva da Ficha: as demais páginas continuam exigindo todas.
+    for (const pagina of Object.keys(P.PAGINAS)) if (pagina !== 'epiFicha') assert.equal(P.PAGINAS[pagina].abrirComQualquer, undefined, pagina);
+  });
 });
 
 describe('menu, página e somente leitura', () => {
@@ -283,7 +305,7 @@ describe('páginas (inspeção estática)', () => {
     const html = ler('portal/inicio.html');
     const links = [...html.matchAll(/<a [^>]*data-pagina="([^"]+)"[^>]*>/g)];
     // E10: na ordem do menu (fechamento-e10.test.js confere a ordem).
-    assert.deepEqual(links.map((m) => m[1]), ['dashboard', 'materials', 'stockValidity', 'availableItems', 'operations', 'employeeGroups', 'employeeHistory',
+    assert.deepEqual(links.map((m) => m[1]), ['dashboard', 'materials', 'stockValidity', 'availableItems', 'operations', 'employeeGroups', 'epiFicha', 'employeeHistory',
       'grupos-acesso', 'grupo-permissoes', 'grupo-usuarios', 'autorizacoes-individuais', 'importEmployees', 'newUser', 'userAdmin']);
     for (const m of links) assert.match(m[0], /style="display:none"/);
     assert.match(html, /<script src="\.\.\/js\/permissoes-efetivas\.js"><\/script>/);

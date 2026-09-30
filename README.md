@@ -4,7 +4,7 @@ Sistema para gestão de Equipamentos de Proteção Individual (EPIs), com fronte
 
 ## Estado do projeto
 
-O desenvolvimento é organizado em blocos. Situação em 29/09/2026:
+O desenvolvimento é organizado em blocos. Situação em 30/09/2026:
 
 | Bloco | Situação |
 |---|---|
@@ -15,17 +15,37 @@ O desenvolvimento é organizado em blocos. Situação em 29/09/2026:
 | Correções de segurança pós-auditoria e Cloudflare Turnstile no login do Portal do Cliente | Incorporados à `main` (PR #33) |
 | MFA TOTP do Painel Privado (MFA-1 a MFA-10) | Incorporado à `main` (PRs #34, #35 e #36; merge `427102a`). Ver "Painel Privado e MFA TOTP" |
 | Gate de segurança pré-Bloco 10 — CI no GitHub Actions, portabilidade dos testes de migration, logout seguro do Portal e atualização documental | Implementado no PR #37 |
-| 10 — Entrega real de EPI, ficha, assinatura e baixa de estoque por lote | Próximo marco funcional, após o gate de segurança pré-Bloco 10 |
+| 10 — Entrega real de EPI, ficha, confirmação e baixa de estoque por lote | **Concluído** nas subetapas 10A a 10J. 10A a 10H incorporadas à `main` (PRs #38, #39, #40 e #41); 10I + 10J validadas localmente na branch `feature/bloco10-10i-10j`, ainda sem PR. Ver "Bloco 10" |
+
+### Bloco 10 — Entrega real de EPI, ficha, confirmação e baixa de estoque por lote
+
+Fluxo **direto** de entrega: quem tem a ação `REALIZAR_ENTREGA` localiza o trabalhador, escolhe materiais e lotes, registra a confirmação de recebimento e o estoque baixa por lote na mesma transação. A ficha de EPI é o registro cumulativo do trabalhador, uma por funcionário na empresa, numerada em sequência por empresa; cada entrega guarda cópias dos dados da época (empresa, trabalhador, GHE, responsável e material), e o CPF nunca é copiado — sai mascarado das consultas.
+
+| Subetapa | Conteúdo | Situação |
+|---|---|---|
+| 10A + 10B | Estrutura persistente: migrations `057` a `060` (fichas, entregas, itens, confirmação e vínculo com o estoque por lote) | `main`, PR #38 |
+| 10C + 10D | Serviço transacional de entrega: concorrência e locks, idempotência por chave, baixa de estoque por lote, auditoria e confirmação com hash | `main`, PR #39 |
+| 10E + 10F | APIs de entrega e ficha: contexto da entrega (trabalhador, materiais e lotes), consultas, histórico com cópias da época, proteção de dados (CPF só no corpo, nunca na URL) e permissões separadas para consultar e entregar | `main`, PR #40 |
+| 10G + 10H | Frontend real da Ficha de EPI (`pages/epi-ficha.html` + `js/epi-ficha.js`): entrega operacional, assinatura desenhada e aceite presencial, retry idempotente, proteção contra confirmação obsoleta e contra resposta assíncrona antiga | `main`, PR #41 |
+| 10I + 10J | Integração oficial: página `epiFicha` em `PAGINAS` e `prepararPagina`, menus, Portal, grupos de permissões, provisionamento do MASTER, allowlist e pacote publicado | branch `feature/bloco10-10i-10j`, validada localmente em 30/09/2026 (ver "Estado atual"); PR ainda não criado |
+
+**Permissões da Ficha de EPI.** Duas autoridades independentes: consultar fichas e histórico é o recurso `epiFicha` (operação visualizar); realizar entrega é a ação `REALIZAR_ENTREGA` (modo `ALTERNATIVA`: grupo ou autorização individual). A página abre com qualquer uma das duas e mostra só o que cada uma dá. Desde a 10I, o escopo de provisionamento do MASTER (`backend/src/rbac/recursos.js`) inclui `epiFicha` (visualizar) e as ações `MOVIMENTAR_ESTOQUE` e `REALIZAR_ENTREGA`.
+
+**Provisionamento do MASTER em bancos existentes (observação operacional).** Empresas novas provisionadas depois da 10I recebem o escopo novo automaticamente. Bancos e empresas já existentes só recebem `epiFicha.visualizar` e `REALIZAR_ENTREGA` para o MASTER quando o comando oficial `npm run db:provisionar:master` for executado com autorização específica para cada banco. Esse provisionamento não foi executado em nenhum banco persistente (`gestao_epi_demo`, `gestao_epi_dev`, `gestao_epi_migrado` ou `gestao_epi_revisao_e6_20260927`).
+
+**Limites do Bloco 10 — funcionalidades futuras, não pendências do encerramento:**
+
+- **Solicitação de EPI pelo trabalhador.** Fluxo futuro: o trabalhador solicita o EPI, a **Segurança do Trabalho** aprova (não o supervisor) e só então acontece a entrega. A entrega originada desse fluxo usará `origem = SOLICITACAO`; o Bloco 10 entrega o fluxo direto (`origem = DIRETA`).
+- **Impressão e PDF da ficha.** A impressão oficial em duas vias continua futura; o botão "Imprimir" da página permanece desabilitado até lá.
 
 ### Próximos marcos e itens futuros
 
 Nada desta lista está implementado:
 
-- **Bloco 10:** entrega real de EPI ao funcionário, ficha de EPI, assinatura e baixa de estoque por lote.
-- **Bloco 11:** ciclo de vida da senha (troca e recuperação "Esqueci minha senha" no Portal do Cliente e no Painel Privado), medição da cobertura do frontend (meta de 25%), testes finais e fechamento acadêmico.
+- **Bloco 11 (próximo marco):** ciclo de vida da senha — troca de senha e "Esqueci minha senha", no Portal do Cliente e no Painel Privado, com recuperação segura; medição da cobertura do frontend com meta mínima de 25%; testes finais e fechamento acadêmico. Decisão funcional já tomada para a recuperação de senha: o link de redefinição é de **uso único**, com **validade máxima de 4 horas**; depois de usado ou expirado, é necessário solicitar outro; se a pessoa não solicitou a redefinição, pode ignorar o e-mail. Suporte humano: `suporte@safeworkengenharia.com.br`. O endereço de envio automático (no-reply) das redefinições ainda está por confirmar.
 - **Homologação e produção na AWS:** deploy, requisitos de publicação do frontend (entre eles a CSP no servidor estático), `TRUST_PROXY_HOPS` conforme a topologia real, chaves reais do Turnstile e do MFA e aplicação autorizada das migrations em cada banco.
 - **Antes da produção:** limpeza e retenção das tabelas de sessões e de tentativas de login.
-- **Backlog:** envio real de e-mail (convites) e notificações, página "Acesso negado" com "Solicitar acesso" e reorganização de pastas.
+- **Backlog:** envio real de e-mail (convites e redefinição de senha) e notificações, página "Acesso negado" com "Solicitar acesso" e reorganização de pastas.
 - **Melhoria futura opcional:** Cloudflare Turnstile também no login do Painel Privado, a reconsiderar só se logs ou padrões de ataque justificarem.
 
 ### Encerramento do Bloco 8
@@ -64,7 +84,7 @@ Os itens abaixo ficaram fora do Bloco 8 e têm destino formal. Não são pendên
 gestao-epi/
 ├── .github/workflows/ci.yml  # CI: testes, checksums e integração com PostgreSQL 16
 ├── backend/                  # API, banco de dados, migrations e regras de negócio
-│   ├── migrations/           # 000 a 056 e o manifesto checksums.json
+│   ├── migrations/           # 000 a 060 e o manifesto checksums.json
 │   ├── scripts/              # runner de migrations e comandos administrativos (CLI)
 │   ├── src/                  # app, config, routes, controllers, services, repositories,
 │   │                         # middleware, schemas, security, rbac, db, errors e utils
@@ -99,7 +119,11 @@ A estrutura interna utiliza caminhos relativos entre `index.html`, `pages/`, `cs
 
 ### Frontend legado
 
-Das 22 páginas originais em `frontend/pages/`, 9 já foram ligadas ao backend real no Bloco 9 (`materials.html`, `available-items.html`, `employee-history.html`, `import-employees.html`, `dashboard.html`, `stock-validity.html`, `operations.html`, `new-user.html` e `user-admin.html`); a página `employee-groups.html` (GHE e EPIs) foi criada no próprio Bloco 9. As outras 13 continuam no repositório como protótipo, com `frontend/js/db-api.js` (simulador de API em `localStorage`) e `frontend/js/main.js` (login e RBAC simulados), usando somente dados inequivocamente sintéticos. Elas não entram no pacote publicado (ver "Publicação do frontend do cliente") e serão integradas nos blocos seguintes.
+Das 22 páginas originais em `frontend/pages/`, 10 já estão ligadas ao backend real: 9 no Bloco 9 (`materials.html`, `available-items.html`, `employee-history.html`, `import-employees.html`, `dashboard.html`, `stock-validity.html`, `operations.html`, `new-user.html` e `user-admin.html`) e `epi-ficha.html` (Ficha de EPI) no Bloco 10; a página `employee-groups.html` (GHE e EPIs) foi criada no próprio Bloco 9. As outras 12 continuam no repositório como protótipo, com `frontend/js/db-api.js` (simulador de API em `localStorage`) e `frontend/js/main.js` (login e RBAC simulados), usando somente dados inequivocamente sintéticos. O teste de publicação as identifica pelo critério objetivo de carregarem script externo (a biblioteca de planilhas por CDN): elas não entram no pacote publicado (ver "Publicação do frontend do cliente") e serão integradas nos blocos seguintes.
+
+### Bloco 10 — Ficha de EPI
+
+`epi-ficha.html` deixou de ser protótipo na 10G e virou funcionalidade oficial na 10I + 10J. A página usa a sessão empresarial do Portal (`js/sessao-empresarial.js`), as permissões efetivas pelo fluxo central `EpiPermissoes.prepararPagina` (página `epiFicha`, que abre com `epiFicha.visualizar` **ou** `REALIZAR_ENTREGA`) e as APIs reais de ficha e entrega, sem `db-api.js`, `main.js` nem biblioteca externa. As regras ficam em `js/epi-ficha.js`, testado sem navegador: busca de fichas e consulta por CPF (só no corpo de um `POST`), histórico com as cópias da época, rascunho da entrega (até 20 itens, lote escolhido explicitamente, justificativas), confirmação por **assinatura desenhada** (traços normalizados) ou **aceite presencial**, chave de idempotência reutilizada só enquanto o conteúdo não muda, "Tentar novamente" com o mesmo corpo e a mesma chave depois de falha de rede, confirmação invalidada por qualquer mudança lógica e descarte de respostas assíncronas antigas ao trocar de trabalhador. O link "Ficha de EPI" aparece nos menus e no Portal conforme a permissão, e a página e o módulo estão em `frontend/publicacao/allowlist.json`, entrando no pacote publicado.
 
 ### Frontend administrativo HTTP (Incremento 8)
 
@@ -291,6 +315,8 @@ A API do Incremento 8 (fotografia histórica, não o total atual da API) soma **
 
 O Bloco 9 acrescentou, na mesma cadeia `/api`, as rotas de materiais, estoque por lote, itens disponíveis, GHE, funcionários, dashboard e, na parte F, `usuario-administracao.routes.js` (`/api/administracao/usuarios`) e `convite-usuario.routes.js` (`/api/administracao/convites-usuario` e as duas rotas públicas de aceite, `/api/convite-usuario/consultar` e `/api/convite-usuario/aceitar`, com limite de requisições próprio).
 
+O Bloco 10 acrescentou `entrega-epi.routes.js`, também em `/api`: `POST /api/entregas-epi` (registrar entrega, com chave de idempotência), o contexto da entrega em `/api/entregas-epi/contexto/*` (localizar trabalhador por nome ou matrícula, consulta por CPF no corpo, contexto do trabalhador, materiais e lotes) e as consultas `GET /api/entregas-epi/:id`, `GET /api/fichas-epi`, `POST /api/fichas-epi/consulta-cpf`, `GET /api/fichas-epi/:id` e `GET /api/fichas-epi/:id/entregas`. Entrega e contexto exigem a ação `REALIZAR_ENTREGA`; ficha e histórico exigem o recurso `epiFicha` (visualizar). O CPF nunca vai na URL.
+
 Também na cadeia `/api`, `auth-global.routes.js` atende o Portal do Cliente: `POST /api/auth/global/login` (e-mail, senha e token do Turnstile), `GET /api/auth/global/turnstile` (site key e action públicas do widget), `GET /api/auth/global/me`, `POST /api/auth/global/empresas/:id/selecionar` e `POST /api/auth/global/logout`.
 
 A cadeia `/api/plataforma`, montada antes de `/api` e separada dela, atende o Painel Privado: login, sessão e logout da plataforma, as rotas do MFA em `/api/plataforma/auth/mfa/*`, o resumo do painel, o cadastro de empresas e o convite do MASTER (com duas rotas públicas de aceite).
@@ -299,7 +325,9 @@ A cadeia `/api/plataforma`, montada antes de `/api` e separada dela, atende o Pa
 
 ## Banco de dados e migrations
 
-O banco do projeto é PostgreSQL 16. As migrations ficam em `backend/migrations/` e existem hoje arquivos versionados de `000` a `056` (57 no total, sem lacunas), que devem ser executados em ordem crescente de prefixo.
+O banco do projeto é PostgreSQL 16. As migrations ficam em `backend/migrations/` e existem hoje arquivos versionados de `000` a `060` (61 no total, sem lacunas), que devem ser executados em ordem crescente de prefixo.
+
+**Bloco 10 (PR #38):** a `057` cria as chaves compostas que as FKs da entrega referenciam (`funcionarios (empresa_id, id)` e `estoque_lotes (empresa_id, id, material_id)`), para que a ficha só aponte para funcionário da mesma empresa e o item da entrega prove, sem gatilho, que o lote é daquele material e daquela empresa. A `058` cria a ficha de EPI (uma por funcionário na empresa, numerada em sequência por empresa), a entrega (evento dentro da ficha, com cópias dos dados da empresa, do trabalhador, do GHE e do responsável da época, chave de idempotência e `origem`, hoje só `DIRETA`) e os itens (cópias do material; tamanho, CA e validade vêm do lote). A `059` faz `estoque_operacoes` aceitar a operação `ENTREGA`, ligada a exatamente um item por FK composta (empresa, item, lote, quantidade). A `060` cria a confirmação de recebimento, exatamente uma por entrega, nos modos `DESENHO` (traços em JSON) e `ACEITE_PRESENCIAL`, sem biometria; a entrega sem confirmação não passa do COMMIT e, como as tabelas só aceitam INSERT, uma entrega gravada fica fechada para sempre. Todas estão versionadas, no manifesto de checksums e validadas em schemas temporários; aplicá-las a qualquer banco persistente exige autorização separada.
 
 **MFA TOTP do Painel Privado (PRs #34 a #36):** a `048` acrescenta ator e alvo à auditoria da plataforma, para registrar operações de CLI e eventos sem autor humano. A `049` cria os fatores de MFA (por ora só TOTP, com o segredo cifrado e o último período aceito para o anti-replay). A `050` e a `051` criam os lotes e os recovery codes, guardados só como hash. A `052` cria os desafios pré-MFA, separados da sessão. A `053` cria as liberações de cadastro de uso único emitidas por CLI. A `054` registra na sessão da plataforma o instante e o método do MFA. A `055` torna o MFA obrigatório em toda sessão não revogada do Painel Privado, conferido pelo PostgreSQL no COMMIT; ao ser aplicada, revoga com o motivo `MFA_OBRIGATORIO` as sessões anteriores que não comprovam o MFA. A `056` cria o gatilho que, na inativação de um administrador, encerra desafios abertos, revoga fatores pendentes (apagando o segredo cifrado) e revoga liberações de cadastro abertas. Todas estão versionadas, no manifesto de checksums e validadas em schemas temporários, inclusive no CI; aplicá-las a qualquer banco persistente exige autorização separada.
 
@@ -370,7 +398,7 @@ O histórico fica registrado na tabela `pgmigrations`, criada e mantida pela fer
 
 ### Integridade das migrations
 
-As migrations de `000` a `056` são protegidas por um manifesto de checksums SHA-256 em `backend/migrations/checksums.json` (57 entradas, todas íntegras na verificação do CI de 29/09/2026). O `npm run db:migrate:verificar` recalcula o digest de cada arquivo e o compara com o registro, detectando alteração de conteúdo, remoção e renomeação.
+As migrations de `000` a `060` são protegidas por um manifesto de checksums SHA-256 em `backend/migrations/checksums.json` (61 entradas, todas íntegras na validação local de 30/09/2026). O `npm run db:migrate:verificar` recalcula o digest de cada arquivo e o compara com o registro, detectando alteração de conteúdo, remoção e renomeação.
 
 Uma migration já aplicada não deve ser alterada. O manifesto só aceita registro automático de migration nova, e recusa qualquer atualização que encubra mudança em arquivo histórico. Correções de estrutura entram sempre em uma migration nova.
 
@@ -388,7 +416,7 @@ O sinalizador de confirmação registra a intenção de quem executa, e não com
 
 O backend usa o runner nativo `node:test` com `node:assert/strict`, e `supertest` para os testes HTTP. A cobertura é medida pela instrumentação nativa do Node (`--experimental-test-coverage`), sem biblioteca adicional. A versão mínima do backend é o Node 22 (`engines`: `>=22`), a mesma usada no CI.
 
-Atualmente existem testes permanentes para a fundação da autenticação (Bloco 5: configuração, normalização, senha, política de senha, token de sessão, cooldown e erros HTTP), para a camada de validação de entrada (Bloco 6: schemas Zod, middleware de validação e tratamento de erros) e para a segurança HTTP (Bloco 7: cabeçalhos, CORS, verificação de origem, política de conteúdo, limite de payload, rate limit e cookies). O Incremento 8 acrescentou a suíte completa do RBAC — repositories, services, controllers, rotas e middleware de autorização.
+Atualmente existem testes permanentes para a fundação da autenticação (Bloco 5: configuração, normalização, senha, política de senha, token de sessão, cooldown e erros HTTP), para a camada de validação de entrada (Bloco 6: schemas Zod, middleware de validação e tratamento de erros) e para a segurança HTTP (Bloco 7: cabeçalhos, CORS, verificação de origem, política de conteúdo, limite de payload, rate limit e cookies). O Incremento 8 acrescentou a suíte completa do RBAC — repositories, services, controllers, rotas e middleware de autorização. O Bloco 10 acrescentou as suítes da entrega de EPI (serviço transacional e idempotência, schemas, rotas de entrega e ficha, escopo e provisionamento do MASTER) e, no frontend, a do módulo `js/epi-ficha.js` e da página integrada.
 
 Além dessa suíte padrão existe uma suíte separada de integração, que valida migrations, repositórios, rotas e concorrência contra um PostgreSQL real e não roda junto com `npm test`. O Incremento 8 também criou uma suíte de testes de frontend própria (`frontend/test/`, runner nativo `node:test`), inexistente até então — ver "Estado atual" abaixo.
 
@@ -450,22 +478,22 @@ O PostgreSQL do segundo job existe só durante a execução e é descartado ao f
 
 ### Estado atual
 
-Resultado do CI no commit `dcca3b8` (run `36656243643`, 29/09/2026):
+Validação local do fechamento do Bloco 10, em 30/09/2026, na branch `feature/bloco10-10i-10j` (não é resultado do CI do GitHub: o PR de 10I + 10J ainda não foi criado, e o CI roda quando ele existir). A integração usou um banco temporário exclusivo, removido ao final.
 
 | Suíte | Testes | Suites | Aprovados | Falhas |
 |---|---:|---:|---:|---:|
-| Backend — unitário (`npm run test:ci`) | 1978 | 481 | 1978 | 0 |
-| Backend — integração PostgreSQL 16 (`npm run test:integracao`) | 1671 | 400 | 1671 | 0 |
-| Frontend (`npm test`, dentro de `frontend/`) | 1047 | 213 | 1047 | 0 |
-| Checksums das migrations (`npm run db:migrate:verificar`) | 57 | — | 57 íntegras | — |
+| Backend — unitário (`npm run test:ci`) | 2014 | 493 | 2014 | 0 |
+| Backend — integração PostgreSQL 16 (`npm run test:integracao`) | 1800 | 429 | 1800 | 0 |
+| Frontend (`npm test`, dentro de `frontend/`) | 1099 | 229 | 1099 | 0 |
+| Checksums das migrations (`npm run db:migrate:verificar`) | 61 | — | 61 íntegras | — |
 
-Cobertura do backend no mesmo run, pelo relatório de `npm run test:ci` (linha "all files"):
+Cobertura do backend na mesma validação, pelo relatório de `npm run test:ci` (linha "all files"):
 
 | `line %` | `branch %` | `funcs %` |
 |---:|---:|---:|
-| 92,07 | 94,27 | 84,66 |
+| 89,44 | 94,01 | 79,40 |
 
-O limiar do CI (`--test-coverage-lines=75`) vale para `line %`. Medições anteriores ficam no histórico do Git.
+O limiar do CI (`--test-coverage-lines=75`) vale para `line %`. O último resultado de CI registrado nesta seção foi o do commit `dcca3b8` (29/09/2026), anterior ao Bloco 10; medições anteriores ficam no histórico do Git.
 
 ### Histórico e adoção de TDD
 
