@@ -56,8 +56,10 @@ describe('publicação do frontend do cliente por allowlist explícita', () => {
     const legadas = fs.readdirSync(path.join(RAIZ, 'pages'))
       .filter((f) => f.endsWith('.html'))
       .filter((f) => /<script[^>]+src=["']https?:/i.test(fs.readFileSync(path.join(RAIZ, 'pages', f), 'utf8')));
-    assert.equal(legadas.length, 13, 'as 13 páginas legadas continuam no repositório (a E7 integrou a Validade de estoque, a E8 as Operações de estoque e a parte F as duas páginas de usuários)');
+    assert.equal(legadas.length, 12, 'as 12 páginas legadas continuam no repositório (a E7 integrou a Validade de estoque, a E8 as Operações de estoque, a parte F as duas páginas de usuários e a 10G a Ficha de EPI)');
     for (const pagina of legadas) assert.ok(!publicados.includes(`pages/${pagina}`), `${pagina} não pode ser publicada`);
+    // Ficha de EPI integrada na 10G; entra na allowlist só na 10I+10J.
+    assert.ok(!publicados.includes('pages/epi-ficha.html'));
 
     for (const fora of ['index.html', 'js/main.js', 'js/db-api.js', 'js/auth-session.js', 'package.json', 'vendor/README.md']) {
       assert.ok(!publicados.includes(fora), `${fora} não pode ser publicado`);

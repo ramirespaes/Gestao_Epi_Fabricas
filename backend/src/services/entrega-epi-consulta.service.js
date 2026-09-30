@@ -45,6 +45,31 @@ async function trabalhadorApto(pool, empresaId, funcionarioId) {
   return funcionario;
 }
 
+/** Trabalhadores ativos da empresa para seleção na entrega (nome e matrícula; nunca CPF na busca). */
+async function localizarTrabalhadores(pool, { empresaId, busca = null, pagina, limite }) {
+  exigirId(empresaId, 'identificador de empresa');
+  const filtros = { busca };
+  const [linhas, total] = await Promise.all([
+    contextoRepo.listarFuncionarios(pool, empresaId, { ...filtros, pagina, limite }),
+    contextoRepo.contarFuncionarios(pool, empresaId, filtros),
+  ]);
+  const funcionarios = linhas.map((f) => {
+    const { ativo, ...publico } = funcionarioAtualPublico(f);
+    return { ...publico, ghe: f.ghe };
+  });
+  return { funcionarios, total, pagina, limite };
+}
+
+/** Trabalhador pelo CPF exato da empresa, apto a receber EPI; o CPF só chega pelo corpo. */
+async function localizarTrabalhadorPorCpf(pool, { empresaId, cpf }) {
+  exigirId(empresaId, 'identificador de empresa');
+  const funcionario = await funcionarioRepo.buscarPorCpf(pool, empresaId, cpf);
+  if (funcionario === null) throw HttpError.notFound('FUNCIONARIO_NAO_ENCONTRADO', 'Trabalhador não encontrado');
+  if (funcionario.ativo !== true) throw HttpError.conflict('FUNCIONARIO_INATIVO', 'Trabalhador inativo não recebe EPI');
+  const { ativo, ...publico } = funcionarioAtualPublico(funcionario);
+  return { funcionario: { ...publico, ghe: await gheAtual(pool, empresaId, funcionario) } };
+}
+
 /** Contexto para iniciar a entrega: trabalhador (CPF mascarado), GHE atual e ficha existente. */
 async function contextoDoTrabalhador(pool, { empresaId, funcionarioId }) {
   const funcionario = await trabalhadorApto(pool, empresaId, funcionarioId);
@@ -174,6 +199,8 @@ async function buscarEntrega(pool, { empresaId, entregaId }) {
 }
 
 module.exports = {
+  localizarTrabalhadores,
+  localizarTrabalhadorPorCpf,
   contextoDoTrabalhador,
   listarMateriaisDoContexto,
   listarLotesDoContexto,

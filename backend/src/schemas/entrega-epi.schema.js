@@ -76,6 +76,15 @@ const registrar = {
 
 // ── Contexto para realizar a entrega ────────────────────────────────
 
+// Localizar o trabalhador para a entrega: nome ou matrícula na query; CPF só no corpo.
+const contextoFuncionarios = {
+  query: z.strictObject({
+    busca: textoCurto(BUSCA_MAXIMA, 'BUSCA_INVALIDA', 'Termo de busca inválido').optional(),
+    ...paginacaoQuery,
+  }),
+};
+const contextoConsultaCpf = { body: z.strictObject({ cpf: cpfComDigitosVerificadores }) };
+
 const contexto = { params: z.strictObject({ funcionarioId: idParametro }) };
 
 const contextoMateriais = {
@@ -125,5 +134,5 @@ const fichaEntregas = {
 };
 
 module.exports = {
-  registrar, contexto, contextoMateriais, contextoLotes, fichas, consultaCpf, porId, fichaEntregas, BUSCA_MAXIMA,
+  registrar, contextoFuncionarios, contextoConsultaCpf, contexto, contextoMateriais, contextoLotes, fichas, consultaCpf, porId, fichaEntregas, BUSCA_MAXIMA,
 };

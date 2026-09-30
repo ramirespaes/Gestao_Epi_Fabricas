@@ -17,6 +17,8 @@ const { pool } = require('../config/database');
  *
  * Caminhos, quando montado por app.js sob /api:
  *   POST /api/entregas-epi
+ *   GET  /api/entregas-epi/contexto/funcionarios          (localizar trabalhador por nome/matrícula)
+ *   POST /api/entregas-epi/contexto/consulta-cpf          (CPF no corpo, nunca na URL)
  *   GET  /api/entregas-epi/contexto/:funcionarioId
  *   GET  /api/entregas-epi/contexto/:funcionarioId/materiais
  *   GET  /api/entregas-epi/contexto/:funcionarioId/materiais/:materialId/lotes
@@ -42,7 +44,20 @@ function criarEntregaEpiRoutes({ controller, exigirSessao: exigirSessaoInjetado,
     validar({ body: schemas.registrar.body }),
     controller.registrar,
   );
-  // As rotas de contexto ficam antes de /entregas-epi/:id.
+  // As rotas de contexto ficam antes de /entregas-epi/:id, e as estáticas
+  // (funcionarios, consulta-cpf) antes de /contexto/:funcionarioId.
+  router.get(
+    '/entregas-epi/contexto/funcionarios',
+    exigirSessaoInjetado, exigirRealizarEntrega,
+    validar({ query: schemas.contextoFuncionarios.query }),
+    controller.contextoFuncionarios,
+  );
+  router.post(
+    '/entregas-epi/contexto/consulta-cpf',
+    exigirSessaoInjetado, exigirRealizarEntrega,
+    validar({ body: schemas.contextoConsultaCpf.body }),
+    controller.contextoConsultaCpf,
+  );
   router.get(
     '/entregas-epi/contexto/:funcionarioId',
     exigirSessaoInjetado, exigirRealizarEntrega,

@@ -127,6 +127,16 @@ describe('registrar.body — estrito', () => {
 });
 
 describe('contexto e consultas — params, query e body estritos', () => {
+  test('localizar trabalhador: query de busca paginada e estrita, sem CPF; consulta por CPF só no corpo, com DV', () => {
+    assert.deepEqual(schemas.contextoFuncionarios.query.safeParse({}).data, { pagina: 1, limite: 20 });
+    assert.deepEqual(schemas.contextoFuncionarios.query.safeParse({ busca: ' Ana ', pagina: '2', limite: '5' }).data, { busca: 'Ana', pagina: 2, limite: 5 });
+    assert.equal(schemas.contextoFuncionarios.query.safeParse({ cpf: '52998224725' }).success, false);
+    assert.equal(schemas.contextoFuncionarios.query.safeParse({ ativo: 'true' }).success, false);
+    assert.deepEqual(schemas.contextoConsultaCpf.body.safeParse({ cpf: '529.982.247-25' }).data, { cpf: '52998224725' });
+    assert.equal(schemas.contextoConsultaCpf.body.safeParse({ cpf: '52998224726' }).success, false);
+    assert.equal(schemas.contextoConsultaCpf.body.safeParse({ cpf: '52998224725', empresaId: 1 }).success, false);
+  });
+
   test('contexto: funcionarioId e materialId de rota são inteiros canônicos; a query de materiais é paginada e estrita', () => {
     assert.deepEqual(schemas.contexto.params.safeParse({ funcionarioId: '12' }).data, { funcionarioId: 12 });
     assert.equal(schemas.contexto.params.safeParse({ funcionarioId: '0' }).success, false);
