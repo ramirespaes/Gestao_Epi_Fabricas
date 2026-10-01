@@ -61,6 +61,10 @@
     "057_alter_funcionarios_estoque_lotes_add_unicidades.sql": "5c4cba4ce07940fe999d3b4bacaef47e845b6573a5921fc7809cfe8202134c39",
     "058_create_fichas_entregas_epi.sql": "0ba43bf26d86365d7963f973578dcb302008341b081bf9486e9438ab5a74b1a9",
     "059_alter_estoque_operacoes_add_entrega.sql": "55a84604ae31f9e0384c5cfa94595aab59b8e8ba66bd1c77eb8a5935db4397aa",
-    "060_create_entregas_epi_confirmacoes.sql": "0b090811fd36fed820cf8ed0002e7e0fc851f9e12aeb9b5fcf31998c2d974285"
+    "060_create_entregas_epi_confirmacoes.sql": "0b090811fd36fed820cf8ed0002e7e0fc851f9e12aeb9b5fcf31998c2d974285",
+    "061_create_redefinicoes_senha.sql": "3aaa3d171697e33044dacdb44510ca3948953170def9d4ac425c45f5cf27259b",
+    "062_create_redefinicoes_senha_plataforma.sql": "bc44b859eb7175e3c2850b8fc1931c8681382f3cafd958a577f395bc6aecc43c",
+    "063_create_recuperacao_senha_solicitacoes.sql": "fb6c9ff24add26998bf59f8cf9b89c351593534170a8f2d5bedb875472d719b5",
+    "064_create_logs_auditoria_identidade.sql": "04352cea60e9ba262d2acf499add7df46b8fd2eeaaaf2d27865bfc27dd73378b"
   }
 }

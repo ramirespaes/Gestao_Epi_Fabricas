@@ -52,25 +52,26 @@ jobs:
     timeout-minutes: 25
     # Banco criado dentro do runner e descartado ao fim do job. Credenciais
     # sintéticas, sem secrets; os testes isolam cada execução em schema
-    # temporário próprio.
+    # temporário próprio. O nome do banco é o único que a suíte de integração
+    # aceita (backend/test/integracao/helpers/banco-de-teste.js).
     services:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_DB: gestao_epi_ci
+          POSTGRES_DB: gestao_epi_teste_local
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d gestao_epi_ci"
+          --health-cmd "pg_isready -U postgres -d gestao_epi_teste_local"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
     env:
       DB_HOST: 127.0.0.1
       DB_PORT: "5432"
-      DB_NAME: gestao_epi_ci
+      DB_NAME: gestao_epi_teste_local
       DB_USER: postgres
       DB_PASSWORD: postgres
     steps:

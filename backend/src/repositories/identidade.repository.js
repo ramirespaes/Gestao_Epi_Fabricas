@@ -104,4 +104,24 @@ async function buscarPorId(executor, id) {
   return mapear(rows[0]);
 }
 
-module.exports = { criar, buscarPorEmail, buscarCredencialPorEmail, buscarPorId };
+/**
+ * Grava o hash novo da senha, que chega pronto do serviço. Devolve null
+ * para identidade inexistente. atualizado_em fica por conta do gatilho.
+ */
+async function atualizarSenhaHash(executor, id, senhaHash) {
+  exigirId(id);
+  exigirSenhaHash(senhaHash);
+
+  const { rows } = await executor.query(
+    `UPDATE identidades
+        SET senha_hash = $2
+      WHERE id = $1
+      RETURNING id, atualizado_em`,
+    [id, senhaHash],
+  );
+
+  const linha = rows[0];
+  return linha === undefined ? null : { id: linha.id, atualizadoEm: linha.atualizado_em };
+}
+
+module.exports = { criar, buscarPorEmail, buscarCredencialPorEmail, buscarPorId, atualizarSenhaHash };

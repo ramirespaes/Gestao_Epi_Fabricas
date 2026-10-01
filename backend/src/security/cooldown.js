@@ -68,6 +68,14 @@ const ROTULO_IDENTIDADE_GLOBAL = 'IDENTIDADE_GLOBAL';
 // (Bloco 9, parte F, migration 046). O mesmo token nunca coincide com a
 // chave do convite do MASTER.
 const ROTULO_CONVITE_USUARIO = 'CONVITE_USUARIO';
+// Limite de solicitações de recuperação de senha (migration 063), um rótulo
+// por namespace: o mesmo e-mail no Portal e no Painel Privado tem contadores
+// separados, e nenhum dos dois coincide com as chaves de login.
+const ESCOPOS_RECUPERACAO_SENHA = Object.freeze({ PORTAL: 'PORTAL', PLATAFORMA: 'PLATAFORMA' });
+const ROTULOS_RECUPERACAO_SENHA = Object.freeze({
+  PORTAL: 'RECUPERACAO_SENHA_PORTAL',
+  PLATAFORMA: 'RECUPERACAO_SENHA_PLATAFORMA',
+});
 const TOKEN_CONVITE_FORMATO = /^[A-Za-z0-9_-]{43}$/;
 
 function gerarChaveCooldown(cnpj, email) {
@@ -193,6 +201,33 @@ function gerarChaveCooldownGlobal(email) {
 }
 
 /**
+ * Chave do limite de solicitações de recuperação de senha por e-mail:
+ * HMAC-SHA-256 sobre o rótulo do escopo || 0x0A || email_normalizado. É o
+ * único valor derivado do e-mail que vai para recuperacao_senha_solicitacoes.
+ */
+function gerarChaveRecuperacaoSenha(escopo, email) {
+  if (typeof escopo !== 'string' || !Object.hasOwn(ROTULOS_RECUPERACAO_SENHA, escopo)) {
+    throw new TypeError('escopo de recuperação de senha inválido');
+  }
+  const emailNormalizado = normalizarEmail(email);
+  if (emailNormalizado === null) {
+    throw new TypeError('e-mail não normalizável');
+  }
+
+  const segredo = obterLoginCooldownHmacSecret();
+  try {
+    return crypto
+      .createHmac('sha256', segredo)
+      .update(ROTULOS_RECUPERACAO_SENHA[escopo], 'utf8')
+      .update(SEPARADOR, 'utf8')
+      .update(emailNormalizado, 'utf8')
+      .digest('hex');
+  } finally {
+    segredo.fill(0);
+  }
+}
+
+/**
  * Chave das tentativas de MFA do Painel Privado, por administrador:
  * SHA-256("PLATAFORMA_MFA|a<administrador_id>") em hexadecimal. Sem HMAC:
  * o id não é dado pessoal, e o cooldown só existe depois da senha correta.
@@ -234,11 +269,13 @@ function idCorrelacaoCooldown(chave) {
 
 module.exports = {
   CHAVE_COOLDOWN_TAMANHO,
+  ESCOPOS_RECUPERACAO_SENHA,
   gerarChaveCooldown,
   gerarChaveCooldownPlataforma,
   gerarChaveCooldownConvite,
   gerarChaveCooldownConviteUsuario,
   gerarChaveCooldownGlobal,
+  gerarChaveRecuperacaoSenha,
   gerarChaveCooldownMfaPlataforma,
   chaveCooldownTemFormatoValido,
   derivarAdvisoryLock64,
