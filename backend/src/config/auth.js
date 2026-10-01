@@ -65,6 +65,9 @@ const INTEIROS = Object.freeze({
   // Expiração absoluta da sessão plena do Painel Privado, que só nasce
   // depois do segundo fator.
   SESSAO_ADMIN_EXPIRACAO_MINUTOS: { min: 5, max: 1440, padrao: 480 },
+  // Validade do link de redefinição de senha. O teto de 240 é o mesmo das
+  // migrations 061 e 062: o banco recusa pedido com mais de 4 horas.
+  RECUPERACAO_SENHA_VALIDADE_MINUTOS: { min: 5, max: 240, padrao: 60 },
 });
 
 const OPCOES = Object.freeze({
@@ -151,6 +154,7 @@ const esquema = z
     MFA_DESAFIO_MAX_FALHAS: inteiroDeAmbiente(INTEIROS.MFA_DESAFIO_MAX_FALHAS),
     MFA_LIBERACAO_MINUTOS: inteiroDeAmbiente(INTEIROS.MFA_LIBERACAO_MINUTOS),
     SESSAO_ADMIN_EXPIRACAO_MINUTOS: inteiroDeAmbiente(INTEIROS.SESSAO_ADMIN_EXPIRACAO_MINUTOS),
+    RECUPERACAO_SENHA_VALIDADE_MINUTOS: inteiroDeAmbiente(INTEIROS.RECUPERACAO_SENHA_VALIDADE_MINUTOS),
   })
   .refine((e) => e.SESSAO_INATIVIDADE_MINUTOS <= e.SESSAO_EXPIRACAO_MINUTOS, {
     message: MENSAGENS.INATIVIDADE,
@@ -284,6 +288,9 @@ function analisarConfigAuth(origem) {
     },
     liberacaoMfa: {
       expiracaoMinutos: e.MFA_LIBERACAO_MINUTOS,
+    },
+    recuperacaoSenha: {
+      validadeMinutos: e.RECUPERACAO_SENHA_VALIDADE_MINUTOS,
     },
   });
 

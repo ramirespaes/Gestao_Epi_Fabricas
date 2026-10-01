@@ -67,6 +67,13 @@ const limitadorConviteUsuario = criarLimitador(httpConfig.rateLimit.autenticacao
 // parâmetros do limite de autenticação. Complementa o limite de falhas por
 // desafio e o cooldown persistente de MFA por administrador.
 const limitadorPlataformaMfa = criarLimitador(httpConfig.rateLimit.autenticacao);
+// Recuperação de senha: um contador por operação e por portal, para que
+// esgotar uma não bloqueie a outra nem o login. Complementa o limite
+// persistente por e-mail do service.
+const limitadorRecuperacaoSenhaSolicitar = criarLimitador(httpConfig.rateLimit.autenticacao);
+const limitadorRecuperacaoSenhaRedefinir = criarLimitador(httpConfig.rateLimit.autenticacao);
+const limitadorPlataformaRecuperacaoSenhaSolicitar = criarLimitador(httpConfig.rateLimit.autenticacao);
+const limitadorPlataformaRecuperacaoSenhaRedefinir = criarLimitador(httpConfig.rateLimit.autenticacao);
 
 module.exports = {
   criarLimitador,
@@ -77,4 +84,8 @@ module.exports = {
   limitadorPlataformaConvite,
   limitadorConviteUsuario,
   limitadorPlataformaMfa,
+  limitadorRecuperacaoSenhaSolicitar,
+  limitadorRecuperacaoSenhaRedefinir,
+  limitadorPlataformaRecuperacaoSenhaSolicitar,
+  limitadorPlataformaRecuperacaoSenhaRedefinir,
 };

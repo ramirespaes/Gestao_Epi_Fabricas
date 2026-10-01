@@ -92,3 +92,26 @@ describe('configuração do Turnstile do Portal', () => {
     assert.throws(() => { config.portal.hostnamesPermitidos.push('mal.test'); }, TypeError);
   });
 });
+
+describe('action própria da recuperação de senha do Portal', () => {
+  const turnstile = require('../../src/config/turnstile'); // eslint-disable-line global-require
+
+  test('a recuperação usa a mesma chave e os mesmos hostnames do Portal, com action distinta da do login', () => {
+    for (const origem of [{ NODE_ENV: 'test' }, producao({ TURNSTILE_PORTAL_SITE_KEY: SITE_FICTICIA, TURNSTILE_PORTAL_SECRET_KEY: SECRET_FICTICIA })]) {
+      const { portal } = carregar(origem, CORS_PRODUCAO);
+      assert.equal(portal.acao, 'portal_login', 'a action do login não muda');
+      assert.equal(portal.acaoRecuperacaoSenha, 'portal_recuperacao_senha');
+      assert.notEqual(portal.acaoRecuperacaoSenha, portal.acao);
+    }
+    assert.equal(turnstile.ACAO_PORTAL_RECUPERACAO_SENHA, 'portal_recuperacao_senha');
+    assert.equal(ACAO_PORTAL_LOGIN, 'portal_login');
+    assert.equal(turnstileConfig.portal.acaoRecuperacaoSenha, 'portal_recuperacao_senha');
+  });
+
+  test('a action nova não traz variável de ambiente nova nem expõe a secret', () => {
+    const config = carregar(producao({ TURNSTILE_PORTAL_SITE_KEY: SITE_FICTICIA, TURNSTILE_PORTAL_SECRET_KEY: SECRET_FICTICIA }), CORS_PRODUCAO);
+    assert.deepEqual(Object.keys(config), ['portal'], 'continua existindo um único bloco, o do Portal');
+    assert.deepEqual(Object.keys(config.portal).sort(), ['acao', 'acaoRecuperacaoSenha', 'hostnamesPermitidos', 'modoTeste', 'siteKey', 'timeoutMs']);
+    assert.equal(JSON.stringify(config).includes(SECRET_FICTICIA), false);
+  });
+});

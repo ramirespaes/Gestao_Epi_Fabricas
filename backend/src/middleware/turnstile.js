@@ -33,10 +33,10 @@ function criarExigirTurnstile({ validador }) {
   };
 }
 
-const exigirTurnstilePortal = criarExigirTurnstile({
+const exigirTurnstileDoPortal = (acao) => criarExigirTurnstile({
   validador: criarValidadorTurnstile({
     secretKey: turnstileConfig.portal.secretKey,
-    acao: turnstileConfig.portal.acao,
+    acao,
     hostnamesPermitidos: turnstileConfig.portal.hostnamesPermitidos,
     modoTeste: turnstileConfig.portal.modoTeste,
     timeoutMs: turnstileConfig.portal.timeoutMs,
@@ -44,4 +44,7 @@ const exigirTurnstilePortal = criarExigirTurnstile({
   }),
 });
 
-module.exports = { criarExigirTurnstile, exigirTurnstilePortal };
+const exigirTurnstilePortal = exigirTurnstileDoPortal(turnstileConfig.portal.acao);
+const exigirTurnstileRecuperacaoSenha = exigirTurnstileDoPortal(turnstileConfig.portal.acaoRecuperacaoSenha);
+
+module.exports = { criarExigirTurnstile, exigirTurnstilePortal, exigirTurnstileRecuperacaoSenha };

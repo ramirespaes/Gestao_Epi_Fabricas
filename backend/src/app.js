@@ -26,6 +26,7 @@ const { funcionarioRoutes } = require('./routes/funcionario.routes');
 const { usuarioAdministracaoRoutes } = require('./routes/usuario-administracao.routes');
 const { conviteUsuarioRoutes } = require('./routes/convite-usuario.routes');
 const { entregaEpiRoutes } = require('./routes/entrega-epi.routes');
+const { recuperacaoSenhaPortalRoutes, recuperacaoSenhaPlataformaRoutes } = require('./routes/recuperacao-senha.routes');
 const { cabecalhosSeguranca, semCache } = require('./middleware/cabecalhos');
 const { corsApi, corsPlataforma } = require('./middleware/cors');
 const { exigirJson, parserJson } = require('./middleware/conteudo');
@@ -79,6 +80,9 @@ app.use(
   exigirJson,
   parserJson,
   authPlataformaRoutes,
+  // Recuperação de senha do administrador: pública, sem Turnstile, com
+  // limitadores próprios dentro da fábrica.
+  recuperacaoSenhaPlataformaRoutes,
   painelPlataformaRoutes,
   // Pacote 3: cadastro de empresas e convite do MASTER — mesma cadeia,
   // mesmas allowlists. As rotas administrativas exigem sessão do Painel
@@ -137,7 +141,11 @@ app.use(
 // autoridade GERENCIAR_USUARIOS é decidida no serviço, como nas telas de
 // grupos. As duas rotas públicas de aceite de convite passam pela mesma
 // verificação de origem e têm limitador próprio.
-app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeral, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, estoqueRoutes, itensDisponiveisRoutes, grupoHomogeneoExposicaoRoutes, gheMaterialRoutes, funcionarioRoutes, dashboardRoutes, usuarioAdministracaoRoutes, conviteUsuarioRoutes, entregaEpiRoutes);
+//
+// recuperacaoSenhaPortalRoutes (Bloco 11D): solicitação e redefinição de
+// senha do Portal, públicas, na mesma cadeia. A solicitação exige o
+// Turnstile com action própria; cada POST tem o próprio limitador.
+app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeral, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, recuperacaoSenhaPortalRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, estoqueRoutes, itensDisponiveisRoutes, grupoHomogeneoExposicaoRoutes, gheMaterialRoutes, funcionarioRoutes, dashboardRoutes, usuarioAdministracaoRoutes, conviteUsuarioRoutes, entregaEpiRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
