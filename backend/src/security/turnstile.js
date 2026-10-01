@@ -6,7 +6,8 @@ const net = require('node:net');
  * Verificação server-side do token do Cloudflare Turnstile (Siteverify).
  *
  * Resultado interno mínimo:
- *   VALIDO       success true, action esperada e hostname permitido;
+ *   VALIDO       success true, action esperada e hostname permitido (no modo
+ *                das chaves oficiais de teste, só success true);
  *   INVALIDO     o desafio não vale (token recusado, reusado, expirado,
  *                action ou hostname diferentes);
  *   INDISPONIVEL não deu para saber (timeout, rede, HTTP não-2xx, resposta
@@ -22,8 +23,6 @@ const SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverif
 const TOKEN_TAMANHO_MAXIMO = 2048;
 const RESPOSTA_TAMANHO_MAXIMO = 16 * 1024;
 const TIMEOUT_MAXIMO_MS = 30000;
-// Com as chaves oficiais de teste, o Siteverify sempre devolve esta action.
-const ACAO_CHAVE_TESTE = 'test';
 // Erros que indicam problema de configuração ou da Cloudflare, não do
 // desafio. bad-request fica fora: um token estranho pode provocá-lo, e o que
 // o cliente provoca não gera log.
@@ -56,7 +55,6 @@ function criarValidadorTurnstile({ secretKey, acao, hostnamesPermitidos, modoTes
     throw new TypeError('hostnames do Turnstile ausentes');
   }
   const hostnames = new Set(hostnamesPermitidos);
-  const acaoEsperada = modoTeste ? ACAO_CHAVE_TESTE : acao;
 
   async function chamarSiteverify(token, ip) {
     const corpo = new URLSearchParams({ secret: secretKey, response: token });
@@ -102,12 +100,17 @@ function criarValidadorTurnstile({ secretKey, acao, hostnamesPermitidos, modoTes
         return resultado(RESULTADO.INVALIDO);
       }
 
+      // Chaves oficiais de teste: o Siteverify responde sem action e com
+      // hostname fictício, então success basta. O modo vem só da configuração
+      // (config/turnstile.js recusa chave de teste em production).
+      if (modoTeste) return resultado(RESULTADO.VALIDO);
+
       if (typeof dados.action !== 'string' || typeof dados.hostname !== 'string') {
         registrarIndisponibilidade('RESPOSTA_MALFORMADA');
         return resultado(RESULTADO.INDISPONIVEL);
       }
-      if (dados.action !== acaoEsperada) return resultado(RESULTADO.INVALIDO);
-      if (!modoTeste && !hostnames.has(dados.hostname)) return resultado(RESULTADO.INVALIDO);
+      if (dados.action !== acao) return resultado(RESULTADO.INVALIDO);
+      if (!hostnames.has(dados.hostname)) return resultado(RESULTADO.INVALIDO);
       return resultado(RESULTADO.VALIDO);
     },
   };
