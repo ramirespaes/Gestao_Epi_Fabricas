@@ -140,17 +140,71 @@ describe('validador do Turnstile (Siteverify)', () => {
     assert.equal(fetch.chamadas.length, 0);
   });
 
-  test('modo de teste (chaves oficiais de teste, nunca em production): exige a action fixa "test" e não confere hostname', async () => {
-    const teste = (extra) => validador(fetchFalso(sucesso(extra)), { modoTeste: true, hostnamesPermitidos: ['localhost'] });
-    assert.deepEqual(await teste({ action: 'test', hostname: 'localhost' }).verificar({ token: TOKEN }), { resultado: 'VALIDO' });
-    assert.deepEqual(await teste({ action: 'test', hostname: 'example.com' }).verificar({ token: TOKEN }), { resultado: 'VALIDO' });
-    assert.deepEqual(await teste({ action: 'outra', hostname: 'localhost' }).verificar({ token: TOKEN }), { resultado: 'INVALIDO' });
-    assert.deepEqual(await teste({ success: false, 'error-codes': ['invalid-input-response'] }).verificar({ token: TOKEN }), { resultado: 'INVALIDO' });
+  // Resposta real do Siteverify para a secret oficial de teste (30/09/2026):
+  // sem o campo action e com hostname fictício.
+  const RESPOSTA_REAL_CHAVE_TESTE = {
+    challenge_ts: '2026-09-30T23:47:23.166Z', 'error-codes': [], hostname: 'example.com', metadata: { result_with_testing_key: true }, success: true,
+  };
+  const emModoTeste = (responder) => validador(fetchFalso(responder), { modoTeste: true, hostnamesPermitidos: ['localhost'] });
+
+  test('modo de teste: a resposta real da chave oficial de teste (success true, sem action, hostname example.com) é VALIDO e não gera log', async (t) => {
+    const linhas = capturarConsole(t);
+    assert.deepEqual(await emModoTeste(json(RESPOSTA_REAL_CHAVE_TESTE)).verificar({ token: TOKEN }), { resultado: 'VALIDO' });
+    assert.equal(linhas.length, 0, 'não é indisponibilidade: nada a registrar');
+  });
+
+  test('modo de teste (chaves oficiais de teste, nunca em production): success true basta; action e hostname não são conferidos', async () => {
+    const respostas = [
+      { success: true },
+      { success: true, hostname: 'example.com' },
+      { success: true, action: 'test', hostname: 'localhost' },
+      { success: true, action: 'portal_login', hostname: 'example.com' },
+      { success: true, action: 'outra', hostname: 'mal.test' },
+      { success: true, action: null, hostname: null },
+    ];
+    for (const corpo of respostas) {
+      assert.deepEqual(await emModoTeste(json(corpo)).verificar({ token: TOKEN }), { resultado: 'VALIDO' }, JSON.stringify(corpo));
+    }
+  });
+
+  test('modo de teste continua falhando fechado: success false, erro da Cloudflare, resposta malformada, HTTP não-2xx, rede e token fora do contrato', async () => {
+    assert.deepEqual(await emModoTeste(json({ success: false, 'error-codes': ['invalid-input-response'] })).verificar({ token: TOKEN }), { resultado: 'INVALIDO' });
+    assert.deepEqual(await emModoTeste(json({ success: false, 'error-codes': ['invalid-input-secret'] })).verificar({ token: TOKEN }), { resultado: 'INDISPONIVEL' });
+    for (const responder of [json('não é json'), json('null'), json('[]'), json({ success: 'true' }), json({ metadata: { result_with_testing_key: true } }), json(RESPOSTA_REAL_CHAVE_TESTE, 500)]) {
+      assert.deepEqual(await emModoTeste(responder).verificar({ token: TOKEN }), { resultado: 'INDISPONIVEL' });
+    }
+    assert.deepEqual(await emModoTeste(() => { throw new TypeError('fetch failed'); }).verificar({ token: TOKEN }), { resultado: 'INDISPONIVEL' });
+    const fetch = fetchFalso(json(RESPOSTA_REAL_CHAVE_TESTE));
+    const v = validador(fetch, { modoTeste: true, hostnamesPermitidos: ['localhost'] });
+    for (const token of [undefined, '', 'a'.repeat(2049)]) assert.deepEqual(await v.verificar({ token }), { resultado: 'INVALIDO' });
+    assert.equal(fetch.chamadas.length, 0, 'o limite do token vale também no modo de teste');
+  });
+
+  test('produção inalterada: action e hostname continuam obrigatórios, como string, com valor exato; metadata nunca prova nada', async () => {
+    const producao = (corpo) => validador(fetchFalso(json(corpo))).verificar({ token: TOKEN });
+    // A) action ausente ou fora do formato: nunca VALIDO.
+    assert.deepEqual(await producao(RESPOSTA_REAL_CHAVE_TESTE), { resultado: 'INDISPONIVEL' }, 'a resposta da chave de teste não passa em produção');
+    assert.deepEqual(await producao({ ...RESPOSTA_REAL_CHAVE_TESTE, hostname: HOSTNAME }), { resultado: 'INDISPONIVEL' });
+    for (const action of [undefined, null, 1, ['portal_login'], { a: 1 }]) {
+      assert.deepEqual(await producao({ success: true, action, hostname: HOSTNAME }), { resultado: 'INDISPONIVEL' }, `action ${JSON.stringify(action)}`);
+    }
+    // B) hostname ausente ou fora do formato: nunca VALIDO.
+    for (const hostname of [undefined, null, 1, [HOSTNAME]]) {
+      assert.deepEqual(await producao({ success: true, action: 'portal_login', hostname }), { resultado: 'INDISPONIVEL' }, `hostname ${JSON.stringify(hostname)}`);
+    }
+    // C) action diferente e D) hostname fora da allowlist: INVALIDO.
+    assert.deepEqual(await producao({ success: true, action: 'test', hostname: HOSTNAME }), { resultado: 'INVALIDO' }, '"test" não é a action esperada');
+    assert.deepEqual(await producao({ success: true, action: 'outra', hostname: HOSTNAME }), { resultado: 'INVALIDO' });
+    assert.deepEqual(await producao({ success: true, action: 'portal_login', hostname: 'example.com' }), { resultado: 'INVALIDO' });
+    // E) success false: INVALIDO; erro de configuração da Cloudflare: INDISPONIVEL.
+    assert.deepEqual(await producao({ success: false, 'error-codes': ['invalid-input-response'] }), { resultado: 'INVALIDO' });
+    assert.deepEqual(await producao({ success: false, 'error-codes': ['invalid-input-secret'] }), { resultado: 'INDISPONIVEL' });
+    // metadata.result_with_testing_key não muda nada fora do modo de teste.
     assert.deepEqual(
-      await validador(fetchFalso(sucesso({ action: 'test' }))).verificar({ token: TOKEN }),
+      await producao({ success: true, action: 'outra', hostname: 'mal.test', metadata: { result_with_testing_key: true } }),
       { resultado: 'INVALIDO' },
-      'fora do modo de teste, "test" não é a action esperada',
     );
+    assert.deepEqual(await producao({ success: true, action: 'portal_login', hostname: HOSTNAME, metadata: { result_with_testing_key: true } }), { resultado: 'VALIDO' });
   });
 
   test('nenhuma saída de console leva token, secret ou a resposta da Cloudflare; só a indisponibilidade gera uma linha mínima', async (t) => {
