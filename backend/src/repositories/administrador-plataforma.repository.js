@@ -107,4 +107,25 @@ async function buscarPorId(executor, id) {
   return mapear(rows[0]);
 }
 
-module.exports = { criar, buscarCredencialPorEmail, buscarPorEmail, buscarPorId };
+/**
+ * Grava o hash novo da senha, que chega pronto do serviço. Devolve null
+ * para administrador inexistente. Só a senha muda: fator, códigos de
+ * recuperação e desafios de MFA não são tocados.
+ */
+async function atualizarSenhaHash(executor, id, senhaHash) {
+  exigirId(id, 'identificador de administrador');
+  exigirSenhaHash(senhaHash);
+
+  const { rows } = await executor.query(
+    `UPDATE administradores_plataforma
+        SET senha_hash = $2
+      WHERE id = $1
+      RETURNING id, atualizado_em`,
+    [id, senhaHash],
+  );
+
+  const linha = rows[0];
+  return linha === undefined ? null : { id: linha.id, atualizadoEm: linha.atualizado_em };
+}
+
+module.exports = { criar, buscarCredencialPorEmail, buscarPorEmail, buscarPorId, atualizarSenhaHash };

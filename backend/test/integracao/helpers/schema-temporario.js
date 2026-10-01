@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { Client, Pool } = require('pg');
+const { configuracaoDoBancoDeTeste, confirmarBancoDeTeste } = require('./banco-de-teste');
 
 /**
  * Schema temporário para testes de migration em PostgreSQL real.
@@ -16,6 +17,10 @@ const { Client, Pool } = require('pg');
  *
  * Conexão exclusivamente pelas variáveis já existentes do projeto
  * (DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD). A senha nunca é impressa.
+ *
+ * Só o banco de teste é aceito (helpers/banco-de-teste.js): outro DB_NAME é
+ * recusado antes de conectar, e nenhum CREATE SCHEMA acontece antes de o
+ * próprio PostgreSQL confirmar o banco da conexão.
  */
 
 const NOME_SEGURO = /^[a-z][a-z0-9_]{1,62}$/;
@@ -41,21 +46,26 @@ function migrationExiste(prefixo) {
  * Abre conexão, cria o schema temporário e aplica as migrations indicadas na
  * ordem recebida. Devolve o cliente já com search_path no schema e a função
  * de limpeza.
+ *
+ * `criarCliente` existe só para o teste da trava do banco injetar uma conexão
+ * falsa; os testes de integração nunca o informam.
  */
-async function abrirSchemaTemporario(prefixosDeMigration) {
+async function abrirSchemaTemporario(prefixosDeMigration, { criarCliente = (configuracao) => new Client(configuracao) } = {}) {
+  const configuracao = configuracaoDoBancoDeTeste();
   const schema = nomeDeSchema();
   if (!NOME_SEGURO.test(schema)) {
     throw new Error('nome de schema gerado é inválido');
   }
-  const cliente = new Client({
-    host: process.env.DB_HOST,
-    port: Number(process.env.DB_PORT),
-    database: process.env.DB_NAME,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    connectionTimeoutMillis: 8000,
-  });
+  const cliente = criarCliente(configuracao);
   await cliente.connect();
+
+  // Recusa sem limpeza: fora do banco de teste nem o DROP SCHEMA é enviado.
+  try {
+    await confirmarBancoDeTeste(cliente);
+  } catch (erro) {
+    await cliente.end();
+    throw erro;
+  }
 
   const encerrar = async () => {
     try {
@@ -106,24 +116,19 @@ async function inserirEmpresa(cliente, cnpj, nome = 'Empresa Teste') {
  * ativa quando o DROP SCHEMA roda. Se a criação do próprio Pool falhar, a
  * conexão administrativa e o schema já criados são limpos antes de propagar
  * o erro.
+ *
+ * `criarCliente` e `criarPool` existem só para o teste da trava do banco.
  */
-async function abrirPoolTemporario(prefixosDeMigration) {
-  const base = await abrirSchemaTemporario(prefixosDeMigration);
+async function abrirPoolTemporario(prefixosDeMigration, { criarCliente, criarPool = (configuracao) => new Pool(configuracao) } = {}) {
+  const base = await abrirSchemaTemporario(prefixosDeMigration, { criarCliente });
 
   let pool;
   try {
-    pool = new Pool({
-      host: process.env.DB_HOST,
-      port: Number(process.env.DB_PORT),
-      database: process.env.DB_NAME,
-      user: process.env.DB_USER,
-      password: process.env.DB_PASSWORD,
-      options: `-c search_path=${base.schema}`,
-      connectionTimeoutMillis: 8000,
-    });
+    pool = criarPool({ ...configuracaoDoBancoDeTeste(), options: `-c search_path=${base.schema}` });
     // Falha cedo, antes de devolver ao chamador, se a configuração do Pool
-    // estiver incorreta (credenciais, host, etc.).
-    await pool.query('SELECT 1');
+    // estiver incorreta (credenciais, host, etc.) ou se o pool cair em outro
+    // banco que não o de teste.
+    await confirmarBancoDeTeste(pool);
   } catch (erro) {
     if (pool) {
       await pool.end();

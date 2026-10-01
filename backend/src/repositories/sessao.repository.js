@@ -351,6 +351,36 @@ async function revogarDaSessaoGlobalComSituacao(executor, sessaoGlobalId, motivo
   return rows.map((linha) => ({ sessaoId: linha.id, empresaId: linha.empresa_id, usuarioId: linha.usuario_id, valida: linha.valida === true }));
 }
 
+/**
+ * Revoga as sessões empresariais ainda não revogadas de todos os vínculos da
+ * identidade, em qualquer empresa e de qualquer origem (seleção de empresa
+ * ou login por CNPJ), e devolve quantas foram. Sem filtro de empresa de
+ * propósito: a senha é da pessoa. `exceto` preserva só a sessão empresarial
+ * da requisição que fez a troca de senha; o identificador vem do cookie
+ * validado, nunca do cliente.
+ */
+async function revogarTodasDaIdentidade(executor, identidadeId, motivo, { exceto = null } = {}) {
+  if (!Number.isInteger(identidadeId) || identidadeId <= 0) {
+    throw new TypeError('identificador de identidade inválido');
+  }
+  exigirMotivo(motivo);
+  if (exceto !== null) {
+    exigirSessao(exceto);
+  }
+
+  const { rowCount } = await executor.query(
+    `UPDATE sessoes s SET revogada_em = now(), motivo_revogacao = $2
+       FROM usuarios u
+      WHERE u.empresa_id = s.empresa_id AND u.id = s.usuario_id
+        AND u.identidade_id = $1
+        AND s.revogada_em IS NULL
+        AND ($3::bigint IS NULL OR s.id <> $3::bigint)`,
+    [identidadeId, motivo, exceto],
+  );
+
+  return rowCount;
+}
+
 module.exports = {
   criar,
   buscarValidaPorHash,
@@ -359,5 +389,6 @@ module.exports = {
   revogarDoUsuario,
   revogarDaSessaoGlobal,
   revogarDaSessaoGlobalComSituacao,
+  revogarTodasDaIdentidade,
   CAMPOS_SESSAO,
 };

@@ -166,4 +166,28 @@ async function revogar(executor, sessaoId, motivo) {
   return rowCount > 0;
 }
 
-module.exports = { criar, buscarValidaPorHash, registrarUso, bloquearValida, revogar };
+/**
+ * Revoga todas as sessões globais ainda não revogadas da identidade,
+ * inclusive as vencidas, e devolve quantas foram. `exceto` preserva a
+ * sessão que está fazendo a troca de senha; no reset público não há exceção.
+ */
+async function revogarTodasDaIdentidade(executor, identidadeId, motivo, { exceto = null } = {}) {
+  exigirIdentidade(identidadeId);
+  exigirMotivo(motivo);
+  if (exceto !== null) {
+    exigirSessao(exceto);
+  }
+
+  const { rowCount } = await executor.query(
+    `UPDATE sessoes_globais
+        SET revogada_em = now(), motivo_revogacao = $2
+      WHERE identidade_id = $1
+        AND revogada_em IS NULL
+        AND ($3::bigint IS NULL OR id <> $3::bigint)`,
+    [identidadeId, motivo, exceto],
+  );
+
+  return rowCount;
+}
+
+module.exports = { criar, buscarValidaPorHash, registrarUso, bloquearValida, revogar, revogarTodasDaIdentidade };

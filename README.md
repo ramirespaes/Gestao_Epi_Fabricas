@@ -15,7 +15,7 @@ O desenvolvimento é organizado em blocos. Situação em 30/09/2026:
 | Correções de segurança pós-auditoria e Cloudflare Turnstile no login do Portal do Cliente | Incorporados à `main` (PR #33) |
 | MFA TOTP do Painel Privado (MFA-1 a MFA-10) | Incorporado à `main` (PRs #34, #35 e #36; merge `427102a`). Ver "Painel Privado e MFA TOTP" |
 | Gate de segurança pré-Bloco 10 — CI no GitHub Actions, portabilidade dos testes de migration, logout seguro do Portal e atualização documental | Implementado no PR #37 |
-| 10 — Entrega real de EPI, ficha, confirmação e baixa de estoque por lote | **Concluído** nas subetapas 10A a 10J. 10A a 10H incorporadas à `main` (PRs #38, #39, #40 e #41); 10I + 10J validadas localmente na branch `feature/bloco10-10i-10j`, ainda sem PR. Ver "Bloco 10" |
+| 10 — Entrega real de EPI, ficha, confirmação e baixa de estoque por lote | **Concluído** nas subetapas 10A a 10J, todas incorporadas à `main` (PRs #38, #39, #40, #41 e #42). Ver "Bloco 10" |
 
 ### Bloco 10 — Entrega real de EPI, ficha, confirmação e baixa de estoque por lote
 
@@ -27,7 +27,7 @@ Fluxo **direto** de entrega: quem tem a ação `REALIZAR_ENTREGA` localiza o tra
 | 10C + 10D | Serviço transacional de entrega: concorrência e locks, idempotência por chave, baixa de estoque por lote, auditoria e confirmação com hash | `main`, PR #39 |
 | 10E + 10F | APIs de entrega e ficha: contexto da entrega (trabalhador, materiais e lotes), consultas, histórico com cópias da época, proteção de dados (CPF só no corpo, nunca na URL) e permissões separadas para consultar e entregar | `main`, PR #40 |
 | 10G + 10H | Frontend real da Ficha de EPI (`pages/epi-ficha.html` + `js/epi-ficha.js`): entrega operacional, assinatura desenhada e aceite presencial, retry idempotente, proteção contra confirmação obsoleta e contra resposta assíncrona antiga | `main`, PR #41 |
-| 10I + 10J | Integração oficial: página `epiFicha` em `PAGINAS` e `prepararPagina`, menus, Portal, grupos de permissões, provisionamento do MASTER, allowlist e pacote publicado | branch `feature/bloco10-10i-10j`, validada localmente em 30/09/2026 (ver "Estado atual"); PR ainda não criado |
+| 10I + 10J | Integração oficial: página `epiFicha` em `PAGINAS` e `prepararPagina`, menus, Portal, grupos de permissões, provisionamento do MASTER, allowlist e pacote publicado | `main`, PR #42 |
 
 **Permissões da Ficha de EPI.** Duas autoridades independentes: consultar fichas e histórico é o recurso `epiFicha` (operação visualizar); realizar entrega é a ação `REALIZAR_ENTREGA` (modo `ALTERNATIVA`: grupo ou autorização individual). A página abre com qualquer uma das duas e mostra só o que cada uma dá. Desde a 10I, o escopo de provisionamento do MASTER (`backend/src/rbac/recursos.js`) inclui `epiFicha` (visualizar) e as ações `MOVIMENTAR_ESTOQUE` e `REALIZAR_ENTREGA`.
 
@@ -42,7 +42,7 @@ Fluxo **direto** de entrega: quem tem a ação `REALIZAR_ENTREGA` localiza o tra
 
 Nada desta lista está implementado:
 
-- **Bloco 11 (próximo marco):** ciclo de vida da senha — troca de senha e "Esqueci minha senha", no Portal do Cliente e no Painel Privado, com recuperação segura; medição da cobertura do frontend com meta mínima de 25%; testes finais e fechamento acadêmico. Decisão funcional já tomada para a recuperação de senha: o link de redefinição é de **uso único**, com **validade máxima de 4 horas**; depois de usado ou expirado, é necessário solicitar outro; se a pessoa não solicitou a redefinição, pode ignorar o e-mail. Suporte humano: `suporte@safeworkengenharia.com.br`. O endereço de envio automático (no-reply) das redefinições ainda está por confirmar.
+- **Bloco 11 (próximo marco):** ciclo de vida da senha — troca de senha e "Esqueci minha senha", no Portal do Cliente e no Painel Privado, com recuperação segura; medição da cobertura do frontend com meta mínima de 25%; testes finais e fechamento acadêmico. Decisão funcional já tomada para a recuperação de senha: o link de redefinição é de **uso único**, com **validade máxima de 4 horas**; depois de usado ou expirado, é necessário solicitar outro; se a pessoa não solicitou a redefinição, pode ignorar o e-mail. Suporte humano: `suporte@safeworkengenharia.com.br`. O endereço de envio automático (no-reply) das redefinições ainda está por confirmar. Do Bloco 11 existe, por enquanto, só a base das subetapas 11A + 11B (migrations `061` a `064` e repositories); serviços, rotas, envio de e-mail e telas ainda não foram implementados.
 - **Homologação e produção na AWS:** deploy, requisitos de publicação do frontend (entre eles a CSP no servidor estático), `TRUST_PROXY_HOPS` conforme a topologia real, chaves reais do Turnstile e do MFA e aplicação autorizada das migrations em cada banco.
 - **Antes da produção:** limpeza e retenção das tabelas de sessões e de tentativas de login.
 - **Backlog:** envio real de e-mail (convites e redefinição de senha) e notificações, página "Acesso negado" com "Solicitar acesso" e reorganização de pastas.
@@ -84,7 +84,7 @@ Os itens abaixo ficaram fora do Bloco 8 e têm destino formal. Não são pendên
 gestao-epi/
 ├── .github/workflows/ci.yml  # CI: testes, checksums e integração com PostgreSQL 16
 ├── backend/                  # API, banco de dados, migrations e regras de negócio
-│   ├── migrations/           # 000 a 060 e o manifesto checksums.json
+│   ├── migrations/           # 000 a 064 e o manifesto checksums.json
 │   ├── scripts/              # runner de migrations e comandos administrativos (CLI)
 │   ├── src/                  # app, config, routes, controllers, services, repositories,
 │   │                         # middleware, schemas, security, rbac, db, errors e utils
@@ -325,7 +325,9 @@ A cadeia `/api/plataforma`, montada antes de `/api` e separada dela, atende o Pa
 
 ## Banco de dados e migrations
 
-O banco do projeto é PostgreSQL 16. As migrations ficam em `backend/migrations/` e existem hoje arquivos versionados de `000` a `060` (61 no total, sem lacunas), que devem ser executados em ordem crescente de prefixo.
+O banco do projeto é PostgreSQL 16. As migrations ficam em `backend/migrations/` e existem hoje arquivos versionados de `000` a `064` (65 no total, sem lacunas), que devem ser executados em ordem crescente de prefixo.
+
+**Bloco 11, subetapas 11A + 11B (ciclo de senha):** a `061` cria os pedidos de redefinição de senha das identidades do Portal e a `062`, os dos administradores do Painel Privado. As duas guardam só o hash do link de uso único, limitam a validade a 4 horas, aceitam um único pedido pendente por conta e, por gatilho, impedem que um pedido usado, cancelado ou expirado volte a valer. A `063` cria o contador de solicitações de recuperação por chave HMAC, sem e-mail em claro e sem ligação com conta. A `064` cria a trilha de auditoria da identidade global, que só aceita INSERT e recusa chave JSON sensível. Todas estão versionadas, no manifesto de checksums e validadas em schemas temporários; nenhuma foi aplicada a banco persistente, e aplicá-las exige autorização separada.
 
 **Bloco 10 (PR #38):** a `057` cria as chaves compostas que as FKs da entrega referenciam (`funcionarios (empresa_id, id)` e `estoque_lotes (empresa_id, id, material_id)`), para que a ficha só aponte para funcionário da mesma empresa e o item da entrega prove, sem gatilho, que o lote é daquele material e daquela empresa. A `058` cria a ficha de EPI (uma por funcionário na empresa, numerada em sequência por empresa), a entrega (evento dentro da ficha, com cópias dos dados da empresa, do trabalhador, do GHE e do responsável da época, chave de idempotência e `origem`, hoje só `DIRETA`) e os itens (cópias do material; tamanho, CA e validade vêm do lote). A `059` faz `estoque_operacoes` aceitar a operação `ENTREGA`, ligada a exatamente um item por FK composta (empresa, item, lote, quantidade). A `060` cria a confirmação de recebimento, exatamente uma por entrega, nos modos `DESENHO` (traços em JSON) e `ACEITE_PRESENCIAL`, sem biometria; a entrega sem confirmação não passa do COMMIT e, como as tabelas só aceitam INSERT, uma entrega gravada fica fechada para sempre. Todas estão versionadas, no manifesto de checksums e validadas em schemas temporários; aplicá-las a qualquer banco persistente exige autorização separada.
 
@@ -398,7 +400,7 @@ O histórico fica registrado na tabela `pgmigrations`, criada e mantida pela fer
 
 ### Integridade das migrations
 
-As migrations de `000` a `060` são protegidas por um manifesto de checksums SHA-256 em `backend/migrations/checksums.json` (61 entradas, todas íntegras na validação local de 30/09/2026). O `npm run db:migrate:verificar` recalcula o digest de cada arquivo e o compara com o registro, detectando alteração de conteúdo, remoção e renomeação.
+As migrations de `000` a `064` são protegidas por um manifesto de checksums SHA-256 em `backend/migrations/checksums.json` (65 entradas, todas íntegras na validação local de 01/10/2026). O `npm run db:migrate:verificar` recalcula o digest de cada arquivo e o compara com o registro, detectando alteração de conteúdo, remoção e renomeação.
 
 Uma migration já aplicada não deve ser alterada. O manifesto só aceita registro automático de migration nova, e recusa qualquer atualização que encubra mudança em arquivo histórico. Correções de estrutura entram sempre em uma migration nova.
 
@@ -426,12 +428,14 @@ Além dessa suíte padrão existe uma suíte separada de integração, que valid
 npm test                # executa a suíte padrão, sem cobertura
 npm run test:cobertura  # executa a suíte padrão e imprime a cobertura por arquivo (linhas, ramos e funções)
 npm run test:ci         # executa a suíte padrão com cobertura, exige no mínimo 75% de linhas e grava coverage/lcov.info
-npm run test:integracao # executa a suíte de integração contra PostgreSQL real, fora da suíte padrão
+DB_NAME=gestao_epi_teste_local npm run test:integracao # executa a suíte de integração contra PostgreSQL real, fora da suíte padrão
 ```
 
 Todos devem ser executados dentro de `backend/`.
 
-Os três primeiros não precisam de banco. O `npm run test:integracao` exige um PostgreSQL acessível e as variáveis `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` e `DB_PASSWORD` no ambiente.
+Os três primeiros não precisam de banco. A suíte de integração exige um PostgreSQL acessível, as variáveis `DB_HOST`, `DB_PORT`, `DB_USER` e `DB_PASSWORD` no ambiente e o nome do banco informado explicitamente no comando, como acima: o único banco aceito é `gestao_epi_teste_local`.
+
+O `npm run test:integracao` puro falha fechado, antes de abrir qualquer conexão, sempre que o `DB_NAME` em vigor for outro. É o que acontece enquanto o `.env` estiver apontando para `gestao_epi_homolog_local`: o comando é recusado e nenhum teste roda. O `.env` não precisa ser alterado para rodar os testes; o `DB_NAME` passado no comando vale só para aquela execução.
 
 ### Testes de integração
 
@@ -445,6 +449,14 @@ Cada execução:
 - remove o schema com `DROP SCHEMA ... CASCADE` ao final, inclusive quando o teste falha.
 
 As migrations dos ensaios são aplicadas exclusivamente em schemas temporários. Os testes podem consultar o estado do schema `public` para comprovar o isolamento, comparando a estrutura antes e depois da execução, mas não modificam seus objetos nem seus dados. Um `public` vazio, como o do PostgreSQL efêmero do CI, é uma linha de base válida: o que se exige é que ela seja lida do `public` real e que nada nele mude. As credenciais vêm exclusivamente do ambiente e não aparecem no código nem na saída dos testes.
+
+A suíte só escreve no banco `gestao_epi_teste_local`. É uma allowlist de um nome só, definida em `backend/test/integracao/helpers/banco-de-teste.js`: qualquer outro banco é recusado, seja ele de homologação, de demonstração, de desenvolvimento ou um nome qualquer. A recusa acontece em três pontos:
+
+- o preflight do comando oficial (`pretest:integracao`) confere o nome e pergunta ao próprio PostgreSQL, com `SELECT current_database()`, em que banco a conexão caiu; se não for o banco de teste, os testes nem começam;
+- cada processo de teste confere o `DB_NAME` antes de carregar qualquer arquivo de teste;
+- o helper que cria o schema temporário recusa o nome antes de conectar e confirma o banco real antes do primeiro `CREATE SCHEMA`.
+
+Quem executa um arquivo de integração isolado, fora do comando oficial, conta apenas com a conferência do helper.
 
 Os arquivos de integração são executados em série, com `--test-concurrency=1`. O motivo é o advisory lock do runner de migrations, que tem alcance de banco inteiro e permite apenas uma execução por vez. Em paralelo, um arquivo bloquearia o outro. A serialização reflete essa restrição real da ferramenta e não contorna nenhuma falha intermitente.
 
@@ -472,26 +484,26 @@ O workflow `.github/workflows/ci.yml` roda em todo pull request e em todo push n
 | Job | Etapas |
 |---|---|
 | Backend unitário, checksums e frontend | `npm ci`, `npm run test:ci` e `npm run db:migrate:verificar` em `backend/`; `npm test` em `frontend/` |
-| Integração com PostgreSQL 16 efêmero | serviço `postgres:16` criado dentro do runner, com credenciais sintéticas e health check; `npm ci` e `npm run test:integracao` em `backend/` |
+| Integração com PostgreSQL 16 efêmero | serviço `postgres:16` criado dentro do runner, com o banco `gestao_epi_teste_local`, credenciais sintéticas e health check; `npm ci` e `npm run test:integracao` em `backend/` |
 
 O PostgreSQL do segundo job existe só durante a execução e é descartado ao fim. Os testes continuam isolados em schemas temporários, e nenhum passo do workflow aplica migrations fora deles.
 
 ### Estado atual
 
-Validação local do fechamento do Bloco 10, em 30/09/2026, na branch `feature/bloco10-10i-10j` (não é resultado do CI do GitHub: o PR de 10I + 10J ainda não foi criado, e o CI roda quando ele existir). A integração usou um banco temporário exclusivo, removido ao final.
+Validação local do fechamento das subetapas 11A + 11B do Bloco 11, em 01/10/2026, na branch `feature/bloco11-11a-11b` (não é resultado do CI do GitHub: o CI roda quando o PR existir). A integração usou exclusivamente o banco `gestao_epi_teste_local`.
 
 | Suíte | Testes | Suites | Aprovados | Falhas |
 |---|---:|---:|---:|---:|
-| Backend — unitário (`npm run test:ci`) | 2014 | 493 | 2014 | 0 |
-| Backend — integração PostgreSQL 16 (`npm run test:integracao`) | 1800 | 429 | 1800 | 0 |
+| Backend — unitário (`npm run test:ci`) | 2093 | 509 | 2093 | 0 |
+| Backend — integração PostgreSQL 16 (`npm run test:integracao`) | 1895 | 442 | 1895 | 0 |
 | Frontend (`npm test`, dentro de `frontend/`) | 1099 | 229 | 1099 | 0 |
-| Checksums das migrations (`npm run db:migrate:verificar`) | 61 | — | 61 íntegras | — |
+| Checksums das migrations (`npm run db:migrate:verificar`) | 65 | — | 65 íntegras | — |
 
 Cobertura do backend na mesma validação, pelo relatório de `npm run test:ci` (linha "all files"):
 
 | `line %` | `branch %` | `funcs %` |
 |---:|---:|---:|
-| 89,44 | 94,01 | 79,40 |
+| 89,62 | 94,15 | 79,80 |
 
 O limiar do CI (`--test-coverage-lines=75`) vale para `line %`. O último resultado de CI registrado nesta seção foi o do commit `dcca3b8` (29/09/2026), anterior ao Bloco 10; medições anteriores ficam no histórico do Git.
 

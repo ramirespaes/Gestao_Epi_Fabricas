@@ -31,6 +31,10 @@ const PENDENTES = [
   '058_create_fichas_entregas_epi',
   '059_alter_estoque_operacoes_add_entrega',
   '060_create_entregas_epi_confirmacoes',
+  '061_create_redefinicoes_senha',
+  '062_create_redefinicoes_senha_plataforma',
+  '063_create_recuperacao_senha_solicitacoes',
+  '064_create_logs_auditoria_identidade',
 ];
 const CNPJ = '11222333000181';
 const VIOLACAO_CHECK = '23514';
@@ -98,17 +102,17 @@ describe('runner real: 057 a 060 numa transação, sobre a 056 com estoque movim
     }
   });
 
-  test('o runner aplica 057 a 060 juntas, em ordem, e registra as 61', async () => {
+  test('o runner aplica 057 a 064 juntas, em ordem, e registra as 65', async () => {
     const aplicadas = await aplicarMigrations({ schema: contexto.schema, diretorio: DIRETORIO_REAL });
 
     assert.deepEqual(aplicadas.map((migration) => migration.name), PENDENTES);
     const linhas = await registradas();
-    assert.equal(linhas.length, 61);
+    assert.equal(linhas.length, 65);
     assert.deepEqual(linhas.slice(-PENDENTES.length).map((linha) => linha.name), PENDENTES);
   });
 
   // run_on é o NOW() da transação. Comparo no banco, em microssegundos.
-  test('as quatro entraram numa transação só, separada da que aplicou até a 056', async () => {
+  test('as pendentes entraram numa transação só, separada da que aplicou até a 056', async () => {
     const { rows } = await q(
       `SELECT count(DISTINCT run_on) FILTER (WHERE name = ANY($1))::int AS instantes,
               count(*) FILTER (WHERE name = ANY($1))::int AS pendentes,
@@ -187,10 +191,10 @@ describe('runner real: 057 a 060 numa transação, sobre a 056 com estoque movim
     assert.equal(confirmada, true);
   });
 
-  test('manifesto: as quatro entradas novas conferem com os arquivos e o total é 61', () => {
+  test('manifesto: as entradas pendentes conferem com os arquivos e o total é 65', () => {
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO_REAL, 'checksums.json'), 'utf8'));
     const arquivos = fs.readdirSync(DIRETORIO_REAL).filter((n) => /^\d{3}_.*\.sql$/.test(n)).sort();
-    assert.equal(arquivos.length, 61);
+    assert.equal(arquivos.length, 65);
     assert.deepEqual(Object.keys(manifesto.migrations).sort(), arquivos);
     for (const nome of PENDENTES) {
       const arquivo = `${nome}.sql`;
