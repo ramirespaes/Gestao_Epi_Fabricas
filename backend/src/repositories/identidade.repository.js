@@ -105,6 +105,28 @@ async function buscarPorId(executor, id) {
 }
 
 /**
+ * Trava a linha da identidade até o fim da transação e devolve a situação
+ * lida sob a trava, sem o hash da senha. No ciclo de senha a conta é sempre
+ * travada antes do pedido de redefinição.
+ *
+ * @returns {Promise<{id:number, email:string, ativo:boolean}|null>}
+ */
+async function buscarPorIdParaAtualizacao(executor, id) {
+  exigirId(id);
+
+  const { rows } = await executor.query(
+    `SELECT id, email, ativo
+       FROM identidades
+      WHERE id = $1
+        FOR UPDATE`,
+    [id],
+  );
+
+  const linha = rows[0];
+  return linha === undefined ? null : { id: linha.id, email: linha.email, ativo: linha.ativo };
+}
+
+/**
  * Grava o hash novo da senha, que chega pronto do serviço. Devolve null
  * para identidade inexistente. atualizado_em fica por conta do gatilho.
  */
@@ -124,4 +146,6 @@ async function atualizarSenhaHash(executor, id, senhaHash) {
   return linha === undefined ? null : { id: linha.id, atualizadoEm: linha.atualizado_em };
 }
 
-module.exports = { criar, buscarPorEmail, buscarCredencialPorEmail, buscarPorId, atualizarSenhaHash };
+module.exports = {
+  criar, buscarPorEmail, buscarCredencialPorEmail, buscarPorId, buscarPorIdParaAtualizacao, atualizarSenhaHash,
+};

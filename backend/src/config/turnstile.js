@@ -18,6 +18,8 @@ const { httpConfig } = require('./http');
  */
 
 const ACAO_PORTAL_LOGIN = 'portal_login';
+// Action própria: um token resolvido no login não vale na recuperação de senha.
+const ACAO_PORTAL_RECUPERACAO_SENHA = 'portal_recuperacao_senha';
 const TIMEOUT_SITEVERIFY_MS = 5000;
 
 // Chaves públicas de teste da documentação da Cloudflare.
@@ -80,6 +82,7 @@ function carregarConfigTurnstile(origem = process.env, { corsOrigens = httpConfi
   const portal = {
     siteKey,
     acao: ACAO_PORTAL_LOGIN,
+    acaoRecuperacaoSenha: ACAO_PORTAL_RECUPERACAO_SENHA,
     hostnamesPermitidos: hostnamesDasOrigens(corsOrigens),
     modoTeste: ehChaveDeTeste(secretKey),
     timeoutMs: TIMEOUT_SITEVERIFY_MS,
@@ -93,4 +96,5 @@ module.exports = {
   turnstileConfig: carregarConfigTurnstile(),
   carregarConfigTurnstile,
   ACAO_PORTAL_LOGIN,
+  ACAO_PORTAL_RECUPERACAO_SENHA,
 };

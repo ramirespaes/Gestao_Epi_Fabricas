@@ -24,4 +24,9 @@ const turnstileController = criarTurnstileController({
   acao: turnstileConfig.portal.acao,
 });
 
-module.exports = { criarTurnstileController, turnstileController };
+const turnstileRecuperacaoSenhaController = criarTurnstileController({
+  siteKey: turnstileConfig.portal.siteKey,
+  acao: turnstileConfig.portal.acaoRecuperacaoSenha,
+});
+
+module.exports = { criarTurnstileController, turnstileController, turnstileRecuperacaoSenhaController };

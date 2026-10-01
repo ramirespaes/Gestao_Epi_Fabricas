@@ -47,6 +47,8 @@ const PADRAO = {
   desafioMfa: { cookieNome: 'gepi_mfa_admin', verificacaoMinutos: 5, cadastroMinutos: 15, maxFalhas: 5 },
   // Liberação de cadastro emitida pelo CLI: uso único, prazo curto.
   liberacaoMfa: { expiracaoMinutos: 30 },
+  // Validade do link de redefinição de senha (Bloco 11).
+  recuperacaoSenha: { validadeMinutos: 60 },
 };
 
 describe('configuração carregada do ambiente de teste', () => {
@@ -238,6 +240,20 @@ describe('carregarConfigAuth com ambiente artificial', () => {
     assert.match(erroDe({ ...base, MFA_LIBERACAO_MINUTOS: '1441' }), /MFA_LIBERACAO_MINUTOS: acima do máximo permitido \(1440\)/);
     assert.match(erroDe({ ...base, SESSAO_ADMIN_EXPIRACAO_MINUTOS: '4' }), /SESSAO_ADMIN_EXPIRACAO_MINUTOS: abaixo do mínimo permitido \(5\)/);
     assert.match(erroDe({ ...base, SESSAO_ADMIN_EXPIRACAO_MINUTOS: '1441' }), /SESSAO_ADMIN_EXPIRACAO_MINUTOS: acima do máximo permitido \(1440\)/);
+  });
+
+  test('validade do link de redefinição de senha: padrão 60 minutos, teto de 240 e mínimo de 5, sem o valor na mensagem', () => {
+    assert.deepEqual(carregarConfigAuth(base).recuperacaoSenha, { validadeMinutos: 60 });
+    assert.deepEqual(carregarConfigAuth({ ...base, RECUPERACAO_SENHA_VALIDADE_MINUTOS: '30' }).recuperacaoSenha, { validadeMinutos: 30 });
+    assert.equal(carregarConfigAuth({ ...base, RECUPERACAO_SENHA_VALIDADE_MINUTOS: '240' }).recuperacaoSenha.validadeMinutos, 240);
+    assert.equal(carregarConfigAuth({ ...base, RECUPERACAO_SENHA_VALIDADE_MINUTOS: '5' }).recuperacaoSenha.validadeMinutos, 5);
+    assert.match(erroDe({ ...base, RECUPERACAO_SENHA_VALIDADE_MINUTOS: '241' }), /RECUPERACAO_SENHA_VALIDADE_MINUTOS: acima do máximo permitido \(240\)/);
+    assert.match(erroDe({ ...base, RECUPERACAO_SENHA_VALIDADE_MINUTOS: '1440' }), /RECUPERACAO_SENHA_VALIDADE_MINUTOS: acima do máximo permitido \(240\)/);
+    assert.match(erroDe({ ...base, RECUPERACAO_SENHA_VALIDADE_MINUTOS: '4' }), /RECUPERACAO_SENHA_VALIDADE_MINUTOS: abaixo do mínimo permitido \(5\)/);
+    assert.match(erroDe({ ...base, RECUPERACAO_SENHA_VALIDADE_MINUTOS: '0' }), /RECUPERACAO_SENHA_VALIDADE_MINUTOS: abaixo do mínimo permitido \(5\)/);
+    assert.match(erroDe({ ...base, RECUPERACAO_SENHA_VALIDADE_MINUTOS: '60.5' }), /RECUPERACAO_SENHA_VALIDADE_MINUTOS: deve ser um número inteiro/);
+    assertSemSensiveis(erroDe({ ...base, RECUPERACAO_SENHA_VALIDADE_MINUTOS: 'valorEstranho999' }), ['valorEstranho999'], 'erro da validade');
+    assert.equal(Object.isFrozen(carregarConfigAuth(base).recuperacaoSenha), true);
   });
 
   test('regras cruzadas de sessão e cooldown', () => {
