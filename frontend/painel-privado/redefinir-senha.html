@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>Redefinir senha — Painel Privado — SafeWork</title>
+  <style>
+    /* Identidade visual SafeWork Engenharia — mesmas variáveis, fonte e medidas do login do Painel (index.html). */
+    :root { color-scheme: light; --ink: #153333; --muted: #617471; --accent: #1f7563; --accent-forte: #153333; --surface: #ffffff; --bg: #f7f8f6; --line: #e3e9e5; --campo: #ffffff; --hover: #8ab5a7; --foco: #e1efe9; --erro: #b3261e; --erro-fundo: #fdecea; --info-fundo: #eaf5ef; --sombra: #173d3720; }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100svh; background: var(--bg); color: var(--ink); font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; }
+    .centro { min-height: 100svh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    .cartao { width: 100%; max-width: 400px; padding: 32px 28px 28px; background: var(--surface); border: 1px solid var(--line); border-radius: 17px; box-shadow: 0 22px 55px var(--sombra); }
+    .marca { text-align: center; margin-bottom: 22px; }
+    .marca-nome { display: block; font-size: 17px; font-weight: 740; letter-spacing: -.05em; color: var(--ink); }
+    .marca-nome span { font-weight: 480; letter-spacing: -.035em; color: var(--muted); }
+    .marca-sub { display: block; margin-top: 4px; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+    h1 { margin: 0 0 14px; font-size: 20px; font-weight: 740; letter-spacing: -.03em; color: var(--ink); }
+    .mensagem { min-height: 1.2rem; margin-bottom: 12px; font-size: 13px; border-radius: 11px; }
+    .mensagem.erro { padding: 9px 12px; color: var(--erro); background: var(--erro-fundo); }
+    .mensagem:empty { padding: 0; background: none; }
+    label { display: block; margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+    input { width: 100%; height: 44px; padding: 0 12px; margin-bottom: 14px; font: inherit; font-size: 15px; color: var(--ink); background: var(--campo); border: 1px solid var(--line); border-radius: 11px; outline: none; transition: border-color .15s, box-shadow .15s; }
+    input:hover { border-color: var(--hover); }
+    input:focus-visible { border-color: var(--hover); box-shadow: 0 0 0 3px var(--foco); }
+    .botao { display: block; width: 100%; height: 46px; margin-top: 4px; font: inherit; font-size: 15px; font-weight: 600; line-height: 46px; text-align: center; text-decoration: none; color: #ffffff; background: var(--accent); border: none; border-radius: 11px; cursor: pointer; transition: background-color .15s, box-shadow .15s; }
+    .botao:hover, .botao:focus-visible { background: var(--accent-forte); outline: none; box-shadow: 0 0 0 3px var(--foco); }
+    .botao:disabled { opacity: .6; cursor: default; }
+    @media (max-width: 500px) { .centro { padding: 16px; } .cartao { padding: 26px 20px 22px; border-radius: 15px; } }
+  </style>
+  <link rel="stylesheet" href="mfa.css?v=20260928">
+</head>
+<!--
+  Redefinição de senha do administrador pelo link (Bloco 11F). Página PÚBLICA:
+  nenhuma sessão; a autoridade é o token do link, que chega no fragmento
+  (#token=), nunca vai ao servidor na URL e sai da barra de endereço assim que
+  é lido. O mesmo estado genérico vale para link ausente, incompleto,
+  expirado, usado ou cancelado. A redefinição não faz login e não mexe no
+  segundo fator: o próximo acesso continua exigindo o autenticador.
+-->
+<body>
+  <main class="centro">
+    <form id="form-redefinicao" class="cartao" novalidate hidden>
+      <div class="marca">
+        <strong class="marca-nome">SafeWork <span>Engenharia</span></strong>
+        <span class="marca-sub">Painel Privado · Administração SafeWork</span>
+      </div>
+      <h1>Criar nova senha</h1>
+      <p class="ajuda">Escolha uma senha com pelo menos 12 caracteres, sem termos óbvios e sem o seu e-mail.</p>
+      <div id="mensagem" class="mensagem" role="alert" aria-live="polite"></div>
+      <label for="senha">Nova senha</label>
+      <input type="password" id="senha" name="senha" autocomplete="new-password" required>
+      <label for="senha-confirmacao">Confirme a nova senha</label>
+      <input type="password" id="senha-confirmacao" name="senha-confirmacao" autocomplete="new-password" required>
+      <button type="submit" id="botao-redefinir" class="botao">Salvar nova senha</button>
+    </form>
+
+    <section id="link-invalido" class="cartao" hidden>
+      <div class="marca">
+        <strong class="marca-nome">SafeWork <span>Engenharia</span></strong>
+        <span class="marca-sub">Painel Privado · Administração SafeWork</span>
+      </div>
+      <h1>Link inválido ou expirado</h1>
+      <p class="ajuda">Este link de redefinição não vale mais. Ele pode estar incompleto, ter expirado ou já ter sido usado.</p>
+      <a class="botao" href="recuperar-senha.html">Pedir um novo link</a>
+    </section>
+
+    <section id="sucesso" class="cartao" role="status" hidden>
+      <div class="marca">
+        <strong class="marca-nome">SafeWork <span>Engenharia</span></strong>
+        <span class="marca-sub">Painel Privado · Administração SafeWork</span>
+      </div>
+      <h1>Senha redefinida</h1>
+      <p class="ajuda">A sua senha foi alterada e os acessos abertos foram encerrados. Entre com a senha nova e o código do autenticador.</p>
+      <a class="botao" href="index.html">Entrar</a>
+    </section>
+  </main>
+
+  <script src="../js/api-http.js?v=20261001"></script>
+  <script src="config.js?v=20261001"></script>
+  <script src="../js/senha-ciclo.js?v=20261001"></script>
+  <script src="redefinir-senha.js?v=20261001"></script>
+</body>
+</html>

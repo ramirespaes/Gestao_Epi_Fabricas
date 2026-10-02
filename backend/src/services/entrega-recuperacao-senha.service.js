@@ -10,8 +10,8 @@ const { httpConfig } = require('../config/http');
  * Entrega dos e-mails do ciclo de senha: o link de redefinição e o aviso de
  * senha alterada.
  *
- * Quem chama (recuperacao-senha.service) só enfileira, e sempre depois do
- * COMMIT. As funções de enfileirar são síncronas e não devolvem promessa: a
+ * Quem chama (recuperacao-senha.service e os services da troca de senha) só
+ * enfileira, e sempre depois do COMMIT. As funções de enfileirar são síncronas e não devolvem promessa: a
  * resposta ao cliente nunca espera a entrega, para o tempo de resposta não
  * distinguir conta existente de inexistente.
  *
@@ -73,12 +73,18 @@ function textoDaRedefinicao({ escopo, email, token, expiraEm }) {
   ].join('\n');
 }
 
-function textoDoAviso({ escopo, email }) {
+// Na troca autenticada o acesso em uso continua: o texto fala só dos demais.
+const ACESSOS_ENCERRADOS = Object.freeze({
+  REDEFINICAO: 'os acessos abertos foram encerrados',
+  TROCA: 'os demais acessos foram encerrados',
+});
+
+function textoDoAviso({ escopo, email, origem }) {
   return [
     `Para: ${email}`,
     `Assunto: Sua senha foi alterada — ${PAGINAS[escopo].nome}`,
     '',
-    'A senha da sua conta acabou de ser alterada e os acessos abertos foram encerrados.',
+    `A senha da sua conta acabou de ser alterada e ${ACESSOS_ENCERRADOS[origem]}.`,
     `Se você não reconhece esta alteração, fale com o suporte: ${SUPORTE}`,
     '',
   ].join('\n');
@@ -119,10 +125,13 @@ function criarEntrega({ config = emailConfig } = {}) {
     despachar('REDEFINICAO', escopo, textoDaRedefinicao({ escopo, email, token, expiraEm }));
   }
 
-  function enfileirarAvisoSenhaAlterada({ escopo, email }) {
+  function enfileirarAvisoSenhaAlterada({ escopo, email, origem = 'REDEFINICAO' }) {
     exigirEscopo(escopo);
     exigirTexto(email, 'destinatário');
-    despachar('AVISO', escopo, textoDoAviso({ escopo, email }));
+    if (typeof origem !== 'string' || !Object.hasOwn(ACESSOS_ENCERRADOS, origem)) {
+      throw new TypeError('origem do aviso inválida');
+    }
+    despachar('AVISO', escopo, textoDoAviso({ escopo, email, origem }));
   }
 
   /** Espera o que já foi enfileirado terminar. Para testes e encerramento do processo. */

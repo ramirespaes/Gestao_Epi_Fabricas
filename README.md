@@ -16,7 +16,7 @@ O desenvolvimento é organizado em blocos. Situação em 01/10/2026:
 | MFA TOTP do Painel Privado (MFA-1 a MFA-10) | Incorporado à `main` (PRs #34, #35 e #36; merge `427102a`). Ver "Painel Privado e MFA TOTP" |
 | Gate de segurança pré-Bloco 10 — CI no GitHub Actions, portabilidade dos testes de migration, logout seguro do Portal e atualização documental | Implementado no PR #37 |
 | 10 — Entrega real de EPI, ficha, confirmação e baixa de estoque por lote | **Concluído** nas subetapas 10A a 10J, todas incorporadas à `main` (PRs #38, #39, #40, #41 e #42). Ver "Bloco 10" |
-| 11 — Ciclo de vida da senha | **Em andamento.** Subetapas 11A + 11B incorporadas à `main` (PR #44). Subetapas 11C e 11D implementadas na branch `feature/bloco11-11c-11d`, ainda sem merge. O fluxo não está pronto para uso comercial. Ver "Bloco 11" |
+| 11 — Ciclo de vida da senha | **Em andamento.** Subetapas 11A + 11B (PR #44) e 11C + 11D (PR #45) incorporadas à `main`. Subetapas 11E + 11F implementadas e validadas na branch `feature/bloco11-11e-11f`, ainda sem commit, PR nem merge. O Bloco 11 não está concluído: a entrega real de e-mail (11H) continua pendente e o fluxo não está pronto para uso comercial. Ver "Bloco 11" |
 
 ### Bloco 10 — Entrega real de EPI, ficha, confirmação e baixa de estoque por lote
 
@@ -46,24 +46,32 @@ Recuperação de senha por link enviado ao e-mail da conta, no Portal do Cliente
 | Subetapa | Conteúdo | Situação |
 |---|---|---|
 | 11A + 11B | Persistência: migrations `061` a `064` (pedidos de redefinição do Portal e do Painel Privado, contador de solicitações e auditoria da identidade global) e repositories | `main`, PR #44 |
-| 11C | Serviços de recuperação: solicitação com resposta única para qualquer desfecho, limite de 3 solicitações por hora por e-mail, redefinição com link de uso único, revogação das sessões da conta e auditoria | Branch `feature/bloco11-11c-11d`, sem merge |
-| 11D | Integração HTTP: rotas públicas de solicitação e redefinição nos dois portais, Turnstile com action própria na solicitação do Portal e limite de requisições por IP separado por operação | Branch `feature/bloco11-11c-11d`, sem merge |
+| 11C | Serviços de recuperação: solicitação com resposta única para qualquer desfecho, limite de 3 solicitações por hora por e-mail, redefinição com link de uso único, revogação das sessões da conta e auditoria | `main`, PR #45 |
+| 11D | Integração HTTP: rotas públicas de solicitação e redefinição nos dois portais, Turnstile com action própria na solicitação do Portal e limite de requisições por IP separado por operação | `main`, PR #45 |
+| 11E | Troca de senha autenticada nos dois portais (`POST /api/auth/global/senha` e `POST /api/plataforma/auth/senha`): senha atual, nova senha (e TOTP no Painel Privado), só a sessão atual continua, as demais são revogadas, pedidos de redefinição pendentes são cancelados e há auditoria e aviso de senha alterada depois do COMMIT | Implementada e validada na branch `feature/bloco11-11e-11f`; sem commit, PR nem merge |
+| 11F | Frontend do ciclo de senha: "Esqueci minha senha" nos dois logins, páginas de pedido do link e de redefinição nos dois portais, troca de senha no Portal (`portal/trocar-senha.html`) e no Painel Privado (em "Segurança da conta") | Implementada e validada na branch `feature/bloco11-11e-11f`; sem commit, PR nem merge |
+| 11H | Entrega real de e-mail: provedor, remetente `no-reply@safeworkengenharia.com.br` ("SafeWork Engenharia"), recuperação de senha, aviso de senha alterada, convites, template visual oficial e SPF/DKIM/DMARC | Futura, não iniciada |
+
+**O que a 11E + 11F entregam**, implementadas e validadas na branch `feature/bloco11-11e-11f`, ainda sem commit, PR nem merge:
+
+- **Portal do Cliente:** "Esqueci minha senha" no login (sem alterar o login nem o Turnstile dele); solicitação pública de recuperação, com a mesma confirmação para qualquer e-mail; redefinição por link, com o token só no fragmento `#token=`; troca autenticada da senha, com a senha atual, em `portal/trocar-senha.html`. Na troca, só a sessão global atual e a sessão empresarial válida ligada a ela continuam; todos os demais acessos da identidade são revogados, em todas as empresas.
+- **Painel Privado:** "Esqueci minha senha" no login; recuperação e redefinição públicas, sem Turnstile; troca autenticada com senha atual e TOTP, em "Segurança da conta" (recovery code não substitui o TOTP). Na troca, só a sessão administrativa atual continua e as demais são revogadas; o fator TOTP, o secret e os recovery codes são preservados.
 
 **O fluxo ainda não está pronto para uso comercial.** O que falta:
 
-- **Entrega real de e-mail.** Não há provedor de envio implementado. Fora de `production`, a mensagem é descartada (`EMAIL_MODO=desativado`) ou gravada em arquivo fora do repositório (`EMAIL_MODO=arquivo`, só desenvolvimento e teste). Em `production` nenhum dos dois modos é aceito e **o backend não sobe** até existir um mecanismo real de envio. A entrega acontece depois do COMMIT, sem fila durável nem reenvio.
-- **Remetente automático (no-reply).** Ainda por confirmar.
-- **Telas.** Não existe frontend de "Esqueci minha senha" nem de redefinição; as rotas só são alcançadas por chamada direta à API.
-- **Troca de senha autenticada** e o restante do ciclo de vida da senha.
+- **Commit, PR e merge da 11E + 11F.** Até o merge, a `main` não tem as telas nem a troca autenticada.
+- **Entrega real de e-mail (subetapa 11H, futura e não iniciada).** Não há provedor de envio implementado. Fora de `production`, a mensagem é descartada (`EMAIL_MODO=desativado`) ou gravada em arquivo fora do repositório (`EMAIL_MODO=arquivo`, só desenvolvimento e teste). Em `production` nenhum dos dois modos é aceito e **o backend não sobe** até existir um mecanismo real de envio. A entrega acontece depois do COMMIT, sem fila durável nem reenvio. A 11H cobre: provedor real de e-mail; remetente `no-reply@safeworkengenharia.com.br`, com o nome "SafeWork Engenharia"; e-mails de recuperação de senha e de aviso de senha alterada; e-mails de convite de usuário e do primeiro MASTER; avaliação de "Reenviar convite"; template visual oficial de e-mail; SPF, DKIM e DMARC do domínio.
+- **Restante do ciclo de vida da senha.** Não existem histórico de senhas, expiração periódica, senha temporária nem troca obrigatória no primeiro acesso.
 
 ### Próximos marcos e itens futuros
 
 Itens ainda não concluídos:
 
-- **Bloco 11 (em andamento):** troca de senha autenticada, telas de "Esqueci minha senha" e de redefinição no Portal do Cliente e no Painel Privado, e entrega real de e-mail — ver "Bloco 11"; medição da cobertura do frontend com meta mínima de 25%; testes finais e fechamento acadêmico.
+- **Bloco 11 (em andamento):** commit, PR e merge da 11E + 11F (troca de senha autenticada e telas do ciclo de senha, hoje implementadas e validadas na branch `feature/bloco11-11e-11f`), entrega real de e-mail (11H) e o restante do ciclo de vida da senha — ver "Bloco 11"; medição da cobertura do frontend com meta mínima de 25%; testes finais e fechamento acadêmico.
 - **Homologação e produção na AWS:** deploy, requisitos de publicação do frontend (entre eles a CSP no servidor estático), `TRUST_PROXY_HOPS` conforme a topologia real, chaves reais do Turnstile e do MFA, mecanismo real de entrega de e-mail (sem ele o backend não inicia em `production`) e aplicação autorizada das migrations em cada banco.
+- **Hardening futuro de publicação** (junto da CSP e da implantação, Bloco 14): CSP no servidor estático, com `base-uri 'none'`; endurecer o parser do empacotador (`frontend/publicacao/empacotar.js`), que não reconhece formas anômalas de HTML, como `<script/src="...">`, nem inspeciona `<base href>`; e a proteção final no deploy. Até lá, o pacote só vale com a CSP do servidor estático — ver "Publicação do frontend do cliente".
 - **Antes da produção:** limpeza e retenção das tabelas de sessões e de tentativas de login.
-- **Backlog:** envio real de e-mail (convites e redefinição de senha) e notificações, página "Acesso negado" com "Solicitar acesso" e reorganização de pastas.
+- **Backlog:** notificações, página "Acesso negado" com "Solicitar acesso" e reorganização de pastas. O envio real de e-mail (convites e redefinição de senha) está na 11H.
 - **Melhoria futura opcional:** Cloudflare Turnstile também no login do Painel Privado, a reconsiderar só se logs ou padrões de ataque justificarem.
 
 ### Encerramento do Bloco 8
@@ -86,8 +94,8 @@ Os itens abaixo ficaram fora do Bloco 8 e têm destino formal. Não são pendên
 |---|---|
 | Cadastro de empresas | Entregue pela autenticação global (Painel Privado, PR #22) |
 | Administração de usuários da empresa | Entregue no Bloco 9, parte F: convite, edição de nome e tipo de conta, inativação e reativação |
-| Troca de senha | Bloco 11, junto com a recuperação de senha e o restante do ciclo de vida da senha, antes da liberação comercial |
-| Recuperação de senha ("Esqueci minha senha") | Bloco 11, separada da autenticação básica já entregue, antes da liberação comercial |
+| Troca de senha | Bloco 11, subetapas 11E + 11F (implementadas e validadas na branch `feature/bloco11-11e-11f`, sem commit, PR nem merge), junto com a recuperação de senha e o restante do ciclo de vida da senha, antes da liberação comercial |
+| Recuperação de senha ("Esqueci minha senha") | Bloco 11, separada da autenticação básica já entregue: backend e HTTP na `main` (11C + 11D); telas na 11F (implementadas e validadas na branch, sem commit, PR nem merge); e-mail real na 11H; antes da liberação comercial |
 | Integração contínua (GitHub Actions) | Criada no gate de segurança pré-Bloco 10 (PR #37): `.github/workflows/ci.yml`, ver "Integração contínua (GitHub Actions)" |
 | Cobertura mínima de 25% no frontend | Bloco 11, com os testes finais, o fechamento acadêmico e a documentação |
 | Limpeza e retenção das tabelas de sessões e de tentativas de login | Requisito de hardening do deploy, antes da produção |
@@ -108,8 +116,8 @@ gestao-epi/
 │   │                         # middleware, schemas, security, rbac, db, errors e utils
 │   └── test/                 # suíte padrão (*.test.js) e integração (integracao/*.integration.js)
 ├── frontend/                 # Interface web
-│   ├── portal/               # Portal do Cliente: login, seleção de empresa, início e aceite de convite
-│   ├── painel-privado/       # Painel Privado da plataforma: login com MFA, empresas e segurança da conta
+│   ├── portal/               # Portal do Cliente: login, seleção de empresa, início, aceite de convite e ciclo de senha
+│   ├── painel-privado/       # Painel Privado da plataforma: login com MFA, empresas, segurança da conta e ciclo de senha
 │   ├── institucional/        # Página institucional
 │   ├── pages/                # Páginas do sistema (integradas ao backend e protótipo)
 │   ├── js/                   # Módulos compartilhados (HTTP, sessão, permissões, páginas)
@@ -178,9 +186,12 @@ A parte F tornou reais as páginas de usuários da empresa:
 
 | Página | Função |
 |---|---|
-| `portal/index.html` | Login (e-mail, senha, verificação Turnstile, Entrar) |
+| `portal/index.html` | Login (e-mail, senha, verificação Turnstile, Entrar) e o link "Esqueci minha senha" |
 | `portal/empresas.html` | "Selecione sua empresa" (e troca de empresa); mensagem própria quando não há empresa ativa vinculada |
-| `portal/inicio.html` | Usuário, perfil e empresa ativa; **TROCAR DE EMPRESA**, **Sair da empresa** e **Sair**; módulos já integrados e módulos em integração |
+| `portal/inicio.html` | Usuário, perfil e empresa ativa; **TROCAR DE EMPRESA**, **Sair da empresa**, **Sair** e o link **Trocar senha**; módulos já integrados e módulos em integração |
+| `portal/recuperar-senha.html` (11F) | "Esqueci minha senha": pede o link de redefinição, com o Turnstile (action própria) e a mesma confirmação para qualquer e-mail |
+| `portal/redefinir-senha.html` (11F) | Redefinição pelo link: o token chega no fragmento (`#token=`) e sai da barra de endereço antes de qualquer rede |
+| `portal/trocar-senha.html` (11F) | Troca de senha com a sessão global em uso; a sessão atual continua depois da troca |
 
 Fluxo: uma empresa autorizada → entra direto; duas ou mais → escolhe; nenhuma → sem acesso operacional. O Portal usa dois cookies: `gepi_sessao_global` (identidade; não dá acesso operacional) e `gepi_sessao` (empresa selecionada; o mesmo que o RBAC sempre usou). Os cookies do Painel Privado são outros (ver "Origens, namespaces e cookies"). O login legado por CNPJ recusa vínculos ligados a uma identidade global — há uma única credencial válida por pessoa.
 
@@ -198,6 +209,8 @@ Em desenvolvimento, sirva `frontend/` em `http://localhost:5500` (Portal: `/port
 
 `frontend/painel-privado/` é o ambiente dos administradores da plataforma: cadastro de empresas, convite do primeiro MASTER de cada empresa e segurança da própria conta. Usa a API `/api/plataforma`, uma cadeia separada da API do cliente, com CORS, verificação de origem, validação de Host e rate limit próprios.
 
+Na subetapa 11F, o login ganha "Esqueci minha senha", com `recuperar-senha.html` e `redefinir-senha.html` (sem Turnstile; o token do link chega no fragmento `#token=`), e "Segurança da conta" ganha a troca de senha (11E), que pede a senha atual e o TOTP, mantém a sessão atual e revoga as demais, sem tocar no fator TOTP nem nos recovery codes.
+
 O acesso exige **senha e MFA TOTP**. A senha correta não cria sessão: cria um **desafio pré-MFA** (cookie `gepi_mfa_admin`), aceito apenas pelas rotas `/api/plataforma/auth/mfa/*`. A **sessão administrativa plena** (cookie `gepi_sessao_admin`, com token novo) só nasce quando o segundo fator é concluído:
 
 | Situação do administrador | Etapa depois da senha |
@@ -209,7 +222,7 @@ O acesso exige **senha e MFA TOTP**. A senha correta não cria sessão: cria um 
 - **TOTP:** RFC 6238 (SHA-1, 6 dígitos, período de 30 s, tolerância de ±1 período), pela biblioteca `otpauth`. Anti-replay: um código só é aceito se o seu período for posterior ao do último aceito.
 - **Segredo TOTP:** cifrado em repouso com AES-256-GCM, com chave versionada (`MFA_TOTP_KEY_V<n>` e `MFA_TOTP_KEY_CURRENT_VERSION`). Sem as chaves, o backend não sobe.
 - **Recovery codes:** 10 por lote, exibidos uma única vez; no banco fica só o hash. Gerar um lote novo revoga o anterior.
-- **Troca do autenticador e novos recovery codes:** exigem sessão plena e reautenticação com senha e código TOTP.
+- **Troca do autenticador, novos recovery codes e troca de senha:** exigem sessão plena e reautenticação com senha e código TOTP (recovery code não vale). As duas primeiras encerram todas as sessões; a troca de senha mantém a sessão atual e revoga as demais.
 - **Operação por CLI**, sem rota HTTP: `npm run db:criar-administrador-plataforma` (cria o administrador), `npm run db:mfa:liberar-cadastro` (emite a liberação do primeiro cadastro) e `npm run db:mfa:redefinir` (reset operacional: revoga fatores, recovery codes, desafios e sessões e emite uma liberação nova). Todos exigem `--email <email> --confirmo`.
 - **Banco:** a migration `055` faz o PostgreSQL recusar, no COMMIT, sessão administrativa não revogada sem MFA comprovado; a `056` encerra desafios abertos, fatores pendentes e liberações abertas quando o administrador é inativado.
 
@@ -251,7 +264,7 @@ Pré-requisitos antes de preencher: API servida sob `/api` (cliente) e `/api/pla
 
 ### Publicação do frontend do cliente
 
-Em homologação e produção, publica-se somente o pacote gerado por `npm run publicacao:empacotar -- --saida <diretório>` (em `frontend/`), a partir da allowlist explícita `frontend/publicacao/allowlist.json`. As páginas legadas, `js/main.js`, `js/db-api.js`, o `index.html` da raiz e o Painel Privado ficam fora. O empacotador recusa o pacote inteiro diante de qualquer divergência. Detalhes e requisitos obrigatórios do deploy, entre eles a CSP no servidor estático, estão em `frontend/publicacao/README.md`.
+Em homologação e produção, publica-se somente o pacote gerado por `npm run publicacao:empacotar -- --saida <diretório>` (em `frontend/`), a partir da allowlist explícita `frontend/publicacao/allowlist.json`. As páginas legadas, `js/main.js`, `js/db-api.js`, o `index.html` da raiz e o Painel Privado ficam fora. O empacotador recusa o pacote inteiro diante de qualquer divergência que reconheça. A inspeção do HTML é por expressões regulares, não um parser completo: formas anômalas como `<script/src="...">` e um `<base href>` externo não são detectadas, e o que as cobre é a CSP obrigatória do servidor estático. Endurecer o empacotador é hardening futuro (ver "Próximos marcos e itens futuros"). Detalhes e requisitos obrigatórios do deploy, entre eles a CSP no servidor estático, estão em `frontend/publicacao/README.md`.
 
 ## Backend
 
@@ -339,7 +352,9 @@ Também na cadeia `/api`, `auth-global.routes.js` atende o Portal do Cliente: `P
 
 A cadeia `/api/plataforma`, montada antes de `/api` e separada dela, atende o Painel Privado: login, sessão e logout da plataforma, as rotas do MFA em `/api/plataforma/auth/mfa/*`, o resumo do painel, o cadastro de empresas e o convite do MASTER (com duas rotas públicas de aceite).
 
-A recuperação de senha (Bloco 11D, `recuperacao-senha.routes.js`, ainda só na branch `feature/bloco11-11c-11d`) tem rotas públicas nas duas cadeias. No Portal: `POST /api/auth/global/recuperacao-senha/solicitar` (e-mail e token do Turnstile), `POST /api/auth/global/recuperacao-senha/redefinir` (token do link e nova senha) e `GET /api/auth/global/recuperacao-senha/turnstile` (site key e action do widget). No Painel Privado: `POST /api/plataforma/auth/recuperacao-senha/solicitar` e `POST /api/plataforma/auth/recuperacao-senha/redefinir`, sem Turnstile. A solicitação bem formada responde sempre `202` com `{ "status": "SOLICITACAO_RECEBIDA" }`, exista ou não a conta, esteja ela ativa ou não. A redefinição responde `200` com `{ "status": "SENHA_REDEFINIDA" }`, não cria sessão e remove os cookies de sessão do portal correspondente. O token do link só é aceito no corpo JSON: as quatro rotas POST recusam qualquer parâmetro na query string. O Turnstile da solicitação usa a action `portal_recuperacao_senha`, diferente da do login, com as mesmas chaves. Cada POST tem o próprio limite de requisições por IP, separado entre si e do login, com os mesmos parâmetros do limite de autenticação.
+A recuperação de senha (Bloco 11D, `recuperacao-senha.routes.js`, na `main` pelo PR #45) tem rotas públicas nas duas cadeias. No Portal: `POST /api/auth/global/recuperacao-senha/solicitar` (e-mail e token do Turnstile), `POST /api/auth/global/recuperacao-senha/redefinir` (token do link e nova senha) e `GET /api/auth/global/recuperacao-senha/turnstile` (site key e action do widget). No Painel Privado: `POST /api/plataforma/auth/recuperacao-senha/solicitar` e `POST /api/plataforma/auth/recuperacao-senha/redefinir`, sem Turnstile. A solicitação bem formada responde sempre `202` com `{ "status": "SOLICITACAO_RECEBIDA" }`, exista ou não a conta, esteja ela ativa ou não. A redefinição responde `200` com `{ "status": "SENHA_REDEFINIDA" }`, não cria sessão e remove os cookies de sessão do portal correspondente. O token do link só é aceito no corpo JSON: as quatro rotas POST recusam qualquer parâmetro na query string. O Turnstile da solicitação usa a action `portal_recuperacao_senha`, diferente da do login, com as mesmas chaves. Cada POST tem o próprio limite de requisições por IP, separado entre si e do login, com os mesmos parâmetros do limite de autenticação.
+
+A troca de senha autenticada (Bloco 11E, `troca-senha.routes.js`) exige sessão em cada cadeia e não aceita parâmetro na query string. No Portal: `POST /api/auth/global/senha`, com a sessão global e o corpo `{ "senhaAtual", "novaSenha" }`. No Painel Privado: `POST /api/plataforma/auth/senha`, com a sessão administrativa plena e o corpo `{ "senhaAtual", "novaSenha", "codigo" }`, em que `codigo` é só o TOTP de 6 dígitos (recovery code não substitui). A identidade vem sempre da sessão, nunca do corpo. No Portal, a senha atual errada responde `401` com `SENHA_ATUAL_INVALIDA` e conta no cooldown do login. No Painel Privado, a senha atual errada, o TOTP errado e o TOTP repetido contam no cooldown de MFA do administrador e recebem a mesma resposta `401` com `REAUTENTICACAO_INVALIDA`, sem dizer qual fator falhou. No sucesso a resposta é `200` com `{ "status": "SENHA_ALTERADA" }`, sem cookie novo: só a sessão atual continua, as demais sessões da conta são revogadas (no Painel Privado, também os desafios de MFA abertos, sem tocar em fator, secret nem recovery codes), os pedidos de redefinição pendentes são cancelados e o aviso de senha alterada sai depois do COMMIT. Cada rota tem o próprio limite de requisições por IP, separado do login e da recuperação.
 
 `health` é pública, sem exigência de sessão. O login (`POST /api/auth/login`) também é público — é o próprio ponto de entrada da autenticação; o login global do Portal é público, mas exige o token do Turnstile. As rotas de recuperação de senha são públicas: não exigem sessão nem MFA. O logout aceita chamada sem sessão válida, por comportamento idempotente. As demais rotas — todas as administrativas do RBAC — exigem sessão autenticada; nenhuma decide autorização por si mesma, apenas autenticação. A autoridade administrativa é sempre resolvida na camada de serviço, relendo o estado do banco a cada chamada.
 
@@ -520,20 +535,20 @@ O PostgreSQL do segundo job existe só durante a execução e é descartado ao f
 
 ### Estado atual
 
-Validação local das subetapas 11C + 11D do Bloco 11, em 01/10/2026, na branch `feature/bloco11-11c-11d` (não é resultado do CI do GitHub: o CI roda quando o PR existir). As subetapas 11A + 11B já estão na `main` (PR #44). As subetapas 11C + 11D estão implementadas e validadas nesta branch e ainda **não** foram incorporadas à `main`. O Bloco 11 não está concluído: o frontend da recuperação de senha não foi implementado e o envio real de e-mail em produção continua pendente. A integração usou exclusivamente o banco `gestao_epi_teste_local`.
+Validação local das subetapas 11E + 11F do Bloco 11, em 01/10/2026, na branch `feature/bloco11-11e-11f` (não é resultado do CI do GitHub: o CI roda quando o PR existir). As subetapas 11A + 11B (PR #44) e 11C + 11D (PR #45) estão na `main`; as 11E + 11F estão implementadas e validadas nesta branch, ainda sem commit, PR nem merge, e os números abaixo já as incluem. O Bloco 11 não está concluído: falta a entrega real de e-mail (11H). A integração usou exclusivamente o banco `gestao_epi_teste_local`.
 
 | Suíte | Testes | Suites | Aprovados | Falhas |
 |---|---:|---:|---:|---:|
-| Backend — unitário (`npm run test:ci`) | 2281 | 542 | 2281 | 0 |
-| Backend — integração PostgreSQL 16 (`npm run test:integracao`) | 1960 | 458 | 1960 | 0 |
-| Frontend (`npm test`, dentro de `frontend/`) | 1099 | 229 | 1099 | 0 |
+| Backend — unitário (`npm run test:ci`) | 2353 | 557 | 2353 | 0 |
+| Backend — integração PostgreSQL 16 (`npm run test:integracao`) | 2054 | 484 | 2054 | 0 |
+| Frontend (`npm test`, dentro de `frontend/`) | 1267 | 246 | 1267 | 0 |
 | Checksums das migrations (`npm run db:migrate:verificar`) | 65 | — | 65 íntegras | — |
 
 Cobertura do backend na mesma validação, pelo relatório de `npm run test:ci` (linha "all files"):
 
 | `line %` | `branch %` | `funcs %` |
 |---:|---:|---:|
-| 89,90 | 94,26 | 80,59 |
+| 89,34 | 94,31 | 80,17 |
 
 O limiar do CI (`--test-coverage-lines=75`) vale para `line %`. O último resultado de CI registrado nesta seção foi o do commit `dcca3b8` (29/09/2026), anterior ao Bloco 10; medições anteriores ficam no histórico do Git.
 

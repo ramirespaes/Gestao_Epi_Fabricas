@@ -30,13 +30,15 @@ O empacotador (`empacotar.js`) recusa o pacote inteiro, **antes de escrever qual
 
 1. uma entrada não é um caminho relativo canônico, está duplicada, aponta para fora de `frontend/`, é diretório, é link simbólico ou não existe;
 2. uma entrada está em `NUNCA_PUBLICAR` — `js/main.js`, `js/db-api.js` ou o Painel Privado — mesmo que alguém a acrescente à allowlist;
-3. uma página publicada carrega script de fora do pacote (CDN ou qualquer URL com esquema);
+3. uma página publicada carrega script de fora do pacote (CDN ou qualquer URL com esquema). A única exceção é o script oficial do Turnstile, pela URL literal `https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit`, e só em `portal/index.html` (login) e `portal/recuperar-senha.html` (recuperação de senha); qualquer outra página, URL, domínio parecido ou prefixo é recusado;
 4. uma página ou folha de estilo publicada carrega recurso local (script, link, imagem ou `url()`) que não está na allowlist;
 5. a saída já existe com conteúdo ou fica dentro do código-fonte do frontend.
 
 Depois de copiar, o empacotador confere que o pacote tem exatamente os arquivos da allowlist, nem um a mais, nem um a menos. `test/publicacao.test.js` roda no `npm test` e prova esses comportamentos.
 
 Acrescentar um arquivo à allowlist é uma decisão de segurança e passa por revisão como qualquer alteração de código.
+
+**Limite conhecido.** A inspeção do HTML é por expressões regulares, não um parser completo. Formas anômalas, como `<script/src="https://...">` (barra no lugar do espaço), não são reconhecidas como script externo, e `<base href>` não é inspecionado: um `<base>` externo faria os caminhos relativos da allowlist carregarem de outra origem. Nenhuma página do repositório usa essas formas, e a CSP obrigatória do servidor estático (requisito 2 abaixo: nenhum host de script externo e `base-uri 'none'`) cobre os dois casos. Endurecer o empacotador é hardening futuro de publicação, junto da CSP e da implantação (Bloco 14).
 
 ## Fora do pacote do cliente, de propósito
 

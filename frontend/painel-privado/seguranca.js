@@ -2,9 +2,11 @@
   'use strict';
 
   /**
-   * Segurança da conta: trocar o autenticador e gerar novos códigos de
-   * recuperação. As duas operações encerram todas as sessões no servidor e
-   * não criam outra: depois dos códigos, só resta o login.
+   * Segurança da conta: trocar o autenticador, gerar novos códigos de
+   * recuperação e trocar a senha. As duas primeiras encerram todas as sessões
+   * no servidor e não criam outra: depois dos códigos, só resta o login. A
+   * troca de senha mantém esta sessão e o servidor encerra as outras; ela
+   * pede só o TOTP, nunca um código de recuperação.
    */
 
   var http = window.EpiHttp;
@@ -16,6 +18,10 @@
   var campoSenha = el('senha-atual');
   var campoAtual = el('codigo-atual');
   var campoCadastro = el('codigo-cadastro');
+  var campoTrocaAtual = el('troca-senha-atual');
+  var campoTrocaNova = el('troca-senha-nova');
+  var campoTrocaConfirmacao = el('troca-senha-confirmacao');
+  var campoTrocaCodigo = el('troca-codigo');
 
   var OPERACOES = {
     SUBSTITUICAO: { titulo: 'Trocar autenticador', caminho: '/auth/mfa/substituicao/iniciar' },
@@ -24,6 +30,10 @@
   var SESSAO_ENCERRADA = 'Sua sessão foi encerrada. Salve os códigos e entre novamente.';
   var RECOMECAR = 'Esta etapa expirou ou não é mais válida. Comece de novo.';
   var GUARDE_OS_CODIGOS = 'Guarde os códigos de recuperação e marque a confirmação antes de sair.';
+  var SENHA_ALTERADA = 'Senha alterada. Esta sessão continua ativa; as outras foram encerradas.';
+  var CONFIRMACAO_DIFERENTE = 'A confirmação não confere com a nova senha. Digite as duas de novo.';
+  var SENHA_IGUAL = 'A nova senha deve ser diferente da senha atual.';
+  var DADOS_INVALIDOS = 'Dados inválidos. Revise os campos e tente novamente.';
   var operacao = null;
 
   var tela = mfa.criarTela({
@@ -32,14 +42,15 @@
     etapas: {
       MENU: el('etapa-menu'),
       REAUTENTICACAO: el('etapa-reautenticacao'),
+      SENHA: el('etapa-senha'),
       CADASTRO: el('etapa-cadastro'),
       CODIGOS: el('etapa-codigos'),
     },
   });
 
   var fila = mfa.criarFila(http, [
-    'sair', 'botao-trocar-autenticador', 'botao-gerar-codigos', 'botao-reautenticar', 'botao-voltar-reautenticacao',
-    'botao-confirmar-cadastro', 'botao-voltar-cadastro',
+    'sair', 'botao-trocar-autenticador', 'botao-gerar-codigos', 'botao-trocar-senha', 'botao-reautenticar', 'botao-voltar-reautenticacao',
+    'botao-confirmar-troca-senha', 'botao-voltar-troca-senha', 'botao-confirmar-cadastro', 'botao-voltar-cadastro',
   ].map(el));
 
   var cadastro = mfa.criarCadastro({
@@ -59,8 +70,13 @@
     aoSalvar: irParaLogin,
   });
 
+  function limparCamposDaTroca() {
+    [campoTrocaAtual, campoTrocaNova, campoTrocaConfirmacao, campoTrocaCodigo].forEach(function (campo) { campo.value = ''; });
+  }
+
   function limparSensiveis() {
     [campoSenha, campoAtual, campoCadastro].forEach(function (campo) { campo.value = ''; });
+    limparCamposDaTroca();
     cadastro.limpar();
     codigos.limpar();
   }
@@ -126,10 +142,29 @@
     tela.mostrar('REAUTENTICACAO', OPERACOES[nome].titulo, campoSenha);
   }
 
-  [campoAtual, campoCadastro].forEach(mfa.prepararCampoTotp);
+  function abrirTrocaDeSenha() {
+    limparCamposDaTroca();
+    tela.mostrar('SENHA', 'Trocar senha', campoTrocaAtual);
+  }
+
+  /** Só as regras de senha que o servidor escolheu mostrar, sem o valor recebido; o resto segue para o classificador do MFA. */
+  function mensagemDaSenha(resposta) {
+    if (resposta.status !== 400) return null;
+    if (resposta.codigo === 'SENHA_IGUAL_A_ATUAL') return SENHA_IGUAL;
+    if (resposta.codigo !== 'VALIDACAO') return null;
+    var textos = [];
+    (Array.isArray(resposta.detalhes) ? resposta.detalhes : []).forEach(function (d) {
+      if (d && typeof d.mensagem === 'string' && d.mensagem !== '' && textos.indexOf(d.mensagem) === -1) textos.push(d.mensagem);
+    });
+    return textos.length > 0 ? textos.join(' ') : DADOS_INVALIDOS;
+  }
+
+  [campoAtual, campoCadastro, campoTrocaCodigo].forEach(mfa.prepararCampoTotp);
 
   aoClicar('botao-trocar-autenticador', function () { abrirReautenticacao('SUBSTITUICAO'); });
   aoClicar('botao-gerar-codigos', function () { abrirReautenticacao('REGENERACAO'); });
+  aoClicar('botao-trocar-senha', abrirTrocaDeSenha);
+  aoClicar('botao-voltar-troca-senha', function () { mostrarMenu(); });
   aoClicar('botao-voltar-reautenticacao', function () { mostrarMenu(); });
   // Voltar não encerra a sessão: o desafio aberto expira sozinho no servidor.
   aoClicar('botao-voltar-cadastro', function () { mostrarMenu(); });
@@ -170,6 +205,47 @@
         return;
       }
       tela.avisar(mfa.MENSAGENS.INESPERADA, 'erro');
+    });
+  });
+
+  aoEnviar('etapa-senha', function () {
+    if (campoTrocaAtual.value === '' || campoTrocaNova.value === '') {
+      tela.avisar(mfa.MENSAGENS.CAMPO_VAZIO, 'erro');
+      (campoTrocaAtual.value === '' ? campoTrocaAtual : campoTrocaNova).focus();
+      return;
+    }
+    if (campoTrocaNova.value !== campoTrocaConfirmacao.value) {
+      tela.avisar(CONFIRMACAO_DIFERENTE, 'erro');
+      campoTrocaConfirmacao.focus();
+      return;
+    }
+    if (!mfa.codigoTotpValido(campoTrocaCodigo.value)) {
+      tela.avisar(mfa.MENSAGENS.CODIGO_INCOMPLETO, 'erro');
+      campoTrocaCodigo.focus();
+      return;
+    }
+    var corpo = { senhaAtual: campoTrocaAtual.value, novaSenha: campoTrocaNova.value, codigo: campoTrocaCodigo.value };
+    fila.requisitar('POST', '/auth/senha', corpo).then(function (resposta) {
+      limparCamposDaTroca();
+      if (resposta.ok) {
+        mostrarMenu();
+        tela.avisar(SENHA_ALTERADA, 'info');
+        return;
+      }
+      // Validação e senha igual à atual têm mensagem própria: o classificador do MFA as chamaria de "código inválido".
+      var propria = mensagemDaSenha(resposta);
+      if (propria !== null) {
+        tela.avisar(propria, 'erro');
+        campoTrocaAtual.focus();
+        return;
+      }
+      var erro = mfa.classificar(resposta);
+      if (erro.tipo === 'SESSAO') {
+        irParaLogin();
+        return;
+      }
+      tela.avisar(erro.mensagem, 'erro');
+      campoTrocaAtual.focus();
     });
   });
 

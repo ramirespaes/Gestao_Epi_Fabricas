@@ -165,7 +165,7 @@ describe('contrato das telas de MFA com o backend', () => {
     const tratados = [...mfa.match(/var POR_CODIGO = \{([\s\S]*?)\};/)[1].matchAll(/^\s*([A-Z_]+):/gm)].map((m) => m[1]);
     assert.deepEqual(tratados.sort(), ['DESAFIO_INVALIDO', 'MFA_CADASTRO_EXPIRADO', 'MFA_CADASTRO_REINICIOS_ESGOTADOS', 'MFA_CODIGO_INVALIDO', 'MFA_INDISPONIVEL', 'MFA_JA_ATIVO', 'REAUTENTICACAO_INVALIDA', 'RESPOSTA_INVALIDA']);
 
-    const fontes = ['services/etapa-mfa-plataforma.js', 'services/mfa-cadastro-plataforma.service.js', 'services/substituicao-mfa-plataforma.service.js', 'middleware/desafio-mfa-plataforma.js'].map(ler).join('\n');
+    const fontes = ['services/etapa-mfa-plataforma.js', 'services/mfa-cadastro-plataforma.service.js', 'services/substituicao-mfa-plataforma.service.js', 'services/reautenticacao-plataforma.js', 'middleware/desafio-mfa-plataforma.js'].map(ler).join('\n');
     // RESPOSTA_INVALIDA nasce no cliente HTTP do navegador, não no servidor.
     for (const codigo of tratados.filter((c) => c !== 'RESPOSTA_INVALIDA')) assert.ok(fontes.includes(`'${codigo}'`), codigo);
     assert.ok(fs.readFileSync(path.join(RAIZ, 'js/api-http.js'), 'utf8').includes("'RESPOSTA_INVALIDA'"));

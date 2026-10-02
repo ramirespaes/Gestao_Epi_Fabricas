@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>Trocar senha — SafeWork</title>
+  <style>
+    /* Mesma identidade visual do login do Portal (portal/index.html); no modo escuro só as variáveis mudam. */
+    :root { color-scheme: light dark; --ink: #153333; --muted: #617471; --accent: #1f7563; --accent-forte: #153333; --surface: #ffffff; --bg: #f7f8f6; --line: #e3e9e5; --campo: #ffffff; --hover: #8ab5a7; --foco: #e1efe9; --erro: #b3261e; --erro-fundo: #fdecea; --info-fundo: #eaf5ef; --ok: #1a7a35; --sombra: #173d3720; }
+    @media (prefers-color-scheme: dark) {
+      :root { --ink: #e8f0ed; --muted: #a2b3af; --accent: #26806b; --accent-forte: #1f6b59; --surface: #1f2826; --bg: #151b1a; --line: #33403d; --campo: #182120; --hover: #4f8f80; --foco: rgba(108, 201, 176, 0.25); --erro: #ff8a80; --erro-fundo: rgba(255, 69, 58, 0.15); --info-fundo: rgba(108, 201, 176, 0.12); --ok: #30d158; --sombra: #00000055; }
+    }
+
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body { margin: 0; min-height: 100svh; background: var(--bg); color: var(--ink); font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; }
+    .centro { min-height: 100svh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    .cartao { width: 100%; max-width: 400px; padding: 32px 28px 28px; background: var(--surface); border: 1px solid var(--line); border-radius: 17px; box-shadow: 0 22px 55px var(--sombra); }
+    .marca { text-align: center; margin-bottom: 22px; }
+    .marca-nome { display: block; font-size: 17px; font-weight: 740; letter-spacing: -.05em; color: var(--ink); }
+    .marca-nome span { font-weight: 480; letter-spacing: -.035em; color: var(--muted); }
+    .marca-sub { display: block; margin-top: 4px; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+    h1 { margin: 0 0 14px; font-size: 20px; font-weight: 740; letter-spacing: -.03em; color: var(--ink); }
+    .ajuda { margin: 0 0 14px; font-size: 13px; line-height: 1.5; color: var(--muted); }
+    .mensagem { min-height: 1.2rem; margin-bottom: 12px; font-size: 13px; border-radius: 11px; }
+    .mensagem.erro { padding: 9px 12px; color: var(--erro); background: var(--erro-fundo); }
+    .mensagem:empty { padding: 0; background: none; }
+    .sucesso { margin: 0 0 14px; font-size: 14px; line-height: 1.5; }
+    .sucesso strong { color: var(--ok); }
+    label { display: block; margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+    input { width: 100%; height: 44px; padding: 0 12px; margin-bottom: 14px; font: inherit; font-size: 15px; color: var(--ink); background: var(--campo); border: 1px solid var(--line); border-radius: 11px; outline: none; transition: border-color .15s, box-shadow .15s; }
+    input:hover { border-color: var(--hover); }
+    input:focus-visible { border-color: var(--hover); box-shadow: 0 0 0 3px var(--foco); }
+    .botao { display: block; width: 100%; height: 46px; margin-top: 4px; font: inherit; font-size: 15px; font-weight: 600; color: #ffffff; background: var(--accent); border: none; border-radius: 11px; cursor: pointer; transition: background-color .15s, box-shadow .15s; }
+    .botao:hover, .botao:focus-visible { background: var(--accent-forte); outline: none; box-shadow: 0 0 0 3px var(--foco); }
+    .botao:disabled { opacity: .6; cursor: default; }
+    .voltar { display: block; margin-top: 18px; text-align: center; font-size: 13px; color: var(--muted); text-decoration: none; }
+    .voltar:hover, .voltar:focus-visible { color: var(--accent); text-decoration: underline; }
+    @media (max-width: 500px) { .centro { padding: 16px; } .cartao { padding: 26px 20px 22px; border-radius: 15px; } }
+  </style>
+</head>
+<!--
+  Troca de senha com a sessão global em uso (Bloco 11F). A página só mostra o
+  formulário depois de o servidor confirmar a sessão. A confirmação da senha
+  nova é só da tela: quem decide é o servidor. Depois da troca esta sessão
+  continua valendo e as outras são encerradas pelo servidor.
+-->
+<body>
+  <div class="centro">
+    <div class="cartao">
+      <div class="marca">
+        <strong class="marca-nome">SafeWork <span>Engenharia</span></strong>
+        <span class="marca-sub">Portal do Cliente · Gestão de EPIs</span>
+      </div>
+      <h1>Trocar senha</h1>
+      <p id="carregando" class="ajuda">Verificando a sua sessão…</p>
+      <div id="mensagem" class="mensagem" role="alert" aria-live="polite"></div>
+
+      <form id="form-troca" novalidate hidden>
+        <label for="senha-atual">Senha atual</label>
+        <input type="password" id="senha-atual" name="senha-atual" autocomplete="current-password" required>
+        <label for="senha-nova">Nova senha</label>
+        <input type="password" id="senha-nova" name="senha-nova" autocomplete="new-password" required>
+        <label for="senha-confirmacao">Confirme a nova senha</label>
+        <input type="password" id="senha-confirmacao" name="senha-confirmacao" autocomplete="new-password" required>
+        <button type="submit" id="botao-trocar" class="botao">Trocar senha</button>
+      </form>
+
+      <div id="sucesso" role="status" hidden>
+        <p class="sucesso"><strong>Senha alterada.</strong> Os demais acessos à sua conta foram encerrados. Este continua ativo: você não precisa entrar de novo.</p>
+      </div>
+
+      <a class="voltar" href="inicio.html">Voltar ao início</a>
+    </div>
+  </div>
+
+  <script src="../js/api-http.js"></script>
+  <script src="../js/portal-cliente.js"></script>
+  <script src="../js/senha-ciclo.js"></script>
+  <script src="config.js"></script>
+  <script src="trocar-senha.js"></script>
+</body>
+</html>

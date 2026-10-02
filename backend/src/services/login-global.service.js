@@ -205,4 +205,5 @@ async function autenticar(pool, { email, senha, ip = null, dispositivo = null })
   throw HttpError.unauthorized('CREDENCIAIS_INVALIDAS', MENSAGEM_CREDENCIAIS_INVALIDAS);
 }
 
-module.exports = { autenticar };
+// tratarFalha também é a regra de falha da troca de senha do Portal: a mesma chave, os mesmos níveis.
+module.exports = { autenticar, tratarFalha };

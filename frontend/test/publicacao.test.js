@@ -8,6 +8,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const { empacotar, verificarPacote, lerAllowlist } = require('../publicacao/empacotar');
+const { arquivosLocaisDe } = require('./helpers/dom-pagina');
 
 /**
  * Publicação do frontend do cliente por allowlist explícita (segurança S1
@@ -127,8 +128,9 @@ describe('publicação do frontend do cliente por allowlist explícita', () => {
     recusa(() => verificarPacote(saida), 'PACOTE_DIVERGENTE');
   });
 
-  describe('script externo: só o Turnstile oficial, e só no login do Portal', () => {
+  describe('script externo: só o Turnstile oficial, e só no login e na recuperação de senha do Portal', () => {
     const TURNSTILE = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+    const PAGINAS_COM_TURNSTILE = ['portal/index.html', 'portal/recuperar-senha.html'];
 
     function frontendSintetico(paginas) {
       const raiz = diretorioTemporario();
@@ -145,7 +147,12 @@ describe('publicação do frontend do cliente por allowlist explícita', () => {
       assert.deepEqual(empacotar(f).arquivos, ['portal/index.html', 'portal/login.js']);
     });
 
-    test('qualquer variação da URL continua recusada', () => {
+    test('a URL exata do Turnstile em portal/recuperar-senha.html também é aceita', () => {
+      const f = frontendSintetico({ 'portal/recuperar-senha.html': pagina(TURNSTILE), 'portal/login.js': '' });
+      assert.deepEqual(empacotar(f).arquivos, ['portal/login.js', 'portal/recuperar-senha.html']);
+    });
+
+    test('qualquer variação da URL continua recusada, no login e na recuperação de senha', () => {
       for (const src of [
         'https://challenges.cloudflare.com/turnstile/v0/api.js',
         'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=iniciar',
@@ -163,20 +170,51 @@ describe('publicação do frontend do cliente por allowlist explícita', () => {
         'https://cdn.jsdelivr.net/npm/qualquer@1/index.js',
         'https://mal.test/turnstile/v0/api.js?render=explicit',
       ]) {
-        const f = frontendSintetico({ 'portal/index.html': pagina(src), 'portal/login.js': '' });
-        recusa(() => empacotar(f), 'SCRIPT_EXTERNO');
-        assert.equal(fs.existsSync(f.saida), false, src);
+        for (const alvo of PAGINAS_COM_TURNSTILE) {
+          const f = frontendSintetico({ [alvo]: pagina(src), 'portal/login.js': '' });
+          recusa(() => empacotar(f), 'SCRIPT_EXTERNO');
+          assert.equal(fs.existsSync(f.saida), false, `${alvo}: ${src}`);
+        }
       }
     });
 
-    test('o Turnstile em outra página é recusado, e um segundo script externo no login também', () => {
-      for (const outra of ['portal/empresas.html', 'portal/aceitar-convite.html', 'pages/dashboard.html', 'index.html']) {
+    test('o Turnstile em outra página é recusado, inclusive nas que se parecem com as duas permitidas', () => {
+      for (const outra of [
+        'portal/empresas.html', 'portal/aceitar-convite.html', 'portal/inicio.html', 'portal/redefinir-senha.html', 'portal/trocar-senha.html', 'pages/dashboard.html', 'index.html',
+        'portal/recuperar-senha-2.html', 'portal/xrecuperar-senha.html', 'portal/index2.html', 'portal/sub/index.html', 'portal/sub/recuperar-senha.html', 'pages/recuperar-senha.html', 'recuperar-senha.html',
+      ]) {
         const f = frontendSintetico({ [outra]: pagina(TURNSTILE), 'portal/index.html': pagina(), 'portal/login.js': '', [path.posix.join(path.posix.dirname(outra), 'login.js')]: '' });
         recusa(() => empacotar(f), 'SCRIPT_EXTERNO');
+        assert.equal(fs.existsSync(f.saida), false, outra);
       }
-      const f = frontendSintetico({ 'portal/index.html': pagina(TURNSTILE, 'https://mal.test/x.js'), 'portal/login.js': '' });
-      recusa(() => empacotar(f), 'SCRIPT_EXTERNO');
     });
+
+    test('um segundo script externo no login ou na recuperação de senha também é recusado', () => {
+      for (const alvo of PAGINAS_COM_TURNSTILE) {
+        const f = frontendSintetico({ [alvo]: pagina(TURNSTILE, 'https://mal.test/x.js'), 'portal/login.js': '' });
+        recusa(() => empacotar(f), 'SCRIPT_EXTERNO');
+      }
+    });
+
+    test('na allowlist real só o login e a recuperação de senha do Portal carregam o Turnstile', () => {
+      const comScriptExterno = lerAllowlist()
+        .filter((f) => f.endsWith('.html'))
+        .filter((f) => /<script[^>]+src=["']https?:/i.test(fs.readFileSync(path.join(RAIZ, f), 'utf8').replace(/<!--[\s\S]*?-->/g, '')))
+        .sort();
+      assert.deepEqual(comScriptExterno, PAGINAS_COM_TURNSTILE);
+    });
+  });
+
+  test('o ciclo de senha do Portal é publicado com os recursos que carrega, e o do Painel Privado continua fora do pacote', () => {
+    const arquivos = lerAllowlist();
+    for (const pagina of ['portal/recuperar-senha.html', 'portal/redefinir-senha.html', 'portal/trocar-senha.html']) {
+      assert.ok(arquivos.includes(pagina), `${pagina} precisa estar na allowlist`);
+      for (const recurso of arquivosLocaisDe(pagina)) assert.ok(arquivos.includes(recurso), `${pagina} carrega ${recurso}, que não está na allowlist`);
+    }
+    for (const fora of ['painel-privado/recuperar-senha.html', 'painel-privado/redefinir-senha.html', 'painel-privado/seguranca.html', 'painel-privado/index.html']) {
+      assert.equal(arquivos.includes(fora), false, `${fora} nunca entra no pacote do cliente`);
+    }
+    assert.equal(arquivos.some((f) => f.startsWith('painel-privado/')), false);
   });
 
   test('linha de comando: sai com 0 ao gerar o pacote e com 1 quando recusa', () => {

@@ -27,6 +27,7 @@ const { usuarioAdministracaoRoutes } = require('./routes/usuario-administracao.r
 const { conviteUsuarioRoutes } = require('./routes/convite-usuario.routes');
 const { entregaEpiRoutes } = require('./routes/entrega-epi.routes');
 const { recuperacaoSenhaPortalRoutes, recuperacaoSenhaPlataformaRoutes } = require('./routes/recuperacao-senha.routes');
+const { trocaSenhaGlobalRoutes, trocaSenhaPlataformaRoutes } = require('./routes/troca-senha.routes');
 const { cabecalhosSeguranca, semCache } = require('./middleware/cabecalhos');
 const { corsApi, corsPlataforma } = require('./middleware/cors');
 const { exigirJson, parserJson } = require('./middleware/conteudo');
@@ -83,6 +84,9 @@ app.use(
   // Recuperação de senha do administrador: pública, sem Turnstile, com
   // limitadores próprios dentro da fábrica.
   recuperacaoSenhaPlataformaRoutes,
+  // Troca de senha com a sessão administrativa plena (Bloco 11E): a sessão,
+  // o TOTP e o limitador próprio ficam dentro da fábrica e do service.
+  trocaSenhaPlataformaRoutes,
   painelPlataformaRoutes,
   // Pacote 3: cadastro de empresas e convite do MASTER — mesma cadeia,
   // mesmas allowlists. As rotas administrativas exigem sessão do Painel
@@ -145,7 +149,10 @@ app.use(
 // recuperacaoSenhaPortalRoutes (Bloco 11D): solicitação e redefinição de
 // senha do Portal, públicas, na mesma cadeia. A solicitação exige o
 // Turnstile com action própria; cada POST tem o próprio limitador.
-app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeral, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, recuperacaoSenhaPortalRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, estoqueRoutes, itensDisponiveisRoutes, grupoHomogeneoExposicaoRoutes, gheMaterialRoutes, funcionarioRoutes, dashboardRoutes, usuarioAdministracaoRoutes, conviteUsuarioRoutes, entregaEpiRoutes);
+//
+// trocaSenhaGlobalRoutes (Bloco 11E): troca de senha com a sessão global, na
+// mesma cadeia; a sessão e o limitador próprio ficam dentro da fábrica.
+app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeral, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, recuperacaoSenhaPortalRoutes, trocaSenhaGlobalRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, estoqueRoutes, itensDisponiveisRoutes, grupoHomogeneoExposicaoRoutes, gheMaterialRoutes, funcionarioRoutes, dashboardRoutes, usuarioAdministracaoRoutes, conviteUsuarioRoutes, entregaEpiRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

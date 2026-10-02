@@ -42,7 +42,7 @@ header.topo { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-
 header.topo .identificacao { font-size: 0.9rem; }
 header.topo .identificacao strong { display: block; font-size: 1rem; }
 header.topo nav { display: flex; gap: 8px; flex-wrap: wrap; }
-header.topo nav button { background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.35); border-radius: 6px; padding: 7px 12px; font-size: 0.85rem; }
+header.topo nav button, header.topo nav a { background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.35); border-radius: 6px; padding: 7px 12px; font-size: 0.85rem; text-decoration: none; }
 main.conteudo { max-width: 920px; margin: 0 auto; padding: 22px; }
 section.bloco { background: var(--cartao); border: 1px solid var(--borda); border-radius: 10px; padding: 18px 20px; margin-bottom: 16px; }
 section.bloco h2 { font-size: 1rem; margin: 0 0 10px; }

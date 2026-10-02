@@ -381,6 +381,47 @@ async function revogarTodasDaIdentidade(executor, identidadeId, motivo, { exceto
   return rowCount;
 }
 
+/**
+ * Identificador da sessão empresarial que o cookie apresentado identifica,
+ * só se ela for válida pelos mesmos critérios de buscarValidaPorHash, for de
+ * um vínculo desta identidade e tiver nascido desta sessão global
+ * (sessoes.sessao_global_id, migration 037). Cookie presente não basta: a
+ * validade da empresarial não depende da global, e preservar uma que nasceu
+ * de outra deixaria viva uma sessão cuja global foi revogada.
+ *
+ * @returns {Promise<string|null>} o id, como string decimal canônica
+ */
+async function buscarIdDaAtualDaSessaoGlobal(executor, {
+  tokenHash, sessaoGlobalId, identidadeId, inatividadeMinutos,
+}) {
+  exigirHash(tokenHash);
+  exigirSessao(sessaoGlobalId);
+  if (!Number.isInteger(identidadeId) || identidadeId <= 0) {
+    throw new TypeError('identificador de identidade inválido');
+  }
+  exigirInatividade(inatividadeMinutos);
+
+  const { rows } = await executor.query(
+    `SELECT s.id
+       FROM sessoes s
+       JOIN usuarios u ON u.empresa_id = s.empresa_id AND u.id = s.usuario_id
+       JOIN empresas e ON e.id = s.empresa_id
+       JOIN identidades i ON i.id = u.identidade_id
+      WHERE s.token_hash = $1
+        AND s.sessao_global_id = $2::bigint
+        AND u.identidade_id = $3
+        AND s.revogada_em IS NULL
+        AND s.expira_em > now()
+        AND s.ultimo_uso_em > now() - ($4 * INTERVAL '1 minute')
+        AND u.ativo
+        AND e.ativo
+        AND i.ativo`,
+    [tokenHash, sessaoGlobalId, identidadeId, inatividadeMinutos],
+  );
+
+  return rows.length === 0 ? null : rows[0].id;
+}
+
 module.exports = {
   criar,
   buscarValidaPorHash,
@@ -390,5 +431,6 @@ module.exports = {
   revogarDaSessaoGlobal,
   revogarDaSessaoGlobalComSituacao,
   revogarTodasDaIdentidade,
+  buscarIdDaAtualDaSessaoGlobal,
   CAMPOS_SESSAO,
 };

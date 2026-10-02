@@ -17,6 +17,7 @@
     "js/pagina-base.js",
     "js/permissoes-efetivas.js",
     "js/portal-cliente.js",
+    "js/senha-ciclo.js",
     "js/sessao-empresarial.js",
     "js/tema.js",
     "js/usuarios.js",
@@ -46,6 +47,12 @@
     "portal/inicio.js",
     "portal/login.js",
     "portal/portal.css",
+    "portal/recuperar-senha.html",
+    "portal/recuperar-senha.js",
+    "portal/redefinir-senha.html",
+    "portal/redefinir-senha.js",
+    "portal/trocar-senha.html",
+    "portal/trocar-senha.js",
     "vendor/LICENSE-read-excel-file.txt",
     "vendor/read-excel-file-9.3.10.min.js"
   ]

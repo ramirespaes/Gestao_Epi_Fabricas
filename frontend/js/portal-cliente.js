@@ -14,6 +14,9 @@
    *   POST /api/auth/global/empresas/:id/selecionar (sem corpo) -> { usuario, empresa }
    *   POST /api/auth/logout                         "sair da empresa" (mantém o login global)
    *   POST /api/auth/global/logout                  "sair completamente"
+   *   GET  /api/auth/global/recuperacao-senha/turnstile    -> { siteKey, action } do widget da recuperação
+   *   POST /api/auth/global/recuperacao-senha/solicitar    { email, turnstileToken } -> 202 genérico
+   *   POST /api/auth/global/senha                   { senhaAtual, novaSenha } -> { status: 'SENHA_ALTERADA' }
    *
    * SEM CNPJ: o Portal pede só e-mail e senha.
    *
@@ -40,6 +43,9 @@
     me: '/auth/global/me',
     sairEmpresa: '/auth/logout',
     sairTudo: '/auth/global/logout',
+    verificacaoRecuperacao: '/auth/global/recuperacao-senha/turnstile',
+    solicitarRecuperacao: '/auth/global/recuperacao-senha/solicitar',
+    trocarSenha: '/auth/global/senha',
   };
 
   var PAGINAS = {
@@ -110,6 +116,36 @@
 
     sairCompletamente: function () {
       return http().requisitar('POST', CAMINHOS.sairTudo);
+    },
+
+    /** A recuperação tem a própria action: o widget do login não vale para ela. */
+    configuracaoVerificacaoRecuperacao: function () {
+      return http().requisitar('GET', CAMINHOS.verificacaoRecuperacao);
+    },
+
+    /** O e-mail e o token da verificação só existem nesta chamada; a resposta é a mesma exista ou não a conta. */
+    solicitarRecuperacao: function (dados) {
+      var d = dados || {};
+      if (typeof d.email !== 'string') {
+        return Promise.reject(new TypeError('e-mail é obrigatório'));
+      }
+      if (typeof d.turnstileToken !== 'string' || d.turnstileToken.length === 0) {
+        return Promise.reject(new TypeError('verificação de segurança obrigatória'));
+      }
+      return http().requisitar('POST', CAMINHOS.solicitarRecuperacao, {
+        corpo: { email: d.email, turnstileToken: d.turnstileToken },
+      });
+    },
+
+    /** Só a senha atual e a nova; quem troca é sempre a sessão, nunca algo do corpo. */
+    trocarSenha: function (dados) {
+      var d = dados || {};
+      if (typeof d.senhaAtual !== 'string' || typeof d.novaSenha !== 'string') {
+        return Promise.reject(new TypeError('senha atual e nova senha são obrigatórias'));
+      }
+      return http().requisitar('POST', CAMINHOS.trocarSenha, {
+        corpo: { senhaAtual: d.senhaAtual, novaSenha: d.novaSenha },
+      });
     },
   };
 
@@ -310,6 +346,26 @@
     },
   };
 
+  var recuperacao = {
+    /**
+     * Pede o link com o token atual, já descartado. Qualquer desfecho que não
+     * seja o aceite (4xx, 5xx ou falha de rede) reinicia o widget: a próxima
+     * tentativa exige um token novo.
+     */
+    solicitar: function (dados, verificacao) {
+      var token = verificacao.consumir();
+      if (token === null) return Promise.resolve({ ok: false, semVerificacao: true });
+      var d = dados || {};
+      return acoes.solicitarRecuperacao({ email: d.email, turnstileToken: token }).then(function (r) {
+        if (!r.ok) verificacao.reiniciar();
+        return r;
+      }, function (erro) {
+        verificacao.reiniciar();
+        throw erro;
+      });
+    },
+  };
+
   global.EpiPortal = {
     acoes: acoes,
     decisao: decisao,
@@ -317,6 +373,7 @@
     mensagens: mensagens,
     verificacao: { criar: criarVerificacao, tamanho: tamanhoDoWidget },
     login: login,
+    recuperacao: recuperacao,
     PAGINAS: PAGINAS,
   };
 
