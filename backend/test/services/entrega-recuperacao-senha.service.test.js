@@ -40,7 +40,9 @@ const semSensiveisNoConsole = () => {
 };
 
 const arquivos = () => (fs.existsSync(diretorio) ? fs.readdirSync(diretorio) : []);
-const emArquivo = () => entrega().criarEntrega({ config: { modo: 'arquivo', arquivo: { diretorio } } });
+const txts = () => arquivos().filter((n) => n.endsWith('.txt'));
+const lerTxt = (nome) => fs.readFileSync(path.join(diretorio, nome), 'utf8');
+const emArquivo = () => entrega().criarEntrega({ config: { modo: 'arquivo', arquivo: { diretorio }, smtp: null, suporte: SUPORTE } });
 
 beforeEach(() => {
   diretorio = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'gepi-entrega-')), 'emails');
@@ -51,10 +53,10 @@ afterEach(() => {
 });
 
 describe('link de redefinição', () => {
-  test('aponta para a página pública de cada portal, na origem configurada, com o token só no fragmento', () => {
+  test('aponta para a página pública de cada portal, na URL pública configurada, com o token só no fragmento', () => {
     const casos = [
-      ['PORTAL', httpConfig.cors.origens[0], '/portal/redefinir-senha.html'],
-      ['PLATAFORMA', httpConfig.plataforma.corsOrigens[0], '/painel-privado/redefinir-senha.html'],
+      ['PORTAL', httpConfig.urlsPublicas.portal, '/portal/redefinir-senha.html'],
+      ['PLATAFORMA', httpConfig.urlsPublicas.painel, '/painel-privado/redefinir-senha.html'],
     ];
     for (const [escopo, origem, caminho] of casos) {
       const link = new URL(entrega().montarLinkRedefinicao(escopo, TOKEN));
@@ -69,7 +71,7 @@ describe('link de redefinição', () => {
 });
 
 describe('modo arquivo (desenvolvimento)', () => {
-  test('grava a mensagem com o link num arquivo do diretório configurado, restrito ao dono, sem nada sensível no nome', async (t) => {
+  test('grava o par TXT e HTML com o link no diretório configurado, restrito ao dono, sem nada sensível no nome', async (t) => {
     espiarConsole(t);
     const instancia = emArquivo();
     const retorno = instancia.enfileirarRedefinicao({ escopo: 'PORTAL', email: EMAIL, token: TOKEN, expiraEm: EXPIRA });
@@ -77,18 +79,21 @@ describe('modo arquivo (desenvolvimento)', () => {
     await instancia.aguardarOciosidade();
 
     const nomes = arquivos();
-    assert.equal(nomes.length, 1);
-    assert.match(nomes[0], /\.txt$/);
-    for (const sensivel of [TOKEN, EMAIL, 'pessoa.destinataria']) assert.equal(nomes[0].includes(sensivel), false);
-    const caminho = path.join(diretorio, nomes[0]);
-    assert.equal(fs.statSync(caminho).mode & 0o777, 0o600);
+    assert.equal(nomes.length, 2);
+    assert.equal(txts().length, 1);
+    for (const nome of nomes) {
+      for (const sensivel of [TOKEN, EMAIL, 'pessoa.destinataria']) assert.equal(nome.includes(sensivel), false);
+      assert.equal(fs.statSync(path.join(diretorio, nome)).mode & 0o777, 0o600);
+    }
     assert.equal(fs.statSync(diretorio).mode & 0o777, 0o700);
 
-    const conteudo = fs.readFileSync(caminho, 'utf8');
+    const conteudo = lerTxt(txts()[0]);
     assert.ok(conteudo.includes(EMAIL), 'destinatário');
     assert.ok(conteudo.includes(instancia.montarLinkRedefinicao('PORTAL', TOKEN)), 'link completo');
-    assert.ok(conteudo.includes(EXPIRA.toISOString()), 'validade');
+    assert.ok(conteudo.includes('02/10/2026 às 12:00 (horário de Brasília)'), 'validade');
     assert.ok(conteudo.includes(SUPORTE), 'contato de suporte');
+    const html = fs.readFileSync(path.join(diretorio, nomes.find((n) => n.endsWith('.html'))), 'utf8');
+    assert.ok(html.includes(instancia.montarLinkRedefinicao('PORTAL', TOKEN)), 'o HTML também leva o link');
     semSensiveisNoConsole();
   });
 
@@ -99,19 +104,19 @@ describe('modo arquivo (desenvolvimento)', () => {
     instancia.enfileirarRedefinicao({ escopo: 'PLATAFORMA', email: EMAIL, token: TOKEN, expiraEm: EXPIRA });
     await instancia.aguardarOciosidade();
 
-    const conteudos = arquivos().map((nome) => fs.readFileSync(path.join(diretorio, nome), 'utf8'));
+    const conteudos = txts().map(lerTxt);
     assert.equal(conteudos.length, 2);
-    assert.equal(conteudos.filter((c) => c.includes(`${httpConfig.plataforma.corsOrigens[0]}/painel-privado/redefinir-senha.html#token=`)).length, 1);
-    assert.equal(conteudos.filter((c) => c.includes(`${httpConfig.cors.origens[0]}/portal/redefinir-senha.html#token=`)).length, 1);
+    assert.equal(conteudos.filter((c) => c.includes(`${httpConfig.urlsPublicas.painel}/painel-privado/redefinir-senha.html#token=`)).length, 1);
+    assert.equal(conteudos.filter((c) => c.includes(`${httpConfig.urlsPublicas.portal}/portal/redefinir-senha.html#token=`)).length, 1);
     semSensiveisNoConsole();
   });
 
-  test('o remetente automático ainda não está definido: a mensagem não declara remetente e o suporte só aparece como contato', async () => {
+  test('o TXT não declara remetente nem Reply-To (o remetente fica no transporte) e o suporte só aparece como contato', async () => {
     const instancia = emArquivo();
     instancia.enfileirarRedefinicao({ escopo: 'PORTAL', email: EMAIL, token: TOKEN, expiraEm: EXPIRA });
     await instancia.aguardarOciosidade();
-    const conteudo = fs.readFileSync(path.join(diretorio, arquivos()[0]), 'utf8');
-    assert.doesNotMatch(conteudo, /^(De|From|Remetente):/mi);
+    const conteudo = lerTxt(txts()[0]);
+    assert.doesNotMatch(conteudo, /^(De|From|Remetente|Reply-To):/mi);
   });
 
   test('aviso de senha alterada: sem token, sem link de redefinição e sem a senha', async (t) => {
@@ -120,7 +125,7 @@ describe('modo arquivo (desenvolvimento)', () => {
     assert.equal(instancia.enfileirarAvisoSenhaAlterada({ escopo: 'PORTAL', email: EMAIL }), undefined);
     await instancia.aguardarOciosidade();
 
-    const conteudo = fs.readFileSync(path.join(diretorio, arquivos()[0]), 'utf8');
+    const conteudo = lerTxt(txts()[0]);
     assert.ok(conteudo.includes(EMAIL));
     assert.ok(conteudo.includes(SUPORTE));
     for (const proibido of ['#token=', 'redefinir-senha.html', TOKEN]) assert.equal(conteudo.includes(proibido), false, proibido);
@@ -168,7 +173,7 @@ describe('modo arquivo (desenvolvimento)', () => {
 describe('modo desativado', () => {
   test('descarta a mensagem: nenhum arquivo, nenhuma exceção e nada sensível no console', async (t) => {
     espiarConsole(t);
-    const instancia = entrega().criarEntrega({ config: { modo: 'desativado', arquivo: null } });
+    const instancia = entrega().criarEntrega({ config: { modo: 'desativado', arquivo: null, smtp: null, suporte: SUPORTE } });
     assert.equal(instancia.enfileirarRedefinicao({ escopo: 'PORTAL', email: EMAIL, token: TOKEN, expiraEm: EXPIRA }), undefined);
     assert.equal(instancia.enfileirarAvisoSenhaAlterada({ escopo: 'PLATAFORMA', email: EMAIL }), undefined);
     await instancia.aguardarOciosidade();

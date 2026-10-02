@@ -4,34 +4,38 @@ const { describe, test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const entrega = require('../../src/services/entrega-convite.service');
+const entregaUsuario = require('../../src/services/entrega-convite-usuario.service');
 const { httpConfig } = require('../../src/config/http');
 
 /**
- * Mecanismo de entrega de DESENVOLVIMENTO do convite (Pacote 3): monta o
- * link de aceite sob a origem do Painel Privado, não envia e-mail, não
- * loga o token.
+ * Camadas finas de entrega dos convites (Bloco 11H) sobre o serviço único de
+ * e-mail. No ambiente da suíte a entrega está desativada, então a resposta
+ * ainda leva o link (mecanismo manual de desenvolvimento).
  */
 
 const TOKEN = 'Zm9ybWF0b2Jhc2U2NHVybGRldG9rZW5jb21fNDNjaGFy'.slice(0, 43);
 const EMAIL = 'pessoa.convidada@exemplo-cliente.com.br';
-const dados = {
-  conviteId: '31', emailConvite: EMAIL, token: TOKEN, expiraEm: new Date('2026-09-30T00:00:00Z'), empresa: { id: 7, razaoSocial: 'Empresa Convidante Ltda' },
+const dadosMaster = {
+  conviteId: '31', email: EMAIL, token: TOKEN, expiraEm: new Date('2026-09-30T00:00:00Z'), empresa: { id: 7, razaoSocial: 'Empresa Convidante Ltda' },
+};
+const dadosUsuario = {
+  conviteId: '41', empresaId: 7, email: EMAIL, token: TOKEN, expiraEm: new Date('2026-09-30T00:00:00Z'), empresa: 'Empresa Convidante Ltda', nome: 'Ana Souza', perfil: 'USUARIO',
 };
 
-describe('entregar', () => {
-  test('devolve o modo de desenvolvimento e um link sob a origem do Painel Privado com o token SÓ no fragmento (nunca na query)', async (t) => {
-    t.mock.method(console, 'log', () => {});
-    const r = await entrega.entregar(dados);
+describe('convite do MASTER', () => {
+  test('devolve o modo de desenvolvimento, o estado e um link sob a URL pública do Painel com o token SÓ no fragmento', async () => {
+    const r = await entrega.entregar(dadosMaster);
     assert.equal(r.modo, 'DESENVOLVIMENTO_SEM_EMAIL');
+    assert.equal(r.estado, 'NAO_ENVIADO');
     const url = new URL(r.linkAceite);
-    assert.equal(url.origin, httpConfig.plataforma.corsOrigens[0]);
+    assert.equal(url.origin, httpConfig.urlsPublicas.painel);
     assert.equal(url.pathname, entrega.CAMINHO_PAGINA_ACEITE);
     assert.equal(url.search, '', 'query vazia: o token não pode ir para logs de acesso nem Referer');
     assert.equal(new URLSearchParams(url.hash.slice(1)).get('token'), TOKEN);
-    assert.equal(r.expiraEm, dados.expiraEm);
+    assert.equal(r.expiraEm, dadosMaster.expiraEm);
   });
 
-  test('exigirDisponivel: em production recusa com 503 CONVITE_ENTREGA_INDISPONIVEL; nos demais ambientes não lança; entregar() também recusa em production', async () => {
+  test('exigirDisponivel: em production sem provedor real recusa com 503; nos demais ambientes não lança', () => {
     assert.throws(() => entrega.exigirDisponivel('production'), (e) => e.status === 503 && e.codigo === 'CONVITE_ENTREGA_INDISPONIVEL');
     assert.doesNotThrow(() => entrega.exigirDisponivel('development'));
     assert.doesNotThrow(() => entrega.exigirDisponivel('test'));
@@ -39,31 +43,37 @@ describe('entregar', () => {
     assert.equal(httpConfig.ambiente, 'test');
   });
 
-  test('a linha de log registra o fato, NUNCA o token nem o link', async (t) => {
-    const logs = [];
-    t.mock.method(console, 'log', (...args) => { logs.push(args); });
-    await entrega.entregar(dados);
-    const texto = JSON.stringify(logs);
-    assert.ok(texto.includes('convite-master'));
-    assert.equal(texto.includes(TOKEN), false);
-    assert.equal(texto.includes('aceitar-convite.html'), false);
-  });
-
-  // SEC-006: o log técnico não leva dado pessoal; empresa e convite bastam
-  // para correlacionar com o registro do convite e a auditoria.
-  test('a linha de log leva só empresaId e conviteId: sem e-mail, nome da empresa ou token', async (t) => {
-    const logs = [];
-    t.mock.method(console, 'log', (...args) => { logs.push(args); });
-    await entrega.entregar(dados);
-    assert.equal(logs.length, 1);
-    const [mensagem, campos] = logs[0];
-    assert.match(mensagem, /convite-master/);
-    assert.deepEqual(campos, { empresaId: 7, conviteId: '31' });
-    const texto = JSON.stringify(logs);
-    for (const dado of [EMAIL, 'pessoa.convidada', 'Empresa Convidante', TOKEN]) assert.equal(texto.includes(dado), false, dado);
+  test('não escreve nada no console: nem token, nem link, nem e-mail, nem nome da empresa', async (t) => {
+    const saidas = [];
+    for (const metodo of ['log', 'info', 'warn', 'error', 'debug']) t.mock.method(console, metodo, (...a) => { saidas.push(JSON.stringify(a)); });
+    await entrega.entregar(dadosMaster);
+    assert.deepEqual(saidas, []);
   });
 
   test('token ausente é erro de programação', async () => {
-    await assert.rejects(() => entrega.entregar({ ...dados, token: '' }), TypeError);
+    await assert.rejects(() => entrega.entregar({ ...dadosMaster, token: '' }), TypeError);
+  });
+});
+
+describe('convite de usuário', () => {
+  test('o link vai à página de aceite do Portal, na URL pública do Portal, com o token só no fragmento', async () => {
+    const r = await entregaUsuario.entregar(dadosUsuario);
+    assert.equal(r.modo, 'DESENVOLVIMENTO_SEM_EMAIL');
+    assert.equal(r.estado, 'NAO_ENVIADO');
+    const url = new URL(r.linkAceite);
+    assert.equal(url.origin, httpConfig.urlsPublicas.portal);
+    assert.equal(url.pathname, entregaUsuario.CAMINHO_PAGINA_ACEITE);
+    assert.equal(url.pathname, '/portal/aceitar-convite.html');
+    assert.equal(url.search, '');
+    assert.equal(new URLSearchParams(url.hash.slice(1)).get('token'), TOKEN);
+  });
+
+  test('mesmo bloqueio de production e o mesmo silêncio no console', async (t) => {
+    assert.throws(() => entregaUsuario.exigirDisponivel('production'), (e) => e.status === 503 && e.codigo === 'CONVITE_ENTREGA_INDISPONIVEL');
+    assert.equal(entregaUsuario.exigirDisponivel, entrega.exigirDisponivel);
+    const saidas = [];
+    for (const metodo of ['log', 'info', 'warn', 'error', 'debug']) t.mock.method(console, metodo, (...a) => { saidas.push(JSON.stringify(a)); });
+    await entregaUsuario.entregar(dadosUsuario);
+    assert.deepEqual(saidas, []);
   });
 });

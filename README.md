@@ -4,7 +4,7 @@ Sistema para gestão de Equipamentos de Proteção Individual (EPIs), com fronte
 
 ## Estado do projeto
 
-O desenvolvimento é organizado em blocos. Situação em 01/10/2026:
+O desenvolvimento é organizado em blocos. Situação em 02/10/2026:
 
 | Bloco | Situação |
 |---|---|
@@ -16,7 +16,7 @@ O desenvolvimento é organizado em blocos. Situação em 01/10/2026:
 | MFA TOTP do Painel Privado (MFA-1 a MFA-10) | Incorporado à `main` (PRs #34, #35 e #36; merge `427102a`). Ver "Painel Privado e MFA TOTP" |
 | Gate de segurança pré-Bloco 10 — CI no GitHub Actions, portabilidade dos testes de migration, logout seguro do Portal e atualização documental | Implementado no PR #37 |
 | 10 — Entrega real de EPI, ficha, confirmação e baixa de estoque por lote | **Concluído** nas subetapas 10A a 10J, todas incorporadas à `main` (PRs #38, #39, #40, #41 e #42). Ver "Bloco 10" |
-| 11 — Ciclo de vida da senha | **Em andamento.** Subetapas 11A + 11B (PR #44) e 11C + 11D (PR #45) incorporadas à `main`. Subetapas 11E + 11F implementadas e validadas na branch `feature/bloco11-11e-11f`, ainda sem commit, PR nem merge. O Bloco 11 não está concluído: a entrega real de e-mail (11H) continua pendente e o fluxo não está pronto para uso comercial. Ver "Bloco 11" |
+| 11 — Ciclo de vida da senha | **Concluído no código.** Subetapas 11A + 11B (PR #44), 11C + 11D (PR #45) e 11E + 11F (PR #46) incorporadas à `main`. Subetapas 11H (e-mail transacional real), 11I (hardening e auditoria) e 11J (documentação, regressão e fechamento) implementadas e validadas na branch `feature/bloco11-11h-11i-11j`, ainda sem commit, PR nem merge. A **configuração de produção continua pendente** (credenciais SMTP, SPF, DKIM, DMARC, URLs públicas e demais itens de deploy): ela bloqueia a produção, mas não o encerramento do código. Ver "Bloco 11" |
 
 ### Bloco 10 — Entrega real de EPI, ficha, confirmação e baixa de estoque por lote
 
@@ -39,39 +39,136 @@ Fluxo **direto** de entrega: quem tem a ação `REALIZAR_ENTREGA` localiza o tra
 - **Solicitação de EPI pelo trabalhador.** Fluxo futuro: o trabalhador solicita o EPI, a **Segurança do Trabalho** aprova (não o supervisor) e só então acontece a entrega. A entrega originada desse fluxo usará `origem = SOLICITACAO`; o Bloco 10 entrega o fluxo direto (`origem = DIRETA`).
 - **Impressão e PDF da ficha.** A impressão oficial em duas vias continua futura; o botão "Imprimir" da página permanece desabilitado até lá.
 
-### Bloco 11 — Ciclo de vida da senha (em andamento)
+### Bloco 11 — Ciclo de vida da senha e e-mail transacional (concluído no código)
 
-Recuperação de senha por link enviado ao e-mail da conta, no Portal do Cliente e no Painel Privado. O link é de **uso único**, com validade padrão de 60 minutos e **máxima de 4 horas**; depois de usado ou expirado, é necessário solicitar outro; quem não solicitou a redefinição pode ignorar o e-mail. Suporte humano: `suporte@safeworkengenharia.com.br`.
+Recuperação de senha por link enviado ao e-mail da conta, no Portal do Cliente e no Painel Privado, troca de senha autenticada e entrega real de e-mail (recuperação, aviso de senha alterada e convites). O link é de **uso único**, com validade padrão de 60 minutos e **máxima de 4 horas**; depois de usado ou expirado, é necessário solicitar outro; quem não solicitou a redefinição pode ignorar o e-mail. Suporte humano: `suporte@safeworkengenharia.com.br`.
 
 | Subetapa | Conteúdo | Situação |
 |---|---|---|
-| 11A + 11B | Persistência: migrations `061` a `064` (pedidos de redefinição do Portal e do Painel Privado, contador de solicitações e auditoria da identidade global) e repositories | `main`, PR #44 |
-| 11C | Serviços de recuperação: solicitação com resposta única para qualquer desfecho, limite de 3 solicitações por hora por e-mail, redefinição com link de uso único, revogação das sessões da conta e auditoria | `main`, PR #45 |
-| 11D | Integração HTTP: rotas públicas de solicitação e redefinição nos dois portais, Turnstile com action própria na solicitação do Portal e limite de requisições por IP separado por operação | `main`, PR #45 |
-| 11E | Troca de senha autenticada nos dois portais (`POST /api/auth/global/senha` e `POST /api/plataforma/auth/senha`): senha atual, nova senha (e TOTP no Painel Privado), só a sessão atual continua, as demais são revogadas, pedidos de redefinição pendentes são cancelados e há auditoria e aviso de senha alterada depois do COMMIT | Implementada e validada na branch `feature/bloco11-11e-11f`; sem commit, PR nem merge |
-| 11F | Frontend do ciclo de senha: "Esqueci minha senha" nos dois logins, páginas de pedido do link e de redefinição nos dois portais, troca de senha no Portal (`portal/trocar-senha.html`) e no Painel Privado (em "Segurança da conta") | Implementada e validada na branch `feature/bloco11-11e-11f`; sem commit, PR nem merge |
-| 11H | Entrega real de e-mail: provedor, remetente `no-reply@safeworkengenharia.com.br` ("SafeWork Engenharia"), recuperação de senha, aviso de senha alterada, convites, template visual oficial e SPF/DKIM/DMARC | Futura, não iniciada |
+| 11A + 11B | Persistência: migrations `061` a `064` (pedidos de redefinição do Portal e do Painel Privado, contador de solicitações e auditoria da identidade global) e repositories | Concluídas, `main`, PR #44 |
+| 11C + 11D | Serviços de recuperação (resposta única para qualquer desfecho, limite de 3 solicitações por hora por e-mail, redefinição com link de uso único, revogação das sessões da conta e auditoria) e integração HTTP (rotas públicas nos dois portais, Turnstile com action própria na solicitação do Portal e limite de requisições por IP separado por operação) | Concluídas, `main`, PR #45 |
+| 11E + 11F | Troca de senha autenticada nos dois portais (`POST /api/auth/global/senha` e `POST /api/plataforma/auth/senha`) e frontend do ciclo de senha: "Esqueci minha senha" nos dois logins, páginas de pedido do link e de redefinição, troca de senha no Portal (`portal/trocar-senha.html`) e no Painel Privado (em "Segurança da conta") | Concluídas, `main`, PR #46 |
+| 11G | Conteúdo absorvido pela 11E + 11F | Sem entrega independente |
+| 11H | E-mail transacional real: infraestrutura única de envio (`backend/src/email/`), provedor SMTP configurável, remetente `no-reply@safeworkengenharia.com.br` ("SafeWork Engenharia"), templates oficiais, URLs públicas independentes do CORS, convites sem link na resposta em produção, reenvio de convite, teto de envios e encerramento ordenado do servidor | Concluída; branch `feature/bloco11-11h-11i-11j`, sem commit, PR nem merge |
+| 11I | Hardening e auditoria final do Bloco 11 (30 itens, ver "Auditoria final de segurança do Bloco 11") | Concluída; mesma branch |
+| 11J | Documentação, regressão completa e fechamento | Concluída; mesma branch |
 
-**O que a 11E + 11F entregam**, implementadas e validadas na branch `feature/bloco11-11e-11f`, ainda sem commit, PR nem merge:
+Nenhuma migration nova foi criada pela 11H, 11I e 11J: o conjunto continua sendo `000` a `064`.
+
+**O que a 11E + 11F entregam** (na `main` desde o PR #46):
 
 - **Portal do Cliente:** "Esqueci minha senha" no login (sem alterar o login nem o Turnstile dele); solicitação pública de recuperação, com a mesma confirmação para qualquer e-mail; redefinição por link, com o token só no fragmento `#token=`; troca autenticada da senha, com a senha atual, em `portal/trocar-senha.html`. Na troca, só a sessão global atual e a sessão empresarial válida ligada a ela continuam; todos os demais acessos da identidade são revogados, em todas as empresas.
 - **Painel Privado:** "Esqueci minha senha" no login; recuperação e redefinição públicas, sem Turnstile; troca autenticada com senha atual e TOTP, em "Segurança da conta" (recovery code não substitui o TOTP). Na troca, só a sessão administrativa atual continua e as demais são revogadas; o fator TOTP, o secret e os recovery codes são preservados.
 
-**O fluxo ainda não está pronto para uso comercial.** O que falta:
+#### E-mail transacional (11H)
 
-- **Commit, PR e merge da 11E + 11F.** Até o merge, a `main` não tem as telas nem a troca autenticada.
-- **Entrega real de e-mail (subetapa 11H, futura e não iniciada).** Não há provedor de envio implementado. Fora de `production`, a mensagem é descartada (`EMAIL_MODO=desativado`) ou gravada em arquivo fora do repositório (`EMAIL_MODO=arquivo`, só desenvolvimento e teste). Em `production` nenhum dos dois modos é aceito e **o backend não sobe** até existir um mecanismo real de envio. A entrega acontece depois do COMMIT, sem fila durável nem reenvio. A 11H cobre: provedor real de e-mail; remetente `no-reply@safeworkengenharia.com.br`, com o nome "SafeWork Engenharia"; e-mails de recuperação de senha e de aviso de senha alterada; e-mails de convite de usuário e do primeiro MASTER; avaliação de "Reenviar convite"; template visual oficial de e-mail; SPF, DKIM e DMARC do domínio.
-- **Restante do ciclo de vida da senha.** Não existem histórico de senhas, expiração periódica, senha temporária nem troca obrigatória no primeiro acesso.
+Toda mensagem do sistema passa por **uma única infraestrutura** (`backend/src/email/`), em camadas: `servico-email.js` (entrada única) → `transporte/` (`desativado`, `arquivo` ou `smtp`) → `templates/`. Não há acoplamento a um provedor: o SMTP é configurado por variáveis de ambiente, e o transporte é o nodemailer, fixado exatamente em `10.0.13` (sem `^` nem `~`, sem scripts de instalação e sem dependências).
+
+| Mensagem | Quando sai | Como sai |
+|---|---|---|
+| Recuperação de senha (Portal e Painel Privado) | depois do COMMIT da solicitação | fila em memória, em segundo plano |
+| Aviso de senha alterada (redefinição e troca) | depois do COMMIT | fila em memória, em segundo plano |
+| Convite de usuário, convite do primeiro MASTER e reenvio de ambos | depois de gravar o convite | enviado de forma aguardada, para a resposta informar o estado do envio |
+
+- **Identidade:** nome "SafeWork Engenharia", remetente `no-reply@safeworkengenharia.com.br` e suporte `suporte@safeworkengenharia.com.br`. São endereços distintos: o suporte aparece só no corpo, nunca como remetente nem como Reply-To, e as mensagens não levam Reply-To, cc, bcc nem cabeçalhos extras.
+- **Modos (`EMAIL_MODO`):** `desativado` (padrão fora de produção; a mensagem é descartada), `arquivo` (grava um par TXT e HTML num diretório fora do repositório; só desenvolvimento e teste) e `smtp`. **Em `production` só `smtp` é aceito**, com STARTTLS ou TLS e usuário e senha: com outro modo, SMTP incompleto ou sem TLS, o backend não sobe. Não existe variável que afrouxe a validação do certificado.
+- **URLs públicas dos links:** `PORTAL_URL_PUBLICA` e `PAINEL_URL_PUBLICA`, que não dependem mais da ordem de `CORS_ORIGIN`. Em `production` são obrigatórias, `https`, e precisam ser uma das origens da allowlist do respectivo namespace. Fora de `production`, sem elas, valem a primeira origem de `CORS_ORIGIN` (Portal) e a primeira de `PLATAFORMA_CORS_ORIGIN` (Painel).
+- **Links:** o token vai só no fragmento (`#token=`), nunca em query. As páginas de aceite e redefinição o retiram da barra de endereço antes de qualquer requisição e usam `referrer: no-referrer`.
+- **Templates:** HTML com tabelas e CSS inline (compatível com clientes de e-mail), sem JavaScript, com variante escura, botão principal, link alternativo em texto e logo inline por CID. O texto vindo de pessoas (nome, empresa) é escapado. Validade formatada em horário de Brasília.
+- **Hardening do SMTP:** STARTTLS exige TLS de verdade, sem rebaixamento; o certificado é sempre validado; o nodemailer não lê arquivo nem busca URL; logger e debug desligados; destinatário normalizado e validado antes do transporte, com envelope explícito; assunto constante, definido pelo sistema. O erro do provedor nunca sai: o registro técnico leva só evento, tipo, escopo e um código de uma lista conhecida, com amostragem para que ninguém encha o log. Nenhum e-mail, token, link ou texto do provedor vai ao log.
+- **Fila em memória** (recuperação e aviso): no máximo 100 mensagens aceitas e ainda não terminadas, 2 envios simultâneos e limite de 15 segundos por envio. O excedente é descartado e contado, sem alterar a resposta pública (a mesma para qualquer desfecho, o que preserva a proteção contra enumeração). Ao receber SIGTERM ou SIGINT, o servidor para de aceitar conexões e mensagens novas, espera as já aceitas (até 10 segundos), fecha o transporte e sai. Se algo ficou para trás, sai com código 1 e registra só a quantidade.
+- **Sem fila durável:** se o processo cair depois do COMMIT e antes do envio, a mensagem se perde e a pessoa precisa solicitar de novo (risco aceito, R2).
+
+**Convites.** O token do convite só existe em claro no instante da criação (no banco fica só o SHA-256), então "reenviar" não reenvia o convite antigo: o **reenvio** cancela o convite anterior (pendente ou expirado) e cria outro, com o mesmo e-mail, nome e perfil, token novo e validade nova, **na mesma transação**; o link antigo deixa de valer. A resposta é `201` com `conviteAnteriorId` e o estado do envio, mesmo se o envio falhar (`FALHA`): o convite novo já está gravado, fica pendente e pode ser reenviado de novo. **Em produção, ou com SMTP real, a resposta nunca traz o link nem o token**; só nos modos `desativado` e `arquivo`, fora de produção, ela traz `linkAceite`, o mecanismo manual de desenvolvimento.
+
+- **Teto de envios por (empresa, e-mail):** no mínimo 60 segundos entre dois envios e no máximo 5 convites em 24 horas, contando criações e reenvios (`429`, com `Retry-After`). Vale também na criação, para que cancelar e criar de novo não contorne o teto. É calculado nas linhas dos próprios convites, sem migration nova.
+- **Limite por IP:** criar e reenviar compartilham um contador por portal, antes da sessão.
+- **Concorrência:** criar, reenviar, aceitar e cancelar são serializados por trava consultiva do par (empresa, e-mail) e por `FOR UPDATE` da linha; nunca há dois convites em aberto para o mesmo par, e um link cancelado nunca é aceito.
+- **Quem pode:** no Portal, MASTER, ou ADMINISTRADOR com `GERENCIAR_USUARIOS` (só SUPERVISOR e USUARIO). No Painel Privado, o administrador da plataforma. O reenvio é auditado como `USUARIO_CONVITE_REENVIADO` (trilha da empresa) ou `CONVITE_MASTER_REENVIADO` (trilha da plataforma), apontando para o convite novo e o anterior, sem e-mail, nome, token nem hash.
+
+**Registros de DNS (SPF, DKIM e DMARC): somente documentação.** O código não os configura nem finge que estão configurados. Antes de enviar e-mail real em produção, o domínio `safeworkengenharia.com.br` precisa de SPF autorizando o provedor escolhido, DKIM com a chave do provedor e DMARC (começando em `p=none`, com endereço de relatório, e endurecendo depois de observar os relatórios). Os valores dependem do provedor e do DNS, e esta entrega não alterou DNS algum.
+
+#### Auditoria final de segurança do Bloco 11 (11I)
+
+Auditoria dos 30 itens do bloco, feita sobre o código, com testes unitários e de integração (PostgreSQL real, só em `gestao_epi_teste_local`) e provas por mutação. Classes: **OK**; **CORRIGIDO NESTA ENTREGA**; **RISCO ACEITO**; **BACKLOG**; **BLOQUEIA PRODUÇÃO**. Nenhum item ficou como defeito aberto do código do Bloco 11.
+
+| # | Item | Classe |
+|---:|---|---|
+| 1 | Anti-enumeração (solicitação, login, convites) | OK |
+| 2 | Limite de requisições HTTP | OK |
+| 3 | Limite persistente (3/h por e-mail, cooldown, teto de convites) | CORRIGIDO NESTA ENTREGA |
+| 4 | Concorrência (travas, ordem, ausência de deadlock) | OK |
+| 5 | Replay (link, TOTP, convite) | OK |
+| 6 | Redefinição de uso único | OK |
+| 7 | Sessões e revogação | OK |
+| 8 | Preservação da sessão atual na troca | OK |
+| 9 | MFA | OK |
+| 10 | Anti-replay do TOTP | OK |
+| 11 | Recovery codes | OK |
+| 12 | Desafios pré-MFA | OK |
+| 13 | Auditoria | OK |
+| 14 | IP e User-Agent | OK |
+| 15 | Logs técnicos | CORRIGIDO NESTA ENTREGA |
+| 16 | Tokens | OK |
+| 17 | Cookies | OK |
+| 18 | CORS e verificação de origem | OK |
+| 19 | Turnstile | OK (Painel sem Turnstile: R5) |
+| 20 | Convites | CORRIGIDO NESTA ENTREGA |
+| 21 | E-mail transacional | CORRIGIDO NESTA ENTREGA (infraestrutura de produção: R8) |
+| 22 | URLs públicas | CORRIGIDO NESTA ENTREGA |
+| 23 | Fail-closed em produção | OK |
+| 24 | Isolamento Portal × Plataforma | OK |
+| 25 | Respostas sem vazamento | OK |
+| 26 | Erros genéricos | OK |
+| 27 | Concorrência de envio e reenvio | CORRIGIDO NESTA ENTREGA |
+| 28 | Dados sensíveis (varredura de segredos) | OK |
+| 29 | Dependências introduzidas | OK (achados antigos do `npm audit`: R9) |
+| 30 | Frontend (token no fragmento, escape, publicação) | OK |
+
+Resíduos registrados (nenhum é defeito de código do Bloco 11):
+
+| Id | Resíduo | Classe |
+|---|---|---|
+| R1 | Diferença estatística de tempo da solicitação (conta existente × inexistente) não medida; o envio assíncrono e o limite por e-mail a reduzem | RISCO ACEITO |
+| R2 | Ausência de outbox: perda entre o COMMIT e o envio | RISCO ACEITO |
+| R3 | Fila de e-mail e `MemoryStore` do rate limit por instância; adequados a instância única | RISCO ACEITO |
+| R4 | Teto global por empresa/administrador para abuso de convites (hoje há 20 requisições por minuto por IP e 5 convites em 24 horas por e-mail, mas não há teto por empresa) | BACKLOG DE SEGURANÇA PRÉ-PRODUÇÃO / PRÉ-LIBERAÇÃO COMERCIAL |
+| R5 | Painel Privado sem Turnstile na solicitação de recuperação (decisão da 11D) | RISCO ACEITO |
+| R6 | Terceiro pode consumir as 3 solicitações por hora de um e-mail | RISCO ACEITO |
+| R7 | Cliente de e-mail pode transformar em link uma URL digitada no nome ou na empresa, no texto simples | RISCO ACEITO |
+| R8 | Configuração de produção (ver abaixo) | **BLOQUEIA PRODUÇÃO** (não o encerramento do código): IMPLEMENTAÇÃO DO BLOCO 11 CONCLUÍDA / CONFIGURAÇÃO DE PRODUÇÃO PENDENTE |
+| R9 | Dois achados antigos do `npm audit` (ver "Backlog técnico de dependências") | BACKLOG |
+| R10 | Inexistência de gate de cobertura do frontend (ver "Requisito de cobertura") | BACKLOG (decisão futura, fora deste PR) |
+
+**Pendências de deploy (R8).** O código do Bloco 11 está completo, mas a produção depende de configuração que não é código e **bloqueia a produção**, não o encerramento do bloco: credenciais SMTP reais (`SMTP_HOST`, `SMTP_USUARIO`, `SMTP_SENHA`); SPF, DKIM e DMARC do domínio; `PORTAL_URL_PUBLICA` e `PAINEL_URL_PUBLICA` reais; `TRUST_PROXY_HOPS` conforme a topologia real (sem ele, o limite por IP e o IP gravado na auditoria ficam errados); chaves reais do Turnstile; segredos em um serviço de secrets; HTTPS; e a proteção de origem, a CSP e o hardening de publicação, que seguem com o Bloco 14.
+
+**Backlog técnico de dependências (R9), fora deste PR.** Não foi executado `npm audit fix` e nenhum destes pacotes foi atualizado. Os dois achados já existiam antes da 11H e não vêm do nodemailer. Recomendação: corrigir em alteração separada, só no `backend/package-lock.json` (as faixas dos pacotes que os exigem já admitem as versões corrigidas, então não há mudança de `package.json` nem de versão maior).
+
+| Pacote | Gravidade | Instalada | Corrigida | Cadeia | Aplicabilidade observada |
+|---|---|---|---|---|---|
+| `brace-expansion` | alta (3 avisos de negação de serviço) | 5.0.9 | 5.0.12 | `node-pg-migrate@9.0.0` → `glob@13.0.6` → `minimatch@10.2.6` → `brace-expansion`; e `nodemon@3.1.14` → `minimatch@10.2.6` → `brace-expansion` (todas dev) | Nenhuma em runtime: `src` e `scripts` não o usam; o runner de migrations só lista o diretório de migrations do repositório (`dir`), sem padrão vindo de entrada externa |
+| `ip-address` | moderada (2 avisos) | 10.7.0 | 10.7.1 (a última publicada é 10.7.3) | `express-rate-limit@8.7.0` → `ip-address` (produção) | Baixa: o `express-rate-limit` só chama `Address6` depois de `net.isIPv6` e `isInSubnet` entre objetos do mesmo tipo; o código do projeto não usa essas funções |
+
+**Backlog de segurança pré-liberação comercial (R4).** Teto global por empresa e por administrador para o envio de convites, a decidir antes da liberação comercial. Não faz parte do Bloco 11.
+
+**Histórico de TDD da 11H a 11J.** Houve ciclo RED→GREEN válido (falha pela ausência do comportamento esperado, e não por erro de sintaxe, importação ou ambiente) nas camadas em que o teste veio antes do código: configuração, núcleo de e-mail, transportes, serviço de e-mail, limite de envio, repositórios, serviços e controllers de reenvio, rotas, limitadores, encerramento e frontend. Alguns testes foram escritos depois da implementação e passaram na primeira execução (as integrações do reenvio e do isolamento, a bateria de falha de entrega da recuperação, os testes de convite e links e o de `.env.example`). Não são apresentados como RED: são **testes de verificação e regressão**, validados também por provas de mutação feitas em cópia fora do repositório (a integração com PostgreSQL foi provada com 11 mutações, todas detectadas). Não houve RED retroativo inventado.
+
+#### Restante do ciclo de vida da senha
+
+Não existem histórico de senhas, expiração periódica, senha temporária nem troca obrigatória no primeiro acesso. São funcionalidades futuras, não pendências do Bloco 11.
 
 ### Próximos marcos e itens futuros
 
 Itens ainda não concluídos:
 
-- **Bloco 11 (em andamento):** commit, PR e merge da 11E + 11F (troca de senha autenticada e telas do ciclo de senha, hoje implementadas e validadas na branch `feature/bloco11-11e-11f`), entrega real de e-mail (11H) e o restante do ciclo de vida da senha — ver "Bloco 11"; medição da cobertura do frontend com meta mínima de 25%; testes finais e fechamento acadêmico.
-- **Homologação e produção na AWS:** deploy, requisitos de publicação do frontend (entre eles a CSP no servidor estático), `TRUST_PROXY_HOPS` conforme a topologia real, chaves reais do Turnstile e do MFA, mecanismo real de entrega de e-mail (sem ele o backend não inicia em `production`) e aplicação autorizada das migrations em cada banco.
+- **Bloco 11 (concluído no código):** falta apenas o commit, o PR e o merge da 11H + 11I + 11J (branch `feature/bloco11-11h-11i-11j`), a cargo de quem mantém o repositório. A configuração de produção do e-mail e do deploy é pendência de implantação — ver "Bloco 11". Restam também o fechamento acadêmico e a documentação final do projeto.
+- **Homologação e produção na AWS:** deploy, requisitos de publicação do frontend (entre eles a CSP no servidor estático), `TRUST_PROXY_HOPS` conforme a topologia real, chaves reais do Turnstile e do MFA, credenciais SMTP reais e SPF, DKIM e DMARC do domínio de e-mail (sem SMTP configurado o backend não inicia em `production`), `PORTAL_URL_PUBLICA` e `PAINEL_URL_PUBLICA` reais e aplicação autorizada das migrations em cada banco.
+- **Backlog de segurança pré-liberação comercial:** teto global por empresa/administrador para o envio de convites (R4).
+- **Backlog técnico de dependências:** `brace-expansion` e `ip-address` (R9), em alteração separada.
+- **Decisão futura, fora do Bloco 11:** gate de cobertura do frontend (R10).
 - **Hardening futuro de publicação** (junto da CSP e da implantação, Bloco 14): CSP no servidor estático, com `base-uri 'none'`; endurecer o parser do empacotador (`frontend/publicacao/empacotar.js`), que não reconhece formas anômalas de HTML, como `<script/src="...">`, nem inspeciona `<base href>`; e a proteção final no deploy. Até lá, o pacote só vale com a CSP do servidor estático — ver "Publicação do frontend do cliente".
 - **Antes da produção:** limpeza e retenção das tabelas de sessões e de tentativas de login.
-- **Backlog:** notificações, página "Acesso negado" com "Solicitar acesso" e reorganização de pastas. O envio real de e-mail (convites e redefinição de senha) está na 11H.
+- **Backlog:** notificações, página "Acesso negado" com "Solicitar acesso" e reorganização de pastas.
 - **Melhoria futura opcional:** Cloudflare Turnstile também no login do Painel Privado, a reconsiderar só se logs ou padrões de ataque justificarem.
 
 ### Encerramento do Bloco 8
@@ -94,10 +191,10 @@ Os itens abaixo ficaram fora do Bloco 8 e têm destino formal. Não são pendên
 |---|---|
 | Cadastro de empresas | Entregue pela autenticação global (Painel Privado, PR #22) |
 | Administração de usuários da empresa | Entregue no Bloco 9, parte F: convite, edição de nome e tipo de conta, inativação e reativação |
-| Troca de senha | Bloco 11, subetapas 11E + 11F (implementadas e validadas na branch `feature/bloco11-11e-11f`, sem commit, PR nem merge), junto com a recuperação de senha e o restante do ciclo de vida da senha, antes da liberação comercial |
-| Recuperação de senha ("Esqueci minha senha") | Bloco 11, separada da autenticação básica já entregue: backend e HTTP na `main` (11C + 11D); telas na 11F (implementadas e validadas na branch, sem commit, PR nem merge); e-mail real na 11H; antes da liberação comercial |
+| Troca de senha | Entregue no Bloco 11, subetapas 11E + 11F (`main`, PR #46) |
+| Recuperação de senha ("Esqueci minha senha") | Entregue no Bloco 11: backend e HTTP (11C + 11D, PR #45), telas (11F, PR #46) e e-mail real (11H); a configuração de produção do e-mail é pendência de implantação |
 | Integração contínua (GitHub Actions) | Criada no gate de segurança pré-Bloco 10 (PR #37): `.github/workflows/ci.yml`, ver "Integração contínua (GitHub Actions)" |
-| Cobertura mínima de 25% no frontend | Bloco 11, com os testes finais, o fechamento acadêmico e a documentação |
+| Cobertura mínima de 25% no frontend | Referência histórica, não é requisito vigente: não existe gate de cobertura do frontend. Criar um gate é decisão futura (ver "Requisito de cobertura") |
 | Limpeza e retenção das tabelas de sessões e de tentativas de login | Requisito de hardening do deploy, antes da produção |
 | Página "Acesso negado", botão "Solicitar acesso" e notificações de pedidos de acesso | Backlog formal |
 | Reorganização de pastas | Backlog formal |
@@ -113,7 +210,7 @@ gestao-epi/
 │   ├── migrations/           # 000 a 064 e o manifesto checksums.json
 │   ├── scripts/              # runner de migrations e comandos administrativos (CLI)
 │   ├── src/                  # app, config, routes, controllers, services, repositories,
-│   │                         # middleware, schemas, security, rbac, db, errors e utils
+│   │                         # middleware, schemas, security, rbac, db, email, errors e utils
 │   └── test/                 # suíte padrão (*.test.js) e integração (integracao/*.integration.js)
 ├── frontend/                 # Interface web
 │   ├── portal/               # Portal do Cliente: login, seleção de empresa, início, aceite de convite e ciclo de senha
@@ -176,7 +273,7 @@ Desde a Etapa E o estoque é controlado **por lote** (migrations `042` a `045`):
 
 A parte F tornou reais as páginas de usuários da empresa:
 
-- **Novo Usuário** (`new-user.html`): o cadastro é um **convite** (migration `046`). Quem administra informa nome, e-mail e tipo de conta; a pessoa aceita por um link com token opaco (só o SHA-256 fica no banco), de uso único, com prazo e cooldown contra tentativas de senha. Se o e-mail já tiver conta no SafeWork, a identidade global é reaproveitada e só nasce o vínculo com esta empresa. Enquanto não houver envio de e-mail, o link volta para quem convidou, fora de produção.
+- **Novo Usuário** (`new-user.html`): o cadastro é um **convite** (migration `046`). Quem administra informa nome, e-mail e tipo de conta; a pessoa aceita por um link com token opaco (só o SHA-256 fica no banco), de uso único, com prazo e cooldown contra tentativas de senha. Se o e-mail já tiver conta no SafeWork, a identidade global é reaproveitada e só nasce o vínculo com esta empresa. Com o SMTP real (produção), o link só chega à pessoa por e-mail e a tela mostra o estado do envio (enviado ou falha); nos modos de desenvolvimento sem e-mail, o link volta para quem convidou, para ser repassado. Convites pendentes ou expirados têm o botão **Reenviar**, que cancela o anterior e envia um novo (ver "E-mail transacional (11H)").
 - **Administração de Usuários** (`user-admin.html`): lista paginada da empresa da sessão, edição de nome e tipo de conta, inativação lógica (as sessões daquele vínculo nesta empresa são revogadas; as outras empresas da mesma pessoa não mudam) e reativação do mesmo vínculo. O e-mail não é editado aqui, porque é a identidade global da pessoa. O grupo continua em Integrantes do Grupo.
 - **Autoridade**: MASTER ativo, ou ADMINISTRADOR com autorização individual `GERENCIAR_USUARIOS` (migration `047`, modo `OBRIGATORIA`). Só o MASTER gerencia contas MASTER e ADMINISTRADOR; o ADMINISTRADOR autorizado gerencia SUPERVISOR e USUARIO. A empresa nunca fica sem MASTER ativo: inativar ou rebaixar o último é recusado no servidor, também sob concorrência.
 
@@ -207,7 +304,7 @@ Em desenvolvimento, sirva `frontend/` em `http://localhost:5500` (Portal: `/port
 
 ### Painel Privado e MFA TOTP
 
-`frontend/painel-privado/` é o ambiente dos administradores da plataforma: cadastro de empresas, convite do primeiro MASTER de cada empresa e segurança da própria conta. Usa a API `/api/plataforma`, uma cadeia separada da API do cliente, com CORS, verificação de origem, validação de Host e rate limit próprios.
+`frontend/painel-privado/` é o ambiente dos administradores da plataforma: cadastro de empresas, convite (e reenvio) do primeiro MASTER de cada empresa e segurança da própria conta. O link do convite só aparece na tela em desenvolvimento; com e-mail real a tela mostra o estado do envio. Usa a API `/api/plataforma`, uma cadeia separada da API do cliente, com CORS, verificação de origem, validação de Host e rate limit próprios.
 
 Na subetapa 11F, o login ganha "Esqueci minha senha", com `recuperar-senha.html` e `redefinir-senha.html` (sem Turnstile; o token do link chega no fragmento `#token=`), e "Segurança da conta" ganha a troca de senha (11E), que pede a senha atual e o TOTP, mantém a sessão atual e revoga as demais, sem tocar no fator TOTP nem nos recovery codes.
 
@@ -316,7 +413,8 @@ Resumo do que já está em vigor, sempre decidido no servidor:
 - **Cabeçalhos HTTP:** Helmet (`backend/src/middleware/cabecalhos.js`) e `x-powered-by` desligado.
 - **CORS por allowlist**, separada para o cliente (`/api`) e para o Painel Privado (`/api/plataforma`), sem curinga.
 - **Verificação de `Origin`** nos métodos que alteram estado, antes de consumir cota de rate limit.
-- **Rate limiting** geral e limitadores próprios para login, MFA e aceite de convites.
+- **Rate limiting** geral e limitadores próprios para login, MFA, recuperação e troca de senha, aceite de convites e envio de convites.
+- **E-mail transacional fail-closed:** em `production` só o SMTP com TLS é aceito; sem ele (ou sem as URLs públicas) o backend não sobe. O link do convite nunca volta na resposta em produção, e o envio de convites tem teto por (empresa, e-mail).
 - **Payload limitado:** só JSON, até 32 KiB, validado por schemas Zod.
 - **Senhas com Argon2id**, cooldown persistente de login com chave HMAC-SHA-256 e resposta pública genérica contra enumeração.
 - **Sessões reais no PostgreSQL:** token opaco de 256 bits em cookie `HttpOnly`; no banco, só o SHA-256 do token.
@@ -350,11 +448,13 @@ O Bloco 10 acrescentou `entrega-epi.routes.js`, também em `/api`: `POST /api/en
 
 Também na cadeia `/api`, `auth-global.routes.js` atende o Portal do Cliente: `POST /api/auth/global/login` (e-mail, senha e token do Turnstile), `GET /api/auth/global/turnstile` (site key e action públicas do widget), `GET /api/auth/global/me`, `POST /api/auth/global/empresas/:id/selecionar` e `POST /api/auth/global/logout`.
 
-A cadeia `/api/plataforma`, montada antes de `/api` e separada dela, atende o Painel Privado: login, sessão e logout da plataforma, as rotas do MFA em `/api/plataforma/auth/mfa/*`, o resumo do painel, o cadastro de empresas e o convite do MASTER (com duas rotas públicas de aceite).
+A cadeia `/api/plataforma`, montada antes de `/api` e separada dela, atende o Painel Privado: login, sessão e logout da plataforma, as rotas do MFA em `/api/plataforma/auth/mfa/*`, o resumo do painel, o cadastro de empresas e o convite do MASTER (criar, listar, consultar, reenviar e cancelar, com duas rotas públicas de aceite).
 
 A recuperação de senha (Bloco 11D, `recuperacao-senha.routes.js`, na `main` pelo PR #45) tem rotas públicas nas duas cadeias. No Portal: `POST /api/auth/global/recuperacao-senha/solicitar` (e-mail e token do Turnstile), `POST /api/auth/global/recuperacao-senha/redefinir` (token do link e nova senha) e `GET /api/auth/global/recuperacao-senha/turnstile` (site key e action do widget). No Painel Privado: `POST /api/plataforma/auth/recuperacao-senha/solicitar` e `POST /api/plataforma/auth/recuperacao-senha/redefinir`, sem Turnstile. A solicitação bem formada responde sempre `202` com `{ "status": "SOLICITACAO_RECEBIDA" }`, exista ou não a conta, esteja ela ativa ou não. A redefinição responde `200` com `{ "status": "SENHA_REDEFINIDA" }`, não cria sessão e remove os cookies de sessão do portal correspondente. O token do link só é aceito no corpo JSON: as quatro rotas POST recusam qualquer parâmetro na query string. O Turnstile da solicitação usa a action `portal_recuperacao_senha`, diferente da do login, com as mesmas chaves. Cada POST tem o próprio limite de requisições por IP, separado entre si e do login, com os mesmos parâmetros do limite de autenticação.
 
 A troca de senha autenticada (Bloco 11E, `troca-senha.routes.js`) exige sessão em cada cadeia e não aceita parâmetro na query string. No Portal: `POST /api/auth/global/senha`, com a sessão global e o corpo `{ "senhaAtual", "novaSenha" }`. No Painel Privado: `POST /api/plataforma/auth/senha`, com a sessão administrativa plena e o corpo `{ "senhaAtual", "novaSenha", "codigo" }`, em que `codigo` é só o TOTP de 6 dígitos (recovery code não substitui). A identidade vem sempre da sessão, nunca do corpo. No Portal, a senha atual errada responde `401` com `SENHA_ATUAL_INVALIDA` e conta no cooldown do login. No Painel Privado, a senha atual errada, o TOTP errado e o TOTP repetido contam no cooldown de MFA do administrador e recebem a mesma resposta `401` com `REAUTENTICACAO_INVALIDA`, sem dizer qual fator falhou. No sucesso a resposta é `200` com `{ "status": "SENHA_ALTERADA" }`, sem cookie novo: só a sessão atual continua, as demais sessões da conta são revogadas (no Painel Privado, também os desafios de MFA abertos, sem tocar em fator, secret nem recovery codes), os pedidos de redefinição pendentes são cancelados e o aviso de senha alterada sai depois do COMMIT. Cada rota tem o próprio limite de requisições por IP, separado do login e da recuperação.
+
+O reenvio de convite (Bloco 11H) tem uma rota em cada cadeia, ambas `POST` com corpo vazio e sem parâmetro na query: `POST /api/administracao/convites-usuario/:conviteId/reenviar` (sessão empresarial; `GERENCIAR_USUARIOS` e as regras de perfil no serviço) e `POST /api/plataforma/convites-master/:id/:conviteId/reenviar` (sessão administrativa plena; `:id` é a empresa). A empresa vem da sessão (Portal) ou da rota validada (Painel); um convite de outra empresa responde `404`, igual a um convite inexistente. Respostas: `201` com `convite`, `conviteAnteriorId` e `entrega` (`modo`, `estado` e, só em desenvolvimento, `linkAceite`); `409` com `CONVITE_NAO_REENVIAVEL` (já aceito ou cancelado), `CONVITE_JA_PENDENTE` (há outro convite em aberto para o e-mail), `USUARIO_VINCULO_EXISTENTE` (só no Portal) ou `EMPRESA_INATIVA` (só no Painel); `429` com `CONVITE_ENVIO_MUITO_RECENTE` ou `CONVITE_ENVIO_LIMITE_DIARIO` e o cabeçalho `Retry-After`. Criar e reenviar passam antes pelo mesmo limitador por IP, que vem antes da sessão.
 
 `health` é pública, sem exigência de sessão. O login (`POST /api/auth/login`) também é público — é o próprio ponto de entrada da autenticação; o login global do Portal é público, mas exige o token do Turnstile. As rotas de recuperação de senha são públicas: não exigem sessão nem MFA. O logout aceita chamada sem sessão válida, por comportamento idempotente. As demais rotas — todas as administrativas do RBAC — exigem sessão autenticada; nenhuma decide autorização por si mesma, apenas autenticação. A autoridade administrativa é sempre resolvida na camada de serviço, relendo o estado do banco a cada chamada.
 
@@ -405,10 +505,23 @@ Variáveis da recuperação de senha (Bloco 11):
 | Variável | Conteúdo |
 |---|---|
 | `RECUPERACAO_SENHA_VALIDADE_MINUTOS` | validade do link de redefinição; padrão 60, mínimo 5, máximo 240 (4 horas) |
-| `EMAIL_MODO` | `desativado` (padrão, a mensagem é descartada) ou `arquivo` (grava a mensagem em disco; só desenvolvimento e teste) |
-| `EMAIL_ARQUIVO_DIRETORIO` | obrigatória no modo `arquivo`: caminho absoluto de um diretório fora do repositório |
+Variáveis do e-mail transacional e dos links (Bloco 11H). Todas estão no `backend/.env.example`, sem valor secreto; senha e usuário do SMTP vêm do ambiente ou de um serviço de secrets:
 
-Em `production` o backend recusa iniciar com `EMAIL_MODO` ausente, `desativado` ou `arquivo`: a produção exige um mecanismo real de envio de e-mail, que ainda não foi implementado.
+| Variável | Conteúdo |
+|---|---|
+| `EMAIL_MODO` | `desativado` (padrão, a mensagem é descartada), `arquivo` (grava TXT e HTML em disco; só desenvolvimento e teste) ou `smtp` (único aceito em `production`) |
+| `EMAIL_ARQUIVO_DIRETORIO` | obrigatória no modo `arquivo`: caminho absoluto de um diretório fora do repositório |
+| `EMAIL_REMETENTE_NOME`, `EMAIL_REMETENTE_ENDERECO`, `EMAIL_SUPORTE_ENDERECO` | identidade aprovada ("SafeWork Engenharia", `no-reply@safeworkengenharia.com.br` e `suporte@safeworkengenharia.com.br`); só troque em homologação |
+| `SMTP_HOST` | obrigatória no modo `smtp`: só o nome do servidor, sem esquema, porta ou caminho |
+| `SMTP_PORTA` | padrão 587 |
+| `SMTP_SEGURANCA` | `starttls` (padrão), `tls` ou `nenhuma` (sem TLS: só desenvolvimento, recusada em `production`) |
+| `SMTP_USUARIO`, `SMTP_SENHA` | obrigatórias em `production`; uma não existe sem a outra |
+| `SMTP_TIMEOUT_MS` | limite de conexão e de cada etapa do SMTP; padrão 10000, de 1000 a 30000 |
+| `PORTAL_URL_PUBLICA`, `PAINEL_URL_PUBLICA` | origem pública dos links dos e-mails; obrigatórias, `https` e dentro da respectiva allowlist em `production`; fora dela, valem a primeira origem de `CORS_ORIGIN` e a de `PLATAFORMA_CORS_ORIGIN` |
+
+Em `production` o backend recusa iniciar sem SMTP válido (modo `smtp`, TLS, usuário e senha) e sem as duas URLs públicas, e a mensagem de erro cita só o nome da variável e a regra, nunca o valor recebido. Em `smtp`, a senha nunca aparece em JSON, em inspeção da configuração nem em log.
+
+**Operação (sem segredos).** Para provar o envio em homologação, configure as variáveis acima no ambiente (não no repositório), suba o backend e dispare uma recuperação de senha para um endereço de teste; a resposta pública é sempre a mesma, e o resultado é visto na caixa de entrada. Falha de envio não aparece na resposta: aparece no registro técnico (`[entrega-email]`, só com evento, tipo, escopo e código). No modo `arquivo`, os arquivos gravados contêm os links e ficam restritos ao dono do processo; apague-os depois de usar.
 
 ### Preparação de um ambiente novo
 
@@ -463,7 +576,7 @@ O sinalizador de confirmação registra a intenção de quem executa, e não com
 
 O backend usa o runner nativo `node:test` com `node:assert/strict`, e `supertest` para os testes HTTP. A cobertura é medida pela instrumentação nativa do Node (`--experimental-test-coverage`), sem biblioteca adicional. A versão mínima do backend é o Node 22 (`engines`: `>=22`), a mesma usada no CI.
 
-Atualmente existem testes permanentes para a fundação da autenticação (Bloco 5: configuração, normalização, senha, política de senha, token de sessão, cooldown e erros HTTP), para a camada de validação de entrada (Bloco 6: schemas Zod, middleware de validação e tratamento de erros) e para a segurança HTTP (Bloco 7: cabeçalhos, CORS, verificação de origem, política de conteúdo, limite de payload, rate limit e cookies). O Incremento 8 acrescentou a suíte completa do RBAC — repositories, services, controllers, rotas e middleware de autorização. O Bloco 10 acrescentou as suítes da entrega de EPI (serviço transacional e idempotência, schemas, rotas de entrega e ficha, escopo e provisionamento do MASTER) e, no frontend, a do módulo `js/epi-ficha.js` e da página integrada.
+Atualmente existem testes permanentes para a fundação da autenticação (Bloco 5: configuração, normalização, senha, política de senha, token de sessão, cooldown e erros HTTP), para a camada de validação de entrada (Bloco 6: schemas Zod, middleware de validação e tratamento de erros) e para a segurança HTTP (Bloco 7: cabeçalhos, CORS, verificação de origem, política de conteúdo, limite de payload, rate limit e cookies). O Incremento 8 acrescentou a suíte completa do RBAC — repositories, services, controllers, rotas e middleware de autorização. O Bloco 10 acrescentou as suítes da entrega de EPI (serviço transacional e idempotência, schemas, rotas de entrega e ficha, escopo e provisionamento do MASTER) e, no frontend, a do módulo `js/epi-ficha.js` e da página integrada. O Bloco 11 acrescentou as suítes da recuperação e da troca de senha e, na 11H, as do e-mail transacional (configuração, templates, transportes, serviço de e-mail, convites e reenvio, teto de envios e encerramento do servidor), mais as integrações do reenvio de convite e do isolamento Portal × Plataforma e as telas de convite do Portal e do Painel.
 
 Além dessa suíte padrão existe uma suíte separada de integração, que valida migrations, repositórios, rotas e concorrência contra um PostgreSQL real e não roda junto com `npm test`. O Incremento 8 também criou uma suíte de testes de frontend própria (`frontend/test/`, runner nativo `node:test`), inexistente até então — ver "Estado atual" abaixo.
 
@@ -507,14 +620,11 @@ Os arquivos de integração são executados em série, com `--test-concurrency=1
 
 ### Requisito de cobertura
 
-A cobertura mínima obrigatória do projeto é:
-
-- Backend: 75% de linhas.
-- Frontend: 25%.
+O único gate de cobertura vigente é o do backend: 75% de linhas.
 
 O backend aplica o limiar de 75% em `npm run test:ci`, que termina com código de saída diferente de zero quando qualquer teste falha ou quando a cobertura de linhas fica abaixo do mínimo. O CI executa `npm ci` e `npm run test:ci` em todo pull request e em todo push na `main`, e qualquer uma dessas duas condições reprova o job (ver "Integração contínua (GitHub Actions)").
 
-O frontend passou a ter suíte de testes própria no Incremento 8 (`frontend/package.json`, runner nativo `node:test`, sem dependências externas — ver "Estado atual" abaixo), mas ainda sem instrumentação de cobertura. A meta obrigatória de 25% de cobertura do frontend ainda não é medida; a instrumentação e a medição estão destinadas ao Bloco 11, com os testes finais, o fechamento acadêmico e a documentação.
+O frontend tem suíte de testes própria desde o Incremento 8 (`frontend/package.json`, runner nativo `node:test`, sem dependências externas). O frontend executa `npm test` e **atualmente não existe gate de cobertura do frontend no CI**: o CI só roda `npm test`. As referências antigas a 25% (e a 60%) em documentos e planos anteriores foram uma meta e um plano, **não são requisito vigente**. A cobertura do frontend foi medida de forma informativa, com a instrumentação nativa do Node (`node --test --experimental-test-coverage --test-coverage-exclude="test/**" "test/**/*.test.js"`, dentro de `frontend/`), e deu **89,56% de linhas** na validação do fechamento do Bloco 11 (os scripts embutidos nas páginas HTML não entram nessa conta). Criar um gate de cobertura para o frontend é uma **decisão futura, fora do Bloco 11**; nenhum código de produção nem teste foi alterado para elevar percentual.
 
 ### Escopo da cobertura
 
@@ -535,28 +645,28 @@ O PostgreSQL do segundo job existe só durante a execução e é descartado ao f
 
 ### Estado atual
 
-Validação local das subetapas 11E + 11F do Bloco 11, em 01/10/2026, na branch `feature/bloco11-11e-11f` (não é resultado do CI do GitHub: o CI roda quando o PR existir). As subetapas 11A + 11B (PR #44) e 11C + 11D (PR #45) estão na `main`; as 11E + 11F estão implementadas e validadas nesta branch, ainda sem commit, PR nem merge, e os números abaixo já as incluem. O Bloco 11 não está concluído: falta a entrega real de e-mail (11H). A integração usou exclusivamente o banco `gestao_epi_teste_local`.
+Validação local do fechamento do Bloco 11 (11H + 11I + 11J), em 02/10/2026, na branch `feature/bloco11-11h-11i-11j` (não é resultado do CI do GitHub: o CI roda quando o PR existir). As subetapas 11A a 11F estão na `main` (PRs #44, #45 e #46); a 11H, a 11I e a 11J estão implementadas e validadas nesta branch, ainda sem commit, PR nem merge, e os números abaixo já as incluem. A integração usou exclusivamente o banco `gestao_epi_teste_local`, confirmado por `SELECT current_database()` antes e depois, e o banco ficou limpo ao final.
 
 | Suíte | Testes | Suites | Aprovados | Falhas |
 |---|---:|---:|---:|---:|
-| Backend — unitário (`npm run test:ci`) | 2353 | 557 | 2353 | 0 |
-| Backend — integração PostgreSQL 16 (`npm run test:integracao`) | 2054 | 484 | 2054 | 0 |
-| Frontend (`npm test`, dentro de `frontend/`) | 1267 | 246 | 1267 | 0 |
+| Backend — unitário (`npm run test:ci`) | 2576 | 617 | 2576 | 0 |
+| Backend — integração PostgreSQL 16 (`npm run test:integracao`) | 2113 | 503 | 2113 | 0 |
+| Frontend (`npm test`, dentro de `frontend/`) | 1297 | 251 | 1297 | 0 |
 | Checksums das migrations (`npm run db:migrate:verificar`) | 65 | — | 65 íntegras | — |
 
 Cobertura do backend na mesma validação, pelo relatório de `npm run test:ci` (linha "all files"):
 
 | `line %` | `branch %` | `funcs %` |
 |---:|---:|---:|
-| 89,34 | 94,31 | 80,17 |
+| 89,96 | 94,62 | 82,05 |
 
-O limiar do CI (`--test-coverage-lines=75`) vale para `line %`. O último resultado de CI registrado nesta seção foi o do commit `dcca3b8` (29/09/2026), anterior ao Bloco 10; medições anteriores ficam no histórico do Git.
+O limiar do CI (`--test-coverage-lines=75`) vale para `line %`. Cobertura do frontend medida de forma informativa na mesma validação: 89,56% de linhas, 82,17% de ramos e 86,59% de funções; não existe gate de cobertura do frontend (ver "Requisito de cobertura"). O último resultado de CI registrado nesta seção foi o do commit `dcca3b8` (29/09/2026), anterior ao Bloco 10; medições anteriores ficam no histórico do Git.
 
 ### Histórico e adoção de TDD
 
 Os testes permanentes dos Blocos 5 e 6 foram escritos depois da implementação desses módulos, convertendo as verificações utilizadas durante a revisão técnica de cada arquivo em testes automatizados. Eles não foram produzidos por TDD e não devem ser apresentados como tal.
 
-A partir do Bloco 7 o desenvolvimento adota o ciclo: escrever o teste, observar a falha esperada, implementar o mínimo necessário, ver o teste passar e então refatorar.
+A partir do Bloco 7 o desenvolvimento adota o ciclo: escrever o teste, observar a falha esperada, implementar o mínimo necessário, ver o teste passar e então refatorar. Testes escritos depois da implementação e que passam na primeira execução não são apresentados como RED: são testes de verificação e regressão, e, quando isso ocorre, são validados por prova de mutação (ver "Histórico de TDD da 11H a 11J", no Bloco 11).
 
 ### Segurança da suíte
 

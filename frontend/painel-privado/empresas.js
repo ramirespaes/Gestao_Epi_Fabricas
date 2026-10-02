@@ -149,16 +149,55 @@
   el('btn-reativar').addEventListener('click', function () { mudarEstado('reativar'); });
 
   // ----- convites -----
+  var ID_CONVITE = /^[1-9][0-9]{0,17}$/;
+  var reenviando = false;
+
   function carregarConvites() {
     Http.requisitar('GET', '/empresas/' + empresaAtual.id + '/convites-master').then(function (r) {
       if (!tratar(r, 'msg-convite')) return;
       el('convites').innerHTML = r.dados.convites.map(function (c) {
-        var cancelar = c.situacao === 'PENDENTE' ? '<button type="button" class="secundario" data-cancelar="' + c.id + '">Cancelar</button>' : '';
-        return '<tr><td>' + escapar(c.emailConvite) + '</td><td>' + escapar(c.situacao) + '</td><td>' + escapar(new Date(c.expiraEm).toLocaleString('pt-BR')) + '</td><td>' + cancelar + '</td></tr>';
+        var reenviar = c.situacao === 'PENDENTE' || c.situacao === 'EXPIRADO' ? '<button type="button" class="secundario" data-reenviar="' + escapar(c.id) + '">Reenviar</button> ' : '';
+        var cancelar = c.situacao === 'PENDENTE' ? '<button type="button" class="secundario" data-cancelar="' + escapar(c.id) + '">Cancelar</button>' : '';
+        return '<tr><td>' + escapar(c.emailConvite) + '</td><td>' + escapar(c.situacao) + '</td><td>' + escapar(new Date(c.expiraEm).toLocaleString('pt-BR')) + '</td><td>' + reenviar + cancelar + '</td></tr>';
       }).join('') || '<tr><td colspan="4">Nenhum convite.</td></tr>';
     });
   }
+
+  /** O link só existe quando o servidor o devolve (desenvolvimento); com e-mail real a tela mostra o estado do envio. */
+  function mostrarEntrega(entrega, reenvio) {
+    var e = entrega || {};
+    var comLink = typeof e.linkAceite === 'string' && e.linkAceite !== '';
+    var texto = comLink ? 'Modo de desenvolvimento (sem envio de e-mail): repasse o link abaixo à pessoa convidada.'
+      : e.estado === 'ENVIADO' ? 'O convite foi enviado por e-mail. O link não é exibido aqui.'
+        : e.estado === 'FALHA' ? 'O convite foi gerado, mas o e-mail não pôde ser enviado agora. Use "Reenviar" na lista para tentar de novo.'
+          : 'O convite foi gerado, mas este ambiente não envia e-mail.';
+    el('entrega-texto').textContent = texto + (reenvio ? ' O link anterior deixou de valer.' : '');
+    el('link-aceite').textContent = comLink ? e.linkAceite : '';
+    el('entrega').style.display = 'block';
+  }
+
+  function reenviarConvite(id) {
+    if (reenviando || !ID_CONVITE.test(id)) return;
+    reenviando = true;
+    el('entrega').style.display = 'none';
+    el('link-aceite').textContent = '';
+    el('entrega-texto').textContent = '';
+    mensagem('msg-convite', '');
+    Http.requisitar('POST', '/convites-master/' + empresaAtual.id + '/' + id + '/reenviar', { corpo: {} }).then(function (r) {
+      reenviando = false;
+      if (!tratar(r, 'msg-convite')) return;
+      mensagem('msg-convite', 'Convite reenviado para ' + r.dados.convite.emailConvite + '.', 'ok');
+      mostrarEntrega(r.dados.entrega, true);
+      carregarConvites();
+    }, function () {
+      reenviando = false;
+      mensagem('msg-convite', 'Não foi possível falar com o servidor.', 'erro');
+    });
+  }
+
   el('convites').addEventListener('click', function (ev) {
+    var reenviar = ev.target.closest('button[data-reenviar]');
+    if (reenviar) { reenviarConvite(reenviar.getAttribute('data-reenviar')); return; }
     var botao = ev.target.closest('button[data-cancelar]');
     if (!botao) return;
     botao.disabled = true;
@@ -176,8 +215,7 @@
       el('btn-convidar').disabled = false;
       if (!tratar(r, 'msg-convite')) return;
       mensagem('msg-convite', 'Convite gerado para ' + r.dados.convite.emailConvite + '.', 'ok');
-      el('link-aceite').textContent = r.dados.entrega.linkAceite;
-      el('entrega').style.display = 'block';
+      mostrarEntrega(r.dados.entrega, false);
       carregarConvites();
     });
   });
@@ -199,6 +237,7 @@
     el('detalhe').style.display = 'none';
     el('entrega').style.display = 'none';
     el('link-aceite').textContent = '';
+    el('entrega-texto').textContent = '';
     el('situacao').textContent = '';
     el('email-master').value = '';
     empresaAtual = null;

@@ -27,6 +27,9 @@ const { HttpError } = require('../../src/errors/HttpError');
 const TOKEN = gerarTokenSessao();
 const empresa = { id: 3, razaoSocial: 'Empresa', ativo: true };
 const agora = new Date();
+const SEM_ENVIOS = Object.freeze({
+  total: 0, primeiroEm: null, ultimoEm: null, agora,
+});
 const convitePendente = { id: '7', empresaId: 3, emailConvite: 'p@x.com', criadoPor: 1, expiraEm: new Date(agora.getTime() + 3600e3), situacao: 'PENDENTE' };
 
 function clienteFalso() {
@@ -47,6 +50,7 @@ describe('criar (administrador)', () => {
   test('sucesso: token em claro devolvido UMA vez, hash gravado, expira_em pela configuração, auditoria da PLATAFORMA com quem convidou e sem token', async (t) => {
     t.mock.method(empresaRepo, 'buscarDetalhesPorId', async () => empresa);
     t.mock.method(conviteRepo, 'buscarPendentePorEmailParaAtualizacao', async () => null);
+    t.mock.method(conviteRepo, 'resumirEnvios', async () => SEM_ENVIOS);
     const criar = t.mock.method(conviteRepo, 'criar', async (_, d) => ({ ...convitePendente, expiraEm: d.expiraEm }));
     const audit = t.mock.method(auditoriaPlataformaRepo, 'registrar', async () => ({ id: '1' }));
 
@@ -71,6 +75,7 @@ describe('criar (administrador)', () => {
     const emailN = 'pessoa.master@exemplo-cliente.com.br';
     t.mock.method(empresaRepo, 'buscarDetalhesPorId', async () => empresa);
     t.mock.method(conviteRepo, 'buscarPendentePorEmailParaAtualizacao', async () => null);
+    t.mock.method(conviteRepo, 'resumirEnvios', async () => SEM_ENVIOS);
     const criar = t.mock.method(conviteRepo, 'criar', async (_, d) => ({ ...convitePendente, emailConvite: d.emailConvite, expiraEm: d.expiraEm }));
     const audit = t.mock.method(auditoriaPlataformaRepo, 'registrar', async () => ({ id: '1' }));
 

@@ -48,11 +48,12 @@ const listar = {
 };
 
 const cancelar = { params: z.strictObject({ conviteId: conviteIdParametro }), body: z.strictObject({}) };
+const reenviar = { params: z.strictObject({ conviteId: conviteIdParametro }), body: z.strictObject({}) };
 
 // Pessoa convidada, sem sessão.
 const consultar = { body: z.strictObject({ token: tokenConvite }) };
 const aceitar = { body: z.strictObject({ token: tokenConvite, senha: senhaEntrada }) };
 
 module.exports = {
-  criar, listar, cancelar, consultar, aceitar,
+  criar, listar, cancelar, reenviar, consultar, aceitar,
 };

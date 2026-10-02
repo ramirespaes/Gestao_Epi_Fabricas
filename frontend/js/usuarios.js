@@ -109,6 +109,9 @@
     cancelarConvite: function (id) {
       return http().requisitar('POST', CAMINHO_CONVITES + '/' + exigirIdConvite(id) + '/cancelar', { corpo: {} });
     },
+    reenviarConvite: function (id) {
+      return http().requisitar('POST', CAMINHO_CONVITES + '/' + exigirIdConvite(id) + '/reenviar', { corpo: {} });
+    },
     // Aceite público: o token é o segredo e viaja só no corpo.
     consultarConvite: function (token) {
       return http().requisitar('POST', '/convite-usuario/consultar', { corpo: { token: token } });
@@ -190,9 +193,9 @@
   }
 
   function linhaConvite(c, opcoes) {
-    var cancelar = opcoes.podeAlterar && c.podeCancelar === true && typeof c.id === 'string' && ID_CONVITE.test(c.id)
-      ? botao('cancelar-convite', c.id, 'Cancelar')
-      : TRACO;
+    var agir = opcoes.podeAlterar && c.podeCancelar === true && typeof c.id === 'string' && ID_CONVITE.test(c.id);
+    var reenviar = agir && (c.situacao === 'PENDENTE' || c.situacao === 'EXPIRADO') ? botao('reenviar-convite', c.id, 'Reenviar') : '';
+    var cancelar = agir ? reenviar + botao('cancelar-convite', c.id, 'Cancelar') : TRACO;
     return '<tr>'
       + '<td>' + escaparHtml(texto(c.emailConvite) || TRACO) + '</td>'
       + '<td>' + escaparHtml(texto(c.nome) || TRACO) + '</td>'
@@ -253,10 +256,14 @@
     USUARIO_NAO_ENCONTRADO: 'Usuário não encontrado nesta empresa. Atualize a lista.',
     USUARIO_ADMINISTRACAO_NAO_AUTORIZADA: 'Você não tem autoridade para administrar os usuários desta empresa.',
     USUARIO_VINCULO_EXISTENTE: 'Este e-mail já tem um usuário nesta empresa. Se ele estiver inativo, reative-o em Administração de usuários.',
-    CONVITE_JA_PENDENTE: 'Já existe um convite em aberto para este e-mail. Cancele-o antes de convidar de novo.',
+    CONVITE_JA_PENDENTE: 'Já existe um convite em aberto para este e-mail. Reenvie-o ou cancele-o na lista de convites.',
     CONVITE_ENTREGA_INDISPONIVEL: 'O envio de convites por e-mail ainda não está disponível neste ambiente.',
     CONVITE_NAO_ENCONTRADO: 'Convite não encontrado nesta empresa. Atualize a lista.',
     CONVITE_NAO_CANCELAVEL: 'Este convite já foi aceito ou cancelado.',
+    CONVITE_NAO_REENVIAVEL: 'Este convite já foi aceito ou cancelado e não pode ser reenviado. Atualize a lista.',
+    CONVITE_ENVIO_MUITO_RECENTE: 'Um convite foi enviado para este e-mail há poucos instantes. Aguarde um minuto para enviar outro.',
+    CONVITE_ENVIO_LIMITE_DIARIO: 'Limite de convites para este e-mail atingido por hoje. Tente novamente mais tarde.',
+    LIMITE_REQUISICOES_EXCEDIDO: 'Muitas solicitações. Aguarde um pouco e tente novamente.',
   });
 
   var ACEITE = Object.freeze({
@@ -284,6 +291,16 @@
   function codigoDe(r) { return r && typeof r.codigo === 'string' ? r.codigo : ''; }
   function semRede(r) { return !r || typeof r.status !== 'number' || r.status === 0; }
 
+  /** Texto próprio para o que o servidor recusou ao criar ou reenviar convite; null quando não há texto específico. */
+  function textoDeErroConvite(r) {
+    if (semRede(r)) return REDE;
+    if (r.status === 401) return SESSAO;
+    var codigo = codigoDe(r);
+    if (hasOwn(POR_CODIGO, codigo)) return POR_CODIGO[codigo];
+    if (r.status === 429) return POR_CODIGO.LIMITE_REQUISICOES_EXCEDIDO;
+    return null;
+  }
+
   var mensagens = {
     exigeNovoLogin: function (r) { return !!r && r.status === 401; },
     erroListagem: function (r) {
@@ -302,12 +319,28 @@
       return 'Não foi possível concluir a operação. Tente novamente.';
     },
     erroConvite: function (r) {
-      if (semRede(r)) return REDE;
-      if (r.status === 401) return SESSAO;
-      var codigo = codigoDe(r);
-      if (hasOwn(POR_CODIGO, codigo)) return POR_CODIGO[codigo];
+      var conhecido = textoDeErroConvite(r);
+      if (conhecido !== null) return conhecido;
       if (r.status === 400) return 'Dados não aceitos pelo servidor. Confira o e-mail, o nome e o tipo de conta.';
       return 'Não foi possível criar o convite. Tente novamente.';
+    },
+    erroReenvio: function (r) {
+      var conhecido = textoDeErroConvite(r);
+      return conhecido !== null ? conhecido : 'Não foi possível reenviar o convite. Tente novamente.';
+    },
+    /** O que mostrar depois de criar ou reenviar: o link só existe quando o servidor o devolveu (desenvolvimento). */
+    envioConvite: function (entrega) {
+      var e = entrega || {};
+      if (typeof e.linkAceite === 'string' && e.linkAceite !== '') {
+        return { mostrarLink: true, texto: 'O envio por e-mail não está ativo neste ambiente: copie o link abaixo e entregue à pessoa por um canal de confiança.' };
+      }
+      if (e.estado === 'ENVIADO') {
+        return { mostrarLink: false, texto: 'O convite foi enviado por e-mail. O link do convite não é exibido nesta tela.' };
+      }
+      if (e.estado === 'FALHA') {
+        return { mostrarLink: false, texto: 'O convite foi criado, mas o e-mail não pôde ser enviado agora. Use "Reenviar" na lista de convites para tentar de novo.' };
+      }
+      return { mostrarLink: false, texto: 'O convite foi criado, mas este ambiente não envia e-mail.' };
     },
     erroAceite: function (r) {
       if (semRede(r)) return 'Não foi possível falar com o servidor. Verifique a conexão.';

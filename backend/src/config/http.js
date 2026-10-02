@@ -71,6 +71,11 @@ const MENSAGENS = Object.freeze({
   // origem presente nas duas anularia o isolamento entre os dois portais
   // (a mesma origem passaria no CORS/Origin de ambos os namespaces).
   SOBREPOSICAO_ORIGENS: 'não pode compartilhar nenhuma origem com CORS_ORIGIN',
+  // Bloco 11H: as URLs públicas dos e-mails precisam ser origens que a API
+  // de cada portal já aceita.
+  URL_PUBLICA_CANONICA: 'deve ser uma origem canônica scheme://host[:port]',
+  PORTAL_FORA_DA_ALLOWLIST: 'deve ser uma das origens de CORS_ORIGIN',
+  PAINEL_FORA_DA_ALLOWLIST: 'deve ser uma das origens de PLATAFORMA_CORS_ORIGIN',
 });
 
 // Devolve a origem canônica ou null. Nunca inclui o valor em mensagens.
@@ -153,12 +158,38 @@ function campoPlataformaHost(producao) {
   });
 }
 
+// URL pública de um portal (PORTAL_URL_PUBLICA e PAINEL_URL_PUBLICA): uma
+// origem canônica, usada para montar os links dos e-mails. Obrigatória em
+// production, onde o link nunca pode depender da ordem de uma allowlist de
+// CORS. Fora de production, ausente significa "a primeira origem da lista".
+function campoUrlPublica(producao) {
+  return z.string().optional().transform((entrada, ctx) => {
+    const problema = (message) => {
+      ctx.addIssue({ code: 'custom', message });
+      return z.NEVER;
+    };
+    if (entrada === undefined) {
+      return producao ? problema(MENSAGENS.OBRIGATORIA_PRODUCAO) : undefined;
+    }
+    const origem = entrada === '*' ? null : origemCanonica(entrada);
+    if (origem === null) {
+      return problema(MENSAGENS.URL_PUBLICA_CANONICA);
+    }
+    if (producao && !origem.startsWith('https://')) {
+      return problema(MENSAGENS.HTTPS_PRODUCAO);
+    }
+    return origem;
+  });
+}
+
 function criarEsquema(producao) {
   return z.object({
     NODE_ENV: z.enum(OPCOES.NODE_ENV).default('development'),
     CORS_ORIGIN: campoCorsOrigin(producao, ORIGEM_PADRAO_DEV),
     PLATAFORMA_CORS_ORIGIN: campoCorsOrigin(producao, ORIGEM_PADRAO_DEV_PLATAFORMA),
     PLATAFORMA_HOST: campoPlataformaHost(producao),
+    PORTAL_URL_PUBLICA: campoUrlPublica(producao),
+    PAINEL_URL_PUBLICA: campoUrlPublica(producao),
     TRUST_PROXY_HOPS: inteiroDeAmbiente(INTEIROS.TRUST_PROXY_HOPS),
     RATE_LIMIT_GERAL_LIMITE: inteiroDeAmbiente(INTEIROS.RATE_LIMIT_GERAL_LIMITE),
     RATE_LIMIT_GERAL_JANELA_SEGUNDOS: inteiroDeAmbiente(INTEIROS.RATE_LIMIT_GERAL_JANELA_SEGUNDOS),
@@ -175,6 +206,12 @@ function criarEsquema(producao) {
       const origensDoCliente = new Set(e.CORS_ORIGIN);
       if (e.PLATAFORMA_CORS_ORIGIN.some((origem) => origensDoCliente.has(origem))) {
         ctx.addIssue({ code: 'custom', path: ['PLATAFORMA_CORS_ORIGIN'], message: MENSAGENS.SOBREPOSICAO_ORIGENS });
+      }
+      if (e.PORTAL_URL_PUBLICA !== undefined && !origensDoCliente.has(e.PORTAL_URL_PUBLICA)) {
+        ctx.addIssue({ code: 'custom', path: ['PORTAL_URL_PUBLICA'], message: MENSAGENS.PORTAL_FORA_DA_ALLOWLIST });
+      }
+      if (e.PAINEL_URL_PUBLICA !== undefined && !e.PLATAFORMA_CORS_ORIGIN.includes(e.PAINEL_URL_PUBLICA)) {
+        ctx.addIssue({ code: 'custom', path: ['PAINEL_URL_PUBLICA'], message: MENSAGENS.PAINEL_FORA_DA_ALLOWLIST });
       }
     });
 }
@@ -196,6 +233,10 @@ function carregarConfigHttp(origem = process.env) {
     ambiente: e.NODE_ENV,
     cors: { origens: e.CORS_ORIGIN },
     plataforma: { corsOrigens: e.PLATAFORMA_CORS_ORIGIN, host: e.PLATAFORMA_HOST },
+    urlsPublicas: {
+      portal: e.PORTAL_URL_PUBLICA ?? e.CORS_ORIGIN[0],
+      painel: e.PAINEL_URL_PUBLICA ?? e.PLATAFORMA_CORS_ORIGIN[0],
+    },
     proxy: { hops: e.TRUST_PROXY_HOPS },
     rateLimit: {
       geral: { limite: e.RATE_LIMIT_GERAL_LIMITE, janelaSegundos: e.RATE_LIMIT_GERAL_JANELA_SEGUNDOS },

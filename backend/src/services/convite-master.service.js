@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const { HttpError } = require('../errors/HttpError');
 const { authConfig } = require('../config/auth');
 const entregaConvite = require('./entrega-convite.service');
+const limiteEnvio = require('./limite-envio-convite');
 const { normalizarEmail } = require('../utils/normalizacao');
 const { detalhesDePoliticaSenha } = require('../middleware/validar');
 const empresaRepo = require('../repositories/empresa.repository');
@@ -23,7 +24,7 @@ const token = require('../security/token');
  * Global, 23/09/2026). Implementa o planejamento v2 §8 e o adendo v2.1 §5.
  *
  * DOIS ATORES, DUAS TRILHAS DE AUDITORIA — nunca confundidos:
- *   - CRIAR e CANCELAR são atos do ADMINISTRADOR DA PLATAFORMA
+ *   - CRIAR, REENVIAR e CANCELAR são atos do ADMINISTRADOR DA PLATAFORMA
  *     (administradorId da sessão do Painel Privado) -> logs_auditoria_plataforma.
  *   - ACEITAR é ato da PESSOA CONVIDADA, que não é administrador de nada
  *     ainda -> logs_auditoria (trilha EMPRESARIAL), com empresa_id do
@@ -45,6 +46,13 @@ const token = require('../security/token');
  *     bateu; nunca associa contas legadas por igualdade de e-mail.
  *   Em ambos, `nome` é o nome de exibição do VÍNCULO (usuarios.nome, NOT
  *   NULL, por vínculo — a identidade não tem nome, migration 025).
+ *
+ * REENVIO: o token só existe em claro na criação, então o convite antigo não
+ * tem o que reenviar. O anterior (pendente ou expirado) é cancelado e nasce
+ * outro, para o mesmo e-mail, com token e validade novos, na mesma
+ * transação; o link antigo deixa de valer. Criação e reenvio dividem o teto
+ * de envios por (empresa, e-mail) — limite-envio-convite.js — para cancelar
+ * e criar de novo não contorná-lo.
  *
  * COOLDOWN (adendo v2.1 §5 item 2): mesmo mecanismo do login — chave
  * HMAC derivada do TOKEN (cooldown.gerarChaveCooldownConvite), advisory
@@ -82,6 +90,7 @@ const CONSTRAINT_IDENTIDADE_EMAIL = 'uq_identidades_email_lower';
 const ACAO = Object.freeze({
   CRIADO: 'CONVITE_MASTER_CRIADO',
   CANCELADO: 'CONVITE_MASTER_CANCELADO',
+  REENVIADO: 'CONVITE_MASTER_REENVIADO',
   ACEITO: 'CONVITE_MASTER_ACEITO',
 });
 
@@ -93,6 +102,7 @@ const MSG = Object.freeze({
   EMPRESA_INATIVA_ACEITE: 'Aceite indisponível: a empresa está inativa',
   NAO_ENCONTRADO: 'Convite não encontrado',
   NAO_CANCELAVEL: 'Convite já aceito ou já cancelado não pode ser cancelado',
+  NAO_REENVIAVEL: 'Somente convite pendente ou expirado pode ser reenviado',
   INVALIDO: 'Convite inválido',
   EXPIRADO: 'Convite expirado',
   CANCELADO: 'Convite cancelado',
@@ -173,8 +183,23 @@ async function exigirEmpresaAtivaParaAceite(executor, empresaId) {
   return { empresa, erro: null };
 }
 
+const exigirTetoDeEnvios = async (client, empresaId, emailNormalizado) => limiteEnvio.exigirEnvioPermitido(
+  await conviteRepo.resumirEnvios(client, empresaId, emailNormalizado, limiteEnvio.JANELA_HORAS),
+);
+
+/** Grava o convite com token e validade novos; devolve o token em claro só para quem vai entregá-lo. */
+async function gravarNovoConvite(client, { empresaId, email, administradorId }) {
+  const agora = await buscarInstanteReal(client);
+  const expiraEm = somarMinutos(agora, authConfig.conviteMaster.expiracaoMinutos);
+  const tokenClaro = token.gerarTokenSessao();
+  const convite = await conviteRepo.criar(client, {
+    empresaId, emailConvite: email, tokenHash: token.hashTokenSessao(tokenClaro), criadoPor: administradorId, expiraEm,
+  });
+  return { convite, tokenClaro };
+}
+
 // ---------------------------------------------------------------------------
-// Administrador da plataforma: criar / cancelar / consultar
+// Administrador da plataforma: criar / reenviar / cancelar / consultar
 // ---------------------------------------------------------------------------
 
 /**
@@ -211,12 +236,9 @@ async function criar(pool, { administradorId, empresaId, email, ip = null, dispo
       throw HttpError.conflict('CONVITE_JA_PENDENTE', MSG.JA_PENDENTE);
     }
 
-    const agora = await buscarInstanteReal(client);
-    const expiraEm = somarMinutos(agora, authConfig.conviteMaster.expiracaoMinutos);
-    const tokenClaro = token.gerarTokenSessao();
-    const tokenHash = token.hashTokenSessao(tokenClaro);
+    await exigirTetoDeEnvios(client, empresaId, emailN);
 
-    const convite = await conviteRepo.criar(client, { empresaId, emailConvite: emailN, tokenHash, criadoPor: administradorId, expiraEm });
+    const { convite, tokenClaro } = await gravarNovoConvite(client, { empresaId, email: emailN, administradorId });
 
     // Minimização de PII (complemento da SEC-023/PRIV-001): e-mail e
     // expiração já ficam em convites_master, que não tem esses campos
@@ -228,6 +250,66 @@ async function criar(pool, { administradorId, empresaId, email, ip = null, dispo
     });
 
     return { convite, token: tokenClaro, empresa: resumoEmpresa(empresa) };
+  });
+}
+
+/**
+ * Cancela o convite pendente ou expirado e cria outro no lugar. Ordem das
+ * travas: trava consultiva do par (empresa, e-mail), a mesma da criação, e só
+ * então a linha (FOR UPDATE); a leitura que descobre o e-mail vem antes e
+ * não trava nada.
+ * @returns {Promise<{convite: object, conviteAnteriorId: string, token: string, empresa: object}>}
+ */
+async function reenviar(pool, { administradorId, empresaId, conviteId, ip = null, dispositivo = null }) {
+  exigirId(administradorId, 'identificador de administrador');
+  exigirId(empresaId, 'identificador de empresa');
+  entregaConvite.exigirDisponivel();
+
+  return emTransacao(pool, async (client) => {
+    const empresa = await empresaRepo.buscarDetalhesPorId(client, empresaId);
+    if (empresa === null) {
+      throw HttpError.notFound('EMPRESA_NAO_ENCONTRADA', MSG.EMPRESA_NAO_ENCONTRADA);
+    }
+    if (empresa.ativo !== true) {
+      throw HttpError.conflict('EMPRESA_INATIVA', MSG.EMPRESA_INATIVA);
+    }
+
+    const lido = await conviteRepo.buscarPorId(client, empresaId, conviteId);
+    if (lido === null) {
+      throw HttpError.notFound('CONVITE_NAO_ENCONTRADO', MSG.NAO_ENCONTRADO);
+    }
+    await client.query('SELECT pg_advisory_xact_lock($1::bigint)', [lockCriacao(empresaId, lido.emailConvite)]);
+
+    const anterior = await conviteRepo.buscarPorIdParaAtualizacao(client, empresaId, conviteId);
+    if (anterior === null) {
+      throw HttpError.notFound('CONVITE_NAO_ENCONTRADO', MSG.NAO_ENCONTRADO);
+    }
+    const { SITUACAO } = conviteRepo;
+    if (anterior.situacao !== SITUACAO.PENDENTE && anterior.situacao !== SITUACAO.EXPIRADO) {
+      throw HttpError.conflict('CONVITE_NAO_REENVIAVEL', MSG.NAO_REENVIAVEL);
+    }
+
+    // Um convite expirado pode ter sido substituído por outro, ainda em aberto.
+    const pendente = await conviteRepo.buscarPendentePorEmailParaAtualizacao(client, empresaId, anterior.emailConvite);
+    if (pendente !== null && pendente.id !== anterior.id) {
+      throw HttpError.conflict('CONVITE_JA_PENDENTE', MSG.JA_PENDENTE);
+    }
+    await exigirTetoDeEnvios(client, empresaId, anterior.emailConvite);
+
+    if (await conviteRepo.cancelar(client, empresaId, anterior.id) === null) {
+      throw HttpError.conflict('CONVITE_NAO_REENVIAVEL', MSG.NAO_REENVIAVEL);
+    }
+    const { convite, tokenClaro } = await gravarNovoConvite(client, { empresaId, email: anterior.emailConvite, administradorId });
+
+    await auditoriaPlataformaRepo.registrar(client, {
+      administradorId, empresaAfetadaId: empresaId, acao: ACAO.REENVIADO, referencia: convite.id, ip, dispositivo,
+      contexto: { origem: 'painel_privado' },
+      dadosNovos: { conviteId: convite.id, conviteAnteriorId: anterior.id },
+    });
+
+    return {
+      convite, conviteAnteriorId: anterior.id, token: tokenClaro, empresa: resumoEmpresa(empresa),
+    };
   });
 }
 
@@ -497,4 +579,4 @@ async function aceitar(pool, { token: tokenClaro, nome, senha, ip = null, dispos
   }
 }
 
-module.exports = { criar, cancelar, buscar, listarPorEmpresa, consultarPorToken, aceitar, ACAO, PERFIL_MASTER };
+module.exports = { criar, reenviar, cancelar, buscar, listarPorEmpresa, consultarPorToken, aceitar, ACAO, PERFIL_MASTER };

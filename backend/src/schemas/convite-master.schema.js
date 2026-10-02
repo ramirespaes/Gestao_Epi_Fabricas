@@ -45,10 +45,13 @@ const criar = { params: paramsEmpresa, body: z.strictObject({ email }) };
 const listar = { params: paramsEmpresa };
 const buscar = { params: paramsConvite };
 const cancelar = { params: paramsConvite, body: semCorpo };
+const reenviar = { params: paramsConvite, body: semCorpo };
 
 // Pessoa convidada (sem sessão). O token viaja SEMPRE em corpo JSON —
 // nunca em query (sigilo: caminho vai para log/console, corpo não).
 const consultar = { body: z.strictObject({ token: tokenConvite }) };
 const aceitar = { body: z.strictObject({ token: tokenConvite, nome, senha: senhaEntrada }) };
 
-module.exports = { criar, listar, buscar, cancelar, consultar, aceitar };
+module.exports = {
+  criar, listar, buscar, cancelar, reenviar, consultar, aceitar,
+};

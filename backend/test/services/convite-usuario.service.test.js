@@ -37,6 +37,9 @@ function mundoDaCriacao(t) {
   t.mock.method(autoridade, 'exigirAutoridadeAdministrativa', async () => ATOR);
   t.mock.method(usuarioAdministracaoRepo, 'buscarVinculoPorEmail', async () => null);
   t.mock.method(conviteRepo, 'buscarPendentePorEmailParaAtualizacao', async () => null);
+  t.mock.method(conviteRepo, 'resumirEnvios', async () => ({
+    total: 0, primeiroEm: null, ultimoEm: null, agora,
+  }));
   const criar = t.mock.method(conviteRepo, 'criar', async (_, d) => ({
     id: '41', empresaId: d.empresaId, emailConvite: d.emailConvite, nome: d.nome, perfil: d.perfil,
     situacao: 'PENDENTE', criadoEm: agora, expiraEm: d.expiraEm, canceladoEm: null,

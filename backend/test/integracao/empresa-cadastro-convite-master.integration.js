@@ -114,7 +114,9 @@ describe('Pacote 3 — cadastro de empresas e convite do MASTER (HTTP + PostgreS
     const exigirSessaoPlataforma = criarExigirSessaoPlataforma({ pool });
     const semLimite = () => criarLimitador({ limite: 100000, janelaSegundos: 60 });
     const empresaRoutes = criarEmpresaCadastroRoutes({ controller: criarEmpresaCadastroController({ pool }), exigirSessaoPlataforma });
-    const conviteRoutes = criarConviteMasterRoutes({ controller: criarConviteMasterController({ pool }), exigirSessaoPlataforma, limitador: semLimite() });
+    const conviteRoutes = criarConviteMasterRoutes({
+      controller: criarConviteMasterController({ pool }), exigirSessaoPlataforma, limitador: semLimite(), limitadorEnvio: semLimite(),
+    });
     const authClienteRoutes = criarAuthRoutes({ controller: criarAuthController({ pool }), limitador: semLimite(), exigirSessao: criarExigirSessao({ pool }) });
 
     app = criarAppTeste((a) => {
@@ -552,8 +554,8 @@ describe('Pacote 3 — cadastro de empresas e convite do MASTER (HTTP + PostgreS
       assert.equal(a.status, 201, JSON.stringify(a.body));
 
       const texto = JSON.stringify(logs);
-      assert.ok(logs.length > 0, 'houve registro no console (entrega de desenvolvimento)');
       assert.equal(texto.includes(token), false, 'o token nunca aparece em console.log/console.error');
+      assert.equal(texto.includes(entrega.linkAceite), false, 'nem o link');
       const { rows: audit } = await contexto.pool.query("SELECT contexto::text || coalesce(dados_novos::text,'') AS t FROM logs_auditoria_plataforma WHERE empresa_afetada_id = $1", [e[0].id]);
       assert.ok(audit.every((l) => !l.t.includes(token)), 'nem na auditoria');
     });

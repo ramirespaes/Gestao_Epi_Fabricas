@@ -146,7 +146,9 @@ describe('recovery code e recadastro obrigatório do TOTP (PostgreSQL real)', ()
         }),
         criarPainelPlataformaRoutes({ controller: painelPlataformaController, exigirSessaoPlataforma }),
         criarEmpresaCadastroRoutes({ controller: criarEmpresaCadastroController({ pool }), exigirSessaoPlataforma }),
-        criarConviteMasterRoutes({ controller: criarConviteMasterController({ pool }), exigirSessaoPlataforma, limitador: semLimite() }),
+        criarConviteMasterRoutes({
+          controller: criarConviteMasterController({ pool }), exigirSessaoPlataforma, limitador: semLimite(), limitadorEnvio: semLimite(),
+        }),
       );
     });
   });

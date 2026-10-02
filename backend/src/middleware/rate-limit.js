@@ -63,6 +63,11 @@ const limitadorPlataformaConvite = criarLimitador(httpConfig.rateLimit.autentica
 // cliente: instância própria, mesmos parâmetros do limite de autenticação.
 // Complementa o cooldown persistente por token (convite-usuario.service.js).
 const limitadorConviteUsuario = criarLimitador(httpConfig.rateLimit.autenticacao);
+// Envio de convites (criar e reenviar), um contador por portal e compartilhado
+// pelas duas operações, para cancelar e criar de novo não escapar do limite.
+// Complementa o teto persistente por (empresa, e-mail) dos services.
+const limitadorEnvioConviteUsuario = criarLimitador(httpConfig.rateLimit.autenticacao);
+const limitadorPlataformaEnvioConvite = criarLimitador(httpConfig.rateLimit.autenticacao);
 // POST das rotas de MFA do Painel Privado: instância própria, mesmos
 // parâmetros do limite de autenticação. Complementa o limite de falhas por
 // desafio e o cooldown persistente de MFA por administrador.
@@ -87,6 +92,8 @@ module.exports = {
   limitadorPlataformaAutenticacao,
   limitadorPlataformaConvite,
   limitadorConviteUsuario,
+  limitadorEnvioConviteUsuario,
+  limitadorPlataformaEnvioConvite,
   limitadorPlataformaMfa,
   limitadorRecuperacaoSenhaSolicitar,
   limitadorRecuperacaoSenhaRedefinir,
