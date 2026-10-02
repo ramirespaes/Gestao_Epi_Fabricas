@@ -16,7 +16,7 @@ O desenvolvimento é organizado em blocos. Situação em 02/10/2026:
 | MFA TOTP do Painel Privado (MFA-1 a MFA-10) | Incorporado à `main` (PRs #34, #35 e #36; merge `427102a`). Ver "Painel Privado e MFA TOTP" |
 | Gate de segurança pré-Bloco 10 — CI no GitHub Actions, portabilidade dos testes de migration, logout seguro do Portal e atualização documental | Implementado no PR #37 |
 | 10 — Entrega real de EPI, ficha, confirmação e baixa de estoque por lote | **Concluído** nas subetapas 10A a 10J, todas incorporadas à `main` (PRs #38, #39, #40, #41 e #42). Ver "Bloco 10" |
-| 11 — Ciclo de vida da senha | **Concluído no código.** Subetapas 11A + 11B (PR #44), 11C + 11D (PR #45) e 11E + 11F (PR #46) incorporadas à `main`. Subetapas 11H (e-mail transacional real), 11I (hardening e auditoria) e 11J (documentação, regressão e fechamento) implementadas e validadas na branch `feature/bloco11-11h-11i-11j`, ainda sem commit, PR nem merge. A **configuração de produção continua pendente** (credenciais SMTP, SPF, DKIM, DMARC, URLs públicas e demais itens de deploy): ela bloqueia a produção, mas não o encerramento do código. Ver "Bloco 11" |
+| 11 — Ciclo de vida da senha | **Concluído no código.** Subetapas 11A + 11B (PR #44), 11C + 11D (PR #45) e 11E + 11F (PR #46) incorporadas à `main`. Subetapas 11H (e-mail transacional real), 11I (hardening e auditoria) e 11J (documentação, regressão e fechamento) incorporadas à `main` pelo PR #47 (MERGED; commit da entrega `8e213ada90ec6390039e4a5ac2f5c1e32c6b97a0`, merge commit `1a474540290e2c80a1b4539cdf24dce491010f40`). A **configuração de produção continua pendente** (credenciais SMTP, SPF, DKIM, DMARC, URLs públicas e demais itens de deploy): ela bloqueia a produção, mas não o encerramento do código. Ver "Bloco 11" |
 
 ### Bloco 10 — Entrega real de EPI, ficha, confirmação e baixa de estoque por lote
 
@@ -49,9 +49,9 @@ Recuperação de senha por link enviado ao e-mail da conta, no Portal do Cliente
 | 11C + 11D | Serviços de recuperação (resposta única para qualquer desfecho, limite de 3 solicitações por hora por e-mail, redefinição com link de uso único, revogação das sessões da conta e auditoria) e integração HTTP (rotas públicas nos dois portais, Turnstile com action própria na solicitação do Portal e limite de requisições por IP separado por operação) | Concluídas, `main`, PR #45 |
 | 11E + 11F | Troca de senha autenticada nos dois portais (`POST /api/auth/global/senha` e `POST /api/plataforma/auth/senha`) e frontend do ciclo de senha: "Esqueci minha senha" nos dois logins, páginas de pedido do link e de redefinição, troca de senha no Portal (`portal/trocar-senha.html`) e no Painel Privado (em "Segurança da conta") | Concluídas, `main`, PR #46 |
 | 11G | Conteúdo absorvido pela 11E + 11F | Sem entrega independente |
-| 11H | E-mail transacional real: infraestrutura única de envio (`backend/src/email/`), provedor SMTP configurável, remetente `no-reply@safeworkengenharia.com.br` ("SafeWork Engenharia"), templates oficiais, URLs públicas independentes do CORS, convites sem link na resposta em produção, reenvio de convite, teto de envios e encerramento ordenado do servidor | Concluída; branch `feature/bloco11-11h-11i-11j`, sem commit, PR nem merge |
-| 11I | Hardening e auditoria final do Bloco 11 (30 itens, ver "Auditoria final de segurança do Bloco 11") | Concluída; mesma branch |
-| 11J | Documentação, regressão completa e fechamento | Concluída; mesma branch |
+| 11H | E-mail transacional real: infraestrutura única de envio (`backend/src/email/`), provedor SMTP configurável, remetente `no-reply@safeworkengenharia.com.br` ("SafeWork Engenharia"), templates oficiais, URLs públicas independentes do CORS, convites sem link na resposta em produção, reenvio de convite, teto de envios e encerramento ordenado do servidor | Concluída, `main`, PR #47 |
+| 11I | Hardening e auditoria final do Bloco 11 (30 itens, ver "Auditoria final de segurança do Bloco 11") | Concluída, `main`, PR #47 |
+| 11J | Documentação, regressão completa e fechamento | Concluída, `main`, PR #47 |
 
 Nenhuma migration nova foi criada pela 11H, 11I e 11J: o conjunto continua sendo `000` a `064`.
 
@@ -138,11 +138,11 @@ Resíduos registrados (nenhum é defeito de código do Bloco 11):
 | R7 | Cliente de e-mail pode transformar em link uma URL digitada no nome ou na empresa, no texto simples | RISCO ACEITO |
 | R8 | Configuração de produção (ver abaixo) | **BLOQUEIA PRODUÇÃO** (não o encerramento do código): IMPLEMENTAÇÃO DO BLOCO 11 CONCLUÍDA / CONFIGURAÇÃO DE PRODUÇÃO PENDENTE |
 | R9 | Dois achados antigos do `npm audit` (ver "Backlog técnico de dependências") | BACKLOG |
-| R10 | Inexistência de gate de cobertura do frontend (ver "Requisito de cobertura") | BACKLOG (decisão futura, fora deste PR) |
+| R10 | Inexistência de gate de cobertura do frontend (ver "Requisito de cobertura") | BACKLOG (decisão futura, fora do PR #47) |
 
 **Pendências de deploy (R8).** O código do Bloco 11 está completo, mas a produção depende de configuração que não é código e **bloqueia a produção**, não o encerramento do bloco: credenciais SMTP reais (`SMTP_HOST`, `SMTP_USUARIO`, `SMTP_SENHA`); SPF, DKIM e DMARC do domínio; `PORTAL_URL_PUBLICA` e `PAINEL_URL_PUBLICA` reais; `TRUST_PROXY_HOPS` conforme a topologia real (sem ele, o limite por IP e o IP gravado na auditoria ficam errados); chaves reais do Turnstile; segredos em um serviço de secrets; HTTPS; e a proteção de origem, a CSP e o hardening de publicação, que seguem com o Bloco 14.
 
-**Backlog técnico de dependências (R9), fora deste PR.** Não foi executado `npm audit fix` e nenhum destes pacotes foi atualizado. Os dois achados já existiam antes da 11H e não vêm do nodemailer. Recomendação: corrigir em alteração separada, só no `backend/package-lock.json` (as faixas dos pacotes que os exigem já admitem as versões corrigidas, então não há mudança de `package.json` nem de versão maior).
+**Backlog técnico de dependências (R9), fora do PR #47.** Não foi executado `npm audit fix` e nenhum destes pacotes foi atualizado. Os dois achados já existiam antes da 11H e não vêm do nodemailer. Recomendação: corrigir em alteração separada, só no `backend/package-lock.json` (as faixas dos pacotes que os exigem já admitem as versões corrigidas, então não há mudança de `package.json` nem de versão maior).
 
 | Pacote | Gravidade | Instalada | Corrigida | Cadeia | Aplicabilidade observada |
 |---|---|---|---|---|---|
@@ -161,7 +161,7 @@ Não existem histórico de senhas, expiração periódica, senha temporária nem
 
 Itens ainda não concluídos:
 
-- **Bloco 11 (concluído no código):** falta apenas o commit, o PR e o merge da 11H + 11I + 11J (branch `feature/bloco11-11h-11i-11j`), a cargo de quem mantém o repositório. A configuração de produção do e-mail e do deploy é pendência de implantação — ver "Bloco 11". Restam também o fechamento acadêmico e a documentação final do projeto.
+- **Bloco 11 (concluído no código e na `main`, PR #47):** a única pendência é a configuração de produção do e-mail e do deploy (R8), que é pendência de implantação — ver "Bloco 11". Restam também o fechamento acadêmico e a documentação final do projeto.
 - **Homologação e produção na AWS:** deploy, requisitos de publicação do frontend (entre eles a CSP no servidor estático), `TRUST_PROXY_HOPS` conforme a topologia real, chaves reais do Turnstile e do MFA, credenciais SMTP reais e SPF, DKIM e DMARC do domínio de e-mail (sem SMTP configurado o backend não inicia em `production`), `PORTAL_URL_PUBLICA` e `PAINEL_URL_PUBLICA` reais e aplicação autorizada das migrations em cada banco.
 - **Backlog de segurança pré-liberação comercial:** teto global por empresa/administrador para o envio de convites (R4).
 - **Backlog técnico de dependências:** `brace-expansion` e `ip-address` (R9), em alteração separada.
@@ -558,7 +558,7 @@ O histórico fica registrado na tabela `pgmigrations`, criada e mantida pela fer
 
 ### Integridade das migrations
 
-As migrations de `000` a `064` são protegidas por um manifesto de checksums SHA-256 em `backend/migrations/checksums.json` (65 entradas, todas íntegras na validação local de 01/10/2026). O `npm run db:migrate:verificar` recalcula o digest de cada arquivo e o compara com o registro, detectando alteração de conteúdo, remoção e renomeação.
+As migrations de `000` a `064` são protegidas por um manifesto de checksums SHA-256 em `backend/migrations/checksums.json` (65 entradas, todas íntegras na validação final do Bloco 11, em 02/10/2026). O `npm run db:migrate:verificar` recalcula o digest de cada arquivo e o compara com o registro, detectando alteração de conteúdo, remoção e renomeação.
 
 Uma migration já aplicada não deve ser alterada. O manifesto só aceita registro automático de migration nova, e recusa qualquer atualização que encubra mudança em arquivo histórico. Correções de estrutura entram sempre em uma migration nova.
 
@@ -645,7 +645,7 @@ O PostgreSQL do segundo job existe só durante a execução e é descartado ao f
 
 ### Estado atual
 
-Validação local do fechamento do Bloco 11 (11H + 11I + 11J), em 02/10/2026, na branch `feature/bloco11-11h-11i-11j` (não é resultado do CI do GitHub: o CI roda quando o PR existir). As subetapas 11A a 11F estão na `main` (PRs #44, #45 e #46); a 11H, a 11I e a 11J estão implementadas e validadas nesta branch, ainda sem commit, PR nem merge, e os números abaixo já as incluem. A integração usou exclusivamente o banco `gestao_epi_teste_local`, confirmado por `SELECT current_database()` antes e depois, e o banco ficou limpo ao final.
+Validação local do fechamento do Bloco 11 (11H + 11I + 11J), em 02/10/2026, feita na branch `feature/bloco11-11h-11i-11j` antes do merge. As subetapas 11A a 11F e a 11H, 11I e 11J estão na `main` (PRs #44, #45, #46 e #47, este mesclado em 02/10/2026), e os números abaixo já as incluem. O CI do GitHub rodou no PR #47 e os dois jobs passaram: "Backend unitário, checksums e frontend" e "Integração com PostgreSQL 16 efêmero". A integração local usou exclusivamente o banco `gestao_epi_teste_local`, confirmado por `SELECT current_database()` antes e depois, e o banco ficou limpo ao final.
 
 | Suíte | Testes | Suites | Aprovados | Falhas |
 |---|---:|---:|---:|---:|
@@ -660,7 +660,7 @@ Cobertura do backend na mesma validação, pelo relatório de `npm run test:ci` 
 |---:|---:|---:|
 | 89,96 | 94,62 | 82,05 |
 
-O limiar do CI (`--test-coverage-lines=75`) vale para `line %`. Cobertura do frontend medida de forma informativa na mesma validação: 89,56% de linhas, 82,17% de ramos e 86,59% de funções; não existe gate de cobertura do frontend (ver "Requisito de cobertura"). O último resultado de CI registrado nesta seção foi o do commit `dcca3b8` (29/09/2026), anterior ao Bloco 10; medições anteriores ficam no histórico do Git.
+O limiar do CI (`--test-coverage-lines=75`) vale para `line %`. Cobertura do frontend medida de forma informativa na mesma validação: 89,56% de linhas, 82,17% de ramos e 86,59% de funções; não existe gate de cobertura do frontend (ver "Requisito de cobertura"). O CI mais recente registrado é o do PR #47 (merge commit `1a474540290e2c80a1b4539cdf24dce491010f40`, 02/10/2026), com os dois jobs aprovados; resultados anteriores, como o do commit `dcca3b8` (29/09/2026), são históricos e ficam no histórico do Git.
 
 ### Histórico e adoção de TDD
 
