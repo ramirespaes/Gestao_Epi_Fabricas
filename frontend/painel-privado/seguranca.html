@@ -60,9 +60,10 @@
       <h2 id="titulo-etapa" tabindex="-1">Segurança da conta</h2>
 
       <section id="etapa-menu" data-etapa="MENU">
-        <p class="ajuda">As duas operações pedem sua senha e o código atual do autenticador. Ao concluir, todas as sessões são encerradas e você entra de novo.</p>
+        <p class="ajuda">Todas as operações pedem sua senha e o código atual do autenticador. Trocar o autenticador e gerar novos códigos de recuperação encerram todas as sessões e você entra de novo. Trocar a senha mantém esta sessão e encerra as outras.</p>
         <button type="button" id="botao-trocar-autenticador" class="botao">Trocar autenticador</button>
         <button type="button" id="botao-gerar-codigos" class="botao-secundario">Gerar novos códigos de recuperação</button>
+        <button type="button" id="botao-trocar-senha" class="botao-secundario">Trocar senha</button>
       </section>
 
       <form id="etapa-reautenticacao" data-etapa="REAUTENTICACAO" novalidate hidden>
@@ -73,6 +74,20 @@
         <input type="text" id="codigo-atual" name="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="6" spellcheck="false" required>
         <button type="submit" id="botao-reautenticar" class="botao">Continuar</button>
         <button type="button" id="botao-voltar-reautenticacao" class="botao-texto">Voltar</button>
+      </form>
+
+      <form id="etapa-senha" data-etapa="SENHA" novalidate hidden>
+        <p class="ajuda">Confirme que é você com a senha atual e o código do autenticador. Esta sessão continua ativa; as outras são encerradas.</p>
+        <label for="troca-senha-atual">Senha atual</label>
+        <input type="password" id="troca-senha-atual" name="senhaAtual" autocomplete="current-password" required>
+        <label for="troca-senha-nova">Nova senha</label>
+        <input type="password" id="troca-senha-nova" name="novaSenha" autocomplete="new-password" required>
+        <label for="troca-senha-confirmacao">Confirme a nova senha</label>
+        <input type="password" id="troca-senha-confirmacao" name="confirmacao" autocomplete="new-password" required>
+        <label for="troca-codigo">Código do autenticador atual</label>
+        <input type="text" id="troca-codigo" name="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="6" spellcheck="false" required>
+        <button type="submit" id="botao-confirmar-troca-senha" class="botao">Trocar senha</button>
+        <button type="button" id="botao-voltar-troca-senha" class="botao-texto">Voltar</button>
       </form>
 
       <form id="etapa-cadastro" data-etapa="CADASTRO" novalidate hidden>

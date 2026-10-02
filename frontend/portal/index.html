@@ -40,6 +40,7 @@
     .voltar-site { display: block; margin-top: 18px; text-align: center; font-size: 13px; color: var(--muted); text-decoration: none; }
     .voltar-site:hover, .voltar-site:focus-visible { color: var(--accent); text-decoration: underline; }
     .voltar-site[hidden] { display: none; }
+    .esqueci-senha { margin-top: 14px; }
     /* Verificação de segurança (Turnstile): só ocupa espaço quando o widget pede interação. */
     .verificacao { display: flex; justify-content: center; }
     .verificacao iframe { margin-bottom: 12px; }
@@ -62,6 +63,7 @@
       <input type="password" id="senha" name="senha" autocomplete="current-password" required>
       <div id="verificacao" class="verificacao"></div>
       <button type="submit" id="botao-entrar" class="botao" disabled>Entrar</button>
+      <a id="link-esqueci-senha" class="voltar-site esqueci-senha" href="recuperar-senha.html">Esqueci minha senha</a>
       <a id="link-voltar-site" class="voltar-site" href="#" hidden>Voltar ao site</a>
     </form>
   </div>

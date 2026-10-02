@@ -35,6 +35,8 @@
     .voltar-site { display: block; margin-top: 18px; text-align: center; font-size: 13px; color: var(--muted); text-decoration: none; }
     .voltar-site:hover, .voltar-site:focus-visible { color: var(--accent); text-decoration: underline; }
     .voltar-site[hidden] { display: none; }
+    .esqueci-senha { display: block; margin-top: 14px; text-align: center; font-size: 13px; color: var(--muted); text-decoration: none; }
+    .esqueci-senha:hover, .esqueci-senha:focus-visible { color: var(--accent); text-decoration: underline; }
     @media (max-width: 500px) { .centro { padding: 16px; } .cartao { padding: 26px 20px 22px; border-radius: 15px; } }
   </style>
   <link rel="stylesheet" href="mfa.css?v=20260928">
@@ -56,6 +58,7 @@
         <label for="senha">Senha</label>
         <input type="password" id="senha" name="senha" autocomplete="current-password" required>
         <button type="submit" id="botao-entrar" class="botao">Entrar</button>
+        <a id="link-esqueci-senha" class="esqueci-senha" href="recuperar-senha.html">Esqueci minha senha</a>
       </form>
 
       <form id="etapa-verificacao" data-etapa="VERIFICACAO" novalidate hidden>

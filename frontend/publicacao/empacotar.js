@@ -16,7 +16,8 @@
  *   2. NUNCA_PUBLICAR: os scripts do protótipo e o Painel Privado (outra
  *      origem, com allowlist de CORS disjunta) são recusados mesmo listados;
  *   3. nenhuma página publicada carrega script de fora do pacote, salvo a
- *      exceção exata de SCRIPTS_EXTERNOS_PERMITIDOS (página e URL literais);
+ *      exceção exata de SCRIPTS_EXTERNOS_PERMITIDOS (página e URL literais:
+ *      o Turnstile oficial no login e na recuperação de senha do Portal);
  *   4. todo recurso carregado por página ou folha de estilo publicada
  *      (script, link, img, url()) também está na allowlist;
  *   5. a saída não existe ou está vazia, e fica fora do código-fonte.
@@ -33,10 +34,13 @@ const RAIZ = path.resolve(__dirname, '..');
 const ARQUIVO_ALLOWLIST = path.join(__dirname, 'allowlist.json');
 const NUNCA_PUBLICAR = ['js/main.js', 'js/db-api.js', 'painel-privado/'];
 const COM_ESQUEMA = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i;
-// Única exceção: o script oficial do Turnstile, só no login do Portal.
-// Comparação literal da página e da URL; nada de prefixo, domínio ou padrão.
+// Única exceção: o script oficial do Turnstile, só no login e na recuperação de
+// senha do Portal. Comparação literal da página e da URL; nada de prefixo,
+// domínio ou padrão.
+const TURNSTILE_OFICIAL = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
 const SCRIPTS_EXTERNOS_PERMITIDOS = new Map([
-  ['portal/index.html', ['https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit']],
+  ['portal/index.html', [TURNSTILE_OFICIAL]],
+  ['portal/recuperar-senha.html', [TURNSTILE_OFICIAL]],
 ]);
 
 class ErroPublicacao extends Error {

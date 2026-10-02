@@ -2,25 +2,19 @@
 
 const { HttpError } = require('../errors/HttpError');
 const { authConfig } = require('../config/auth');
-const token = require('../security/token');
-const cooldown = require('../security/cooldown');
-const password = require('../security/password');
-const travaRepo = require('../repositories/trava-mfa-plataforma.repository');
 const desafioRepo = require('../repositories/desafio-mfa-plataforma.repository');
 const fatorRepo = require('../repositories/fator-mfa-plataforma.repository');
 const sessaoRepo = require('../repositories/sessao-plataforma.repository');
-const administradorRepo = require('../repositories/administrador-plataforma.repository');
 const auditoriaRepo = require('../repositories/auditoria-plataforma.repository');
 const tentativaRepo = require('../repositories/login-tentativa-plataforma.repository');
 const desafioService = require('./desafio-mfa-plataforma.service');
+const { sessaoInvalida, sessaoRelida, reautenticar } = require('./reautenticacao-plataforma');
 const {
   desafioInvalido,
-  emCooldown,
   executarEtapa,
   exigirChaveAtual,
   abrirEtapa,
   instanteDoBanco,
-  aplicarCooldown,
   registrarFalha,
   novoSegredoCifrado,
   entregaDoCadastro,
@@ -36,64 +30,7 @@ const {
  * próximo acesso exige login completo.
  */
 
-const sessaoInvalida = () => HttpError.unauthorized('SESSAO_INVALIDA', 'Sessão inválida ou expirada');
-// Senha, TOTP, replay e fator ausente respondem igual: quem tem só a sessão não descobre o que falhou.
-const reautenticacaoInvalida = () => HttpError.unauthorized('REAUTENTICACAO_INVALIDA', 'Senha ou código inválidos');
 const cadastroExpirado = () => HttpError.conflict('MFA_CADASTRO_EXPIRADO', 'O cadastro expirou. Gere um novo código ou entre de novo com a senha');
-
-async function sessaoRelida(client, { administradorId, sessaoId, tokenSessao }) {
-  if (!token.tokenSessaoTemFormatoValido(tokenSessao)) {
-    return null;
-  }
-  const contexto = await sessaoRepo.buscarValidaPorHash(client, token.hashTokenSessao(tokenSessao), authConfig.sessao.inatividadeMinutos);
-  if (contexto === null || contexto.sessao.id !== sessaoId || contexto.administrador.id !== administradorId) {
-    return null;
-  }
-  return contexto;
-}
-
-async function falhaDeReautenticacao(client, { administradorId, chave, motivo, origem }) {
-  await tentativaRepo.registrarTentativa(client, { chaveCooldown: chave, administradorId, sucesso: false, motivo, ...origem });
-  await aplicarCooldown(client, { administradorId, chave, origem });
-  return { erro: reautenticacaoInvalida() };
-}
-
-/** Sob a trava: sessão relida, cooldown de MFA, senha, TOTP do fator ATIVO e step consumido. */
-async function reautenticar(client, { administradorId, sessaoId, tokenSessao, senha, codigo, origem }) {
-  await travaRepo.travarAdministrador(client, administradorId);
-  const contexto = await sessaoRelida(client, { administradorId, sessaoId, tokenSessao });
-  if (contexto === null) {
-    return { erro: sessaoInvalida() };
-  }
-
-  const chave = cooldown.gerarChaveCooldownMfaPlataforma(administradorId);
-  const vigente = await tentativaRepo.buscarCooldownVigente(client, chave);
-  if (vigente !== null) {
-    return { erro: emCooldown(vigente.ativoAte) };
-  }
-
-  const credencial = await administradorRepo.buscarCredencialPorEmail(client, contexto.administrador.email);
-  if (credencial === null || credencial.id !== administradorId || !credencial.ativo) {
-    return { erro: sessaoInvalida() };
-  }
-  if (!(await password.verificarSenha(credencial.senhaHash, senha))) {
-    return falhaDeReautenticacao(client, { administradorId, chave, motivo: 'REAUTENTICACAO_INVALIDA', origem });
-  }
-
-  const fator = await fatorRepo.buscarTotpAtivo(client, administradorId, { travar: true });
-  if (fator === null) {
-    return { erro: reautenticacaoInvalida() };
-  }
-  const agora = await instanteDoBanco(client);
-  const aceito = validarTotpDoFator({ administradorId, fator, codigo, agora });
-  if (aceito === null) {
-    return falhaDeReautenticacao(client, { administradorId, chave, motivo: 'TOTP_INVALIDO', origem });
-  }
-  if (!(await fatorRepo.registrarStepAceito(client, { administradorId, fatorId: fator.id, step: aceito.step }))) {
-    return falhaDeReautenticacao(client, { administradorId, chave, motivo: 'TOTP_REPETIDO', origem });
-  }
-  return { chave };
-}
 
 /**
  * Sessão plena -> SUBSTITUICAO. Cria o PENDENTE novo e o desafio ligado à
