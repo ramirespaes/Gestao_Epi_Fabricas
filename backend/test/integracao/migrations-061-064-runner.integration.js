@@ -12,9 +12,9 @@ const { aplicarMigrations } = require('../../scripts/migrate');
 const { criarIdentidade, criarAdministrador, inserirPedido, hashDeToken, tabelaExiste } = require('./helpers/recuperacao-senha');
 
 /**
- * 061 a 064 pelo runner real, sobre um banco que já está na 060 com
+ * 061 a 065 pelo runner real, sobre um banco que já está na 060 com
  * identidade, administrador e sessões gravados. É o caminho de todo banco
- * existente: as quatro entram numa transação só e não tocam em senha,
+ * existente: as pendentes entram numa transação só e não tocam em senha,
  * sessão nem MFA. Monto a estrutura até a 060 pelo mesmo runner, a partir de
  * um diretório temporário com cópias dos arquivos reais. PostgreSQL real,
  * schema temporário; nenhum banco persistente é tocado.
@@ -27,11 +27,12 @@ const PENDENTES = [
   '062_create_redefinicoes_senha_plataforma',
   '063_create_recuperacao_senha_solicitacoes',
   '064_create_logs_auditoria_identidade',
+  '065_create_solicitacoes_epi',
 ];
 const TABELAS_NOVAS = ['redefinicoes_senha', 'redefinicoes_senha_plataforma', 'recuperacao_senha_solicitacoes', 'logs_auditoria_identidade'];
-const TOTAL = 65;
+const TOTAL = 66;
 
-describe('runner real: 061 a 064 numa transação, sobre a 060 com contas e sessões existentes', () => {
+describe('runner real: 061 a 065 numa transação, sobre a 060 com contas e sessões existentes', () => {
   let contexto;
   let c;
   let diretorioAteA060;
@@ -76,7 +77,7 @@ describe('runner real: 061 a 064 numa transação, sobre a 060 com contas e sess
     for (const tabela of TABELAS_NOVAS) assert.equal(await tabelaExiste(c, tabela), false, tabela);
   });
 
-  test('o runner aplica 061 a 064 juntas, em ordem, e registra as 65', async () => {
+  test('o runner aplica 061 a 065 juntas, em ordem, e registra as 66', async () => {
     const aplicadas = await aplicarMigrations({ schema: contexto.schema, diretorio: DIRETORIO_REAL });
 
     assert.deepEqual(aplicadas.map((migration) => migration.name), PENDENTES);
@@ -87,7 +88,7 @@ describe('runner real: 061 a 064 numa transação, sobre a 060 com contas e sess
   });
 
   // run_on é o NOW() da transação. Comparo no banco, em microssegundos.
-  test('as quatro entraram numa transação só, separada da que aplicou até a 060', async () => {
+  test('as pendentes entraram numa transação só, separada da que aplicou até a 060', async () => {
     const { rows } = await q(
       `SELECT count(DISTINCT run_on) FILTER (WHERE name = ANY($1))::int AS instantes,
               count(*) FILTER (WHERE name = ANY($1))::int AS pendentes,
@@ -115,7 +116,7 @@ describe('runner real: 061 a 064 numa transação, sobre a 060 com contas e sess
     assert.equal(n, 1);
   });
 
-  test('manifesto: as quatro entradas novas conferem com os arquivos e o total é 65', () => {
+  test('manifesto: as entradas pendentes conferem com os arquivos e o total é 66', () => {
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO_REAL, 'checksums.json'), 'utf8'));
     const arquivos = fs.readdirSync(DIRETORIO_REAL).filter((n) => /^\d{3}_.*\.sql$/.test(n)).sort();
     assert.equal(arquivos.length, TOTAL);

@@ -17,6 +17,7 @@ O desenvolvimento é organizado em blocos. Situação em 02/10/2026:
 | Gate de segurança pré-Bloco 10 — CI no GitHub Actions, portabilidade dos testes de migration, logout seguro do Portal e atualização documental | Implementado no PR #37 |
 | 10 — Entrega real de EPI, ficha, confirmação e baixa de estoque por lote | **Concluído** nas subetapas 10A a 10J, todas incorporadas à `main` (PRs #38, #39, #40, #41 e #42). Ver "Bloco 10" |
 | 11 — Ciclo de vida da senha | **Concluído no código.** Subetapas 11A + 11B (PR #44), 11C + 11D (PR #45) e 11E + 11F (PR #46) incorporadas à `main`. Subetapas 11H (e-mail transacional real), 11I (hardening e auditoria) e 11J (documentação, regressão e fechamento) incorporadas à `main` pelo PR #47 (MERGED; commit da entrega `8e213ada90ec6390039e4a5ac2f5c1e32c6b97a0`, merge commit `1a474540290e2c80a1b4539cdf24dce491010f40`). A **configuração de produção continua pendente** (credenciais SMTP, SPF, DKIM, DMARC, URLs públicas e demais itens de deploy): ela bloqueia a produção, mas não o encerramento do código. Ver "Bloco 11" |
+| 12 — Operação completa de EPI (solicitação, aprovação pela Segurança do Trabalho e entrega) | **Em andamento.** Subetapas 12A (migration `065`, repositories e trava por par de estoque) e 12B (serviços de solicitação e de vínculo SST, sem HTTP) implementadas na branch `feature/bloco12-12a-12b`, ainda não incorporadas à `main`. As subetapas 12C e 12D **não foram iniciadas**. Ver "Bloco 12" |
 
 ### Bloco 10 — Entrega real de EPI, ficha, confirmação e baixa de estoque por lote
 
@@ -36,7 +37,7 @@ Fluxo **direto** de entrega: quem tem a ação `REALIZAR_ENTREGA` localiza o tra
 
 **Limites do Bloco 10 — funcionalidades futuras, não pendências do encerramento:**
 
-- **Solicitação de EPI pelo trabalhador.** Fluxo futuro: o trabalhador solicita o EPI, a **Segurança do Trabalho** aprova (não o supervisor) e só então acontece a entrega. A entrega originada desse fluxo usará `origem = SOLICITACAO`; o Bloco 10 entrega o fluxo direto (`origem = DIRETA`).
+- **Solicitação de EPI pelo trabalhador.** Fluxo futuro: o trabalhador solicita o EPI, a **Segurança do Trabalho** aprova (não o supervisor) e só então acontece a entrega. A entrega originada desse fluxo usará `origem = SOLICITACAO`; o Bloco 10 entrega o fluxo direto (`origem = DIRETA`). A solicitação e a aprovação passaram a existir na camada de serviço na 12A + 12B (ver "Bloco 12"); a entrega originada da solicitação é a 12C, ainda não iniciada.
 - **Impressão e PDF da ficha.** A impressão oficial em duas vias continua futura; o botão "Imprimir" da página permanece desabilitado até lá.
 
 ### Bloco 11 — Ciclo de vida da senha e e-mail transacional (concluído no código)
@@ -53,7 +54,7 @@ Recuperação de senha por link enviado ao e-mail da conta, no Portal do Cliente
 | 11I | Hardening e auditoria final do Bloco 11 (30 itens, ver "Auditoria final de segurança do Bloco 11") | Concluída, `main`, PR #47 |
 | 11J | Documentação, regressão completa e fechamento | Concluída, `main`, PR #47 |
 
-Nenhuma migration nova foi criada pela 11H, 11I e 11J: o conjunto continua sendo `000` a `064`.
+Nenhuma migration nova foi criada pela 11H, 11I e 11J: o conjunto, naquele momento, era `000` a `064` (a `065` pertence ao Bloco 12).
 
 **O que a 11E + 11F entregam** (na `main` desde o PR #46):
 
@@ -157,6 +158,29 @@ Resíduos registrados (nenhum é defeito de código do Bloco 11):
 
 Não existem histórico de senhas, expiração periódica, senha temporária nem troca obrigatória no primeiro acesso. São funcionalidades futuras, não pendências do Bloco 11.
 
+### Bloco 12 — Operação completa de EPI (em andamento: 12A + 12B)
+
+Fluxo de destino: o trabalhador (ou um usuário interno) **solicita** o EPI, a **Segurança do Trabalho** aprova (nunca o supervisor) e só então acontece a entrega. A entrega direta do Bloco 10 (`origem = DIRETA`) continua funcionando como antes. Esta seção descreve apenas o que entrou na branch `feature/bloco12-12a-12b`; nada daqui está na `main` e nenhuma rota, controller ou tela existe para a solicitação.
+
+| Subetapa | Conteúdo | Situação |
+|---|---|---|
+| 12A | Migration `065` (solicitações, itens e numeração por empresa), repositories e trava por par de estoque | Implementada na branch, sem commit |
+| 12B | Serviços de solicitação (criar, decidir, cancelar, consultar) e de vínculo SST, com auditoria, sem HTTP | Implementada na branch, sem commit |
+| 12C | Entrega originada da solicitação, ligação entre o item da entrega e o item da solicitação, proteção da entrega direta pelo saldo livre e adaptação da baixa à trava do par (migration `066`) | **Não iniciada** |
+| 12D | Posição de estoque (físico utilizável, comprometido, livre, demanda sem cobertura, mínimo e déficit), painel pelo saldo livre, filtro de entregas no histórico e ajustes de telas | **Não iniciada** |
+
+**Reserva lógica de estoque (modelo A).** Não existe reserva gravada, contador nem tabela de alocação. Por par (empresa, material, tamanho) o sistema deriva: **U**, o físico utilizável (lotes de material ativo, sem os de CA ausente ou vencido na data operacional); **D**, a demanda aprovada pendente (itens aprovados de solicitações aprovadas, de trabalhador e material ativos); **C = min(U, D)**, a parte coberta, atribuída por ordem de fila (`decidida_em`, solicitação, item); **L = max(0, U − D)**, o saldo livre; e **G = max(0, D − U)**, a demanda sem cobertura. A aprovação sem estoque é permitida: o item fica aguardando. A situação exibida (`AGUARDANDO_ESTOQUE`, `PARCIALMENTE_COBERTA`, `PRONTA_PARA_ENTREGA`, `PARCIALMENTE_ENTREGUE`, `ENTREGUE` ou `SUSPENSA`) é derivada na consulta; o status gravado não muda. `SUSPENSA` vale quando o trabalhador ou o material de um item está inativo, e a solicitação volta à fila quando ficam ativos.
+
+**Migration `065`.** Cria `solicitacoes_epi_numeracao`, `solicitacoes_epi` e `solicitacoes_epi_itens`, com chaves compostas por empresa, status `PENDENTE`, `APROVADA`, `APROVADA_PARCIAL`, `REPROVADA`, `CANCELADA` e `ENTREGUE`, origem `USUARIO_INTERNO` ou `AUTOATENDIMENTO`, e a regra de que quem decide não é quem solicitou. A decisão é gravada uma vez, a quantidade de itens é selada e gatilhos adiados conferem no COMMIT que toda solicitação tem itens e que a decisão é coerente. Os índices atendem a fila de pendentes, a fila de aprovadas e a demanda por par. Está versionada, no manifesto de checksums e validada em schema temporário; **não foi aplicada a nenhum banco persistente**, e aplicá-la exige autorização separada.
+
+**Trava por par de estoque.** Operações que decidem sobre o saldo de um par tomam um `pg_advisory_xact_lock` de 64 bits derivado de empresa, material e tamanho, um par por vez, em ordem canônica. A ordem global de travas é: idempotência, solicitação, trabalhador, materiais, pares, lotes e numeração. A decisão de aprovação usa a trava; entrada de estoque e cancelamento não precisam dela. A adaptação da baixa e da entrega direta do Bloco 10 à trava é da 12C e **não foi feita**.
+
+**Serviços (sem rota).** `solicitacao-epi.service.js` cria a solicitação de forma idempotente (1 a 20 itens, tamanho conforme a classificação do material, marcação de item previsto ou não no GHE do trabalhador), decide todos os itens em um único ato (aprova, aprova parcialmente ou reprova, com justificativa quando reprova, reduz a quantidade ou aprova item fora do GHE), cancela (só pendente e só pelo criador) e consulta em transação somente leitura. A decisão pelo próprio solicitante é recusada. `vinculo-sst.service.js` concede e remove o vínculo com a Segurança do Trabalho, só pelo MASTER ativo da empresa. O MASTER pode administrar vínculos, mas não recebe um: a tentativa é recusada com 409 `VINCULO_SST_NAO_SE_APLICA_AO_MASTER`, e vínculo legado de MASTER não é removido automaticamente. Usuário inativo não recebe vínculo novo; o vínculo de um inativo pode ser removido. A auditoria (`SOLICITACAO_EPI_CRIADA`, `SOLICITACAO_EPI_DECIDIDA`, `SOLICITACAO_EPI_CANCELADA`, `VINCULO_SST_ADICIONADO`, `VINCULO_SST_REMOVIDO`) entra na mesma transação e guarda só identificadores e indicadores, sem texto livre. Quem cancela sem ser o criador, ou com ator inexistente, recebe o mesmo 403 `CANCELAMENTO_NAO_PERMITIDO`, sem revelar a existência da solicitação.
+
+**Correção associada.** `exigirDataOperacional` lançava `RangeError` para mês ou dia impossível (por exemplo `2026-13-01`); passou a lançar sempre `TypeError('data operacional inválida')`.
+
+**Pendências registradas para a 12C:** migration `066`; ligação entre o item da entrega e o item da solicitação; `origem = SOLICITACAO`; entrega por solicitação; entrega direta protegida pelo saldo livre; baixa adaptada à trava do par, distinguindo eventos físicos (avaria, perda, ajuste de inventário, descarte, CA vencido), sempre permitidos, de atos discricionários (devolução ao fornecedor, outro), que respeitam o saldo livre; e testes de concorrência ponta a ponta. **Para a 12D:** posição de estoque, painel pelo saldo livre, filtro `ENTREGA` no histórico e ajustes de telas. Nada disso foi implementado.
+
 ### Próximos marcos e itens futuros
 
 Itens ainda não concluídos:
@@ -207,7 +231,7 @@ Os itens abaixo ficaram fora do Bloco 8 e têm destino formal. Não são pendên
 gestao-epi/
 ├── .github/workflows/ci.yml  # CI: testes, checksums e integração com PostgreSQL 16
 ├── backend/                  # API, banco de dados, migrations e regras de negócio
-│   ├── migrations/           # 000 a 064 e o manifesto checksums.json
+│   ├── migrations/           # 000 a 065 e o manifesto checksums.json
 │   ├── scripts/              # runner de migrations e comandos administrativos (CLI)
 │   ├── src/                  # app, config, routes, controllers, services, repositories,
 │   │                         # middleware, schemas, security, rbac, db, email, errors e utils
@@ -460,7 +484,9 @@ O reenvio de convite (Bloco 11H) tem uma rota em cada cadeia, ambas `POST` com c
 
 ## Banco de dados e migrations
 
-O banco do projeto é PostgreSQL 16. As migrations ficam em `backend/migrations/` e existem hoje arquivos versionados de `000` a `064` (65 no total, sem lacunas), que devem ser executados em ordem crescente de prefixo.
+O banco do projeto é PostgreSQL 16. As migrations ficam em `backend/migrations/` e existem hoje arquivos versionados de `000` a `065` (66 no total, sem lacunas), que devem ser executados em ordem crescente de prefixo.
+
+**Bloco 12, subetapa 12A (solicitação de EPI):** a `065` cria as três tabelas da solicitação (numeração por empresa, cabeçalho e itens), com FKs compostas por empresa, gatilhos de transição e de decisão gravada uma única vez e gatilhos adiados de coerência no COMMIT. Está versionada, no manifesto de checksums e validada em schema temporário; não foi aplicada a banco persistente, e aplicá-la exige autorização separada. Ver "Bloco 12".
 
 **Bloco 11, subetapas 11A + 11B (ciclo de senha):** a `061` cria os pedidos de redefinição de senha das identidades do Portal e a `062`, os dos administradores do Painel Privado. As duas guardam só o hash do link de uso único, limitam a validade a 4 horas, aceitam um único pedido pendente por conta e, por gatilho, impedem que um pedido usado, cancelado ou expirado volte a valer. A `063` cria o contador de solicitações de recuperação por chave HMAC, sem e-mail em claro e sem ligação com conta. A `064` cria a trilha de auditoria da identidade global, que só aceita INSERT e recusa chave JSON sensível. Todas estão versionadas, no manifesto de checksums e validadas em schemas temporários; nenhuma foi aplicada a banco persistente, e aplicá-las exige autorização separada.
 
@@ -558,7 +584,7 @@ O histórico fica registrado na tabela `pgmigrations`, criada e mantida pela fer
 
 ### Integridade das migrations
 
-As migrations de `000` a `064` são protegidas por um manifesto de checksums SHA-256 em `backend/migrations/checksums.json` (65 entradas, todas íntegras na validação final do Bloco 11, em 02/10/2026). O `npm run db:migrate:verificar` recalcula o digest de cada arquivo e o compara com o registro, detectando alteração de conteúdo, remoção e renomeação.
+As migrations de `000` a `065` são protegidas por um manifesto de checksums SHA-256 em `backend/migrations/checksums.json` (66 entradas; a `065` foi registrada na 12A e as 65 anteriores, íntegras na validação final do Bloco 11, em 02/10/2026). O `npm run db:migrate:verificar` recalcula o digest de cada arquivo e o compara com o registro, detectando alteração de conteúdo, remoção e renomeação.
 
 Uma migration já aplicada não deve ser alterada. O manifesto só aceita registro automático de migration nova, e recusa qualquer atualização que encubra mudança em arquivo histórico. Correções de estrutura entram sempre em uma migration nova.
 
@@ -661,6 +687,16 @@ Cobertura do backend na mesma validação, pelo relatório de `npm run test:ci` 
 | 89,96 | 94,62 | 82,05 |
 
 O limiar do CI (`--test-coverage-lines=75`) vale para `line %`. Cobertura do frontend medida de forma informativa na mesma validação: 89,56% de linhas, 82,17% de ramos e 86,59% de funções; não existe gate de cobertura do frontend (ver "Requisito de cobertura"). O CI mais recente registrado é o do PR #47 (merge commit `1a474540290e2c80a1b4539cdf24dce491010f40`, 02/10/2026), com os dois jobs aprovados; resultados anteriores, como o do commit `dcca3b8` (29/09/2026), são históricos e ficam no histórico do Git.
+
+**Validação local da 12A + 12B (02/10/2026, branch `feature/bloco12-12a-12b`, ainda sem commit).** Só o backend foi revalidado; o frontend não foi alterado. O CI não rodou nesta branch.
+
+| Suíte | Testes | Suites | Aprovados | Falhas |
+|---|---:|---:|---:|---:|
+| Backend — unitário (`npm run test:ci`) | 2692 | 655 | 2692 | 0 |
+| Backend — integração PostgreSQL 16 (`npm run test:integracao`) | 2290 | 528 | 2290 | 0 |
+| Checksums das migrations (`npm run db:migrate:verificar`) | 66 | — | 66 íntegras | — |
+
+Cobertura do backend no `npm run test:ci` ("all files"): 89,32% de linhas, 94,79% de ramos e 82,10% de funções. Os serviços da solicitação e do vínculo SST são exercitados sobretudo pela integração: com unitário e integração juntos, `solicitacao-epi.service.js` e `vinculo-sst.service.js` ficam com 100% de linhas. A integração usou exclusivamente `gestao_epi_teste_local`, confirmado por `SELECT current_database()`, e o banco ficou sem schemas temporários.
 
 ### Histórico e adoção de TDD
 

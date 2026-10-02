@@ -3,7 +3,7 @@
 const crypto = require('node:crypto');
 
 /**
- * Idempotência das escritas (estoque e entrega de EPI): chave UUID canônica,
+ * Idempotência das escritas (estoque, entrega e solicitação de EPI): chave UUID canônica,
  * hash SHA-256 da requisição lógica normalizada e advisory lock de 64 bits
  * por espaço, empresa e chave. Cada domínio tem o seu espaço: o mesmo UUID
  * pode existir uma vez no estoque e uma vez nas entregas.
@@ -13,7 +13,8 @@ const CHAVE_FORMATO = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 const HASH_FORMATO = /^[0-9a-f]{64}$/;
 const ESPACO_ESTOQUE = 'estoque_operacoes';
 const ESPACO_ENTREGAS = 'entregas_epi';
-const ESPACOS = Object.freeze([ESPACO_ESTOQUE, ESPACO_ENTREGAS]);
+const ESPACO_SOLICITACOES = 'solicitacoes_epi';
+const ESPACOS = Object.freeze([ESPACO_ESTOQUE, ESPACO_ENTREGAS, ESPACO_SOLICITACOES]);
 
 /** UUID em minúsculas, ou null quando não é um UUID. */
 function chaveCanonica(chave) {
@@ -36,5 +37,5 @@ function lockDaChave(espaco, empresaId, chave) {
 }
 
 module.exports = {
-  CHAVE_FORMATO, HASH_FORMATO, ESPACO_ESTOQUE, ESPACO_ENTREGAS, chaveCanonica, hashRequisicao, lockDaChave,
+  CHAVE_FORMATO, HASH_FORMATO, ESPACO_ESTOQUE, ESPACO_ENTREGAS, ESPACO_SOLICITACOES, chaveCanonica, hashRequisicao, lockDaChave,
 };

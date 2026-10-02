@@ -14,9 +14,14 @@ function dataOperacional(agora = new Date()) {
   return FORMATO.format(agora);
 }
 
+// Mês ou dia impossível (ex.: 2026-13-01) dá Invalid Date, e toISOString() lançaria RangeError.
+function dataDeCalendarioExiste(texto) {
+  const data = new Date(`${texto}T00:00:00Z`);
+  return !Number.isNaN(data.getTime()) && data.toISOString().slice(0, 10) === texto;
+}
+
 function exigirDataOperacional(hoje) {
-  const valida = typeof hoje === 'string' && DATA_ISO.test(hoje)
-    && new Date(`${hoje}T00:00:00Z`).toISOString().slice(0, 10) === hoje;
+  const valida = typeof hoje === 'string' && DATA_ISO.test(hoje) && dataDeCalendarioExiste(hoje);
   if (!valida) {
     throw new TypeError('data operacional inválida');
   }

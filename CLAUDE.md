@@ -371,7 +371,7 @@ Não alterar migrations antigas somente para:
 
 Se uma estrutura já aplicada precisar mudar, criar nova migration, salvo decisão explícita em contrário.
 
-Atualmente existem migrations versionadas de `000` a `064`, que devem ser executadas em ordem crescente de prefixo.
+Atualmente existem migrations versionadas de `000` a `065`, que devem ser executadas em ordem crescente de prefixo.
 
 Estar versionada não significa estar aplicada: o conjunto descreve o histórico do repositório, não o estado de nenhum banco. Depois de incorporadas ao histórico, essas migrations devem ser preservadas.
 
@@ -1289,7 +1289,32 @@ Em caso de conflito entre conveniência e qualidade técnica, priorizar nesta or
 
 ---
 
-# 63. Regra final
+# 63. Solicitação de EPI e reserva lógica de estoque
+
+Decisões do Bloco 12 (12A + 12B) que valem para as próximas subetapas.
+
+Fluxo: a solicitação é decidida pela **Segurança do Trabalho**, nunca pelo supervisor. Quem decide não pode ser quem solicitou (`AUTODECISAO_PROIBIDA`). A entrega direta do Bloco 10 (`origem = DIRETA`) não pode ser quebrada.
+
+Reserva lógica, derivada:
+
+- não persistir reserva, alocação, contador de saldo, `quantidade_entregue` nem tabela de alocação; a cobertura de cada par (empresa, material, tamanho) é calculada a partir dos lotes e da demanda aprovada pendente;
+- o físico utilizável desconsidera lotes de material inativo e de CA ausente ou vencido na data operacional;
+- a cobertura segue a ordem de fila `decidida_em`, solicitação, item;
+- a aprovação sem estoque é permitida, e a situação exibida da solicitação é derivada (inclusive `SUSPENSA`, quando o trabalhador ou o material do item está inativo); o status gravado não muda por derivação.
+
+Trava por par: operações que decidem sobre o saldo de um par usam `pg_advisory_xact_lock` de 64 bits (`backend/src/utils/lock-par-estoque.js`), um par por vez, em ordem canônica. Ordem global de travas: idempotência, solicitação, trabalhador, materiais, pares, lotes, numeração. Não inverter essa ordem.
+
+Baixa e entrega (a adaptar na 12C, ainda não feita): eventos físicos (avaria, perda, ajuste de inventário, descarte, CA vencido) são sempre permitidos; atos discricionários (devolução ao fornecedor, outro) e a entrega direta respeitam o saldo livre e não consomem estoque comprometido.
+
+Vínculo SST: concedido e removido só pelo MASTER ativo da empresa. O MASTER administra vínculos, mas não é alvo de um novo vínculo (`VINCULO_SST_NAO_SE_APLICA_AO_MASTER`); vínculo legado de MASTER não é removido automaticamente. Usuário inativo não recebe vínculo novo, e o vínculo de um inativo pode ser removido.
+
+Anti-enumeração: cancelar sem ser o criador, ou com ator inexistente, devolve o mesmo 403 `CANCELAMENTO_NAO_PERMITIDO`, sem revelar a existência da solicitação nem quem a criou.
+
+Auditoria da solicitação e do vínculo: identificadores e indicadores booleanos, sem texto livre, na mesma transação do ato.
+
+---
+
+# 64. Regra final
 
 Não ampliar o escopo sem autorização.
 
