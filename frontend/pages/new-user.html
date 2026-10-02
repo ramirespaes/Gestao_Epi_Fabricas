@@ -161,12 +161,14 @@
           </form>
 
           <div id="resultadoConvite" class="notice" style="display:none;margin-top:16px">
-            <strong>Convite criado para <span id="resultadoEmail"></span>.</strong>
-            Válido até <span id="resultadoValidade"></span>. O envio por e-mail ainda não está configurado neste ambiente: copie o link abaixo e entregue à pessoa por um canal de confiança.
-            <div class="link-convite">
+            <strong><span id="resultadoTitulo">Convite criado</span> para <span id="resultadoEmail"></span>.</strong>
+            Válido até <span id="resultadoValidade"></span>. <span id="resultadoEstado"></span>
+            <div id="blocoLinkConvite" class="link-convite" style="display:none">
               <label for="linkConvite" class="sr-only">Link do convite</label>
               <input id="linkConvite" class="input" type="text" readonly autocomplete="off" spellcheck="false" />
               <button id="botaoCopiarLink" class="outlined-btn" type="button"><span class="material-symbols-outlined" aria-hidden="true">content_copy</span>Copiar</button>
+            </div>
+            <div class="link-convite">
               <button id="botaoFecharResultado" class="outlined-btn" type="button">Fechar</button>
             </div>
           </div>
@@ -178,7 +180,7 @@
               <div class="card-icon">mail</div>
               <div>
                 <h2>Convites em aberto</h2>
-                <p>Convites ainda não aceitos desta empresa. Um convite vencido precisa ser cancelado antes de convidar o mesmo e-mail de novo.</p>
+                <p>Convites ainda não aceitos desta empresa. Um convite vencido pode ser reenviado: o link anterior deixa de valer e a pessoa recebe um novo.</p>
               </div>
             </div>
           </div>
@@ -255,6 +257,7 @@
   var liberada = false;
   var consultaAtual = 0;
   var encerrada = false;
+  var reenviando = false;
 
   EpiHttp.configurar({ baseUrl: window.SAFEWORK_PORTAL_API_BASE_URL });
 
@@ -330,15 +333,21 @@
     $('linkConvite').value = '';
     $('resultadoEmail').textContent = '';
     $('resultadoValidade').textContent = '';
+    $('resultadoEstado').textContent = '';
+    $('blocoLinkConvite').style.display = 'none';
     $('resultadoConvite').style.display = 'none';
   }
 
-  function mostrarResultado(d) {
+  function mostrarResultado(d, reenvio) {
     var convite = d.convite || {};
     var entrega = d.entrega || {};
+    var envio = U.mensagens.envioConvite(entrega);
+    $('resultadoTitulo').textContent = reenvio ? 'Convite reenviado' : 'Convite criado';
     $('resultadoEmail').textContent = convite.emailConvite || '';
     $('resultadoValidade').textContent = U.texto.data(entrega.expiraEm || convite.expiraEm);
-    $('linkConvite').value = typeof entrega.linkAceite === 'string' ? entrega.linkAceite : '';
+    $('resultadoEstado').textContent = envio.texto + (reenvio ? ' O link anterior deixou de valer.' : '');
+    $('linkConvite').value = envio.mostrarLink ? entrega.linkAceite : '';
+    $('blocoLinkConvite').style.display = envio.mostrarLink ? '' : 'none';
     $('resultadoConvite').style.display = '';
   }
 
@@ -404,6 +413,31 @@
     await carregarConvites();
   }
 
+  async function reenviar(id) {
+    if (reenviando || encerrada) return;
+    reenviando = true;
+    fecharResultado();
+    mostrarAviso('', null);
+    try {
+      var r;
+      try {
+        r = await U.acoes.reenviarConvite(id);
+      } catch (erro) {
+        mostrarAviso(U.mensagens.erroReenvio({ ok: false, status: 500 }), 'erro');
+        return;
+      }
+      if (!r.ok) {
+        if (tratarSessao(r)) return;
+        mostrarAviso(U.mensagens.erroReenvio(r), 'erro');
+        return;
+      }
+      mostrarResultado(r.dados || {}, true);
+      await carregarConvites();
+    } finally {
+      reenviando = false;
+    }
+  }
+
   function encerrarTela() {
     encerrada = true;
     consultaAtual += 1;
@@ -437,6 +471,7 @@
     var botao = evento && evento.target && evento.target.closest ? evento.target.closest('[data-acao]') : null;
     if (!botao || botao.disabled || !acesso.podeAlterar) return undefined;
     if (botao.getAttribute('data-acao') === 'cancelar-convite') return pedirCancelamento(botao.getAttribute('data-id'));
+    if (botao.getAttribute('data-acao') === 'reenviar-convite') return reenviar(botao.getAttribute('data-id'));
     return undefined;
   });
 

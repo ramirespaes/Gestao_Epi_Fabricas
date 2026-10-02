@@ -19,8 +19,38 @@ function criarConviteUsuarioController({ pool: poolInjetado, entregar = entregaC
       const { convite, token } = await conviteUsuarioService.criar(poolInjetado, {
         ...daSessao(req), ...doDispositivo(req), email, nome, perfil: tipoConta,
       });
-      const entrega = await entregar({ conviteId: convite.id, empresaId: req.empresa.id, token, expiraEm: convite.expiraEm });
+      const entrega = await entregar({
+        conviteId: convite.id,
+        empresaId: req.empresa.id,
+        token,
+        expiraEm: convite.expiraEm,
+        email: convite.emailConvite,
+        empresa: req.empresa.nome,
+        nome: convite.nome,
+        perfil: convite.perfil,
+      });
       res.status(201).json({ status: 'ok', convite, entrega });
+    },
+
+    async reenviar(req, res) {
+      const { convite, conviteAnteriorId, token } = await conviteUsuarioService.reenviar(poolInjetado, {
+        ...daSessao(req), ...doDispositivo(req), conviteId: req.validado.params.conviteId,
+      });
+      const entrega = await entregar({
+        conviteId: convite.id,
+        empresaId: req.empresa.id,
+        token,
+        expiraEm: convite.expiraEm,
+        email: convite.emailConvite,
+        empresa: req.empresa.nome,
+        nome: convite.nome,
+        perfil: convite.perfil,
+        reenvio: true,
+      });
+      // O convite novo já está gravado: falha de envio não vira erro, fica em entrega.estado.
+      res.status(201).json({
+        status: 'ok', convite, conviteAnteriorId, entrega,
+      });
     },
 
     async listar(req, res) {

@@ -103,6 +103,14 @@ describe('consultas: só o contrato de cada rota, nunca empresa, identidade ou s
     for (const ruim of [31, '0', '1 OR 1', '../31', '']) assert.throws(() => U.acoes.cancelarConvite(ruim), TypeError, String(ruim));
   });
 
+  test('reenviar convite: POST com corpo vazio e id decimal; nada além do id vai ao servidor', async () => {
+    servidor();
+    const U = modulo();
+    await U.acoes.reenviarConvite('31');
+    assert.deepEqual(chamadas.map((c) => [c.metodo, c.caminho, c.corpo]), [['POST', '/api/administracao/convites-usuario/31/reenviar', {}]]);
+    for (const ruim of [31, '0', '1 OR 1', '../31', '', null, undefined]) assert.throws(() => U.acoes.reenviarConvite(ruim), TypeError, String(ruim));
+  });
+
   test('aceite público: token e senha só no corpo, nunca na URL', async () => {
     servidor();
     const U = modulo();
@@ -204,8 +212,26 @@ describe('HTML da administração de usuários', () => {
 describe('HTML dos convites em aberto', () => {
   test('colunas: e-mail, nome, tipo de conta, situação, validade, quem convidou e ações', () => {
     const [linha] = linhas(modulo().render.linhasConvites([convite()], { podeAlterar: true }));
-    assert.deepEqual(celulas(linha), ['nova@exemplo-cliente.com.br', 'Nova Pessoa', 'Supervisor', 'Pendente', '30/09/2026', 'Marta Master', 'Cancelar']);
+    assert.deepEqual(celulas(linha), ['nova@exemplo-cliente.com.br', 'Nova Pessoa', 'Supervisor', 'Pendente', '30/09/2026', 'Marta Master', 'Reenviar Cancelar']);
     assert.match(linha, /data-acao="cancelar-convite" data-id="31"/);
+    assert.match(linha, /data-acao="reenviar-convite" data-id="31"/);
+  });
+
+  test('Reenviar só aparece para convite pendente ou expirado, com autoridade e id no formato', () => {
+    const R = modulo().render;
+    const reenvia = (extra, opcoes = { podeAlterar: true }) => /data-acao="reenviar-convite"/.test(R.linhasConvites([convite(extra)], opcoes));
+    assert.equal(reenvia({ situacao: 'PENDENTE' }), true);
+    assert.equal(reenvia({ situacao: 'EXPIRADO' }), true);
+    for (const situacao of ['ACEITO', 'CANCELADO', 'OUTRA', undefined]) assert.equal(reenvia({ situacao }), false, String(situacao));
+    assert.equal(reenvia({ podeCancelar: false }), false, 'sem autoridade sobre o perfil');
+    assert.equal(reenvia({}, { podeAlterar: false }), false, 'sem poder alterar');
+    assert.equal(reenvia({ id: '31" onclick="x' }), false, 'id fora do formato');
+  });
+
+  test('convite expirado ganha o botão Reenviar e continua sem Cancelar duplicado', () => {
+    const [linha] = linhas(modulo().render.linhasConvites([convite({ situacao: 'EXPIRADO' })], { podeAlterar: true }));
+    assert.match(celulas(linha).at(-1), /Reenviar/);
+    assert.equal((linha.match(/data-acao="reenviar-convite"/g) || []).length, 1);
   });
 
   test('sem poder cancelar aquele perfil, ou sem alterar: sem botão; expirado aparece como expirado', () => {
@@ -257,6 +283,52 @@ describe('mensagens próprias, sem repetir o servidor', () => {
     assert.match(M.erroConvite(segredo(403, 'USUARIO_PERFIL_NAO_PERMITIDO')), /Somente o MASTER/);
     for (const codigo of ['USUARIO_VINCULO_EXISTENTE', 'CONVITE_JA_PENDENTE', 'VALIDACAO', 'ERRO_INTERNO']) {
       assert.equal(/SEGREDO/.test(M.erroConvite(segredo(400, codigo))), false, codigo);
+    }
+  });
+
+  test('convite: reenvio fora do estado, envio muito recente, limite diário e limite de requisições têm texto próprio', () => {
+    const M = modulo().mensagens;
+    const casos = [
+      [409, 'CONVITE_NAO_REENVIAVEL', /já foi aceito ou cancelado/],
+      [429, 'CONVITE_ENVIO_MUITO_RECENTE', /há poucos instantes/],
+      [429, 'CONVITE_ENVIO_LIMITE_DIARIO', /Limite de convites/],
+      [429, 'LIMITE_REQUISICOES_EXCEDIDO', /Muitas solicitações/],
+    ];
+    for (const [status, codigo, esperado] of casos) {
+      const texto = M.erroConvite(segredo(status, codigo));
+      assert.match(texto, esperado, codigo);
+      assert.equal(/SEGREDO/.test(texto), false, codigo);
+    }
+    assert.match(M.erroConvite(segredo(429, 'QUALQUER')), /Muitas solicitações/);
+  });
+
+  test('erroReenvio: mesmos textos de negócio e padrão próprio, sem repetir o servidor', () => {
+    const M = modulo().mensagens;
+    assert.match(M.erroReenvio(segredo(409, 'CONVITE_NAO_REENVIAVEL')), /já foi aceito ou cancelado/);
+    assert.match(M.erroReenvio(segredo(403, 'USUARIO_PERFIL_NAO_PERMITIDO')), /Somente o MASTER/);
+    assert.match(M.erroReenvio(segredo(404, 'CONVITE_NAO_ENCONTRADO')), /não encontrado/);
+    assert.match(M.erroReenvio(segredo(500, 'ERRO_INTERNO')), /reenviar o convite/);
+    assert.match(M.erroReenvio({ ok: false, status: 0 }), /Falha de rede/);
+    assert.match(M.erroReenvio(segredo(401, 'SESSAO_INVALIDA')), /sessão terminou/);
+    for (const r of [segredo(409, 'CONVITE_NAO_REENVIAVEL'), segredo(500, 'ERRO_INTERNO'), segredo(400, 'VALIDACAO')]) assert.equal(/SEGREDO/.test(M.erroReenvio(r)), false);
+  });
+
+  test('envioConvite: com link (desenvolvimento), enviado, falha e sem envio; o link só aparece quando veio na resposta', () => {
+    const M = modulo().mensagens;
+    const comLink = M.envioConvite({ modo: 'DESENVOLVIMENTO_SEM_EMAIL', estado: 'NAO_ENVIADO', linkAceite: 'http://localhost:5500/portal/aceitar-convite.html#token=x' });
+    assert.equal(comLink.mostrarLink, true);
+    assert.match(comLink.texto, /copie o link/);
+    const enviado = M.envioConvite({ modo: 'EMAIL', estado: 'ENVIADO' });
+    assert.equal(enviado.mostrarLink, false);
+    assert.match(enviado.texto, /enviado por e-mail/);
+    const falha = M.envioConvite({ modo: 'EMAIL', estado: 'FALHA' });
+    assert.equal(falha.mostrarLink, false);
+    assert.match(falha.texto, /não pôde ser enviado/);
+    assert.match(falha.texto, /Reenviar/);
+    for (const vazio of [undefined, null, {}, { estado: 'NAO_ENVIADO' }, { linkAceite: '' }, { linkAceite: 42 }]) {
+      const m = M.envioConvite(vazio);
+      assert.equal(m.mostrarLink, false, JSON.stringify(vazio));
+      assert.match(m.texto, /não envia e-mail/);
     }
   });
 

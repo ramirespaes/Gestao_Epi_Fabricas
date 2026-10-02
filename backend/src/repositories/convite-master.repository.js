@@ -21,6 +21,7 @@ const { normalizarEmail } = require('../utils/normalizacao');
 
 const FORMATO_HASH = /^[0-9a-f]{64}$/;
 const FORMATO_ID = /^[1-9][0-9]*$/;
+const JANELA_MAXIMA_HORAS = 168;
 
 const SITUACAO = Object.freeze({ PENDENTE: 'PENDENTE', ACEITO: 'ACEITO', CANCELADO: 'CANCELADO', EXPIRADO: 'EXPIRADO' });
 
@@ -153,6 +154,41 @@ async function buscarPorId(executor, empresaId, id) {
   return mapear(rows[0]);
 }
 
+/** Pelo id, filtrada pela empresa e travada com FOR UPDATE (reenvio: a trava consultiva do par já foi tomada). */
+async function buscarPorIdParaAtualizacao(executor, empresaId, id) {
+  exigirEmpresa(empresaId);
+  exigirIdConvite(id);
+  const { rows } = await executor.query(
+    `SELECT ${PROJECAO} FROM convites_master WHERE empresa_id = $1 AND id = $2 FOR UPDATE`,
+    [empresaId, id],
+  );
+  return mapear(rows[0]);
+}
+
+/**
+ * Convites já criados para o par (empresa, e-mail) nas últimas `janelaHoras`,
+ * de qualquer situação, com o relógio do banco. Base do teto de envios.
+ * @returns {Promise<{total: number, primeiroEm: Date|null, ultimoEm: Date|null, agora: Date}>}
+ */
+async function resumirEnvios(executor, empresaId, emailConvite, janelaHoras) {
+  exigirEmpresa(empresaId);
+  exigirEmailNormalizado(emailConvite);
+  if (!Number.isInteger(janelaHoras) || janelaHoras < 1 || janelaHoras > JANELA_MAXIMA_HORAS) {
+    throw new TypeError('janela de envios inválida');
+  }
+  const { rows } = await executor.query(
+    `SELECT count(*)::int AS total, min(criado_em) AS primeiro_em, max(criado_em) AS ultimo_em, clock_timestamp() AS agora
+       FROM convites_master
+      WHERE empresa_id = $1 AND lower(email_convite) = $2
+        AND criado_em > clock_timestamp() - make_interval(hours => $3)`,
+    [empresaId, emailConvite, janelaHoras],
+  );
+  const linha = rows[0];
+  return {
+    total: linha.total, primeiroEm: linha.primeiro_em, ultimoEm: linha.ultimo_em, agora: linha.agora,
+  };
+}
+
 async function listarPorEmpresa(executor, empresaId) {
   exigirEmpresa(empresaId);
   const { rows } = await executor.query(
@@ -204,6 +240,8 @@ module.exports = {
   buscarPorHashParaAtualizacao,
   buscarPorHash,
   buscarPorId,
+  buscarPorIdParaAtualizacao,
+  resumirEnvios,
   listarPorEmpresa,
   marcarAceito,
   cancelar,

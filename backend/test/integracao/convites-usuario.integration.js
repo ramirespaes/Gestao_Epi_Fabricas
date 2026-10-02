@@ -123,7 +123,9 @@ describe('Parte F — convite de usuário (PostgreSQL real)', () => {
         '/api',
         criarAuthRoutes({ controller: criarAuthController({ pool }), limitador: semLimite(), exigirSessao }),
         criarAuthGlobalRoutes({ controller: criarAuthGlobalController({ pool }), limitador: semLimite(), exigirSessaoGlobal: criarExigirSessaoGlobal({ pool }), ...turnstileDeTeste() }),
-        criarConviteUsuarioRoutes({ controller: criarConviteUsuarioController({ pool }), exigirSessao, limitador: semLimite() }),
+        criarConviteUsuarioRoutes({
+          controller: criarConviteUsuarioController({ pool }), exigirSessao, limitador: semLimite(), limitadorEnvio: semLimite(),
+        }),
       );
     });
     for (const chave of ['masterA', 'admA', 'adm2A', 'usuA', 'masterB', 'masterE']) await entrar(chave);

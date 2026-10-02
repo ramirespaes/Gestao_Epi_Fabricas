@@ -230,6 +230,19 @@ const convite = (extra = {}) => ({
 const convites = (extra = {}) => ({ status: 'ok', convites: [convite()], total: 1, pagina: 1, limite: 20, paginas: 1, perfisGerenciaveis: ['SUPERVISOR', 'USUARIO'], ...extra });
 const criado = { status: 'ok', convite: convite({ id: '32', emailConvite: 'outra@exemplo-cliente.com.br' }), entrega: { modo: 'DESENVOLVIMENTO_SEM_EMAIL', linkAceite: LINK, expiraEm: '2026-09-30T13:05:00.000Z' } };
 
+const criadoComEmail = (estado) => ({
+  status: 'ok',
+  convite: convite({ id: '32', emailConvite: 'outra@exemplo-cliente.com.br' }),
+  entrega: { modo: 'EMAIL', estado, expiraEm: '2026-09-30T13:05:00.000Z' },
+});
+
+async function preencherEEnviar(pg) {
+  Object.assign(pg.el('novoNome'), { value: 'Outra Pessoa' });
+  Object.assign(pg.el('novoEmail'), { value: 'outra@exemplo-cliente.com.br' });
+  Object.assign(pg.el('novoTipo'), { value: 'SUPERVISOR' });
+  await pg.disparar('formConvite', 'submit');
+}
+
 function paginaNovo({ responder, acesso, clipboard } = {}) {
   servidor(responder || ((m, u) => {
     if (m === 'GET') return resposta(200, convites());
@@ -266,6 +279,38 @@ describe('Novo usuário (DOM simulado)', () => {
     for (const e of Object.values(pg.mapa)) assert.equal(String(e.innerHTML).includes(TOKEN), false, `token no innerHTML de ${e.id}`);
     assert.deepEqual([pg.el('novoNome').value, pg.el('novoEmail').value], ['', '']);
     assert.equal(ultima().metodo, 'GET', 'a lista é recarregada');
+  });
+
+  test('criar convite com o e-mail enviado (production): sem link na tela e com a confirmação do envio', async () => {
+    const pg = paginaNovo({ responder: (m) => (m === 'GET' ? resposta(200, convites()) : resposta(201, criadoComEmail('ENVIADO'))) });
+    await pg.esperar();
+    await preencherEEnviar(pg);
+    assert.equal(pg.el('linkConvite').value, '');
+    assert.equal(pg.el('blocoLinkConvite').style.display, 'none');
+    assert.match(pg.el('resultadoEstado').textContent, /enviado por e-mail/);
+    assert.equal(pg.el('resultadoTitulo').textContent, 'Convite criado');
+    assert.equal(pg.el('resultadoEmail').textContent, 'outra@exemplo-cliente.com.br');
+    assert.equal(pg.el('resultadoConvite').style.display, '');
+    for (const e of Object.values(pg.mapa)) assert.equal(/undefined|null/.test(`${e.textContent}${e.value}`), false, `texto quebrado em ${e.id}`);
+  });
+
+  test('criar convite com falha no envio: o convite existe, a tela diz isso, aponta o Reenviar e não mostra link', async () => {
+    const pg = paginaNovo({ responder: (m) => (m === 'GET' ? resposta(200, convites()) : resposta(201, criadoComEmail('FALHA'))) });
+    await pg.esperar();
+    await preencherEEnviar(pg);
+    assert.match(pg.el('resultadoEstado').textContent, /não pôde ser enviado/);
+    assert.match(pg.el('resultadoEstado').textContent, /Reenviar/);
+    assert.equal(pg.el('linkConvite').value, '');
+    assert.equal(pg.el('blocoLinkConvite').style.display, 'none');
+    assert.equal(ultima().metodo, 'GET', 'a lista é recarregada e mostra o convite pendente');
+  });
+
+  test('em desenvolvimento o link continua aparecendo no bloco de cópia', async () => {
+    const pg = paginaNovo();
+    await pg.esperar();
+    await preencherEEnviar(pg);
+    assert.equal(pg.el('blocoLinkConvite').style.display, '');
+    assert.match(pg.el('resultadoEstado').textContent, /copie o link/);
   });
 
   test('copiar o link usa a área de transferência; fechar apaga o link da tela', async () => {
@@ -314,6 +359,89 @@ describe('Novo usuário (DOM simulado)', () => {
     await pg.disparar('botaoConfirmar');
     assert.ok(chamadas.some((c) => c.metodo === 'POST' && c.caminho === '/api/administracao/convites-usuario/31/cancelar'));
     assert.equal(ultima().metodo, 'GET');
+  });
+
+  test('reenviar convite: pede ao servidor, mostra o novo envio sem link em production e recarrega a lista', async () => {
+    const pg = paginaNovo({
+      responder: (m, u) => {
+        if (m === 'GET') return resposta(200, convites());
+        assert.ok(u.pathname.endsWith('/31/reenviar'), u.pathname);
+        return resposta(201, { status: 'ok', convite: convite({ id: '33' }), conviteAnteriorId: '31', entrega: { modo: 'EMAIL', estado: 'ENVIADO', expiraEm: '2026-10-03T13:05:00.000Z' } });
+      },
+    });
+    await pg.esperar();
+    await pg.clicarAcao('convitesCorpo', 'reenviar-convite', '31');
+    const posts = chamadas.filter((c) => c.metodo === 'POST');
+    assert.deepEqual(posts.map((c) => [c.caminho, c.corpo]), [['/api/administracao/convites-usuario/31/reenviar', {}]]);
+    assert.equal(pg.el('modalConfirmar').classList.contains('open'), false, 'reenviar não abre a confirmação do cancelamento');
+    assert.equal(pg.el('resultadoTitulo').textContent, 'Convite reenviado');
+    assert.equal(pg.el('resultadoEmail').textContent, 'nova@exemplo-cliente.com.br');
+    assert.match(pg.el('resultadoEstado').textContent, /enviado por e-mail/);
+    assert.match(pg.el('resultadoEstado').textContent, /link anterior deixou de valer/);
+    assert.equal(pg.el('linkConvite').value, '');
+    assert.equal(pg.el('blocoLinkConvite').style.display, 'none');
+    assert.equal(ultima().metodo, 'GET', 'a lista é recarregada');
+  });
+
+  test('reenviar em desenvolvimento mostra o link novo, e o link nunca vai para o HTML', async () => {
+    const pg = paginaNovo({
+      responder: (m) => (m === 'GET' ? resposta(200, convites()) : resposta(201, { status: 'ok', convite: convite({ id: '33' }), conviteAnteriorId: '31', entrega: { modo: 'DESENVOLVIMENTO_SEM_EMAIL', estado: 'NAO_ENVIADO', linkAceite: LINK, expiraEm: '2026-10-03T13:05:00.000Z' } })),
+    });
+    await pg.esperar();
+    await pg.clicarAcao('convitesCorpo', 'reenviar-convite', '31');
+    assert.equal(pg.el('linkConvite').value, LINK);
+    assert.equal(pg.el('blocoLinkConvite').style.display, '');
+    for (const e of Object.values(pg.mapa)) assert.equal(String(e.innerHTML).includes(TOKEN), false, `token no innerHTML de ${e.id}`);
+  });
+
+  test('reenvio recusado (convite que já foi aceito, limite): aviso com texto próprio, sem ecoar o servidor e sem resultado', async () => {
+    for (const [status, codigo, esperado] of [[409, 'CONVITE_NAO_REENVIAVEL', /já foi aceito ou cancelado/], [429, 'CONVITE_ENVIO_MUITO_RECENTE', /há poucos instantes/], [429, 'CONVITE_ENVIO_LIMITE_DIARIO', /Limite de convites/]]) {
+      const pg = paginaNovo({ responder: (m) => (m === 'GET' ? resposta(200, convites()) : resposta(status, { status: 'error', codigo, message: 'SEGREDO-INTERNO' })) });
+      await pg.esperar();
+      await pg.clicarAcao('convitesCorpo', 'reenviar-convite', '31');
+      assert.match(pg.el('aviso').innerHTML, esperado, codigo);
+      assert.equal(/SEGREDO/.test(pg.el('aviso').innerHTML), false, codigo);
+      assert.equal(pg.el('resultadoConvite').style.display === '', false, 'sem bloco de resultado');
+    }
+  });
+
+  test('dois cliques seguidos em Reenviar enviam uma única solicitação', async () => {
+    let liberar;
+    const trava = new Promise((resolver) => { liberar = resolver; });
+    const pg = paginaNovo({
+      responder: (m) => (m === 'GET' ? resposta(200, convites()) : trava.then(() => resposta(201, criadoComEmail('ENVIADO')))),
+    });
+    await pg.esperar();
+    const primeiro = pg.clicarAcao('convitesCorpo', 'reenviar-convite', '31');
+    const segundo = pg.clicarAcao('convitesCorpo', 'reenviar-convite', '31');
+    await new Promise((resolver) => { setImmediate(resolver); });
+    liberar();
+    await Promise.all([primeiro, segundo]);
+    assert.equal(chamadas.filter((c) => c.metodo === 'POST').length, 1);
+  });
+
+  test('sem poder alterar, um clique forjado em Reenviar não chama nada', async () => {
+    const pg = paginaNovo({ acesso: { permissoes: {}, podeAlterar: false } });
+    await pg.esperar();
+    await pg.clicarAcao('convitesCorpo', 'reenviar-convite', '31');
+    assert.equal(chamadas.some((c) => c.metodo === 'POST'), false);
+  });
+
+  test('sessão que terminou durante o reenvio leva à tela de sessão encerrada', async () => {
+    const pg = paginaNovo({ responder: (m) => (m === 'GET' ? resposta(200, convites()) : resposta(401, { status: 'error', codigo: 'SESSAO_INVALIDA' })) });
+    await pg.esperar();
+    await pg.clicarAcao('convitesCorpo', 'reenviar-convite', '31');
+    assert.equal(pg.sandbox.encerrada, true);
+  });
+
+  test('o HTML tem os pontos de ancoragem do resultado e não afirma, de forma fixa, que o e-mail não está configurado', () => {
+    const html = semComentarios(ler('pages/new-user.html'));
+    for (const id of ['resultadoTitulo', 'resultadoEstado', 'blocoLinkConvite', 'linkConvite', 'botaoCopiarLink', 'botaoFecharResultado']) {
+      assert.match(html, new RegExp(`id="${id}"`), id);
+    }
+    const corpo = html.slice(0, html.lastIndexOf('<script>'));
+    assert.equal(/ainda não está configurado/.test(corpo), false);
+    assert.equal(/precisa ser cancelado antes de convidar/.test(corpo), false);
   });
 
   test('sem acesso: nenhuma consulta; sem poder alterar: formulário oculto', async () => {

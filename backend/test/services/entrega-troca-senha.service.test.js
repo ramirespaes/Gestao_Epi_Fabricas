@@ -39,9 +39,10 @@ async function textoDoAviso(dados) {
   assert.equal(instancia.enfileirarAvisoSenhaAlterada(dados), undefined, 'quem enfileira não recebe promessa para esperar');
   await instancia.aguardarOciosidade();
   const nomes = arquivos();
-  assert.equal(nomes.length, 1, 'um arquivo por aviso');
-  const texto = fs.readFileSync(path.join(diretorio, nomes[0]), 'utf8');
-  fs.rmSync(path.join(diretorio, nomes[0]));
+  assert.equal(nomes.length, 2, 'um par TXT e HTML por aviso');
+  const txt = nomes.find((n) => n.endsWith('.txt'));
+  const texto = fs.readFileSync(path.join(diretorio, txt), 'utf8');
+  for (const n of nomes) fs.rmSync(path.join(diretorio, n));
   return texto;
 }
 

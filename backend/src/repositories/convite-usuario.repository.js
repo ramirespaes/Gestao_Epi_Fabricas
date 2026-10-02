@@ -16,6 +16,7 @@ const FORMATO_HASH = /^[0-9a-f]{64}$/;
 const FORMATO_ID = /^[1-9][0-9]*$/;
 const PERFIS = Object.freeze(['MASTER', 'ADMINISTRADOR', 'SUPERVISOR', 'USUARIO']);
 const TAMANHO_MAXIMO_NOME = 150;
+const JANELA_MAXIMA_HORAS = 168;
 
 const SITUACAO = Object.freeze({ PENDENTE: 'PENDENTE', ACEITO: 'ACEITO', CANCELADO: 'CANCELADO', EXPIRADO: 'EXPIRADO' });
 
@@ -129,6 +130,17 @@ async function buscarPorHashParaAtualizacao(executor, tokenHash) {
   return mapear(rows[0]);
 }
 
+/** Pelo id, filtrada pela empresa, sem travar: o reenvio precisa do e-mail antes de tomar a trava consultiva do par. */
+async function buscarPorId(executor, empresaId, id) {
+  exigirEmpresa(empresaId);
+  exigirIdConvite(id);
+  const { rows } = await executor.query(
+    `SELECT ${PROJECAO} FROM convites_usuario c WHERE c.empresa_id = $1 AND c.id = $2`,
+    [empresaId, id],
+  );
+  return mapear(rows[0]);
+}
+
 async function buscarPorIdParaAtualizacao(executor, empresaId, id) {
   exigirEmpresa(empresaId);
   exigirIdConvite(id);
@@ -137,6 +149,30 @@ async function buscarPorIdParaAtualizacao(executor, empresaId, id) {
     [empresaId, id],
   );
   return mapear(rows[0]);
+}
+
+/**
+ * Convites já criados para o par (empresa, e-mail) nas últimas `janelaHoras`,
+ * de qualquer situação, com o relógio do banco. Base do teto de envios.
+ * @returns {Promise<{total: number, primeiroEm: Date|null, ultimoEm: Date|null, agora: Date}>}
+ */
+async function resumirEnvios(executor, empresaId, emailConvite, janelaHoras) {
+  exigirEmpresa(empresaId);
+  exigirEmailNormalizado(emailConvite);
+  if (!Number.isInteger(janelaHoras) || janelaHoras < 1 || janelaHoras > JANELA_MAXIMA_HORAS) {
+    throw new TypeError('janela de envios inválida');
+  }
+  const { rows } = await executor.query(
+    `SELECT count(*)::int AS total, min(c.criado_em) AS primeiro_em, max(c.criado_em) AS ultimo_em, clock_timestamp() AS agora
+       FROM convites_usuario c
+      WHERE c.empresa_id = $1 AND c.email_convite = $2
+        AND c.criado_em > clock_timestamp() - make_interval(hours => $3)`,
+    [empresaId, emailConvite, janelaHoras],
+  );
+  const linha = rows[0];
+  return {
+    total: linha.total, primeiroEm: linha.primeiro_em, ultimoEm: linha.ultimo_em, agora: linha.agora,
+  };
 }
 
 /**
@@ -202,7 +238,9 @@ module.exports = {
   buscarPendentePorEmailParaAtualizacao,
   buscarPorHash,
   buscarPorHashParaAtualizacao,
+  buscarPorId,
   buscarPorIdParaAtualizacao,
+  resumirEnvios,
   listarEmAberto,
   marcarAceito,
   cancelar,

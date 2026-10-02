@@ -156,7 +156,9 @@ describe('Portal do Cliente (frontend real) contra o backend real — META FINAL
         desafioMfa: (tipos) => criarExigirDesafioMfa({ pool, tipos }),
       }),
       criarEmpresaCadastroRoutes({ controller: criarEmpresaCadastroController({ pool }), exigirSessaoPlataforma }),
-      criarConviteMasterRoutes({ controller: criarConviteMasterController({ pool }), exigirSessaoPlataforma, limitador: semLimite() }),
+      criarConviteMasterRoutes({
+        controller: criarConviteMasterController({ pool }), exigirSessaoPlataforma, limitador: semLimite(), limitadorEnvio: semLimite(),
+      }),
       notFoundHandler,
     );
     app.use(

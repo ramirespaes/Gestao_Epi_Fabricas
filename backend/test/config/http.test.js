@@ -18,6 +18,7 @@ const PADRAO_DEV = {
   ambiente: 'development',
   cors: { origens: ['http://localhost:5500'] },
   plataforma: { corsOrigens: ['http://localhost:5501'], host: null },
+  urlsPublicas: { portal: 'http://localhost:5500', painel: 'http://localhost:5501' },
   proxy: { hops: 0 },
   rateLimit: { geral: { limite: 120, janelaSegundos: 60 }, autenticacao: { limite: 20, janelaSegundos: 60 } },
   hstsAtivo: false,
@@ -52,6 +53,8 @@ describe('carregarConfigHttp: CORS_ORIGIN', () => {
         CORS_ORIGIN: 'https://app.empresa.com.br',
         PLATAFORMA_CORS_ORIGIN: 'https://admin.empresa.com.br',
         PLATAFORMA_HOST: 'admin.empresa.com.br',
+        PORTAL_URL_PUBLICA: 'https://app.empresa.com.br',
+        PAINEL_URL_PUBLICA: 'https://admin.empresa.com.br',
       }).cors.origens,
       ['https://app.empresa.com.br'],
     );
@@ -93,6 +96,8 @@ describe('carregarConfigHttp: CORS_ORIGIN', () => {
         CORS_ORIGIN: 'https://app.example.com,https://app.example.com:8443',
         PLATAFORMA_CORS_ORIGIN: 'https://admin.example.com',
         PLATAFORMA_HOST: 'admin.example.com',
+        PORTAL_URL_PUBLICA: 'https://app.example.com',
+        PAINEL_URL_PUBLICA: 'https://admin.example.com',
       }).cors.origens,
       ['https://app.example.com', 'https://app.example.com:8443'],
     );
@@ -140,6 +145,8 @@ describe('carregarConfigHttp: proxy, rate limit, HSTS', () => {
         CORS_ORIGIN: 'https://app.empresa.com.br',
         PLATAFORMA_CORS_ORIGIN: 'https://admin.empresa.com.br',
         PLATAFORMA_HOST: 'admin.empresa.com.br',
+        PORTAL_URL_PUBLICA: 'https://app.empresa.com.br',
+        PAINEL_URL_PUBLICA: 'https://admin.empresa.com.br',
       }).hstsAtivo,
       true,
     );
@@ -197,6 +204,8 @@ describe('carregarConfigHttp: PLATAFORMA_HOST obrigatório em production (corre�
     NODE_ENV: 'production',
     CORS_ORIGIN: 'https://app.empresa.com.br',
     PLATAFORMA_CORS_ORIGIN: 'https://admin.empresa.com.br',
+    PORTAL_URL_PUBLICA: 'https://app.empresa.com.br',
+    PAINEL_URL_PUBLICA: 'https://admin.empresa.com.br',
   };
 
   test('ausente em production: recusa a inicialização', () => {
@@ -218,5 +227,61 @@ describe('carregarConfigHttp: PLATAFORMA_HOST obrigatório em production (corre�
       erroDe({ ...BASE_PRODUCAO, PLATAFORMA_HOST: 'https://admin.empresa.com.br' }),
       /PLATAFORMA_HOST: deve ser um hostname válido/,
     );
+  });
+});
+
+describe('carregarConfigHttp: URLs públicas do Portal e do Painel Privado (Bloco 11H)', () => {
+  const PRODUCAO = {
+    NODE_ENV: 'production',
+    CORS_ORIGIN: 'https://app.empresa.com.br,https://www.empresa.com.br',
+    PLATAFORMA_CORS_ORIGIN: 'https://admin.empresa.com.br',
+    PLATAFORMA_HOST: 'admin.empresa.com.br',
+    PORTAL_URL_PUBLICA: 'https://app.empresa.com.br',
+    PAINEL_URL_PUBLICA: 'https://admin.empresa.com.br',
+  };
+
+  test('em development e test o padrão é a primeira origem de cada allowlist, como os links usavam antes', () => {
+    for (const NODE_ENV of ['development', 'test']) {
+      assert.deepEqual(carregarConfigHttp({ NODE_ENV }).urlsPublicas, { portal: 'http://localhost:5500', painel: 'http://localhost:5501' });
+    }
+    const cfg = carregarConfigHttp({ CORS_ORIGIN: 'http://localhost:7000,http://localhost:5500', PLATAFORMA_CORS_ORIGIN: 'http://localhost:7001' });
+    assert.deepEqual(cfg.urlsPublicas, { portal: 'http://localhost:7000', painel: 'http://localhost:7001' });
+    assert.equal(Object.isFrozen(cfg.urlsPublicas), true);
+  });
+
+  test('em development e test podem ser definidas, desde que sejam uma origem da allowlist correspondente', () => {
+    const cfg = carregarConfigHttp({ CORS_ORIGIN: 'http://localhost:7000,http://localhost:5500', PORTAL_URL_PUBLICA: 'http://localhost:5500' });
+    assert.equal(cfg.urlsPublicas.portal, 'http://localhost:5500');
+    assert.match(erroDe({ PORTAL_URL_PUBLICA: 'http://localhost:9999' }), /PORTAL_URL_PUBLICA: deve ser uma das origens de CORS_ORIGIN/);
+    assert.match(erroDe({ PAINEL_URL_PUBLICA: 'http://localhost:9999' }), /PAINEL_URL_PUBLICA: deve ser uma das origens de PLATAFORMA_CORS_ORIGIN/);
+  });
+
+  test('em production as duas são obrigatórias e a escolha NÃO depende da ordem da allowlist', () => {
+    const sem = (nome) => { const { [nome]: _, ...resto } = PRODUCAO; return resto; };
+    assert.match(erroDe(sem('PORTAL_URL_PUBLICA')), /PORTAL_URL_PUBLICA: obrigatória em production/);
+    assert.match(erroDe(sem('PAINEL_URL_PUBLICA')), /PAINEL_URL_PUBLICA: obrigatória em production/);
+    const cfg = carregarConfigHttp({ ...PRODUCAO, PORTAL_URL_PUBLICA: 'https://www.empresa.com.br' });
+    assert.deepEqual(cfg.urlsPublicas, { portal: 'https://www.empresa.com.br', painel: 'https://admin.empresa.com.br' });
+    assert.deepEqual(cfg.cors.origens, ['https://app.empresa.com.br', 'https://www.empresa.com.br']);
+  });
+
+  test('em production exigem https e coerência com as origens permitidas de cada portal, sem trocar um pelo outro', () => {
+    assert.match(erroDe({ ...PRODUCAO, PORTAL_URL_PUBLICA: 'http://app.empresa.com.br' }), /PORTAL_URL_PUBLICA: em production toda origem exige https/);
+    assert.match(erroDe({ ...PRODUCAO, PORTAL_URL_PUBLICA: 'https://outro.empresa.com.br' }), /PORTAL_URL_PUBLICA: deve ser uma das origens de CORS_ORIGIN/);
+    assert.match(erroDe({ ...PRODUCAO, PAINEL_URL_PUBLICA: 'https://app.empresa.com.br' }), /PAINEL_URL_PUBLICA: deve ser uma das origens de PLATAFORMA_CORS_ORIGIN/);
+    assert.match(erroDe({ ...PRODUCAO, PORTAL_URL_PUBLICA: 'https://admin.empresa.com.br' }), /PORTAL_URL_PUBLICA: deve ser uma das origens de CORS_ORIGIN/);
+  });
+
+  test('só origem canônica: sem caminho, query, fragmento, credenciais nem curinga, e sem eco do valor', () => {
+    for (const url of ['https://app.empresa.com.br/portal', 'https://app.empresa.com.br?x=1', 'https://app.empresa.com.br#token', 'https://u:s@app.empresa.com.br', '*', 'app.empresa.com.br', 'https://app.empresa.com.br\r\nX: y']) {
+      const texto = erroDe({ ...PRODUCAO, PORTAL_URL_PUBLICA: url });
+      assert.match(texto, /PORTAL_URL_PUBLICA: /, JSON.stringify(url));
+      assertSemSensiveis(texto, ['u:s@', '/portal', 'X: y'], 'erro da URL pública');
+    }
+  });
+
+  test('uma configuração de production completa é aceita e as duas URLs coincidem com as origens esperadas', () => {
+    const cfg = carregarConfigHttp(PRODUCAO);
+    assert.deepEqual(cfg.urlsPublicas, { portal: 'https://app.empresa.com.br', painel: 'https://admin.empresa.com.br' });
   });
 });
