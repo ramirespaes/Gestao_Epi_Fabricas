@@ -47,6 +47,8 @@ Tecnologias principais:
 - Helmet
 - express-rate-limit
 - cookie
+- `otpauth` — MFA TOTP
+- `nodemailer` 10.0.13 — transporte SMTP do e-mail transacional
 - Supertest para testes HTTP
 
 O arquivo `backend/package.json` utiliza:
@@ -369,7 +371,7 @@ Não alterar migrations antigas somente para:
 
 Se uma estrutura já aplicada precisar mudar, criar nova migration, salvo decisão explícita em contrário.
 
-Atualmente existem migrations versionadas de `000` a `016`, que devem ser executadas em ordem crescente de prefixo.
+Atualmente existem migrations versionadas de `000` a `064`, que devem ser executadas em ordem crescente de prefixo.
 
 Estar versionada não significa estar aplicada: o conjunto descreve o histórico do repositório, não o estado de nenhum banco. Depois de incorporadas ao histórico, essas migrations devem ser preservadas.
 
