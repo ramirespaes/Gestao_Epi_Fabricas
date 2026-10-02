@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 
 const {
-  chaveCanonica, hashRequisicao, lockDaChave, ESPACO_ESTOQUE, ESPACO_ENTREGAS,
+  chaveCanonica, hashRequisicao, lockDaChave, ESPACO_ESTOQUE, ESPACO_ENTREGAS, ESPACO_SOLICITACOES,
 } = require('../../src/utils/idempotencia');
 
 /**
@@ -60,6 +60,17 @@ describe('lockDaChave', () => {
     assert.notEqual(estoque, lockDaChave(ESPACO_ENTREGAS, 4242, CHAVE_MINUSCULA));
     assert.notEqual(estoque, lockDaChave(ESPACO_ESTOQUE, 4243, CHAVE_MINUSCULA));
     assert.notEqual(estoque, lockDaChave(ESPACO_ESTOQUE, 4242, '3f2b8c1e-9a4d-4e7b-8c2a-1d5e6f7a8b9d'));
+  });
+
+  test('a solicitação de EPI tem o seu espaço, que não colide com o do estoque nem com o da entrega; os dois anteriores não mudam', () => {
+    assert.equal(ESPACO_SOLICITACOES, 'solicitacoes_epi');
+    const lock = lockDaChave(ESPACO_SOLICITACOES, 4242, CHAVE_MINUSCULA);
+    assert.match(lock, /^-?\d{1,19}$/);
+    assert.equal(lock, crypto.createHash('sha256').update(`solicitacoes_epi\n4242\n${CHAVE_MINUSCULA}`).digest().readBigInt64BE(0).toString());
+    assert.notEqual(lock, lockDaChave(ESPACO_ESTOQUE, 4242, CHAVE_MINUSCULA));
+    assert.notEqual(lock, lockDaChave(ESPACO_ENTREGAS, 4242, CHAVE_MINUSCULA));
+    assert.equal(lockDaChave(ESPACO_ENTREGAS, 4242, CHAVE_MINUSCULA),
+      crypto.createHash('sha256').update(`entregas_epi\n4242\n${CHAVE_MINUSCULA}`).digest().readBigInt64BE(0).toString());
   });
 
   test('recusa espaço desconhecido, empresa ou chave fora do formato', () => {

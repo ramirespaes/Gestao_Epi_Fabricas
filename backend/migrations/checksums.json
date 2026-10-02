@@ -65,6 +65,7 @@
     "061_create_redefinicoes_senha.sql": "3aaa3d171697e33044dacdb44510ca3948953170def9d4ac425c45f5cf27259b",
     "062_create_redefinicoes_senha_plataforma.sql": "bc44b859eb7175e3c2850b8fc1931c8681382f3cafd958a577f395bc6aecc43c",
     "063_create_recuperacao_senha_solicitacoes.sql": "fb6c9ff24add26998bf59f8cf9b89c351593534170a8f2d5bedb875472d719b5",
-    "064_create_logs_auditoria_identidade.sql": "04352cea60e9ba262d2acf499add7df46b8fd2eeaaaf2d27865bfc27dd73378b"
+    "064_create_logs_auditoria_identidade.sql": "04352cea60e9ba262d2acf499add7df46b8fd2eeaaaf2d27865bfc27dd73378b",
+    "065_create_solicitacoes_epi.sql": "de25e05955fdda5e4d4732f1e8bd12ed64e815b057a458f675bba4234d073c97"
   }
 }

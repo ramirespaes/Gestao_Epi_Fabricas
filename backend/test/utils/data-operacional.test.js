@@ -29,4 +29,25 @@ describe('dataOperacional — dia civil em America/Sao_Paulo', () => {
       assert.throws(() => exigirDataOperacional(invalida), /data operacional/, String(invalida));
     }
   });
+
+  test('todo valor inválido termina em TypeError("data operacional inválida"): mês ou dia impossível nunca vira RangeError', () => {
+    const impossiveis = [
+      '2026-13-01', '2026-00-01', '2026-12-32', '2026-01-00', '2026-00-00', '2026-99-99', '0000-00-00',
+      '2026-02-30', '2026-04-31', '2023-02-29', '1900-02-29',
+    ];
+    for (const invalida of impossiveis) {
+      assert.throws(() => exigirDataOperacional(invalida), (erro) => {
+        assert.ok(erro instanceof TypeError, `${invalida}: esperado TypeError, veio ${erro && erro.name}`);
+        assert.equal(erro.message, 'data operacional inválida', invalida);
+        return true;
+      }, invalida);
+    }
+  });
+
+  test('as datas de calendário válidas continuam aceitas, inclusive 29/02 de ano bissexto e as pontas do ano', () => {
+    for (const valida of ['2026-09-30', '2026-02-28', '2024-02-29', '2000-02-29', '2026-01-01', '2026-12-31', '2026-04-30']) {
+      assert.doesNotThrow(() => exigirDataOperacional(valida), valida);
+      assert.equal(exigirDataOperacional(valida), undefined, 'o contrato não devolve valor');
+    }
+  });
 });

@@ -346,10 +346,10 @@ describe('migration 056 — aplicação', () => {
     }
   });
 
-  test('manifesto: 65 entradas, uma por arquivo, todas coerentes; a da 056 confere', () => {
+  test('manifesto: 66 entradas, uma por arquivo, todas coerentes; a da 056 confere', () => {
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO, 'checksums.json'), 'utf8')).migrations;
     const arquivos = fs.readdirSync(DIRETORIO).filter((n) => /^\d{3}_.*\.sql$/.test(n)).sort();
-    assert.equal(arquivos.length, 65);
+    assert.equal(arquivos.length, 66);
     assert.deepEqual(Object.keys(manifesto).sort(), arquivos);
     for (const arquivo of arquivos) {
       const sha = crypto.createHash('sha256').update(fs.readFileSync(path.join(DIRETORIO, arquivo))).digest('hex');

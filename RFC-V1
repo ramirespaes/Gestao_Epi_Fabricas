@@ -235,9 +235,9 @@ Interage com o sistema de forma simples, via interface web, aplicativo ou termin
 
 ### 🧑‍💼 Supervisor / Líder de Área
 
-Responsável por analisar e aprovar as solicitações de EPI realizadas pelos trabalhadores.
+Acompanha as necessidades de EPI da sua equipe e as atividades executadas.
 
-Pode ajustar quantidades, negar solicitações e registrar justificativas, garantindo controle sobre o consumo e aderência às atividades executadas.
+A aprovação das solicitações de EPI não é do supervisor: é da Segurança do Trabalho (SST), que aprova, nega, ajusta quantidades e registra justificativas.
 
 **Nível técnico:** médio.
 
@@ -248,6 +248,7 @@ Responsável pela gestão completa do processo de fornecimento de EPIs.
 Atua nas seguintes frentes:
 
 - validação técnica dos EPIs;
+- aprovação das solicitações de EPI (aprovar, negar, ajustar quantidades e registrar justificativas);
 - controle de estoque;
 - entrega dos equipamentos;
 - geração e gestão das fichas de EPI;
@@ -297,7 +298,7 @@ Desenvolver um sistema digital de gestão de Equipamentos de Proteção Individu
 
 ### ✅ Objetivos Específicos
 
-- Digitalizar o processo de solicitação e aprovação de EPIs pelos trabalhadores e supervisores;
+- Digitalizar o processo de solicitação de EPIs pelos trabalhadores e de aprovação pela Segurança do Trabalho;
 - Implementar controle automatizado de estoque com alertas de reposição e validade;
 - Garantir que apenas EPIs com Certificado de Aprovação (CA) válido sejam disponibilizados, conforme exigência da NR-06;
 - Gerar automaticamente a ficha de EPI com todos os dados obrigatórios no momento da entrega;
@@ -625,9 +626,9 @@ O funcionamento do sistema será estruturado em etapas sequenciais:
 - Informa o motivo da solicitação;
 - Sistema sugere EPIs com base na função (integração com PGR).
 
-### 2. Aprovação do Supervisor
+### 2. Aprovação pela Segurança do Trabalho
 
-- Supervisor recebe a solicitação;
+- A Segurança do Trabalho (SST) recebe a solicitação;
 - Pode:
   - aprovar;
   - negar;
