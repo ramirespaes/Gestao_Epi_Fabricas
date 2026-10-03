@@ -430,6 +430,9 @@
     TENTATIVA_INCERTA: 'Há uma tentativa de registro sem resposta. Nada pode ser alterado até ela ser resolvida: use "Tentar novamente".',
     CONFIRMACAO_AUSENTE: 'Capture a confirmação do trabalhador antes de registrar.',
     CONFIRMACAO_OBSOLETA: 'A entrega mudou depois da confirmação. Capture uma nova confirmação do trabalhador.',
+    POSICAO_DESATUALIZADA: 'A posição do estoque precisa ser recarregada antes de uma nova tentativa. Use "Recarregar posição".',
+    POSICAO_ATUALIZADA: ' A posição por tamanho foi atualizada.',
+    POSICAO_NAO_ATUALIZADA: ' Não foi possível atualizar a posição: use "Recarregar posição" antes de tentar de novo.',
   };
   var POR_CODIGO = {
     IDEMPOTENCIA_CONFLITO: 'Esta tentativa já foi usada com outro conteúdo. Revise os dados e confirme como uma nova entrega.',
@@ -446,6 +449,8 @@
     CA_AUSENTE: 'Este material exige CA e o lote escolhido não tem CA.',
     CA_VENCIDO: 'O CA do lote escolhido está vencido: escolha outro lote.',
     SALDO_INSUFICIENTE: 'O saldo do lote mudou e não cobre a quantidade. Os lotes foram recarregados: ajuste a quantidade ou escolha outro lote.',
+    // Saldo físico existe, mas parte está reservada a solicitações aprovadas: o texto não diz quais, de quem nem quanto.
+    SALDO_LIVRE_INSUFICIENTE: 'O saldo físico existe, mas parte dele está comprometida com solicitações já aprovadas e não pode ser entregue diretamente. Ajuste a quantidade, escolha outro tamanho ou aguarde a reposição.',
     JUSTIFICATIVA_FORA_GHE_OBRIGATORIA: 'Este EPI não está previsto no GHE do trabalhador: informe a justificativa da exceção.',
     JUSTIFICATIVA_FORA_GHE_NAO_SE_APLICA: 'Este EPI está previsto no GHE do trabalhador: a justificativa de exceção não se aplica.',
     FICHA_NAO_ENCONTRADA: 'Ficha não encontrada nesta empresa.',
@@ -621,10 +626,39 @@
     }).join('');
   }
 
+  // Posição por tamanho (12D-3): o servidor manda por par (material, tamanho) o físico utilizável, o comprometido
+  // com solicitações aprovadas e o saldo livre. Só esses números são mostrados: nunca a composição da demanda.
+  function numeroDaPosicao(v) { return typeof v === 'number' && isFinite(v) && v >= 0 ? String(v) : '—'; }
+
+  function posicaoDoTamanho(posicoes, tamanho) {
+    var alvo = tamanho === undefined || tamanho === null || tamanho === '' ? null : String(tamanho);
+    var lista = Array.isArray(posicoes) ? posicoes : [];
+    for (var i = 0; i < lista.length; i += 1) {
+      var t = lista[i] && lista[i].tamanho;
+      var par = t === undefined || t === null || t === '' ? null : String(t);
+      if (par === alvo) return lista[i];
+    }
+    return null;
+  }
+
+  function linhasPosicoes(posicoes) {
+    return (Array.isArray(posicoes) ? posicoes : []).map(function (p) {
+      var livre = numeroDaPosicao(p.saldoLivre);
+      var tudoComprometido = p.saldoLivre === 0 && typeof p.fisicoUtilizavel === 'number' && p.fisicoUtilizavel > 0;
+      return '<tr>'
+        + '<td style="text-align:center">' + e(ou(p.tamanho, 'Único')) + '</td>'
+        + '<td style="text-align:center">' + e(numeroDaPosicao(p.fisicoUtilizavel)) + '</td>'
+        + '<td style="text-align:center">' + e(numeroDaPosicao(p.comprometido)) + '</td>'
+        + '<td style="text-align:center">' + e(livre) + (tudoComprometido ? ' ' + badge('Tudo comprometido', COR.aviso) : '') + '</td>'
+        + '</tr>';
+    }).join('');
+  }
+
   var render = {
     escaparHtml: escaparHtml, dataBr: dataBr, dataHoraBr: dataHoraBr, badge: badge,
     linhasFichas: linhasFichas, linhasHistorico: linhasHistorico, cabecalhoFicha: cabecalhoFicha,
     linhasTrabalhadores: linhasTrabalhadores, linhasMateriais: linhasMateriais, linhasLotes: linhasLotes, linhasItens: linhasItens,
+    linhasPosicoes: linhasPosicoes,
   };
 
   // ───────────────────────────────────────────────────────────────────
@@ -635,15 +669,23 @@
     return {
       ok: false, status: r.status, codigo: r.codigo || null, mensagem: erro(r), incerta: ehRede(r), sessaoEncerrada: exigeNovoLogin(r),
       recarregarLotes: r.codigo === 'SALDO_INSUFICIENTE' || r.codigo === 'LOTE_NAO_ENCONTRADO' || r.codigo === 'LOTE_MATERIAL_DIVERGENTE',
+      // O saldo livre mudou (solicitações aprovadas depois da leitura): a posição precisa ser relida antes de nova tentativa.
+      recarregarPosicao: r.codigo === 'SALDO_LIVRE_INSUFICIENTE',
     };
+  }
+
+  function posicoesDaResposta(dados) {
+    return dados && Array.isArray(dados.posicoes) ? dados.posicoes : null;
   }
 
   function criarFluxo() {
     var estado = {
       trabalhador: null, ghe: null, ficha: null, rascunho: null, material: null, lotes: [], materiais: [], totalMateriais: 0,
       confirmacao: null, enviando: false, tentativaIncerta: null, resultado: null,
+      // Posição por tamanho, por material (id em texto): só o que o servidor mandou, nada persistido no navegador.
+      posicoes: {}, posicaoDesatualizada: false, recarregandoPosicao: false,
     };
-    var seq = { trabalhador: 0, materiais: 0, lotes: 0, busca: 0 };
+    var seq = { trabalhador: 0, materiais: 0, lotes: 0, busca: 0, posicoes: 0 };
     var chave = idempotencia.novoEstado();
     var ouvintes = [];
     var avisar = function () { ouvintes.forEach(function (fn) { fn(estado); }); };
@@ -662,8 +704,9 @@
 
     // Consultas do trabalhador anterior deixam de valer: respostas tardias são descartadas.
     function invalidarDependentes() {
-      seq.materiais += 1; seq.lotes += 1;
+      seq.materiais += 1; seq.lotes += 1; seq.posicoes += 1;
       estado.material = null; estado.lotes = []; estado.materiais = []; estado.totalMateriais = 0;
+      estado.posicoes = {}; estado.posicaoDesatualizada = false; estado.recarregandoPosicao = false;
     }
 
     function definirTrabalhador(contexto) {
@@ -744,12 +787,61 @@
       if (minha !== seq.lotes) return { ok: false, descartada: true };
       if (!r.ok) return respostaDeErro(r);
       estado.lotes = (r.dados && r.dados.lotes) || [];
+      guardarPosicao(String(m.id), posicoesDaResposta(r.dados));
       avisar();
       return { ok: true, lotes: estado.lotes };
     }
 
+    // Servidor sem `posicoes` (versão anterior): nada é inventado, o material fica sem posição.
+    function guardarPosicao(materialId, posicoes) {
+      if (posicoes) estado.posicoes[materialId] = posicoes;
+      else delete estado.posicoes[materialId];
+    }
+
     async function recarregarLotes() {
       return estado.material ? selecionarMaterial(estado.material) : { ok: false, codigo: 'SEM_MATERIAL' };
+    }
+
+    // Materiais cuja posição pesa na entrega: os do rascunho e o escolhido agora, cada um uma vez.
+    function materiaisDaPosicao() {
+      var ids = [];
+      var itens = estado.rascunho ? estado.rascunho.itens : [];
+      itens.forEach(function (i) { if (ids.indexOf(String(i.materialId)) < 0) ids.push(String(i.materialId)); });
+      if (estado.material && ids.indexOf(String(estado.material.id)) < 0) ids.push(String(estado.material.id));
+      return ids;
+    }
+
+    /**
+     * Relê a posição de cada material em jogo (o mesmo GET dos lotes). Qualquer falha deixa a posição
+     * desatualizada: confirmar() não envia nada até uma recarga completa dar certo.
+     */
+    async function recarregarPosicoes() {
+      if (!estado.trabalhador) return { ok: false, codigo: 'SEM_TRABALHADOR', mensagem: 'Selecione o trabalhador primeiro.' };
+      var minha = ++seq.posicoes;
+      var ids = materiaisDaPosicao();
+      var lidas = {};
+      var lotesAtuais = null;
+      estado.recarregandoPosicao = true;
+      avisar();
+      try {
+        for (var i = 0; i < ids.length; i += 1) {
+          var r = await acoes.lotes(estado.trabalhador.id, ids[i]);
+          if (minha !== seq.posicoes) return { ok: false, descartada: true };
+          if (!r.ok) {
+            estado.posicaoDesatualizada = true;
+            return respostaDeErro(r);
+          }
+          lidas[ids[i]] = posicoesDaResposta(r.dados);
+          if (estado.material && String(estado.material.id) === ids[i]) lotesAtuais = (r.dados && r.dados.lotes) || [];
+        }
+        ids.forEach(function (id) { guardarPosicao(id, lidas[id]); });
+        if (lotesAtuais) estado.lotes = lotesAtuais;
+        estado.posicaoDesatualizada = false;
+        return { ok: true };
+      } finally {
+        if (minha === seq.posicoes) estado.recarregandoPosicao = false;
+        avisar();
+      }
     }
 
     // Toda mudança do conteúdo lógico derruba a confirmação já capturada.
@@ -820,6 +912,15 @@
       if (!r.ok) {
         estado.resultado = respostaDeErro(r);
         estado.tentativaIncerta = estado.resultado.incerta ? { corpo: corpo, chave: chaveDaTentativa } : null;
+        if (estado.resultado.recarregarPosicao) {
+          // A posição só volta a valer depois de relida: até lá confirmar() fica bloqueado.
+          estado.posicaoDesatualizada = true;
+          avisar();
+          await recarregarPosicoes();
+          var recarregada = !estado.posicaoDesatualizada;
+          estado.resultado.posicaoRecarregada = recarregada;
+          estado.resultado.mensagem += recarregada ? MSG.POSICAO_ATUALIZADA : MSG.POSICAO_NAO_ATUALIZADA;
+        }
         avisar();
         return estado.resultado;
       }
@@ -838,6 +939,7 @@
     async function confirmar() {
       if (arguments.length) return { ok: false, codigo: 'CONFIRMACAO_FORA_DO_ESTADO', mensagem: MSG.CONFIRMACAO_AUSENTE };
       var b = bloqueio(); if (b) return b;
+      if (estado.posicaoDesatualizada) return { ok: false, codigo: 'POSICAO_DESATUALIZADA', mensagem: MSG.POSICAO_DESATUALIZADA };
       if (!estado.confirmacao) return { ok: false, codigo: 'CONFIRMACAO_AUSENTE', mensagem: MSG.CONFIRMACAO_AUSENTE };
       if (estado.confirmacao.conteudo !== conteudoAtual()) {
         estado.confirmacao = null;
@@ -866,6 +968,7 @@
       carregarMateriais: carregarMateriais,
       selecionarMaterial: selecionarMaterial,
       recarregarLotes: recarregarLotes,
+      recarregarPosicoes: recarregarPosicoes,
       adicionarItem: adicionarItem,
       removerItem: removerItem,
       alterarQuantidade: alterarQuantidade,
@@ -970,6 +1073,7 @@
     SITUACOES_CA: SITUACOES_CA,
     DECLARACAO: DECLARACAO,
     rotuloMotivo: rotuloMotivo,
+    posicaoDoTamanho: posicaoDoTamanho,
     acoes: acoes,
     permissoes: permissoes,
     filtros: filtros,

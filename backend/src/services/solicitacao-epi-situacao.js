@@ -8,7 +8,9 @@
  *
  * `coberta` nulo quer dizer que o item não está na fila de cobertura
  * (trabalhador ou material inativo): a demanda fica SUSPENSA, sem mudar o
- * status gravado. `quantidadeEntregue` é zero até a integração da entrega (12C).
+ * status gravado. `quantidadeEntregue` é derivada das entregas ligadas ao item
+ * (entregas_epi_itens.solicitacao_item_id, migration 066), de qualquer lote e
+ * de qualquer ato; o pendente é a aprovada menos essa soma.
  */
 
 const SITUACOES = Object.freeze([
@@ -52,6 +54,9 @@ function situacaoDaSolicitacao(status, situacoesDosItens) {
   const ativas = situacoesDosItens.filter((s) => s !== null);
   if (ativas.length === 0) throw new TypeError('solicitação aprovada sem item aprovado');
   if (ativas.every((s) => s === 'ENTREGUE')) return 'ENTREGUE';
+  // Precedência: se tudo o que falta entregar está suspenso, a impossibilidade atual prevalece sobre o progresso já feito
+  // (as quantidades entregues continuam visíveis em cada item). Com algo ainda entregável, vale o progresso.
+  if (ativas.filter((s) => s !== 'ENTREGUE').every((s) => s === 'SUSPENSA')) return 'SUSPENSA';
   if (ativas.some((s) => s === 'ENTREGUE' || s === 'PARCIALMENTE_ENTREGUE')) return 'PARCIALMENTE_ENTREGUE';
   for (const uniforme of ['PRONTA_PARA_ENTREGA', 'AGUARDANDO_ESTOQUE', 'SUSPENSA']) {
     if (ativas.every((s) => s === uniforme)) return uniforme;

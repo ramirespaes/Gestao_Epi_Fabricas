@@ -305,8 +305,8 @@
     var minimo = texto(c.estoqueMinimo);
     if (minimo) {
       var m = inteiro(minimo);
-      if (m === null || m < 0) erro('estoqueMinimo', 'Estoque mínimo deve ser um inteiro maior ou igual a zero.');
-      else if (m > INTEGER_MAXIMO) erro('estoqueMinimo', 'Estoque mínimo acima do limite (' + INTEGER_MAXIMO + ').');
+      if (m === null || m < 0) erro('estoqueMinimo', 'Mínimo padrão deve ser um inteiro maior ou igual a zero.');
+      else if (m > INTEGER_MAXIMO) erro('estoqueMinimo', 'Mínimo padrão acima do limite (' + INTEGER_MAXIMO + ').');
       else corpo.estoqueMinimo = m;
     }
 
@@ -442,7 +442,7 @@
       return true;
     });
     if (!texto(base.estoqueMinimo) && !erros.some(function (e) { return e.campo === 'estoqueMinimo'; })) {
-      erros.push({ campo: 'estoqueMinimo', mensagem: 'Informe o estoque mínimo (use 0 para nenhum).' });
+      erros.push({ campo: 'estoqueMinimo', mensagem: 'Informe o mínimo padrão (use 0 para nenhum).' });
     }
     if (erros.length > 0) return { ok: false, erros: erros };
     var corpo = {};
@@ -652,6 +652,10 @@
     EDICAO_NAO_CONFIRMADA_SERVIDOR: 'Erro no servidor: não foi possível confirmar se as alterações foram salvas. Cancele a edição e abra o material de novo para conferir antes de salvar outra vez.',
     EDICAO_GENERICO: 'Não foi possível salvar as alterações. Tente novamente.',
     TAMANHO_SALDO_INCOMPATIVEL: 'Não foi possível mudar o controle de tamanho: há saldo em estoque em lotes que não combinam com a nova configuração. Dê baixa nesses lotes antes de mudar.',
+    TAMANHO_MINIMOS_INCOMPATIVEIS: 'Não foi possível mudar o controle de tamanho: o material tem mínimos por tamanho configurados. Remova esses mínimos (cartão "Estoque mínimo por tamanho") antes de mudar.',
+    // Minúscula inicial: compõe com "Baixa não realizada: ...". Não diz qual solicitação, de quem nem quanto.
+    BAIXA_SALDO_LIVRE: 'o saldo físico existe, mas esta baixa reduziria o estoque comprometido com solicitações já aprovadas. Devolução ao fornecedor e "Outro" só podem usar o saldo livre. Registre o motivo conforme o que realmente aconteceu com o item.',
+    AVISO_MOTIVO_SALDO_LIVRE: 'Esta baixa só pode usar o saldo livre: não pode reduzir o estoque comprometido com solicitações já aprovadas.',
     CARREGAR_GENERICO: 'Não foi possível abrir o material para edição.',
     OCULOS_OBRIGATORIO: 'Informe se os óculos de proteção são com grau: marque "Óculos com grau" ou deixe desmarcado para sem grau.',
     OCULOS_NAO_SE_APLICA: '"Óculos com grau" só vale para o tipo Óculos de proteção.',
@@ -721,6 +725,7 @@
     if (r.status === 403) return MSG.SEM_MOVIMENTAR;
     if (r.status === 404) return 'lote não encontrado nesta empresa.';
     if (r.codigo === 'SALDO_LOTE_INSUFICIENTE') return 'quantidade maior que o saldo atual do lote.';
+    if (r.codigo === 'SALDO_LIVRE_INSUFICIENTE') return MSG.BAIXA_SALDO_LIVRE;
     if (r.codigo === 'IDEMPOTENCIA_CONFLITO') return 'esta operação conflita com outra já registrada; atualize os lotes e tente de novo.';
     if (temDetalhe(r, 'JUSTIFICATIVA_OBRIGATORIA')) return 'informe a justificativa para o motivo Outro.';
     if (r.status === 400) return 'dados da baixa recusados pelo servidor.' + camposDe(r);
@@ -745,6 +750,7 @@
     if (r.codigo === 'MATERIAL_CODIGO_INTERNO_DUPLICADO') return MSG.CODIGO_DUPLICADO;
     if (r.codigo === 'MATERIAL_SEM_ALTERACAO') return MSG.EDICAO_SEM_ALTERACAO;
     if (r.codigo === 'MATERIAL_TAMANHO_SALDO_INCOMPATIVEL') return MSG.TAMANHO_SALDO_INCOMPATIVEL;
+    if (r.codigo === 'MATERIAL_TAMANHO_MINIMOS_INCOMPATIVEIS') return MSG.TAMANHO_MINIMOS_INCOMPATIVEIS;
     if (erroOculos(r)) return erroOculos(r);
     if (r.status === 400) return 'Dados recusados pelo servidor.' + camposDe(r);
     return MSG.EDICAO_GENERICO;
@@ -805,7 +811,13 @@
     return 'Baixa não realizada: ' + erroBaixa(resposta);
   }
 
+  // Só as baixas discricionárias dependem do saldo livre; os fatos físicos (avaria, perda, descarte, CA vencido, ajuste) não ganham dica.
+  function avisoMotivoBaixa(motivo) {
+    return motivo === 'DEVOLUCAO_FORNECEDOR' || motivo === 'OUTRO' ? MSG.AVISO_MOTIVO_SALDO_LIVRE : '';
+  }
+
   var mensagens = {
+    avisoMotivoBaixa: avisoMotivoBaixa,
     exigeNovoLogin: exigeNovoLogin, confirmado: confirmado, erroCadastro: erroCadastro, erroEntrada: erroEntrada, erroBaixa: erroBaixa,
     erroEstoque: erroEstoque, erroEdicao: erroEdicao, erroCarregarEdicao: erroCarregarEdicao, resultado: resultado,
     resultadoEntrada: resultadoEntrada, resultadoBaixa: resultadoBaixa, MSG: MSG,

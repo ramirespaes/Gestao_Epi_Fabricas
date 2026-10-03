@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const request = require('supertest');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { todasAsMigrations } = require('./helpers/entrega-epi');
 const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { inserirLote, baixarLote, somarDias } = require('./helpers/estoque-lotes');
 const { criarAppTeste } = require('../helpers/app-teste');
@@ -28,7 +29,7 @@ const provisionamento = require('../../src/services/provisionamento-permissoes.s
  * Paulo o UTC já está em 01/10; o CURRENT_DATE do banco é outro dia.
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 46 }, (_, i) => String(i).padStart(3, '0'));
+const TODAS_AS_MIGRATIONS = todasAsMigrations();
 const HOJE = '2026-09-30';
 const NOITE_DE_30_09 = () => new Date('2026-10-01T02:30:00Z');
 const MADRUGADA_DE_01_10 = () => new Date('2026-10-01T03:30:00Z');

@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { todasAsMigrations } = require('./helpers/entrega-epi');
 const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { inserirLote, baixarLote, somarDias } = require('./helpers/estoque-lotes');
 const { criarAppTeste } = require('../helpers/app-teste');
@@ -23,6 +24,7 @@ const { gerarHashSenha } = require('../../src/security/password');
 const { authConfig } = require('../../src/config/auth');
 const provisionamento = require('../../src/services/provisionamento-permissoes.service');
 const loteRepo = require('../../src/repositories/estoque-lote.repository');
+const posicaoRepo = require('../../src/repositories/posicao-estoque.repository');
 
 /**
  * Leitura do estoque por lote com PostgreSQL real e relógio controlado.
@@ -31,7 +33,8 @@ const loteRepo = require('../../src/repositories/estoque-lote.repository');
  * números mudariam.
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 46 }, (_, i) => String(i).padStart(3, '0'));
+// Todas as migrations: Itens Disponíveis e o dashboard leem a posição (065 a 067) e um prefixo antigo daria 500.
+const TODAS_AS_MIGRATIONS = todasAsMigrations();
 const HOJE = '2026-09-30';
 const NOITE_DE_30_09 = () => new Date('2026-10-01T02:30:00Z');
 const MADRUGADA_DE_01_10 = () => new Date('2026-10-01T03:30:00Z');
@@ -250,8 +253,11 @@ describe('leitura do estoque por lote (PostgreSQL real, data operacional control
       if (valido > 0) await inserirLote(pool, { empresaId: empresaC, materialId: id, tamanho: 'U', quantidade: valido, ca: '12345', validade: '2027-12-31' });
       if (semCa > 0) await inserirLote(pool, { empresaId: empresaC, materialId: id, tamanho: 'U', quantidade: semCa });
     }
-    const r = await loteRepo.resumirIndicadores(pool, empresaC, { hoje: HOJE, diasAlerta: 60 });
-    assert.deepEqual([r.disponivel, r.abaixoMinimo], [20, 2], 'só "min 10, disponível 0" e "min 10, disponível 5"');
+    // 12D-2: o estoque do dashboard sai da posição por par (sem demanda, o saldo livre é o próprio disponível).
+    const r = await posicaoRepo.resumirPosicoes(pool, empresaC, { hoje: HOJE });
+    assert.deepEqual([r.fisicoUtilizavel, r.paresAbaixoDoMinimo], [20, 2], 'só "min 10, disponível 0" e "min 10, disponível 5"');
+    const validade = await loteRepo.resumirIndicadores(pool, empresaC, { hoje: HOJE, diasAlerta: 60 });
+    assert.deepEqual(Object.keys(validade).sort(), ['caAVencer', 'caVencido'], 'o indicador de lotes é só a validade do CA');
   });
 
   test('fuso America/Sao_Paulo: à 00h30 de 01/10 o CA que venceu em 30/09 passa a bloquear', async () => {

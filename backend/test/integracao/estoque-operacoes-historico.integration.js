@@ -8,6 +8,7 @@ const path = require('node:path');
 const request = require('supertest');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { todasAsMigrations } = require('./helpers/entrega-epi');
 const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { criarAppTeste } = require('../helpers/app-teste');
 const { criarAuthGlobalController } = require('../../src/controllers/auth-global.controller');
@@ -28,7 +29,7 @@ const provisionamento = require('../../src/services/provisionamento-permissoes.s
  * (entrada idempotente e baixa); parte é gravada com data controlada.
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 46 }, (_, i) => String(i).padStart(3, '0'));
+const TODAS_AS_MIGRATIONS = todasAsMigrations();
 const SENHA = 'senha-forte-das-operacoes-2026';
 const EMAILS = {
   masterA: 'master.a.operacoes@exemplo-cliente.com.br',
@@ -167,7 +168,7 @@ describe('E8 — operações de estoque (PostgreSQL real)', () => {
     assert.deepEqual(o[op.saldoBotina], {
       operacaoId: op.saldoBotina, tipo: 'SALDO_INICIAL', quantidade: 10, motivo: null, justificativa: null, responsavel: null,
       criadoEm: '2026-09-01T12:00:00.000Z', loteId: lote.saldoBotina, materialId: m.botina, material: 'Botina de segurança', codigoInterno: 'COD-botina',
-      tamanho: '40', caNumero: 'CA-100', caValidade: '2027-01-31',
+      tamanho: '40', caNumero: 'CA-100', caValidade: '2027-01-31', entrega: null, // 12D-2: só a ENTREGA leva bloco de entrega
     });
     assert.deepEqual([o[op.saldoLuva].tamanho, o[op.saldoLuva].caNumero, o[op.saldoLuva].responsavel], [null, null, null]);
   });
@@ -233,7 +234,8 @@ describe('E8 — operações de estoque (PostgreSQL real)', () => {
   });
 
   test('12. filtro adulterado, ordenação pedida pelo cliente, datas inválidas ou período invertido: 400, nada listado', async () => {
-    for (const query of ['?tipo=ENTREGA', '?tipo=entrada', "?tipo=BAIXA'%20OR%201=1", '?tipo=BAIXA&tipo=ENTRADA', '?ordem=criado_em', '?empresaId=2', '?de=2026-13-01',
+    // 12D-2: ENTREGA passou a ser um tipo válido (e `origem` um filtro); o que continua inválido é tipo ou origem fora da lista.
+    for (const query of ['?tipo=entrega', '?tipo=DEVOLUCAO', '?origem=AUTOATENDIMENTO', '?tipo=entrada', "?tipo=BAIXA'%20OR%201=1", '?tipo=BAIXA&tipo=ENTRADA', '?ordem=criado_em', '?empresaId=2', '?de=2026-13-01',
       '?de=2026-09-10&ate=2026-09-09', '?ate=ontem', '?busca=' + 'x'.repeat(101)]) {
       const r = await operacoes('masterA', query);
       assert.deepEqual([r.status, r.body.codigo], [400, 'VALIDACAO'], query);

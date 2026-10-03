@@ -215,3 +215,34 @@ describe('oculosComGrau — óculos de proteção com ou sem grau (migration 045
     }
   });
 });
+
+describe('mínimos por tamanho (12D-2): GET /materiais/:id/minimos, PUT e DELETE /materiais/:id/minimos/:tamanho', () => {
+  test('o id e o tamanho vêm do caminho; o id é decimal canônico e o tamanho sai aparado', () => {
+    assert.deepEqual(material.minimos.params.safeParse({ id: '7' }).data, { id: 7 });
+    for (const id of ['0', '07', '-1', '1.5', 'a', '2147483648']) assert.equal(material.minimos.params.safeParse({ id }).success, false, id);
+    assert.deepEqual(material.minimo.params.safeParse({ id: '7', tamanho: ' GG ' }).data, { id: 7, tamanho: 'GG' });
+    assert.equal(material.minimo.params.safeParse({ id: '7', tamanho: 'x'.repeat(20) }).success, true);
+    for (const tamanho of ['', '   ', 'x'.repeat(21), 'M\nG']) assert.equal(material.minimo.params.safeParse({ id: '7', tamanho }).success, false, JSON.stringify(tamanho));
+  });
+
+  test('o caminho recusa parâmetro que não é dele, inclusive empresaId', () => {
+    assert.equal(material.minimos.params.safeParse({ id: '7', empresaId: '1' }).success, false);
+    assert.equal(material.minimo.params.safeParse({ id: '7', tamanho: 'M', empresaId: '1' }).success, false);
+  });
+
+  test('corpo do PUT: só minimo, inteiro de 0 ao teto do INTEGER; o zero é válido', () => {
+    const corpo = (b) => material.definirMinimo.body.safeParse(b);
+    assert.deepEqual(corpo({ minimo: 0 }).data, { minimo: 0 });
+    assert.deepEqual(corpo({ minimo: 20 }).data, { minimo: 20 });
+    assert.equal(corpo({ minimo: 2147483647 }).success, true);
+    for (const b of [{}, { minimo: -1 }, { minimo: 1.5 }, { minimo: '20' }, { minimo: null }, { minimo: 2147483648 }, { minimo: 5, tamanho: 'M' }, { minimo: 5, empresaId: 1 }, { minimo: 5, materialId: 1 }]) {
+      assert.equal(corpo(b).success, false, JSON.stringify(b));
+    }
+  });
+
+  test('DELETE não tem corpo: qualquer campo é recusado', () => {
+    assert.equal(material.removerMinimo.body.safeParse({}).success, true);
+    assert.equal(material.removerMinimo.body.safeParse({ minimo: 0 }).success, false);
+    assert.equal(material.removerMinimo.params.safeParse({ id: '7', tamanho: 'M' }).success, true);
+  });
+});

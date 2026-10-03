@@ -25,7 +25,7 @@ const resposta = (status, corpo) => ({ status, ok: status >= 200 && status < 300
 const ATAQUE = '<img src=x onerror=alert(1)>';
 const ESCAPADO = '&lt;img src=x onerror=alert(1)&gt;';
 const NOME = 'Operações de estoque';
-const SUBTITULO = 'Consulte o histórico de saldos iniciais, entradas e baixas de estoque, lote a lote, com data, quantidade, motivo e responsável. As operações registradas não podem ser editadas nem excluídas.';
+const SUBTITULO = 'Consulte o histórico de saldos iniciais, entradas, baixas e entregas de estoque, lote a lote, com data, quantidade, motivo e responsável. As operações registradas não podem ser editadas nem excluídas.';
 
 let chamadas;
 function servidor(responder) {
@@ -42,11 +42,17 @@ function servidor(responder) {
   });
 }
 
+// 12D-2: toda linha traz `entrega`: null fora da ENTREGA; só { origem } para quem não vê a ficha;
+// com o detalhe, { origem, fichaId, fichaNumero, trabalhador { id, nome, matricula }, solicitacao { id, numero } | null }.
 const operacao = (extra) => ({
   operacaoId: '31', tipo: 'ENTRADA', quantidade: 5, motivo: null, justificativa: null, responsavel: 'Maria Estoquista',
   criadoEm: '2026-09-27T13:05:00.000Z', loteId: 12, materialId: 7, material: 'Botina de segurança', codigoInterno: 'EPI-1',
-  tamanho: '42', caNumero: '38271', caValidade: '2030-12-31', ...extra,
+  tamanho: '42', caNumero: '38271', caValidade: '2030-12-31', entrega: null, ...extra,
 });
+const ENTREGA_DIRETA = { origem: 'DIRETA' };
+const ENTREGA_DIRETA_COM_DETALHE = { origem: 'DIRETA', fichaId: 9, fichaNumero: 12, trabalhador: { id: 5, nome: 'João da Silva', matricula: 'M-100' }, solicitacao: null };
+const ENTREGA_SOLICITACAO_COM_DETALHE = { origem: 'SOLICITACAO', fichaId: 9, fichaNumero: 12, trabalhador: { id: 5, nome: 'João da Silva', matricula: 'M-100' }, solicitacao: { id: 3, numero: 5 } };
+const entrega = (dados, extra) => operacao({ operacaoId: '41', tipo: 'ENTREGA', quantidade: 2, entrega: dados, ...extra });
 const OPERACOES = [
   operacao(),
   operacao({ operacaoId: '30', tipo: 'BAIXA', quantidade: 2, motivo: 'AVARIA', criadoEm: '2026-09-10T02:30:00.000Z' }),
@@ -72,7 +78,7 @@ describe('módulo: consulta, textos e HTML', () => {
     servidor(() => resposta(200, listagem()));
     const O = modulo();
     await O.acoes.listar({ tipo: 'BAIXA', de: '2026-09-01', ate: '2026-09-30', busca: '  botina & 50%  ', pagina: 2 });
-    await O.acoes.listar({ tipo: 'ENTREGA', de: '01/09/2026', ate: "2026-09-30' OR 1=1", busca: '   ', pagina: 0 });
+    await O.acoes.listar({ tipo: 'TRANSFERENCIA', de: '01/09/2026', ate: "2026-09-30' OR 1=1", busca: '   ', pagina: 0 });
     await O.acoes.listar({ tipo: 'SALDO_INICIAL' });
     assert.deepEqual(chamadas.map((c) => c.caminho), [
       '/api/estoque/operacoes?tipo=BAIXA&de=2026-09-01&ate=2026-09-30&busca=botina%20%26%2050%25&pagina=2&limite=50',
@@ -81,8 +87,35 @@ describe('módulo: consulta, textos e HTML', () => {
     ]);
     assert.ok(chamadas.every((c) => c.metodo === 'GET'));
     assert.equal(chamadas.some((c) => /empresa|ordem|order/i.test(c.caminho)), false);
-    assert.deepEqual(O.FILTROS.map((f) => f[0]), ['', 'SALDO_INICIAL', 'ENTRADA', 'BAIXA']);
-    assert.deepEqual(O.FILTROS.map((f) => f[1]), ['Todas', 'Saldo inicial', 'Entrada', 'Baixa']);
+    assert.deepEqual(O.FILTROS.map((f) => f[0]), ['', 'SALDO_INICIAL', 'ENTRADA', 'BAIXA', 'ENTREGA']);
+    assert.deepEqual(O.FILTROS.map((f) => f[1]), ['Todas', 'Saldo inicial', 'Entrada', 'Baixa', 'Entrega']);
+  });
+
+  test('12D-3: ENTREGA é um tipo aceito e a origem (DIRETA ou SOLICITACAO) vai ao servidor só com ENTREGA ou sem tipo', async () => {
+    servidor(() => resposta(200, listagem()));
+    const O = modulo();
+    await O.acoes.listar({ tipo: 'ENTREGA' });
+    await O.acoes.listar({ tipo: 'ENTREGA', origem: 'DIRETA' });
+    await O.acoes.listar({ tipo: 'ENTREGA', origem: 'SOLICITACAO', de: '2026-09-01', busca: 'botina', pagina: 3 });
+    await O.acoes.listar({ origem: 'SOLICITACAO' });
+    assert.deepEqual(chamadas.map((c) => c.caminho), [
+      '/api/estoque/operacoes?tipo=ENTREGA&pagina=1&limite=50',
+      '/api/estoque/operacoes?tipo=ENTREGA&origem=DIRETA&pagina=1&limite=50',
+      '/api/estoque/operacoes?tipo=ENTREGA&origem=SOLICITACAO&de=2026-09-01&busca=botina&pagina=3&limite=50',
+      '/api/estoque/operacoes?origem=SOLICITACAO&pagina=1&limite=50',
+    ]);
+    assert.deepEqual(O.ORIGENS, [['', 'Todas'], ['DIRETA', 'Direta'], ['SOLICITACAO', 'Solicitação']]);
+  });
+
+  test('12D-3: origem inválida nunca vai ao servidor; origem com outro tipo (que nunca tem origem) também não', async () => {
+    servidor(() => resposta(200, listagem()));
+    const O = modulo();
+    for (const origem of ['direta', 'OUTRA', "DIRETA' OR 1=1", '', null, undefined, 7]) await O.acoes.listar({ tipo: 'ENTREGA', origem });
+    for (const tipo of ['BAIXA', 'ENTRADA', 'SALDO_INICIAL']) await O.acoes.listar({ tipo, origem: 'DIRETA' });
+    assert.equal(chamadas.some((c) => /origem=/.test(c.caminho)), false);
+    assert.equal(O.origemPermitida('DIRETA'), true);
+    assert.equal(O.origemPermitida('SOLICITACAO'), true);
+    assert.equal(O.origemPermitida(''), false);
   });
 
   test('data e hora em São Paulo, no formato dd/mm/aaaa HH:mm; meia-noite é 00:00; valor inválido vira "—"', () => {
@@ -109,8 +142,9 @@ describe('módulo: consulta, textos e HTML', () => {
 
   test('tipos: saldo inicial tem nome próprio e nunca aparece como entrada manual', () => {
     const O = modulo();
-    assert.deepEqual(Object.keys(O.TIPOS), ['SALDO_INICIAL', 'ENTRADA', 'BAIXA']);
-    assert.deepEqual([O.TIPOS.SALDO_INICIAL.rotulo, O.TIPOS.ENTRADA.rotulo, O.TIPOS.BAIXA.rotulo], ['Saldo inicial', 'Entrada', 'Baixa']);
+    assert.deepEqual(Object.keys(O.TIPOS), ['SALDO_INICIAL', 'ENTRADA', 'BAIXA', 'ENTREGA']);
+    assert.deepEqual([O.TIPOS.SALDO_INICIAL.rotulo, O.TIPOS.ENTRADA.rotulo, O.TIPOS.BAIXA.rotulo, O.TIPOS.ENTREGA.rotulo], ['Saldo inicial', 'Entrada', 'Baixa', 'Entrega']);
+    assert.equal(O.TIPOS.ENTREGA.sinal, '−', 'a entrega tira do estoque');
     const [saldo] = linhas(O.render.linhas([OPERACOES[3]]));
     const [, operacaoTexto, material, tamanho, ca, quantidade, motivo, justificativa, responsavel] = celulas(saldo);
     assert.match(operacaoTexto, /^Saldo inicial/);
@@ -126,6 +160,62 @@ describe('módulo: consulta, textos e HTML', () => {
     assert.deepEqual(entrada, ['27/09/2026 10:05', 'Entrada', 'Botina de segurança EPI-1', '42', '38271 Lote 12', '+5', '—', '—', 'Maria Estoquista', 'Op. 31']);
     assert.deepEqual([avaria[0], avaria[1], avaria[5], avaria[6], avaria[7]], ['09/09/2026 23:30', 'Baixa', '−2', 'Avaria', '—']);
     assert.deepEqual([outro[6], outro[7]], ['Outro', 'Doação para treinamento']);
+  });
+
+  test('12D-3: ENTREGA aparece como "Entrega" com a origem discreta (Direta ou Por solicitação) e quantidade com sinal de menos', () => {
+    const R = modulo().render;
+    const [direta] = linhas(R.linhas([entrega(ENTREGA_DIRETA)])).map(celulas);
+    const [porSolicitacao] = linhas(R.linhas([entrega({ origem: 'SOLICITACAO' })])).map(celulas);
+    assert.equal(direta.length, 10);
+    assert.deepEqual([direta[1], direta[5], direta[6], direta[9]], ['Entrega Direta', '−2', '—', 'Op. 41']);
+    assert.deepEqual([porSolicitacao[1], porSolicitacao[5]], ['Entrega Por solicitação', '−2']);
+    const html = R.linhas([entrega(ENTREGA_DIRETA)]);
+    assert.match(html, /class="tipo tipo-entrega"/);
+    assert.match(html, /class="numero tipo-entrega"/);
+    assert.equal(/Por solicitação/.test(html), false, 'a origem DIRETA nunca aparece como solicitação');
+    assert.equal(/Direta/.test(R.linhas([entrega({ origem: 'SOLICITACAO' })])), false, 'a origem SOLICITACAO nunca aparece como direta');
+  });
+
+  test('12D-3: origem desconhecida ou ausente não é adivinhada: só "Entrega", sem "Direta" nem "Por solicitação"', () => {
+    const R = modulo().render;
+    for (const dados of [{ origem: 'FUTURA' }, { origem: null }, {}, null, undefined]) {
+      const [celula] = linhas(R.linhas([entrega(dados)])).map(celulas);
+      assert.equal(celula[1], 'Entrega', JSON.stringify(dados));
+    }
+  });
+
+  test('12D-3: com o detalhe permitido pelo servidor, a referência mostra ficha, trabalhador (nome e matrícula) e solicitação', () => {
+    const R = modulo().render;
+    const ref = (dados) => linhas(R.linhas([entrega(dados)])).map(celulas)[0][9];
+    assert.equal(ref(ENTREGA_SOLICITACAO_COM_DETALHE), 'Op. 41 Ficha 12 João da Silva · M-100 Solicitação 5');
+    assert.equal(ref(ENTREGA_DIRETA_COM_DETALHE), 'Op. 41 Ficha 12 João da Silva · M-100', 'a entrega direta não tem solicitação e nada é inventado');
+    assert.equal(ref({ ...ENTREGA_DIRETA_COM_DETALHE, trabalhador: { id: 5, nome: 'João da Silva', matricula: null } }), 'Op. 41 Ficha 12 João da Silva');
+  });
+
+  test('12D-3: sem o detalhe (perfil sem ficha), a linha não mostra ficha, trabalhador, solicitação nem aviso de falta de permissão', () => {
+    const R = modulo().render;
+    for (const dados of [ENTREGA_DIRETA, { origem: 'SOLICITACAO' }, null]) {
+      const html = R.linhas([entrega(dados)]);
+      assert.equal(celulas(linhas(html)[0])[9], 'Op. 41');
+      assert.equal(/Ficha|Trabalhador|permiss|restrit|oculto|\*\*\*/i.test(html), false, JSON.stringify(dados));
+    }
+  });
+
+  test('12D-3: o CPF e qualquer outro dado fora do contrato nunca são mostrados, mesmo que cheguem na resposta', () => {
+    const R = modulo().render;
+    const trabalhador = { ...ENTREGA_SOLICITACAO_COM_DETALHE.trabalhador, cpf: '123.456.789-09', cpfMascarado: '***.456.789-**', cpfHash: 'abc123' };
+    const html = R.linhas([entrega({ ...ENTREGA_SOLICITACAO_COM_DETALHE, trabalhador, cpf: '987.654.321-00', solicitante: 'Fulano Solicitante', justificativaSst: 'Texto SST secreto' }, { cpf: '111.222.333-44' })]);
+    for (const proibido of ['123.456', '987.654', '456.789', '111.222', 'abc123', 'Fulano Solicitante', 'SST secreto']) assert.equal(html.includes(proibido), false, proibido);
+    assert.equal(/cpf/i.test(semComentarios(ler('js/operacoes-estoque.js'))), false, 'o módulo nem lê um campo de CPF');
+  });
+
+  test('12D-3: XSS no detalhe da entrega: ficha, trabalhador, matrícula, solicitação e origem saem escapados', () => {
+    const atacada = entrega({
+      origem: ATAQUE, fichaId: 1, fichaNumero: ATAQUE, trabalhador: { id: 1, nome: ATAQUE, matricula: ATAQUE }, solicitacao: { id: 1, numero: ATAQUE },
+    });
+    const html = modulo().render.linhas([atacada]);
+    assert.ok(html.includes(ESCAPADO));
+    semElementoInjetado(html);
   });
 
   test('XSS: tudo o que vem do servidor é texto escapado, inclusive tipo e motivo desconhecidos', () => {
@@ -179,7 +269,7 @@ function montarPagina({ responder, acesso = true } = {}) {
   const mapa = {};
   const el = (id) => (mapa[id] = mapa[id] || {
     id, value: '', textContent: '', innerHTML: '', disabled: false, style: {}, atributos: {}, listeners: {},
-    tagName: id === 'filtroTipo' ? 'SELECT' : 'INPUT',
+    tagName: id === 'filtroTipo' || id === 'filtroOrigem' ? 'SELECT' : 'INPUT',
     addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
     setAttribute(k, v) { this.atributos[k] = String(v); }, removeAttribute(k) { delete this.atributos[k]; }, focus() {},
   });
@@ -227,6 +317,52 @@ describe('página (DOM simulado)', () => {
     await pg.disparar('botaoLimparFiltros');
     assert.equal(leituras().at(-1), '/api/estoque/operacoes?pagina=1&limite=50');
     assert.deepEqual(['filtroTipo', 'filtroDe', 'filtroAte', 'filtroBusca'].map((id) => pg.el(id).value), ['', '', '', '']);
+  });
+
+  test('12D-3: tipo ENTREGA e origem vão ao servidor; página seguinte mantém; Limpar zera os cinco filtros', async () => {
+    const pg = montarPagina({ responder: (m, u) => resposta(200, listagem({ total: 120, paginas: 3, pagina: Number(u.searchParams.get('pagina')) })) });
+    await pg.esperar();
+    Object.assign(pg.el('filtroTipo'), { value: 'ENTREGA' });
+    Object.assign(pg.el('filtroOrigem'), { value: 'SOLICITACAO' });
+    await pg.disparar('botaoFiltrar');
+    assert.equal(leituras().at(-1), '/api/estoque/operacoes?tipo=ENTREGA&origem=SOLICITACAO&pagina=1&limite=50');
+    await pg.disparar('paginaProxima');
+    assert.equal(leituras().at(-1), '/api/estoque/operacoes?tipo=ENTREGA&origem=SOLICITACAO&pagina=2&limite=50');
+    await pg.disparar('botaoLimparFiltros');
+    assert.deepEqual(['filtroTipo', 'filtroOrigem', 'filtroDe', 'filtroAte', 'filtroBusca'].map((id) => pg.el(id).value), ['', '', '', '', '']);
+    assert.equal(leituras().at(-1), '/api/estoque/operacoes?pagina=1&limite=50');
+  });
+
+  test('12D-3: a origem só vale sem tipo ou com ENTREGA; com outro tipo o campo zera e fica desabilitado, e volta ao escolher ENTREGA', async () => {
+    const pg = montarPagina();
+    await pg.esperar();
+    Object.assign(pg.el('filtroOrigem'), { value: 'DIRETA' });
+    Object.assign(pg.el('filtroTipo'), { value: 'BAIXA' });
+    await pg.disparar('filtroTipo', 'change');
+    assert.deepEqual([pg.el('filtroOrigem').value, pg.el('filtroOrigem').disabled], ['', true]);
+    assert.equal(leituras().at(-1), '/api/estoque/operacoes?tipo=BAIXA&pagina=1&limite=50');
+    Object.assign(pg.el('filtroTipo'), { value: 'ENTREGA' });
+    await pg.disparar('filtroTipo', 'change');
+    assert.equal(pg.el('filtroOrigem').disabled, false);
+    Object.assign(pg.el('filtroOrigem'), { value: 'DIRETA' });
+    await pg.disparar('filtroOrigem', 'change');
+    assert.equal(leituras().at(-1), '/api/estoque/operacoes?tipo=ENTREGA&origem=DIRETA&pagina=1&limite=50');
+  });
+
+  test('12D-3: a tabela da página mostra a entrega com a origem e, quando o servidor liberou, a ficha e o trabalhador; o filtro de origem conta como filtro no vazio', async () => {
+    const itens = [entrega(ENTREGA_SOLICITACAO_COM_DETALHE), entrega(ENTREGA_DIRETA, { operacaoId: '40' })];
+    const pg = montarPagina({ responder: () => resposta(200, listagem({ operacoes: itens, total: 2 })) });
+    await pg.esperar();
+    const corpo = pg.el('operacoesCorpo').innerHTML;
+    assert.match(corpo, /Por solicitação/);
+    assert.match(corpo, /Direta/);
+    assert.match(corpo, /João da Silva · M-100/);
+    const vazio = montarPagina({ responder: () => resposta(200, listagem({ operacoes: [], total: 0, paginas: 0 })) });
+    await vazio.esperar();
+    assert.match(vazio.el('operacoesCorpo').innerHTML, /Nenhuma operação de estoque registrada nesta empresa/);
+    Object.assign(vazio.el('filtroOrigem'), { value: 'DIRETA' });
+    await vazio.disparar('botaoFiltrar');
+    assert.match(vazio.el('operacoesCorpo').innerHTML, /Nenhuma operação para este filtro/);
   });
 
   test('período invertido: nada é consultado e o campo fica marcado', async () => {
@@ -295,6 +431,10 @@ describe('inspeção estática', () => {
   test('filtros com as opções do módulo; período com dois campos de data; colunas pedidas', () => {
     const trecho = html.slice(html.indexOf('id="filtroTipo"')).split('</select>')[0];
     assert.deepEqual([...trecho.matchAll(/<option value="([^"]*)">/g)].map((m) => m[1]), modulo().FILTROS.map((f) => f[0]));
+    // 12D-3: origem da entrega, com rótulo associado e as opções do módulo.
+    assert.match(html, /<label for="filtroOrigem">Origem da entrega<\/label>/);
+    const origens = html.slice(html.indexOf('id="filtroOrigem"')).split('</select>')[0];
+    assert.deepEqual([...origens.matchAll(/<option value="([^"]*)">([^<]*)<\/option>/g)].map((m) => [m[1], m[2]]), modulo().ORIGENS);
     assert.match(html, /<input id="filtroDe" class="input" type="date"/);
     assert.match(html, /<input id="filtroAte" class="input" type="date"/);
     assert.match(html, /<input id="filtroBusca" class="input" type="search" maxlength="100"/);
@@ -315,6 +455,11 @@ describe('inspeção estática', () => {
     assert.match(html, /\.vidro\{[^}]*backdrop-filter:blur\(/);
     assert.match(html, /html\[data-theme="dark"\] \.vidro\{/);
     assert.match(html, /<div class="table-wrap"/);
+    // 12D-3: o tipo Entrega tem cor própria nos dois temas, e o selo sempre traz o texto (nunca só cor).
+    assert.match(html, /\.tipo\.tipo-entrega\{/);
+    assert.match(html, /td\.numero\.tipo-entrega\{/);
+    assert.match(html, /--tipo-entrega:[^;]+;--tipo-entrega-fundo:/);
+    assert.match(html, /html\[data-theme="dark"\] \.operacoes\{[^}]*--tipo-entrega:/);
     assert.match(html, /<caption class="sr-only">/);
     assert.match(html, /id="aviso" role="status" aria-live="polite"/);
   });

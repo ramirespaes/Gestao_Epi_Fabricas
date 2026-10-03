@@ -3,7 +3,7 @@
 
   /**
    * EpiOperacoesEstoque — Operações de estoque (Bloco 9, E8): o histórico de
-   * saldo inicial, entradas e baixas, pelo GET /estoque/operacoes.
+   * saldo inicial, entradas, baixas e entregas, pelo GET /estoque/operacoes.
    *
    *   acoes     — fala com a API e devolve o envelope do EpiHttp. Só lê.
    *   texto     — data e hora, sinal, motivo e campos vazios em texto de tela.
@@ -12,6 +12,12 @@
    *
    * A ordem, o fuso do período e a empresa são decididos pelo servidor. O
    * sinal da quantidade é só de tela: o servidor manda a quantidade positiva.
+   *
+   * ENTREGA (12D-3): o servidor manda `entrega` com a origem (DIRETA ou
+   * SOLICITACAO) e, só para quem pode ver a ficha, também a ficha, o
+   * trabalhador (nome e matrícula) e a solicitação. Esta tela mostra o que
+   * veio e nada mais: sem o detalhe não há campo vazio nem aviso de falta de
+   * permissão, e nada é buscado por outro caminho. O CPF não é lido nunca.
    */
 
   var CAMINHO = '/estoque/operacoes';
@@ -25,7 +31,11 @@
     SALDO_INICIAL: Object.freeze({ rotulo: 'Saldo inicial', classe: 'tipo-saldo', sinal: '+', nota: 'migrado do controle anterior' }),
     ENTRADA: Object.freeze({ rotulo: 'Entrada', classe: 'tipo-entrada', sinal: '+', nota: '' }),
     BAIXA: Object.freeze({ rotulo: 'Baixa', classe: 'tipo-baixa', sinal: MENOS, nota: '' }),
+    ENTREGA: Object.freeze({ rotulo: 'Entrega', classe: 'tipo-entrega', sinal: MENOS, nota: '' }),
   });
+
+  // Origem da ENTREGA, como o servidor a manda; qualquer outro valor não é mostrado nem enviado.
+  var ORIGENS_ROTULO = Object.freeze({ DIRETA: 'Direta', SOLICITACAO: 'Por solicitação' });
 
   var MOTIVOS = Object.freeze({
     CA_VENCIDO: 'CA vencido',
@@ -38,7 +48,8 @@
   });
 
   // Opções do filtro, na ordem da tela; '' é "Todas". O servidor confere de novo.
-  var FILTROS = Object.freeze([['', 'Todas'], ['SALDO_INICIAL', 'Saldo inicial'], ['ENTRADA', 'Entrada'], ['BAIXA', 'Baixa']]);
+  var FILTROS = Object.freeze([['', 'Todas'], ['SALDO_INICIAL', 'Saldo inicial'], ['ENTRADA', 'Entrada'], ['BAIXA', 'Baixa'], ['ENTREGA', 'Entrega']]);
+  var ORIGENS = Object.freeze([['', 'Todas'], ['DIRETA', 'Direta'], ['SOLICITACAO', 'Solicitação']]);
 
   // dd/mm/aaaa HH:mm no relógio de São Paulo, qualquer que seja o fuso do navegador.
   var FORMATO_DATA_HORA = new Intl.DateTimeFormat('pt-BR', {
@@ -58,6 +69,9 @@
   function inteiroPositivo(v) { return typeof v === 'number' && Math.floor(v) === v && v > 0; }
   function tipoPermitido(valor) { return typeof valor === 'string' && valor !== '' && hasOwn(TIPOS, valor); }
   function dataPermitida(valor) { return typeof valor === 'string' && DATA.test(valor); }
+  function origemPermitida(valor) { return typeof valor === 'string' && valor !== '' && hasOwn(ORIGENS_ROTULO, valor); }
+  // Só a ENTREGA tem origem: com BAIXA, ENTRADA ou SALDO_INICIAL o resultado seria sempre vazio.
+  function origemAplicavel(tipo) { return !tipo || tipo === 'ENTREGA'; }
 
   // ─── Ações ─────────────────────────────────────────────────────────
   var acoes = {
@@ -65,6 +79,7 @@
       var f = filtro || {};
       var q = [];
       if (tipoPermitido(f.tipo)) q.push('tipo=' + f.tipo);
+      if (origemPermitida(f.origem) && origemAplicavel(tipoPermitido(f.tipo) ? f.tipo : '')) q.push('origem=' + f.origem);
       if (dataPermitida(f.de)) q.push('de=' + f.de);
       if (dataPermitida(f.ate)) q.push('ate=' + f.ate);
       var busca = texto(f.busca);
@@ -115,11 +130,35 @@
     return texto(v) ? ' <small class="detalhe">' + escaparHtml(v) + '</small>' : '';
   }
 
+  // Só a ENTREGA tem bloco `entrega`; uma origem que não é das duas conhecidas não é mostrada nem adivinhada.
+  function blocoEntrega(o) {
+    return o.tipo === 'ENTREGA' && o.entrega && typeof o.entrega === 'object' ? o.entrega : null;
+  }
+
+  function origemDaEntrega(o) {
+    var e = blocoEntrega(o);
+    return e && hasOwn(ORIGENS_ROTULO, e.origem) ? ORIGENS_ROTULO[e.origem] : '';
+  }
+
+  // Ficha, trabalhador e solicitação: só o que o servidor mandou (perfil com ficha), nunca CPF nem campo vazio.
+  function referenciasDaEntrega(o) {
+    var e = blocoEntrega(o);
+    if (!e) return [];
+    var partes = [];
+    if (texto(e.fichaNumero)) partes.push('Ficha ' + texto(e.fichaNumero));
+    var t = e.trabalhador && typeof e.trabalhador === 'object' ? e.trabalhador : null;
+    var quem = t ? [texto(t.nome), texto(t.matricula)].filter(Boolean).join(' · ') : '';
+    if (quem) partes.push(quem);
+    var s = e.solicitacao && typeof e.solicitacao === 'object' ? e.solicitacao : null;
+    if (s && texto(s.numero)) partes.push('Solicitação ' + texto(s.numero));
+    return partes;
+  }
+
   function linha(o) {
     var t = tipoDe(o.tipo);
     return '<tr>'
       + '<td class="data">' + escaparHtml(dataHora(o.criadoEm)) + '</td>'
-      + '<td><span class="tipo ' + t.classe + '">' + escaparHtml(t.rotulo) + '</span>' + detalhe(t.nota) + '</td>'
+      + '<td><span class="tipo ' + t.classe + '">' + escaparHtml(t.rotulo) + '</span>' + detalhe(t.nota || origemDaEntrega(o)) + '</td>'
       + '<td>' + escaparHtml(texto(o.material) || TRACO) + detalhe(o.codigoInterno) + '</td>'
       + '<td>' + escaparHtml(textoDe.tamanho(o.tamanho)) + '</td>'
       + '<td>' + escaparHtml(textoDe.ca(o)) + detalhe(texto(o.loteId) ? 'Lote ' + o.loteId : '') + '</td>'
@@ -127,7 +166,7 @@
       + '<td>' + escaparHtml(textoDe.motivo(o)) + '</td>'
       + '<td class="justificativa">' + escaparHtml(textoDe.justificativa(o)) + '</td>'
       + '<td>' + escaparHtml(textoDe.responsavel(o)) + '</td>'
-      + '<td class="referencia">' + escaparHtml(texto(o.operacaoId) ? 'Op. ' + o.operacaoId : TRACO) + '</td>'
+      + '<td class="referencia">' + escaparHtml(texto(o.operacaoId) ? 'Op. ' + o.operacaoId : TRACO) + referenciasDaEntrega(o).map(detalhe).join('') + '</td>'
       + '</tr>';
   }
 
@@ -170,7 +209,10 @@
     TIPOS: TIPOS,
     MOTIVOS: MOTIVOS,
     FILTROS: FILTROS,
+    ORIGENS: ORIGENS,
     tipoPermitido: tipoPermitido,
+    origemPermitida: origemPermitida,
+    origemAplicavel: origemAplicavel,
     dataPermitida: dataPermitida,
     acoes: acoes,
     texto: textoDe,

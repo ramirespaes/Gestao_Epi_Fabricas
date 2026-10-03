@@ -119,6 +119,44 @@ describe('listarPorSolicitacao', () => {
   });
 });
 
+describe('listarPorSolicitacaoComEntregue', () => {
+  // A soma vem do banco como bigint (texto no pg).
+  const comEntregue = (extra = {}) => linha({ quantidade_entregue: '0', ...extra });
+
+  test('devolve os itens da solicitação com a quantidade entregue derivada das entregas ligadas a eles, em Number', async () => {
+    const executor = executorFalso([
+      comEntregue({ id: 1, decisao: 'APROVADO', quantidade_aprovada: 3, quantidade_entregue: '2' }),
+      comEntregue({ id: 2, material_id: 31 }),
+    ]);
+    const itens = await repo().listarPorSolicitacaoComEntregue(executor, EMPRESA, SOLICITACAO);
+    assert.deepEqual(itens, [
+      publica({ id: 1, decisao: 'APROVADO', quantidadeAprovada: 3, quantidadeEntregue: 2 }),
+      publica({ id: 2, materialId: 31, quantidadeEntregue: 0 }),
+    ]);
+  });
+
+  test('a entregue é soma das entregas da empresa ligadas ao item, sem coluna de contador, e só lê', async () => {
+    const executor = executorFalso([]);
+    await repo().listarPorSolicitacaoComEntregue(executor, EMPRESA, SOLICITACAO);
+    const { texto, valores } = executor.chamadas[0];
+    assert.match(texto, /^SELECT\b/);
+    assert.doesNotMatch(texto, /\b(INSERT|UPDATE|DELETE)\b|FOR\s+(NO KEY\s+)?(UPDATE|SHARE)/i);
+    assert.match(texto, /LEFT JOIN LATERAL \(\s*SELECT COALESCE\(sum\(ei\.quantidade\), 0\)::bigint AS quantidade_entregue\s+FROM entregas_epi_itens ei\s+WHERE ei\.empresa_id = i\.empresa_id AND ei\.solicitacao_item_id = i\.id\s*\) e ON true/);
+    assert.match(texto, /WHERE i\.empresa_id = \$1 AND i\.solicitacao_id = \$2\s+ORDER BY i\.id$/);
+    assert.doesNotMatch(texto, /i\.quantidade_entregue|estoque_|fichas_epi|FROM solicitacoes_epi\b(?!_itens)/);
+    assert.deepEqual(valores, [EMPRESA, SOLICITACAO]);
+  });
+
+  test('sem itens volta vazio; recusa empresa ou solicitação inválidas sem consultar', async () => {
+    const executor = executorFalso([]);
+    assert.deepEqual(await repo().listarPorSolicitacaoComEntregue(executor, EMPRESA, SOLICITACAO), []);
+    const vazio = executorFalso();
+    await assert.rejects(() => repo().listarPorSolicitacaoComEntregue(vazio, -1, SOLICITACAO), /empresa/);
+    await assert.rejects(() => repo().listarPorSolicitacaoComEntregue(vazio, EMPRESA, null), /solicitação/);
+    assert.equal(vazio.chamadas.length, 0);
+  });
+});
+
 describe('decidirTodos', () => {
   const decisoes = () => [
     { itemId: 1, decisao: 'APROVADO', quantidadeAprovada: 4, justificativa: null },

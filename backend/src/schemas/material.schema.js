@@ -123,4 +123,19 @@ const semCorpo = z.strictObject({});
 const inativar = { params: paramsComId, body: semCorpo };
 const reativar = { params: paramsComId, body: semCorpo };
 
-module.exports = { criar, listar, buscar, alterar, inativar, reativar };
+// Mínimos por tamanho (12D-2, migration 067). O tamanho vai no caminho, com o
+// mesmo formato dos lotes (aparado, até 20 caracteres, sem controle); a empresa
+// nunca vem do cliente. O mínimo próprio 0 é válido: significa "este tamanho
+// não tem mínimo", e é diferente de remover a sobrescrita (voltar ao padrão).
+const TAMANHO_ESTOQUE_MAXIMO = 20;
+const tamanhoDoMinimo = textoCurto(TAMANHO_ESTOQUE_MAXIMO, 'TAMANHO_INVALIDO', 'Tamanho inválido');
+const paramsDoMinimo = z.strictObject({ id: idParametro, tamanho: tamanhoDoMinimo });
+
+const minimos = { params: paramsComId };
+const minimo = { params: paramsDoMinimo };
+const definirMinimo = { params: paramsDoMinimo, body: z.strictObject({ minimo: estoqueMinimo }) };
+const removerMinimo = { params: paramsDoMinimo, body: semCorpo };
+
+module.exports = {
+  criar, listar, buscar, alterar, inativar, reativar, minimos, minimo, definirMinimo, removerMinimo,
+};

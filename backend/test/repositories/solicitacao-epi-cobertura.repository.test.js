@@ -100,13 +100,22 @@ describe('lerPosicoes — SQL', () => {
     assert.doesNotMatch(texto, /CURRENT_DATE|now\(\)/i, 'o fuso do banco não é o de São Paulo');
   });
 
-  test('D: só itens aprovados de solicitação APROVADA ou APROVADA_PARCIAL, de trabalhador e material ativos; até a 12C nada foi entregue', async () => {
+  test('D: só itens aprovados de solicitação APROVADA ou APROVADA_PARCIAL, de trabalhador e material ativos', async () => {
     const texto = await textoDaConsulta();
     assert.match(texto, /s\.status IN \('APROVADA', 'APROVADA_PARCIAL'\)/);
     assert.match(texto, /i\.decisao = 'APROVADO'/);
     assert.match(texto, /f\.ativo/);
-    assert.match(texto, /sum\(i\.quantidade_aprovada\)/);
     assert.match(texto, /COALESCE\(i\.tamanho, ''\) = p\.tamanho_chave/);
+  });
+
+  test('D é o pendente: aprovada menos a soma das entregas ligadas ao item, só dos itens com pendente; nada é lido de contador', async () => {
+    const texto = await textoDaConsulta();
+    assert.match(texto, /LEFT JOIN LATERAL \(\s*SELECT sum\(ei\.quantidade\)::bigint AS entregue\s+FROM entregas_epi_itens ei\s+WHERE ei\.empresa_id = i\.empresa_id AND ei\.solicitacao_item_id = i\.id\s*\) e ON true/);
+    assert.match(texto, /sum\(i\.quantidade_aprovada - COALESCE\(e\.entregue, 0\)\)/);
+    assert.match(texto, /i\.quantidade_aprovada > COALESCE\(e\.entregue, 0\)/, 'item inteiramente entregue não conta, e pendente negativa nunca soma');
+    assert.doesNotMatch(texto, /sum\(i\.quantidade_aprovada\)/, 'a demanda não é mais a aprovada inteira');
+    assert.doesNotMatch(texto, /quantidade_entregue/, 'a entregue do item é derivada, não lida de coluna');
+    assert.doesNotMatch(texto, /entregas_epi\b(?!_itens)/, 'só os itens da entrega entram na soma');
   });
 
   test('C, L e G nunca violam as invariantes: C = LEAST(U, D), L e G com GREATEST(0, ...)', async () => {
@@ -200,6 +209,16 @@ describe('listarCobertura — SQL', () => {
     assert.match(texto, /m\.exige_ca AND \(l\.ca_validade IS NULL OR l\.ca_validade < \$2::date\)/);
     assert.match(texto, /LEAST\(fl\.pendente, GREATEST\(0, /);
     assert.doesNotMatch(texto, /CURRENT_DATE|now\(\)/i);
+  });
+
+  test('o pendente da fila é a aprovada menos o entregue derivado: a fila e a demanda anterior contam só o que falta entregar', async () => {
+    const texto = await textoDaConsulta();
+    assert.match(texto, /LEFT JOIN LATERAL \(\s*SELECT sum\(ei\.quantidade\)::bigint AS entregue\s+FROM entregas_epi_itens ei\s+WHERE ei\.empresa_id = i\.empresa_id AND ei\.solicitacao_item_id = i\.id\s*\) e ON true/);
+    assert.match(texto, /i\.quantidade_aprovada - COALESCE\(e\.entregue, 0\) AS pendente/);
+    assert.match(texto, /i\.quantidade_aprovada > COALESCE\(e\.entregue, 0\)/, 'o item inteiramente entregue sai da fila');
+    assert.match(texto, /sum\(i\.quantidade_aprovada - COALESCE\(e\.entregue, 0\)\) OVER \(/, 'a demanda anterior também é do pendente');
+    assert.doesNotMatch(texto, /sum\(i\.quantidade_aprovada\)/);
+    assert.doesNotMatch(texto, /quantidade_entregue/);
   });
 
   test('toda tabela é filtrada pela empresa recebida e ligada por chave composta', async () => {

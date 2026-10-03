@@ -84,6 +84,32 @@ async function listarPorSolicitacao(executor, empresaId, solicitacaoId) {
   return rows.map(mapear);
 }
 
+/**
+ * Os itens da solicitação com a quantidade entregue de cada um, em ordem de
+ * id. A entregue é derivada: a soma das entregas ligadas ao item (066), de
+ * qualquer lote e de qualquer ato; a entrega DIRETA não conta, porque não tem
+ * vínculo. Nada é lido de coluna de contador. O pendente é a aprovada menos
+ * a entregue, e o banco garante que a entregue nunca passa da aprovada.
+ */
+async function listarPorSolicitacaoComEntregue(executor, empresaId, solicitacaoId) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirId(solicitacaoId, 'identificador de solicitação');
+  const { rows } = await executor.query(
+    `SELECT ${COLUNAS_RETORNO}, e.quantidade_entregue
+       FROM solicitacoes_epi_itens i
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(sum(ei.quantidade), 0)::bigint AS quantidade_entregue
+           FROM entregas_epi_itens ei
+          WHERE ei.empresa_id = i.empresa_id AND ei.solicitacao_item_id = i.id
+       ) e ON true
+      WHERE i.empresa_id = $1 AND i.solicitacao_id = $2
+      ORDER BY i.id`,
+    [empresaId, solicitacaoId],
+  );
+  // bigint chega como texto no pg.
+  return rows.map((l) => ({ ...mapear(l), quantidadeEntregue: Number(l.quantidade_entregue) }));
+}
+
 function validarDecisoes(decisoes) {
   if (!Array.isArray(decisoes) || decisoes.length === 0) throw new TypeError('lista de decisões inválida');
   const vistos = new Set();
@@ -128,4 +154,6 @@ async function decidirTodos(executor, empresaId, solicitacaoId, decisoes) {
   return rows.map(mapear).sort((a, b) => a.id - b.id);
 }
 
-module.exports = { MOTIVOS, DECISOES, criar, listarPorSolicitacao, decidirTodos };
+module.exports = {
+  MOTIVOS, DECISOES, criar, listarPorSolicitacao, listarPorSolicitacaoComEntregue, decidirTodos,
+};

@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const request = require('supertest');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { todasAsMigrations } = require('./helpers/entrega-epi');
 const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { inserirLote, somarDias } = require('./helpers/estoque-lotes');
 const { criarAppTeste } = require('../helpers/app-teste');
@@ -31,7 +32,7 @@ const provisionamento = require('../../src/services/provisionamento-permissoes.s
  * da API fica em 00h30 de 01/10.
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 46 }, (_, i) => String(i).padStart(3, '0'));
+const TODAS_AS_MIGRATIONS = todasAsMigrations();
 const HOJE = '2026-09-30';
 const ONTEM = somarDias(HOJE, -1);
 const AMANHA = somarDias(HOJE, 1);
@@ -606,6 +607,13 @@ describe('entrada e baixa por lote (PostgreSQL real, data operacional controlada
       assert.deepEqual(linha.contexto, {
         operacaoId: r.body.operacao.id, materialId: m.id, loteId: lote.loteId, tamanho: 'M', caNumero: '777',
         quantidade: 3, motivo: 'OUTRO', justificativa: 'Amostra para ensaio',
+        posicaoAntes: {
+          fisicoUtilizavel: 10, demandaPendente: 0, comprometido: 0, saldoLivre: 10, semCobertura: 0,
+        },
+        posicaoDepois: {
+          fisicoUtilizavel: 7, demandaPendente: 0, comprometido: 0, saldoLivre: 7, semCobertura: 0,
+        },
+        reduziuCobertura: false,
       });
       assert.deepEqual([linha.dados_anteriores, linha.dados_novos], [{ saldo: 10 }, { saldo: 7 }]);
       assert.ok(linha.criado_em instanceof Date);
@@ -884,7 +892,9 @@ describe('entrada e baixa por lote (PostgreSQL real, data operacional controlada
       const filtros = (await get('masterA', '/api/estoque/itens-disponiveis?limite=100')).body.filtros;
       assert.equal(filtros.tamanhos.includes(null), false, 'tamanho nulo não vira opção de filtro');
 
-      assert.deepEqual(diferenca(antes, await indicadores('masterA')), { disponivel: 5, abaixo: 1, vencido: 0, aVencer: 0 });
+      // 12D-2: o material sem tamanho com mínimo padrão 10 já estava abaixo do mínimo ANTES da primeira entrada (o par sem
+      // tamanho entra na posição pelo mínimo, mesmo sem lote); com 5 livres continua abaixo, então a diferença é zero.
+      assert.deepEqual(diferenca(antes, await indicadores('masterA')), { disponivel: 5, abaixo: 0, vencido: 0, aVencer: 0 });
       await postBaixa('masterA', lote.loteId, corpoBaixa({ quantidade: 5 }));
       assert.deepEqual(await itemDe('masterA', m, null), [3, 3, 0]);
     });

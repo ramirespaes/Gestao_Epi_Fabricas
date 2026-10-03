@@ -9,6 +9,7 @@ const entregaRepo = require('../repositories/entrega-epi.repository');
 const itemRepo = require('../repositories/entrega-epi-item.repository');
 const confirmacaoRepo = require('../repositories/entrega-epi-confirmacao.repository');
 const contextoRepo = require('../repositories/entrega-epi-contexto.repository');
+const posicaoRepo = require('../repositories/posicao-estoque.repository');
 const { exigirDataOperacional } = require('../utils/data-operacional');
 const { entregaPublica, fichaPublica, funcionarioAtualPublico } = require('./entrega-epi-publica');
 
@@ -93,20 +94,29 @@ async function listarMateriaisDoContexto(pool, {
   return { funcionarioId, gheId: funcionario.grupoHomogeneoId, materiais, total, pagina, limite };
 }
 
-/** Lotes com saldo do material, com a situação do CA na data operacional; a escolha continua sendo do usuário. */
+/**
+ * Lotes com saldo do material, com a situação do CA na data operacional; a escolha continua sendo do usuário.
+ * Ao lado vai a posição agregada do par por tamanho (12D-2): o físico utilizável, o comprometido, o saldo livre
+ * e a demanda sem cobertura, para o operador saber quanto da entrega direta cabe. Só números do par: quais
+ * solicitações compõem a demanda, e de quem, nunca saem daqui.
+ */
 async function listarLotesDoContexto(pool, { empresaId, funcionarioId, materialId, hoje }) {
   exigirId(materialId, 'identificador de material');
   exigirDataOperacional(hoje);
   await trabalhadorApto(pool, empresaId, funcionarioId);
   const material = await materialRepo.buscarPorId(pool, empresaId, materialId);
   if (material === null) throw HttpError.notFound('MATERIAL_NAO_ENCONTRADO', 'Material não encontrado');
-  const lotes = await contextoRepo.listarLotes(pool, empresaId, materialId, hoje);
+  const [lotes, posicoes] = await Promise.all([
+    contextoRepo.listarLotes(pool, empresaId, materialId, hoje),
+    posicaoRepo.listarPosicoesDoMaterial(pool, empresaId, materialId, { hoje }),
+  ]);
   return {
     material: {
       id: material.id, nome: material.nome, ativo: material.ativo, exigeTamanho: material.exigeTamanho, oculosComGrau: material.oculosComGrau, prazoUsoDias: material.prazoUsoDias,
     },
     hoje,
     lotes,
+    posicoes,
   };
 }
 

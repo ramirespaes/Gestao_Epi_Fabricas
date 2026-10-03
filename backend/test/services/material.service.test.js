@@ -8,6 +8,7 @@ const materialRepo = require('../../src/repositories/material.repository');
 const auditoriaRepo = require('../../src/repositories/auditoria.repository');
 const loteRepo = require('../../src/repositories/estoque-lote.repository');
 const { HttpError } = require('../../src/errors/HttpError');
+const { exigirModulo } = require('../helpers/exigir-modulo');
 
 /**
  * Testes unitários do serviço de materiais (Bloco 9, Etapa A), sem
@@ -425,6 +426,9 @@ describe('exige tamanho', () => {
   const novo = (extra) => ({ empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Botina', prazoUsoDias: 180, ...extra });
   const alteracao = (extra) => ({ empresaId: EMPRESA, atorId: ATOR_ID, materialId: MATERIAL_ID, ...extra });
   const saldoIncompativel = (t, resposta) => t.mock.method(loteRepo, 'possuiSaldoIncompativel', async () => resposta);
+  // Carregado na hora do uso: sem o repository (RED), o teste diz que ele não existe, em vez de quebrar o arquivo inteiro.
+  const minimoRepo = () => exigirModulo('src/repositories/estoque-minimo.repository');
+  const minimosPorTamanho = (t, resposta) => t.mock.method(minimoRepo(), 'possuiOverrides', async () => resposta);
 
   test('criar sem exigeTamanho, com null ou com valor que não é booleano: 400 MATERIAL_DADOS_INVALIDOS antes de abrir transação', async (t) => {
     for (const exigeTamanho of [undefined, null, 'sim']) {
@@ -477,6 +481,7 @@ describe('exige tamanho', () => {
   test('mudança sem saldo incompatível é gravada; repetir o valor atual não consulta saldo', async (t) => {
     const escritas = mundoValido(t, { existente: material({ exigeTamanho: true }) });
     const saldo = saldoIncompativel(t, false);
+    minimosPorTamanho(t, false);
     await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ exigeTamanho: false }));
     assert.equal(escritas.atualizar.mock.calls[0].arguments[3].exigeTamanho, false);
     assert.equal(saldo.mock.callCount(), 1);
@@ -486,6 +491,70 @@ describe('exige tamanho', () => {
     await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ exigeTamanho: true }));
     assert.equal(mesmo.atualizar.mock.calls[0].arguments[3].exigeTamanho, true);
     assert.equal(semConsulta.mock.callCount(), 0);
+  });
+
+  describe('mínimos por tamanho (estoque_minimos, 12D-1): a classificação não muda enquanto houver mínimo próprio', () => {
+    test('true para false com mínimos próprios: 409 MATERIAL_TAMANHO_MINIMOS_INCOMPATIVEIS, ROLLBACK, nada gravado, e nenhum mínimo é apagado', async (t) => {
+      const escritas = mundoValido(t, { existente: material({ exigeTamanho: true }) });
+      saldoIncompativel(t, false);
+      const existem = minimosPorTamanho(t, true);
+      const apagar = t.mock.method(minimoRepo(), 'remover', async () => true);
+      const cliente = criarClienteFalso();
+      await esperarHttpError(servico.alterar(criarPoolFalso(cliente), alteracao({ exigeTamanho: false })), 409, 'MATERIAL_TAMANHO_MINIMOS_INCOMPATIVEIS');
+      assert.deepEqual(existem.mock.calls[0].arguments.slice(1), [EMPRESA, MATERIAL_ID]);
+      assert.equal(escritas.atualizar.mock.calls.length, 0);
+      assert.equal(apagar.mock.callCount(), 0, 'nunca apaga configuração automaticamente');
+      assertRecusaSemRastro(cliente, escritas);
+    });
+
+    test('a mensagem é de domínio, sem expor tabela, gatilho ou SQL', async (t) => {
+      mundoValido(t, { existente: material({ exigeTamanho: true }) });
+      saldoIncompativel(t, false);
+      minimosPorTamanho(t, true);
+      await assert.rejects(servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ exigeTamanho: false })), (erro) => {
+        assert.ok(HttpError.ehHttpError(erro));
+        assert.match(erro.message, /mínimos? por tamanho/i);
+        assert.doesNotMatch(erro.message, /estoque_minimos|trigger|gatilho|constraint|SQL|P0001/i);
+        return true;
+      });
+    });
+
+    test('a conferência vem depois do saldo e depois da trava do material (FOR UPDATE), nunca antes', async (t) => {
+      const ordem = [];
+      mundoValido(t, { existente: material({ exigeTamanho: true }) });
+      t.mock.method(materialRepo, 'buscarPorIdParaAtualizacao', async () => { ordem.push('material'); return material({ exigeTamanho: true }); });
+      t.mock.method(loteRepo, 'possuiSaldoIncompativel', async () => { ordem.push('saldo'); return false; });
+      t.mock.method(minimoRepo(), 'possuiOverrides', async () => { ordem.push('minimos'); return false; });
+      await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ exigeTamanho: false }));
+      assert.deepEqual(ordem, ['material', 'saldo', 'minimos']);
+    });
+
+    test('saldo incompatível e mínimos ao mesmo tempo: vale o erro do saldo, que já existia', async (t) => {
+      mundoValido(t, { existente: material({ exigeTamanho: true }) });
+      saldoIncompativel(t, true);
+      const existem = minimosPorTamanho(t, true);
+      await esperarHttpError(servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ exigeTamanho: false })), 409, 'MATERIAL_TAMANHO_SALDO_INCOMPATIVEL');
+      assert.equal(existem.mock.callCount(), 0);
+    });
+
+    test('sem mínimos próprios a troca é gravada', async (t) => {
+      const escritas = mundoValido(t, { existente: material({ exigeTamanho: true }) });
+      saldoIncompativel(t, false);
+      minimosPorTamanho(t, false);
+      await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ exigeTamanho: false }));
+      assert.equal(escritas.atualizar.mock.calls[0].arguments[3].exigeTamanho, false);
+    });
+
+    test('só a saída de "exige tamanho" consulta os mínimos: false para true, NULL para qualquer valor, repetir o valor e não mexer na classificação não consultam', async (t) => {
+      for (const [atual, novoValor] of [[false, true], [null, true], [null, false], [true, true], [false, false], [true, undefined]]) {
+        mundoValido(t, { existente: material({ exigeTamanho: atual }) });
+        saldoIncompativel(t, false);
+        const existem = minimosPorTamanho(t, true);
+        await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao(novoValor === undefined ? { nome: 'Outro nome' } : { exigeTamanho: novoValor }));
+        assert.equal(existem.mock.callCount(), 0, `${atual} para ${novoValor}`);
+        t.mock.restoreAll();
+      }
+    });
   });
 
   test('alterar para null: 400 MATERIAL_DADOS_INVALIDOS, a classificação não pode ser desfeita', async (t) => {

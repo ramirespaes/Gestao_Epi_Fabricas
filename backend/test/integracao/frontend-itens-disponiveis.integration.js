@@ -6,6 +6,7 @@ const express = require('express');
 const http = require('node:http');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { todasAsMigrations } = require('./helpers/entrega-epi');
 const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { inserirLote, baixarLote, somarDias } = require('./helpers/estoque-lotes');
 const { criarAuthController } = require('../../src/controllers/auth.controller');
@@ -32,7 +33,6 @@ const EpiHttp = require('../../../frontend/js/api-http');
 const EpiPortal = require('../../../frontend/js/portal-cliente');
 const EpiSessaoEmpresarial = require('../../../frontend/js/sessao-empresarial');
 const EpiPermissoes = require('../../../frontend/js/permissoes-efetivas');
-require('../../../frontend/js/materiais');
 const EpiItens = require('../../../frontend/js/itens-disponiveis');
 
 /**
@@ -44,7 +44,7 @@ const EpiItens = require('../../../frontend/js/itens-disponiveis');
  * O saldo vem dos lotes, com a data operacional fixada em 30/09/2026.
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 46 }, (_, i) => String(i).padStart(3, '0'));
+const TODAS_AS_MIGRATIONS = todasAsMigrations();
 const HOJE = '2026-09-30';
 const RELOGIO = () => new Date('2026-09-30T15:00:00Z');
 const SENHA = 'senha-forte-da-parte-c3-2026';
@@ -172,7 +172,7 @@ describe('C3 — Itens Disponíveis pela página integrada (PostgreSQL real)', (
     if (contexto) await contexto.encerrar();
   });
 
-  test('MASTER: a página abre (availableItems provisionado); primeira página real com 50 linhas, total 121, opções reais; status pela regra da C2', async () => {
+  test('MASTER: a página abre (availableItems provisionado); primeira página real com 50 linhas, total 121, opções reais; status pela medida do servidor (saldo livre)', async () => {
     const pagina = await abrirPagina(EMAILS.master);
     assert.equal(pagina.podeAbrir, true);
     const r = await EpiItens.acoes.listar({});
@@ -181,8 +181,9 @@ describe('C3 — Itens Disponíveis pela página integrada (PostgreSQL real)', (
     assert.deepEqual(r.dados.filtros, { categorias: ['EPI'], tipos: ['Capacete', 'Luva'], tamanhos: ['G', 'M', 'Único'] });
     const html = EpiItens.render.linhas(r.dados.itens);
     assert.match(html, /Sem estoque/);
-    assert.match(html, /Baixo/);
+    assert.match(html, /Abaixo do mínimo/);
     assert.equal(/Inativo|Material B/.test(html), false);
+    assert.ok(html.split('</tr>').filter((l) => l.includes('<td')).every((l) => (l.match(/<td/g) || []).length === 13), 'treze colunas por linha');
     assert.equal(pagina.nav.chamadas.some((c) => /empresaId|usuarioId/.test(c)), false);
   });
 
@@ -195,16 +196,17 @@ describe('C3 — Itens Disponíveis pela página integrada (PostgreSQL real)', (
     assert.ok(combinados.dados.itens.every((i) => i.saldo === 0 && i.disponivel === 0));
   });
 
-  test('exportação: busca as duas páginas (100 + 21) e gera o CSV com as sete colunas e 121 linhas', async () => {
+  test('exportação: busca as duas páginas (100 + 21) e gera o CSV com as quatorze colunas e 121 linhas', async () => {
     const pagina = await abrirPagina(EMAILS.master);
     const r = await EpiItens.acoes.listarTodos({});
     assert.deepEqual([r.ok, r.dados.itens.length, r.dados.completo], [true, 121, true]);
     assert.deepEqual(pagina.nav.chamadas.filter((c) => c.startsWith('GET /api/estoque')), ['GET /api/estoque/itens-disponiveis?pagina=1&limite=100', 'GET /api/estoque/itens-disponiveis?pagina=2&limite=100']);
     const linhas = EpiItens.csv.gerar(r.dados.itens).slice(1).split('\r\n');
     assert.equal(linhas.length, 122);
-    assert.equal(linhas[0], '"Categoria";"Tipo";"Material";"Tamanho";"Quantidade disponível";"Unidade";"Status"');
-    assert.ok(linhas.slice(1).every((l) => l.split('";"').length === 7));
-    assert.ok(linhas.includes('"EPI";"Capacete";"Capacete vencido (CAP-1)";"Único";"0";"Unidade";"Sem estoque"'));
+    assert.equal(linhas[0], '"Categoria";"Tipo";"Material";"Tamanho";"Físico utilizável";"Comprometido";"Saldo livre";"Sem cobertura";"Mínimo";"Origem do mínimo";"Déficit";"Necessidade";"Unidade";"Status"');
+    assert.ok(linhas.slice(1).every((l) => l.split('";"').length === 14));
+    // CA vencido: o físico utilizável é 0 (o saldo 7 está bloqueado); o mínimo padrão 1 não é coberto pelo saldo livre.
+    assert.ok(linhas.includes('"EPI";"Capacete";"Capacete vencido (CAP-1)";"Único";"0";"0";"0";"0";"1";"Padrão";"1";"1";"Unidade";"Sem estoque · Abaixo do mínimo"'));
   });
 
   test('permissão independente: supervisor com materials SEM availableItems não abre e a API recusa (403, mensagem própria)', async () => {

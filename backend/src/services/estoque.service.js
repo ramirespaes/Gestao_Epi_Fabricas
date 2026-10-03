@@ -3,8 +3,15 @@
 const { HttpError } = require('../errors/HttpError');
 const materialRepo = require('../repositories/material.repository');
 const loteRepo = require('../repositories/estoque-lote.repository');
+const posicaoRepo = require('../repositories/posicao-estoque.repository');
 const operacaoRepo = require('../repositories/estoque-operacao.repository');
+const autorizacao = require('../middleware/autorizacao');
 const auditoriaRepo = require('../repositories/auditoria.repository');
+const parRepo = require('../repositories/estoque-par.repository');
+const coberturaRepo = require('../repositories/solicitacao-epi-cobertura.repository');
+const entregaRepo = require('../repositories/entrega-epi.repository');
+const saldoLivre = require('./saldo-livre');
+const auditoriaRecusa = require('./auditoria-recusa-saldo-livre');
 const { DIAS_ALERTA_VALIDADE_CA } = require('../schemas/itens-disponiveis.schema');
 const {
   MOTIVOS_BAIXA, TAMANHO_MAXIMO, CA_NUMERO_MAXIMO, JUSTIFICATIVA_MAXIMA,
@@ -32,6 +39,9 @@ const idempotencia = require('../utils/idempotencia');
 
 // Teto do INTEGER do PostgreSQL para quantidades.
 const LIMITE_INTEGER_POSTGRES = 2147483647;
+
+// Recurso do RBAC que dá acesso à ficha de EPI (o histórico de entregas por trabalhador).
+const RECURSO_FICHA = 'epiFicha';
 
 const MSG_MATERIAL_NAO_ENCONTRADO = 'Material não encontrado';
 const MSG_MATERIAL_INATIVO = 'Material inativo não pode ter estoque movimentado';
@@ -63,25 +73,61 @@ async function emTransacao(pool, operacao) {
 }
 
 /**
- * Itens disponíveis (Parte C3): consulta agregada, somente leitura, sem
+ * O item público de Itens Disponíveis: os campos de sempre mais a posição do
+ * par (12D). `disponivel` fica como apelido do físico utilizável, para o
+ * contrato antigo continuar valendo; a demanda pendente por si não sai, só o
+ * que ela faz com o par (comprometido e sem cobertura).
+ */
+function itemDaPosicao(p) {
+  return {
+    materialId: p.materialId,
+    material: p.material,
+    codigoInterno: p.codigoInterno,
+    categoria: p.categoria,
+    tipo: p.tipo,
+    tamanho: p.tamanho,
+    saldo: p.saldo,
+    bloqueado: p.bloqueado,
+    disponivel: p.fisicoUtilizavel,
+    fisicoUtilizavel: p.fisicoUtilizavel,
+    comprometido: p.comprometido,
+    saldoLivre: p.saldoLivre,
+    semCobertura: p.semCobertura,
+    estoqueMinimo: p.estoqueMinimo,
+    minimoOrigem: p.minimoOrigem,
+    abaixoDoMinimo: p.abaixoDoMinimo,
+    deficit: p.deficit,
+    necessidade: p.necessidade,
+    unidade: p.unidade,
+    caValidade: p.caValidade,
+    validade: p.validade,
+  };
+}
+
+/**
+ * Itens disponíveis (Parte C3 e 12D): consulta agregada, somente leitura, sem
  * transação e sem auditoria. Empresa sempre da sessão (quem chama garante).
  * O prazo de alerta da validade do CA vem do schema (fonte única).
  *
- * O saldo vem dos lotes: disponível desconta o que está bloqueado por CA
- * vencido ou ausente, na data operacional recebida.
+ * Cada item é um par (material, tamanho) da posição de estoque: o físico
+ * utilizável (o saldo menos o bloqueado por CA vencido ou ausente, na data
+ * operacional recebida), o que está comprometido com solicitações aprovadas, o
+ * saldo livre, a demanda sem cobertura e o mínimo efetivo, com a situação
+ * funcional medida pelo saldo livre. A lista, o total e o Dashboard saem da
+ * mesma definição.
  */
 async function listarDisponiveis(pool, {
-  empresaId, hoje, categoria = null, tipo = null, tamanho = null, validade = null, pagina, limite,
+  empresaId, hoje, categoria = null, tipo = null, tamanho = null, validade = null, busca = null, situacao = null, somenteComNecessidade = false, pagina, limite,
 }) {
   exigirId(empresaId, 'identificador de empresa');
   exigirDataOperacional(hoje);
-  const filtros = { categoria, tipo, tamanho, validade, hoje, diasAlerta: DIAS_ALERTA_VALIDADE_CA };
-  const [itens, total, opcoes] = await Promise.all([
-    loteRepo.listarDisponiveis(pool, empresaId, { ...filtros, pagina, limite }),
-    loteRepo.contarDisponiveis(pool, empresaId, filtros),
+  const [posicao, opcoes] = await Promise.all([
+    posicaoRepo.listarPosicoes(pool, empresaId, {
+      hoje, diasAlerta: DIAS_ALERTA_VALIDADE_CA, categoria, tipo, tamanho, validade, busca, situacao, somenteComNecessidade, pagina, limite,
+    }),
     loteRepo.listarFiltrosDisponiveis(pool, empresaId),
   ]);
-  return { itens, total, pagina, limite, filtros: opcoes };
+  return { itens: posicao.itens.map(itemDaPosicao), total: posicao.total, pagina, limite, filtros: opcoes };
 }
 
 function somarSaldos(lotes) {
@@ -109,18 +155,39 @@ async function listarValidade(pool, {
   return { hoje, diasAlerta: DIAS_ALERTA_VALIDADE_CA, indicadores, lotes, total, pagina, limite };
 }
 
+// Quem vê a ficha vê, na linha de ENTREGA, o trabalhador, a ficha e a solicitação; quem só vê as
+// operações vê a linha e a origem. Sem usuário e perfil na chamada, o detalhe fica fechado, e um
+// filtro que não pode trazer ENTREGA nem consulta a permissão.
+async function podeVerDetalheDaEntrega(pool, {
+  empresaId, usuarioId, perfil, tipo,
+}) {
+  if (usuarioId === null || perfil === null) return false;
+  if (tipo !== null && tipo !== 'ENTREGA') return false;
+  const decisao = await autorizacao.avaliarPermissaoRecurso(pool, { empresaId, usuarioId, perfil }, RECURSO_FICHA);
+  return decisao.visualizar === true;
+}
+
 /**
  * E8 — operações de estoque: o histórico de estoque_operacoes da empresa, só
- * leitura, com o total do filtro para a paginação. Saldo inicial, entrada e
- * baixa vêm como foram gravados; nada aqui altera uma operação.
+ * leitura, com o total do filtro para a paginação. Saldo inicial, entrada,
+ * baixa e (12D-2) entrega vêm como foram gravados; nada aqui altera uma
+ * operação. A origem filtra as linhas de ENTREGA (com outro tipo, o resultado é
+ * vazio) e o detalhe da entrega depende de epiFicha.visualizar.
  */
 async function listarOperacoes(pool, {
-  empresaId, tipo = null, de = null, ate = null, busca = null, pagina = 1, limite,
+  empresaId, usuarioId = null, perfil = null, tipo = null, origem = null, de = null, ate = null, busca = null, pagina = 1, limite,
 }) {
   exigirId(empresaId, 'identificador de empresa');
-  const filtros = { tipo, de, ate, busca };
+  const filtros = {
+    tipo, origem, de, ate, busca,
+  };
+  const detalheEntrega = await podeVerDetalheDaEntrega(pool, {
+    empresaId, usuarioId, perfil, tipo,
+  });
   const [operacoes, total] = await Promise.all([
-    operacaoRepo.listarHistorico(pool, empresaId, { ...filtros, pagina, limite }),
+    operacaoRepo.listarHistorico(pool, empresaId, {
+      ...filtros, pagina, limite, detalheEntrega,
+    }),
     operacaoRepo.contarHistorico(pool, empresaId, filtros),
   ]);
   return { operacoes, total, pagina, limite, paginas: Math.ceil(total / limite) };
@@ -295,12 +362,15 @@ async function registrarEntrada(pool, {
  * Baixa manual de um lote. Vale também para material inativo e para lote com
  * CA vencido ou sem CA: a empresa precisa regularizar o estoque físico que
  * existe. A quantidade nunca passa do saldo do lote; o lote zerado continua
- * no histórico.
+ * no histórico. Evento físico (CA vencido, avaria, descarte, perda, ajuste de
+ * inventário) nunca é recusado por reserva; devolução ao fornecedor e outro
+ * não podem consumir o estoque comprometido com solicitações aprovadas.
  *
  * @param {object} dados empresaId e atorId vêm da sessão
  * @returns {Promise<{repetida: boolean, operacao: object, lote: object}>}
  * @throws {HttpError} 400 dado inválido; 404 lote fora da empresa;
- *   409 saldo insuficiente ou chave usada em outra operação
+ *   409 saldo do lote insuficiente, saldo livre insuficiente (ato discricionário)
+ *   ou chave usada em outra operação
  */
 async function registrarBaixa(pool, {
   empresaId, atorId, loteId, quantidade, motivo, justificativa = null, chaveIdempotencia, ip = null, dispositivo = null,
@@ -321,12 +391,43 @@ async function registrarBaixa(pool, {
   const chave = chaveCanonica(chaveIdempotencia);
   const requisicaoHash = hashRequisicao(['BAIXA', loteId, quantidade, motivo, justificativaN]);
 
+  try {
+    return await baixarNaTransacao(pool, {
+      empresaId, atorId, loteId, quantidade, motivo, justificativaN, chave, requisicaoHash, ip, dispositivo,
+    });
+  } catch (erro) {
+    // Só depois do ROLLBACK: a recusa é auditada em transação própria e nunca troca o erro.
+    await auditoriaRecusa.auditarRecusaDoErro(pool, { empresaId, atorId, ip }, erro);
+    throw erro;
+  }
+}
+
+/**
+ * Trava, nesta ordem: chave → material (FOR SHARE) → par → lote (FOR UPDATE). O
+ * par e o material são achados por leitura sem trava, porque material e tamanho
+ * do lote nunca mudam (042); o lote só é travado depois do par, nunca antes. A
+ * posição do par é medida com tudo travado, antes e depois da baixa.
+ *
+ * Evento físico nunca é recusado por reserva. O ato discricionário é recusado
+ * se a baixa reduziria o comprometido: um lote que não participa de U (CA
+ * vencido ou ausente, material inativo) não muda a posição e, portanto, passa.
+ */
+async function baixarNaTransacao(pool, {
+  empresaId, atorId, loteId, quantidade, motivo, justificativaN, chave, requisicaoHash, ip, dispositivo,
+}) {
   return emTransacao(pool, async (client) => {
     const repetida = await repetirSeJaRegistrada(client, empresaId, chave, requisicaoHash);
     if (repetida !== null) {
       return repetida;
     }
 
+    const lido = await operacaoRepo.buscarLote(client, empresaId, loteId);
+    if (lido === null) {
+      throw HttpError.notFound('LOTE_NAO_ENCONTRADO', MSG_LOTE_NAO_ENCONTRADO);
+    }
+    await materialRepo.listarPorIdsParaVinculo(client, empresaId, [lido.materialId]);
+    const par = { materialId: lido.materialId, tamanho: lido.tamanho };
+    await parRepo.travarPares(client, empresaId, [par]);
     const lote = await operacaoRepo.buscarLoteParaBaixa(client, empresaId, loteId);
     if (lote === null) {
       throw HttpError.notFound('LOTE_NAO_ENCONTRADO', MSG_LOTE_NAO_ENCONTRADO);
@@ -335,9 +436,29 @@ async function registrarBaixa(pool, {
       throw HttpError.conflict('SALDO_LOTE_INSUFICIENTE', MSG_SALDO_LOTE_INSUFICIENTE);
     }
 
+    const hoje = await entregaRepo.dataOperacionalDaTransacao(client);
+    const [antes] = await coberturaRepo.lerPosicoes(client, empresaId, [par], { hoje });
     const operacao = await operacaoRepo.registrarBaixa(client, {
       empresaId, loteId, usuarioId: atorId, quantidade, motivo, justificativa: justificativaN, chave, requisicaoHash,
     });
+    const [depois] = await coberturaRepo.lerPosicoes(client, empresaId, [par], { hoje });
+    const perdeuCobertura = saldoLivre.reduziuCobertura(antes, depois);
+    if (saldoLivre.ehMotivoDiscricionario(motivo) && perdeuCobertura) {
+      throw saldoLivre.recusaPorSaldoLivre({
+        operacao: 'BAIXA',
+        recusas: [{
+          materialId: antes.materialId,
+          tamanho: antes.tamanho,
+          quantidadeSolicitada: quantidade,
+          fisicoUtilizavel: antes.fisicoUtilizavel,
+          demandaPendente: antes.demandaPendente,
+          comprometido: antes.comprometido,
+          saldoLivre: antes.saldoLivre,
+        }],
+        loteId,
+        motivo,
+      });
+    }
     const loteAtualizado = await operacaoRepo.buscarLote(client, empresaId, loteId);
     await auditoriaRepo.registrar(client, {
       empresaId,
@@ -349,6 +470,9 @@ async function registrarBaixa(pool, {
       contexto: {
         operacaoId: operacao.id, materialId: lote.materialId, loteId, tamanho: lote.tamanho, caNumero: lote.caNumero,
         quantidade, motivo, justificativa: justificativaN,
+        posicaoAntes: saldoLivre.posicaoPublica(antes),
+        posicaoDepois: saldoLivre.posicaoPublica(depois),
+        reduziuCobertura: perdeuCobertura,
       },
       dadosAnteriores: { saldo: lote.saldo },
       dadosNovos: { saldo: loteAtualizado.saldo },

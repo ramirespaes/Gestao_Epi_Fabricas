@@ -4,16 +4,18 @@ const { describe, test } = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
 const express = require('express');
-const { criarCors } = require('../../src/middleware/cors');
+const { criarCors, METODOS_PORTAL, METODOS_PLATAFORMA } = require('../../src/middleware/cors');
 const { criarCabecalhosSeguranca, semCache } = require('../../src/middleware/cabecalhos');
 const { notFoundHandler, errorHandler } = require('../../src/middleware/errorHandler');
 
 // Allowlist explícita para a factory; o app real usa httpConfig e é testado em app.test.js.
 const ORIGENS = ['http://a.test', 'http://b.test'];
+// Os métodos são sempre explícitos, por namespace (12D-2): este app usa o conjunto mínimo de GET, HEAD, POST e PATCH.
+const METODOS_MINIMOS = ['GET', 'HEAD', 'POST', 'PATCH'];
 
 const app = express();
 app.use(criarCabecalhosSeguranca({ hstsAtivo: false }));
-app.use('/api', criarCors({ origens: ORIGENS }), semCache);
+app.use('/api', criarCors({ origens: ORIGENS, metodos: METODOS_MINIMOS }), semCache);
 app.get('/api/x', (req, res) => res.json({ ok: true }));
 app.post('/api/x', (req, res) => res.json({ ok: true }));
 app.get('/fora', (req, res) => res.json({ fora: true }));
@@ -85,7 +87,7 @@ describe('criarCors: preflight', () => {
     assert.equal(r.status, 204);
     assert.equal(r.headers['access-control-allow-origin'], 'http://a.test');
     assert.equal(r.headers['access-control-allow-credentials'], 'true');
-    assert.deepEqual(r.headers['access-control-allow-methods'].split(',').map((m) => m.trim()).sort(), ['GET', 'HEAD', 'PATCH', 'POST']);
+    assert.deepEqual(r.headers['access-control-allow-methods'].split(',').map((m) => m.trim()).sort(), [...METODOS_MINIMOS].sort());
     assert.equal(r.headers['access-control-allow-headers'], 'Content-Type');
     assert.equal(r.headers['access-control-max-age'], '600');
     varyTemOrigin(r, 'preflight');
@@ -109,6 +111,80 @@ describe('criarCors: preflight', () => {
     const r = await preflight('http://mal.test');
     semCors(r, 'preflight não permitido');
     assert.notEqual(r.status, 403);
+  });
+});
+
+describe('criarCors: métodos explícitos por namespace (12D-2)', () => {
+  const metodosDe = (r) => r.headers['access-control-allow-methods'].split(',').map((m) => m.trim()).sort();
+  const appCom = (metodos) => {
+    const a = express();
+    a.use('/api', criarCors({ origens: ORIGENS, metodos }), semCache);
+    a.get('/api/x', (req, res) => res.json({ ok: true }));
+    return a;
+  };
+  const preflightPara = (a, metodo, origem = 'http://a.test') => request(a).options('/api/x')
+    .set('Origin', origem)
+    .set('Access-Control-Request-Method', metodo)
+    .set('Access-Control-Request-Headers', 'content-type');
+
+  test('o Portal anuncia GET, HEAD, POST, PUT, PATCH e DELETE; o Painel Privado, só GET, HEAD, POST e PATCH', () => {
+    assert.deepEqual([...METODOS_PORTAL].sort(), ['DELETE', 'GET', 'HEAD', 'PATCH', 'POST', 'PUT']);
+    assert.deepEqual([...METODOS_PLATAFORMA].sort(), ['GET', 'HEAD', 'PATCH', 'POST']);
+    assert.ok(Object.isFrozen(METODOS_PORTAL) && Object.isFrozen(METODOS_PLATAFORMA));
+    assert.ok(!METODOS_PLATAFORMA.includes('PUT') && !METODOS_PLATAFORMA.includes('DELETE'), 'o Painel Privado não ganha PUT nem DELETE por tabela');
+  });
+
+  test('preflight de PUT no Portal: 204, origem exata, credentials, PUT nos métodos, só Content-Type, Max-Age 600 e Vary: Origin', async () => {
+    const r = await preflightPara(appCom(METODOS_PORTAL), 'PUT');
+    assert.equal(r.status, 204);
+    assert.equal(r.headers['access-control-allow-origin'], 'http://a.test');
+    assert.equal(r.headers['access-control-allow-credentials'], 'true');
+    assert.ok(metodosDe(r).includes('PUT'), `métodos: ${metodosDe(r)}`);
+    assert.equal(r.headers['access-control-allow-headers'], 'Content-Type');
+    assert.equal(r.headers['access-control-max-age'], '600');
+    varyTemOrigin(r, 'preflight PUT');
+  });
+
+  test('preflight de DELETE no Portal: DELETE nos métodos anunciados', async () => {
+    const r = await preflightPara(appCom(METODOS_PORTAL), 'DELETE');
+    assert.equal(r.status, 204);
+    assert.equal(r.headers['access-control-allow-origin'], 'http://a.test');
+    assert.ok(metodosDe(r).includes('DELETE'), `métodos: ${metodosDe(r)}`);
+    assert.deepEqual(metodosDe(r), ['DELETE', 'GET', 'HEAD', 'PATCH', 'POST', 'PUT']);
+  });
+
+  test('o conjunto anunciado é exatamente o que a fábrica recebeu: sem PUT nem DELETE quando o namespace não os pede', async () => {
+    const r = await preflightPara(appCom(METODOS_PLATAFORMA), 'PUT');
+    assert.deepEqual(metodosDe(r), ['GET', 'HEAD', 'PATCH', 'POST']);
+    const so = await preflightPara(appCom(['GET', 'HEAD']), 'POST');
+    assert.deepEqual(metodosDe(so), ['GET', 'HEAD']);
+  });
+
+  test('origem fora da allowlist, para PUT e DELETE, não recebe nenhum Access-Control-* e a origem não é refletida', async () => {
+    for (const metodo of ['PUT', 'DELETE']) {
+      for (const origem of ['http://mal.test', 'http://a.test:8080', 'null']) {
+        const r = await preflightPara(appCom(METODOS_PORTAL), metodo, origem);
+        semCors(r, `${metodo} ${origem}`);
+        assert.ok(!JSON.stringify(r.headers).includes(origem === 'null' ? '"null"' : origem), `${metodo}: a origem ${origem} não deve ser refletida`);
+      }
+    }
+  });
+
+  test('Authorization e X-* continuam fora, mesmo no Portal com PUT e DELETE', async () => {
+    const r = await request(appCom(METODOS_PORTAL)).options('/api/x')
+      .set('Origin', 'http://a.test')
+      .set('Access-Control-Request-Method', 'DELETE')
+      .set('Access-Control-Request-Headers', 'authorization, x-custom, content-type');
+    assert.equal(r.headers['access-control-allow-headers'], 'Content-Type');
+    assert.equal(r.headers['access-control-expose-headers'], undefined);
+  });
+
+  test('a fábrica exige a lista de métodos: ausente, vazia, com duplicata, com OPTIONS ou com verbo desconhecido é erro de programação', () => {
+    const base = { origens: ORIGENS };
+    for (const metodos of [undefined, null, [], 'GET', ['GET', 'GET'], ['GET', 'OPTIONS'], ['GET', 'TRACE'], ['get'], ['GET', 1]]) {
+      assert.throws(() => criarCors({ ...base, metodos }), TypeError, JSON.stringify(metodos));
+    }
+    assert.doesNotThrow(() => criarCors({ ...base, metodos: ['GET'] }));
   });
 });
 

@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const request = require('supertest');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { todasAsMigrations } = require('./helpers/entrega-epi');
 const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { inserirLote, baixarLote } = require('./helpers/estoque-lotes');
 const { criarAppTeste } = require('../helpers/app-teste');
@@ -36,7 +37,7 @@ const provisionamento = require('../../src/services/provisionamento-permissoes.s
  * PostgreSQL real, schema temporário, data operacional de São Paulo fixa.
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 46 }, (_, i) => String(i).padStart(3, '0'));
+const TODAS_AS_MIGRATIONS = todasAsMigrations();
 const NOITE_DE_30_09 = () => new Date('2026-10-01T02:30:00Z');
 const SENHA = 'senha-forte-do-rbac-e9-2026';
 const EMAILS = {

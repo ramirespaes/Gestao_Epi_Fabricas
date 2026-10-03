@@ -19,8 +19,10 @@ const {
  * ciclo de vida controlado e itens com decisão por item. PostgreSQL real,
  * schema temporário.
  *
- * A estrutura é conferida num schema que para na 065. O comportamento roda
- * num schema com todas as migrations do diretório.
+ * A estrutura e o comportamento da 065 são conferidos num schema que para na
+ * 065; só a concorrência do contador roda com todas as migrations. A
+ * migration 066 acrescenta barreiras à entrega (fechar a solicitação exige
+ * entrega real) e tem teste próprio.
  *
  * Ordem das conferências: BEFORE (identidade e transição) → CHECK → FK →
  * gatilhos adiados no COMMIT (itens selados e decisão coerente com o
@@ -267,7 +269,9 @@ describe('migration 065 — comportamento, com todas as migrations do diretório
   });
 
   before(async () => {
-    contexto = await abrirSchemaTemporario(TODAS);
+    // O comportamento da 065 roda no schema que para na 065: as barreiras da entrega por solicitação (066), que
+    // exigem entrega real para fechar uma solicitação, têm teste próprio na migration 066.
+    contexto = await abrirSchemaTemporario(ATE_A_065);
     c = contexto.cliente;
     d = await montarCenario(c);
   });

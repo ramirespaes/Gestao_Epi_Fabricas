@@ -395,9 +395,10 @@ describe('migration 058 — comportamento, com todas as migrations do diretório
     assert.equal(empresaCruzada?.code, VIOLACAO_FK, 'empresa B com ficha, responsável e GHE de A');
   });
 
-  test('entrega: origem só DIRETA; GHE e nome do GHE andam juntos; CNPJ, UF e hash no formato; cópias obrigatórias não vazias e aparadas; data operacional incoerente recusada', async () => {
+  test('entrega: origem fora de DIRETA e SOLICITACAO recusada (a 066 acrescentou SOLICITACAO); GHE e nome do GHE andam juntos; CNPJ, UF e hash no formato; cópias obrigatórias não vazias e aparadas; data operacional incoerente recusada', async () => {
     const casos = [
-      [{ origem: 'SOLICITACAO' }, 'chk_entregas_epi_origem'],
+      [{ origem: 'AUTOATENDIMENTO' }, 'chk_entregas_epi_origem'],
+      [{ origem: 'direta' }, 'chk_entregas_epi_origem'],
       [{ ghe_id: null }, 'chk_entregas_epi_ghe_nome'],
       [{ ghe_nome: null }, 'chk_entregas_epi_ghe_nome'],
       [{ empresa_cnpj: 'a1222333000181' }, 'chk_entregas_epi_empresa_cnpj'],

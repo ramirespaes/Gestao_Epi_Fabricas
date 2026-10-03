@@ -5,12 +5,16 @@
    * EpiDashboard — indicadores do dashboard (Bloco 9, Etapa C, Parte C6),
    * sobre GET /api/dashboard/indicadores (recurso `dashboard`, visualizar).
    *
-   * Só quatro indicadores têm dado real nesta etapa: itens disponíveis,
+   * Oito indicadores têm dado real: itens disponíveis (físico utilizável),
+   * saldo livre, comprometido, sem cobertura, necessidade de reposição,
    * estoque abaixo do mínimo, CA vencido (com a vencer) e funcionários
-   * ativos. Cada um só traz número se o usuário vê a FONTE (decisão do
-   * servidor); sem permissão: "—" e "sem permissão". Os demais cards e
-   * painéis da página ficam em "—" / "em integração". Nenhum valor fixo,
-   * nada guardado no navegador.
+   * ativos. Os seis de estoque saem da mesma posição por par
+   * (material, tamanho) e são somados pelo SERVIDOR; o frontend só os
+   * mostra, nunca recalcula livre, comprometido nem necessidade. Cada um só
+   * traz número se o usuário vê a FONTE (decisão do servidor); sem
+   * permissão: "—" e "sem permissão", nunca um zero mascarado. Os demais
+   * cards e painéis da página ficam em "—" / "em integração". Nenhum valor
+   * fixo, nada guardado no navegador.
    */
 
   function http() {
@@ -50,9 +54,13 @@
           : INDISPONIVEL;
       }
       return {
-        disponiveis: simples(i.itensDisponiveis, 'Saldo em estoque'),
-        abaixoMinimo: simples(i.estoqueAbaixoMinimo, 'Itens (material × tamanho) abaixo do mínimo'),
+        disponiveis: simples(i.itensDisponiveis, 'Físico utilizável em estoque'),
+        saldoLivre: simples(i.saldoLivre, 'Físico utilizável menos o comprometido'),
+        comprometido: simples(i.comprometido, 'Reservado a solicitações aprovadas'),
         caVencido: caVencido,
+        semCobertura: simples(i.semCobertura, 'Aprovado sem estoque para cobrir'),
+        necessidade: simples(i.necessidadeReposicao, 'Sem cobertura mais déficit do mínimo'),
+        abaixoMinimo: simples(i.estoqueAbaixoMinimo, 'Itens (material × tamanho) abaixo do mínimo pelo saldo livre'),
         funcionarios: simples(i.funcionariosAtivos, 'Funcionários ativos cadastrados'),
       };
     },

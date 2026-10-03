@@ -1,6 +1,7 @@
 'use strict';
 
 const materialService = require('../services/material.service');
+const minimoService = require('../services/estoque-minimo.service');
 const { pool } = require('../config/database');
 
 /**
@@ -129,6 +130,44 @@ function criarMaterialController({ pool: poolInjetado }) {
       });
 
       res.status(200).json({ status: 'ok', material, alterado });
+    },
+
+    // 12D-2 — mínimo padrão e sobrescritas por tamanho. A empresa e o ator são os da sessão.
+    async minimos(req, res) {
+      const estado = await minimoService.consultar(poolInjetado, {
+        empresaId: req.empresa.id,
+        materialId: req.validado.params.id,
+      });
+
+      res.status(200).json({ status: 'ok', ...estado });
+    },
+
+    // 201 quando a sobrescrita nasce; 200 quando já existia, tenha mudado ou não (alterado diz).
+    async definirMinimo(req, res) {
+      const resultado = await minimoService.definir(poolInjetado, {
+        empresaId: req.empresa.id,
+        atorId: req.usuario.id,
+        materialId: req.validado.params.id,
+        tamanho: req.validado.params.tamanho,
+        minimo: req.validado.body.minimo,
+        ip: req.ip,
+        dispositivo: req.headers['user-agent'],
+      });
+
+      res.status(resultado.criado ? 201 : 200).json({ status: 'ok', ...resultado });
+    },
+
+    async removerMinimo(req, res) {
+      const resultado = await minimoService.remover(poolInjetado, {
+        empresaId: req.empresa.id,
+        atorId: req.usuario.id,
+        materialId: req.validado.params.id,
+        tamanho: req.validado.params.tamanho,
+        ip: req.ip,
+        dispositivo: req.headers['user-agent'],
+      });
+
+      res.status(200).json({ status: 'ok', ...resultado });
     },
   };
 }

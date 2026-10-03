@@ -11,6 +11,9 @@ const { lockDaChave, ESPACO_ENTREGAS, CHAVE_FORMATO, HASH_FORMATO } = require('.
  * relógio do banco na transação: nunca do cliente.
  */
 
+// DIRETA é a entrega do Bloco 10; SOLICITACAO nasce de uma solicitação aprovada (066).
+const ORIGENS = Object.freeze(['DIRETA', 'SOLICITACAO']);
+
 const COLUNAS = `id, empresa_id, ficha_id, responsavel_id, ghe_id, origem, entregue_em,
   to_char(entregue_em AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS entregue_em_canonico,
   to_char(data_operacional, 'YYYY-MM-DD') AS data_operacional, chave_idempotencia, requisicao_hash,
@@ -123,14 +126,19 @@ async function dataOperacionalDaTransacao(executor) {
   return rows[0].hoje;
 }
 
-/** Grava o cabeçalho com as cópias congeladas lidas na mesma transação. Só dentro de transação. */
+/**
+ * Grava o cabeçalho com as cópias congeladas lidas na mesma transação. Só
+ * dentro de transação. Sem `origem` a entrega é DIRETA, como sempre foi; o
+ * banco confere que SOLICITACAO só tem itens ligados a uma solicitação.
+ */
 async function criar(executor, {
-  empresaId, fichaId, responsavelId, gheId, chave, requisicaoHash, empresa, trabalhador, gheNome, responsavelNome,
+  empresaId, fichaId, responsavelId, gheId, origem = 'DIRETA', chave, requisicaoHash, empresa, trabalhador, gheNome, responsavelNome,
 }) {
   exigirId(empresaId, 'identificador de empresa');
   exigirId(fichaId, 'identificador de ficha');
   exigirId(responsavelId, 'identificador de responsável');
   if (gheId !== null) exigirId(gheId, 'identificador de GHE');
+  if (!ORIGENS.includes(origem)) throw new TypeError('origem da entrega inválida');
   exigirChave(chave);
   if (typeof requisicaoHash !== 'string' || !HASH_FORMATO.test(requisicaoHash)) throw new TypeError('hash da requisição inválido');
   exigirTexto(empresa.nome, 'nome da empresa', 150);
@@ -151,9 +159,9 @@ async function criar(executor, {
        (empresa_id, ficha_id, responsavel_id, ghe_id, origem, chave_idempotencia, requisicao_hash,
         empresa_nome, empresa_cnpj, empresa_endereco, empresa_cidade, empresa_uf,
         trabalhador_nome, trabalhador_matricula, trabalhador_funcao, trabalhador_setor, ghe_nome, responsavel_nome)
-     VALUES ($1, $2, $3, $4, 'DIRETA', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
      RETURNING ${COLUNAS}`,
-    [empresaId, fichaId, responsavelId, gheId, chave, requisicaoHash,
+    [empresaId, fichaId, responsavelId, gheId, origem, chave, requisicaoHash,
       empresa.nome, empresa.cnpj, empresa.endereco, empresa.cidade, empresa.uf,
       trabalhador.nome, trabalhador.matricula, trabalhador.funcao, trabalhador.setor, gheNome, responsavelNome],
   );
@@ -161,5 +169,5 @@ async function criar(executor, {
 }
 
 module.exports = {
-  travarChave, buscarPorChave, buscarPorId, listarPorFicha, contarPorFicha, dataOperacionalDaTransacao, criar,
+  ORIGENS, travarChave, buscarPorChave, buscarPorId, listarPorFicha, contarPorFicha, dataOperacionalDaTransacao, criar,
 };

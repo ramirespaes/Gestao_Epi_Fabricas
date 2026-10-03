@@ -2,21 +2,24 @@
   'use strict';
 
   /**
-   * EpiItensDisponiveis — Itens Disponíveis (Bloco 9, Etapa C, Parte C3).
-   * Somente leitura, sobre GET /api/estoque/itens-disponiveis
+   * EpiItensDisponiveis — Itens Disponíveis (Bloco 9, Etapa C, Parte C3; posição
+   * de estoque na 12D-3). Somente leitura, sobre GET /api/estoque/itens-disponiveis
    * (permissão de recurso `availableItems`, visualizar).
    *
    *   acoes     — consultas à API (envelope do EpiHttp).
-   *   render    — HTML escapado: linhas da tabela (7 colunas originais),
-   *               opções dos filtros, paginação e estados.
+   *   render    — HTML escapado: linhas da tabela (13 colunas), opções dos
+   *               filtros, paginação e estados.
    *   mensagens — textos de vazio e de falha.
-   *   csv       — exportação com as mesmas 7 colunas da tabela.
+   *   csv       — exportação com as mesmas colunas da tabela, mais a origem do mínimo.
    *
-   * Regras: materiais ativos da empresa da sessão, todos os tamanhos
-   * cadastrados (saldo 0 = "Sem estoque"); o status usa a MESMA regra da
-   * grade da C2 (EpiMateriais.grade.situacao) sobre `disponivel`, que nesta
-   * etapa é igual ao saldo (não há reserva). A validade filtrada é só a do
-   * CA e é informativa: não bloqueia o estoque.
+   * Cada item é um par (material, tamanho) da posição de estoque calculada pelo
+   * SERVIDOR: físico utilizável, comprometido (com solicitações já aprovadas),
+   * saldo livre, demanda sem cobertura, mínimo efetivo (próprio ou padrão),
+   * déficit e necessidade. O frontend só mostra: não recalcula livre, mínimo,
+   * déficit nem necessidade, e a situação é a que o servidor mediu pelo saldo
+   * livre (`abaixoDoMinimo`). `disponivel` é o apelido antigo do físico
+   * utilizável e só entra se `fisicoUtilizavel` faltar. A validade filtrada é só
+   * a do CA e é informativa: não bloqueia o estoque.
    */
 
   var CAMINHO = '/estoque/itens-disponiveis';
@@ -26,23 +29,31 @@
   // Teto de itens exportáveis (100 páginas × 100). Acima disso a exportação é
   // recusada antes de buscar as demais páginas: nunca se gera CSV parcial.
   var LIMITE_EXPORTACAO = LIMITE_POR_PAGINA_EXPORTACAO * PAGINAS_MAXIMAS_EXPORTACAO;
-  var ORDEM_FILTROS = ['categoria', 'tipo', 'tamanho', 'validade'];
-  var ROTULOS_SITUACAO = {
-    'com-saldo': { texto: 'Disponível', classe: 'status-active' },
-    'abaixo-minimo': { texto: 'Baixo', classe: 'role-supervisor' },
-    'sem-estoque': { texto: 'Sem estoque', classe: 'status-inactive' },
+  var ORDEM_FILTROS = ['categoria', 'tipo', 'tamanho', 'validade', 'busca'];
+  // As quatro situações que o servidor aceita; '' é "Todas". O servidor confere de novo.
+  var SITUACOES = Object.freeze([
+    ['', 'Todas'],
+    ['SEM_ESTOQUE', 'Sem estoque'],
+    ['ABAIXO_MINIMO', 'Abaixo do mínimo'],
+    ['COM_COMPROMETIDO', 'Com saldo comprometido'],
+    ['SEM_COBERTURA', 'Sem cobertura'],
+  ]);
+  var ORIGENS_MINIMO = { PROPRIO: 'Próprio', PADRAO: 'Padrão' };
+  var SITUACAO = {
+    semCobertura: { texto: 'Sem cobertura', classe: 'status-inactive' },
+    semEstoque: { texto: 'Sem estoque', classe: 'status-inactive' },
+    comprometido: { texto: 'Com saldo comprometido', classe: 'badge-warning' },
+    abaixoMinimo: { texto: 'Abaixo do mínimo', classe: 'role-supervisor' },
+    disponivel: { texto: 'Disponível', classe: 'status-active' },
   };
-  var CABECALHO_CSV = ['Categoria', 'Tipo', 'Material', 'Tamanho', 'Quantidade disponível', 'Unidade', 'Status'];
+  var CABECALHO_CSV = ['Categoria', 'Tipo', 'Material', 'Tamanho', 'Físico utilizável', 'Comprometido', 'Saldo livre', 'Sem cobertura', 'Mínimo', 'Origem do mínimo', 'Déficit', 'Necessidade', 'Unidade', 'Status'];
 
   function http() {
     if (!global.EpiHttp) throw new Error('EpiHttp não carregado: inclua js/api-http.js antes de js/itens-disponiveis.js');
     return global.EpiHttp;
   }
-  function regraSituacao() {
-    if (!global.EpiMateriais || !global.EpiMateriais.grade) throw new Error('EpiMateriais não carregado: inclua js/materiais.js antes de js/itens-disponiveis.js');
-    return global.EpiMateriais.grade.situacao;
-  }
   function texto(v) { return v === null || v === undefined ? '' : String(v); }
+  function situacaoValida(v) { return SITUACOES.some(function (s) { return s[0] !== '' && s[0] === v; }); }
 
   // ─── Ações ─────────────────────────────────────────────────────────
   function montarQuery(filtro) {
@@ -52,6 +63,8 @@
       var v = texto(f[k]).trim();
       if (v) partes.push(k + '=' + encodeURIComponent(v));
     });
+    if (situacaoValida(f.situacao)) partes.push('situacao=' + f.situacao);
+    if (f.somenteComNecessidade === true) partes.push('somenteComNecessidade=true');
     partes.push('pagina=' + (f.pagina || 1));
     partes.push('limite=' + (f.limite || LIMITE_PAGINA));
     return '?' + partes.join('&');
@@ -105,22 +118,54 @@
     var t = texto(u);
     return t ? t.charAt(0).toUpperCase() + t.slice(1) : '—';
   }
-  function situacaoDe(item) {
-    var chave = regraSituacao()(item.disponivel, item.estoqueMinimo);
-    return ROTULOS_SITUACAO[chave] || ROTULOS_SITUACAO['sem-estoque'];
+  function numero(v) { return typeof v === 'number' ? v : Number(v); }
+  function fisicoDe(item) {
+    return item.fisicoUtilizavel === undefined || item.fisicoUtilizavel === null ? item.disponivel : item.fisicoUtilizavel;
   }
-  function celula(v) { return '<td>' + (texto(v) ? escaparHtml(v) : '—') + '</td>'; }
+  function origemDoMinimo(item) {
+    return ORIGENS_MINIMO[item.minimoOrigem] || '';
+  }
+
+  /**
+   * As situações do par, em ordem de exibição, a partir do que o servidor mandou.
+   * Primeiro a disponibilidade (sem cobertura, sem estoque ou saldo comprometido);
+   * "abaixo do mínimo" é a medida do servidor sobre o saldo livre e acompanha a
+   * primeira, ou vale sozinha quando o par não tem outro problema.
+   */
+  function situacoesDe(item) {
+    var primeira = null;
+    if (numero(item.semCobertura) > 0) primeira = SITUACAO.semCobertura;
+    else if (numero(fisicoDe(item)) === 0) primeira = SITUACAO.semEstoque;
+    else if (numero(item.comprometido) > 0) primeira = SITUACAO.comprometido;
+    var abaixo = item.abaixoDoMinimo === true ? SITUACAO.abaixoMinimo : null;
+    if (primeira && abaixo) return [primeira, abaixo];
+    if (primeira) return [primeira];
+    if (abaixo) return [abaixo];
+    return [SITUACAO.disponivel];
+  }
+
+  function celula(v, classe) {
+    return '<td' + (classe ? ' class="' + classe + '"' : '') + '>' + (texto(v) ? escaparHtml(v) : '—') + '</td>';
+  }
+  function celulaNumero(v, classe) {
+    return '<td' + (classe ? ' class="' + classe + '"' : '') + '>' + escaparHtml(v) + '</td>';
+  }
 
   var render = {
     escaparHtml: escaparHtml,
     linhas: function (itens) {
       return (itens || []).map(function (i) {
-        var s = situacaoDe(i);
         var material = escaparHtml(i.material)
           + (i.codigoInterno ? ' <small style="color:var(--on-surface-variant)">' + escaparHtml(i.codigoInterno) + '</small>' : '');
-        return '<tr>' + celula(i.categoria) + celula(i.tipo) + '<td>' + material + '</td>'
-          + celula(i.tamanho) + '<td>' + escaparHtml(i.disponivel) + '</td>' + '<td>' + escaparHtml(unidadeExibida(i.unidade)) + '</td>'
-          + '<td><span class="badge ' + s.classe + '">' + s.texto + '</span></td></tr>';
+        var origem = origemDoMinimo(i);
+        var minimo = escaparHtml(i.estoqueMinimo) + (origem ? ' <small style="color:var(--on-surface-variant)">' + escaparHtml(origem) + '</small>' : '');
+        var status = situacoesDe(i).map(function (s) { return '<span class="badge ' + s.classe + '">' + s.texto + '</span>'; }).join(' ');
+        return '<tr>' + celula(i.categoria, 'col-sec') + celula(i.tipo, 'col-sec') + '<td>' + material + '</td>'
+          + celula(i.tamanho)
+          + celulaNumero(fisicoDe(i)) + celulaNumero(i.comprometido) + celulaNumero(i.saldoLivre) + celulaNumero(i.semCobertura)
+          + '<td>' + minimo + '</td>' + celulaNumero(i.deficit, 'col-sec') + celulaNumero(i.necessidade)
+          + '<td class="col-sec">' + escaparHtml(unidadeExibida(i.unidade)) + '</td>'
+          + '<td>' + status + '</td></tr>';
       }).join('');
     },
     opcoes: function (lista, rotuloTodos, selecionado) {
@@ -136,7 +181,7 @@
       return { texto: 'Itens ' + inicio + '–' + fim + ' de ' + total + ' · página ' + pagina + ' de ' + paginas, anterior: pagina > 1, proxima: pagina < paginas };
     },
     estado: function (mensagem) {
-      return '<tr><td colspan="7" style="text-align:center;color:var(--on-surface-variant);padding:32px">' + escaparHtml(mensagem) + '</td></tr>';
+      return '<tr><td colspan="13" style="text-align:center;color:var(--on-surface-variant);padding:32px">' + escaparHtml(mensagem) + '</td></tr>';
     },
   };
 
@@ -158,7 +203,7 @@
     erroExportacao: function (r) {
       if (r && r.motivo === 'LIMITE_EXPORTACAO') {
         return 'A exportação teria ' + milhar(r.total) + ' itens, acima do limite de ' + milhar(r.limite)
-          + '. Nenhum arquivo foi gerado. Restrinja os filtros (categoria, tipo, tamanho ou validade do CA) e exporte novamente.';
+          + '. Nenhum arquivo foi gerado. Restrinja os filtros (categoria, tipo, tamanho, situação ou validade do CA) e exporte novamente.';
       }
       if (r && r.motivo === 'EXPORTACAO_INCOMPLETA') {
         return 'Os itens mudaram durante a exportação e o arquivo ficaria incompleto. Nenhum arquivo foi gerado. Tente exportar novamente.';
@@ -182,13 +227,17 @@
       var linhas = [CABECALHO_CSV.map(campoCsv).join(';')];
       (itens || []).forEach(function (i) {
         var material = texto(i.material) + (i.codigoInterno ? ' (' + i.codigoInterno + ')' : '');
-        linhas.push([i.categoria || '—', i.tipo || '—', material, i.tamanho, i.disponivel, unidadeExibida(i.unidade), situacaoDe(i).texto].map(campoCsv).join(';'));
+        var situacao = situacoesDe(i).map(function (s) { return s.texto; }).join(' · ');
+        linhas.push([
+          i.categoria || '—', i.tipo || '—', material, i.tamanho, fisicoDe(i), i.comprometido, i.saldoLivre, i.semCobertura,
+          i.estoqueMinimo, origemDoMinimo(i), i.deficit, i.necessidade, unidadeExibida(i.unidade), situacao,
+        ].map(campoCsv).join(';'));
       });
       return '﻿' + linhas.join('\r\n');
     },
   };
 
-  global.EpiItensDisponiveis = { acoes: acoes, render: render, mensagens: mensagens, csv: csv, LIMITE_PAGINA: LIMITE_PAGINA };
+  global.EpiItensDisponiveis = { acoes: acoes, render: render, mensagens: mensagens, csv: csv, LIMITE_PAGINA: LIMITE_PAGINA, SITUACOES: SITUACOES };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = global.EpiItensDisponiveis;
 })(typeof window !== 'undefined' ? window : globalThis);

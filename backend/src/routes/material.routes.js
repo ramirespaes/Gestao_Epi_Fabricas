@@ -43,6 +43,9 @@ const { pool } = require('../config/database');
  *   PATCH /api/materiais/:id
  *   POST  /api/materiais/:id/inativar
  *   POST  /api/materiais/:id/reativar
+ *   GET    /api/materiais/:id/minimos                 (12D-2: mínimo padrão e sobrescritas)
+ *   PUT    /api/materiais/:id/minimos/:tamanho        (12D-2: define o mínimo do tamanho)
+ *   DELETE /api/materiais/:id/minimos/:tamanho        (12D-2: volta o tamanho ao padrão)
  */
 
 const RECURSO = 'materials';
@@ -89,6 +92,28 @@ function criarMaterialRoutes({ controller, exigirSessao: exigirSessaoInjetado, p
     exigirSessaoInjetado, exigirEditar,
     validar({ params: materialSchemas.reativar.params, body: materialSchemas.reativar.body }),
     controller.reativar,
+  );
+
+  // 12D-2 — mínimo por tamanho. Ler: materials.visualizar; definir e remover: materials.editar
+  // (nenhuma ação nova de RBAC). PUT e DELETE como em grupo-usuario.routes.js: "definir" e "remover"
+  // a sobrescrita de um tamanho são idempotentes.
+  router.get(
+    '/materiais/:id/minimos',
+    exigirSessaoInjetado, exigirVisualizar,
+    validar({ params: materialSchemas.minimos.params }),
+    controller.minimos,
+  );
+  router.put(
+    '/materiais/:id/minimos/:tamanho',
+    exigirSessaoInjetado, exigirEditar,
+    validar({ params: materialSchemas.definirMinimo.params, body: materialSchemas.definirMinimo.body }),
+    controller.definirMinimo,
+  );
+  router.delete(
+    '/materiais/:id/minimos/:tamanho',
+    exigirSessaoInjetado, exigirEditar,
+    validar({ params: materialSchemas.removerMinimo.params, body: materialSchemas.removerMinimo.body }),
+    controller.removerMinimo,
   );
 
   return router;

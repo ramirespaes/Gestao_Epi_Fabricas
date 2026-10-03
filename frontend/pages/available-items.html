@@ -12,6 +12,22 @@
     .nav a.nav-pendente{cursor:default;opacity:.55}
     .nav a.nav-pendente:hover{background:transparent}
     .nav-etiqueta{margin-left:auto;font-size:10px;font-weight:500;color:var(--on-surface-variant);border:1px solid var(--outline);border-radius:99px;padding:1px 7px;white-space:nowrap}
+    /* 12D-3: sete filtros e a ação cabem em quatro colunas; a tabela da posição rola na horizontal dentro do próprio quadro */
+    #availableItemsView .filters-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+    #availableItemsView .filters-actions{grid-column:1/-1;justify-content:flex-end}
+    .check-inline{display:inline-flex;align-items:center;gap:8px;min-height:40px;font-size:13px;cursor:pointer}
+    .check-inline input{width:18px;height:18px;margin:0}
+    .legenda-posicao{margin:-6px 0 14px;font-size:12.5px;color:var(--on-surface-variant)}
+    .legenda-posicao summary{cursor:pointer;font-weight:500;padding:4px 0}
+    .legenda-posicao ul{margin:6px 0 0;padding-left:18px;line-height:1.55}
+    #availableItemsView td,#availableItemsView th{white-space:nowrap}
+    @media (max-width: 900px){
+      #availableItemsView .filters-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .col-sec{display:none}
+    }
+    @media (max-width: 560px){
+      #availableItemsView .filters-grid{grid-template-columns:1fr}
+    }
   </style>
 </head>
 <!--
@@ -111,7 +127,7 @@
         <div class="page-actions">
           <div>
             <h2 style="font-family:var(--font-brand);font-size:22px;line-height:1.1;letter-spacing:-0.4px;font-weight:500">Análise de estoque</h2>
-            <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Consulte o saldo disponível por categoria, tipo e tamanho, filtre pela validade do CA e identifique itens com saldo baixo ou sem estoque.</p>
+            <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Consulte a posição do estoque por categoria, tipo e tamanho: o que está fisicamente utilizável, o que já está comprometido com solicitações aprovadas e o saldo livre. Filtre pela validade do CA e identifique itens abaixo do mínimo, sem estoque ou sem cobertura.</p>
           </div>
         </div>
 
@@ -123,7 +139,7 @@
               <div class="card-icon">checklist</div>
               <div>
                 <h2>Consulta de estoque</h2>
-                <p>Saldo disponível para entrega, por categoria, tipo e tamanho.</p>
+                <p>Posição do estoque por categoria, tipo e tamanho.</p>
               </div>
             </div>
           </div>
@@ -156,22 +172,56 @@
                 <option value="expired">Vencido</option>
               </select>
             </div>
+            <div class="field">
+              <label for="availableSearch">Buscar material</label>
+              <input id="availableSearch" class="input" type="text" maxlength="100" autocomplete="off" placeholder="Nome ou código interno">
+            </div>
+            <div class="field">
+              <label for="availableSituation">Situação</label>
+              <select id="availableSituation" class="select">
+                <option value="">Todas</option>
+                <option value="SEM_ESTOQUE">Sem estoque</option>
+                <option value="ABAIXO_MINIMO">Abaixo do mínimo</option>
+                <option value="COM_COMPROMETIDO">Com saldo comprometido</option>
+                <option value="SEM_COBERTURA">Sem cobertura</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="check-inline" for="availableNeed"><input id="availableNeed" type="checkbox">Somente com necessidade</label>
+            </div>
             <div class="filters-actions">
               <button id="botaoLimpar" class="outlined-btn" type="button">Limpar</button>
               <button id="botaoFiltrar" class="filled-btn" type="button"><span class="material-symbols-outlined">search</span>Filtrar</button>
             </div>
           </div>
 
+          <details class="legenda-posicao">
+            <summary>Como ler esta tabela</summary>
+            <ul>
+              <li><strong>Físico utilizável</strong>: saldo dos lotes com CA vigente, de materiais ativos.</li>
+              <li><strong>Comprometido</strong>: parte do físico já reservada para solicitações aprovadas e ainda não entregues.</li>
+              <li><strong>Saldo livre</strong>: físico utilizável menos o comprometido; é o que a entrega direta pode usar.</li>
+              <li><strong>Sem cobertura</strong>: quantidade aprovada que o físico utilizável não cobre.</li>
+              <li><strong>Mínimo</strong>: o do tamanho, quando definido; senão o mínimo padrão do material. <strong>Déficit</strong> é o quanto o saldo livre está abaixo do mínimo e <strong>Necessidade</strong> soma o déficit e a quantidade sem cobertura.</li>
+            </ul>
+          </details>
+
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Categoria</th>
-                  <th>Tipo</th>
+                  <th class="col-sec">Categoria</th>
+                  <th class="col-sec">Tipo</th>
                   <th>Material</th>
                   <th>Tamanho</th>
-                  <th>Quantidade disponível</th>
-                  <th>Unidade</th>
+                  <th>Físico utilizável</th>
+                  <th>Comprometido</th>
+                  <th>Saldo livre</th>
+                  <th>Sem cobertura</th>
+                  <th>Mínimo</th>
+                  <th class="col-sec">Déficit</th>
+                  <th>Necessidade</th>
+                  <th class="col-sec">Unidade</th>
                   <th>Status</th>
                 </tr>
               </thead>
@@ -198,12 +248,12 @@
 <script src="../js/sessao-empresarial.js"></script>
 <script src="../js/permissoes-efetivas.js"></script>
 <script src="../js/pagina-base.js"></script>
-<script src="../js/materiais.js"></script>
 <script src="../js/itens-disponiveis.js"></script>
 <script>
 /*
-  Ligação com o DOM — deliberadamente fina. Consulta, regras de status,
-  paginação e CSV vivem em js/itens-disponiveis.js (testado sem navegador).
+  Ligação com o DOM — deliberadamente fina. Consulta, situação (medida
+  pelo servidor sobre o saldo livre), paginação e CSV vivem em
+  js/itens-disponiveis.js (testado sem navegador).
   Página somente leitura: nenhuma movimentação de estoque.
 */
 (function () {
@@ -211,7 +261,8 @@
 
   var $ = function (id) { return document.getElementById(id); };
   var Itens = EpiItensDisponiveis;
-  var FILTROS = { categoria: 'availableCategory', tipo: 'availableType', tamanho: 'availableSize', validade: 'deliveredStatus' };
+  var FILTROS = { categoria: 'availableCategory', tipo: 'availableType', tamanho: 'availableSize', validade: 'deliveredStatus', busca: 'availableSearch', situacao: 'availableSituation' };
+  var CAIXA_NECESSIDADE = 'availableNeed'; // "somente com necessidade": caixa de marcação, não valor de texto
 
   // Mesmo endereço do Portal do Cliente (portal/config.js).
   EpiHttp.configurar({ baseUrl: window.SAFEWORK_PORTAL_API_BASE_URL });
@@ -235,7 +286,7 @@
   }
 
   function temFiltro() {
-    return Object.keys(FILTROS).some(function (k) { return !!aplicados[k]; });
+    return Object.keys(aplicados).length > 0;
   }
 
   function atualizarPaginacao(p) {
@@ -272,7 +323,11 @@
 
   function filtrar() {
     aplicados = {};
-    Object.keys(FILTROS).forEach(function (k) { if ($(FILTROS[k]).value) aplicados[k] = $(FILTROS[k]).value; });
+    Object.keys(FILTROS).forEach(function (k) {
+      var valor = String($(FILTROS[k]).value || '').trim();
+      if (valor) aplicados[k] = valor;
+    });
+    if ($(CAIXA_NECESSIDADE).checked) aplicados.somenteComNecessidade = true;
     pagina = 1;
     mostrarAviso('', null);
     return carregar();
@@ -280,6 +335,7 @@
 
   function limpar() {
     Object.keys(FILTROS).forEach(function (k) { $(FILTROS[k]).value = ''; });
+    $(CAIXA_NECESSIDADE).checked = false;
     aplicados = {};
     pagina = 1;
     mostrarAviso('', null);
@@ -326,8 +382,9 @@
     $('availableCategory').innerHTML = Itens.render.opcoes([], 'Todas', '');
     $('availableType').innerHTML = Itens.render.opcoes([], 'Todos', '');
     $('availableSize').innerHTML = Itens.render.opcoes([], 'Todos', '');
-    Object.keys(FILTROS).forEach(function (k) { $(FILTROS[k]).value = ''; });
+    Object.keys(FILTROS).forEach(function (k) { $(FILTROS[k]).value = ''; }); // inclui busca e situação (opções fixas, não recarregadas)
     $('deliveredStatus').value = ''; // Status de validade do CA (opções fixas, não recarregadas)
+    $(CAIXA_NECESSIDADE).checked = false;
     aplicados = {};
     pagina = 1;
     atualizarPaginacao({ texto: '—', anterior: false, proxima: false });

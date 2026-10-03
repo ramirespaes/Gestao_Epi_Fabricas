@@ -6,6 +6,7 @@ const express = require('express');
 const http = require('node:http');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { todasAsMigrations } = require('./helpers/entrega-epi');
 const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { criarAuthGlobalController } = require('../../src/controllers/auth-global.controller');
 const { criarAuthGlobalRoutes } = require('../../src/routes/auth-global.routes');
@@ -43,7 +44,7 @@ const EpiMateriais = require('../../../frontend/js/materiais');
  * API recusa editar sem materials.editar (403) e fora da empresa (404).
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 46 }, (_, i) => String(i).padStart(3, '0'));
+const TODAS_AS_MIGRATIONS = todasAsMigrations();
 const SENHA = 'senha-forte-da-melhoria-c2-2026';
 const EMAILS = {
   master: 'master.edicao@exemplo-cliente.com.br',     // MASTER em A: visualizar, criar, editar, MOVIMENTAR_ESTOQUE

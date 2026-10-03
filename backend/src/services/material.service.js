@@ -3,6 +3,7 @@
 const { HttpError } = require('../errors/HttpError');
 const materialRepo = require('../repositories/material.repository');
 const loteRepo = require('../repositories/estoque-lote.repository');
+const minimoRepo = require('../repositories/estoque-minimo.repository');
 const auditoriaRepo = require('../repositories/auditoria.repository');
 
 /**
@@ -56,6 +57,7 @@ const MSG_SEM_ALTERACAO = 'Nenhum campo para alterar';
 const MSG_UNIDADE_NAO_EDITAVEL = 'A unidade de controle de um material existente não pode ser alterada';
 const MSG_DADOS_INVALIDOS = 'Dados de material inválidos';
 const MSG_TAMANHO_SALDO_INCOMPATIVEL = 'Há saldo em estoque incompatível com a nova exigência de tamanho';
+const MSG_TAMANHO_MINIMOS_INCOMPATIVEIS = 'Há mínimos por tamanho cadastrados para este material: remova-os antes de mudar a exigência de tamanho';
 // Parte C2 (migration 039): índice único parcial do código interno por empresa.
 const INDICE_CODIGO_INTERNO = 'uq_materiais_empresa_codigo_interno';
 const MSG_CODIGO_INTERNO_DUPLICADO = 'Já existe um material com este código interno nesta empresa';
@@ -402,6 +404,12 @@ async function alterar(pool, {
     const trocaClassificacao = exigeTamanho !== undefined && anterior.exigeTamanho !== null && anterior.exigeTamanho !== exigeTamanho;
     if (trocaClassificacao && await loteRepo.possuiSaldoIncompativel(client, empresaId, materialId, exigeTamanho)) {
       throw HttpError.conflict('MATERIAL_TAMANHO_SALDO_INCOMPATIVEL', MSG_TAMANHO_SALDO_INCOMPATIVEL);
+    }
+    // Sair de "exige tamanho" não pode deixar mínimo por tamanho para trás, e eu nunca apago configuração
+    // sozinho. A gravação do mínimo lê este material FOR SHARE (gatilho da 067): a que chegou antes
+    // termina primeiro, e a que chega depois da troca é recusada pelo próprio banco.
+    if (trocaClassificacao && anterior.exigeTamanho === true && await minimoRepo.possuiOverrides(client, empresaId, materialId)) {
+      throw HttpError.conflict('MATERIAL_TAMANHO_MINIMOS_INCOMPATIVEIS', MSG_TAMANHO_MINIMOS_INCOMPATIVEIS);
     }
     const oculos = oculosNaEdicao(anterior, tipoInformado ? tipoNormalizado : anterior.tipo, oculosComGrauInformado, oculosComGrau);
 

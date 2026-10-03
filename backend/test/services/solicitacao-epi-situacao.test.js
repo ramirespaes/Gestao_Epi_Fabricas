@@ -105,6 +105,17 @@ describe('situacaoDaSolicitacao', () => {
     assert.equal(situacaoDaSolicitacao('APROVADA', ['ENTREGUE', 'ENTREGUE']), 'ENTREGUE');
   });
 
+  test('precedência com SUSPENSA: se o que falta entregar está todo suspenso, a solicitação é SUSPENSA, mesmo com parte já entregue; se ainda há o que entregar, vale o progresso', () => {
+    const { situacaoDaSolicitacao } = modulo();
+    for (const status of ['APROVADA', 'APROVADA_PARCIAL']) {
+      assert.equal(situacaoDaSolicitacao(status, ['ENTREGUE', 'SUSPENSA']), 'SUSPENSA', `${status}: o item entregue fica visível nas quantidades, a situação é a impossibilidade atual`);
+      assert.equal(situacaoDaSolicitacao(status, ['ENTREGUE', 'SUSPENSA', 'SUSPENSA']), 'SUSPENSA', status);
+      assert.equal(situacaoDaSolicitacao(status, ['SUSPENSA', null]), 'SUSPENSA', status);
+      assert.equal(situacaoDaSolicitacao(status, ['ENTREGUE', 'SUSPENSA', 'PRONTA_PARA_ENTREGA']), 'PARCIALMENTE_ENTREGUE', `${status}: ainda há o que entregar`);
+      assert.equal(situacaoDaSolicitacao(status, ['PARCIALMENTE_ENTREGUE', 'SUSPENSA']), 'PARCIALMENTE_ENTREGUE', status);
+    }
+  });
+
   test('aprovada sem nenhum item aprovado, ou status desconhecido, é inconsistência: erro de programação', () => {
     const { situacaoDaSolicitacao } = modulo();
     assert.throws(() => situacaoDaSolicitacao('APROVADA', [null, null]), TypeError);

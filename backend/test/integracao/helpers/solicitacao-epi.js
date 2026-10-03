@@ -3,7 +3,7 @@
 const crypto = require('node:crypto');
 const {
   HASH, transacao, inserir, criarEmpresa, criarUsuario, criarGhe, criarFuncionario, criarMaterial, criarLote, criarFicha,
-  registrarEntrega,
+  registrarEntrega, inserirEntrega, inserirItem, inserirOperacaoEntrega, inserirConfirmacao,
 } = require('./entrega-epi');
 
 /**
@@ -190,12 +190,101 @@ async function entregarDireta(executor, { empresaId, funcionarioId, usuarioId, m
   });
 }
 
+/** Soma entregue de um item da solicitação: o que as entregas ligadas a ele já registraram. */
+async function entregueDoItem(executor, itemId) {
+  const { rows } = await executor.query(
+    'SELECT COALESCE(sum(quantidade), 0)::int AS entregue FROM entregas_epi_itens WHERE solicitacao_item_id = $1',
+    [itemId],
+  );
+  return rows[0].entregue;
+}
+
+// Todos os itens aprovados inteiramente entregues (e ao menos um aprovado): é quando a solicitação fecha.
+async function solicitacaoCompleta(executor, empresaId, solicitacaoId) {
+  const { rows } = await executor.query(
+    `SELECT count(*) FILTER (WHERE i.decisao = 'APROVADO') AS aprovados,
+            count(*) FILTER (WHERE i.decisao = 'APROVADO'
+              AND i.quantidade_aprovada = COALESCE((SELECT sum(e.quantidade) FROM entregas_epi_itens e WHERE e.solicitacao_item_id = i.id), 0)) AS completos
+       FROM solicitacoes_epi_itens i WHERE i.empresa_id = $1 AND i.solicitacao_id = $2`,
+    [empresaId, solicitacaoId],
+  );
+  return Number(rows[0].aprovados) > 0 && rows[0].aprovados === rows[0].completos;
+}
+
+/**
+ * Entrega ligada à solicitação, completa, numa transação: ficha (criada na
+ * primeira entrega do trabalhador), cabeçalho, um item por lote, a operação
+ * ENTREGA de cada item e a confirmação. Emula, com SQL, o que o serviço da
+ * 12C-2 vai fazer. `itens`: [{ item, loteId, quantidade }], com `item` sendo a
+ * linha de solicitacoes_epi_itens; motivo, previsão no GHE e justificativa
+ * vêm da solicitação, como na entrega real.
+ *
+ * `fechar`: 'auto' passa a solicitação a ENTREGUE na mesma transação quando a
+ * última quantidade aprovada é entregue; true e false forçam, para provar as
+ * barreiras do banco. `origem` e `extra` existem para montar casos inválidos.
+ */
+async function entregarPorSolicitacao(executor, {
+  solicitacao, itens, usuarioId, cnpj = CNPJ_A, fechar = 'auto', funcionarioId = solicitacao.funcionario_id, origem = 'SOLICITACAO', extra = {},
+}) {
+  const empresaId = solicitacao.empresa_id;
+  const { rows } = await executor.query('SELECT id FROM fichas_epi WHERE empresa_id = $1 AND funcionario_id = $2', [empresaId, funcionarioId]);
+  const ficha = rows[0] ?? await criarFicha(executor, empresaId, funcionarioId);
+  return transacao(executor, (c) => gravarEntregaPorSolicitacao(c, { solicitacao, itens, usuarioId, cnpj, fechar, fichaId: ficha.id, origem, extra }));
+}
+
+/**
+ * O miolo de entregarPorSolicitacao, dentro de uma transação que o chamador
+ * abriu e fecha: assim o teste decide quais travas tomar antes (a ordem do
+ * serviço) e quando confirmar. A ficha já existe.
+ */
+async function gravarEntregaPorSolicitacao(c, {
+  solicitacao, itens, usuarioId, cnpj = CNPJ_A, fechar = 'auto', fichaId, origem = 'SOLICITACAO', extra = {},
+}) {
+  const empresaId = solicitacao.empresa_id;
+  const entrega = await inserirEntrega(c, { empresa_id: empresaId, ficha_id: fichaId, responsavel_id: usuarioId, empresa_cnpj: cnpj, origem });
+  const criados = [];
+  for (const { item, loteId, quantidade, ...doItem } of itens) {
+    const { rows: [atual] } = await c.query('SELECT * FROM solicitacoes_epi_itens WHERE id = $1', [item.id]);
+    const linha = await inserirItem(c, {
+      empresa_id: empresaId,
+      entrega_id: entrega.id,
+      material_id: item.material_id,
+      lote_id: loteId,
+      quantidade,
+      motivo: atual.motivo,
+      justificativa: atual.justificativa,
+      previsto_no_ghe: atual.previsto_no_ghe,
+      justificativa_fora_ghe: atual.previsto_no_ghe ? null : atual.justificativa_decisao,
+      solicitacao_item_id: item.id,
+      ...extra,
+      ...doItem,
+    });
+    await inserirOperacaoEntrega(c, {
+      empresa_id: empresaId, lote_id: linha.lote_id, quantidade: linha.quantidade, usuario_id: usuarioId, entrega_item_id: linha.id,
+    });
+    criados.push(linha);
+  }
+  await inserirConfirmacao(c, { empresa_id: empresaId, entrega_id: entrega.id });
+  const fecha = fechar === 'auto' ? await solicitacaoCompleta(c, empresaId, solicitacao.id) : fechar;
+  if (fecha) {
+    await c.query(
+      "UPDATE solicitacoes_epi SET status = 'ENTREGUE', entregue_em = clock_timestamp() WHERE empresa_id = $1 AND id = $2",
+      [empresaId, solicitacao.id],
+    );
+  }
+  return { entrega, itens: criados };
+}
+
 module.exports = {
   CNPJ_A,
   CNPJ_B,
   criarLoteDeEntrada,
   baixarLote,
   entregarDireta,
+  entregueDoItem,
+  solicitacaoCompleta,
+  entregarPorSolicitacao,
+  gravarEntregaPorSolicitacao,
   SQL_PROXIMO_NUMERO_DA_SOLICITACAO,
   proximoNumeroDaSolicitacao,
   inserirSolicitacao,

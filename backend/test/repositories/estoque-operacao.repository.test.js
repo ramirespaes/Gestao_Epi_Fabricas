@@ -218,16 +218,16 @@ describe('histórico de operações (E8)', () => {
       tipo: 'BAIXA', de: '2026-09-01', ate: '2026-09-30', busca: '50%_x\\', pagina: 3, limite: 20,
     });
     const [{ texto, valores }] = executor.chamadas;
-    assert.deepEqual(valores, [EMPRESA, 'BAIXA', '2026-09-01', '2026-09-30', '50\\%\\_x\\\\', 20, 40]);
+    assert.deepEqual(valores, [EMPRESA, 'BAIXA', '2026-09-01', '2026-09-30', '50\\%\\_x\\\\', null, 20, 40]);
     assert.match(texto, /WHERE o\.empresa_id = \$1/);
     assert.match(texto, /l\.empresa_id = o\.empresa_id/);
     assert.match(texto, /u\.empresa_id = o\.empresa_id AND u\.id = o\.usuario_id/);
-    assert.match(texto, /ORDER BY o\.criado_em DESC, o\.id DESC\s+LIMIT \$6 OFFSET \$7/);
+    assert.match(texto, /ORDER BY o\.criado_em DESC, o\.id DESC\s+LIMIT \$7 OFFSET \$8/);
     assert.match(texto, /AT TIME ZONE 'America\/Sao_Paulo'/);
     assert.doesNotMatch(texto, /logs_auditoria|chave_idempotencia|requisicao_hash|UPDATE|DELETE|INSERT/i);
     assert.deepEqual(r, [{
       operacaoId: '99', tipo: 'BAIXA', quantidade: 2, motivo: 'OUTRO', justificativa: 'Doação', responsavel: 'Maria', criadoEm: CRIADO_EM,
-      loteId: LOTE, materialId: MATERIAL, material: 'Botina', codigoInterno: 'EPI-1', tamanho: null, caNumero: '12345', caValidade: '2027-06-30',
+      loteId: LOTE, materialId: MATERIAL, material: 'Botina', codigoInterno: 'EPI-1', tamanho: null, caNumero: '12345', caValidade: '2027-06-30', entrega: null,
     }]);
   });
 
@@ -235,15 +235,79 @@ describe('histórico de operações (E8)', () => {
     const executor = executorFalso([], [{ total: 7 }]);
     await repo.listarHistorico(executor, EMPRESA, { pagina: 1, limite: 50 });
     assert.equal(await repo.contarHistorico(executor, EMPRESA, { tipo: 'ENTRADA' }), 7);
-    assert.deepEqual(executor.chamadas.map((c) => c.valores), [[EMPRESA, null, null, null, null, 50, 0], [EMPRESA, 'ENTRADA', null, null, null]]);
+    assert.deepEqual(executor.chamadas.map((c) => c.valores), [[EMPRESA, null, null, null, null, null, 50, 0], [EMPRESA, 'ENTRADA', null, null, null, null]]);
     assert.doesNotMatch(executor.chamadas[1].texto, /ORDER BY|LIMIT/);
   });
 
-  test('recusa empresa, tipo, data, busca, página e limite inválidos antes de consultar', async () => {
+  test('ENTREGA e origem (12D-2): a lista de tipos tem a ENTREGA e a de origens, DIRETA e SOLICITACAO', () => {
+    assert.deepEqual([...repo.TIPOS_OPERACAO], ['SALDO_INICIAL', 'ENTRADA', 'BAIXA', 'ENTREGA']);
+    assert.deepEqual([...repo.ORIGENS_ENTREGA], ['DIRETA', 'SOLICITACAO']);
+  });
+
+  test('o filtro de origem é o $6, vale na lista e na contagem, e só casa com linha de ENTREGA (LEFT JOIN na entrega, sempre pela empresa)', async () => {
+    const executor = executorFalso([linhaHistorico()], [{ total: 2 }]);
+    await repo.listarHistorico(executor, EMPRESA, { tipo: 'ENTREGA', origem: 'SOLICITACAO', pagina: 1, limite: 50 });
+    assert.equal(await repo.contarHistorico(executor, EMPRESA, { tipo: 'ENTREGA', origem: 'SOLICITACAO' }), 2);
+    for (const { texto, valores } of executor.chamadas) {
+      assert.equal(valores[1], 'ENTREGA');
+      assert.equal(valores[5], 'SOLICITACAO');
+      assert.match(texto, /LEFT JOIN entregas_epi_itens ei ON ei\.empresa_id = o\.empresa_id AND ei\.id = o\.entrega_item_id/);
+      assert.match(texto, /LEFT JOIN entregas_epi en ON en\.empresa_id = ei\.empresa_id AND en\.id = ei\.entrega_id/);
+      assert.match(texto, /\$6::text IS NULL OR en\.origem = \$6::text/);
+    }
+  });
+
+  test('SEM o detalhe sensível, o SQL nem junta nem seleciona ficha, trabalhador ou solicitação (privacidade por construção)', async () => {
+    const executor = executorFalso([linhaHistorico({ tipo: 'ENTREGA', motivo: null, justificativa: null, entrega_origem: 'DIRETA' })]);
+    const r = await repo.listarHistorico(executor, EMPRESA, { pagina: 1, limite: 50 });
+    const { texto } = executor.chamadas[0];
+    assert.doesNotMatch(texto, /fichas_epi|solicitacoes_epi|trabalhador_nome|trabalhador_matricula|\bcpf\b/i);
+    assert.deepEqual(r[0].entrega, { origem: 'DIRETA' });
+    const explicito = executorFalso([linhaHistorico({ tipo: 'ENTREGA', entrega_origem: 'DIRETA' })]);
+    await repo.listarHistorico(explicito, EMPRESA, { pagina: 1, limite: 50, detalheEntrega: false });
+    assert.doesNotMatch(explicito.chamadas[0].texto, /fichas_epi|solicitacoes_epi|trabalhador_nome/);
+  });
+
+  test('COM o detalhe: ficha, trabalhador pelo snapshot da entrega (nome e matrícula, nunca CPF) e solicitação, todos ligados pela empresa', async () => {
+    const executor = executorFalso([
+      linhaHistorico({
+        tipo: 'ENTREGA', motivo: null, justificativa: null, entrega_origem: 'SOLICITACAO', ficha_id: 5, ficha_numero: 12, trabalhador_id: 77, trabalhador_nome: 'Ana Souza', trabalhador_matricula: 'T-9', solicitacao_id: 31, solicitacao_numero: 4,
+      }),
+      linhaHistorico({
+        id: '100', tipo: 'ENTREGA', motivo: null, justificativa: null, entrega_origem: 'DIRETA', ficha_id: 6, ficha_numero: 13, trabalhador_id: 78, trabalhador_nome: 'Beto Lima', trabalhador_matricula: 'T-10', solicitacao_id: null, solicitacao_numero: null,
+      }),
+    ]);
+    const r = await repo.listarHistorico(executor, EMPRESA, { pagina: 1, limite: 50, detalheEntrega: true });
+    const { texto } = executor.chamadas[0];
+    assert.match(texto, /LEFT JOIN fichas_epi fi ON fi\.empresa_id = en\.empresa_id AND fi\.id = en\.ficha_id/);
+    assert.match(texto, /LEFT JOIN solicitacoes_epi_itens si ON si\.empresa_id = ei\.empresa_id AND si\.id = ei\.solicitacao_item_id/);
+    assert.match(texto, /LEFT JOIN solicitacoes_epi s ON s\.empresa_id = si\.empresa_id AND s\.id = si\.solicitacao_id/);
+    assert.match(texto, /en\.trabalhador_nome/);
+    assert.doesNotMatch(texto, /\bcpf\b/i, 'o CPF não é lido');
+    assert.deepEqual(r[0].entrega, {
+      origem: 'SOLICITACAO', fichaId: 5, fichaNumero: 12, trabalhador: { id: 77, nome: 'Ana Souza', matricula: 'T-9' }, solicitacao: { id: 31, numero: 4 },
+    });
+    assert.deepEqual(r[1].entrega, {
+      origem: 'DIRETA', fichaId: 6, fichaNumero: 13, trabalhador: { id: 78, nome: 'Beto Lima', matricula: 'T-10' }, solicitacao: null,
+    });
+    assert.ok(!JSON.stringify(r).includes('cpf'));
+  });
+
+  test('linha que não é ENTREGA nunca leva bloco de entrega, com ou sem detalhe', async () => {
+    const executor = executorFalso([linhaHistorico({ tipo: 'ENTRADA', entrega_origem: null })]);
+    const r = await repo.listarHistorico(executor, EMPRESA, { pagina: 1, limite: 50, detalheEntrega: true });
+    assert.equal(r[0].entrega, null);
+  });
+
+  test('recusa empresa, tipo, origem, data, busca, página, limite e detalhe inválidos antes de consultar', async () => {
     const executor = executorFalso();
     const pagina = { pagina: 1, limite: 50 };
     await assert.rejects(() => repo.listarHistorico(executor, 0, pagina), /empresa/);
-    await assert.rejects(() => repo.listarHistorico(executor, EMPRESA, { ...pagina, tipo: 'ENTREGA' }), /tipo/);
+    await assert.rejects(() => repo.listarHistorico(executor, EMPRESA, { ...pagina, tipo: 'DEVOLUCAO' }), /tipo/);
+    await assert.rejects(() => repo.listarHistorico(executor, EMPRESA, { ...pagina, origem: 'AUTOATENDIMENTO' }), /origem/);
+    await assert.rejects(() => repo.listarHistorico(executor, EMPRESA, { ...pagina, origem: '' }), /origem/);
+    await assert.rejects(() => repo.contarHistorico(executor, EMPRESA, { origem: "DIRETA' OR 1=1" }), /origem/);
+    await assert.rejects(() => repo.listarHistorico(executor, EMPRESA, { ...pagina, detalheEntrega: 'sim' }), /detalhe/);
     await assert.rejects(() => repo.listarHistorico(executor, EMPRESA, { ...pagina, de: '01/09/2026' }), /período/);
     await assert.rejects(() => repo.listarHistorico(executor, EMPRESA, { ...pagina, busca: '' }), /busca/);
     await assert.rejects(() => repo.listarHistorico(executor, EMPRESA, { pagina: 0, limite: 50 }), /página/);

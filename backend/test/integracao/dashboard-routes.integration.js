@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 
 const { abrirPoolTemporario, inserirEmpresa } = require('./helpers/schema-temporario');
+const { todasAsMigrations } = require('./helpers/entrega-epi');
 const { inserirLote, somarDias } = require('./helpers/estoque-lotes');
 const { criarAppTeste } = require('../helpers/app-teste');
 const { criarAuthController } = require('../../src/controllers/auth.controller');
@@ -30,10 +31,8 @@ const { gerarHashSenha } = require('../../src/security/password');
  *   - isolamento: só a empresa da sessão.
  */
 
-const MIGRATIONS = [
-  '000', '001', '002', '003', '004', '005', '025', '006', '007', '008', '009', '010', '011',
-  '012', '013', '014', '015', '016', '017', '018', '019', '020', '021', '022', '023', '039', '040', '041', '042', '044', '045',
-];
+// Todas as migrations: o estoque do dashboard sai da posição (065 a 067) e um prefixo antigo daria 500.
+const MIGRATIONS = todasAsMigrations();
 
 const HOJE = '2026-09-30';
 const RELOGIO = () => new Date('2026-09-30T15:00:00Z');
@@ -164,12 +163,18 @@ describe('GET /api/dashboard/indicadores com PostgreSQL real', () => {
     assert.equal(r.body.indicadores, undefined);
   });
 
-  test('com todas as fontes: os quatro indicadores reais da empresa da sessão', async () => {
+  // 12D-2: sem nenhuma solicitação aprovada, o saldo livre é o próprio disponível, nada está comprometido nem sem cobertura,
+  // e a necessidade de reposição é só o déficit do mínimo (Botina 41: 5 - 0; Capacete: 2 - 1 = 6).
+  test('com todas as fontes: os indicadores reais da empresa da sessão, os de estoque pela posição', async () => {
     const r = await indicadores(cookie.masterA);
     assert.equal(r.status, 200);
     assert.deepEqual(r.body.indicadores, {
       itensDisponiveis: { permitido: true, valor: 24 },
       estoqueAbaixoMinimo: { permitido: true, valor: 2 },
+      saldoLivre: { permitido: true, valor: 24 },
+      comprometido: { permitido: true, valor: 0 },
+      semCobertura: { permitido: true, valor: 0 },
+      necessidadeReposicao: { permitido: true, valor: 6 },
       caVencido: { permitido: true, valor: 2, aVencer: 2, diasAlerta: 60 },
       funcionariosAtivos: { permitido: true, valor: 2 },
     });
@@ -181,6 +186,10 @@ describe('GET /api/dashboard/indicadores com PostgreSQL real', () => {
     assert.deepEqual(r.body.indicadores, {
       itensDisponiveis: { permitido: false },
       estoqueAbaixoMinimo: { permitido: false },
+      saldoLivre: { permitido: false },
+      comprometido: { permitido: false },
+      semCobertura: { permitido: false },
+      necessidadeReposicao: { permitido: false },
       caVencido: { permitido: false },
       funcionariosAtivos: { permitido: false },
     });
@@ -192,17 +201,25 @@ describe('GET /api/dashboard/indicadores com PostgreSQL real', () => {
     assert.deepEqual(r.body.indicadores, {
       itensDisponiveis: { permitido: true, valor: 24 },
       estoqueAbaixoMinimo: { permitido: true, valor: 2 },
+      saldoLivre: { permitido: true, valor: 24 },
+      comprometido: { permitido: true, valor: 0 },
+      semCobertura: { permitido: true, valor: 0 },
+      necessidadeReposicao: { permitido: true, valor: 6 },
       caVencido: { permitido: false },
       funcionariosAtivos: { permitido: false },
     });
   });
 
-  test('multiempresa: a empresa B vê só os próprios números (500 físicos, todos bloqueados por CA vencido)', async () => {
+  test('multiempresa: a empresa B vê só os próprios números (500 físicos, todos bloqueados por CA vencido; mínimo 1000 sem nada livre)', async () => {
     const r = await indicadores(cookie.masterB);
     assert.equal(r.status, 200);
     assert.deepEqual(r.body.indicadores, {
       itensDisponiveis: { permitido: true, valor: 0 },
       estoqueAbaixoMinimo: { permitido: true, valor: 1 },
+      saldoLivre: { permitido: true, valor: 0 },
+      comprometido: { permitido: true, valor: 0 },
+      semCobertura: { permitido: true, valor: 0 },
+      necessidadeReposicao: { permitido: true, valor: 1000 },
       caVencido: { permitido: true, valor: 1, aVencer: 0, diasAlerta: 60 },
       funcionariosAtivos: { permitido: true, valor: 1 },
     });

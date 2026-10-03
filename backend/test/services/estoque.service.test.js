@@ -6,8 +6,13 @@ const assert = require('node:assert/strict');
 const servico = require('../../src/services/estoque.service');
 const materialRepo = require('../../src/repositories/material.repository');
 const loteRepo = require('../../src/repositories/estoque-lote.repository');
+const posicaoRepo = require('../../src/repositories/posicao-estoque.repository');
+const autorizacao = require('../../src/middleware/autorizacao');
 const operacaoRepo = require('../../src/repositories/estoque-operacao.repository');
 const auditoriaRepo = require('../../src/repositories/auditoria.repository');
+const parRepo = require('../../src/repositories/estoque-par.repository');
+const coberturaRepo = require('../../src/repositories/solicitacao-epi-cobertura.repository');
+const entregaRepo = require('../../src/repositories/entrega-epi.repository');
 const { HttpError } = require('../../src/errors/HttpError');
 
 /**
@@ -50,29 +55,137 @@ async function esperarHttpError(promessa, status, codigo) {
 // ═══════════════════════════════════════════════════════════════════
 // Leitura por lote — Itens Disponíveis e lotes do material
 // ═══════════════════════════════════════════════════════════════════
-describe('listarDisponiveis — por lote, com a data operacional', () => {
-  test('compõe itens, total, página, limite e filtros; passa empresa, hoje e o alerta de 60 dias; nenhuma escrita', async (t) => {
+describe('listarDisponiveis — pela posição de todos os pares, com a data operacional (12D-2)', () => {
+  const itemDaPosicao = (extra = {}) => ({
+    materialId: 1, material: 'Botina', codigoInterno: 'EPI-1', categoria: 'EPI', tipo: 'Botina', tamanho: '40', unidade: 'par',
+    saldo: 8, bloqueado: 3, fisicoUtilizavel: 5, demandaPendente: 2, comprometido: 2, saldoLivre: 3, semCobertura: 0,
+    estoqueMinimo: 5, minimoOrigem: 'PROPRIO', abaixoDoMinimo: true, deficit: 2, necessidade: 2, caValidade: '2027-01-31', validade: 'ok', ...extra,
+  });
+
+  test('compõe itens, total, página, limite e filtros; passa empresa, hoje, o alerta de 60 dias e todos os filtros; nenhuma escrita', async (t) => {
     const recebido = {};
-    t.mock.method(loteRepo, 'listarDisponiveis', async (_p, empresaId, f) => { recebido.lista = [empresaId, f]; return [{ materialId: 1, saldo: 5, bloqueado: 2, disponivel: 3 }]; });
-    t.mock.method(loteRepo, 'contarDisponiveis', async (_p, empresaId, f) => { recebido.conta = [empresaId, f]; return 1; });
+    t.mock.method(posicaoRepo, 'listarPosicoes', async (_p, empresaId, f) => { recebido.lista = [empresaId, f]; return { itens: [itemDaPosicao()], total: 1 }; });
     t.mock.method(loteRepo, 'listarFiltrosDisponiveis', async (_p, empresaId) => { recebido.filtros = empresaId; return { categorias: ['EPI'], tipos: [], tamanhos: ['G'] }; });
     const auditoria = t.mock.method(auditoriaRepo, 'registrar', async () => { throw new Error('não deve auditar'); });
     const pool = { connect: async () => { throw new Error('não deve abrir transação'); }, query: async () => ({ rows: [] }) };
 
-    const r = await servico.listarDisponiveis(pool, { empresaId: EMPRESA, hoje: '2026-09-30', categoria: 'EPI', validade: 'expired', pagina: 1, limite: 50 });
-    assert.deepEqual(r, { itens: [{ materialId: 1, saldo: 5, bloqueado: 2, disponivel: 3 }], total: 1, pagina: 1, limite: 50, filtros: { categorias: ['EPI'], tipos: [], tamanhos: ['G'] } });
-    const filtros = { categoria: 'EPI', tipo: null, tamanho: null, validade: 'expired', hoje: '2026-09-30', diasAlerta: 60 };
-    assert.deepEqual(recebido.lista, [EMPRESA, { ...filtros, pagina: 1, limite: 50 }]);
-    assert.deepEqual(recebido.conta, [EMPRESA, filtros]);
+    const r = await servico.listarDisponiveis(pool, {
+      empresaId: EMPRESA, hoje: '2026-09-30', categoria: 'EPI', validade: 'expired', busca: 'bot', situacao: 'ABAIXO_MINIMO', somenteComNecessidade: true, pagina: 1, limite: 50,
+    });
+    assert.deepEqual(recebido.lista, [EMPRESA, {
+      hoje: '2026-09-30', diasAlerta: 60, categoria: 'EPI', tipo: null, tamanho: null, validade: 'expired', busca: 'bot', situacao: 'ABAIXO_MINIMO', somenteComNecessidade: true, pagina: 1, limite: 50,
+    }]);
     assert.equal(recebido.filtros, EMPRESA);
+    assert.deepEqual([r.total, r.pagina, r.limite, r.filtros], [1, 1, 50, { categorias: ['EPI'], tipos: [], tamanhos: ['G'] }]);
     assert.equal(auditoria.mock.callCount(), 0);
   });
 
+  test('o item público é o contrato aditivo: campos antigos preservados, disponivel igual ao físico utilizável, e nada além (sem demandaPendente)', async (t) => {
+    t.mock.method(posicaoRepo, 'listarPosicoes', async () => ({ itens: [itemDaPosicao()], total: 1 }));
+    t.mock.method(loteRepo, 'listarFiltrosDisponiveis', async () => ({ categorias: [], tipos: [], tamanhos: [] }));
+    const { itens: [item] } = await servico.listarDisponiveis({}, { empresaId: EMPRESA, hoje: '2026-09-30', pagina: 1, limite: 50 });
+    assert.deepEqual(item, {
+      materialId: 1,
+      material: 'Botina',
+      codigoInterno: 'EPI-1',
+      categoria: 'EPI',
+      tipo: 'Botina',
+      tamanho: '40',
+      saldo: 8,
+      bloqueado: 3,
+      disponivel: 5,
+      fisicoUtilizavel: 5,
+      comprometido: 2,
+      saldoLivre: 3,
+      semCobertura: 0,
+      estoqueMinimo: 5,
+      minimoOrigem: 'PROPRIO',
+      abaixoDoMinimo: true,
+      deficit: 2,
+      necessidade: 2,
+      unidade: 'par',
+      caValidade: '2027-01-31',
+      validade: 'ok',
+    });
+    assert.equal(item.disponivel, item.fisicoUtilizavel);
+  });
+
+  test('filtros ausentes viram null e somenteComNecessidade ausente vira falso', async (t) => {
+    let recebido;
+    t.mock.method(posicaoRepo, 'listarPosicoes', async (_p, _e, f) => { recebido = f; return { itens: [], total: 0 }; });
+    t.mock.method(loteRepo, 'listarFiltrosDisponiveis', async () => ({ categorias: [], tipos: [], tamanhos: [] }));
+    await servico.listarDisponiveis({}, { empresaId: EMPRESA, hoje: '2026-09-30', pagina: 1, limite: 50 });
+    assert.deepEqual(recebido, {
+      hoje: '2026-09-30', diasAlerta: 60, categoria: null, tipo: null, tamanho: null, validade: null, busca: null, situacao: null, somenteComNecessidade: false, pagina: 1, limite: 50,
+    });
+  });
+
+  test('página além da última: itens vazios e o total continua correto', async (t) => {
+    t.mock.method(posicaoRepo, 'listarPosicoes', async () => ({ itens: [], total: 23 }));
+    t.mock.method(loteRepo, 'listarFiltrosDisponiveis', async () => ({ categorias: [], tipos: [], tamanhos: [] }));
+    const r = await servico.listarDisponiveis({}, { empresaId: EMPRESA, hoje: '2026-09-30', pagina: 4, limite: 10 });
+    assert.deepEqual([r.itens, r.total, r.pagina, r.limite], [[], 23, 4, 10]);
+  });
+
   test('empresa ou data operacional inválida é recusada antes de consultar', async (t) => {
-    const lista = t.mock.method(loteRepo, 'listarDisponiveis', async () => []);
+    const lista = t.mock.method(posicaoRepo, 'listarPosicoes', async () => ({ itens: [], total: 0 }));
     await assert.rejects(() => servico.listarDisponiveis({}, { empresaId: 0, hoje: '2026-09-30', pagina: 1, limite: 50 }), /empresa/i);
     await assert.rejects(() => servico.listarDisponiveis({}, { empresaId: EMPRESA, pagina: 1, limite: 50 }), /data operacional/i);
     assert.equal(lista.mock.callCount(), 0);
+  });
+});
+
+describe('listarOperacoes — histórico, com o detalhe da entrega só para quem vê a ficha (12D-2)', () => {
+  const contextoDoUsuario = { empresaId: EMPRESA, usuarioId: 11, perfil: 'USUARIO' };
+  const pagina = { pagina: 1, limite: 50 };
+
+  function simular(t, { podeVerFicha, linhas = [], total = 0 }) {
+    const recebido = {};
+    t.mock.method(operacaoRepo, 'listarHistorico', async (_p, empresaId, f) => { recebido.lista = [empresaId, f]; return linhas; });
+    t.mock.method(operacaoRepo, 'contarHistorico', async (_p, empresaId, f) => { recebido.conta = [empresaId, f]; return total; });
+    const avaliar = t.mock.method(autorizacao, 'avaliarPermissaoRecurso', async (_p, ctx, recurso) => { recebido.avaliou = [ctx, recurso]; return { visualizar: podeVerFicha }; });
+    return { recebido, avaliar };
+  }
+
+  test('com epiFicha.visualizar: o repositório recebe detalheEntrega verdadeiro; a permissão é avaliada pelo recurso epiFicha, da empresa e do usuário da sessão', async (t) => {
+    const { recebido } = simular(t, { podeVerFicha: true, total: 3 });
+    const r = await servico.listarOperacoes({}, { ...contextoDoUsuario, tipo: 'ENTREGA', origem: 'DIRETA', ...pagina });
+    assert.deepEqual(recebido.avaliou, [{ empresaId: EMPRESA, usuarioId: 11, perfil: 'USUARIO' }, 'epiFicha']);
+    assert.deepEqual(recebido.lista, [EMPRESA, { tipo: 'ENTREGA', origem: 'DIRETA', de: null, ate: null, busca: null, pagina: 1, limite: 50, detalheEntrega: true }]);
+    assert.deepEqual(recebido.conta, [EMPRESA, { tipo: 'ENTREGA', origem: 'DIRETA', de: null, ate: null, busca: null }]);
+    assert.deepEqual([r.total, r.pagina, r.limite, r.paginas], [3, 1, 50, 1]);
+  });
+
+  test('sem epiFicha.visualizar: o detalhe vai falso e a linha de ENTREGA continua listada', async (t) => {
+    const { recebido } = simular(t, { podeVerFicha: false });
+    await servico.listarOperacoes({}, { ...contextoDoUsuario, ...pagina });
+    assert.equal(recebido.lista[1].detalheEntrega, false);
+  });
+
+  test('sem usuário e perfil na chamada, o detalhe é falso e a permissão nem é consultada (falha fechada)', async (t) => {
+    const { recebido, avaliar } = simular(t, { podeVerFicha: true });
+    await servico.listarOperacoes({}, { empresaId: EMPRESA, ...pagina });
+    assert.equal(recebido.lista[1].detalheEntrega, false);
+    assert.equal(avaliar.mock.callCount(), 0);
+  });
+
+  test('filtro que não pode trazer ENTREGA (ENTRADA, BAIXA, SALDO_INICIAL) não consulta a permissão', async (t) => {
+    const { avaliar, recebido } = simular(t, { podeVerFicha: true });
+    for (const tipo of ['ENTRADA', 'BAIXA', 'SALDO_INICIAL']) await servico.listarOperacoes({}, { ...contextoDoUsuario, tipo, ...pagina });
+    assert.equal(avaliar.mock.callCount(), 0);
+    assert.equal(recebido.lista[1].detalheEntrega, false);
+  });
+
+  test('tipo BAIXA com origem DIRETA é válido e não é erro: o repositório responde conjunto vazio', async (t) => {
+    simular(t, { podeVerFicha: true, linhas: [], total: 0 });
+    const r = await servico.listarOperacoes({}, { ...contextoDoUsuario, tipo: 'BAIXA', origem: 'DIRETA', ...pagina });
+    assert.deepEqual([r.operacoes, r.total, r.paginas], [[], 0, 0]);
+  });
+
+  test('a página e o total vêm das duas consultas; paginas é o teto de total por limite', async (t) => {
+    simular(t, { podeVerFicha: false, linhas: [{ operacaoId: '1' }], total: 101 });
+    const r = await servico.listarOperacoes({}, { ...contextoDoUsuario, pagina: 1, limite: 50 });
+    assert.deepEqual([r.operacoes.length, r.total, r.paginas], [1, 101, 3]);
   });
 });
 
@@ -134,8 +247,17 @@ const operacaoPublica = (extra = {}) => ({
   id: '900', tipo: 'ENTRADA', loteId: LOTE_ID, quantidade: 10, motivo: null, justificativa: null, usuarioId: ATOR_ID, criadoEm: CRIADO_EM, ...extra,
 });
 
-function mundoDeLotes(t, { materialExistente = material(), existente = null, lote = lotePublico(), loteDepois = null } = {}) {
+// Posição do par (12C-3): U físico utilizável, D demanda pendente; C, L e G derivam deles.
+const posicaoDoPar = (U, D, extra = {}) => ({
+  materialId: MATERIAL_ID, tamanho: '40', fisicoUtilizavel: U, demandaPendente: D, comprometido: Math.min(U, D), saldoLivre: Math.max(0, U - D), semCobertura: Math.max(0, D - U), ...extra,
+});
+
+function mundoDeLotes(t, {
+  materialExistente = material(), existente = null, lote = lotePublico(), loteDepois = null, antes = posicaoDoPar(10, 0), depois = posicaoDoPar(6, 0),
+} = {}) {
   const ordem = [];
+  let leituras = 0;
+  let posicoesLidas = 0;
   t.mock.method(materialRepo, 'buscarPorIdParaAtualizacao', async (_c, empresaId, id) => {
     ordem.push('material');
     return empresaId === EMPRESA && materialExistente && id === materialExistente.id ? materialExistente : null;
@@ -146,7 +268,25 @@ function mundoDeLotes(t, { materialExistente = material(), existente = null, lot
     ordem.push('lote');
     return empresaId === EMPRESA && lote && id === lote.loteId ? lote : null;
   });
-  t.mock.method(operacaoRepo, 'buscarLote', async () => { ordem.push('releitura'); return loteDepois ?? lote; });
+  // A primeira leitura do lote (sem trava) e a repetição da chave devolvem o lote; a releitura depois da baixa devolve loteDepois.
+  t.mock.method(operacaoRepo, 'buscarLote', async (_c, empresaId, id) => {
+    ordem.push('releitura');
+    leituras += 1;
+    if (!(empresaId === EMPRESA && lote && id === lote.loteId)) return null;
+    return leituras > 1 ? loteDepois ?? lote : lote;
+  });
+  t.mock.method(materialRepo, 'listarPorIdsParaVinculo', async (_c, empresaId, ids) => {
+    ordem.push('material-baixa');
+    return [{ id: ids[0], empresaId, ativo: materialExistente?.ativo ?? true, exigeCa: true }];
+  });
+  t.mock.method(parRepo, 'travarPares', async (_c, _empresaId, pares) => { ordem.push('par'); return pares; });
+  t.mock.method(entregaRepo, 'dataOperacionalDaTransacao', async () => HOJE);
+  t.mock.method(coberturaRepo, 'lerPosicoes', async (_c, _empresaId, pares) => {
+    ordem.push('posicao');
+    const lida = posicoesLidas === 0 ? antes : depois;
+    posicoesLidas += 1;
+    return [{ ...lida, materialId: pares[0].materialId, tamanho: pares[0].tamanho }];
+  });
   return {
     ordem,
     entrada: t.mock.method(operacaoRepo, 'registrarEntrada', async (_c, d) => {
@@ -374,12 +514,12 @@ describe('registrarEntrada — idempotência', () => {
 });
 
 describe('registrarBaixa — baixa manual por lote', () => {
-  test('trava a chave, consulta a chave, trava o lote, grava a BAIXA, relê o lote, audita e commita', async (t) => {
+  test('trava a chave; lê o lote sem trava; trava o material, o par e o lote; mede a posição, grava a BAIXA, mede de novo, relê o lote, audita e commita', async (t) => {
     const mundo = mundoDeLotes(t, { loteDepois: lotePublico({ quantidadeBaixada: 4, saldo: 6 }) });
     const cliente = criarClienteFalso();
     const r = await servico.registrarBaixa(criarPoolFalso(cliente), dadosBaixa());
 
-    assert.deepEqual(mundo.ordem, ['trava', 'chave', 'lote', 'baixa', 'releitura', 'auditoria']);
+    assert.deepEqual(mundo.ordem, ['trava', 'chave', 'releitura', 'material-baixa', 'par', 'lote', 'posicao', 'baixa', 'posicao', 'releitura', 'auditoria']);
     assert.deepEqual(cliente.chamadas.filter((c) => /^(BEGIN|COMMIT|ROLLBACK)$/.test(c)), ['BEGIN', 'COMMIT']);
 
     const gravado = mundo.baixa.mock.calls[0].arguments[1];
@@ -390,7 +530,19 @@ describe('registrarBaixa — baixa manual por lote', () => {
 
     assert.deepEqual(mundo.registrar.mock.calls[0].arguments[1], {
       empresaId: EMPRESA, usuarioId: ATOR_ID, acao: 'ESTOQUE_BAIXA', referencia: String(LOTE_ID), ip: '10.0.0.1', dispositivo: 'Navegador',
-      contexto: { operacaoId: '900', materialId: MATERIAL_ID, loteId: LOTE_ID, tamanho: '40', caNumero: '12345', quantidade: 4, motivo: 'AVARIA', justificativa: null },
+      contexto: {
+        operacaoId: '900',
+        materialId: MATERIAL_ID,
+        loteId: LOTE_ID,
+        tamanho: '40',
+        caNumero: '12345',
+        quantidade: 4,
+        motivo: 'AVARIA',
+        justificativa: null,
+        posicaoAntes: { fisicoUtilizavel: 10, demandaPendente: 0, comprometido: 0, saldoLivre: 10, semCobertura: 0 },
+        posicaoDepois: { fisicoUtilizavel: 6, demandaPendente: 0, comprometido: 0, saldoLivre: 6, semCobertura: 0 },
+        reduziuCobertura: false,
+      },
       dadosAnteriores: { saldo: 10 },
       dadosNovos: { saldo: 6 },
     });
@@ -399,14 +551,17 @@ describe('registrarBaixa — baixa manual por lote', () => {
     assert.equal(r.lote.saldo, 6);
   });
 
-  test('não consulta o material: material inativo e lote legado sem CA também recebem baixa', async (t) => {
+  test('material inativo e lote legado sem CA também recebem baixa: o material é só travado (FOR SHARE), nunca recusado', async (t) => {
     const mundo = mundoDeLotes(t, {
       materialExistente: material({ ativo: false }),
       lote: lotePublico({ origem: 'SALDO_INICIAL', caNumero: null, caValidade: null }),
+      antes: posicaoDoPar(0, 0),
+      depois: posicaoDoPar(0, 0),
     });
     const r = await servico.registrarBaixa(criarPoolFalso(criarClienteFalso()), dadosBaixa({ motivo: 'DESCARTE' }));
     assert.equal(r.repetida, false);
-    assert.equal(mundo.ordem.includes('material'), false);
+    assert.equal(mundo.ordem.includes('material-baixa'), true);
+    assert.equal(mundo.ordem.includes('material'), false, 'não é a trava de escrita da entrada');
     assert.equal(mundo.registrar.mock.calls[0].arguments[1].contexto.caNumero, null);
   });
 
