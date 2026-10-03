@@ -1291,7 +1291,7 @@ Em caso de conflito entre conveniência e qualidade técnica, priorizar nesta or
 
 # 63. Solicitação de EPI e reserva lógica de estoque
 
-Decisões do Bloco 12 que valem para as próximas subetapas. A 12A e a 12B estão na `main` (PR #49, merge `0ccf59d47527b58fd656a265a74fd763109fbd45`); a 12C e a 12D (12D-1, 12D-2 e 12D-3) estão implementadas e validadas localmente na branch `feature/bloco12-12c`, sem commit e sem PR, até o usuário autorizar; a 12E (que traz a pendência obrigatória D6) e as demais subetapas não foram iniciadas.
+Decisões do Bloco 12 que valem para as próximas subetapas. A 12A e a 12B estão na `main` (PR #49, merge `0ccf59d47527b58fd656a265a74fd763109fbd45`); a 12C e a 12D (12D-1, 12D-2 e 12D-3) estão concluídas no commit `997b7bc9bc6d04002539ec5046b19ce5da8efae7` (`feat(bloco12): concluir entrega por solicitacao e posicao de estoque`); a 12E (que traz a pendência obrigatória D6), a 12F e a 12G não foram iniciadas. A solicitação, a aprovação e a entrega por solicitação continuam sem frontend final e seguem para a 12E, a 12F e a 12G; a 12D integrou às telas existentes o saldo livre na entrega direta, os mínimos, Itens Disponíveis, o Dashboard e o histórico de entregas.
 
 Fluxo: a solicitação é decidida pela **Segurança do Trabalho**, nunca pelo supervisor. Quem decide não pode ser quem solicitou (`AUTODECISAO_PROIBIDA`). A entrega direta do Bloco 10 (`origem = DIRETA`) não pode ser quebrada.
 
