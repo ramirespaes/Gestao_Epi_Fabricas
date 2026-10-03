@@ -56,14 +56,15 @@ describe('CORS: métodos anunciados por namespace x métodos das rotas montadas'
     for (const metodo of ['PUT', 'DELETE']) assert.ok(usados.includes(metodo), `o Portal usa ${metodo}`);
   });
 
-  // Todas estas já precisavam de PUT ou DELETE no CORS (só funcionavam no mesmo site); os mínimos (12D-2) são a mais recente.
-  test('as rotas PUT e DELETE do Portal são conhecidas: autorizações individuais, vínculo de material ao GHE, vínculo de usuário a grupo e mínimos', () => {
+  // Todas estas já precisavam de PUT ou DELETE no CORS (só funcionavam no mesmo site); a remoção do vínculo SST (12F-2) é a mais recente.
+  test('as rotas PUT e DELETE do Portal são conhecidas: autorizações individuais, vínculo de material ao GHE, vínculo de usuário a grupo, mínimos e vínculo SST', () => {
     const verbosInseguros = rotasDoNamespace('portal').filter((r) => r.metodo === 'PUT' || r.metodo === 'DELETE').map((r) => `${r.metodo} ${r.caminho}`).sort();
     assert.deepEqual(verbosInseguros, [
       'DELETE /autorizacoes-individuais/:id',
       'DELETE /grupos-homogeneos/:id/materiais/:materialId',
       'DELETE /materiais/:id/minimos/:tamanho',
       'DELETE /usuarios/:usuarioId/grupo-acesso',
+      'DELETE /vinculos-sst/:usuarioId',
       'PUT /grupos-acesso/:id/usuarios/:usuarioId',
       'PUT /materiais/:id/minimos/:tamanho',
     ]);

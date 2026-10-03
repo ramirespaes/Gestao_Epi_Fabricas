@@ -150,4 +150,4 @@ async function montarAmbiente() {
   };
 }
 
-module.exports = { montarAmbiente, CABECALHO };
+module.exports = { montarAmbiente, CABECALHO, sessaoDeTeste };

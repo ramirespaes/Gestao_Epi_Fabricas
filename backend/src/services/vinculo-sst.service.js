@@ -7,17 +7,18 @@ const auditoriaRepo = require('../repositories/auditoria.repository');
 const { PERFIL_MASTER } = require('./autoridade-administrativa');
 
 /**
- * Administração do vínculo SST (12B), só a camada interna: sem rota nem
- * frontend. Nesta primeira versão só o MASTER ativo da própria empresa
- * concede e remove, sem ação administrativa nova e sem tocar a autorização
- * existente: a decisão de quem integra a SST continua lida de vinculo_sst
- * pela camada de autorização (permissao.repository.usuarioIntegraSst).
+ * Administração do vínculo SST (12B; rotas HTTP na 12F, vinculo-sst.routes.js).
+ * Só o MASTER ativo da própria empresa concede, remove e lista, sem ação
+ * administrativa nova e sem tocar a autorização existente: a decisão de quem
+ * integra a SST continua lida de vinculo_sst pela camada de autorização
+ * (permissao.repository.usuarioIntegraSst).
  *
  * empresaId e atorId vêm da sessão. Quem não tem autoridade recebe sempre o
  * mesmo 403, sem revelar se o ator existe, está inativo ou é de outra empresa;
  * o usuário alvo de outra empresa é "não encontrado". Ator e alvo são
  * travados (FOR UPDATE) em ordem crescente de id, para duas concessões
- * cruzadas não formarem ciclo, e a auditoria entra na mesma transação.
+ * cruzadas não formarem ciclo, e a auditoria entra na mesma transação, só com
+ * ids e indicadores, sem texto livre.
  */
 
 const ACAO_ADICIONADO = 'VINCULO_SST_ADICIONADO';
@@ -42,6 +43,23 @@ async function emTransacao(pool, operacao) {
     } catch (erroTransacional) {
       await client.query('ROLLBACK');
       throw erroTransacional;
+    }
+  } finally {
+    client.release();
+  }
+}
+
+async function emLeitura(pool, operacao) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN READ ONLY ISOLATION LEVEL REPEATABLE READ');
+    try {
+      const resultado = await operacao(client);
+      await client.query('COMMIT');
+      return resultado;
+    } catch (erroLeitura) {
+      await client.query('ROLLBACK');
+      throw erroLeitura;
     }
   } finally {
     client.release();
@@ -103,12 +121,12 @@ async function concederVinculo(pool, {
     const criado = await vinculoRepo.inserir(client, { empresaId, usuarioId, concedidoPor: atorId, motivo: motivoN });
     if (criado === null) throw HttpError.conflict('VINCULO_SST_JA_EXISTE', 'O usuário já integra a Segurança do Trabalho');
 
+    // O motivo fica só no vínculo; a auditoria registra se houve, nunca o texto.
     await auditoriaRepo.registrar(client, {
       empresaId,
       usuarioId: atorId,
       acao: ACAO_ADICIONADO,
       referencia: String(usuarioId),
-      descricao: motivoN,
       ip,
       dispositivo,
       contexto: { usuarioId, comMotivo: motivoN !== null },
@@ -154,4 +172,31 @@ async function removerVinculo(pool, {
   });
 }
 
-module.exports = { concederVinculo, removerVinculo };
+/**
+ * Lista os vínculos SST da própria empresa, do mais novo ao mais antigo, com
+ * nome, perfil e situação do usuário: o vínculo de usuário inativo e o legado
+ * de MASTER aparecem, para quem administra poder removê-los. Só o MASTER ativo
+ * da empresa lê, com o mesmo 403 genérico de conceder e remover. Só leitura,
+ * num retrato único do banco, sem auditoria.
+ *
+ * @throws {HttpError} 403 ator sem autoridade
+ */
+async function listarVinculos(pool, {
+  empresaId, atorId, pagina, limite,
+}) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirId(atorId, 'identificador de ator');
+  if (!Number.isInteger(pagina) || pagina < 1) throw new TypeError('página inválida');
+  if (!Number.isInteger(limite) || limite < 1 || limite > vinculoRepo.LIMITE_MAXIMO) throw new TypeError('limite inválido');
+
+  return emLeitura(pool, async (client) => {
+    exigirAutoridade(await usuarioRepo.buscarPorId(client, empresaId, atorId));
+    const vinculos = await vinculoRepo.listarComUsuario(client, empresaId, { pagina, limite });
+    const total = await vinculoRepo.contar(client, empresaId);
+    return {
+      vinculos, total, pagina, limite,
+    };
+  });
+}
+
+module.exports = { concederVinculo, removerVinculo, listarVinculos };

@@ -85,14 +85,36 @@ describe('cancelamento e consulta da solicitação de EPI — serviço (PostgreS
       assert.equal((await cancelar(semTexto.solicitacao.id)).solicitacao.cancelamento.justificativa, null);
     });
 
-    test('outro usuário não cancela, nem mesmo a SST, o MASTER ou outro solicitante; nada muda', async () => {
+    // Fechamento 12E+12F: a solicitação de outro usuário, mesmo da mesma empresa, é "não encontrada", igual à inexistente.
+    const recusa = async (promessa) => {
+      try {
+        await promessa;
+      } catch (erro) {
+        return { status: erro.status, corpo: erro.corpoResposta() };
+      }
+      return assert.fail('o cancelamento deveria ter sido recusado');
+    };
+
+    test('outro usuário da mesma empresa (outro solicitante, a SST, o MASTER) recebe exatamente o 404 da inexistente; nada muda', async () => {
       const m = await materialNoGhe();
       const { solicitacao } = await criar([item(m)]);
+      const inexistente = await recusa(cancelar(2147483000, { atorId: d.outroSolicitante }));
+      assert.deepEqual(inexistente, { status: 404, corpo: { status: 'error', codigo: 'SOLICITACAO_NAO_ENCONTRADA', message: 'Solicitação não encontrada' } });
       for (const atorId of [d.outroSolicitante, d.sst1, d.master]) {
-        await esperarHttpError(cancelar(solicitacao.id, { atorId }), 403, 'CANCELAMENTO_NAO_PERMITIDO');
+        assert.deepEqual(await recusa(cancelar(solicitacao.id, { atorId })), inexistente, `ator ${atorId}`);
       }
       assert.equal((await buscar(solicitacao.id)).solicitacao.status, 'PENDENTE');
       assert.equal(await contar('logs_auditoria', "acao = 'SOLICITACAO_EPI_CANCELADA' AND referencia = $1", [String(solicitacao.id)]), 0);
+    });
+
+    test('igualdade completa: inexistente, de outro usuário da mesma empresa e de outra empresa dão a mesma resposta', async () => {
+      const m = await materialNoGhe();
+      const daA = await criar([item(m)]);
+      const inexistente = await recusa(cancelar(2147483000, { atorId: d.outroSolicitante }));
+      const deOutroUsuario = await recusa(cancelar(daA.solicitacao.id, { atorId: d.outroSolicitante }));
+      const deOutraEmpresa = await recusa(cancelar(daA.solicitacao.id, { empresaId: d.empresaB, atorId: d.usuarioB }));
+      assert.deepEqual(deOutroUsuario, inexistente);
+      assert.deepEqual(deOutraEmpresa, inexistente);
     });
 
     test('depois da decisão (APROVADA, APROVADA_PARCIAL, REPROVADA), da entrega ou do próprio cancelamento, não se cancela', async () => {
@@ -119,22 +141,22 @@ describe('cancelamento e consulta da solicitação de EPI — serviço (PostgreS
       );
     });
 
-    test('solicitação de autoatendimento não tem solicitante interno: nenhum usuário interno a cancela por esta via', async () => {
+    test('solicitação de autoatendimento não tem solicitante interno: para qualquer usuário interno ela é "não encontrada" por esta via', async () => {
       const m = await materialNoGhe();
       const { solicitacao } = await criarSolicitacaoSql(pool, { empresaA: d.empresaA, trabalhadorA: d.trabalhador, solicitante: d.solicitante }, {
         empresaId: d.empresaA, funcionarioId: d.trabalhador, origem: 'AUTOATENDIMENTO', itens: [{ material_id: m, tamanho: '40' }],
       });
       for (const atorId of [d.solicitante, d.sst1, d.master]) {
-        await esperarHttpError(cancelar(solicitacao.id, { atorId }), 403, 'CANCELAMENTO_NAO_PERMITIDO');
+        await esperarHttpError(cancelar(solicitacao.id, { atorId }), 404, 'SOLICITACAO_NAO_ENCONTRADA');
       }
     });
 
-    test('inexistente ou de outra empresa: 404; o solicitante precisa existir e estar ativo', async () => {
+    test('inexistente ou de outra empresa: 404; ator inexistente também; o próprio solicitante precisa estar ativo', async () => {
       const m = await materialNoGhe();
       const { solicitacao } = await criar([item(m)]);
       await esperarHttpError(cancelar(2147483000), 404, 'SOLICITACAO_NAO_ENCONTRADA');
       await esperarHttpError(cancelar(solicitacao.id, { empresaId: d.empresaB, atorId: d.usuarioB }), 404, 'SOLICITACAO_NAO_ENCONTRADA');
-      await esperarHttpError(cancelar(solicitacao.id, { atorId: 999999 }), 403, 'CANCELAMENTO_NAO_PERMITIDO');
+      await esperarHttpError(cancelar(solicitacao.id, { atorId: 999999 }), 404, 'SOLICITACAO_NAO_ENCONTRADA');
       const doInativo = await criar([item(m)], { atorId: d.outroSolicitante, funcionarioId: d.trabalhador2 });
       await q('UPDATE usuarios SET ativo = false WHERE id = $1', [d.outroSolicitante]);
       await esperarHttpError(cancelar(doInativo.solicitacao.id, { atorId: d.outroSolicitante }), 403, 'USUARIO_INATIVO');
@@ -142,14 +164,16 @@ describe('cancelamento e consulta da solicitação de EPI — serviço (PostgreS
       assert.equal((await buscar(solicitacao.id)).solicitacao.status, 'PENDENTE');
     });
 
-    test('auditoria SOLICITACAO_EPI_CANCELADA: quem, o quê e a justificativa na descrição; o estado anterior e o novo', async () => {
+    test('auditoria SOLICITACAO_EPI_CANCELADA: quem, o quê, se houve justificativa e o estado anterior e o novo; o texto da justificativa fica só na solicitação, nunca na auditoria', async () => {
       const m = await materialNoGhe();
       const { solicitacao } = await criar([item(m)]);
       await cancelar(solicitacao.id, { justificativa: 'Pedido em duplicidade' });
-      const { rows } = await q("SELECT usuario_id, referencia, descricao, contexto, dados_anteriores, dados_novos FROM logs_auditoria WHERE empresa_id = $1 AND acao = 'SOLICITACAO_EPI_CANCELADA' AND referencia = $2", [d.empresaA, String(solicitacao.id)]);
+      const { rows } = await q("SELECT * FROM logs_auditoria WHERE empresa_id = $1 AND acao = 'SOLICITACAO_EPI_CANCELADA' AND referencia = $2", [d.empresaA, String(solicitacao.id)]);
       assert.equal(rows.length, 1);
       assert.equal(rows[0].usuario_id, d.solicitante);
-      assert.equal(rows[0].descricao, 'Pedido em duplicidade');
+      assert.equal(rows[0].descricao, null);
+      assert.equal(JSON.stringify(rows[0]).includes('Pedido em duplicidade'), false, 'o texto livre não vai para a auditoria, em coluna nenhuma');
+      assert.equal((await q('SELECT justificativa_cancelamento FROM solicitacoes_epi WHERE id = $1', [solicitacao.id])).rows[0].justificativa_cancelamento, 'Pedido em duplicidade');
       assert.deepEqual(rows[0].contexto, { solicitacaoId: solicitacao.id, numero: solicitacao.numero, funcionarioId: d.trabalhador, comJustificativa: true });
       assert.deepEqual(rows[0].dados_anteriores, { status: 'PENDENTE' });
       assert.deepEqual(rows[0].dados_novos, { status: 'CANCELADA' });

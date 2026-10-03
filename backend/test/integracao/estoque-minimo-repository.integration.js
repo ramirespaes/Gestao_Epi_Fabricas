@@ -46,8 +46,21 @@ describe('repository de mínimos por tamanho — PostgreSQL real', () => {
     const segundo = await repo().definir(pool, empresaA, { materialId: m, tamanho: 'P', minimo: 12 });
     assert.deepEqual([segundo.minimo, segundo.criado], [12, false]);
     assert.deepEqual(segundo.criadoEm, primeiro.criadoEm);
-    assert.ok(segundo.atualizadoEm > primeiro.atualizadoEm);
     assert.equal((await repo().listarPorMaterial(pool, empresaA, m)).length, 1);
+
+    // atualizado_em renovado sem depender do relógio: o Date do JavaScript tem milissegundos e o now() do banco,
+    // microssegundos, então duas gravações seguidas podem chegar iguais. O registro anterior nasce com um instante
+    // conhecido e antigo (por INSERT, porque o gatilho do UPDATE sempre grava now()) e o upsert real o renova.
+    const ANTIGO = new Date('2000-01-01T00:00:00.000Z');
+    const preparado = await novoMaterial();
+    await q(
+      'INSERT INTO estoque_minimos (empresa_id, material_id, tamanho, minimo, criado_em, atualizado_em) VALUES ($1, $2, $3, $4, $5, $5)',
+      [empresaA, preparado, 'P', 10, ANTIGO],
+    );
+    const renovado = await repo().definir(pool, empresaA, { materialId: preparado, tamanho: 'P', minimo: 12 });
+    assert.deepEqual([renovado.minimo, renovado.criado, renovado.criadoEm], [12, false, ANTIGO]);
+    assert.ok(renovado.atualizadoEm > ANTIGO, 'o upsert renova atualizado_em');
+    assert.equal((await repo().listarPorMaterial(pool, empresaA, preparado)).length, 1);
   });
 
   test('listarPorMaterial: todos os tamanhos do material em ordem, e nada de outro material nem de outra empresa', async () => {

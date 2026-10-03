@@ -59,10 +59,13 @@ describe('vínculo SST — serviço administrativo (PostgreSQL real)', () => {
     const { rows: [linha] } = await q('SELECT empresa_id, concedido_por, motivo FROM vinculo_sst WHERE usuario_id = $1', [d.sst1]);
     assert.deepEqual([linha.empresa_id, linha.concedido_por, linha.motivo], [d.empresaA, d.master, 'Técnico de segurança do trabalho']);
 
+    // Fechamento 12E+12F: o motivo fica só no vínculo; a auditoria registra que houve motivo, nunca o texto.
     const eventos = await auditorias('VINCULO_SST_ADICIONADO', d.sst1);
     assert.equal(eventos.length, 1);
     assert.equal(eventos[0].usuario_id, d.master);
-    assert.equal(eventos[0].descricao, 'Técnico de segurança do trabalho');
+    assert.equal(eventos[0].descricao, null);
+    const { rows: [registroCompleto] } = await q("SELECT * FROM logs_auditoria WHERE acao = 'VINCULO_SST_ADICIONADO' AND referencia = $1", [String(d.sst1)]);
+    assert.equal(JSON.stringify(registroCompleto).includes('Técnico de segurança do trabalho'), false, 'o texto livre não vai para a auditoria, em coluna nenhuma');
     assert.deepEqual(eventos[0].contexto, { usuarioId: d.sst1, comMotivo: true });
     assert.deepEqual(eventos[0].dados_novos, { usuarioId: d.sst1, concedidoPor: d.master });
     assert.equal(eventos[0].dados_anteriores, null);

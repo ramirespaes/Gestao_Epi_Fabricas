@@ -68,6 +68,7 @@
     "064_create_logs_auditoria_identidade.sql": "04352cea60e9ba262d2acf499add7df46b8fd2eeaaaf2d27865bfc27dd73378b",
     "065_create_solicitacoes_epi.sql": "de25e05955fdda5e4d4732f1e8bd12ed64e815b057a458f675bba4234d073c97",
     "066_alter_entregas_epi_origem_solicitacao.sql": "b9f098f9bd68f996a51d8175f302cbb2c02c6878762ae2444d0ee2c3c35e93c1",
-    "067_create_estoque_minimos.sql": "91c461e485875f8900282462737ca830b32a42fd56651732fee1e3d539665d1b"
+    "067_create_estoque_minimos.sql": "91c461e485875f8900282462737ca830b32a42fd56651732fee1e3d539665d1b",
+    "068_alter_solicitacoes_epi_add_encerramento.sql": "125ff4b8a11d5f9e80f39bfe30b9534fa666b3e8a267b07aa7c9be2a68673280"
   }
 }

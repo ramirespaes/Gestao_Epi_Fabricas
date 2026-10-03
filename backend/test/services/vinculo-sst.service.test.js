@@ -39,6 +39,21 @@ describe('concederVinculo — validação antes de qualquer acesso ao banco', ()
   });
 });
 
+describe('listarVinculos — validação antes de qualquer acesso ao banco (12E-1)', () => {
+  const funcao = () => {
+    assert.equal(typeof servico().listarVinculos, 'function', 'função ainda não implementada: listarVinculos');
+    return servico().listarVinculos;
+  };
+  const dadosDaLista = (extra = {}) => ({ empresaId: 42, atorId: 7, pagina: 1, limite: 20, ...extra });
+
+  test('empresa e ator da sessão, página e limite válidos', async () => {
+    for (const extra of [{ empresaId: 0 }, { atorId: -1 }, { atorId: '7' }, { pagina: 0 }, { pagina: 1.5 }, { limite: 0 }, { limite: 101 }, { limite: undefined }]) {
+      await assert.rejects(funcao()(poolFechado, dadosDaLista(extra)), TypeError, JSON.stringify(extra));
+    }
+    await assert.rejects(funcao()(poolFechado, dadosDaLista()), /não deve abrir transação/);
+  });
+});
+
 describe('removerVinculo — validação antes de qualquer acesso ao banco', () => {
   test('identificadores inteiros positivos', async () => {
     for (const extra of [{ empresaId: 0 }, { atorId: 1.5 }, { usuarioId: null }]) {

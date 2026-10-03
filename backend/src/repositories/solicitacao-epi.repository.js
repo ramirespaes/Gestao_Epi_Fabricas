@@ -10,8 +10,8 @@ const { lockDaChave, ESPACO_SOLICITACOES, CHAVE_FORMATO, HASH_FORMATO } = requir
  * empresa. A decisão e o cancelamento só atualizam solicitação PENDENTE e
  * devolvem null quando não havia o que atualizar.
  *
- * criada_em vem do DEFAULT da tabela; decidida_em e cancelada_em, do
- * clock_timestamp() do banco, nunca do cliente.
+ * criada_em vem do DEFAULT da tabela; decidida_em, cancelada_em e encerrada_em,
+ * do clock_timestamp() do banco, nunca do cliente.
  */
 
 const ORIGENS = Object.freeze(['USUARIO_INTERNO', 'AUTOATENDIMENTO']);
@@ -21,7 +21,7 @@ const JUSTIFICATIVA_MAXIMA = 500;
 
 const COLUNAS = `id, empresa_id, numero, funcionario_id, ghe_id, origem_solicitacao, solicitante_usuario_id, status,
   quantidade_itens, observacao, chave_idempotencia, requisicao_hash, criada_em, decidida_por, decidida_em, cancelada_por,
-  cancelada_em, justificativa_cancelamento, entregue_em`;
+  cancelada_em, justificativa_cancelamento, entregue_em, encerrada_por, encerrada_em, justificativa_encerramento`;
 
 function exigirId(valor, nome) {
   if (!Number.isInteger(valor) || valor <= 0) {
@@ -63,6 +63,9 @@ const mapear = (l) => (l === undefined ? null : {
   canceladaEm: l.cancelada_em,
   justificativaCancelamento: l.justificativa_cancelamento,
   entregueEm: l.entregue_em,
+  encerradaPor: l.encerrada_por,
+  encerradaEm: l.encerrada_em,
+  justificativaEncerramento: l.justificativa_encerramento,
 });
 
 /** Serializa, até o fim da transação, quem usa a mesma chave na mesma empresa (espaço das solicitações). */
@@ -191,6 +194,29 @@ async function marcarEntregue(executor, empresaId, id) {
   return mapear(rows[0]);
 }
 
+/**
+ * Encerra a solicitação APROVADA ou APROVADA_PARCIAL que não será mais entregue
+ * (068), com quem encerrou, a hora do relógio do banco e a justificativa
+ * obrigatória. Devolve null quando ela não está aprovada em aberto ou não é da
+ * empresa. As entregas feitas não mudam; o banco confere no COMMIT que ainda
+ * havia o que entregar.
+ */
+async function encerrar(executor, empresaId, id, { encerradaPor, justificativa }) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirId(id, 'identificador de solicitação');
+  exigirId(encerradaPor, 'autor do encerramento');
+  if (justificativa === null || justificativa === undefined) throw new TypeError('justificativa do encerramento inválida');
+  exigirTextoOpcional(justificativa, 'justificativa do encerramento', JUSTIFICATIVA_MAXIMA);
+  const { rows } = await executor.query(
+    `UPDATE solicitacoes_epi
+        SET status = 'ENCERRADA', encerrada_por = $3, encerrada_em = clock_timestamp(), justificativa_encerramento = $4
+      WHERE empresa_id = $1 AND id = $2 AND status IN ('APROVADA', 'APROVADA_PARCIAL')
+      RETURNING ${COLUNAS}`,
+    [empresaId, id, encerradaPor, justificativa],
+  );
+  return mapear(rows[0]);
+}
+
 module.exports = {
-  ORIGENS, STATUS_DE_DECISAO, travarChave, buscarPorChave, buscarPorId, travarPorId, criar, registrarDecisao, cancelar, marcarEntregue,
+  ORIGENS, STATUS_DE_DECISAO, OBSERVACAO_MAXIMA, JUSTIFICATIVA_MAXIMA, travarChave, buscarPorChave, buscarPorId, travarPorId, criar, registrarDecisao, cancelar, marcarEntregue, encerrar,
 };

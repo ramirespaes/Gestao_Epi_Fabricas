@@ -38,6 +38,7 @@ const PENDENTES = [
   '065_create_solicitacoes_epi',
   '066_alter_entregas_epi_origem_solicitacao',
   '067_create_estoque_minimos',
+  '068_alter_solicitacoes_epi_add_encerramento',
 ];
 const CNPJ = '11222333000181';
 const VIOLACAO_CHECK = '23514';
@@ -105,12 +106,12 @@ describe('runner real: 057 a 060 numa transação, sobre a 056 com estoque movim
     }
   });
 
-  test('o runner aplica 057 a 067 juntas, em ordem, e registra as 68', async () => {
+  test('o runner aplica 057 a 068 juntas, em ordem, e registra as 69', async () => {
     const aplicadas = await aplicarMigrations({ schema: contexto.schema, diretorio: DIRETORIO_REAL });
 
     assert.deepEqual(aplicadas.map((migration) => migration.name), PENDENTES);
     const linhas = await registradas();
-    assert.equal(linhas.length, 68);
+    assert.equal(linhas.length, 69);
     assert.deepEqual(linhas.slice(-PENDENTES.length).map((linha) => linha.name), PENDENTES);
   });
 
@@ -194,10 +195,10 @@ describe('runner real: 057 a 060 numa transação, sobre a 056 com estoque movim
     assert.equal(confirmada, true);
   });
 
-  test('manifesto: as entradas pendentes conferem com os arquivos e o total é 68', () => {
+  test('manifesto: as entradas pendentes conferem com os arquivos e o total é 69', () => {
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO_REAL, 'checksums.json'), 'utf8'));
     const arquivos = fs.readdirSync(DIRETORIO_REAL).filter((n) => /^\d{3}_.*\.sql$/.test(n)).sort();
-    assert.equal(arquivos.length, 68);
+    assert.equal(arquivos.length, 69);
     assert.deepEqual(Object.keys(manifesto.migrations).sort(), arquivos);
     for (const nome of PENDENTES) {
       const arquivo = `${nome}.sql`;

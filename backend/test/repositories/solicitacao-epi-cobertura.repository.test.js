@@ -231,6 +231,75 @@ describe('listarCobertura — SQL', () => {
   });
 });
 
+describe('listarCoberturaDasSolicitacoes — várias solicitações numa consulta', () => {
+  const funcao = () => {
+    assert.equal(typeof repo().listarCoberturaDasSolicitacoes, 'function', 'função ainda não implementada: listarCoberturaDasSolicitacoes');
+    return repo().listarCoberturaDasSolicitacoes;
+  };
+  const textoDaConsulta = async () => {
+    const executor = executorFalso([]);
+    await funcao()(executor, EMPRESA, { hoje: HOJE, solicitacaoIds: [17, 18] });
+    return executor.chamadas[0].texto;
+  };
+
+  test('mapeia a fila como listarCobertura e leva a lista de solicitações como um só parâmetro', async () => {
+    const executor = executorFalso([
+      linhaCobertura(),
+      linhaCobertura({ item_id: 9, solicitacao_id: 18, tamanho: null, pendente: '1', acumulado_anterior: '0', fisico_utilizavel: '0', coberta: '0' }),
+    ]);
+    const cobertura = await funcao()(executor, EMPRESA, { hoje: HOJE, solicitacaoIds: [17, 18] });
+    assert.deepEqual(cobertura, [
+      {
+        itemId: 5, solicitacaoId: 17, materialId: 30, tamanho: '40', decididaEm: DECIDIDA_EM,
+        quantidadePendente: 4, acumuladoAnterior: 2, fisicoUtilizavel: 5, coberta: 3, semCobertura: 1,
+      },
+      {
+        itemId: 9, solicitacaoId: 18, materialId: 30, tamanho: null, decididaEm: DECIDIDA_EM,
+        quantidadePendente: 1, acumuladoAnterior: 0, fisicoUtilizavel: 0, coberta: 0, semCobertura: 1,
+      },
+    ]);
+    assert.deepEqual(executor.chamadas[0].valores, [EMPRESA, HOJE, [17, 18]]);
+  });
+
+  test('é leitura pura, filtrada pela empresa, e restringe a fila aos pares das solicitações pedidas sem perder a demanda anterior', async () => {
+    const texto = await textoDaConsulta();
+    assert.match(texto, /^WITH\b/);
+    assert.doesNotMatch(texto, /\b(INSERT|UPDATE|DELETE|TRUNCATE)\b/i);
+    assert.doesNotMatch(texto, /\bFOR\s+(NO KEY\s+)?(UPDATE|SHARE)\b/i);
+    assert.doesNotMatch(texto, /pg_advisory|estoque_operacoes|estoque_tamanhos|cpf/i);
+    assert.match(texto, /s\.empresa_id = \$1/);
+    assert.match(texto, /a\.solicitacao_id = ANY\(\$3::int\[\]\)/, 'os pares vêm das solicitações pedidas');
+    assert.match(texto, /WHERE fl\.solicitacao_id = ANY\(\$3::int\[\]\)\s+ORDER BY fl\.decidida_em, fl\.solicitacao_id, fl\.item_id\s*$/);
+  });
+
+  test('a definição da fila é a mesma da cobertura de uma solicitação: FIFO, demanda atendível e utilizável', async () => {
+    const texto = await textoDaConsulta();
+    assert.match(texto, /PARTITION BY i\.material_id, COALESCE\(i\.tamanho, ''\)/);
+    assert.match(texto, /ORDER BY s\.decidida_em, s\.id, i\.id\s+ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING/);
+    assert.match(texto, /s\.status IN \('APROVADA', 'APROVADA_PARCIAL'\)/);
+    assert.match(texto, /i\.decisao = 'APROVADO'/);
+    assert.match(texto, /f\.ativo/);
+    assert.match(texto, /m\.ativo/);
+    assert.match(texto, /i\.quantidade_aprovada - COALESCE\(e\.entregue, 0\) AS pendente/);
+    assert.match(texto, /m\.exige_ca AND \(l\.ca_validade IS NULL OR l\.ca_validade < \$2::date\)/);
+    assert.match(texto, /LEAST\(fl\.pendente, GREATEST\(0, /);
+    assert.doesNotMatch(texto, /CURRENT_DATE|now\(\)/i);
+  });
+
+  test('lista vazia volta vazia sem consultar; recusa empresa, data, lista ou identificador inválidos sem consultar', async () => {
+    const vazio = executorFalso();
+    assert.deepEqual(await funcao()(vazio, EMPRESA, { hoje: HOJE, solicitacaoIds: [] }), []);
+    await assert.rejects(() => funcao()(vazio, 0, { hoje: HOJE, solicitacaoIds: [17] }), /empresa/);
+    await assert.rejects(() => funcao()(vazio, EMPRESA, { hoje: '2026-02-30', solicitacaoIds: [17] }), /data operacional/);
+    await assert.rejects(() => funcao()(vazio, EMPRESA, { solicitacaoIds: [17] }), /data operacional/);
+    await assert.rejects(() => funcao()(vazio, EMPRESA, { hoje: HOJE, solicitacaoIds: 17 }), /solicitações/);
+    await assert.rejects(() => funcao()(vazio, EMPRESA, { hoje: HOJE }), /solicitações/);
+    await assert.rejects(() => funcao()(vazio, EMPRESA, { hoje: HOJE, solicitacaoIds: [17, 0] }), /solicitação/);
+    await assert.rejects(() => funcao()(vazio, EMPRESA, { hoje: HOJE, solicitacaoIds: ['17'] }), /solicitação/);
+    assert.equal(vazio.chamadas.length, 0);
+  });
+});
+
 describe('listarCobertura — validação', () => {
   test('recusa empresa, data operacional ou solicitação inválidas sem consultar', async () => {
     const vazio = executorFalso();

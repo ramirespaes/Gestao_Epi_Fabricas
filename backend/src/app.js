@@ -26,6 +26,8 @@ const { funcionarioRoutes } = require('./routes/funcionario.routes');
 const { usuarioAdministracaoRoutes } = require('./routes/usuario-administracao.routes');
 const { conviteUsuarioRoutes } = require('./routes/convite-usuario.routes');
 const { entregaEpiRoutes } = require('./routes/entrega-epi.routes');
+const { solicitacaoEpiRoutes } = require('./routes/solicitacao-epi.routes');
+const { vinculoSstRoutes } = require('./routes/vinculo-sst.routes');
 const { recuperacaoSenhaPortalRoutes, recuperacaoSenhaPlataformaRoutes } = require('./routes/recuperacao-senha.routes');
 const { trocaSenhaGlobalRoutes, trocaSenhaPlataformaRoutes } = require('./routes/troca-senha.routes');
 const { cabecalhosSeguranca, semCache } = require('./middleware/cabecalhos');
@@ -152,7 +154,15 @@ app.use(
 //
 // trocaSenhaGlobalRoutes (Bloco 11E): troca de senha com a sessão global, na
 // mesma cadeia; a sessão e o limitador próprio ficam dentro da fábrica.
-app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeral, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, recuperacaoSenhaPortalRoutes, trocaSenhaGlobalRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, estoqueRoutes, itensDisponiveisRoutes, grupoHomogeneoExposicaoRoutes, gheMaterialRoutes, funcionarioRoutes, dashboardRoutes, usuarioAdministracaoRoutes, conviteUsuarioRoutes, entregaEpiRoutes);
+//
+// solicitacaoEpiRoutes e vinculoSstRoutes (Bloco 12, 12F-1 e 12F-2): consultas
+// da solicitação de EPI (minhas, fila da SST, entregáveis e detalhe) e listagem
+// dos vínculos SST; escrita por POST (criar, cancelar, decidir, encerrar e
+// entregar por solicitação; conceder vínculo) e DELETE (remover vínculo), mesma
+// cadeia, com a mesma verificação de origem e os mesmos métodos de CORS do
+// Portal; as autorizações ficam nas fábricas e, no detalhe e nos vínculos, nos
+// serviços.
+app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeral, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, recuperacaoSenhaPortalRoutes, trocaSenhaGlobalRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, estoqueRoutes, itensDisponiveisRoutes, grupoHomogeneoExposicaoRoutes, gheMaterialRoutes, funcionarioRoutes, dashboardRoutes, usuarioAdministracaoRoutes, conviteUsuarioRoutes, entregaEpiRoutes, solicitacaoEpiRoutes, vinculoSstRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
