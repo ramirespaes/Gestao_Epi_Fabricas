@@ -2,6 +2,7 @@
 
 const { exigirDataOperacional } = require('../utils/data-operacional');
 const { parOrdenados, chaveDoTamanho } = require('../utils/lock-par-estoque');
+const sqlPosicao = require('./sql/posicao-estoque');
 
 /**
  * Posição de estoque e cobertura FIFO das solicitações aprovadas. A reserva é
@@ -13,13 +14,15 @@ const { parOrdenados, chaveDoTamanho } = require('../utils/lock-par-estoque');
  *       ausente ou vencido bloqueia (como no dashboard), na data operacional
  *       recebida; não uso CURRENT_DATE, porque o fuso do banco não é o de São
  *       Paulo.
- *   D = demanda aprovada pendente: quantidade aprovada dos itens APROVADOS de
- *       solicitações APROVADA ou APROVADA_PARCIAL, de trabalhador e material
- *       ativos. A suspensão por inativação é derivada: o status persistido não
- *       muda e a solicitação volta à fila quando reativada. Até a integração
- *       da entrega (12C) nada foi entregue por solicitação, então a pendente
- *       é a aprovada; a entrega já concluída sai porque a solicitação vira
- *       ENTREGUE.
+ *   D = demanda aprovada pendente: a quantidade aprovada dos itens APROVADOS
+ *       de solicitações APROVADA ou APROVADA_PARCIAL, de trabalhador e material
+ *       ativos, MENOS o que já foi entregue. A entregue de um item é a soma das
+ *       entregas ligadas a ele (entregas_epi_itens.solicitacao_item_id, 066),
+ *       de qualquer lote e de qualquer ato; nada é lido de coluna de contador.
+ *       Item inteiramente entregue sai da fila, e a solicitação fechada
+ *       (ENTREGUE) já não tem status atendível. A suspensão por inativação é
+ *       derivada: o status persistido não muda e a solicitação volta à fila
+ *       quando reativada. A entrega DIRETA não tem vínculo e só baixa o físico.
  *   C = min(U, D)   L = max(0, U − D)   G = max(0, D − U)
  *
  * Tamanho ausente é o texto vazio nas comparações (o mesmo COALESCE dos
@@ -34,10 +37,18 @@ function exigirId(valor, nome) {
   }
 }
 
+// A definição de "utilizável" e da demanda pendente é única (sql/posicao-estoque.js):
+// aqui só digo os meus aliases e parâmetros. $1 é a empresa, $2 a data operacional e
+// $3 a solicitação (ou null).
+const ITEM = { item: 'i', solicitacao: 's', funcionario: 'f', material: 'm', entregue: 'e' };
+const LOTE = { lote: 'l', material: 'm', hoje: '$2' };
+
 // Fila das demandas atendíveis, com a soma da demanda anterior no mesmo par.
+// O pendente é a aprovada menos o entregue derivado; o item sem pendente não
+// entra, e por isso a janela soma só o que ainda falta entregar.
 const FILA = `fila AS (
-     SELECT i.id AS item_id, i.solicitacao_id, i.material_id, i.tamanho, i.quantidade_aprovada AS pendente, s.decidida_em,
-            COALESCE(sum(i.quantidade_aprovada) OVER (
+     SELECT i.id AS item_id, i.solicitacao_id, i.material_id, i.tamanho, ${sqlPosicao.pendenteDoItem(ITEM)} AS pendente, s.decidida_em,
+            COALESCE(sum(${sqlPosicao.pendenteDoItem(ITEM)}) OVER (
               PARTITION BY i.material_id, COALESCE(i.tamanho, '')
               ORDER BY s.decidida_em, s.id, i.id
               ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS acumulado_anterior
@@ -45,9 +56,11 @@ const FILA = `fila AS (
        JOIN solicitacoes_epi_itens i ON i.empresa_id = s.empresa_id AND i.solicitacao_id = s.id
        JOIN funcionarios f ON f.empresa_id = s.empresa_id AND f.id = s.funcionario_id
        JOIN materiais m ON m.empresa_id = i.empresa_id AND m.id = i.material_id
+       ${sqlPosicao.entregueDoItem(ITEM)}
       WHERE s.empresa_id = $1
-        AND s.status IN ('APROVADA', 'APROVADA_PARCIAL')
+        AND ${sqlPosicao.statusAtendiveis(ITEM)}
         AND i.decisao = 'APROVADO'
+        AND ${sqlPosicao.itemComPendente(ITEM)}
         AND f.ativo
         AND m.ativo
         AND ($3::int IS NULL OR (i.material_id, COALESCE(i.tamanho, '')) IN (
@@ -59,7 +72,7 @@ const FILA = `fila AS (
 // U de cada par que aparece na fila.
 const FISICO_DA_FILA = `fisico AS (
      SELECT fl.material_id, COALESCE(fl.tamanho, '') AS tamanho_chave,
-            COALESCE(sum(CASE WHEN m.exige_ca AND (l.ca_validade IS NULL OR l.ca_validade < $2::date) THEN 0 ELSE l.saldo END), 0)::bigint AS fisico_utilizavel
+            COALESCE(sum(${sqlPosicao.fisicoUtilizavel(LOTE)}), 0)::bigint AS fisico_utilizavel
        FROM (SELECT DISTINCT material_id, tamanho FROM fila) fl
        JOIN materiais m ON m.empresa_id = $1 AND m.id = fl.material_id AND m.ativo
        LEFT JOIN estoque_lotes l ON l.empresa_id = $1 AND l.material_id = fl.material_id
@@ -129,7 +142,7 @@ async function lerPosicoes(executor, empresaId, pares, { hoje } = {}) {
      ),
      fisico AS (
        SELECT p.material_id, p.tamanho_chave,
-              COALESCE(sum(CASE WHEN m.exige_ca AND (l.ca_validade IS NULL OR l.ca_validade < $2::date) THEN 0 ELSE l.saldo END), 0)::bigint AS fisico_utilizavel
+              COALESCE(sum(${sqlPosicao.fisicoUtilizavel(LOTE)}), 0)::bigint AS fisico_utilizavel
          FROM pares p
          LEFT JOIN materiais m ON m.empresa_id = $1 AND m.id = p.material_id AND m.ativo
          LEFT JOIN estoque_lotes l ON l.empresa_id = $1 AND l.material_id = m.id
@@ -137,14 +150,12 @@ async function lerPosicoes(executor, empresaId, pares, { hoje } = {}) {
         GROUP BY p.material_id, p.tamanho_chave
      ),
      demanda AS (
-       SELECT p.material_id, p.tamanho_chave, sum(i.quantidade_aprovada)::bigint AS demanda_pendente
+       SELECT p.material_id, p.tamanho_chave, sum(${sqlPosicao.pendenteDoItem(ITEM)})::bigint AS demanda_pendente
          FROM pares p
          JOIN solicitacoes_epi_itens i ON i.empresa_id = $1 AND i.material_id = p.material_id
           AND COALESCE(i.tamanho, '') = p.tamanho_chave AND i.decisao = 'APROVADO'
-         JOIN solicitacoes_epi s ON s.empresa_id = i.empresa_id AND s.id = i.solicitacao_id
-          AND s.status IN ('APROVADA', 'APROVADA_PARCIAL')
-         JOIN funcionarios f ON f.empresa_id = s.empresa_id AND f.id = s.funcionario_id AND f.ativo
-         JOIN materiais m ON m.empresa_id = i.empresa_id AND m.id = i.material_id AND m.ativo
+         ${sqlPosicao.fonteDaDemanda(ITEM)}
+        WHERE ${sqlPosicao.itemComPendente(ITEM)}
         GROUP BY p.material_id, p.tamanho_chave
      ),
      posicao AS (

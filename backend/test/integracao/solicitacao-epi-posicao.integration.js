@@ -8,7 +8,7 @@ const {
   todasAsMigrations, criarUsuario, criarFuncionario, criarMaterial, criarLote,
 } = require('./helpers/entrega-epi');
 const {
-  CNPJ_A, montarCenario, criarSolicitacao, decidirSolicitacao, aprovar, reprovar, criarLoteDeEntrada, baixarLote, entregarDireta,
+  CNPJ_A, montarCenario, criarSolicitacao, decidirSolicitacao, aprovar, reprovar, criarLoteDeEntrada, baixarLote, entregarDireta, entregarPorSolicitacao,
 } = require('./helpers/solicitacao-epi');
 
 /**
@@ -117,10 +117,9 @@ describe('posição e cobertura FIFO — PostgreSQL real', () => {
     const b = await aprovada({ materialId: m, trabalhador: trabalhadores[1] });
     const lote = await entrada(m, 5);
     assert.deepEqual(numeros(await posicao(m)), [5, 2, 2, 3, 0]);
-    // Até a 12C não há entrega ligada à solicitação: simulo o par físico (ENTREGA direta) e o estado ENTREGUE.
-    for (const [alvo, trabalhador] of [[a, trabalhadores[0]], [b, trabalhadores[1]]]) {
-      await entregarDireta(pool(), { empresaId: d.empresaA, funcionarioId: trabalhador, usuarioId: d.aprovador, materialId: m, loteId: lote, quantidade: 1, cnpj: CNPJ_A });
-      await pool().query("UPDATE solicitacoes_epi SET status = 'ENTREGUE', entregue_em = clock_timestamp() WHERE empresa_id = $1 AND id = $2", [d.empresaA, alvo.solicitacao.id]);
+    // Entrega real, ligada ao item da solicitação: a ENTREGA baixa o físico, a pendente do item zera e a solicitação fecha.
+    for (const alvo of [a, b]) {
+      await entregarPorSolicitacao(pool(), { solicitacao: alvo.solicitacao, usuarioId: d.aprovador, itens: [{ item: alvo.item, loteId: lote, quantidade: 1 }] });
     }
     assert.deepEqual(numeros(await posicao(m)), [3, 0, 0, 3, 0]);
     assert.deepEqual(await coberturaDe(m), []);
@@ -210,8 +209,11 @@ describe('posição e cobertura FIFO — PostgreSQL real', () => {
     await decidirSolicitacao(pool(), reprovada.solicitacao, { status: 'REPROVADA', decididaPor: d.aprovador, decisoes: [reprovar(reprovada.itens[0])] });
     const cancelada = await criarSolicitacao(pool(), d, { funcionarioId: trabalhadores[4], itens: [{ material_id: m, tamanho: '40', quantidade: 4 }] });
     await pool().query("UPDATE solicitacoes_epi SET status = 'CANCELADA', cancelada_por = $2, cancelada_em = clock_timestamp() WHERE id = $1", [cancelada.solicitacao.id, d.solicitante]);
+    // Entregue de verdade: entra estoque, a solicitação é entregue por inteiro e fecha; o físico volta a zero.
     const entregue = await aprovada({ materialId: m, quantidade: 6, trabalhador: trabalhadores[5] });
-    await pool().query("UPDATE solicitacoes_epi SET status = 'ENTREGUE', entregue_em = clock_timestamp() WHERE id = $1", [entregue.solicitacao.id]);
+    const estoqueDaEntrega = await entrada(m, 6);
+    await entregarPorSolicitacao(pool(), { solicitacao: entregue.solicitacao, usuarioId: d.aprovador, itens: [{ item: entregue.item, loteId: estoqueDaEntrega, quantidade: 6 }] });
+    assert.equal((await pool().query('SELECT status FROM solicitacoes_epi WHERE id = $1', [entregue.solicitacao.id])).rows[0].status, 'ENTREGUE');
     assert.equal(pendente.solicitacao.status, 'PENDENTE');
     assert.deepEqual(numeros(await posicao(m)), [0, 5, 0, 0, 5], '2 (reduzida) + 3 (integral)');
     assert.deepEqual((await coberturaDe(m)).map((i) => i.quantidadePendente), [2, 3]);
@@ -251,15 +253,17 @@ describe('posição e cobertura FIFO — PostgreSQL real', () => {
     assert.deepEqual(numeros(await posicao(m)), [1, 2, 1, 0, 1]);
   });
 
-  test('cancelar ou entregar uma aprovada libera a cobertura em cascata para as seguintes, sem escrita', async () => {
+  test('entregar a mais antiga tira do estoque o que tira da demanda: as seguintes mantêm a cobertura que já tinham', async () => {
     const m = await novoMaterial();
     const a = await aprovada({ materialId: m, quantidade: 2, trabalhador: trabalhadores[0] });
     const b = await aprovada({ materialId: m, quantidade: 2, trabalhador: trabalhadores[1] });
     const c = await aprovada({ materialId: m, quantidade: 2, trabalhador: trabalhadores[2] });
-    await entrada(m, 3);
+    const lote = await entrada(m, 3);
     assert.deepEqual((await coberturaDe(m)).map((i) => [i.solicitacaoId, i.coberta]), [[a.solicitacao.id, 2], [b.solicitacao.id, 1], [c.solicitacao.id, 0]]);
-    await pool().query("UPDATE solicitacoes_epi SET status = 'ENTREGUE', entregue_em = clock_timestamp() WHERE id = $1", [a.solicitacao.id]);
-    assert.deepEqual((await coberturaDe(m)).map((i) => [i.solicitacaoId, i.coberta]), [[b.solicitacao.id, 2], [c.solicitacao.id, 1]]);
+    await entregarPorSolicitacao(pool(), { solicitacao: a.solicitacao, usuarioId: d.aprovador, itens: [{ item: a.item, loteId: lote, quantidade: 2 }] });
+    assert.deepEqual((await coberturaDe(m)).map((i) => [i.solicitacaoId, i.coberta]), [[b.solicitacao.id, 1], [c.solicitacao.id, 0]]);
+    await entrada(m, 1);
+    assert.deepEqual((await coberturaDe(m)).map((i) => [i.solicitacaoId, i.coberta]), [[b.solicitacao.id, 2], [c.solicitacao.id, 0]], 'a entrada seguinte vai primeiro para a mais antiga');
   });
 
   test('FIFO por decidida_em, não pelo id: a solicitação criada antes e decidida depois fica atrás; empate de hora desempata pelo id da solicitação', async () => {

@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { todasAsMigrations } = require('./helpers/entrega-epi');
 const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { inserirLote, baixarLote, somarDias } = require('./helpers/estoque-lotes');
 const { criarAppTeste } = require('../helpers/app-teste');
@@ -30,7 +31,7 @@ const provisionamento = require('../../src/services/provisionamento-permissoes.s
  * 30/09/2026 (relógio injetado).
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 46 }, (_, i) => String(i).padStart(3, '0'));
+const TODAS_AS_MIGRATIONS = todasAsMigrations();
 const HOJE = '2026-09-30';
 const RELOGIO = () => new Date('2026-09-30T15:00:00Z');
 const SENHA = 'senha-forte-da-parte-c3-2026';
@@ -165,7 +166,10 @@ describe('C3 — GET /api/estoque/itens-disponiveis (PostgreSQL real)', () => {
     assert.deepEqual(botina40, {
       materialId: m.botina, material: 'Botina de segurança', codigoInterno: 'EPI-001', categoria: 'EPI', tipo: 'Sapatão / Botina',
       tamanho: '40', saldo: 12, bloqueado: 0, disponivel: 12, unidade: 'par', estoqueMinimo: 5, caValidade: somarDias(HOJE, 10), validade: 'expiring',
+      // 12D-2: os campos da posição, aditivos (sem solicitação aprovada o livre é o próprio disponível)
+      fisicoUtilizavel: 12, comprometido: 0, saldoLivre: 12, semCobertura: 0, minimoOrigem: 'PADRAO', abaixoDoMinimo: false, deficit: 0, necessidade: 0,
     });
+    assert.equal(botina40.disponivel, botina40.fisicoUtilizavel, 'disponivel continua igual ao físico utilizável');
     assert.equal(r.body.itens.some((i) => i.material === 'Material inativo'), false, 'inativo nunca aparece');
     assert.equal(r.body.itens.some((i) => i.material === 'Protetor sem linha de saldo'), false, 'nenhum tamanho fictício');
     assert.equal(r.body.itens.some((i) => i.material === 'Botina da empresa B'), false, 'isolamento');

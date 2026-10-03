@@ -17,10 +17,12 @@
     .operacoes{--vidro-fundo:rgba(255,255,255,.64);--vidro-borda:rgba(255,255,255,.72);--vidro-sombra:0 1px 0 rgba(255,255,255,.7) inset,0 10px 30px rgba(15,23,42,.07);
       --realce:radial-gradient(1100px 520px at 0% -20%,rgba(0,122,255,.10),transparent 60%),radial-gradient(900px 480px at 100% 0%,rgba(88,86,214,.08),transparent 60%);
       --tipo-saldo:#4B49B8;--tipo-saldo-fundo:rgba(88,86,214,.12);--tipo-entrada:#1A7A35;--tipo-entrada-fundo:rgba(52,199,89,.14);--tipo-baixa:#C0221A;--tipo-baixa-fundo:rgba(255,59,48,.12);
+      --tipo-entrega:#0B6E99;--tipo-entrega-fundo:rgba(0,122,255,.12);
       background:var(--realce);border-radius:22px;padding:6px}
     html[data-theme="dark"] .operacoes{--vidro-fundo:rgba(44,44,46,.58);--vidro-borda:rgba(255,255,255,.10);--vidro-sombra:0 1px 0 rgba(255,255,255,.05) inset,0 12px 32px rgba(0,0,0,.38);
       --realce:radial-gradient(1100px 520px at 0% -20%,rgba(10,132,255,.14),transparent 60%),radial-gradient(900px 480px at 100% 0%,rgba(94,92,230,.12),transparent 60%);
-      --tipo-saldo:#A5A3FF;--tipo-saldo-fundo:rgba(94,92,230,.22);--tipo-entrada:#30D158;--tipo-entrada-fundo:rgba(48,209,88,.16);--tipo-baixa:#FF6961;--tipo-baixa-fundo:rgba(255,69,58,.18)}
+      --tipo-saldo:#A5A3FF;--tipo-saldo-fundo:rgba(94,92,230,.22);--tipo-entrada:#30D158;--tipo-entrada-fundo:rgba(48,209,88,.16);--tipo-baixa:#FF6961;--tipo-baixa-fundo:rgba(255,69,58,.18);
+      --tipo-entrega:#64D2FF;--tipo-entrega-fundo:rgba(100,210,255,.18)}
     .vidro{background:var(--vidro-fundo);-webkit-backdrop-filter:blur(18px) saturate(150%);backdrop-filter:blur(18px) saturate(150%);border:1px solid var(--vidro-borda);border-radius:18px;box-shadow:var(--vidro-sombra)}
     html[data-theme="dark"] .vidro{color:var(--on-surface)}
     @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.vidro{background:var(--surface-container)}}
@@ -30,7 +32,7 @@
     .operacoes-topo p{font-size:13px;color:var(--on-surface-variant);margin-top:4px;max-width:760px}
     .selo-leitura{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;color:var(--on-surface-variant);padding:5px 11px}
     .selo-leitura .material-symbols-outlined{font-size:16px}
-    .filtros{display:grid;grid-template-columns:minmax(160px,1fr) minmax(150px,.8fr) minmax(150px,.8fr) minmax(200px,1.4fr) auto;gap:10px;align-items:end;padding:14px 16px;margin:14px 0}
+    .filtros{display:grid;grid-template-columns:minmax(150px,1fr) minmax(140px,.9fr) minmax(140px,.8fr) minmax(140px,.8fr) minmax(190px,1.3fr) auto;gap:10px;align-items:end;padding:14px 16px;margin:14px 0}
     .filtros .acoes{display:flex;gap:8px}
     .filtros :focus-visible,.paginacao :focus-visible{outline:2px solid var(--primary);outline-offset:2px}
     .tabela-operacoes{padding:6px 6px 10px;margin-bottom:14px}
@@ -45,8 +47,10 @@
     .tipo.tipo-saldo{background:var(--tipo-saldo-fundo);color:var(--tipo-saldo)}
     .tipo.tipo-entrada{background:var(--tipo-entrada-fundo);color:var(--tipo-entrada)}
     .tipo.tipo-baixa{background:var(--tipo-baixa-fundo);color:var(--tipo-baixa)}
+    .tipo.tipo-entrega{background:var(--tipo-entrega-fundo);color:var(--tipo-entrega)}
     .tipo.tipo-outro{background:var(--surface-container-high);color:var(--on-surface-variant)}
     td.numero.tipo-saldo{color:var(--tipo-saldo)}
+    td.numero.tipo-entrega{color:var(--tipo-entrega)}
     td.numero.tipo-entrada{color:var(--tipo-entrada)}
     td.numero.tipo-baixa{color:var(--tipo-baixa)}
     .paginacao{display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:8px 10px 0;font-size:12px;color:var(--on-surface-variant)}
@@ -56,8 +60,10 @@
 </head>
 <!--
   Operações de estoque (Bloco 9, E8): histórico só de leitura dos saldos
-  iniciais, entradas e baixas gravados em estoque_operacoes, pelo
-  GET /api/estoque/operacoes. Sessão empresarial do Portal, permissões do
+  iniciais, entradas, baixas e entregas gravados em estoque_operacoes, pelo
+  GET /api/estoque/operacoes. A entrega mostra a origem (direta ou por
+  solicitação) e, só quando o servidor a manda, a ficha, o trabalhador e a
+  solicitação; o CPF nunca. Sessão empresarial do Portal, permissões do
   servidor; sem js/db-api.js e sem js/main.js. Não é o log de auditoria.
 -->
 <body>
@@ -144,7 +150,7 @@
         <div class="operacoes-topo">
           <div>
             <h2>Operações de estoque</h2>
-            <p>Consulte o histórico de saldos iniciais, entradas e baixas de estoque, lote a lote, com data, quantidade, motivo e responsável. As operações registradas não podem ser editadas nem excluídas.</p>
+            <p>Consulte o histórico de saldos iniciais, entradas, baixas e entregas de estoque, lote a lote, com data, quantidade, motivo e responsável. As operações registradas não podem ser editadas nem excluídas.</p>
           </div>
           <span class="vidro selo-leitura"><span class="material-symbols-outlined" aria-hidden="true">lock</span>Somente leitura · horário de São Paulo</span>
         </div>
@@ -159,6 +165,15 @@
               <option value="SALDO_INICIAL">Saldo inicial</option>
               <option value="ENTRADA">Entrada</option>
               <option value="BAIXA">Baixa</option>
+              <option value="ENTREGA">Entrega</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="filtroOrigem">Origem da entrega</label>
+            <select id="filtroOrigem" class="select">
+              <option value="">Todas</option>
+              <option value="DIRETA">Direta</option>
+              <option value="SOLICITACAO">Solicitação</option>
             </select>
           </div>
           <div class="field">
@@ -228,7 +243,7 @@
   var $ = function (id) { return document.getElementById(id); };
   var O = EpiOperacoesEstoque;
 
-  var filtro = { tipo: '', de: '', ate: '', busca: '', pagina: 1 };
+  var filtro = { tipo: '', origem: '', de: '', ate: '', busca: '', pagina: 1 };
   // Só consulto depois que o servidor liberar a página; só a consulta mais
   // recente pode tocar a tela; depois do fim da sessão, nenhuma.
   var liberada = false;
@@ -259,7 +274,7 @@
     consultaAtual += 1;
     var numero = consultaAtual;
     $('operacoesCorpo').innerHTML = O.render.vazio('Carregando…');
-    var r = await O.acoes.listar({ tipo: filtro.tipo, de: filtro.de, ate: filtro.ate, busca: filtro.busca, pagina: filtro.pagina, limite: O.LIMITE });
+    var r = await O.acoes.listar({ tipo: filtro.tipo, origem: filtro.origem, de: filtro.de, ate: filtro.ate, busca: filtro.busca, pagina: filtro.pagina, limite: O.LIMITE });
     if (encerrada || numero !== consultaAtual) return;
     if (!r.ok) {
       if (r.status === 401) { EpiSessaoEmpresarial.sessaoEncerrada(); return; }
@@ -271,7 +286,7 @@
     }
     var d = r.dados || {};
     var operacoes = Array.isArray(d.operacoes) ? d.operacoes : [];
-    var comFiltro = filtro.tipo || filtro.de || filtro.ate || filtro.busca;
+    var comFiltro = filtro.tipo || filtro.origem || filtro.de || filtro.ate || filtro.busca;
     var opcoesTabela = { mensagemVazia: comFiltro ? 'Nenhuma operação para este filtro.' : 'Nenhuma operação de estoque registrada nesta empresa.' };
     $('operacoesCorpo').innerHTML = O.render.tabela(operacoes, opcoesTabela);
     pintarPaginacao(d, operacoes.length);
@@ -284,9 +299,17 @@
     });
   }
 
+  // A origem só existe na ENTREGA: com outro tipo o campo zera e fica desabilitado.
+  function sincronizarOrigem() {
+    var aplicavel = O.origemAplicavel($('filtroTipo').value);
+    if (!aplicavel) $('filtroOrigem').value = '';
+    $('filtroOrigem').disabled = !aplicavel;
+  }
+
   // O período invertido para aqui, sem consultar; o servidor recusa de novo.
   function filtrar() {
     desmarcarPeriodo();
+    sincronizarOrigem();
     var de = $('filtroDe').value;
     var ate = $('filtroAte').value;
     if (O.dataPermitida(de) && O.dataPermitida(ate) && de > ate) {
@@ -297,8 +320,10 @@
       return undefined;
     }
     var tipo = $('filtroTipo').value;
+    var origem = $('filtroOrigem').value;
     filtro = {
       tipo: O.tipoPermitido(tipo) ? tipo : '',
+      origem: O.origemPermitida(origem) ? origem : '',
       de: O.dataPermitida(de) ? de : '',
       ate: O.dataPermitida(ate) ? ate : '',
       busca: $('filtroBusca').value.trim(),
@@ -319,12 +344,13 @@
   // ── eventos ──
   $('botaoFiltrar').addEventListener('click', filtrar);
   $('filtroTipo').addEventListener('change', filtrar);
+  $('filtroOrigem').addEventListener('change', filtrar);
   $('filtroBusca').addEventListener('keydown', function (evento) {
     if (evento && evento.key === 'Enter') return filtrar();
     return undefined;
   });
   $('botaoLimparFiltros').addEventListener('click', function () {
-    ['filtroTipo', 'filtroDe', 'filtroAte', 'filtroBusca'].forEach(function (id) { $(id).value = ''; });
+    ['filtroTipo', 'filtroOrigem', 'filtroDe', 'filtroAte', 'filtroBusca'].forEach(function (id) { $(id).value = ''; });
     return filtrar();
   });
   $('paginaAnterior').addEventListener('click', function () {

@@ -19,7 +19,8 @@ const semComentarios = (s) => s.replace(/<!--[\s\S]*?-->/g, '').replace(/^\s*\/\
 const PAGINAS = fs.readdirSync(path.join(RAIZ, 'pages')).filter((f) => f.endsWith('.html')).sort();
 const INTERNAS = ['materials', 'available-items', 'employee-groups', 'employee-history', 'import-employees', 'grupos-acesso', 'grupo-permissoes', 'grupo-usuarios', 'autorizacoes-individuais'];
 const SUBTITULO = 'Cadastre materiais e gerencie entradas, lotes, validade de CA, saldos e baixas de estoque.';
-const SUBTITULO_ANALISE = 'Consulte o saldo disponível por categoria, tipo e tamanho, filtre pela validade do CA e identifique itens com saldo baixo ou sem estoque.';
+// 12D-3: a página passou a mostrar a posição (físico utilizável, comprometido e saldo livre).
+const SUBTITULO_ANALISE = 'Consulte a posição do estoque por categoria, tipo e tamanho: o que está fisicamente utilizável, o que já está comprometido com solicitações aprovadas e o saldo livre. Filtre pela validade do CA e identifique itens abaixo do mínimo, sem estoque ou sem cobertura.';
 
 const rotulosDoMenu = (html, icone) => [...html.matchAll(new RegExp(`<div class="nav-icon [a-z]+">${icone}</div>([^<]*)</a>`, 'g'))].map((m) => m[1]);
 
@@ -65,10 +66,11 @@ describe('nomes: Gestão de estoque e Análise de estoque', () => {
     const html = ler('pages/available-items.html');
     const subtitulo = html.match(/font-weight:500">Análise de estoque<\/h2>\s*<p[^>]*>([^<]*)<\/p>/)[1];
     assert.equal(subtitulo, SUBTITULO_ANALISE);
-    assert.match(html, /<h2>Consulta de estoque<\/h2>\s*<p>Saldo disponível para entrega, por categoria, tipo e tamanho\.<\/p>/);
+    assert.match(html, /<h2>Consulta de estoque<\/h2>\s*<p>Posição do estoque por categoria, tipo e tamanho\.<\/p>/);
     const visivel = semComentarios(html);
     assert.equal(/itens disponíveis em estoque|Consulta de itens disponíveis|grade de tamanho/i.test(visivel), false);
-    assert.match(html, /<th>Quantidade disponível<\/th>/, 'conceito funcional preservado');
+    assert.match(html, /<th>Físico utilizável<\/th>/, 'o físico utilizável continua visível (o antigo "disponível" é o mesmo número)');
+    assert.match(html, /<th>Saldo livre<\/th>/);
   });
 
   test('Portal do Cliente e Permissões do Grupo usam os nomes novos', () => {
@@ -149,6 +151,9 @@ describe('segurança: innerHTML só com texto fixo ou HTML escapado', () => {
     /^\(lista\.length \? '<option value="">Selecione um material<\/option>' : '<option value="">Nenhum material cadastrado nesta empresa<\/option>'\) \+ render\.opcoesMateriais\(lista\)$/,
     /^dados \? estoque\.linhasLotes\(dados\.lotes\) : ''$/,
     /^estoque\.opcoesLotes\(dados \? dados\.lotes : \[\]\)$/,
+    // 12D-3: painel do mínimo por tamanho, só pelo render escapado de js/estoque-minimos.js.
+    /^comTabela \? Min\.render\.linhas\(painel, \{ podeEditar: podeEditar \}\) : ''$/,
+    /^podeEditar \? Min\.render\.opcoesTamanhos\(painel\) : ''$/,
   ];
 
   test('Gestão de estoque: toda escrita em innerHTML tem origem conhecida e escapada', () => {

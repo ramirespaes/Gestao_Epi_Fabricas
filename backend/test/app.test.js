@@ -229,7 +229,8 @@ describe('app.js: CORS restrito ao namespace /api', () => {
     const r = await request(app).options('/api/health').set('Origin', PERMITIDA).set('Access-Control-Request-Method', 'POST').set('Access-Control-Request-Headers', 'content-type');
     assert.equal(r.status, 204);
     assert.equal(r.headers['access-control-allow-origin'], PERMITIDA);
-    assert.deepEqual(r.headers['access-control-allow-methods'].split(',').map((m) => m.trim()).sort(), ['GET', 'HEAD', 'PATCH', 'POST']);
+    // 12D-2: o Portal passou a anunciar também PUT e DELETE (mínimos por tamanho e vínculo de usuário a grupo).
+    assert.deepEqual(r.headers['access-control-allow-methods'].split(',').map((m) => m.trim()).sort(), ['DELETE', 'GET', 'HEAD', 'PATCH', 'POST', 'PUT']);
     assert.equal(r.headers['access-control-allow-headers'], 'Content-Type');
     assert.equal(r.headers['access-control-max-age'], '600');
     assert.equal(r.headers['x-frame-options'], 'DENY');
@@ -730,5 +731,78 @@ describe('app.js: GET /api/auth/permissoes (Bloco 9, Etapa C, Parte C1)', () => 
   test('não existe no namespace da plataforma', async () => {
     const r = await request(app).get('/api/plataforma/auth/permissoes');
     assert.equal(r.status, 404);
+  });
+});
+
+// 12D-2: PUT e DELETE em /api exigem preflight cross-origin. O CORS diz ao navegador o que ele pode enviar; a verificação
+// de origem (CSRF) continua sendo outra camada, testada à parte. Aqui é o OPTIONS real contra o app de produção.
+describe('app.js: preflight real de PUT e DELETE por namespace (CORS)', () => {
+  const app = require('../src/app');
+  const CLIENTE = 'http://localhost:5500';
+  const PLATAFORMA = 'http://localhost:5501';
+  const MALICIOSA = 'http://mal.test';
+  const ROTA_MINIMOS = '/api/materiais/1/minimos/M';
+  const ROTA_EMPRESA = '/api/plataforma/empresas/1';
+  const metodosDe = (r) => String(r.headers['access-control-allow-methods']).split(',').map((m) => m.trim()).sort();
+  const cors = (r) => Object.fromEntries(Object.entries(r.headers).filter(([k]) => k.startsWith('access-control-')));
+  const preflight = (rota, metodo, origem) => request(app).options(rota)
+    .set('Origin', origem)
+    .set('Access-Control-Request-Method', metodo)
+    .set('Access-Control-Request-Headers', 'Content-Type');
+
+  for (const metodo of ['PUT', 'DELETE']) {
+    test(`Portal: preflight de ${metodo} em /api/materiais/:id/minimos/:tamanho é autorizado para a origem permitida`, async () => {
+      const r = await preflight(ROTA_MINIMOS, metodo, CLIENTE);
+      assert.equal(r.status, 204);
+      assert.equal(r.headers['access-control-allow-origin'], CLIENTE, 'a origem exata, nunca *');
+      assert.equal(r.headers['access-control-allow-credentials'], 'true');
+      assert.ok(metodosDe(r).includes(metodo), `Access-Control-Allow-Methods deve conter ${metodo}: ${metodosDe(r)}`);
+      assert.equal(r.headers['access-control-allow-headers'], 'Content-Type');
+      assert.equal(r.headers['access-control-max-age'], '600');
+      assert.ok(String(r.headers.vary || '').split(',').map((v) => v.trim()).includes('Origin'));
+      assert.equal(r.headers['x-frame-options'], 'DENY', 'o preflight termina no CORS, com o Helmet já aplicado');
+      assert.equal('cache-control' in r.headers, false);
+    });
+
+    test(`Portal: preflight de ${metodo} com origem fora da allowlist (inclusive a do Painel Privado) não recebe nenhum Access-Control-* nem reflete a origem`, async () => {
+      for (const origem of [MALICIOSA, PLATAFORMA, 'null']) {
+        const r = await preflight(ROTA_MINIMOS, metodo, origem);
+        assert.deepEqual(cors(r), {}, `${metodo} ${origem}`);
+        assert.ok(!JSON.stringify(r.headers).includes(origem === 'null' ? '"null"' : origem), `${metodo}: ${origem} não pode ser refletida`);
+      }
+    });
+
+    test(`Painel Privado: preflight de ${metodo} em /api/plataforma NÃO é autorizado (nenhuma rota do namespace usa ${metodo})`, async () => {
+      const r = await preflight(ROTA_EMPRESA, metodo, PLATAFORMA);
+      assert.equal(r.status, 204);
+      assert.equal(r.headers['access-control-allow-origin'], PLATAFORMA);
+      assert.ok(!metodosDe(r).includes(metodo), `o Painel Privado não deve anunciar ${metodo}: ${metodosDe(r)}`);
+      assert.deepEqual(metodosDe(r), ['GET', 'HEAD', 'PATCH', 'POST']);
+    });
+  }
+
+  test('Painel Privado: os métodos que as rotas dele usam (PATCH em /empresas/:id, POST e GET) continuam autorizados, com a origem do Painel', async () => {
+    for (const metodo of ['PATCH', 'POST', 'GET']) {
+      const r = await preflight(ROTA_EMPRESA, metodo, PLATAFORMA);
+      assert.equal(r.status, 204, metodo);
+      assert.ok(metodosDe(r).includes(metodo), metodo);
+      assert.equal(r.headers['access-control-allow-credentials'], 'true');
+      assert.equal(r.headers['access-control-allow-headers'], 'Content-Type');
+      assert.equal(r.headers['access-control-max-age'], '600');
+    }
+  });
+
+  test('as allowlists continuam separadas: a origem do Portal não recebe CORS em /api/plataforma, e a do Painel não recebe em /api', async () => {
+    assert.deepEqual(cors(await preflight(ROTA_EMPRESA, 'PATCH', CLIENTE)), {});
+    assert.deepEqual(cors(await preflight(ROTA_MINIMOS, 'PUT', PLATAFORMA)), {});
+  });
+
+  test('requisição real (não preflight) em /api/plataforma com PUT ou DELETE continua sem rota: 404, e a de /api sem sessão é 401, não 404', async () => {
+    for (const metodo of ['put', 'delete']) {
+      const plataforma = await request(app)[metodo](ROTA_EMPRESA).set('Origin', PLATAFORMA);
+      assert.equal(plataforma.status, 404, `${metodo} /api/plataforma/empresas/1`);
+      const portal = await request(app)[metodo](ROTA_MINIMOS).set('Origin', CLIENTE).send(metodo === 'put' ? { minimo: 1 } : undefined);
+      assert.equal(portal.status, 401, `${metodo} ${ROTA_MINIMOS}`);
+    }
   });
 });

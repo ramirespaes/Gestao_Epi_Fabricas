@@ -360,6 +360,15 @@
           <div class="passo" id="passoLote" style="display:none">
             <h3><span class="num">3</span>Lote <span id="entregaLoteMaterial" style="font-weight:400;color:var(--on-surface-variant)"></span></h3>
             <div id="entregaMatAviso" class="helper" style="display:none"></div>
+            <div id="entregaPosicao" style="display:none;margin-bottom:12px">
+              <div class="helper" style="margin-bottom:6px"><strong>Posição por tamanho.</strong> A entrega direta usa só o saldo livre; o comprometido está reservado a solicitações já aprovadas.</div>
+              <div class="table-wrap">
+                <table style="min-width:420px">
+                  <thead><tr><th>Tamanho</th><th>Físico utilizável</th><th>Comprometido</th><th>Saldo livre</th></tr></thead>
+                  <tbody id="entregaPosicaoBody"></tbody>
+                </table>
+              </div>
+            </div>
             <div class="table-wrap">
               <table style="min-width:640px">
                 <thead><tr><th>Tamanho</th><th>CA</th><th>Validade CA</th><th>Saldo</th><th>Situação</th><th></th></tr></thead>
@@ -419,6 +428,10 @@
             <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap">
               <button class="outlined-btn" type="button" id="btnTentarNovamente" style="display:none"><span class="material-symbols-outlined">refresh</span>Tentar novamente</button>
               <button class="filled-btn" type="button" id="btnRegistrarEntrega"><span class="material-symbols-outlined">check</span>Registrar entrega</button>
+            </div>
+            <div id="entregaPosicaoAviso" class="helper" style="display:none;margin-top:10px" role="status">
+              A posição do estoque precisa ser recarregada antes de uma nova tentativa.
+              <button class="outlined-btn" type="button" id="btnRecarregarPosicao" style="padding:4px 10px;font-size:12px;margin-left:8px"><span class="material-symbols-outlined">refresh</span>Recarregar posição</button>
             </div>
             <div id="entregaStatus" style="margin-top:10px;font-size:12px" role="status" aria-live="polite"></div>
           </div>
@@ -669,7 +682,8 @@
     $('itemQuantidade').value = '1';
     $('entregaMatBody').innerHTML = '';
     $('entregaLoteBody').innerHTML = '';
-    ['passoMaterial', 'passoLote', 'passoItem', 'passoItens', 'passoConfirmacao', 'entregaMatAviso', 'entregaLoteVazio'].forEach(function (id) { mostrar(id, false); });
+    $('entregaPosicaoBody').innerHTML = '';
+    ['passoMaterial', 'passoLote', 'passoItem', 'passoItens', 'passoConfirmacao', 'entregaMatAviso', 'entregaLoteVazio', 'entregaPosicao', 'entregaPosicaoAviso'].forEach(function (id) { mostrar(id, false); });
     $('entregaStatus').textContent = '';
     materialEscolhido = null;
     loteEscolhido = null;
@@ -780,15 +794,26 @@
     mostrar('passoLote', true);
     mostrar('passoItem', false);
     $('entregaLoteBody').innerHTML = '<tr><td colspan="6" class="helper">Carregando lotes…</td></tr>';
+    $('entregaPosicaoBody').innerHTML = '';
+    mostrar('entregaPosicao', false);
     var r = await fluxo.selecionarMaterial(m);
     if (encerrada || r.descartada) return;
     if (tratarFalha(r)) return;
     renderizarLotes();
   }
+  // Posição por tamanho do material escolhido: só físico utilizável, comprometido e saldo livre, como o servidor mandou.
+  function renderizarPosicao() {
+    var st = fluxo.estado();
+    var lista = st.material ? st.posicoes[String(st.material.id)] : null;
+    var tem = Array.isArray(lista) && lista.length > 0;
+    $('entregaPosicaoBody').innerHTML = tem ? F.render.linhasPosicoes(lista) : '';
+    mostrar('entregaPosicao', tem);
+  }
   function renderizarLotes() {
     var st = fluxo.estado();
     $('entregaLoteBody').innerHTML = F.render.linhasLotes(st.lotes, st.material);
     mostrar('entregaLoteVazio', st.lotes.length === 0);
+    renderizarPosicao();
   }
   $('entregaLoteBody').addEventListener('click', function (ev) {
     var alvo = ev && ev.target && typeof ev.target.closest === 'function' ? ev.target.closest('[data-lote]') : null;
@@ -797,7 +822,9 @@
     var l = fluxo.estado().lotes.filter(function (x) { return x.loteId === id; })[0];
     if (!l) return;
     loteEscolhido = l;
-    $('entregaItemResumo').textContent = '— ' + materialEscolhido.nome + ' · lote ' + (l.tamanho ? 'tamanho ' + l.tamanho : 'sem tamanho') + ' · CA ' + (l.caNumero || '—') + ' · saldo ' + l.saldo;
+    var posicaoDoLote = F.posicaoDoTamanho(fluxo.estado().posicoes[String(materialEscolhido.id)], l.tamanho);
+    var livre = posicaoDoLote && typeof posicaoDoLote.saldoLivre === 'number' ? ' · saldo livre do tamanho ' + posicaoDoLote.saldoLivre : '';
+    $('entregaItemResumo').textContent = '— ' + materialEscolhido.nome + ' · lote ' + (l.tamanho ? 'tamanho ' + l.tamanho : 'sem tamanho') + ' · CA ' + (l.caNumero || '—') + ' · saldo ' + l.saldo + livre;
     $('itemQuantidade').max = String(l.saldo);
     $('itemQuantidade').value = '1';
     mostrar('campoJustificativaForaGhe', !materialEscolhido.previstoNoGhe);
@@ -820,7 +847,10 @@
     ['btnCancelarEntrega', 'btnBuscarTrab', 'btnCpfTrab', 'btnAdicionarItem', 'btnModoDesenho', 'btnModoAceite', 'aceitePresencial'].forEach(function (id) {
       $(id).disabled = congelado || st.enviando;
     });
-    $('btnRegistrarEntrega').disabled = congelado || st.enviando;
+    // Depois de uma recusa por saldo livre, registrar só volta com a posição relida.
+    $('btnRegistrarEntrega').disabled = congelado || st.enviando || st.posicaoDesatualizada;
+    mostrar('entregaPosicaoAviso', st.posicaoDesatualizada);
+    $('btnRecarregarPosicao').disabled = st.recarregandoPosicao || st.enviando;
     mostrar('btnTentarNovamente', congelado);
     $('btnTentarNovamente').disabled = st.enviando;
   }
@@ -902,6 +932,7 @@
       if (r.status === undefined) { mostrarAviso(r.mensagem, 'erro'); return; }
       $('entregaStatus').textContent = r.mensagem;
       if (r.recarregarLotes) { fluxo.recarregarLotes().then(function (x) { if (x && x.ok) renderizarLotes(); }); }
+      if (r.recarregarPosicao) renderizarLotes(); // o fluxo já releu a posição: lotes e posição na tela acompanham
       return;
     }
     $('entregaStatus').textContent = '';
@@ -920,6 +951,14 @@
     if (r.codigo === 'ENVIO_EM_ANDAMENTO') return;
     if (!r.ok && r.status === undefined) $('entregaStatus').textContent = '';
     aoResultado(r);
+  });
+  $('btnRecarregarPosicao').addEventListener('click', async function () {
+    if (!capacidades.entregar || encerrada) return;
+    var r = await fluxo.recarregarPosicoes();
+    if (encerrada || r.descartada) return;
+    if (tratarFalha(r)) return;
+    $('entregaStatus').textContent = '';
+    renderizarLotes();
   });
   $('btnTentarNovamente').addEventListener('click', async function () {
     $('entregaStatus').textContent = 'Reenviando a mesma tentativa…';

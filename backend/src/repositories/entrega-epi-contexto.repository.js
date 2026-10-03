@@ -1,6 +1,7 @@
 'use strict';
 
 const { escaparCoringasLike } = require('../utils/like');
+const sqlPosicao = require('./sql/posicao-estoque');
 
 /**
  * Leituras do contexto para realizar uma entrega (10E): os materiais ativos
@@ -20,15 +21,10 @@ const FILTRO_MATERIAIS = `FROM materiais m
     AND ($3::text IS NULL OR m.nome ILIKE '%' || $3::text || '%' OR m.codigo_interno ILIKE '%' || $3::text || '%')
     AND ($4::boolean IS NULL OR ${PREVISTO} = $4::boolean)`;
 
-// A mesma leitura do CA do estoque: vence no fim do dia da validade; material
-// que dispensa CA nunca é classificado por validade.
-const SITUACAO_CA = `CASE
-    WHEN NOT m.exige_ca THEN 'NAO_EXIGE_CA'
-    WHEN l.ca_validade IS NULL THEN 'SEM_CA'
-    WHEN l.ca_validade < $3::date THEN 'VENCIDO'
-    WHEN l.ca_validade = $3::date THEN 'VENCE_HOJE'
-    ELSE 'VALIDO'
-  END`;
+// A mesma leitura do CA do estoque (definição única em sql/posicao-estoque.js): vence
+// no fim do dia da validade; material que dispensa CA nunca é classificado por
+// validade. Nesta consulta a data é $3 e não há dias de alerta.
+const SITUACAO_CA = sqlPosicao.situacaoCa({ lote: 'l', material: 'm', hoje: '$3' });
 
 function exigirId(valor, nome) {
   if (!Number.isInteger(valor) || valor <= 0) {

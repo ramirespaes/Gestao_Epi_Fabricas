@@ -4,6 +4,7 @@ const { z } = require('zod');
 const {
   idParametro, textoCurto, dataCalendario, inteiroQuery, LIMITES,
 } = require('./campos.schema');
+const { TIPOS_OPERACAO, ORIGENS_ENTREGA } = require('../utils/operacoes-estoque');
 
 /**
  * Schemas das rotas de estoque por lote (Bloco 9). Só estrutura e formato —
@@ -86,13 +87,16 @@ const validade = {
 
 // E8 — operações de estoque: histórico só de leitura. O período é em dias de
 // São Paulo e a ordem é fixa no servidor; nenhum outro parâmetro é aceito.
-const TIPOS_OPERACAO = Object.freeze(['SALDO_INICIAL', 'ENTRADA', 'BAIXA']);
+// 12D-2: ENTREGA entra nos tipos e `origem` (DIRETA ou SOLICITACAO) filtra as
+// linhas de ENTREGA; combinada com outro tipo, a origem é válida e o resultado
+// é vazio, porque só a ENTREGA tem origem.
 const BUSCA_OPERACOES_MAXIMA = 100;
 const LIMITE_OPERACOES_PADRAO = 50;
 
 const operacoes = {
   query: z.strictObject({
     tipo: z.enum(TIPOS_OPERACAO).optional(),
+    origem: z.enum(ORIGENS_ENTREGA).optional(),
     de: dataCalendario('DATA_INVALIDA', 'Data inicial inválida').optional(),
     ate: dataCalendario('DATA_INVALIDA', 'Data final inválida').optional(),
     busca: textoCurto(BUSCA_OPERACOES_MAXIMA, 'BUSCA_INVALIDA', 'Termo de busca inválido').optional(),
@@ -109,5 +113,5 @@ const operacoes = {
 
 module.exports = {
   lotes, entrada, baixa, validade, operacoes, MOTIVOS_BAIXA, SITUACOES_VALIDADE, LIMITE_VALIDADE_PADRAO,
-  TIPOS_OPERACAO, LIMITE_OPERACOES_PADRAO, TAMANHO_MAXIMO, CA_NUMERO_MAXIMO, JUSTIFICATIVA_MAXIMA,
+  TIPOS_OPERACAO, ORIGENS_ENTREGA, LIMITE_OPERACOES_PADRAO, TAMANHO_MAXIMO, CA_NUMERO_MAXIMO, JUSTIFICATIVA_MAXIMA,
 };

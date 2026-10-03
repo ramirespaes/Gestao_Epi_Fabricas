@@ -229,7 +229,7 @@ const chaveDoPar = (materialId, tamanho) => `${materialId}\n${tamanho ?? ''}`;
  * saem do estoque de agora na data operacional recebida: nada é gravado.
  */
 async function visaoDaSolicitacao(executor, empresaId, solicitacao, hoje) {
-  const itens = await itemRepo.listarPorSolicitacao(executor, empresaId, solicitacao.id);
+  const itens = await itemRepo.listarPorSolicitacaoComEntregue(executor, empresaId, solicitacao.id);
   const comCobertura = STATUS_COM_COBERTURA.includes(solicitacao.status);
   let coberturaPorItem = new Map();
   let posicaoPorPar = new Map();
@@ -241,10 +241,10 @@ async function visaoDaSolicitacao(executor, empresaId, solicitacao, hoje) {
     posicaoPorPar = new Map(posicoes.map((p) => [chaveDoPar(p.materialId, p.tamanho), p]));
   }
 
-  const entregue = solicitacao.status === 'ENTREGUE';
   const itensPublicos = itens.map((i) => {
     const aprovado = i.decisao === 'APROVADO';
-    const quantidadeEntregue = entregue && aprovado ? i.quantidadeAprovada : 0;
+    // Derivada das entregas ligadas ao item; só o item aprovado recebe entrega.
+    const quantidadeEntregue = aprovado ? i.quantidadeEntregue : 0;
     const linha = coberturaPorItem.get(i.id) ?? null;
     const posicao = comCobertura && aprovado ? posicaoPorPar.get(chaveDoPar(i.materialId, i.tamanho)) ?? null : null;
     return {

@@ -14,7 +14,7 @@ const JUSTIFICATIVA_MAXIMA = 500;
 const COLUNAS = Object.freeze([
   'id', 'empresa_id', 'entrega_id', 'material_id', 'lote_id', 'quantidade', 'motivo', 'justificativa',
   'previsto_no_ghe', 'justificativa_fora_ghe', 'material_nome', 'material_tipo', 'material_codigo_interno', 'material_unidade',
-  'material_prazo_uso_dias', 'material_oculos_com_grau', 'material_exige_ca',
+  'material_prazo_uso_dias', 'material_oculos_com_grau', 'material_exige_ca', 'solicitacao_item_id',
 ]);
 const COLUNAS_ITEM = COLUNAS.join(', ');
 // Do lote só o que é imutável (tamanho, CA, validade); o saldo muda e não é histórico.
@@ -57,6 +57,7 @@ const mapearItem = (l) => ({
   justificativa: l.justificativa,
   previstoNoGhe: l.previsto_no_ghe,
   justificativaForaGhe: l.justificativa_fora_ghe,
+  solicitacaoItemId: l.solicitacao_item_id,
   material: mapearMaterial(l),
 });
 
@@ -67,14 +68,21 @@ const mapearLeitura = (l) => ({
   operacaoId: l.operacao_id === null ? null : String(l.operacao_id),
 });
 
-/** Grava um item com a cópia do material lida na mesma transação. */
+/**
+ * Grava um item com a cópia do material lida na mesma transação. Na entrega
+ * por solicitação, `solicitacaoItemId` liga o item ao item da solicitação; na
+ * DIRETA fica nulo. O banco confere empresa, material, tamanho, trabalhador,
+ * aprovação e quantidade.
+ */
 async function criar(executor, {
   empresaId, entregaId, materialId, loteId, quantidade, motivo, justificativa = null, previstoNoGhe, justificativaForaGhe = null, material,
+  solicitacaoItemId = null,
 }) {
   exigirId(empresaId, 'identificador de empresa');
   exigirId(entregaId, 'identificador de entrega');
   exigirId(materialId, 'identificador de material');
   exigirId(loteId, 'identificador de lote');
+  if (solicitacaoItemId !== null) exigirId(solicitacaoItemId, 'identificador de item da solicitação');
   if (!Number.isInteger(quantidade) || quantidade <= 0 || quantidade > INTEGER_MAXIMO) throw new TypeError('quantidade inválida');
   if (!MOTIVOS.includes(motivo)) throw new TypeError('motivo inválido');
   exigirTextoOpcional(justificativa, 'justificativa', JUSTIFICATIVA_MAXIMA);
@@ -87,11 +95,13 @@ async function criar(executor, {
   const { rows } = await executor.query(
     `INSERT INTO entregas_epi_itens
        (empresa_id, entrega_id, material_id, lote_id, quantidade, motivo, justificativa, previsto_no_ghe, justificativa_fora_ghe,
-        material_nome, material_tipo, material_codigo_interno, material_unidade, material_prazo_uso_dias, material_oculos_com_grau, material_exige_ca)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        material_nome, material_tipo, material_codigo_interno, material_unidade, material_prazo_uso_dias, material_oculos_com_grau, material_exige_ca,
+        solicitacao_item_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
      RETURNING ${COLUNAS_ITEM}`,
     [empresaId, entregaId, materialId, loteId, quantidade, motivo, justificativa, previstoNoGhe, justificativaForaGhe,
-      material.nome, material.tipo, material.codigoInterno, material.unidade, material.prazoUsoDias, material.oculosComGrau, material.exigeCa],
+      material.nome, material.tipo, material.codigoInterno, material.unidade, material.prazoUsoDias, material.oculosComGrau, material.exigeCa,
+      solicitacaoItemId],
   );
   return mapearItem(rows[0]);
 }

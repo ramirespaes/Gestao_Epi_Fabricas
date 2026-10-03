@@ -2,6 +2,7 @@
 
 const { exigirDataOperacional } = require('../utils/data-operacional');
 const { escaparCoringasLike } = require('../utils/like');
+const sqlPosicao = require('./sql/posicao-estoque');
 
 /**
  * Leitura do estoque por lote. Toda consulta filtra pela empresa e liga o
@@ -12,62 +13,19 @@ const { escaparCoringasLike } = require('../utils/like');
  * CURRENT_DATE, porque o fuso do banco não é o de São Paulo.
  */
 
-const VALIDADES = Object.freeze(['ok', 'expiring', 'expired']);
-
 const JUNCAO = `FROM estoque_lotes l
        JOIN materiais m ON m.empresa_id = l.empresa_id AND m.id = l.material_id`;
 
+// A definição de "utilizável" e da situação do CA é única (sql/posicao-estoque.js):
+// aqui só digo quais são os meus aliases e parâmetros ($2 a data, $3 os dias de alerta).
+const LOTE = { lote: 'l', material: 'm', hoje: '$2' };
+
 // CA vence no fim do dia da validade. Material que dispensa CA nunca é
 // classificado por validade, mesmo que o lote tenha um CA informado.
-const SITUACAO_CA = `CASE
-         WHEN NOT m.exige_ca THEN 'NAO_EXIGE_CA'
-         WHEN l.ca_validade IS NULL THEN 'SEM_CA'
-         WHEN l.ca_validade < $2::date THEN 'VENCIDO'
-         WHEN l.ca_validade = $2::date THEN 'VENCE_HOJE'
-         WHEN l.ca_validade <= $2::date + $3::int THEN 'A_VENCER'
-         ELSE 'VALIDO'
-       END`;
+const SITUACAO_CA = sqlPosicao.situacaoCa({ ...LOTE, diasAlerta: '$3' });
 
 // Bloqueado é o saldo que não pode gerar nova entrega.
-const BLOQUEADO = `CASE
-         WHEN m.exige_ca AND (l.ca_validade IS NULL OR l.ca_validade < $2::date) THEN l.saldo
-         ELSE 0
-       END`;
-
-// Lotes dos materiais ativos, inclusive os zerados: eles não somam nada, mas
-// mantêm na lista o tamanho que esgotou.
-const LOTES_ATIVOS = `lotes AS (
-     SELECT l.material_id, l.tamanho, l.saldo, l.ca_validade,
-            ${BLOQUEADO} AS bloqueado,
-            ${SITUACAO_CA} AS situacao
-       ${JUNCAO}
-      WHERE l.empresa_id = $1
-        AND m.ativo
-   )`;
-
-// Um item de Itens Disponíveis é o par material × tamanho. A validade do par
-// é a pior entre os lotes com saldo que exigem CA.
-const PARES = `pares AS (
-     SELECT material_id, tamanho,
-            sum(saldo)::bigint AS fisico,
-            sum(bloqueado)::bigint AS bloqueado,
-            min(ca_validade) FILTER (WHERE saldo > 0 AND situacao NOT IN ('NAO_EXIGE_CA', 'SEM_CA')) AS ca_validade,
-            CASE
-              WHEN bool_or(saldo > 0 AND situacao = 'VENCIDO') THEN 'expired'
-              WHEN bool_or(saldo > 0 AND situacao IN ('VENCE_HOJE', 'A_VENCER')) THEN 'expiring'
-              WHEN bool_or(saldo > 0 AND situacao = 'VALIDO') THEN 'ok'
-              ELSE 'sem-validade'
-            END AS validade
-       FROM lotes
-      GROUP BY material_id, tamanho
-   )`;
-
-const FILTRO_PARES = `FROM pares p
-       JOIN materiais m ON m.empresa_id = $1 AND m.id = p.material_id
-      WHERE ($4::text IS NULL OR m.categoria = $4::text)
-        AND ($5::text IS NULL OR m.tipo = $5::text)
-        AND ($6::text IS NULL OR p.tamanho = $6::text)
-        AND ($7::text IS NULL OR p.validade = $7::text)`;
+const BLOQUEADO = sqlPosicao.saldoBloqueado(LOTE);
 
 function exigirId(valor, nome) {
   if (!Number.isInteger(valor) || valor <= 0) {
@@ -81,26 +39,6 @@ function exigirReferencia({ hoje, diasAlerta } = {}) {
     throw new TypeError('prazo de alerta da validade do CA inválido');
   }
 }
-
-function exigirTextoFiltro(valor, nome) {
-  if (valor !== null && valor !== undefined && typeof valor !== 'string') {
-    throw new TypeError(`filtro ${nome} deve ser texto ou null`);
-  }
-}
-
-function exigirFiltros(filtros) {
-  exigirReferencia(filtros);
-  exigirTextoFiltro(filtros.categoria, 'categoria');
-  exigirTextoFiltro(filtros.tipo, 'tipo');
-  exigirTextoFiltro(filtros.tamanho, 'tamanho');
-  if (filtros.validade !== null && filtros.validade !== undefined && !VALIDADES.includes(filtros.validade)) {
-    throw new TypeError('filtro de validade inválido');
-  }
-}
-
-const paramsFiltro = (empresaId, f) => [
-  empresaId, f.hoje, f.diasAlerta, f.categoria ?? null, f.tipo ?? null, f.tamanho ?? null, f.validade ?? null,
-];
 
 async function listarPorMaterial(executor, empresaId, materialId, referencia) {
   exigirId(empresaId, 'empresa');
@@ -135,56 +73,8 @@ async function listarPorMaterial(executor, empresaId, materialId, referencia) {
   }));
 }
 
-async function listarDisponiveis(executor, empresaId, filtros = {}) {
-  exigirId(empresaId, 'empresa');
-  exigirFiltros(filtros);
-  const { pagina = 1, limite = 50 } = filtros;
-  if (!Number.isInteger(pagina) || pagina < 1) throw new TypeError('página inválida');
-  if (!Number.isInteger(limite) || limite < 1) throw new TypeError('limite inválido');
-
-  const { rows } = await executor.query(
-    `WITH ${LOTES_ATIVOS}, ${PARES}
-     SELECT m.id AS material_id, m.nome AS material, m.codigo_interno, m.categoria, m.tipo, p.tamanho,
-            p.fisico, p.bloqueado, m.unidade, m.estoque_minimo,
-            to_char(p.ca_validade, 'YYYY-MM-DD') AS ca_validade, p.validade
-       ${FILTRO_PARES}
-      ORDER BY lower(m.nome), m.id, p.tamanho
-      LIMIT $8 OFFSET $9`,
-    [...paramsFiltro(empresaId, filtros), limite, (pagina - 1) * limite],
-  );
-
-  return rows.map((l) => {
-    const fisico = Number(l.fisico);
-    const bloqueado = Number(l.bloqueado);
-    return {
-      materialId: l.material_id,
-      material: l.material,
-      codigoInterno: l.codigo_interno ?? null,
-      categoria: l.categoria ?? null,
-      tipo: l.tipo ?? null,
-      tamanho: l.tamanho,
-      saldo: fisico,
-      bloqueado,
-      disponivel: fisico - bloqueado,
-      unidade: l.unidade,
-      estoqueMinimo: l.estoque_minimo,
-      caValidade: l.ca_validade ?? null,
-      validade: l.validade,
-    };
-  });
-}
-
-async function contarDisponiveis(executor, empresaId, filtros = {}) {
-  exigirId(empresaId, 'empresa');
-  exigirFiltros(filtros);
-  const { rows } = await executor.query(
-    `WITH ${LOTES_ATIVOS}, ${PARES}
-     SELECT count(*)::int AS total ${FILTRO_PARES}`,
-    paramsFiltro(empresaId, filtros),
-  );
-  return rows[0] ? rows[0].total : 0;
-}
-
+// Os itens de Itens Disponíveis (par material × tamanho) saem da posição de estoque
+// (posicao-estoque.repository), a única definição de "utilizável"; aqui ficam só os filtros.
 async function listarFiltrosDisponiveis(executor, empresaId) {
   exigirId(empresaId, 'empresa');
   const { rows } = await executor.query(
@@ -199,33 +89,22 @@ async function listarFiltrosDisponiveis(executor, empresaId) {
   return { categorias: l.categorias || [], tipos: l.tipos || [], tamanhos: l.tamanhos || [] };
 }
 
-// Indicadores do dashboard. Disponível e abaixo do mínimo são do material
-// ativo, o que pode ser entregue e reposto; abaixo do mínimo só existe com
-// mínimo configurado, e disponível 0 sem mínimo não é alerta. CA vencido e a
-// vencer usam o recorte da Validade de estoque (lote com saldo, de material
-// ativo ou inativo), para os dois números baterem. Lote zerado não entra.
+// Indicadores de validade do dashboard: CA vencido e a vencer usam o recorte da
+// Validade de estoque (lote com saldo, de material ativo ou inativo), para os dois
+// números baterem. Lote zerado não entra. Os números de estoque do dashboard (físico
+// utilizável, saldo livre, comprometido, sem cobertura, abaixo do mínimo) não saem
+// daqui: vêm da posição por par, a mesma de Itens Disponíveis (posicao-estoque.repository).
 async function resumirIndicadores(executor, empresaId, referencia) {
   exigirId(empresaId, 'empresa');
   exigirReferencia(referencia);
   const { rows } = await executor.query(
-    `WITH ${LOTES_ATIVOS},
-     ${LOTES_VALIDADE},
-     pares AS (
-       SELECT material_id, tamanho, sum(saldo - bloqueado) AS disponivel
-         FROM lotes
-        GROUP BY material_id, tamanho
-     )
-     SELECT (SELECT COALESCE(sum(saldo - bloqueado), 0) FROM lotes)::bigint AS disponivel,
-            (SELECT count(*)
-               FROM pares p
-               JOIN materiais m ON m.empresa_id = $1 AND m.id = p.material_id
-              WHERE m.estoque_minimo > 0 AND p.disponivel < m.estoque_minimo)::int AS abaixo_minimo,
-            (SELECT count(*) FROM validade WHERE situacao = 'VENCIDO')::int AS ca_vencido,
+    `WITH ${LOTES_VALIDADE}
+     SELECT (SELECT count(*) FROM validade WHERE situacao = 'VENCIDO')::int AS ca_vencido,
             (SELECT count(*) FROM validade WHERE situacao IN ('VENCE_HOJE', 'A_VENCER'))::int AS ca_a_vencer`,
     [empresaId, referencia.hoje, referencia.diasAlerta],
   );
   const r = rows[0];
-  return { disponivel: Number(r.disponivel), abaixoMinimo: r.abaixo_minimo, caVencido: r.ca_vencido, caAVencer: r.ca_a_vencer };
+  return { caVencido: r.ca_vencido, caAVencer: r.ca_a_vencer };
 }
 
 // E7 — validade de estoque. A unidade é o lote com saldo físico, de material
@@ -361,13 +240,10 @@ async function possuiSaldoIncompativel(executor, empresaId, materialId, novaExig
 module.exports = {
   possuiSaldoIncompativel,
   listarPorMaterial,
-  listarDisponiveis,
-  contarDisponiveis,
   listarFiltrosDisponiveis,
   resumirIndicadores,
   listarValidade,
   contarValidade,
   resumirValidade,
-  VALIDADES,
   SITUACOES_LOTE,
 };

@@ -6,6 +6,7 @@
     "js/autorizacoes-individuais.js",
     "js/dashboard.js",
     "js/epi-ficha.js",
+    "js/estoque-minimos.js",
     "js/funcionarios.js",
     "js/grupo-permissoes.js",
     "js/grupo-usuarios.js",

@@ -52,37 +52,14 @@ describe('listarPorMaterial', () => {
   });
 });
 
-describe('listarDisponiveis / contarDisponiveis / listarFiltrosDisponiveis', () => {
-  const linha = (extra = {}) => ({
-    material_id: MATERIAL, material: 'Botina', codigo_interno: 'EPI-1', categoria: 'EPI', tipo: 'Sapatão / Botina',
-    tamanho: '40', fisico: '15', bloqueado: '5', unidade: 'par', estoque_minimo: 5, ca_validade: '2026-09-29', validade: 'expired', ...extra,
-  });
-
-  test('agrega por material e tamanho de materiais ativos; saldo é o físico e disponível desconta o bloqueado', async () => {
-    const executor = executorFalso([linha()]);
-    const itens = await repo.listarDisponiveis(executor, EMPRESA, {
-      hoje: HOJE, diasAlerta: 60, categoria: 'EPI', tipo: 'Luva', tamanho: 'G', validade: 'expired', pagina: 2, limite: 50,
-    });
-    const { texto, valores } = executor.chamadas[0];
-    semFonteLegada(texto);
-    assert.match(texto, /m\.ativo/);
-    assert.match(texto, /LIMIT\s+\$\d+\s+OFFSET\s+\$\d+/i);
-    assert.doesNotMatch(texto, /'EPI'|'Luva'/, 'nenhum valor de filtro concatenado no SQL');
-    assert.deepEqual(valores.slice(0, 3), [EMPRESA, HOJE, 60]);
-    assert.ok(['EPI', 'Luva', 'G', 'expired'].every((v) => valores.includes(v)));
-    assert.deepEqual(valores.slice(-2), [50, 50], 'limite e deslocamento da página 2');
-    assert.deepEqual(itens, [{
-      materialId: MATERIAL, material: 'Botina', codigoInterno: 'EPI-1', categoria: 'EPI', tipo: 'Sapatão / Botina',
-      tamanho: '40', saldo: 15, bloqueado: 5, disponivel: 10, unidade: 'par', estoqueMinimo: 5, caValidade: '2026-09-29', validade: 'expired',
-    }]);
-  });
-
-  test('contarDisponiveis usa os mesmos filtros, sem paginação', async () => {
-    const executor = executorFalso([{ total: 7 }]);
-    assert.equal(await repo.contarDisponiveis(executor, EMPRESA, { hoje: HOJE, diasAlerta: 60, categoria: 'EPI' }), 7);
-    semFonteLegada(executor.chamadas[0].texto);
-    assert.match(executor.chamadas[0].texto, /count\(\*\)/i);
-    assert.doesNotMatch(executor.chamadas[0].texto, /LIMIT/i);
+describe('listarFiltrosDisponiveis', () => {
+  // 12D-3: a listagem por lote (listarDisponiveis e contarDisponiveis) saiu daqui. Os itens de Itens
+  // Disponíveis saem da posição por par (posicao-estoque.repository), a única definição de "utilizável";
+  // uma segunda listagem por lote poderia divergir dela. O que continua é só o que a posição não faz.
+  test('a listagem antiga por lote não existe mais neste repositório (a única fonte dos itens é a posição por par)', () => {
+    assert.equal(repo.listarDisponiveis, undefined);
+    assert.equal(repo.contarDisponiveis, undefined);
+    assert.equal(repo.VALIDADES, undefined);
   });
 
   test('listarFiltrosDisponiveis devolve opções só da empresa e de materiais ativos com lote', async () => {
@@ -97,30 +74,26 @@ describe('listarDisponiveis / contarDisponiveis / listarFiltrosDisponiveis', () 
 });
 
 describe('resumirIndicadores', () => {
-  test('disponível, abaixo do mínimo (só com mínimo configurado) e lotes com CA vencido ou a vencer, só de materiais ativos', async () => {
-    const executor = executorFalso([{ disponivel: '47', abaixo_minimo: 3, ca_vencido: 2, ca_a_vencer: 2 }]);
+  test('só a validade (12D-2): lotes com CA vencido ou a vencer, no recorte da Validade de estoque; o estoque do dashboard sai da posição', async () => {
+    const executor = executorFalso([{ ca_vencido: 2, ca_a_vencer: 2 }]);
     const r = await repo.resumirIndicadores(executor, EMPRESA, { hoje: HOJE, diasAlerta: 60 });
     const { texto, valores } = executor.chamadas[0];
     semFonteLegada(texto);
-    assert.match(texto, /m\.ativo/);
-    assert.match(texto, /WHERE\s+m\.estoque_minimo\s*>\s*0\s+AND\s+p\.disponivel\s*<\s*m\.estoque_minimo/);
-    assert.doesNotMatch(texto, /disponivel\s*<=\s*0/, 'disponível zero sem mínimo configurado não é abaixo do mínimo');
+    assert.match(texto, /l\.saldo > 0/, 'o lote zerado não entra');
+    assert.doesNotMatch(texto, /estoque_minimo|disponivel/, 'o mínimo e o disponível não são mais daqui: vêm da posição por par');
     assert.deepEqual(valores, [EMPRESA, HOJE, 60]);
-    assert.deepEqual(r, { disponivel: 47, abaixoMinimo: 3, caVencido: 2, caAVencer: 2 });
+    assert.deepEqual(r, { caVencido: 2, caAVencer: 2 });
   });
 });
 
 describe('recusa entrada inválida antes de consultar', () => {
-  test('empresa, material, data operacional, alerta, validade e paginação', async () => {
+  test('empresa, material, data operacional e alerta', async () => {
     const executor = executorFalso([]);
     const base = { hoje: HOJE, diasAlerta: 60 };
     await assert.rejects(() => repo.listarPorMaterial(executor, 0, MATERIAL, base), /empresa/i);
     await assert.rejects(() => repo.listarPorMaterial(executor, EMPRESA, 'x', base), /material/i);
     await assert.rejects(() => repo.listarPorMaterial(executor, EMPRESA, MATERIAL, { ...base, hoje: '30/09/2026' }), /data operacional/i);
-    await assert.rejects(() => repo.listarDisponiveis(executor, EMPRESA, { ...base, diasAlerta: 0 }), /alerta/i);
-    await assert.rejects(() => repo.listarDisponiveis(executor, EMPRESA, { ...base, validade: 'vencido' }), /validade/i);
-    await assert.rejects(() => repo.listarDisponiveis(executor, EMPRESA, { ...base, pagina: 0 }), /página/i);
-    await assert.rejects(() => repo.contarDisponiveis(executor, -1, base), /empresa/i);
+    await assert.rejects(() => repo.listarPorMaterial(executor, EMPRESA, MATERIAL, { ...base, diasAlerta: 0 }), /alerta/i);
     await assert.rejects(() => repo.listarFiltrosDisponiveis(executor, 'x'), /empresa/i);
     await assert.rejects(() => repo.resumirIndicadores(executor, EMPRESA, { diasAlerta: 60 }), /data operacional/i);
     assert.equal(executor.chamadas.length, 0);

@@ -36,9 +36,11 @@
 
   Página ORIGINAL ligada ao backend real, com a interface preservada:
   sessão empresarial do Portal (C0), permissões efetivas (C1, recurso
-  dashboard) e GET /api/dashboard/indicadores. Quatro indicadores reais
-  (itens disponíveis, estoque abaixo do mínimo, CA vencido/a vencer,
-  funcionários ativos); os demais componentes ficam "—" / "em integração".
+  dashboard) e GET /api/dashboard/indicadores. Oito indicadores reais
+  (itens disponíveis, saldo livre, comprometido, sem cobertura, necessidade
+  de reposição, estoque abaixo do mínimo pelo saldo livre, CA vencido/a
+  vencer, funcionários ativos), todos medidos pelo servidor; os demais
+  componentes ficam "—" / "em integração".
   Sem js/db-api.js, sem js/main.js, sem números fixos nem dados de exemplo.
 -->
 <body>
@@ -203,7 +205,23 @@
               <div class="kpi-icon">inventory</div>
             </div>
             <div class="kpi-value" id="kpiDisponiveisValor">—</div>
-            <div class="kpi-meta" id="kpiDisponiveisMeta">Saldo em estoque</div>
+            <div class="kpi-meta" id="kpiDisponiveisMeta">Físico utilizável em estoque</div>
+          </article>
+          <article class="kpi-card success">
+            <div class="kpi-head">
+              <div class="kpi-title">Saldo livre</div>
+              <div class="kpi-icon">lock_open</div>
+            </div>
+            <div class="kpi-value" id="kpiSaldoLivreValor">—</div>
+            <div class="kpi-meta" id="kpiSaldoLivreMeta">Físico utilizável menos o comprometido</div>
+          </article>
+          <article class="kpi-card primary">
+            <div class="kpi-head">
+              <div class="kpi-title">Saldo comprometido</div>
+              <div class="kpi-icon">lock_clock</div>
+            </div>
+            <div class="kpi-value" id="kpiComprometidoValor">—</div>
+            <div class="kpi-meta" id="kpiComprometidoMeta">Reservado a solicitações aprovadas</div>
           </article>
           <article class="kpi-card danger">
             <div class="kpi-head">
@@ -222,8 +240,16 @@
               <div class="kpi-title">Pendências sem estoque</div>
               <div class="kpi-icon">notifications_active</div>
             </div>
-            <div class="kpi-value">—</div>
-            <div class="kpi-meta">em integração</div>
+            <div class="kpi-value" id="kpiSemCoberturaValor">—</div>
+            <div class="kpi-meta" id="kpiSemCoberturaMeta">Aprovado sem estoque para cobrir</div>
+          </article>
+          <article class="kpi-card warning">
+            <div class="kpi-head">
+              <div class="kpi-title">Necessidade de reposição</div>
+              <div class="kpi-icon">add_shopping_cart</div>
+            </div>
+            <div class="kpi-value" id="kpiNecessidadeValor">—</div>
+            <div class="kpi-meta" id="kpiNecessidadeMeta">Sem cobertura mais déficit do mínimo</div>
           </article>
           <article class="kpi-card warning">
             <div class="kpi-head">
@@ -231,7 +257,7 @@
               <div class="kpi-icon">production_quantity_limits</div>
             </div>
             <div class="kpi-value" id="kpiAbaixoMinimoValor">—</div>
-            <div class="kpi-meta" id="kpiAbaixoMinimoMeta">Itens (material × tamanho) abaixo do mínimo</div>
+            <div class="kpi-meta" id="kpiAbaixoMinimoMeta">Itens (material × tamanho) abaixo do mínimo pelo saldo livre</div>
           </article>
           <article class="kpi-card primary">
             <div class="kpi-head">
@@ -355,7 +381,10 @@
 
   var $ = function (id) { return document.getElementById(id); };
   var D = EpiDashboard;
-  var CARDS = { disponiveis: 'kpiDisponiveis', abaixoMinimo: 'kpiAbaixoMinimo', caVencido: 'kpiCaVencido', funcionarios: 'kpiFuncionarios' };
+  var CARDS = {
+    disponiveis: 'kpiDisponiveis', saldoLivre: 'kpiSaldoLivre', comprometido: 'kpiComprometido', caVencido: 'kpiCaVencido',
+    semCobertura: 'kpiSemCobertura', necessidade: 'kpiNecessidade', abaixoMinimo: 'kpiAbaixoMinimo', funcionarios: 'kpiFuncionarios',
+  };
   // Atalhos do cartão de CA para a Validade de estoque. Só ganham destino quando
   // o servidor liberou o indicador, que segue a mesma permissão da Validade.
   var ATALHOS_VALIDADE = { linkCaVencidos: 'stock-validity.html?situacao=VENCIDO', linkCaAVencer: 'stock-validity.html?situacao=VENCIMENTO_PROXIMO' };

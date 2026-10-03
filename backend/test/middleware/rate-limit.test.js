@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 const express = require('express');
 const { criarLimitador, limitadorAutenticacao } = require('../../src/middleware/rate-limit');
-const { criarCors } = require('../../src/middleware/cors');
+const { criarCors, METODOS_PORTAL } = require('../../src/middleware/cors');
 const { criarVerificacaoOrigem } = require('../../src/middleware/origem');
 const { criarCabecalhosSeguranca, semCache } = require('../../src/middleware/cabecalhos');
 const { exigirJson, parserJson } = require('../../src/middleware/conteudo');
@@ -22,7 +22,7 @@ const criarApp = ({ limite = 2, janelaSegundos = 60, hops = 0, comCadeia = false
   app.set('trust proxy', hops === 0 ? false : hops);
   app.use(criarCabecalhosSeguranca({ hstsAtivo: false }));
   const camadas = comCadeia
-    ? [criarCors({ origens: ORIGENS }), semCache, criarVerificacaoOrigem({ origens: ORIGENS }), criarLimitador({ limite, janelaSegundos }), exigirJson, parserJson]
+    ? [criarCors({ origens: ORIGENS, metodos: METODOS_PORTAL }), semCache, criarVerificacaoOrigem({ origens: ORIGENS }), criarLimitador({ limite, janelaSegundos }), exigirJson, parserJson]
     : [criarLimitador({ limite, janelaSegundos })];
   app.use('/api', ...camadas);
   app.all('/api/x', (req, res) => res.json({ metodo: req.method }));

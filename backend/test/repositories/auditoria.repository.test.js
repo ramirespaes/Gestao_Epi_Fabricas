@@ -88,6 +88,45 @@ describe('registrar', () => {
 // SEC-002: User-Agent e IP vêm do cliente e as colunas são VARCHAR(150) e
 // VARCHAR(45). O repositório é o ponto canônico: corta aqui, para nenhum
 // serviço precisar lembrar, e a operação auditada não cai por isso.
+describe('existeRecente — janela de supressão da auditoria de recusa (12C-3)', () => {
+  const repositorio = () => require('../../src/repositories/auditoria.repository');
+  const consulta = (linhas = []) => {
+    const chamadas = [];
+    return { chamadas, query: async (texto, valores) => { chamadas.push({ texto, valores }); return { rows: linhas, rowCount: linhas.length }; } };
+  };
+  const dados = (extra = {}) => ({
+    empresaId: EMPRESA, usuarioId: USUARIO, acao: 'SALDO_LIVRE_INSUFICIENTE', referencia: 'BAIXA:30:40', janelaSegundos: 60, ...extra,
+  });
+
+  test('só lê: SELECT parametrizado por empresa, ator, ação e referência, com o relógio da consulta e a janela em segundos', async () => {
+    assert.equal(typeof repositorio().existeRecente, 'function', 'função ainda não implementada: existeRecente');
+    const executor = consulta([{ existe: 1 }]);
+    assert.equal(await repositorio().existeRecente(executor, dados()), true);
+    const { texto, valores } = executor.chamadas[0];
+    assert.match(texto, /^SELECT 1\s+FROM logs_auditoria/);
+    assert.doesNotMatch(texto, /\b(INSERT|UPDATE|DELETE)\b/i);
+    assert.match(texto, /WHERE empresa_id = \$1 AND usuario_id = \$2 AND acao = \$3 AND referencia = \$4/);
+    assert.match(texto, /criado_em > clock_timestamp\(\) - make_interval\(secs => \$5\)/, 'o relógio da consulta, não o do início da transação');
+    assert.match(texto, /LIMIT 1$/);
+    assert.deepEqual(valores, [EMPRESA, USUARIO, 'SALDO_LIVRE_INSUFICIENTE', 'BAIXA:30:40', 60]);
+  });
+
+  test('sem linha, não há evento recente', async () => {
+    assert.equal(await repositorio().existeRecente(consulta([]), dados()), false);
+  });
+
+  test('recusa empresa, ator, ação, referência e janela inválidos antes de consultar', async () => {
+    const executor = consulta();
+    for (const extra of [
+      { empresaId: 0 }, { usuarioId: -1 }, { usuarioId: null }, { acao: '' }, { acao: 'A'.repeat(61) }, { referencia: '' }, { referencia: 'x'.repeat(151) }, { referencia: null },
+      { janelaSegundos: 0 }, { janelaSegundos: -5 }, { janelaSegundos: 1.5 }, { janelaSegundos: '60' }, { janelaSegundos: 3601 },
+    ]) {
+      await assert.rejects(() => repositorio().existeRecente(executor, dados(extra)), TypeError, JSON.stringify(extra));
+    }
+    assert.equal(executor.chamadas.length, 0);
+  });
+});
+
 describe('SEC-002 — IP e User-Agent cabem nas colunas', () => {
   const gravar = async (extra) => {
     const executor = executorFalso();

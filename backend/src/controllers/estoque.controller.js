@@ -40,14 +40,18 @@ function criarEstoqueController({ pool: poolInjetado, relogio = () => new Date()
       res.status(200).json({ status: 'ok', ...resultado });
     },
 
-    // E8: a empresa vem da sessão; a ordem e o fuso são do servidor.
+    // E8: a empresa vem da sessão; a ordem e o fuso são do servidor. 12D-2: o usuário e o perfil
+    // da sessão seguem para o serviço, que decide pela permissão epiFicha se o detalhe da entrega sai.
     async operacoes(req, res) {
       const {
-        tipo, de, ate, busca, pagina, limite,
+        tipo, origem, de, ate, busca, pagina, limite,
       } = req.validado.query;
       const resultado = await estoqueService.listarOperacoes(poolInjetado, {
         empresaId: req.empresa.id,
+        usuarioId: req.usuario.id,
+        perfil: req.usuario.perfil,
         tipo: tipo ?? null,
+        origem: origem ?? null,
         de: de ?? null,
         ate: ate ?? null,
         busca: busca ?? null,

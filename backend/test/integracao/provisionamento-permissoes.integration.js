@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const request = require('supertest');
 
 const { abrirPoolTemporario, inserirEmpresa } = require('./helpers/schema-temporario');
+const { todasAsMigrations } = require('./helpers/entrega-epi');
 const { criarAppTeste } = require('../helpers/app-teste');
 const { criarAuthController } = require('../../src/controllers/auth.controller');
 const { criarAuthRoutes } = require('../../src/routes/auth.routes');
@@ -36,13 +37,9 @@ const script = require('../../scripts/provisionar-permissoes-master');
  * temporário — nunca o banco principal.
  */
 
-const MIGRATIONS = [
-  '000', '001', '002', '003', '004', '005', '025', '006', '007', '008', '009', '010', '011',
-  '012', '013', '014', '015', '016', '017', '018', '019', '020', '021', '022', '023',
-  '039',
-  '040', // C4: funcionarios.data_admissao (lida pela projeção do repositório)
-  '041', '042', '044', '045', // materiais.exige_tamanho e oculos_com_grau, lidos pela projeção do material
-];
+// Todas as migrations do repositório: a rota de operações de estoque lê as entregas (058/059) e as de Itens
+// Disponíveis e do Dashboard leem a posição (065 a 067); um prefixo antigo daria 500 no código novo.
+const MIGRATIONS = todasAsMigrations();
 
 const SENHA = 'senha-correta-do-teste-provisionamento-2026';
 const CNPJ_A = '11222333000181';

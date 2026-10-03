@@ -898,3 +898,392 @@ describe('10J — publicação da Ficha de EPI', () => {
     }
   });
 });
+
+// ───────────────────────────────────────────────────────────────────
+// 12D-3 — posição por tamanho na entrega direta (físico utilizável,
+// comprometido e saldo livre) e recusa SALDO_LIVRE_INSUFICIENTE.
+// Contrato do servidor (12D-2): GET /entregas-epi/contexto/:id/materiais/:id/lotes
+// devolve { material, hoje, lotes, posicoes: [{ tamanho, fisicoUtilizavel, comprometido,
+// saldoLivre, semCobertura, estoqueMinimo, minimoOrigem, abaixoDoMinimo }] }; a recusa
+// pública é 409 { status, codigo: 'SALDO_LIVRE_INSUFICIENTE', message } e nada mais.
+// ───────────────────────────────────────────────────────────────────
+const CHAVES_DA_POSICAO = ['abaixoDoMinimo', 'comprometido', 'estoqueMinimo', 'fisicoUtilizavel', 'minimoOrigem', 'saldoLivre', 'semCobertura', 'tamanho'];
+const posicao = (extra = {}) => ({
+  tamanho: '40', fisicoUtilizavel: 10, comprometido: 4, saldoLivre: 6, semCobertura: 0, estoqueMinimo: 5, minimoOrigem: 'PADRAO', abaixoDoMinimo: false, ...extra,
+});
+const lotesComPosicao = (extra = {}) => ({ status: 'ok', material: { id: 30 }, hoje: '2026-10-03', lotes: [lote()], posicoes: [posicao()], ...extra });
+const RECUSA_LIVRE = { status: 'error', codigo: 'SALDO_LIVRE_INSUFICIENTE', message: 'texto-do-servidor' };
+const semComentarios12d = (s) => s.replace(/<!--[\s\S]*?-->/g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+
+describe('12D-3 — posição por tamanho no fluxo da entrega direta', () => {
+  const corpoUmItem = () => {
+    let r = F.rascunho.novo(funcionario(), null);
+    r = F.rascunho.adicionarItem(r, { material: material(), lote: lote(), quantidade: 3, motivo: 'ADMISSAO' }).rascunho;
+    return r;
+  };
+  const prontoParaConfirmar = async (responder) => {
+    servidor(responder);
+    const fluxo = F.fluxo.criar();
+    fluxo.definirTrabalhador({ funcionario: funcionario(), ghe: null, ficha: null });
+    await fluxo.selecionarMaterial(material());
+    fluxo.substituirRascunho(corpoUmItem());
+    fluxo.definirConfirmacao({ modo: 'ACEITE_PRESENCIAL' });
+    return fluxo;
+  };
+  const sequencia = () => chamadas.map((c) => `${c.metodo} ${c.caminho.replace('/api/entregas-epi', '')}`);
+
+  test('selecionarMaterial guarda a posição do material; sem `posicoes` na resposta (servidor antigo) nada é inventado', async () => {
+    servidor(resposta(200, lotesComPosicao()));
+    const fluxo = F.fluxo.criar();
+    fluxo.definirTrabalhador({ funcionario: funcionario(), ghe: null, ficha: null });
+    await fluxo.selecionarMaterial(material());
+    assert.deepEqual(fluxo.estado().posicoes['30'], [posicao()]);
+    assert.equal(chamadas[0].caminho, '/api/entregas-epi/contexto/5/materiais/30/lotes');
+    servidor(resposta(200, { status: 'ok', material: { id: 31 }, lotes: [lote({ loteId: 8 })] }));
+    await fluxo.selecionarMaterial(material({ id: 31 }));
+    assert.equal(fluxo.estado().posicoes['31'], undefined);
+    assert.equal(fluxo.estado().posicaoDesatualizada, false);
+  });
+
+  test('resposta atrasada de outro material não entra: só a posição do material atual fica no estado', async () => {
+    const pendentes = servidorControlado();
+    const fluxo = F.fluxo.criar();
+    fluxo.definirTrabalhador({ funcionario: funcionario(), ghe: null, ficha: null });
+    const p30 = fluxo.selecionarMaterial(material());
+    const p31 = fluxo.selecionarMaterial(material({ id: 31, nome: 'Luva' }));
+    pendentes[1].responder(200, lotesComPosicao({ material: { id: 31 }, posicoes: [posicao({ tamanho: 'M' })] }));
+    await p31;
+    pendentes[0].responder(200, lotesComPosicao());
+    await p30;
+    assert.deepEqual(Object.keys(fluxo.estado().posicoes), ['31']);
+  });
+
+  test('trocar de trabalhador zera as posições e a marca de posição desatualizada', async () => {
+    servidor(resposta(200, lotesComPosicao()));
+    const fluxo = F.fluxo.criar();
+    fluxo.definirTrabalhador({ funcionario: funcionario(), ghe: null, ficha: null });
+    await fluxo.selecionarMaterial(material());
+    fluxo.definirTrabalhador({ funcionario: funcionario({ id: 6 }), ghe: null, ficha: null });
+    assert.deepEqual([fluxo.estado().posicoes, fluxo.estado().posicaoDesatualizada], [{}, false]);
+  });
+
+  test('SALDO_LIVRE_INSUFICIENTE: mensagem de domínio (não é saldo do lote), nenhum texto do servidor, sem pedir recarga dos lotes', async () => {
+    const M = F.mensagens;
+    const mensagem = M.POR_CODIGO.SALDO_LIVRE_INSUFICIENTE;
+    assert.match(mensagem, /^O saldo físico existe, mas parte dele está comprometida com solicitações já aprovadas/);
+    assert.notEqual(mensagem, M.POR_CODIGO.SALDO_INSUFICIENTE);
+    assert.equal(M.erro({ status: 409, codigo: 'SALDO_LIVRE_INSUFICIENTE' }), mensagem);
+    assert.equal(/\d/.test(mensagem), false, 'a mensagem não traz número, solicitação nem nome de ninguém');
+    const fluxo = await prontoParaConfirmar((c) => (c.metodo === 'POST' ? resposta(409, RECUSA_LIVRE) : resposta(200, lotesComPosicao())));
+    const r = await fluxo.confirmar();
+    assert.deepEqual([r.ok, r.status, r.codigo, r.recarregarLotes, r.recarregarPosicao], [false, 409, 'SALDO_LIVRE_INSUFICIENTE', false, true]);
+    assert.ok(r.mensagem.startsWith(mensagem));
+    assert.equal(JSON.stringify(r).includes('texto-do-servidor'), false);
+  });
+
+  test('depois da recusa a posição é recarregada (GET dos lotes) antes de qualquer nova tentativa, e a nova posição entra no estado', async () => {
+    let atual = lotesComPosicao();
+    const fluxo = await prontoParaConfirmar((c) => (c.metodo === 'POST' ? resposta(409, RECUSA_LIVRE) : resposta(200, atual)));
+    atual = lotesComPosicao({ posicoes: [posicao({ comprometido: 9, saldoLivre: 1 })] });
+    const r = await fluxo.confirmar();
+    assert.deepEqual(sequencia(), ['GET /contexto/5/materiais/30/lotes', 'POST ', 'GET /contexto/5/materiais/30/lotes']);
+    assert.deepEqual([fluxo.estado().posicoes['30'][0].comprometido, fluxo.estado().posicoes['30'][0].saldoLivre], [9, 1]);
+    assert.deepEqual([fluxo.estado().posicaoDesatualizada, r.posicaoRecarregada], [false, true]);
+    assert.match(r.mensagem, /posição.*atualizada/i);
+    assert.equal(fluxo.estado().rascunho.itens.length, 1, 'o rascunho é preservado');
+  });
+
+  test('se a recarga falha, a posição fica desatualizada e confirmar() não envia nada até recarregar com sucesso', async () => {
+    let lotesFalham = false;
+    const fluxo = await prontoParaConfirmar((c) => {
+      if (c.metodo === 'POST') return resposta(409, RECUSA_LIVRE);
+      return lotesFalham ? new TypeError('Failed to fetch') : resposta(200, lotesComPosicao());
+    });
+    lotesFalham = true;
+    const r = await fluxo.confirmar();
+    assert.deepEqual([r.posicaoRecarregada, fluxo.estado().posicaoDesatualizada], [false, true]);
+    assert.match(r.mensagem, /Recarregar posição/);
+    const posts = () => chamadas.filter((c) => c.metodo === 'POST').length;
+    assert.equal(posts(), 1);
+    const bloqueada = await fluxo.confirmar();
+    assert.deepEqual([bloqueada.ok, bloqueada.codigo, bloqueada.mensagem], [false, 'POSICAO_DESATUALIZADA', F.mensagens.MSG.POSICAO_DESATUALIZADA]);
+    assert.equal(posts(), 1, 'nenhum novo POST enquanto a posição está desatualizada');
+    lotesFalham = false;
+    const recarga = await fluxo.recarregarPosicoes();
+    assert.deepEqual([recarga.ok, fluxo.estado().posicaoDesatualizada], [true, false]);
+    await fluxo.confirmar();
+    assert.equal(posts(), 2, 'recarregada a posição, a nova tentativa sai');
+  });
+
+  test('enquanto a posição está sendo relida depois da recusa, confirmar() não envia nada (a marca vale desde a recusa, não só depois da falha da recarga)', async () => {
+    const pendentes = servidorControlado();
+    const fluxo = F.fluxo.criar();
+    fluxo.definirTrabalhador({ funcionario: funcionario(), ghe: null, ficha: null });
+    fluxo.substituirRascunho(corpoUmItem());
+    fluxo.definirConfirmacao({ modo: 'ACEITE_PRESENCIAL' });
+    const envio = fluxo.confirmar();
+    assert.equal(pendentes[0].chamada.metodo, 'POST');
+    pendentes[0].responder(409, RECUSA_LIVRE);
+    for (let i = 0; i < 20 && pendentes.length < 2; i += 1) await new Promise((r) => setImmediate(r));
+    assert.equal(pendentes[1].chamada.metodo, 'GET', 'a releitura da posição está em voo');
+    assert.equal(fluxo.estado().posicaoDesatualizada, true);
+    const durante = await fluxo.confirmar();
+    assert.deepEqual([durante.ok, durante.codigo], [false, 'POSICAO_DESATUALIZADA']);
+    assert.equal(chamadas.filter((c) => c.metodo === 'POST').length, 1, 'nenhum novo POST durante a releitura');
+    pendentes[1].responder(200, lotesComPosicao());
+    const recusa = await envio;
+    assert.equal(recusa.posicaoRecarregada, true);
+    assert.equal(fluxo.estado().posicaoDesatualizada, false);
+  });
+
+  test('a recarga cobre cada material do rascunho e o material atual, uma vez cada', async () => {
+    let r = F.rascunho.novo(funcionario(), null);
+    r = F.rascunho.adicionarItem(r, { material: material(), lote: lote(), quantidade: 1, motivo: 'ADMISSAO' }).rascunho;
+    r = F.rascunho.adicionarItem(r, { material: material({ id: 31, nome: 'Luva' }), lote: lote({ loteId: 8 }), quantidade: 1, motivo: 'ADMISSAO' }).rascunho;
+    servidor((c) => (c.metodo === 'POST' ? resposta(409, RECUSA_LIVRE) : resposta(200, lotesComPosicao({ material: { id: Number(/materiais\/(\d+)\/lotes/.exec(c.caminho)[1]) } }))));
+    const fluxo = F.fluxo.criar();
+    fluxo.definirTrabalhador({ funcionario: funcionario(), ghe: null, ficha: null });
+    await fluxo.selecionarMaterial(material());
+    fluxo.substituirRascunho(r);
+    fluxo.definirConfirmacao({ modo: 'ACEITE_PRESENCIAL' });
+    chamadas.length = 0;
+    await fluxo.confirmar();
+    assert.deepEqual(sequencia(), ['POST ', 'GET /contexto/5/materiais/30/lotes', 'GET /contexto/5/materiais/31/lotes']);
+    assert.deepEqual(Object.keys(fluxo.estado().posicoes).sort(), ['30', '31']);
+  });
+
+  test('SALDO_INSUFICIENTE (saldo do lote) segue como antes: recarga dos lotes pela página, nenhuma recarga automática e a posição não fica desatualizada', async () => {
+    const fluxo = await prontoParaConfirmar((c) => (c.metodo === 'POST' ? resposta(409, { status: 'error', codigo: 'SALDO_INSUFICIENTE', message: 'x' }) : resposta(200, lotesComPosicao())));
+    chamadas.length = 0;
+    const r = await fluxo.confirmar();
+    assert.deepEqual([r.recarregarLotes, r.recarregarPosicao, fluxo.estado().posicaoDesatualizada], [true, false, false]);
+    assert.deepEqual(sequencia(), ['POST ']);
+    assert.match(r.mensagem, /saldo do lote/i);
+  });
+
+  test('recarregarPosicoes: sem trabalhador não consulta; resposta tardia de um trabalhador anterior é descartada', async () => {
+    const pendentes = servidorControlado();
+    const fluxo = F.fluxo.criar();
+    assert.equal((await fluxo.recarregarPosicoes()).codigo, 'SEM_TRABALHADOR');
+    assert.equal(pendentes.length, 0);
+    fluxo.definirTrabalhador({ funcionario: funcionario(), ghe: null, ficha: null });
+    fluxo.substituirRascunho(corpoUmItem());
+    const p = fluxo.recarregarPosicoes();
+    fluxo.definirTrabalhador({ funcionario: funcionario({ id: 6 }), ghe: null, ficha: null });
+    pendentes[0].responder(200, lotesComPosicao());
+    assert.equal((await p).descartada, true);
+    assert.deepEqual(fluxo.estado().posicoes, {});
+  });
+
+  test('posicaoDoTamanho acha o par pelo tamanho do lote (tamanho nulo é o par sem tamanho) e devolve null quando não há', () => {
+    const lista = [posicao({ tamanho: '40' }), posicao({ tamanho: '41', saldoLivre: 2 }), posicao({ tamanho: null, saldoLivre: 8 })];
+    assert.equal(F.posicaoDoTamanho(lista, '41').saldoLivre, 2);
+    assert.equal(F.posicaoDoTamanho(lista, null).saldoLivre, 8);
+    assert.equal(F.posicaoDoTamanho(lista, '99'), null);
+    assert.equal(F.posicaoDoTamanho(undefined, '40'), null);
+    assert.equal(F.posicaoDoTamanho([], '40'), null);
+  });
+});
+
+describe('12D-3 — render da posição por tamanho', () => {
+  const colunas = (html) => [...html.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((m) => m[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
+
+  test('uma linha por tamanho: tamanho, físico utilizável, comprometido e saldo livre; tamanho nulo é "Único"', () => {
+    const html = F.render.linhasPosicoes([posicao(), posicao({ tamanho: null, fisicoUtilizavel: 7, comprometido: 0, saldoLivre: 7 })]);
+    const linhas = html.split('</tr>').filter((l) => l.includes('<td')).map(colunas);
+    assert.deepEqual(linhas[0], ['40', '10', '4', '6']);
+    assert.deepEqual(linhas[1], ['Único', '7', '0', '7']);
+  });
+
+  test('zero real aparece como "0"; saldo livre 0 com físico positivo avisa em texto que tudo está comprometido; sem físico não avisa', () => {
+    const tudo = colunas(F.render.linhasPosicoes([posicao({ fisicoUtilizavel: 5, comprometido: 5, saldoLivre: 0 })]));
+    assert.deepEqual(tudo.slice(0, 3), ['40', '5', '5']);
+    assert.match(tudo[3], /^0 Tudo comprometido$/);
+    const vazio = colunas(F.render.linhasPosicoes([posicao({ fisicoUtilizavel: 0, comprometido: 0, saldoLivre: 0 })]));
+    assert.equal(vazio[3], '0');
+    assert.equal(/Tudo comprometido/.test(F.render.linhasPosicoes([posicao()])), false);
+  });
+
+  test('o que não é número válido vira "—", nunca "0" nem "undefined"; lista ausente não gera linhas', () => {
+    const c = colunas(F.render.linhasPosicoes([{ tamanho: '40', fisicoUtilizavel: 'x', comprometido: null, saldoLivre: undefined }]));
+    assert.deepEqual(c, ['40', '—', '—', '—']);
+    assert.equal(F.render.linhasPosicoes(undefined), '');
+    assert.equal(F.render.linhasPosicoes([]), '');
+  });
+
+  test('privacidade: só os quatro campos aparecem; solicitações, solicitantes e justificativas da SST que cheguem por engano nunca são mostrados', () => {
+    const intrusa = posicao({
+      solicitacoes: [{ numero: 77, solicitante: 'Fulano Solicitante', justificativaSst: 'Texto SST secreto' }], solicitante: 'Fulano Solicitante', justificativaSst: 'Texto SST secreto', semCobertura: 4, estoqueMinimo: 9,
+    });
+    const html = F.render.linhasPosicoes([intrusa]);
+    for (const proibido of ['Fulano', 'SST', 'secreto', '77', 'Solicitante']) assert.equal(html.includes(proibido), false, proibido);
+    assert.deepEqual(colunas(html), ['40', '10', '4', '6']);
+  });
+
+  test('XSS: o tamanho vindo do servidor sai escapado', () => {
+    const html = F.render.linhasPosicoes([posicao({ tamanho: '<img src=x onerror=alert(1)>' })]);
+    assert.ok(html.includes('&lt;img src=x onerror=alert(1)&gt;'));
+    assert.equal(/<img/.test(html), false);
+  });
+
+  test('contrato: o render lê só chaves do contrato da posição e, entre elas, o tamanho, o físico, o comprometido e o livre', () => {
+    const lidas = new Set();
+    const espiao = new Proxy(posicao(), { get(alvo, nome) { if (typeof nome === 'string') lidas.add(nome); return alvo[nome]; } });
+    F.render.linhasPosicoes([espiao]);
+    F.posicaoDoTamanho([espiao], '40');
+    assert.ok([...lidas].every((k) => CHAVES_DA_POSICAO.includes(k)), [...lidas].join(','));
+    for (const obrigatoria of ['tamanho', 'fisicoUtilizavel', 'comprometido', 'saldoLivre']) assert.ok(lidas.has(obrigatoria), `não lê ${obrigatoria}`);
+  });
+
+  test('o módulo não consulta nem monta composição de solicitações: nenhuma chamada a /solicitacoes e nenhum campo de solicitante ou justificativa da SST', () => {
+    const codigo = semComentarios12d(ler('js/epi-ficha.js'));
+    assert.equal(/solicitacoes-epi|\/solicitacoes/i.test(codigo), false);
+    assert.equal(/solicitante|justificativaSst|justificativa_sst/i.test(codigo), false);
+  });
+});
+
+describe('12D-3 — página da entrega direta com a posição (DOM simulado, fluxo real)', () => {
+  const html = ler('pages/epi-ficha.html');
+
+  test('estática: a posição por tamanho, o aviso com "Recarregar posição" e a ligação com o fluxo existem; a página não consulta solicitações', () => {
+    for (const id of ['entregaPosicao', 'entregaPosicaoBody', 'entregaPosicaoAviso', 'btnRecarregarPosicao']) assert.match(html, new RegExp(`id="${id}"`), id);
+    assert.match(html, /<th>Tamanho<\/th><th>Físico utilizável<\/th><th>Comprometido<\/th><th>Saldo livre<\/th>/);
+    const script = semComentarios12d(html.match(/<script>([\s\S]*?)<\/script>/)[1]);
+    assert.match(script, /F\.render\.linhasPosicoes\(/);
+    assert.match(script, /fluxo\.recarregarPosicoes\(\)/);
+    assert.match(script, /st\.posicaoDesatualizada/);
+    assert.equal(/solicitacoes-epi|\/solicitacoes/i.test(script), false);
+    assert.equal(/localStorage|sessionStorage/.test(script), false, 'a posição não é guardada no navegador');
+    assert.match(html, /A entrega direta usa só o saldo livre/);
+  });
+
+  function abrirInterativa(responder) {
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+    const requisicoes = [];
+    EpiHttp.configurar({
+      baseUrl: BASE,
+      fetch: async (url, opcoes) => {
+        const u = new URL(url);
+        const chamada = { metodo: opcoes.method, caminho: u.pathname + u.search, corpo: opcoes && opcoes.body ? JSON.parse(opcoes.body) : undefined };
+        requisicoes.push(chamada);
+        const r = responder(chamada);
+        if (r instanceof Error) throw r;
+        return r;
+      },
+    });
+    const ocultos = new Set([...html.matchAll(/<[^>]*\sid="([^"]+)"[^>]*display:none[^>]*>/g)].map((m) => m[1]));
+    const mapa = {};
+    const el = (id) => (mapa[id] = mapa[id] || {
+      id, value: '', textContent: '', innerHTML: '', disabled: false, checked: false, max: '', className: '', style: { display: ocultos.has(id) ? 'none' : '' }, listeners: {},
+      classList: { add() {}, remove() {} }, appendChild() {}, scrollIntoView() {}, setAttribute() {}, removeAttribute() {},
+      addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
+      getContext: () => ({ clearRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {} }),
+    });
+    const links = ['dashboard', 'materials', 'epiFicha'].map((p) => ({ style: { display: 'none' }, getAttribute: (k) => (k === 'data-pagina' ? p : null) }));
+    const contexto = { empresa: { id: 3, nome: 'Empresa', cnpj: '11222333000181' }, usuario: { id: 7, nome: 'Pessoa', email: 'p@exemplo.invalid', perfil: 'USUARIO' } };
+    const sessao = { montar: async () => contexto, sessaoEncerrada() { requisicoes.push({ metodo: 'EVENTO', caminho: 'sessaoEncerrada' }); } };
+    const sandbox = {
+      document: { getElementById: el, createElement: () => ({ value: '', textContent: '' }), querySelectorAll: () => links },
+      window: { SAFEWORK_PORTAL_API_BASE_URL: BASE },
+      EpiHttp, EpiPermissoes, EpiFicha: F, EpiSessaoEmpresarial: sessao,
+      console, Promise, String, Number, Array, Object, JSON, Math, crypto: globalThis.crypto,
+    };
+    globalThis.EpiSessaoEmpresarial = sessao;
+    vm.runInNewContext(script, sandbox);
+    const esperar = async () => { for (let i = 0; i < 60; i += 1) await new Promise((r) => setImmediate(r)); };
+    const clicar = async (id, alvo) => { for (const fn of (el(id).listeners.click || [])) await fn({ target: alvo }); await esperar(); };
+    const alvoDe = (atributo, valor) => ({ disabled: false, closest: () => ({ disabled: false, getAttribute: (k) => (k === atributo ? String(valor) : null) }) });
+    return { el, esperar, clicar, alvoDe, requisicoes };
+  }
+
+  // Responde só o que o fluxo pede: permissões, contexto, materiais, lotes (com a posição atual) e o POST.
+  function servidorDaEntrega(estadoServidor) {
+    return (c) => {
+      if (c.caminho === '/api/auth/permissoes') return resposta(200, permissoesDaEmpresa({ entrega: true }));
+      if (c.metodo === 'POST' && c.caminho === '/api/entregas-epi') return resposta(409, RECUSA_LIVRE);
+      if (/\/contexto\/5\/materiais\/30\/lotes$/.test(c.caminho)) return estadoServidor.lotes();
+      if (/\/contexto\/5\/materiais(\?|$)/.test(c.caminho)) return resposta(200, { status: 'ok', materiais: [material()], total: 1 });
+      if (/\/contexto\/5$/.test(c.caminho)) return resposta(200, { status: 'ok', funcionario: funcionario(), ghe: { id: 2, nome: 'GHE' }, ficha: null });
+      return resposta(200, { status: 'ok' });
+    };
+  }
+
+  async function ateConfirmacao(pg) {
+    await pg.esperar();
+    await pg.clicar('btnNovaEntrega');
+    await pg.clicar('entregaTrabBody', pg.alvoDe('data-funcionario', 5));
+    await pg.clicar('entregaMatBody', pg.alvoDe('data-material', 30));
+    await pg.clicar('entregaLoteBody', pg.alvoDe('data-lote', 7));
+    pg.el('itemQuantidade').value = '3';
+    pg.el('itemMotivo').value = 'ADMISSAO';
+    await pg.clicar('btnAdicionarItem');
+    for (const fn of pg.el('aceitePresencial').listeners.change || []) await fn({ target: { checked: true } });
+    await pg.esperar();
+  }
+
+  test('escolher o material mostra a posição por tamanho (físico, comprometido, livre) e o resumo do item traz o saldo livre do tamanho', async () => {
+    const servidorEstado = { lotes: () => resposta(200, lotesComPosicao()) };
+    const pg = abrirInterativa(servidorDaEntrega(servidorEstado));
+    await pg.esperar();
+    await pg.clicar('btnNovaEntrega');
+    await pg.clicar('entregaTrabBody', pg.alvoDe('data-funcionario', 5));
+    await pg.clicar('entregaMatBody', pg.alvoDe('data-material', 30));
+    assert.equal(pg.el('entregaPosicao').style.display, '');
+    assert.match(pg.el('entregaPosicaoBody').innerHTML, /<td[^>]*>10<\/td>\s*<td[^>]*>4<\/td>\s*<td[^>]*>6<\/td>/);
+    await pg.clicar('entregaLoteBody', pg.alvoDe('data-lote', 7));
+    assert.match(pg.el('entregaItemResumo').textContent, /saldo livre do tamanho 6/);
+  });
+
+  test('sem `posicoes` na resposta (servidor antigo) a posição não aparece e o fluxo segue como no Bloco 10', async () => {
+    const pg = abrirInterativa(servidorDaEntrega({ lotes: () => resposta(200, { status: 'ok', material: { id: 30 }, lotes: [lote()] }) }));
+    await pg.esperar();
+    await pg.clicar('btnNovaEntrega');
+    await pg.clicar('entregaTrabBody', pg.alvoDe('data-funcionario', 5));
+    await pg.clicar('entregaMatBody', pg.alvoDe('data-material', 30));
+    assert.equal(pg.el('entregaPosicao').style.display, 'none');
+    assert.match(pg.el('entregaLoteBody').innerHTML, /data-lote="7"/);
+    await pg.clicar('entregaLoteBody', pg.alvoDe('data-lote', 7));
+    assert.equal(/saldo livre/.test(pg.el('entregaItemResumo').textContent), false);
+  });
+
+  test('recusa SALDO_LIVRE_INSUFICIENTE: mensagem clara na tela, posição recarregada e já atualizada, botão liberado; nada de solicitações na tela', async () => {
+    let posicaoAtual = [posicao()];
+    const pg = abrirInterativa(servidorDaEntrega({ lotes: () => resposta(200, lotesComPosicao({ posicoes: posicaoAtual })) }));
+    await ateConfirmacao(pg);
+    posicaoAtual = [posicao({ fisicoUtilizavel: 10, comprometido: 9, saldoLivre: 1 })];
+    pg.requisicoes.length = 0;
+    await pg.clicar('btnRegistrarEntrega');
+    const seq = pg.requisicoes.filter((r) => r.metodo !== 'EVENTO').map((r) => `${r.metodo} ${r.caminho.replace('/api/entregas-epi', '')}`);
+    assert.deepEqual(seq, ['POST ', 'GET /contexto/5/materiais/30/lotes']);
+    assert.match(pg.el('entregaStatus').textContent, /^O saldo físico existe, mas parte dele está comprometida com solicitações já aprovadas/);
+    assert.equal(/texto-do-servidor|SALDO_LIVRE_INSUFICIENTE/.test(pg.el('entregaStatus').textContent), false);
+    assert.match(pg.el('entregaPosicaoBody').innerHTML, /<td[^>]*>9<\/td>\s*<td[^>]*>1<\/td>/);
+    assert.equal(pg.el('btnRegistrarEntrega').disabled, false);
+    assert.equal(pg.el('entregaPosicaoAviso').style.display, 'none');
+  });
+
+  test('recusa com a recarga falhando: registrar fica bloqueado e "Recarregar posição" reaparece; recarregando, o registro volta', async () => {
+    let lotesFalham = false;
+    const pg = abrirInterativa(servidorDaEntrega({ lotes: () => (lotesFalham ? new TypeError('Failed to fetch') : resposta(200, lotesComPosicao())) }));
+    await ateConfirmacao(pg);
+    lotesFalham = true;
+    await pg.clicar('btnRegistrarEntrega');
+    assert.equal(pg.el('btnRegistrarEntrega').disabled, true);
+    assert.equal(pg.el('entregaPosicaoAviso').style.display, '');
+    assert.match(pg.el('entregaStatus').textContent, /Recarregar posição/);
+    lotesFalham = false;
+    await pg.clicar('btnRecarregarPosicao');
+    assert.equal(pg.el('btnRegistrarEntrega').disabled, false);
+    assert.equal(pg.el('entregaPosicaoAviso').style.display, 'none');
+  });
+
+  test('SALDO_INSUFICIENTE (saldo do lote) continua recarregando só os lotes pela página, sem bloquear o registro', async () => {
+    const estadoSrv = { lotes: () => resposta(200, lotesComPosicao()) };
+    const base = servidorDaEntrega(estadoSrv);
+    const pg = abrirInterativa((c) => (c.metodo === 'POST' && c.caminho === '/api/entregas-epi' ? resposta(409, { status: 'error', codigo: 'SALDO_INSUFICIENTE', message: 'x' }) : base(c)));
+    await ateConfirmacao(pg);
+    await pg.clicar('btnRegistrarEntrega');
+    assert.match(pg.el('entregaStatus').textContent, /saldo do lote/i);
+    assert.equal(pg.el('btnRegistrarEntrega').disabled, false);
+  });
+});

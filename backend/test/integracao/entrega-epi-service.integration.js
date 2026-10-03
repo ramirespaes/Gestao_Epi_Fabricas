@@ -638,11 +638,12 @@ describe('entrega de EPI — concorrência (PostgreSQL real, conexões simultân
     assert.deepEqual(await lote(loteId), { quantidade_entregue: 10, saldo: 0 });
   });
 
-  test('duas entregas no mesmo lote com saldo só para uma: a segunda espera a trava do lote e é recusada com 409, sem saldo negativo nem baixa duplicada', async (t) => {
+  test('duas entregas no mesmo lote com saldo só para uma: a segunda espera a trava do par (advisory, antes dos lotes) e é recusada com 409, sem saldo negativo nem baixa duplicada', async (t) => {
     const loteId = await criarLote(pool, { empresaId: d.empresa, materialId: d.material, quantidade: 10, tamanho: '42' });
     const itens = (quantidade) => [{ materialId: d.material, loteId, quantidade, motivo: 'ADMISSAO', justificativaForaGhe: 'Sem GHE' }];
     const { a, b, esperou } = await emParalelo(t, itemRepo, 'criar', { funcionarioId: d.funcionario, itens: itens(6) }, { funcionarioId: d.outroFuncionario, itens: itens(6) });
-    assert.ok(['transactionid', 'tuple'].includes(esperou), esperou);
+    // As chaves de idempotência são diferentes: a única trava advisory em disputa é a do par (empresa, material, tamanho).
+    assert.equal(esperou, 'advisory', esperou);
     assert.equal(a.ok, true, a.erro?.message);
     assert.deepEqual([b.ok, b.erro?.status, b.erro?.codigo], [false, 409, 'SALDO_INSUFICIENTE']);
     assert.deepEqual(await lote(loteId), { quantidade_entregue: 6, saldo: 4 });

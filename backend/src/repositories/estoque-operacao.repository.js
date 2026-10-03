@@ -2,6 +2,7 @@
 
 const { escaparCoringasLike } = require('../utils/like');
 const { lockDaChave, ESPACO_ESTOQUE } = require('../utils/idempotencia');
+const { TIPOS_OPERACAO, ORIGENS_ENTREGA } = require('../utils/operacoes-estoque');
 
 /**
  * Escrita do estoque por lote e leitura do histórico de operações. Eu só
@@ -226,44 +227,87 @@ async function registrarBaixa(executor, dados) {
 // em dias de São Paulo. A ordem é fixa, mais recente primeiro e o id como
 // desempate, e segue o índice (empresa_id, criado_em DESC, id DESC).
 
-const TIPOS_OPERACAO = Object.freeze(['SALDO_INICIAL', 'ENTRADA', 'BAIXA']);
+// A lista de tipos e a de origens vivem em utils/operacoes-estoque.js, a mesma do schema da rota.
 const LIMITE_HISTORICO_MAXIMO = 100;
 
+// A operação ENTREGA aponta o item da entrega (1:1, índice único da 059); o item, a sua
+// entrega, e a entrega, a ficha: tudo N:1 e sempre pela empresa, então uma operação é
+// uma linha. As outras operações não têm item e ficam com a entrega nula.
 const ORIGEM_HISTORICO = `FROM estoque_operacoes o
        JOIN estoque_lotes l ON l.empresa_id = o.empresa_id AND l.id = o.lote_id
-       JOIN materiais m ON m.empresa_id = l.empresa_id AND m.id = l.material_id`;
+       JOIN materiais m ON m.empresa_id = l.empresa_id AND m.id = l.material_id
+       LEFT JOIN entregas_epi_itens ei ON ei.empresa_id = o.empresa_id AND ei.id = o.entrega_item_id
+       LEFT JOIN entregas_epi en ON en.empresa_id = ei.empresa_id AND en.id = ei.entrega_id`;
 
+// Só entra na consulta de quem pode ver a ficha: trabalhador pelo snapshot da entrega
+// (nome e matrícula; o cadastro e o CPF nunca são lidos), a ficha e a solicitação de origem.
+const DETALHE_ENTREGA = `LEFT JOIN fichas_epi fi ON fi.empresa_id = en.empresa_id AND fi.id = en.ficha_id
+       LEFT JOIN solicitacoes_epi_itens si ON si.empresa_id = ei.empresa_id AND si.id = ei.solicitacao_item_id
+       LEFT JOIN solicitacoes_epi s ON s.empresa_id = si.empresa_id AND s.id = si.solicitacao_id`;
+
+const COLUNAS_DETALHE_ENTREGA = `,
+            fi.id AS ficha_id, fi.numero AS ficha_numero, fi.funcionario_id AS trabalhador_id,
+            en.trabalhador_nome, en.trabalhador_matricula, s.id AS solicitacao_id, s.numero AS solicitacao_numero`;
+
+// $6 é a origem: só uma linha de ENTREGA tem origem, então pedir a origem exclui as demais.
 const FILTRO_HISTORICO = `WHERE o.empresa_id = $1
         AND ($2::text IS NULL OR o.tipo = $2::text)
         AND ($3::date IS NULL OR o.criado_em >= ($3::date)::timestamp AT TIME ZONE 'America/Sao_Paulo')
         AND ($4::date IS NULL OR o.criado_em < ($4::date + 1)::timestamp AT TIME ZONE 'America/Sao_Paulo')
-        AND ($5::text IS NULL OR m.nome ILIKE '%' || $5::text || '%' OR l.ca_numero ILIKE '%' || $5::text || '%')`;
+        AND ($5::text IS NULL OR m.nome ILIKE '%' || $5::text || '%' OR l.ca_numero ILIKE '%' || $5::text || '%')
+        AND ($6::text IS NULL OR en.origem = $6::text)`;
 
-function filtrosHistorico({ tipo = null, de = null, ate = null, busca = null } = {}) {
+function filtrosHistorico({
+  tipo = null, origem = null, de = null, ate = null, busca = null,
+} = {}) {
   if (tipo !== null && !TIPOS_OPERACAO.includes(tipo)) throw new TypeError('tipo de operação inválido');
+  if (origem !== null && !ORIGENS_ENTREGA.includes(origem)) throw new TypeError('origem da entrega inválida');
   for (const data of [de, ate]) {
     if (data !== null && (typeof data !== 'string' || !DATA_FORMATO.test(data))) throw new TypeError('período inválido');
   }
   if (busca !== null && (typeof busca !== 'string' || busca.length === 0)) throw new TypeError('busca inválida');
-  return [tipo, de, ate, busca === null ? null : escaparCoringasLike(busca)];
+  return [tipo, de, ate, busca === null ? null : escaparCoringasLike(busca), origem];
 }
 
-/** Uma página do histórico, com o lote, o material e o nome de quem registrou, da mesma empresa. */
-async function listarHistorico(executor, empresaId, { pagina, limite, ...filtros }) {
+// O bloco da entrega: só a origem para quem não vê a ficha; com o detalhe, a ficha, o trabalhador e a solicitação (null na DIRETA).
+function entregaDaLinha(o, detalhe) {
+  if (o.tipo !== 'ENTREGA') return null;
+  const entrega = { origem: o.entrega_origem };
+  if (!detalhe) return entrega;
+  return {
+    ...entrega,
+    fichaId: o.ficha_id,
+    fichaNumero: o.ficha_numero,
+    trabalhador: { id: o.trabalhador_id, nome: o.trabalhador_nome, matricula: o.trabalhador_matricula },
+    solicitacao: o.solicitacao_id === null || o.solicitacao_id === undefined ? null : { id: o.solicitacao_id, numero: o.solicitacao_numero },
+  };
+}
+
+/**
+ * Uma página do histórico, com o lote, o material, o nome de quem registrou e,
+ * nas linhas de ENTREGA, a origem; com `detalheEntrega`, também a ficha, o
+ * trabalhador e a solicitação. Tudo da mesma empresa.
+ */
+async function listarHistorico(executor, empresaId, {
+  pagina, limite, detalheEntrega = false, ...filtros
+}) {
   exigirId(empresaId, 'empresa');
   exigirId(pagina, 'página');
   if (!Number.isInteger(limite) || limite < 1 || limite > LIMITE_HISTORICO_MAXIMO) {
     throw new TypeError('limite inválido');
   }
+  if (typeof detalheEntrega !== 'boolean') throw new TypeError('detalhe da entrega deve ser booleano');
   const { rows } = await executor.query(
     `SELECT o.id, o.tipo, o.quantidade, o.motivo, o.justificativa, o.criado_em, o.lote_id,
             l.material_id, m.nome, m.codigo_interno, l.tamanho, l.ca_numero,
-            to_char(l.ca_validade, 'YYYY-MM-DD') AS ca_validade, u.nome AS responsavel
+            to_char(l.ca_validade, 'YYYY-MM-DD') AS ca_validade, u.nome AS responsavel,
+            en.origem AS entrega_origem${detalheEntrega ? COLUNAS_DETALHE_ENTREGA : ''}
        ${ORIGEM_HISTORICO}
        LEFT JOIN usuarios u ON u.empresa_id = o.empresa_id AND u.id = o.usuario_id
+       ${detalheEntrega ? DETALHE_ENTREGA : ''}
        ${FILTRO_HISTORICO}
       ORDER BY o.criado_em DESC, o.id DESC
-      LIMIT $6 OFFSET $7`,
+      LIMIT $7 OFFSET $8`,
     [empresaId, ...filtrosHistorico(filtros), limite, (pagina - 1) * limite],
   );
   return rows.map((o) => ({
@@ -281,6 +325,7 @@ async function listarHistorico(executor, empresaId, { pagina, limite, ...filtros
     tamanho: o.tamanho,
     caNumero: o.ca_numero,
     caValidade: o.ca_validade,
+    entrega: entregaDaLinha(o, detalheEntrega),
   }));
 }
 
@@ -294,6 +339,8 @@ async function contarHistorico(executor, empresaId, filtros) {
 }
 
 module.exports = {
+  TIPOS_OPERACAO,
+  ORIGENS_ENTREGA,
   listarHistorico,
   contarHistorico,
   travarChave,

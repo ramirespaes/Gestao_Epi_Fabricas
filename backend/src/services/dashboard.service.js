@@ -2,6 +2,7 @@
 
 const autorizacao = require('../middleware/autorizacao');
 const loteRepo = require('../repositories/estoque-lote.repository');
+const posicaoRepo = require('../repositories/posicao-estoque.repository');
 const funcionarioRepo = require('../repositories/funcionario.repository');
 const { DIAS_ALERTA_VALIDADE_CA } = require('../schemas/itens-disponiveis.schema');
 const { exigirDataOperacional } = require('../utils/data-operacional');
@@ -13,8 +14,11 @@ const { exigirDataOperacional } = require('../utils/data-operacional');
  * calculado e devolvido se o usuário também puder VISUALIZAR a fonte dos
  * dados, decidida pela MESMA função que autoriza as rotas
  * (autorizacao.avaliarPermissaoRecurso — nenhuma interpretação nova do RBAC):
- *   itensDisponiveis, estoqueAbaixoMinimo -> availableItems (os dados de
- *     Itens Disponíveis: disponível por material ativo × tamanho);
+ *   itensDisponiveis, estoqueAbaixoMinimo, saldoLivre, comprometido,
+ *   semCobertura, necessidadeReposicao -> availableItems (os dados de Itens
+ *     Disponíveis, somados da MESMA posição por par: o físico utilizável, o
+ *     saldo livre L, o comprometido C, a demanda sem cobertura G e a necessidade
+ *     G + déficit; o abaixo do mínimo mede o mínimo efetivo contra o livre);
  *   caVencido (+ aVencer)               -> stockValidity (E9: os lotes com
  *     saldo e CA vencido ou a vencer, na data operacional, contados como na
  *     Validade de estoque, inclusive de material inativo);
@@ -52,17 +56,23 @@ async function consultar(pool, { empresaId, usuarioId, perfil, hoje }) {
     podeVer(pool, contexto, FONTES.funcionarios),
   ]);
 
-  // Os indicadores de estoque saem da mesma consulta; só devolvo o que a fonte permite.
-  const [resumo, ativos] = await Promise.all([
-    estoque || validade ? loteRepo.resumirIndicadores(pool, empresaId, { hoje, diasAlerta: DIAS_ALERTA_VALIDADE_CA }) : null,
+  // Cada agregação só roda se o usuário vê a sua fonte; o estoque sai da posição, a validade dos lotes.
+  const [posicao, ca, ativos] = await Promise.all([
+    estoque ? posicaoRepo.resumirPosicoes(pool, empresaId, { hoje }) : null,
+    validade ? loteRepo.resumirIndicadores(pool, empresaId, { hoje, diasAlerta: DIAS_ALERTA_VALIDADE_CA }) : null,
     funcionarios ? funcionarioRepo.contarPorEmpresa(pool, empresaId, { ativo: true }) : null,
   ]);
+  const deEstoque = (valor) => (estoque ? { permitido: true, valor } : { ...NEGADO });
 
   return {
-    itensDisponiveis: estoque ? { permitido: true, valor: resumo.disponivel } : { ...NEGADO },
-    estoqueAbaixoMinimo: estoque ? { permitido: true, valor: resumo.abaixoMinimo } : { ...NEGADO },
+    itensDisponiveis: deEstoque(estoque ? posicao.fisicoUtilizavel : null),
+    estoqueAbaixoMinimo: deEstoque(estoque ? posicao.paresAbaixoDoMinimo : null),
+    saldoLivre: deEstoque(estoque ? posicao.saldoLivre : null),
+    comprometido: deEstoque(estoque ? posicao.comprometido : null),
+    semCobertura: deEstoque(estoque ? posicao.semCobertura : null),
+    necessidadeReposicao: deEstoque(estoque ? posicao.necessidade : null),
     caVencido: validade
-      ? { permitido: true, valor: resumo.caVencido, aVencer: resumo.caAVencer, diasAlerta: DIAS_ALERTA_VALIDADE_CA }
+      ? { permitido: true, valor: ca.caVencido, aVencer: ca.caAVencer, diasAlerta: DIAS_ALERTA_VALIDADE_CA }
       : { ...NEGADO },
     funcionariosAtivos: funcionarios ? { permitido: true, valor: ativos } : { ...NEGADO },
   };

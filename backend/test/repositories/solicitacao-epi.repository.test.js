@@ -260,6 +260,31 @@ describe('cancelar', () => {
   });
 });
 
+describe('marcarEntregue', () => {
+  test('fecha só uma solicitação APROVADA ou APROVADA_PARCIAL da empresa, com a hora do relógio do banco, e devolve a linha', async () => {
+    const executor = executorFalso([linha({ status: 'ENTREGUE', entregue_em: CRIADA_EM })]);
+    const fechada = await repo().marcarEntregue(executor, EMPRESA, ID);
+    assert.deepEqual(fechada, publica({ status: 'ENTREGUE', entregueEm: CRIADA_EM }));
+    const { texto, valores } = executor.chamadas[0];
+    assert.match(texto, /^UPDATE solicitacoes_epi\s+SET status = 'ENTREGUE', entregue_em = clock_timestamp\(\)/);
+    assert.match(texto, /WHERE empresa_id = \$1 AND id = \$2 AND status IN \('APROVADA', 'APROVADA_PARCIAL'\)/);
+    assert.match(texto, /RETURNING id, empresa_id/);
+    assert.deepEqual(valores, [EMPRESA, ID]);
+    assert.doesNotMatch(texto, /now\(\)|CURRENT_TIMESTAMP/i, 'o carimbo é do relógio da transação em andamento, como a decisão e o cancelamento');
+  });
+
+  test('devolve null quando a solicitação não está aberta para entrega ou não é da empresa (nenhuma linha atualizada)', async () => {
+    assert.equal(await repo().marcarEntregue(executorFalso([]), EMPRESA, ID), null);
+  });
+
+  test('recusa empresa e solicitação inválidas sem consultar', async () => {
+    const vazio = executorFalso();
+    await assert.rejects(() => repo().marcarEntregue(vazio, 0, ID), /empresa/);
+    await assert.rejects(() => repo().marcarEntregue(vazio, EMPRESA, '17'), /solicitação/);
+    assert.equal(vazio.chamadas.length, 0);
+  });
+});
+
 describe('o repositório não escreve em outra tabela nem muda o estoque', () => {
   test('nenhuma função toca estoque, lotes ou fichas; só a tabela solicitacoes_epi', async () => {
     const executor = executorFalso(...Array.from({ length: 10 }, () => [linha()]));
@@ -267,6 +292,7 @@ describe('o repositório não escreve em outra tabela nem muda o estoque', () =>
     await r.criar(executor, novo());
     await r.registrarDecisao(executor, EMPRESA, ID, { status: 'APROVADA', decididaPor: 12 });
     await r.cancelar(executor, EMPRESA, ID, { canceladaPor: USUARIO });
+    await r.marcarEntregue(executor, EMPRESA, ID);
     await r.buscarPorId(executor, EMPRESA, ID);
     await r.travarPorId(executor, EMPRESA, ID);
     await r.buscarPorChave(executor, EMPRESA, CHAVE);

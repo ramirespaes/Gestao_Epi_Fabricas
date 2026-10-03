@@ -166,11 +166,27 @@ describe('baixa — motivos da 042 e justificativa do OUTRO', () => {
 describe('operacoes — filtros do histórico (E8)', () => {
   const q = (query) => estoque.operacoes.query.safeParse(query);
 
-  test('sem filtro: página 1 e limite 50; tipos só os três da 042', () => {
+  test('sem filtro: página 1 e limite 50; tipos: os três da 042 e a ENTREGA da 059 (12D-2)', () => {
     assert.deepEqual(q({}).data, { pagina: 1, limite: 50 });
-    assert.deepEqual([...estoque.TIPOS_OPERACAO], ['SALDO_INICIAL', 'ENTRADA', 'BAIXA']);
+    assert.deepEqual([...estoque.TIPOS_OPERACAO], ['SALDO_INICIAL', 'ENTRADA', 'BAIXA', 'ENTREGA']);
     for (const tipo of estoque.TIPOS_OPERACAO) assert.equal(q({ tipo }).data.tipo, tipo);
-    for (const tipo of ['ENTREGA', 'baixa', '', ['BAIXA', 'ENTRADA']]) assert.equal(q({ tipo }).success, false, String(tipo));
+    for (const tipo of ['entrega', 'baixa', '', 'DEVOLUCAO', ['BAIXA', 'ENTRADA']]) assert.equal(q({ tipo }).success, false, String(tipo));
+  });
+
+  test('origem: DIRETA ou SOLICITACAO, com ou sem tipo; qualquer outro valor é recusado (12D-2)', () => {
+    assert.deepEqual([...estoque.ORIGENS_ENTREGA], ['DIRETA', 'SOLICITACAO']);
+    for (const origem of estoque.ORIGENS_ENTREGA) {
+      assert.equal(q({ origem }).data.origem, origem);
+      assert.equal(q({ tipo: 'ENTREGA', origem }).success, true, origem);
+      assert.equal(q({ tipo: 'BAIXA', origem }).success, true, 'a combinação é válida; o resultado é que fica vazio');
+    }
+    for (const origem of ['direta', '', 'AUTOATENDIMENTO', ['DIRETA', 'SOLICITACAO']]) assert.equal(q({ origem }).success, false, JSON.stringify(origem));
+  });
+
+  test('a lista de tipos do schema é a mesma do repository (fonte única)', () => {
+    const repositorio = require('../../src/repositories/estoque-operacao.repository');
+    assert.deepEqual([...repositorio.TIPOS_OPERACAO], [...estoque.TIPOS_OPERACAO]);
+    assert.deepEqual([...repositorio.ORIGENS_ENTREGA], [...estoque.ORIGENS_ENTREGA]);
   });
 
   test('período: datas de calendário, o mesmo dia vale, e a data final antes da inicial é recusada', () => {

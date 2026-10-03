@@ -99,4 +99,31 @@ async function registrar(executor, {
   return { id: rows[0].id, criadoEm: rows[0].criado_em };
 }
 
-module.exports = { registrar };
+/**
+ * Há registro do mesmo ator, ação e referência na janela? Só leitura, para a
+ * supressão da auditoria de recusa (12C-3). A janela corre pelo relógio da
+ * consulta (clock_timestamp), não pelo do início da transação. Atende-se pelos
+ * índices de empresa e usuário e pelo de criado_em; sem índice novo.
+ */
+async function existeRecente(executor, {
+  empresaId, usuarioId, acao, referencia, janelaSegundos,
+}) {
+  exigirEmpresa(empresaId);
+  if (!Number.isInteger(usuarioId) || usuarioId <= 0) throw new TypeError('identificador de usuário inválido');
+  exigirAcao(acao);
+  // logs_auditoria.referencia: VARCHAR(150).
+  if (typeof referencia !== 'string' || referencia.length === 0 || referencia.length > 150) throw new TypeError('referência de auditoria inválida');
+  if (!Number.isInteger(janelaSegundos) || janelaSegundos < 1 || janelaSegundos > 3600) throw new TypeError('janela em segundos inválida');
+
+  const { rows } = await executor.query(
+    `SELECT 1
+       FROM logs_auditoria
+      WHERE empresa_id = $1 AND usuario_id = $2 AND acao = $3 AND referencia = $4
+        AND criado_em > clock_timestamp() - make_interval(secs => $5)
+      LIMIT 1`,
+    [empresaId, usuarioId, acao, referencia, janelaSegundos],
+  );
+  return rows.length > 0;
+}
+
+module.exports = { registrar, existeRecente };

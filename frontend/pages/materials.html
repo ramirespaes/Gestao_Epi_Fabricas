@@ -234,9 +234,9 @@
                   <div class="helper" id="materialUnidadeHelper" style="display:none">A unidade de controle não pode ser alterada em um material existente.</div>
                 </div>
                 <div class="field">
-                  <label for="materialEstoqueMinimo">Estoque mínimo</label>
+                  <label for="materialEstoqueMinimo">Mínimo padrão</label>
                   <input id="materialEstoqueMinimo" class="input" type="number" placeholder="Ex.: 15" />
-                  <div class="helper">Quando atingir esse nível, o sistema deve sinalizar necessidade de compra.</div>
+                  <div class="helper">Usado para tamanhos que não possuem mínimo específico. Quando o saldo livre ficar abaixo dele, o sistema sinaliza necessidade de compra.</div>
                 </div>
 
                 <div id="validityFields" class="field full">
@@ -392,6 +392,7 @@
                         <option value="OUTRO">Outro</option>
                       </select>
                     </div>
+                    <div class="field full helper" id="baixaMotivoHelper" style="margin:0"></div>
                     <div class="field full" id="campoBaixaJustificativa" style="display:none">
                       <label for="baixaJustificativa">Justificativa *</label>
                       <input id="baixaJustificativa" class="input" type="text" maxlength="500" placeholder="Explique o motivo da baixa" />
@@ -402,6 +403,55 @@
                   </div>
                 </div>
               </div>
+            </section>
+
+            <section class="card" id="cardMinimos">
+              <div class="card-header">
+                <div class="card-title">
+                  <div class="card-icon">tune</div>
+                  <div>
+                    <h2>Estoque mínimo por tamanho</h2>
+                    <p>Mínimo próprio de cada tamanho; sem ele, vale o mínimo padrão do cadastro.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="helper" id="minimosAviso">Escolha um material para ver os mínimos por tamanho.</div>
+              <div class="table-wrap" id="minimosTabela" style="display:none;margin-top:8px">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Tamanho</th>
+                      <th style="text-align:right">Mínimo próprio</th>
+                      <th style="text-align:right">Mínimo efetivo</th>
+                      <th>Origem</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="minimosCorpo"></tbody>
+                </table>
+              </div>
+
+              <!-- Definir ou alterar o mínimo de um tamanho (só com materials.editar; só para material com tamanhos) -->
+              <div id="blocoMinimos" style="display:none;margin-top:16px;padding-top:14px;border-top:0.5px solid rgba(0,0,0,0.08)">
+                <div style="font-size:13px;font-weight:600;margin-bottom:10px">Definir mínimo de um tamanho</div>
+                <div class="form-grid">
+                  <div class="field">
+                    <label for="minimoTamanho">Tamanho *</label>
+                    <input id="minimoTamanho" class="input" type="text" list="minimoTamanhosLista" maxlength="20" autocomplete="off" placeholder="Ex.: 42 ou GG" />
+                    <datalist id="minimoTamanhosLista"></datalist>
+                  </div>
+                  <div class="field">
+                    <label for="minimoValor">Mínimo *</label>
+                    <input id="minimoValor" class="input" type="number" min="0" step="1" placeholder="Ex.: 10" />
+                  </div>
+                </div>
+                <div class="helper">Use 0 para um tamanho sem mínimo. "Remover" na tabela devolve o tamanho ao mínimo padrão.</div>
+                <div class="footer-actions">
+                  <button id="botaoDefinirMinimo" class="filled-btn" type="button" disabled><span class="material-symbols-outlined">save</span>Definir mínimo</button>
+                </div>
+              </div>
+              <div id="minimosStatus" role="status" aria-live="polite" style="margin-top:10px;font-size:12px"></div>
             </section>
 
             <section class="card">
@@ -461,6 +511,7 @@
 <script src="../js/permissoes-efetivas.js"></script>
 <script src="../js/pagina-base.js"></script>
 <script src="../js/materiais.js"></script>
+<script src="../js/estoque-minimos.js"></script>
 <script>
 /*
   Ligação com o DOM — deliberadamente fina. Toda a lógica (corpo do POST,
@@ -473,6 +524,7 @@
 
   var $ = function (id) { return document.getElementById(id); };
   var formulario = EpiMateriais.formulario, mensagens = EpiMateriais.mensagens, render = EpiMateriais.render, fluxo = EpiMateriais.fluxo, estoque = EpiMateriais.estoque;
+  var Min = EpiEstoqueMinimos;
 
   // O que o servidor disse que esta pessoa pode fazer aqui. Começa sem nada;
   // só aplicarAcesso() (após GET /api/auth/permissoes) libera.
@@ -491,6 +543,14 @@
   var lotesAtuais = [];
   var entradaEmAndamento = false;
   var baixaEmAndamento = false;
+  // Mínimo por tamanho do material escolhido: último estado do servidor, texto de falha
+  // da consulta (só no painel), numeração das consultas e escritas (resposta antiga é
+  // descartada) e bloqueio contra duas escritas ao mesmo tempo. Nada vai ao navegador.
+  var minimosDados = null;
+  var minimosFalha = '';
+  var minimosSeq = 0;
+  var minimosOcupado = false;
+  var CAMPO_MINIMO = { tamanho: 'minimoTamanho', minimo: 'minimoValor' };
   // Uma chave por operação: repetir a mesma entrada ou baixa depois de uma
   // resposta inconclusiva não duplica o registro no servidor.
   var operacaoEntrada = EpiMateriais.idempotencia.criar();
@@ -882,7 +942,7 @@
       if (!r.ok) {
         if (tratarSessao(r)) return;
         if (r.codigo === 'MATERIAL_CODIGO_INTERNO_DUPLICADO') marcarErros([{ campo: 'codigoInterno' }]);
-        if (r.codigo === 'MATERIAL_TAMANHO_SALDO_INCOMPATIVEL') marcarErros([{ campo: 'controleTamanho' }]);
+        if (r.codigo === 'MATERIAL_TAMANHO_SALDO_INCOMPATIVEL' || r.codigo === 'MATERIAL_TAMANHO_MINIMOS_INCOMPATIVEIS') marcarErros([{ campo: 'controleTamanho' }]);
         // 4xx: recusa confirmada. Rede ou 5xx: não confirmado; formulário preservado, sem repetição.
         mostrarAviso(mensagens.erroEdicao(r), mensagens.confirmado(r) ? 'erro' : 'atencao');
         return;
@@ -893,6 +953,7 @@
       showToast('Alterações salvas', 'success');
       await carregarSeletorGrade(material.id, material);
       await carregarEstoque(material.id);
+      await carregarMinimos(material.id); // o padrão ou o controle de tamanho podem ter mudado
     } finally {
       $('botaoSalvar').disabled = false;
       $('botaoCancelarEdicao').disabled = false;
@@ -944,6 +1005,7 @@
     atualizarLimiteBaixa();
     configurarEntrada();
     atualizarEstoqueAcoes();
+    renderizarMinimos(); // os tamanhos dos lotes entram no painel dos mínimos
   }
 
   async function carregarEstoque(id) {
@@ -994,6 +1056,7 @@
   function limparBaixa() {
     ['baixaLote', 'baixaQuantidade', 'baixaMotivo', 'baixaJustificativa'].forEach(function (id) { $(id).value = ''; });
     $('campoBaixaJustificativa').style.display = 'none';
+    $('baixaMotivoHelper').textContent = '';
     $('baixaQuantidade').max = '';
     desmarcarCampos(Object.keys(CAMPO_BAIXA_POR_ERRO).map(function (k) { return CAMPO_BAIXA_POR_ERRO[k]; }));
   }
@@ -1061,6 +1124,8 @@
     var outro = $('baixaMotivo').value === 'OUTRO';
     $('campoBaixaJustificativa').style.display = outro ? '' : 'none';
     if (!outro) $('baixaJustificativa').value = '';
+    // Só devolução ao fornecedor e "Outro" dependem do saldo livre; os fatos físicos não ganham dica.
+    $('baixaMotivoHelper').textContent = mensagens.avisoMotivoBaixa($('baixaMotivo').value);
   }
 
   async function registrarBaixa() {
@@ -1094,6 +1159,148 @@
     }
   }
 
+  // ── mínimo por tamanho do material escolhido (12D-3) ──
+  function minimosStatus(texto, erro) {
+    $('minimosStatus').textContent = texto || '';
+    $('minimosStatus').style.color = erro ? 'var(--error)' : '';
+  }
+
+  function tamanhosDosLotes() {
+    return lotesAtuais.map(function (l) { return l.tamanho; });
+  }
+
+  // Só edita quem pode editar, num material escolhido que o servidor disse exigir tamanho:
+  // tamanho único, não classificado ou sem resposta nunca recebem escrita (o servidor recusaria com 409).
+  function minimoEditavel() {
+    return acessoAtual.podeEditar && !telaEncerrada && !!$('gradeMaterial').value && Min.painel.montar(minimosDados, tamanhosDosLotes()).modo === 'TAMANHOS';
+  }
+
+  // Painel a partir do estado do servidor e dos tamanhos dos lotes.
+  function renderizarMinimos() {
+    var escolhido = !!$('gradeMaterial').value && !telaEncerrada;
+    var painel = Min.painel.montar(minimosDados, tamanhosDosLotes());
+    var comTabela = escolhido && painel.modo === 'TAMANHOS' && painel.linhas.length > 0;
+    var podeEditar = minimoEditavel();
+    var texto;
+    if (!escolhido) texto = 'Escolha um material para ver os mínimos por tamanho.';
+    else if (minimosFalha) texto = minimosFalha;
+    else if (!minimosDados) texto = 'Carregando os mínimos…';
+    else texto = Min.mensagens.aviso(painel);
+    $('minimosAviso').textContent = texto;
+    $('minimosCorpo').innerHTML = comTabela ? Min.render.linhas(painel, { podeEditar: podeEditar }) : '';
+    $('minimosTabela').style.display = comTabela ? '' : 'none';
+    $('minimoTamanhosLista').innerHTML = podeEditar ? Min.render.opcoesTamanhos(painel) : '';
+    $('blocoMinimos').style.display = podeEditar ? '' : 'none';
+    $('botaoDefinirMinimo').disabled = !podeEditar || minimosOcupado;
+  }
+
+  function limparMinimos() {
+    minimosSeq += 1;
+    minimosDados = null;
+    minimosFalha = '';
+    minimosOcupado = false;
+    ['minimoTamanho', 'minimoValor'].forEach(function (id) { $(id).value = ''; });
+    desmarcarCampos(['minimoTamanho', 'minimoValor']);
+    minimosStatus('', false);
+    renderizarMinimos();
+  }
+
+  /** `manter`: recarga depois de uma escrita duvidosa; o painel atual fica até a resposta chegar. */
+  async function carregarMinimos(id, opcoes) {
+    var minha = ++minimosSeq;
+    if (!(opcoes && opcoes.manter)) { minimosDados = null; minimosFalha = ''; }
+    renderizarMinimos();
+    if (!id) return;
+    var r = await Min.acoes.consultar(Number(id));
+    if (telaEncerrada || minha !== minimosSeq || $('gradeMaterial').value !== String(id)) return; // outro material ou resposta antiga
+    if (!r.ok) {
+      if (tratarSessao(r)) return;
+      minimosDados = null;
+      minimosFalha = Min.mensagens.erroConsulta(r);
+    } else {
+      minimosDados = r.dados;
+      minimosFalha = '';
+    }
+    renderizarMinimos();
+  }
+
+  /**
+   * Uma escrita (PUT ou DELETE) por vez, no material escolhido. O estado novo vem na resposta e
+   * redesenha o painel; 409 (o estado mudou) e falha de rede ou 5xx (não confirmado) releem o servidor.
+   * Devolve true só quando o servidor confirmou.
+   */
+  async function executarMinimo(chamar, textoDeSucesso) {
+    var id = Number($('gradeMaterial').value);
+    if (!minimoEditavel() || minimosOcupado || !id) return false;
+    var minha = ++minimosSeq;
+    minimosOcupado = true;
+    minimosStatus('Salvando…', false);
+    renderizarMinimos();
+    try {
+      var r = await chamar(id);
+      if (telaEncerrada || minha !== minimosSeq) return false;
+      if (!r.ok) {
+        if (tratarSessao(r)) return false;
+        minimosStatus(Min.mensagens.erroGravacao(r), true);
+        if (r.status === 409 || !mensagens.confirmado(r)) {
+          minimosOcupado = false;
+          await carregarMinimos(id, { manter: true });
+        }
+        return false;
+      }
+      minimosDados = r.dados;
+      minimosFalha = '';
+      minimosStatus(textoDeSucesso(r.dados), false);
+      return true;
+    } finally {
+      minimosOcupado = false;
+      renderizarMinimos();
+    }
+  }
+
+  async function definirMinimo() {
+    if (!minimoEditavel() || minimosOcupado) return;
+    desmarcarCampos(['minimoTamanho', 'minimoValor']);
+    var t = Min.validar.tamanho($('minimoTamanho').value);
+    var v = Min.validar.minimo($('minimoValor').value);
+    var erros = [];
+    if (!t.ok) erros.push({ campo: 'tamanho', mensagem: t.mensagem });
+    if (!v.ok) erros.push({ campo: 'minimo', mensagem: v.mensagem });
+    if (erros.length) {
+      marcarCampos(CAMPO_MINIMO, erros);
+      minimosStatus(erros.map(function (e) { return e.mensagem; }).join(' '), true);
+      return;
+    }
+    var gravou = await executarMinimo(
+      function (id) { return Min.acoes.definir(id, t.tamanho, v.valor); },
+      function (dados) { return Min.mensagens.sucessoDefinir(dados, t.tamanho, v.valor); },
+    );
+    if (gravou) { $('minimoTamanho').value = ''; $('minimoValor').value = ''; }
+  }
+
+  function removerMinimo(tamanho) {
+    return executarMinimo(
+      function (id) { return Min.acoes.remover(id, tamanho); },
+      function (dados) { return Min.mensagens.sucessoRemover(dados, tamanho); },
+    );
+  }
+
+  // Definir e Alterar só levam o tamanho (e o valor atual) ao formulário; Remover vai direto ao servidor.
+  function acaoDaLinhaDoMinimo(ev) {
+    var alvo = ev && ev.target && typeof ev.target.closest === 'function' ? ev.target.closest('[data-acao]') : null;
+    if (!alvo || alvo.disabled || !minimoEditavel()) return undefined;
+    var acao = alvo.getAttribute('data-acao');
+    var tamanho = alvo.getAttribute('data-tamanho');
+    if (acao === 'remover') return removerMinimo(tamanho);
+    if (acao !== 'definir' && acao !== 'alterar') return undefined;
+    var linha = Min.painel.montar(minimosDados, tamanhosDosLotes()).linhas.filter(function (l) { return l.tamanho === tamanho; })[0];
+    desmarcarCampos(['minimoTamanho', 'minimoValor']);
+    $('minimoTamanho').value = tamanho;
+    $('minimoValor').value = acao === 'alterar' && linha && linha.proprio !== null ? String(linha.proprio) : '';
+    $('minimoValor').focus();
+    return undefined;
+  }
+
   // ── acesso e sessão ──
   function aplicarAcesso(acesso) {
     acessoAtual = {
@@ -1112,6 +1319,7 @@
     aplicarModo();
     atualizarBotaoEditar();
     atualizarEstoqueAcoes();
+    renderizarMinimos();
   }
 
   async function iniciarSessao() {
@@ -1129,6 +1337,7 @@
     lotesAtuais = [];
     limparEntrada();
     limparBaixa();
+    limparMinimos();
     mostrarEstoque(null);
     $('gradeMaterial').innerHTML = '';
     mostrarAviso('', null);
@@ -1150,9 +1359,13 @@
     lotesAtuais = [];
     limparEntrada();
     limparBaixa();
+    limparMinimos();
     mostrarEstoque(null);
     carregarEstoque($('gradeMaterial').value);
+    carregarMinimos($('gradeMaterial').value);
   });
+  $('botaoDefinirMinimo').addEventListener('click', definirMinimo);
+  $('minimosCorpo').addEventListener('click', acaoDaLinhaDoMinimo);
   $('botaoRegistrarEntrada').addEventListener('click', registrarEntradaPosterior);
   $('baixaLote').addEventListener('change', atualizarLimiteBaixa);
   $('baixaMotivo').addEventListener('change', toggleJustificativa);

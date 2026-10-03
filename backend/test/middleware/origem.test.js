@@ -6,7 +6,7 @@ const http = require('node:http');
 const request = require('supertest');
 const express = require('express');
 const { criarVerificacaoOrigem } = require('../../src/middleware/origem');
-const { criarCors } = require('../../src/middleware/cors');
+const { criarCors, METODOS_PORTAL } = require('../../src/middleware/cors');
 const { criarCabecalhosSeguranca, semCache } = require('../../src/middleware/cabecalhos');
 const { notFoundHandler, errorHandler } = require('../../src/middleware/errorHandler');
 const { assertSemSensiveis } = require('../helpers/sensiveis');
@@ -20,7 +20,7 @@ const SENSIVEIS = [SENTINELA_PATH, 'valor-sentinela-9a2b', SENTINELA_HOST, 'mal.
 
 const app = express();
 app.use(criarCabecalhosSeguranca({ hstsAtivo: false }));
-app.use('/api', criarCors({ origens: ORIGENS }), semCache, criarVerificacaoOrigem({ origens: ORIGENS }));
+app.use('/api', criarCors({ origens: ORIGENS, metodos: METODOS_PORTAL }), semCache, criarVerificacaoOrigem({ origens: ORIGENS }));
 app.all('/api/x', (req, res) => res.json({ metodo: req.method }));
 app.all('/fora', (req, res) => res.json({ fora: true }));
 app.use(notFoundHandler);

@@ -8,13 +8,17 @@ const vm = require('node:vm');
 
 const EpiHttp = require('../js/api-http');
 const P = require('../js/permissoes-efetivas');
-require('../js/materiais'); // regra de situação do estoque (C2), reutilizada
 
 /**
- * Itens Disponíveis (Bloco 9, Etapa C, Parte C3): módulo
+ * Itens Disponíveis (Bloco 9, Etapa C, Parte C3; posição da 12D-3): módulo
  * js/itens-disponiveis.js com `fetch` injetado, entrada `availableItems`
  * no mapa de páginas, inspeção estática de pages/available-items.html e
  * comportamento da página sobre um DOM simulado. Somente leitura.
+ *
+ * Desde a 12D-3 cada item é um par (material, tamanho) da posição de estoque e
+ * o payload dos testes é EXATAMENTE o contrato da 12D-2 (as 21 chaves). A
+ * situação do estoque vem do servidor (`abaixoDoMinimo`, que o servidor mede
+ * pelo saldo livre): o frontend não recalcula mínimo, livre nem necessidade.
  */
 
 const BASE = 'http://localhost:3000/api';
@@ -24,9 +28,15 @@ const semComentarios = (s) => s.replace(/<!--[\s\S]*?-->/g, '').replace(/^\s*\/\
 const modulo = () => require('../js/itens-disponiveis'); // eslint-disable-line global-require
 const resposta = (status, corpo) => ({ status, ok: status >= 200 && status < 300, text: async () => (corpo === undefined ? '' : JSON.stringify(corpo)) });
 
+// As 21 chaves do item de GET /api/estoque/itens-disponiveis (contrato da 12D-2, igual ao teste de integração do backend).
+const CHAVES_DO_ITEM = [
+  'abaixoDoMinimo', 'bloqueado', 'caValidade', 'categoria', 'codigoInterno', 'comprometido', 'deficit', 'disponivel', 'estoqueMinimo', 'fisicoUtilizavel',
+  'material', 'materialId', 'minimoOrigem', 'necessidade', 'saldo', 'saldoLivre', 'semCobertura', 'tamanho', 'tipo', 'unidade', 'validade',
+];
 const item = (extra = {}) => ({
-  materialId: 1, material: 'Botina de segurança', codigoInterno: 'EPI-001', categoria: 'EPI', tipo: 'Sapatão / Botina',
-  tamanho: '40', saldo: 12, disponivel: 12, unidade: 'par', estoqueMinimo: 5, caValidade: '2027-01-31', validade: 'ok', ...extra,
+  materialId: 1, material: 'Botina de segurança', codigoInterno: 'EPI-001', categoria: 'EPI', tipo: 'Sapatão / Botina', tamanho: '40',
+  saldo: 12, bloqueado: 0, disponivel: 12, fisicoUtilizavel: 12, comprometido: 0, saldoLivre: 12, semCobertura: 0,
+  estoqueMinimo: 5, minimoOrigem: 'PADRAO', abaixoDoMinimo: false, deficit: 0, necessidade: 0, unidade: 'par', caValidade: '2027-01-31', validade: 'ok', ...extra,
 });
 const pagina = (itens, extra = {}) => ({ status: 'ok', itens, total: itens.length, pagina: 1, limite: 50, filtros: { categorias: ['EPI'], tipos: ['Sapatão / Botina'], tamanhos: ['40'] }, ...extra });
 
@@ -61,6 +71,28 @@ describe('acoes: GET /estoque/itens-disponiveis', () => {
     assert.equal(chamadas.some((c) => /empresaId|usuarioId/.test(c.caminho)), false);
   });
 
+  test('filtros novos (12D-3): busca, situação e somente com necessidade, na ordem do contrato e só quando preenchidos', async () => {
+    await modulo().acoes.listar({ categoria: 'EPI', busca: '  Botina 50% ', situacao: 'ABAIXO_MINIMO', somenteComNecessidade: true, pagina: 2, limite: 20 });
+    assert.equal(chamadas[0].caminho, '/api/estoque/itens-disponiveis?categoria=EPI&busca=Botina%2050%25&situacao=ABAIXO_MINIMO&somenteComNecessidade=true&pagina=2&limite=20');
+    await modulo().acoes.listar({ busca: '', situacao: '', somenteComNecessidade: false });
+    assert.equal(chamadas[1].caminho, '/api/estoque/itens-disponiveis?pagina=1&limite=50', 'vazio, "Todas" e falso são omitidos');
+  });
+
+  test('situação só vai se for uma das quatro do servidor; qualquer outro valor é descartado antes da rede', async () => {
+    const { acoes, SITUACOES } = modulo();
+    assert.deepEqual(SITUACOES.map(([valor]) => valor), ['', 'SEM_ESTOQUE', 'ABAIXO_MINIMO', 'COM_COMPROMETIDO', 'SEM_COBERTURA']);
+    for (const [valor] of SITUACOES.slice(1)) {
+      await acoes.listar({ situacao: valor });
+      assert.match(chamadas.at(-1).caminho, new RegExp(`situacao=${valor}&`));
+    }
+    for (const invalida of ['COM_NECESSIDADE', 'sem_estoque', 'QUALQUER', '1; DROP']) {
+      await acoes.listar({ situacao: invalida });
+      assert.doesNotMatch(chamadas.at(-1).caminho, /situacao=/, invalida);
+    }
+    await acoes.listar({ somenteComNecessidade: 'true' });
+    assert.doesNotMatch(chamadas.at(-1).caminho, /somenteComNecessidade/, 'só o booleano verdadeiro vale');
+  });
+
   test('listarTodos (exportação): páginas de 100 até o total, com os mesmos filtros; falha em qualquer página devolve a falha', async () => {
     const todos = Array.from({ length: 230 }, (_, i) => item({ materialId: i + 1, tamanho: String(i) }));
     servidor((u) => {
@@ -77,26 +109,102 @@ describe('acoes: GET /estoque/itens-disponiveis', () => {
   });
 });
 
-describe('render: tabela com as sete colunas originais', () => {
-  test('linha: categoria, tipo, material (com código interno), tamanho, quantidade disponível, unidade, status — tudo escapado', () => {
-    const html = modulo().render.linhas([item({ material: '<b>x</b>', codigoInterno: 'C&D' })]);
-    const tds = [...html.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((m) => m[1]);
-    assert.equal(tds.length, 7);
-    assert.equal(tds[0], 'EPI');
-    assert.equal(tds[1], 'Sapatão / Botina');
-    assert.match(tds[2], /^&lt;b&gt;x&lt;\/b&gt;/);
-    assert.match(tds[2], /C&amp;D/);
-    assert.deepEqual([tds[3], tds[4], tds[5]], ['40', '12', 'Par']);
-    assert.match(tds[6], /<span class="badge status-active">Disponível<\/span>/);
+// As células de uma linha, sem as marcações de formatação interna, na ordem da tabela.
+const celulasDe = (html) => [...html.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((m) => m[1]);
+const semMarcacao = (s) => s.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+const COLUNAS = ['categoria', 'tipo', 'material', 'tamanho', 'fisico', 'comprometido', 'livre', 'semCobertura', 'minimo', 'deficit', 'necessidade', 'unidade', 'status'];
+const colunasDe = (html) => Object.fromEntries(celulasDe(html).map((c, i) => [COLUNAS[i], c]));
+
+describe('render: tabela da posição (12D-3), 13 colunas', () => {
+  test('linha: categoria, tipo, material (com código interno), tamanho, físico utilizável, comprometido, saldo livre, sem cobertura, mínimo, déficit, necessidade, unidade, status — tudo escapado', () => {
+    const html = modulo().render.linhas([item({ material: '<b>x</b>', codigoInterno: 'C&D', comprometido: 2, saldoLivre: 10, estoqueMinimo: 5, deficit: 0, necessidade: 0 })]);
+    const tds = celulasDe(html);
+    assert.equal(tds.length, 13);
+    const c = colunasDe(html);
+    assert.equal(c.categoria, 'EPI');
+    assert.equal(c.tipo, 'Sapatão / Botina');
+    assert.match(c.material, /^&lt;b&gt;x&lt;\/b&gt;/);
+    assert.match(c.material, /C&amp;D/);
+    assert.deepEqual([c.tamanho, c.fisico, c.comprometido, c.livre, c.semCobertura, c.deficit, c.necessidade, c.unidade], ['40', '12', '2', '10', '0', '0', '0', 'Par']);
+    assert.match(c.minimo, /^5\b/);
+    assert.match(c.status, /<span class="badge [^"]+">[^<]+<\/span>/);
   });
 
-  test('status pela regra da C2 (reutilizada): 0 → Sem estoque; abaixo do mínimo → Baixo; demais → Disponível; usa disponivel, não outro campo', () => {
+  test('o físico utilizável vem de fisicoUtilizavel; disponivel é só o apelido antigo (mesmo valor) e a falta dele não quebra', () => {
     const { render } = modulo();
-    assert.match(render.linhas([item({ saldo: 0, disponivel: 0 })]), /badge status-inactive">Sem estoque/);
-    assert.match(render.linhas([item({ saldo: 3, disponivel: 3 })]), /badge role-supervisor">Baixo/);
-    assert.match(render.linhas([item({ saldo: 5, disponivel: 5 })]), /badge status-active">Disponível/);
-    assert.match(render.linhas([item({ saldo: 1, disponivel: 1, estoqueMinimo: 0 })]), /Disponível/);
-    assert.match(render.linhas([item({ categoria: null, tipo: null, codigoInterno: null })]), /<td>—<\/td><td>—<\/td>/);
+    assert.equal(colunasDe(render.linhas([item({ fisicoUtilizavel: 9, disponivel: 9 })])).fisico, '9');
+    assert.equal(colunasDe(render.linhas([item({ fisicoUtilizavel: 9, disponivel: undefined })])).fisico, '9');
+    assert.equal(item().disponivel, item().fisicoUtilizavel, 'compatibilidade do contrato: disponivel === fisicoUtilizavel');
+  });
+
+  test('status vem do servidor: sem cobertura > sem estoque > abaixo do mínimo > comprometido > disponível; sempre com texto', () => {
+    const { render } = modulo();
+    const status = (extra) => semMarcacao(colunasDe(render.linhas([item(extra)])).status);
+    assert.equal(status({}), 'Disponível');
+    assert.equal(status({ fisicoUtilizavel: 0, disponivel: 0, saldoLivre: 0, saldo: 0 }), 'Sem estoque');
+    assert.equal(status({ fisicoUtilizavel: 3, disponivel: 3, saldoLivre: 3, abaixoDoMinimo: true, deficit: 2, necessidade: 2 }), 'Abaixo do mínimo');
+    assert.equal(status({ comprometido: 4, saldoLivre: 8 }), 'Com saldo comprometido');
+    assert.equal(status({ fisicoUtilizavel: 1, disponivel: 1, comprometido: 1, saldoLivre: 0, semCobertura: 2, necessidade: 2 }), 'Sem cobertura');
+    assert.equal(status({ fisicoUtilizavel: 0, disponivel: 0, saldoLivre: 0, semCobertura: 3, necessidade: 3 }), 'Sem cobertura', 'a demanda sem cobertura prevalece sobre "sem estoque"');
+    assert.match(render.linhas([item({ fisicoUtilizavel: 0, disponivel: 0, saldoLivre: 0 })]), /badge status-inactive">Sem estoque/);
+    assert.match(render.linhas([item()]), /badge status-active">Disponível/);
+  });
+
+  test('SITUAÇÃO PELO SALDO LIVRE: físico 10 acima do mínimo 5, mas livre 2 e o servidor diz abaixo → "Abaixo do mínimo"; o frontend não recalcula', () => {
+    const { render } = modulo();
+    const abaixo = item({ fisicoUtilizavel: 10, disponivel: 10, comprometido: 8, saldoLivre: 2, estoqueMinimo: 5, abaixoDoMinimo: true, deficit: 3, necessidade: 3 });
+    assert.equal(semMarcacao(colunasDe(render.linhas([abaixo])).status), 'Com saldo comprometido Abaixo do mínimo');
+    // A decisão é do servidor: se ele manda abaixoDoMinimo=false, o frontend não refaz a conta do mínimo.
+    const obedece = item({ fisicoUtilizavel: 3, disponivel: 3, saldoLivre: 3, estoqueMinimo: 5, abaixoDoMinimo: false });
+    assert.equal(semMarcacao(colunasDe(render.linhas([obedece])).status), 'Disponível');
+  });
+
+  test('"Abaixo do mínimo" aparece também junto de outra situação (nunca só por cor): comprometido + abaixo mostra as duas', () => {
+    const html = modulo().render.linhas([item({ comprometido: 8, saldoLivre: 2, abaixoDoMinimo: true, deficit: 3, necessidade: 3 })]);
+    const status = colunasDe(html).status;
+    assert.match(status, />Com saldo comprometido</);
+    assert.match(status, />Abaixo do mínimo</);
+  });
+
+  test('mínimo: o próprio aparece como "Próprio" e o herdado como "Padrão"; o próprio 0 é mostrado como 0 (não é "—" nem herança)', () => {
+    const { render } = modulo();
+    const minimo = (extra) => semMarcacao(colunasDe(render.linhas([item(extra)])).minimo);
+    assert.equal(minimo({ estoqueMinimo: 20, minimoOrigem: 'PADRAO' }), '20 Padrão');
+    assert.equal(minimo({ estoqueMinimo: 5, minimoOrigem: 'PROPRIO' }), '5 Próprio');
+    assert.equal(minimo({ estoqueMinimo: 0, minimoOrigem: 'PROPRIO' }), '0 Próprio');
+    assert.equal(minimo({ estoqueMinimo: 0, minimoOrigem: 'PADRAO' }), '0 Padrão');
+    assert.notEqual(minimo({ estoqueMinimo: 0, minimoOrigem: 'PROPRIO' }), minimo({ estoqueMinimo: 0, minimoOrigem: 'PADRAO' }));
+  });
+
+  test('sem cobertura, déficit e necessidade são mostrados como o servidor mandou (a necessidade inclui a demanda sem cobertura)', () => {
+    const c = colunasDe(modulo().render.linhas([item({ fisicoUtilizavel: 0, disponivel: 0, saldo: 0, saldoLivre: 0, semCobertura: 2, estoqueMinimo: 5, deficit: 5, necessidade: 7, abaixoDoMinimo: true })]));
+    assert.deepEqual([c.semCobertura, c.deficit, c.necessidade], ['2', '5', '7']);
+    assert.equal(semMarcacao(c.status), 'Sem cobertura Abaixo do mínimo');
+  });
+
+  test('tamanho ausente (material sem tamanho) e campos vazios viram "—"; zero real continua 0', () => {
+    const html = modulo().render.linhas([item({ tamanho: null, categoria: null, tipo: null, codigoInterno: null, comprometido: 0 })]);
+    const c = colunasDe(html);
+    assert.deepEqual([c.categoria, c.tipo, c.tamanho], ['—', '—', '—']);
+    assert.equal(c.comprometido, '0');
+  });
+
+  test('colunas secundárias (categoria, tipo, déficit, unidade) têm a classe que esconde em tela pequena; as principais não', () => {
+    const html = modulo().render.linhas([item()]);
+    const tds = [...html.matchAll(/<td([^>]*)>/g)].map((m) => m[1]);
+    const secundarias = tds.map((a, i) => (/class="[^"]*\bcol-sec\b/.test(a) ? COLUNAS[i] : null)).filter(Boolean);
+    assert.deepEqual(secundarias, ['categoria', 'tipo', 'deficit', 'unidade']);
+  });
+
+  test('guarda do contrato: o render só lê chaves que existem no contrato da 12D-2 e lê as críticas (um nome trocado quebra este teste)', () => {
+    const lidas = new Set();
+    const espiao = new Proxy(item(), { get(alvo, chave) { if (typeof chave === 'string') lidas.add(chave); return alvo[chave]; } });
+    modulo().render.linhas([espiao]);
+    for (const chave of lidas) assert.ok(CHAVES_DO_ITEM.includes(chave), `o render lê "${chave}", que não existe no contrato`);
+    for (const critica of ['fisicoUtilizavel', 'comprometido', 'saldoLivre', 'semCobertura', 'estoqueMinimo', 'minimoOrigem', 'abaixoDoMinimo', 'deficit', 'necessidade', 'tamanho', 'material']) {
+      assert.ok(lidas.has(critica), `o render não lê "${critica}"`);
+    }
+    assert.deepEqual(Object.keys(item()).sort(), CHAVES_DO_ITEM);
   });
 
   test('opções dos filtros: rótulo "Todos/Todas" com valor vazio primeiro, valores reais escapados, seleção preservada quando ainda existe', () => {
@@ -115,7 +223,7 @@ describe('render: tabela com as sete colunas originais', () => {
 
   test('estado vazio distinto de falha; com filtros a mensagem sugere Limpar', () => {
     const { render, mensagens } = modulo();
-    assert.match(render.estado('Nenhum item'), /<tr><td colspan="7"[^>]*>Nenhum item<\/td><\/tr>/);
+    assert.match(render.estado('Nenhum item'), /<tr><td colspan="13"[^>]*>Nenhum item<\/td><\/tr>/);
     assert.match(mensagens.vazio(false), /Nenhum material ativo com tamanho cadastrado nesta empresa/);
     assert.match(mensagens.vazio(true), /Limpar/);
     assert.match(mensagens.erroConsulta({ ok: false, status: 0 }), /rede/i);
@@ -126,18 +234,38 @@ describe('render: tabela com as sete colunas originais', () => {
   });
 });
 
-describe('csv: exportação com as sete colunas', () => {
+describe('csv: exportação com os campos da posição (12D-3)', () => {
+  const CABECALHO = '"Categoria";"Tipo";"Material";"Tamanho";"Físico utilizável";"Comprometido";"Saldo livre";"Sem cobertura";"Mínimo";"Origem do mínimo";"Déficit";"Necessidade";"Unidade";"Status"';
+
   test('cabeçalho e linhas correspondem à tabela; BOM; aspas; fórmulas neutralizadas', () => {
     const { csv } = modulo();
-    const texto = csv.gerar([item(), item({ material: '=HYPERLINK("x")', tamanho: '41', saldo: 3, disponivel: 3, codigoInterno: null }), item({ tamanho: '42', saldo: 0, disponivel: 0 })]);
+    const texto = csv.gerar([
+      item(),
+      item({ material: '=HYPERLINK("x")', tamanho: '41', saldo: 3, disponivel: 3, fisicoUtilizavel: 3, saldoLivre: 3, codigoInterno: null, abaixoDoMinimo: true, deficit: 2, necessidade: 2 }),
+      item({ tamanho: '42', saldo: 0, disponivel: 0, fisicoUtilizavel: 0, saldoLivre: 0 }),
+    ]);
     assert.equal(texto.charCodeAt(0), 0xFEFF);
     const linhas = texto.slice(1).split('\r\n');
-    assert.equal(linhas[0], '"Categoria";"Tipo";"Material";"Tamanho";"Quantidade disponível";"Unidade";"Status"');
-    assert.equal(linhas[1], '"EPI";"Sapatão / Botina";"Botina de segurança (EPI-001)";"40";"12";"Par";"Disponível"');
-    assert.equal(linhas[2], '"EPI";"Sapatão / Botina";"\'=HYPERLINK(""x"")";"41";"3";"Par";"Baixo"');
-    assert.equal(linhas[3], '"EPI";"Sapatão / Botina";"Botina de segurança (EPI-001)";"42";"0";"Par";"Sem estoque"');
+    assert.equal(linhas[0], CABECALHO);
+    assert.equal(linhas[1], '"EPI";"Sapatão / Botina";"Botina de segurança (EPI-001)";"40";"12";"0";"12";"0";"5";"Padrão";"0";"0";"Par";"Disponível"');
+    assert.equal(linhas[2], '"EPI";"Sapatão / Botina";"\'=HYPERLINK(""x"")";"41";"3";"0";"3";"0";"5";"Padrão";"2";"2";"Par";"Abaixo do mínimo"');
+    assert.equal(linhas[3], '"EPI";"Sapatão / Botina";"Botina de segurança (EPI-001)";"42";"0";"0";"0";"0";"5";"Padrão";"0";"0";"Par";"Sem estoque"');
     assert.equal(linhas.length, 4);
     assert.equal(csv.NOME_ARQUIVO, 'itens_disponiveis.csv');
+  });
+
+  test('comprometido, sem cobertura, mínimo próprio 0 e necessidade chegam ao arquivo exatamente como o servidor mandou', () => {
+    const texto = modulo().csv.gerar([
+      item({ fisicoUtilizavel: 5, disponivel: 5, comprometido: 2, saldoLivre: 3, estoqueMinimo: 0, minimoOrigem: 'PROPRIO' }),
+      item({ tamanho: '42', fisicoUtilizavel: 0, disponivel: 0, saldo: 0, saldoLivre: 0, semCobertura: 2, estoqueMinimo: 5, deficit: 5, necessidade: 7, abaixoDoMinimo: true }),
+    ]);
+    const [, proprio, semCob] = texto.slice(1).split('\r\n');
+    assert.equal(proprio, '"EPI";"Sapatão / Botina";"Botina de segurança (EPI-001)";"40";"5";"2";"3";"0";"0";"Próprio";"0";"0";"Par";"Com saldo comprometido"');
+    assert.equal(semCob, '"EPI";"Sapatão / Botina";"Botina de segurança (EPI-001)";"42";"0";"0";"0";"2";"5";"Padrão";"5";"7";"Par";"Sem cobertura · Abaixo do mínimo"');
+  });
+
+  test('sem itens: só o cabeçalho', () => {
+    assert.equal(modulo().csv.gerar([]).slice(1), CABECALHO);
   });
 });
 
@@ -163,7 +291,8 @@ describe('inspeção estática: pages/available-items.html integrada, interface 
       assert.equal(proibido.test(codigo), false, `available-items.html contém ${proibido}`);
     }
     const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
-    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/materiais.js', '../js/itens-disponiveis.js']);
+    // 12D-3: a situação vem do servidor, então a regra local de js/materiais.js não é mais carregada aqui.
+    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/itens-disponiveis.js']);
     assert.match(codigo, /EpiSessaoEmpresarial\.montar\(/);
     assert.match(codigo, /EpiPermissoes\.prepararPagina\(\{\s*pagina: 'availableItems'/);
     for (const id of ['telaSessao', 'telaSessaoMensagem', 'telaSessaoPortal', 'aviso']) assert.ok(ids.includes(id), id);
@@ -173,7 +302,12 @@ describe('inspeção estática: pages/available-items.html integrada, interface 
     for (const id of ['availableItemsView', 'availableCategory', 'availableType', 'availableSize', 'deliveredStatus', 'botaoLimpar', 'botaoFiltrar', 'botaoExportar', 'itensDisponiveisCorpo', 'paginaAnterior', 'paginacaoTexto', 'paginaProxima']) {
       assert.ok(ids.includes(id), `falta #${id}`);
     }
-    for (const th of ['Categoria', 'Tipo', 'Material', 'Tamanho', 'Quantidade disponível', 'Unidade', 'Status']) assert.match(html, new RegExp(`<th>${th}</th>`));
+    // 12D-3: a tabela mostra a posição; as colunas secundárias esvaziam em tela pequena (classe col-sec).
+    const cabecalhos = [...html.matchAll(/<th([^>]*)>([^<]+)<\/th>/g)].map((m) => [m[2], /\bcol-sec\b/.test(m[1])]);
+    assert.deepEqual(cabecalhos.map(([t]) => t), ['Categoria', 'Tipo', 'Material', 'Tamanho', 'Físico utilizável', 'Comprometido', 'Saldo livre', 'Sem cobertura', 'Mínimo', 'Déficit', 'Necessidade', 'Unidade', 'Status']);
+    assert.deepEqual(cabecalhos.filter(([, sec]) => sec).map(([t]) => t), ['Categoria', 'Tipo', 'Déficit', 'Unidade']);
+    assert.match(html, /@media \(max-width: \d+px\)[^}]*\.col-sec|\.col-sec[^}]*display:\s*none/);
+    assert.equal(/Quantidade disponível/.test(html), false, 'o rótulo antigo saiu');
     assert.match(html, /<option value="">Todas<\/option>/);
     assert.match(html, /<option value="ok">Dentro do prazo<\/option>/);
     assert.match(html, /<option value="expiring">Próximo do vencimento<\/option>/);
@@ -184,6 +318,18 @@ describe('inspeção estática: pages/available-items.html integrada, interface 
       assert.equal(html.includes(ficticio), false, `dado fictício: ${ficticio}`);
     }
     assert.match(html, /Validade do CA/i, 'rótulo esclarece que a validade é a do CA');
+  });
+
+  test('filtros novos da 12D-3: busca, situação e somente com necessidade, com rótulo associado; situações só as quatro do servidor', () => {
+    for (const id of ['availableSearch', 'availableSituation', 'availableNeed']) assert.ok(ids.includes(id), `falta #${id}`);
+    assert.match(html, /<label for="availableSearch">/);
+    assert.match(html, /<label for="availableSituation">/);
+    assert.match(html, /<label[^>]*for="availableNeed"/);
+    assert.match(html, /<input id="availableSearch"[^>]*maxlength="100"/);
+    assert.match(html, /<input id="availableNeed"[^>]*type="checkbox"|<input[^>]*type="checkbox"[^>]*id="availableNeed"/);
+    const opcoes = [...html.slice(html.indexOf('id="availableSituation"')).matchAll(/<option value="([^"]*)">([^<]+)<\/option>/g)].slice(0, 5).map((m) => [m[1], m[2]]);
+    assert.deepEqual(opcoes, [['', 'Todas'], ['SEM_ESTOQUE', 'Sem estoque'], ['ABAIXO_MINIMO', 'Abaixo do mínimo'], ['COM_COMPROMETIDO', 'Com saldo comprometido'], ['SEM_COBERTURA', 'Sem cobertura']]);
+    assert.match(html, /saldo livre/i, 'a explicação da página fala do saldo livre');
   });
 
   test('menu: estrutura preservada; Análise de estoque ativa; integrados por permissão; demais sem link', () => {
@@ -214,10 +360,10 @@ function montarPagina(responder, { acesso = { permissoes: PERMISSOES_OK, podeAlt
   servidor(responder);
   const html = ler('pages/available-items.html');
   const script = html.slice(html.lastIndexOf('<script>') + '<script>'.length, html.lastIndexOf('</script>'));
-  const SELECTS = new Set(['availableCategory', 'availableType', 'availableSize', 'deliveredStatus']);
+  const SELECTS = new Set(['availableCategory', 'availableType', 'availableSize', 'deliveredStatus', 'availableSituation']);
   const mapa = {};
   const el = (id) => (mapa[id] = mapa[id] || {
-    id, value: '', innerHTML: '', textContent: '', disabled: false, style: {}, listeners: {}, tagName: SELECTS.has(id) ? 'SELECT' : 'DIV',
+    id, value: '', checked: false, innerHTML: '', textContent: '', disabled: false, style: {}, listeners: {}, tagName: SELECTS.has(id) ? 'SELECT' : 'DIV',
     addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
   });
   const downloads = [];
@@ -230,7 +376,7 @@ function montarPagina(responder, { acesso = { permissoes: PERMISSOES_OK, podeAlt
     window: { SAFEWORK_PORTAL_API_BASE_URL: BASE },
     URL: { createObjectURL: (b) => { downloads.push({ blob: b }); return 'blob:x'; }, revokeObjectURL() {} },
     Blob: class { constructor(partes, opcoes) { this.partes = partes; this.tipo = opcoes && opcoes.type; } },
-    EpiHttp, EpiMateriais: globalThis.EpiMateriais, EpiItensDisponiveis: modulo(),
+    EpiHttp, EpiItensDisponiveis: modulo(),
     EpiPermissoes: { prepararPagina: async () => acesso },
     EpiSessaoEmpresarial: { montar: async (o) => { sandbox.opcoesMontar = o; return CONTEXTO; }, sessaoEncerrada() { sandbox.encerrada = true; } },
     console, setTimeout, Promise, String, Number, Array, Object, JSON,
@@ -244,7 +390,7 @@ function montarPagina(responder, { acesso = { permissoes: PERMISSOES_OK, podeAlt
 
 describe('página (DOM simulado)', () => {
   test('ao abrir: consulta sem filtros, preenche as opções reais dos filtros e a tabela; paginação atualizada', async () => {
-    const pg = montarPagina(resposta(200, pagina([item(), item({ tamanho: '41', saldo: 0, disponivel: 0 })], { total: 2, filtros: { categorias: ['EPI', 'Uniforme'], tipos: ['Luva'], tamanhos: ['40', '41'] } })));
+    const pg = montarPagina(resposta(200, pagina([item(), item({ tamanho: '41', saldo: 0, disponivel: 0, fisicoUtilizavel: 0, saldoLivre: 0 })], { total: 2, filtros: { categorias: ['EPI', 'Uniforme'], tipos: ['Luva'], tamanhos: ['40', '41'] } })));
     await pg.esperar();
     assert.deepEqual(chamadas.map((c) => c.caminho), ['/api/estoque/itens-disponiveis?pagina=1&limite=50']);
     assert.equal(pg.el('availableCategory').innerHTML, '<option value="">Todas</option><option value="EPI">EPI</option><option value="Uniforme">Uniforme</option>');
@@ -266,6 +412,38 @@ describe('página (DOM simulado)', () => {
     await pg.clicar('botaoLimpar');
     assert.deepEqual(['availableCategory', 'availableType', 'availableSize', 'deliveredStatus'].map((id) => pg.el(id).value), ['', '', '', '']);
     assert.equal(chamadas.at(-1).caminho, '/api/estoque/itens-disponiveis?pagina=1&limite=50');
+  });
+
+  test('filtros da 12D-3: busca, situação e somente com necessidade vão ao servidor; Limpar zera os três (a caixa desmarca)', async () => {
+    const pg = montarPagina(resposta(200, pagina([item()])));
+    await pg.esperar();
+    Object.assign(pg.el('availableSearch'), { value: '  botina ' });
+    Object.assign(pg.el('availableSituation'), { value: 'SEM_COBERTURA' });
+    Object.assign(pg.el('availableNeed'), { checked: true });
+    await pg.clicar('botaoFiltrar');
+    assert.equal(chamadas.at(-1).caminho, '/api/estoque/itens-disponiveis?busca=botina&situacao=SEM_COBERTURA&somenteComNecessidade=true&pagina=1&limite=50');
+    await pg.clicar('paginaProxima');
+    assert.match(chamadas.at(-1).caminho, /busca=botina&situacao=SEM_COBERTURA&somenteComNecessidade=true&pagina=2/, 'a página seguinte mantém os filtros novos');
+    await pg.clicar('botaoLimpar');
+    assert.deepEqual([pg.el('availableSearch').value, pg.el('availableSituation').value, pg.el('availableNeed').checked], ['', '', false]);
+    assert.equal(chamadas.at(-1).caminho, '/api/estoque/itens-disponiveis?pagina=1&limite=50');
+  });
+
+  test('vazio com os filtros novos sugere Limpar; a situação e a necessidade contam como filtro aplicado', async () => {
+    const pg = montarPagina(resposta(200, pagina([], { total: 0, filtros: { categorias: [], tipos: [], tamanhos: [] } })));
+    await pg.esperar();
+    assert.doesNotMatch(pg.el('itensDisponiveisCorpo').innerHTML, /Limpar/);
+    Object.assign(pg.el('availableNeed'), { checked: true });
+    await pg.clicar('botaoFiltrar');
+    assert.match(pg.el('itensDisponiveisCorpo').innerHTML, /Limpar/);
+  });
+
+  test('a tabela mostra a posição exatamente como o servidor mandou: físico, comprometido, livre, sem cobertura, mínimo, déficit e necessidade', async () => {
+    const pg = montarPagina(resposta(200, pagina([item({ fisicoUtilizavel: 0, disponivel: 0, saldo: 0, saldoLivre: 0, semCobertura: 2, estoqueMinimo: 5, deficit: 5, necessidade: 7, abaixoDoMinimo: true })], { total: 1 })));
+    await pg.esperar();
+    const c = colunasDe(pg.el('itensDisponiveisCorpo').innerHTML);
+    assert.deepEqual([c.fisico, c.livre, c.semCobertura, c.deficit, c.necessidade], ['0', '0', '2', '5', '7']);
+    assert.equal(semMarcacao(c.status), 'Sem cobertura Abaixo do mínimo');
   });
 
   test('paginação: Próxima e Anterior mantêm os filtros aplicados', async () => {
@@ -308,7 +486,7 @@ describe('página (DOM simulado)', () => {
     assert.deepEqual(chamadas, []);
   });
 
-  test('Exportar: busca TODAS as páginas do filtro aplicado e baixa itens_disponiveis.csv com as sete colunas', async () => {
+  test('Exportar: busca TODAS as páginas do filtro aplicado e baixa itens_disponiveis.csv com as quatorze colunas', async () => {
     const todos = Array.from({ length: 150 }, (_, i) => item({ tamanho: String(i) }));
     const pg = montarPagina((u) => {
       const p = Number(u.searchParams.get('pagina')); const l = Number(u.searchParams.get('limite'));
@@ -322,7 +500,7 @@ describe('página (DOM simulado)', () => {
     const blob = pg.downloads.find((d) => d.blob).blob;
     const texto = blob.partes.join('');
     assert.equal(texto.slice(1).split('\r\n').length, 151);
-    assert.match(texto, /"Quantidade disponível";"Unidade";"Status"/);
+    assert.match(texto, /"Físico utilizável";"Comprometido";"Saldo livre";"Sem cobertura";"Mínimo";"Origem do mínimo";"Déficit";"Necessidade";"Unidade";"Status"/);
     assert.equal(pg.downloads.find((d) => d.nome).nome, 'itens_disponiveis.csv');
   });
 
@@ -499,8 +677,12 @@ describe('ajuste 3 — encerramento da sessão não preserva a consulta anterior
     assert.match(chamadas.at(-1).caminho, /categoria=EPI.*validade=expired&pagina=2/);
     const antes = chamadas.length;
 
+    Object.assign(pg.el('availableSearch'), { value: 'botina' });
+    Object.assign(pg.el('availableSituation'), { value: 'ABAIXO_MINIMO' });
+    Object.assign(pg.el('availableNeed'), { checked: true });
     pg.sandbox.opcoesMontar.aoEncerrar();
     assert.deepEqual(['availableCategory', 'availableType', 'availableSize', 'deliveredStatus'].map((id) => pg.el(id).value), ['', '', '', '']);
+    assert.deepEqual([pg.el('availableSearch').value, pg.el('availableSituation').value, pg.el('availableNeed').checked], ['', '', false], 'os filtros novos também são limpos');
     assert.equal(pg.el('availableCategory').innerHTML, '<option value="">Todas</option>');
     assert.equal(pg.el('paginacaoTexto').textContent, '—');
     await pg.clicar('paginaProxima');
@@ -516,6 +698,8 @@ describe('ajuste 3 — encerramento da sessão não preserva a consulta anterior
     assert.match(corpo, /aplicados = \{\};/);
     assert.match(corpo, /pagina = 1;/);
     assert.match(corpo, /\$\('deliveredStatus'\)\.value = '';/);
+    assert.match(corpo, /\$\(CAIXA_NECESSIDADE\)\.checked = false;/, 'a caixa "somente com necessidade" também desmarca');
+    assert.match(html, /busca: 'availableSearch', situacao: 'availableSituation'/, 'busca e situação entram no mapa de filtros que o encerramento zera');
   });
 });
 
@@ -533,7 +717,10 @@ describe('segurança: na Análise de estoque, conteúdo da API aparece como text
   };
 
   test('linha da tabela: categoria, tipo, material, código, tamanho, quantidade e unidade escapados', () => {
-    const html = modulo().render.linhas([item({ categoria: ATAQUE, tipo: ATAQUE, material: ATAQUE, codigoInterno: `"><${ATAQUE}`, tamanho: ATAQUE, disponivel: ATAQUE, unidade: ATAQUE })]);
+    const html = modulo().render.linhas([item({
+      categoria: ATAQUE, tipo: ATAQUE, material: ATAQUE, codigoInterno: `"><${ATAQUE}`, tamanho: ATAQUE, disponivel: ATAQUE, fisicoUtilizavel: ATAQUE, comprometido: ATAQUE,
+      saldoLivre: ATAQUE, semCobertura: ATAQUE, estoqueMinimo: ATAQUE, minimoOrigem: ATAQUE, deficit: ATAQUE, necessidade: ATAQUE, unidade: ATAQUE,
+    })]);
     assert.ok(html.includes(ESCAPADO));
     semElementoInjetado(html);
   });

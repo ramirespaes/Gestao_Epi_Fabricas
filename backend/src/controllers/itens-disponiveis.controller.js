@@ -12,7 +12,9 @@ const { dataOperacional } = require('../utils/data-operacional');
 function criarItensDisponiveisController({ pool: poolInjetado, relogio = () => new Date() }) {
   return {
     async listar(req, res) {
-      const { categoria, tipo, tamanho, validade, pagina, limite } = req.validado.query;
+      const {
+        categoria, tipo, tamanho, validade, busca, situacao, somenteComNecessidade, pagina, limite,
+      } = req.validado.query;
       const resultado = await estoqueService.listarDisponiveis(poolInjetado, {
         empresaId: req.empresa.id,
         hoje: dataOperacional(relogio()),
@@ -20,6 +22,9 @@ function criarItensDisponiveisController({ pool: poolInjetado, relogio = () => n
         tipo: tipo ?? null,
         tamanho: tamanho ?? null,
         validade: validade ?? null,
+        busca: busca ?? null,
+        situacao: situacao ?? null,
+        somenteComNecessidade: somenteComNecessidade ?? false,
         pagina,
         limite,
       });

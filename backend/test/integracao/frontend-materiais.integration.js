@@ -6,6 +6,7 @@ const express = require('express');
 const http = require('node:http');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { todasAsMigrations } = require('./helpers/entrega-epi');
 const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { criarAuthController } = require('../../src/controllers/auth.controller');
 const { criarAuthRoutes } = require('../../src/routes/auth.routes');
@@ -40,14 +41,14 @@ const EpiMateriais = require('../../../frontend/js/materiais');
  * (C0) -> permissões efetivas (C1) -> módulo real da página
  * (frontend/js/materiais.js) contra o servidor HTTP de verdade, com a
  * cadeia /api de produção e PostgreSQL real em schema temporário exclusivo
- * com TODAS as migrations (000-039). O `fetch` injetado é o navegador
+ * com TODAS as migrations do repositório. O `fetch` injetado é o navegador
  * (Origin + jar de cookies HttpOnly).
  *
  * Os testes negativos confirmam que a API RECUSA (403/401/404/409/400),
  * não apenas que a interface esconde botões.
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 46 }, (_, i) => String(i).padStart(3, '0'));
+const TODAS_AS_MIGRATIONS = todasAsMigrations();
 const SENHA = 'senha-forte-da-etapa-c2-2026';
 const EMAILS = {
   master: 'master.c2@exemplo-cliente.com.br',       // MASTER em A

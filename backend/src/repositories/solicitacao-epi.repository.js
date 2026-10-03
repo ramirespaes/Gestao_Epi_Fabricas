@@ -171,6 +171,26 @@ async function cancelar(executor, empresaId, id, { canceladaPor, justificativa =
   return mapear(rows[0]);
 }
 
+/**
+ * Fecha a solicitação como ENTREGUE, com a hora do relógio do banco: quem
+ * chama já confirmou, com a solicitação travada, que toda a quantidade
+ * aprovada dos itens aprovados foi entregue, e o banco confere o mesmo no
+ * COMMIT (066). Devolve null quando a solicitação não está APROVADA nem
+ * APROVADA_PARCIAL, ou não é da empresa.
+ */
+async function marcarEntregue(executor, empresaId, id) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirId(id, 'identificador de solicitação');
+  const { rows } = await executor.query(
+    `UPDATE solicitacoes_epi
+        SET status = 'ENTREGUE', entregue_em = clock_timestamp()
+      WHERE empresa_id = $1 AND id = $2 AND status IN ('APROVADA', 'APROVADA_PARCIAL')
+      RETURNING ${COLUNAS}`,
+    [empresaId, id],
+  );
+  return mapear(rows[0]);
+}
+
 module.exports = {
-  ORIGENS, STATUS_DE_DECISAO, travarChave, buscarPorChave, buscarPorId, travarPorId, criar, registrarDecisao, cancelar,
+  ORIGENS, STATUS_DE_DECISAO, travarChave, buscarPorChave, buscarPorId, travarPorId, criar, registrarDecisao, cancelar, marcarEntregue,
 };

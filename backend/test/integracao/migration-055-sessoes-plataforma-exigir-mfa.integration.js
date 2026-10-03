@@ -184,7 +184,7 @@ describe('migration 055 — MFA obrigatório nas sessões do Painel Privado', ()
     for (const prefixo of POSTERIORES) {
       assert.ok(ARQUIVOS.some((n) => n.startsWith(`${prefixo}_`)), prefixo);
     }
-    assert.equal(ARQUIVOS.length, 66);
+    assert.equal(ARQUIVOS.length, 68);
   });
 });
 

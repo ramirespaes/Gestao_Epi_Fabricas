@@ -345,7 +345,8 @@ describe('inspeção estática: pages/materials.html integrada, com a interface 
       assert.ok(ids.includes(id), `falta #${id}`);
     }
     const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
-    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/materiais.js']);
+    // 12D-3: o painel do mínimo por tamanho é um módulo próprio, carregado depois do de materiais.
+    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/materiais.js', '../js/estoque-minimos.js']);
     assert.match(codigo, /EpiHttp\.configurar\(\{ baseUrl: window\.SAFEWORK_PORTAL_API_BASE_URL \}\)/);
     assert.match(codigo, /EpiSessaoEmpresarial\.montar\(/);
     assert.match(codigo, /EpiPermissoes\.prepararPagina\(\{\s*pagina: 'materials'/);
@@ -496,7 +497,7 @@ function montarPagina({ permissoes = { recursos: { materials: { visualizar: true
   const sandbox = {
     document: { getElementById: el, querySelectorAll: () => [] },
     window: { SAFEWORK_PORTAL_API_BASE_URL: BASE },
-    EpiHttp, EpiMateriais: carregarMateriais(), EpiPermissoes: { prepararPagina: async () => ({ permissoes, podeAlterar }), acao: P.acao, recurso: P.recurso, somenteLeitura() {} },
+    EpiHttp, EpiMateriais: carregarMateriais(), EpiEstoqueMinimos: require('../js/estoque-minimos'), EpiPermissoes: { prepararPagina: async () => ({ permissoes, podeAlterar }), acao: P.acao, recurso: P.recurso, somenteLeitura() {} },
     EpiSessaoEmpresarial: { montar: async (o) => { sandbox.opcoesMontar = o; return CONTEXTO; }, sessaoEncerrada() { sandbox.encerrada = true; } },
     showToast: (m, t) => toasts.push([m, t]), toasts, console, setTimeout, Promise, String, Number, Array, Object, JSON, crypto: globalThis.crypto,
   };
@@ -2370,5 +2371,411 @@ describe('segurança: conteúdo vindo da API aparece como texto, nunca como elem
     await pg.disparar('botaoEditarMaterial');
     assert.ok(pg.el('modoEdicao').textContent.includes(ATAQUE));
     assert.equal(pg.el('modoEdicao').innerHTML, '');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 12D-3 — "Mínimo padrão" no cadastro, painel do mínimo por tamanho
+// (GET/PUT/DELETE /materiais/:id/minimos) e a recusa SALDO_LIVRE_INSUFICIENTE
+// na baixa. Módulo do painel: test/estoque-minimos.test.js.
+// ═══════════════════════════════════════════════════════════════════
+
+describe('12D-3 — cadastro: "Mínimo padrão" no lugar de "Estoque mínimo"', () => {
+  const html = ler('pages/materials.html');
+
+  test('rótulo e explicação: o mínimo do cadastro é o padrão, usado por tamanhos sem mínimo específico; o rótulo antigo saiu', () => {
+    assert.match(html, /<label for="materialEstoqueMinimo">Mínimo padrão<\/label>/);
+    assert.match(html, /Usado para tamanhos que não possuem mínimo específico\./);
+    assert.equal(/<label for="materialEstoqueMinimo">Estoque mínimo<\/label>/.test(html), false);
+  });
+
+  test('mensagens do módulo: a validação fala em "mínimo padrão"', () => {
+    const { formulario } = carregarMateriais();
+    const msg = (r, campo) => r.erros.find((e) => e.campo === campo).mensagem;
+    assert.match(msg(formulario.montarCorpo({ ...FORMULARIO, estoqueMinimo: '-1' }), 'estoqueMinimo'), /^Mínimo padrão deve ser um inteiro maior ou igual a zero\./);
+    assert.match(msg(formulario.montarCorpo({ ...FORMULARIO, estoqueMinimo: '2147483648' }), 'estoqueMinimo'), /^Mínimo padrão acima do limite/);
+    const campos = formulario.camposDoMaterial(MATERIAL).campos;
+    assert.equal(msg(formulario.montarEdicao({ ...campos, estoqueMinimo: '' }, MATERIAL), 'estoqueMinimo'), 'Informe o mínimo padrão (use 0 para nenhum).');
+  });
+
+  test('o campo da API continua estoqueMinimo: só o texto mudou', () => {
+    const { formulario } = carregarMateriais();
+    assert.equal(formulario.montarCorpo({ ...FORMULARIO, estoqueMinimo: '7' }).corpo.estoqueMinimo, 7);
+    assert.equal(formulario.montarCorpo({ ...FORMULARIO, estoqueMinimo: '0' }).corpo.estoqueMinimo, 0, 'zero é um mínimo padrão válido');
+  });
+
+  test('edição: trocar o controle de tamanho com mínimos por tamanho configurados é recusado com a orientação de removê-los', () => {
+    const { mensagens } = carregarMateriais();
+    const texto = mensagens.erroEdicao({ ok: false, status: 409, codigo: 'MATERIAL_TAMANHO_MINIMOS_INCOMPATIVEIS', mensagem: 'SEGREDO-INTERNO' });
+    assert.match(texto, /mínimos por tamanho/i);
+    assert.match(texto, /Remova/i);
+    assert.equal(/SEGREDO/.test(texto), false);
+    assert.notEqual(texto, mensagens.MSG.EDICAO_GENERICO);
+  });
+});
+
+describe('12D-3 — baixa: SALDO_LIVRE_INSUFICIENTE para as baixas discricionárias', () => {
+  test('mensagem de domínio: o saldo físico existe, mas a baixa reduziria o comprometido; devolução e "Outro" só usam o saldo livre; sem número nem dado de terceiros', () => {
+    const { mensagens } = carregarMateriais();
+    const texto = mensagens.erroBaixa({ ok: false, status: 409, codigo: 'SALDO_LIVRE_INSUFICIENTE', mensagem: 'SEGREDO-INTERNO' });
+    assert.match(texto, /^o saldo físico existe, mas esta baixa reduziria o estoque comprometido com solicitações já aprovadas/);
+    assert.match(texto, /saldo livre/);
+    assert.match(texto, /Devolução ao fornecedor/);
+    assert.match(texto, /Outro/);
+    assert.equal(/saldo atual do lote/.test(texto), false, 'não é o saldo do lote');
+    assert.notEqual(texto, mensagens.erroBaixa({ ok: false, status: 409, codigo: 'SALDO_LOTE_INSUFICIENTE' }));
+    assert.equal(/SEGREDO|\d/.test(texto), false);
+  });
+
+  test('a orientação manda registrar o motivo conforme o que aconteceu, sem sugerir um motivo físico para passar', () => {
+    const { mensagens } = carregarMateriais();
+    const texto = mensagens.erroBaixa({ ok: false, status: 409, codigo: 'SALDO_LIVRE_INSUFICIENTE' });
+    assert.match(texto, /conforme o que realmente aconteceu/);
+    assert.equal(/escolha (o motivo|um motivo) (de )?(avaria|perda|descarte|ajuste)/i.test(texto), false);
+    assert.equal(/para (contornar|evitar)/i.test(texto), false);
+  });
+
+  test('resultadoBaixa: é recusa confirmada (4xx), nunca "não confirmada"', () => {
+    const { mensagens } = carregarMateriais();
+    const r = { ok: false, confirmado: true, resposta: { ok: false, status: 409, codigo: 'SALDO_LIVRE_INSUFICIENTE' } };
+    const texto = mensagens.resultadoBaixa(r, { quantidade: 2, motivo: 'OUTRO' }, { tamanho: '41', caNumero: '54321' });
+    assert.match(texto, /^Baixa não realizada: o saldo físico existe/);
+    assert.equal(/não confirmada/.test(texto), false);
+  });
+
+  test('aviso do motivo: só devolução ao fornecedor e "Outro" dependem do saldo livre; os fatos físicos não ganham dica', () => {
+    const { mensagens } = carregarMateriais();
+    for (const motivo of ['DEVOLUCAO_FORNECEDOR', 'OUTRO']) assert.match(mensagens.avisoMotivoBaixa(motivo), /só pode usar o saldo livre/);
+    for (const motivo of ['CA_VENCIDO', 'AVARIA', 'DESCARTE', 'PERDA', 'AJUSTE_INVENTARIO', '', undefined, 'QUALQUER']) assert.equal(mensagens.avisoMotivoBaixa(motivo), '', String(motivo));
+  });
+});
+
+// Servidor falso por rota com os mínimos por tamanho (as demais rotas vêm do estadoPadrao).
+function estadoComMinimos({ minimos = {}, ...extra } = {}) {
+  const e = estadoPadrao({ materiais: [MATERIAL], lotes: LOTES, materialEstoque: { exigeTamanho: true }, ...extra });
+  e.minimos = { estoqueMinimoPadrao: 5, exigeTamanho: true, overrides: [], ...minimos };
+  e.falhaMinimos = null; // (metodo, tamanho) => resposta | Error | undefined
+  const estado = (mais = {}) => ({
+    status: 'ok', materialId: 77, estoqueMinimoPadrao: e.minimos.estoqueMinimoPadrao, exigeTamanho: e.minimos.exigeTamanho, overrides: e.minimos.overrides.map((o) => ({ ...o })), ...mais,
+  });
+  const base = e.responder;
+  e.responder = (metodo, u, corpo) => {
+    const m = u.pathname.match(/^\/api\/materiais\/(\d+)\/minimos(?:\/([^/]+))?$/);
+    if (!m) return base(metodo, u, corpo);
+    const tamanho = m[2] === undefined ? undefined : decodeURIComponent(m[2]);
+    const falha = e.falhaMinimos && e.falhaMinimos(metodo, tamanho);
+    if (falha) return falha;
+    if (metodo === 'GET' && tamanho === undefined) return resposta(200, estado());
+    const i = e.minimos.overrides.findIndex((o) => o.tamanho === tamanho);
+    if (metodo === 'PUT') {
+      const criado = i < 0;
+      const alterado = criado || e.minimos.overrides[i].minimo !== corpo.minimo;
+      if (criado) e.minimos.overrides.push({ tamanho, minimo: corpo.minimo }); else e.minimos.overrides[i].minimo = corpo.minimo;
+      return resposta(criado ? 201 : 200, estado({ criado, alterado }));
+    }
+    if (metodo === 'DELETE') {
+      if (i >= 0) e.minimos.overrides.splice(i, 1);
+      return resposta(200, estado({ alterado: i >= 0 }));
+    }
+    return resposta(404, { status: 'erro', codigo: 'NAO_ENCONTRADO' });
+  };
+  return e;
+}
+const chamadasMinimos = () => chamadas.filter((c) => /\/minimos/.test(c.caminho));
+
+describe('12D-3 — página: mínimo por tamanho (painel, definir, alterar, remover)', () => {
+  const html = ler('pages/materials.html');
+  const codigo = semComentarios(html);
+  const ids = [...html.matchAll(/id="([^"]+)"/g)].map((m) => m[1]);
+  // O painel escreve os textos por textContent (nunca por innerHTML).
+  const textoDe = (pg, id) => pg.el(id).textContent.replace(/\s+/g, ' ').trim();
+  const linhasDoPainel = (pg) => pg.el('minimosCorpo').innerHTML.split('</tr>').filter((l) => l.includes('<td')).map((l) => [...l.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((m) => m[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()).slice(0, 4));
+  /** Clique de linha: a página delega no corpo da tabela e acha o botão por data-acao e data-tamanho. */
+  const clicarLinha = async (pg, acao, tamanho) => {
+    const botao = { disabled: false, getAttribute: (k) => ({ 'data-acao': acao, 'data-tamanho': tamanho })[k] || null };
+    for (const fn of (pg.el('minimosCorpo').listeners.click || [])) await fn({ target: { closest: () => botao } });
+    await pg.esperar();
+  };
+
+  test('estática: cartão "Estoque mínimo por tamanho" com tabela, formulário rotulado, região de status e o módulo carregado; nada no navegador', () => {
+    assert.match(html, /<h2>Estoque mínimo por tamanho<\/h2>/);
+    for (const id of ['cardMinimos', 'minimosAviso', 'minimosCorpo', 'blocoMinimos', 'minimoTamanho', 'minimoTamanhosLista', 'minimoValor', 'botaoDefinirMinimo', 'minimosStatus']) assert.ok(ids.includes(id), `falta #${id}`);
+    assert.match(html, /<label for="minimoTamanho">Tamanho \*<\/label>/);
+    assert.match(html, /<label for="minimoValor">Mínimo \*<\/label>/);
+    assert.match(html, /<input id="minimoTamanho"[^>]*maxlength="20"/);
+    assert.match(html, /id="minimosStatus"[^>]*role="status"[^>]*aria-live="polite"|id="minimosStatus"[^>]*aria-live="polite"[^>]*role="status"/);
+    const cabecalho = html.slice(html.indexOf('id="cardMinimos"'));
+    assert.deepEqual([...cabecalho.slice(0, cabecalho.indexOf('</thead>')).matchAll(/<th[^>]*>([^<]*)<\/th>/g)].map((m) => m[1]), ['Tamanho', 'Mínimo próprio', 'Mínimo efetivo', 'Origem', '']);
+    assert.match(codigo, /EpiEstoqueMinimos/);
+    assert.equal(/localStorage|sessionStorage/.test(codigo), false);
+  });
+
+  test('ao escolher o material: GET dos mínimos; uma linha por tamanho com lote ou sobrescrita; "0 próprio" diferente de "herdando padrão"; o padrão explicado', async () => {
+    servidorRotas(estadoComMinimos({ minimos: { overrides: [{ tamanho: '40', minimo: 0 }, { tamanho: '44', minimo: 9 }] } }));
+    const pg = montarPagina({ permissoes: PODE_EDITAR });
+    await pg.esperar();
+    await escolherMaterial(pg);
+    assert.deepEqual(chamadasMinimos().map((c) => `${c.metodo} ${c.caminho}`), ['GET /api/materiais/77/minimos']);
+    assert.deepEqual(linhasDoPainel(pg), [
+      ['40', '0 próprio', '0', 'Próprio'],
+      ['41', 'herdando padrão', '5', 'Padrão'],
+      ['44', '9 próprio', '9', 'Próprio'],
+    ]);
+    assert.match(textoDe(pg, 'minimosAviso'), /mínimo padrão \(5\)/);
+    assert.equal(pg.el('blocoMinimos').style.display, '');
+    assert.match(pg.el('minimoTamanhosLista').innerHTML, /<option value="41">/);
+  });
+
+  test('definir: PUT só com { minimo } no tamanho certo; o painel passa a mostrar o próprio; mensagem de sucesso; nenhuma linha extra para outros tamanhos', async () => {
+    servidorRotas(estadoComMinimos());
+    const pg = montarPagina({ permissoes: PODE_EDITAR });
+    await pg.esperar();
+    await escolherMaterial(pg);
+    pg.preencher({ minimoTamanho: ' 41 ', minimoValor: '3' });
+    await pg.disparar('botaoDefinirMinimo');
+    assert.deepEqual(escritas().map((c) => [c.metodo, c.caminho, c.corpo]), [['PUT', '/api/materiais/77/minimos/41', { minimo: 3 }]]);
+    assert.deepEqual(linhasDoPainel(pg).map((l) => l[0]), ['40', '41']);
+    assert.deepEqual(linhasDoPainel(pg).find((l) => l[0] === '41'), ['41', '3 próprio', '3', 'Próprio']);
+    assert.equal(pg.el('minimosStatus').textContent, 'Mínimo do tamanho 41 definido: 3.');
+    assert.deepEqual([pg.el('minimoTamanho').value, pg.el('minimoValor').value], ['', ''], 'formulário limpo depois de gravar');
+  });
+
+  test('o zero próprio é enviado e mostrado como zero próprio, não como "herdando padrão"', async () => {
+    servidorRotas(estadoComMinimos());
+    const pg = montarPagina({ permissoes: PODE_EDITAR });
+    await pg.esperar();
+    await escolherMaterial(pg);
+    pg.preencher({ minimoTamanho: '41', minimoValor: '0' });
+    await pg.disparar('botaoDefinirMinimo');
+    assert.deepEqual(escritas()[0].corpo, { minimo: 0 });
+    assert.deepEqual(linhasDoPainel(pg).find((l) => l[0] === '41'), ['41', '0 próprio', '0', 'Próprio']);
+  });
+
+  test('Alterar traz o tamanho e o valor atuais para o formulário; gravar o mesmo valor é "nada alterado"; outro valor, "alterado para"', async () => {
+    servidorRotas(estadoComMinimos({ minimos: { overrides: [{ tamanho: '41', minimo: 7 }] } }));
+    const pg = montarPagina({ permissoes: PODE_EDITAR });
+    await pg.esperar();
+    await escolherMaterial(pg);
+    await clicarLinha(pg, 'alterar', '41');
+    assert.deepEqual([pg.el('minimoTamanho').value, pg.el('minimoValor').value], ['41', '7']);
+    await pg.disparar('botaoDefinirMinimo');
+    assert.equal(pg.el('minimosStatus').textContent, 'O tamanho 41 já tinha o mínimo 7; nada foi alterado.');
+    pg.preencher({ minimoTamanho: '41', minimoValor: '8' });
+    await pg.disparar('botaoDefinirMinimo');
+    assert.equal(pg.el('minimosStatus').textContent, 'Mínimo do tamanho 41 alterado para 8.');
+    assert.deepEqual(linhasDoPainel(pg).find((l) => l[0] === '41'), ['41', '8 próprio', '8', 'Próprio']);
+  });
+
+  test('Definir numa linha que herda leva só o tamanho ao formulário e põe o foco no mínimo', async () => {
+    servidorRotas(estadoComMinimos());
+    const pg = montarPagina({ permissoes: PODE_EDITAR });
+    await pg.esperar();
+    await escolherMaterial(pg);
+    await clicarLinha(pg, 'definir', '41');
+    assert.deepEqual([pg.el('minimoTamanho').value, pg.el('minimoValor').value], ['41', '']);
+  });
+
+  test('Remover: DELETE do tamanho; a linha volta a "herdando padrão" com o mínimo padrão; mensagem diz que voltou ao padrão', async () => {
+    servidorRotas(estadoComMinimos({ minimos: { overrides: [{ tamanho: '41', minimo: 0 }] } }));
+    const pg = montarPagina({ permissoes: PODE_EDITAR });
+    await pg.esperar();
+    await escolherMaterial(pg);
+    assert.deepEqual(linhasDoPainel(pg).find((l) => l[0] === '41'), ['41', '0 próprio', '0', 'Próprio']);
+    await clicarLinha(pg, 'remover', '41');
+    assert.deepEqual(escritas().map((c) => [c.metodo, c.caminho, c.corpo]), [['DELETE', '/api/materiais/77/minimos/41', undefined]]);
+    assert.deepEqual(linhasDoPainel(pg).find((l) => l[0] === '41'), ['41', 'herdando padrão', '5', 'Padrão']);
+    assert.equal(pg.el('minimosStatus').textContent, 'Mínimo próprio do tamanho 41 removido: o tamanho volta a usar o mínimo padrão (5).');
+  });
+
+  test('tamanho único (exigeTamanho false): sem formulário nem tabela, só o mínimo padrão explicado; nenhuma escrita é possível', async () => {
+    servidorRotas(estadoComMinimos({ minimos: { exigeTamanho: false } }));
+    const pg = montarPagina({ permissoes: PODE_EDITAR });
+    await pg.esperar();
+    await escolherMaterial(pg);
+    assert.equal(pg.el('blocoMinimos').style.display, 'none');
+    assert.equal(pg.el('minimosCorpo').innerHTML, '');
+    assert.match(textoDe(pg, 'minimosAviso'), /não usa tamanho.*mínimo padrão \(5\)/i);
+    pg.preencher({ minimoTamanho: '41', minimoValor: '3' });
+    await pg.disparar('botaoDefinirMinimo');
+    assert.equal(escritas().length, 0);
+  });
+
+  test('material não classificado (exigeTamanho nulo): orientação de classificar no cadastro, sem formulário e sem sobrescritas mostradas', async () => {
+    servidorRotas(estadoComMinimos({ minimos: { exigeTamanho: null, overrides: [{ tamanho: '41', minimo: 2 }] } }));
+    const pg = montarPagina({ permissoes: PODE_EDITAR });
+    await pg.esperar();
+    await escolherMaterial(pg);
+    assert.equal(pg.el('blocoMinimos').style.display, 'none');
+    assert.equal(pg.el('minimosCorpo').innerHTML, '');
+    assert.match(textoDe(pg, 'minimosAviso'), /Defina no cadastro/);
+  });
+
+  test('sem permissão de editar: a tabela aparece, mas sem formulário e sem botões de ação; nenhuma escrita', async () => {
+    servidorRotas(estadoComMinimos({ minimos: { overrides: [{ tamanho: '41', minimo: 2 }] } }));
+    const pg = montarPagina({ permissoes: { recursos: { materials: { visualizar: true, criar: false, editar: false, excluir: false } }, acoes: {}, administracao: {} }, podeAlterar: false });
+    await pg.esperar();
+    await escolherMaterial(pg);
+    assert.equal(linhasDoPainel(pg).length, 2);
+    assert.equal(/<button/.test(pg.el('minimosCorpo').innerHTML), false);
+    assert.equal(pg.el('blocoMinimos').style.display, 'none');
+    await clicarLinha(pg, 'remover', '41');
+    pg.preencher({ minimoTamanho: '41', minimoValor: '3' });
+    await pg.disparar('botaoDefinirMinimo');
+    assert.equal(escritas().length, 0);
+  });
+
+  test('valores inválidos: nada é enviado, o campo é marcado e a mensagem explica; o servidor não é consultado', async () => {
+    servidorRotas(estadoComMinimos());
+    const pg = montarPagina({ permissoes: PODE_EDITAR });
+    await pg.esperar();
+    await escolherMaterial(pg);
+    for (const [tamanho, valor, campo] of [['41', '', 'minimoValor'], ['41', '-1', 'minimoValor'], ['41', '1.5', 'minimoValor'], ['41', 'abc', 'minimoValor'], ['', '3', 'minimoTamanho'], ['x'.repeat(21), '3', 'minimoTamanho']]) {
+      pg.preencher({ minimoTamanho: tamanho, minimoValor: valor });
+      await pg.disparar('botaoDefinirMinimo');
+      assert.equal(pg.el(campo).atributos['aria-invalid'], 'true', `${tamanho}/${valor}`);
+      assert.notEqual(pg.el('minimosStatus').textContent, '');
+    }
+    assert.equal(escritas().length, 0);
+  });
+
+  test('409 do servidor não é contornado: mostra a orientação própria e recarrega o painel (o estado pode ter mudado)', async () => {
+    const estado = estadoComMinimos();
+    servidorRotas(estado);
+    const pg = montarPagina({ permissoes: PODE_EDITAR });
+    await pg.esperar();
+    await escolherMaterial(pg);
+    estado.falhaMinimos = (m) => (m === 'PUT' ? resposta(409, { status: 'error', codigo: 'MATERIAL_NAO_EXIGE_TAMANHO', message: 'SEGREDO-INTERNO' }) : undefined);
+    estado.minimos.exigeTamanho = false; // o cadastro mudou em outra aba
+    pg.preencher({ minimoTamanho: '41', minimoValor: '3' });
+    await pg.disparar('botaoDefinirMinimo');
+    assert.match(pg.el('minimosStatus').textContent, /não usa tamanho.*mínimo padrão do cadastro/i);
+    assert.equal(/SEGREDO/.test(pg.el('minimosStatus').textContent), false);
+    assert.equal(escritas().length, 1, 'uma tentativa só, sem repetir');
+    assert.deepEqual(chamadasMinimos().map((c) => c.metodo), ['GET', 'PUT', 'GET'], 'o painel foi recarregado');
+    assert.equal(pg.el('blocoMinimos').style.display, 'none');
+  });
+
+  test('falha de rede na gravação: mensagem de não confirmado, o painel é recarregado para conferir e os botões voltam', async () => {
+    const estado = estadoComMinimos();
+    servidorRotas(estado);
+    const pg = montarPagina({ permissoes: PODE_EDITAR });
+    await pg.esperar();
+    await escolherMaterial(pg);
+    estado.falhaMinimos = (m) => (m === 'PUT' ? new TypeError('Failed to fetch') : undefined);
+    pg.preencher({ minimoTamanho: '41', minimoValor: '3' });
+    await pg.disparar('botaoDefinirMinimo');
+    assert.match(pg.el('minimosStatus').textContent, /não foi possível confirmar se o mínimo foi salvo/i);
+    assert.equal(pg.el('botaoDefinirMinimo').disabled, false);
+    assert.deepEqual(chamadasMinimos().map((c) => c.metodo), ['GET', 'PUT', 'GET']);
+  });
+
+  test('401 na gravação devolve ao Portal e limpa o painel', async () => {
+    const estado = estadoComMinimos({ minimos: { overrides: [{ tamanho: '41', minimo: 2 }] } });
+    servidorRotas(estado);
+    const pg = montarPagina({ permissoes: PODE_EDITAR });
+    await pg.esperar();
+    await escolherMaterial(pg);
+    estado.falhaMinimos = (m) => (m === 'DELETE' ? resposta(401, { status: 'error', codigo: 'SESSAO_INVALIDA' }) : undefined);
+    await clicarLinha(pg, 'remover', '41');
+    assert.equal(pg.sandbox.encerrada, true);
+  });
+
+  test('falha ao consultar os mínimos: aviso próprio no painel (não no aviso geral), sem tabela e sem formulário; o estoque por lote segue funcionando', async () => {
+    const estado = estadoComMinimos();
+    estado.falhaMinimos = () => resposta(500, { status: 'error', codigo: 'ERRO_INTERNO' });
+    servidorRotas(estado);
+    const pg = montarPagina({ permissoes: PODE_EDITAR });
+    await pg.esperar();
+    await escolherMaterial(pg);
+    assert.match(textoDe(pg, 'minimosAviso'), /Não foi possível consultar os mínimos/);
+    assert.equal(pg.el('minimosCorpo').innerHTML, '');
+    assert.equal(pg.el('blocoMinimos').style.display, 'none');
+    assert.equal(pg.el('saldoFisico').textContent, '35', 'os lotes carregaram');
+    assert.equal(/mínimos/i.test(pg.el('aviso').innerHTML), false);
+  });
+
+  test('trocar de material enquanto os mínimos do anterior carregam: a resposta antiga é descartada', async () => {
+    const estado = estadoComMinimos({ materiais: [MATERIAL, { ...MATERIAL, id: 78, nome: 'Luva' }] });
+    let liberar77;
+    const base = estado.responder;
+    // Só o GET dos mínimos do material 77 fica pendente; o resto responde na hora.
+    estado.responder = (metodo, u, corpo) => {
+      if (metodo === 'GET' && u.pathname === '/api/materiais/77/minimos') {
+        return new Promise((resolver) => { liberar77 = () => resolver(resposta(200, { status: 'ok', materialId: 77, estoqueMinimoPadrao: 5, exigeTamanho: true, overrides: [{ tamanho: '99', minimo: 1 }] })); });
+      }
+      return base(metodo, u, corpo);
+    };
+    servidorRotas(estado);
+    const pg = montarPagina({ permissoes: PODE_EDITAR });
+    await pg.esperar();
+    pg.el('gradeMaterial').value = '77';
+    await pg.disparar('gradeMaterial', 'change');
+    pg.el('gradeMaterial').value = '78';
+    await pg.disparar('gradeMaterial', 'change');
+    liberar77();
+    await pg.esperar();
+    assert.equal(linhasDoPainel(pg).some((l) => l[0] === '99'), false, 'a sobrescrita do material 77 não aparece no 78');
+  });
+
+  test('encerrar a sessão limpa o painel, o formulário e a mensagem', async () => {
+    servidorRotas(estadoComMinimos({ minimos: { overrides: [{ tamanho: '41', minimo: 2 }] } }));
+    const pg = montarPagina({ permissoes: PODE_EDITAR });
+    await pg.esperar();
+    await escolherMaterial(pg);
+    pg.preencher({ minimoTamanho: '41', minimoValor: '3' });
+    pg.sandbox.opcoesMontar.aoEncerrar();
+    assert.equal(pg.el('minimosCorpo').innerHTML, '');
+    assert.deepEqual([pg.el('minimoTamanho').value, pg.el('minimoValor').value, pg.el('minimosStatus').textContent], ['', '', '']);
+    assert.equal(pg.el('blocoMinimos').style.display, 'none');
+  });
+
+  test('XSS: o tamanho vindo do servidor sai escapado na tabela e nas sugestões do campo', async () => {
+    const ATAQUE_TAMANHO = '<b onclick=x>';
+    servidorRotas(estadoComMinimos({ minimos: { overrides: [{ tamanho: ATAQUE_TAMANHO, minimo: 1 }] } }));
+    const pg = montarPagina({ permissoes: PODE_EDITAR });
+    await pg.esperar();
+    await escolherMaterial(pg);
+    for (const html2 of [pg.el('minimosCorpo').innerHTML, pg.el('minimoTamanhosLista').innerHTML]) {
+      assert.ok(html2.includes('&lt;b onclick=x&gt;'), html2);
+      assert.equal(/<b[\s>]/.test(html2), false);
+    }
+  });
+});
+
+describe('12D-3 — página: baixa discricionária recusada por saldo livre', () => {
+  const preparar = async (motivo) => {
+    const estado = estadoComMinimos({ baixa: () => resposta(409, { status: 'error', codigo: 'SALDO_LIVRE_INSUFICIENTE', message: 'SEGREDO-INTERNO' }) });
+    servidorRotas(estado);
+    const pg = montarPagina({ permissoes: PODE_EDITAR });
+    await pg.esperar();
+    await escolherMaterial(pg);
+    pg.el('baixaLote').value = '2';
+    await pg.disparar('baixaLote', 'change');
+    pg.preencher({ baixaQuantidade: '4', baixaMotivo: motivo, baixaJustificativa: motivo === 'OUTRO' ? 'Doação para treinamento' : '' });
+    await pg.disparar('baixaMotivo', 'change');
+    return pg;
+  };
+
+  test('devolução ao fornecedor: a explicação do saldo livre aparece já ao escolher o motivo, antes de qualquer tentativa', async () => {
+    const pg = await preparar('DEVOLUCAO_FORNECEDOR');
+    assert.match(pg.el('baixaMotivoHelper').textContent, /só pode usar o saldo livre/);
+    assert.equal(escritas().length, 0);
+  });
+
+  test('motivos físicos não ganham dica de saldo livre', async () => {
+    const pg = await preparar('AVARIA');
+    assert.equal(pg.el('baixaMotivoHelper').textContent, '');
+  });
+
+  test('recusa 409: aviso de erro com a explicação; o formulário e os lotes ficam como estavam; nada vaza do servidor; uma tentativa só', async () => {
+    const pg = await preparar('OUTRO');
+    await pg.disparar('botaoRegistrarBaixa');
+    const aviso = pg.el('aviso').innerHTML;
+    assert.match(aviso, /Baixa não realizada: o saldo físico existe, mas esta baixa reduziria o estoque comprometido/);
+    assert.equal(/SEGREDO/.test(aviso), false);
+    assert.equal(/C07000/.test(aviso), false, 'recusa confirmada é erro, não "atenção"');
+    assert.equal(escritas().length, 1);
+    assert.deepEqual([pg.el('baixaQuantidade').value, pg.el('baixaMotivo').value, pg.el('baixaJustificativa').value], ['4', 'OUTRO', 'Doação para treinamento']);
+    assert.equal(pg.el('botaoRegistrarBaixa').disabled, false);
   });
 });

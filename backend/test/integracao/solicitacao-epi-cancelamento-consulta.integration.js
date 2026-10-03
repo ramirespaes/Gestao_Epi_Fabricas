@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
 const { exigirModulo } = require('../helpers/exigir-modulo');
 const { todasAsMigrations, criarMaterial } = require('./helpers/entrega-epi');
-const { criarLoteDeEntrada, criarSolicitacao: criarSolicitacaoSql } = require('./helpers/solicitacao-epi');
+const { criarLoteDeEntrada, criarSolicitacao: criarSolicitacaoSql, entregarPorSolicitacao } = require('./helpers/solicitacao-epi');
 const {
   montarMundoDoServico, vincularMaterialAoGhe, chaveNova, esperarHttpError,
 } = require('./helpers/solicitacao-epi-servico');
@@ -50,6 +50,16 @@ describe('cancelamento e consulta da solicitação de EPI — serviço (PostgreS
   const aprovar = (i, quantidadeAprovada) => ({ itemId: i.id, decisao: 'APROVADO', ...(quantidadeAprovada === undefined ? {} : { quantidadeAprovada }) });
   const reprovar = (i) => ({ itemId: i.id, decisao: 'REPROVADO', justificativa: 'Sem necessidade comprovada' });
   const estoque = (materialId, quantidade) => criarLoteDeEntrada(pool, { empresaId: d.empresaA, materialId, quantidade, usuarioId: d.master });
+  // Entrega real ligada aos itens da solicitação (SQL, como o serviço da 12C-2 fará): [[itemId, loteId, quantidade]].
+  async function entregarReal(solicitacaoId, entregas) {
+    const { rows: [solicitacao] } = await q('SELECT * FROM solicitacoes_epi WHERE id = $1', [solicitacaoId]);
+    const itens = [];
+    for (const [itemId, loteId, quantidade] of entregas) {
+      const { rows: [linha] } = await q('SELECT * FROM solicitacoes_epi_itens WHERE id = $1', [itemId]);
+      itens.push({ item: linha, loteId, quantidade });
+    }
+    return entregarPorSolicitacao(pool, { solicitacao, itens, usuarioId: d.master });
+  }
   const contar = async (tabela, onde = 'true', params = []) => (await q(`SELECT count(*)::int AS n FROM ${tabela} WHERE ${onde}`, params)).rows[0].n;
 
   before(async () => {
@@ -96,7 +106,7 @@ describe('cancelamento e consulta da solicitação de EPI — serviço (PostgreS
       await decidir(reprovada.solicitacao.id, [reprovar(reprovada.itens[0])]);
       const entregue = await criar([item(b)]);
       await decidir(entregue.solicitacao.id, [aprovar(entregue.itens[0])]);
-      await q("UPDATE solicitacoes_epi SET status = 'ENTREGUE', entregue_em = clock_timestamp() WHERE id = $1", [entregue.solicitacao.id]);
+      await entregarReal(entregue.solicitacao.id, [[entregue.itens[0].id, await estoque(b, 2), 2]]);
       const cancelada = await criar([item(b)], { funcionarioId: d.trabalhador2 });
       await cancelar(cancelada.solicitacao.id);
 
@@ -246,11 +256,61 @@ describe('cancelamento e consulta da solicitação de EPI — serviço (PostgreS
       await q('UPDATE materiais SET ativo = true WHERE id = $1', [m]);
     });
 
-    test('ENTREGUE (preparado para a 12C): itens entregues, pendente zero; REPROVADA e CANCELADA sem situação operacional', async () => {
+    test('entrega parcial: a entregue vem das entregas ligadas ao item, a pendente continua, a solicitação segue aberta e a situação é PARCIALMENTE_ENTREGUE', async () => {
       const m = await materialNoGhe();
+      const lote = await estoque(m, 5);
+      const { solicitacao, itens } = await criar([item(m, { quantidade: 3 })]);
+      await decidir(solicitacao.id, [aprovar(itens[0])]);
+      await entregarReal(solicitacao.id, [[itens[0].id, lote, 1]]);
+      const lida = await buscar(solicitacao.id);
+      assert.equal(lida.solicitacao.status, 'APROVADA', 'o status decisório não muda com a entrega parcial');
+      assert.equal(lida.solicitacao.entregueEm, null);
+      assert.deepEqual([lida.itens[0].situacao, lida.itens[0].quantidadeEntregue, lida.itens[0].quantidadePendente], ['PARCIALMENTE_ENTREGUE', 1, 2]);
+      assert.equal(lida.solicitacao.situacaoOperacional, 'PARCIALMENTE_ENTREGUE');
+      assert.deepEqual(lida.itens[0].cobertura, { coberta: 2, semCobertura: 0, acumuladoAnterior: 0, fisicoUtilizavel: 4 });
+      assert.deepEqual(lida.itens[0].posicao, { fisicoUtilizavel: 4, demandaPendente: 2, comprometido: 2, saldoLivre: 2, semCobertura: 0 });
+      await entregarReal(solicitacao.id, [[itens[0].id, lote, 2]]);
+      const fechada = await buscar(solicitacao.id);
+      assert.equal(fechada.solicitacao.status, 'ENTREGUE');
+      assert.deepEqual([fechada.itens[0].situacao, fechada.itens[0].quantidadeEntregue, fechada.itens[0].quantidadePendente], ['ENTREGUE', 3, 0]);
+    });
+
+    test('vários itens: um entregue por inteiro e outro pendente deixam o cabeçalho PARCIALMENTE_ENTREGUE; o item reprovado não entra na conta', async () => {
+      const a = await materialNoGhe();
+      const b = await materialNoGhe();
+      const c = await materialNoGhe();
+      const loteA = await estoque(a, 3);
+      await estoque(b, 1);
+      const { solicitacao, itens } = await criar([item(a, { quantidade: 2 }), item(b, { quantidade: 2 }), item(c, { quantidade: 1 })]);
+      await decidir(solicitacao.id, [aprovar(itens[0]), aprovar(itens[1]), reprovar(itens[2])]);
+      await entregarReal(solicitacao.id, [[itens[0].id, loteA, 2]]);
+      const lida = await buscar(solicitacao.id);
+      assert.equal(lida.solicitacao.status, 'APROVADA_PARCIAL');
+      assert.deepEqual(lida.itens.map((i) => [i.situacao, i.quantidadeEntregue, i.quantidadePendente]), [['ENTREGUE', 2, 0], ['PARCIALMENTE_COBERTA', 0, 2], [null, 0, null]]);
+      assert.equal(lida.solicitacao.situacaoOperacional, 'PARCIALMENTE_ENTREGUE');
+    });
+
+    test('trabalhador inativo com entrega parcial: o remanescente fica SUSPENSO, derivado, sem mudar o status', async () => {
+      const m = await materialNoGhe();
+      const lote = await estoque(m, 5);
+      const trabalhador = await d.novoTrabalhador(d.empresaA, { gheId: d.gheA });
+      const { solicitacao, itens } = await criar([item(m, { quantidade: 3 })], { funcionarioId: trabalhador });
+      await decidir(solicitacao.id, [aprovar(itens[0])]);
+      await entregarReal(solicitacao.id, [[itens[0].id, lote, 1]]);
+      await q('UPDATE funcionarios SET ativo = false WHERE id = $1', [trabalhador]);
+      const suspensa = await buscar(solicitacao.id);
+      assert.equal(suspensa.solicitacao.status, 'APROVADA');
+      assert.deepEqual([suspensa.itens[0].situacao, suspensa.itens[0].quantidadeEntregue, suspensa.itens[0].quantidadePendente, suspensa.itens[0].cobertura], ['SUSPENSA', 1, 2, null]);
+      await q('UPDATE funcionarios SET ativo = true WHERE id = $1', [trabalhador]);
+      assert.equal((await buscar(solicitacao.id)).itens[0].situacao, 'PARCIALMENTE_ENTREGUE');
+    });
+
+    test('ENTREGUE (fechada pela última entrega): itens entregues, pendente zero; REPROVADA e CANCELADA sem situação operacional', async () => {
+      const m = await materialNoGhe();
+      const lote = await estoque(m, 2);
       const entregue = await criar([item(m, { quantidade: 2 })]);
       await decidir(entregue.solicitacao.id, [aprovar(entregue.itens[0])]);
-      await q("UPDATE solicitacoes_epi SET status = 'ENTREGUE', entregue_em = clock_timestamp() WHERE id = $1", [entregue.solicitacao.id]);
+      await entregarReal(entregue.solicitacao.id, [[entregue.itens[0].id, lote, 2]]);
       const lida = await buscar(entregue.solicitacao.id);
       assert.equal(lida.solicitacao.situacaoOperacional, 'ENTREGUE');
       assert.deepEqual([lida.itens[0].situacao, lida.itens[0].quantidadeEntregue, lida.itens[0].quantidadePendente], ['ENTREGUE', 2, 0]);
