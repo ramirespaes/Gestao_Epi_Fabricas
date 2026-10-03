@@ -12,7 +12,7 @@ const { aplicarMigrations } = require('../../scripts/migrate');
 const { criarIdentidade, criarAdministrador, inserirPedido, hashDeToken, tabelaExiste } = require('./helpers/recuperacao-senha');
 
 /**
- * 061 a 067 pelo runner real, sobre um banco que já está na 060 com
+ * 061 a 068 pelo runner real, sobre um banco que já está na 060 com
  * identidade, administrador e sessões gravados. É o caminho de todo banco
  * existente: as pendentes entram numa transação só e não tocam em senha,
  * sessão nem MFA. Monto a estrutura até a 060 pelo mesmo runner, a partir de
@@ -30,11 +30,12 @@ const PENDENTES = [
   '065_create_solicitacoes_epi',
   '066_alter_entregas_epi_origem_solicitacao',
   '067_create_estoque_minimos',
+  '068_alter_solicitacoes_epi_add_encerramento',
 ];
 const TABELAS_NOVAS = ['redefinicoes_senha', 'redefinicoes_senha_plataforma', 'recuperacao_senha_solicitacoes', 'logs_auditoria_identidade'];
-const TOTAL = 68;
+const TOTAL = 69;
 
-describe('runner real: 061 a 067 numa transação, sobre a 060 com contas e sessões existentes', () => {
+describe('runner real: 061 a 068 numa transação, sobre a 060 com contas e sessões existentes', () => {
   let contexto;
   let c;
   let diretorioAteA060;
@@ -79,7 +80,7 @@ describe('runner real: 061 a 067 numa transação, sobre a 060 com contas e sess
     for (const tabela of TABELAS_NOVAS) assert.equal(await tabelaExiste(c, tabela), false, tabela);
   });
 
-  test('o runner aplica 061 a 067 juntas, em ordem, e registra as 68', async () => {
+  test('o runner aplica 061 a 068 juntas, em ordem, e registra as 69', async () => {
     const aplicadas = await aplicarMigrations({ schema: contexto.schema, diretorio: DIRETORIO_REAL });
 
     assert.deepEqual(aplicadas.map((migration) => migration.name), PENDENTES);
@@ -118,7 +119,7 @@ describe('runner real: 061 a 067 numa transação, sobre a 060 com contas e sess
     assert.equal(n, 1);
   });
 
-  test('manifesto: as entradas pendentes conferem com os arquivos e o total é 68', () => {
+  test('manifesto: as entradas pendentes conferem com os arquivos e o total é 69', () => {
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO_REAL, 'checksums.json'), 'utf8'));
     const arquivos = fs.readdirSync(DIRETORIO_REAL).filter((n) => /^\d{3}_.*\.sql$/.test(n)).sort();
     assert.equal(arquivos.length, TOTAL);

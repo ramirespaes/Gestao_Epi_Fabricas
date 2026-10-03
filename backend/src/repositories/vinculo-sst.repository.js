@@ -10,6 +10,7 @@
  */
 
 const MOTIVO_MAXIMO = 500;
+const LIMITE_MAXIMO = 100;
 const COLUNAS = 'usuario_id, empresa_id, concedido_por, concedido_em, motivo';
 
 function exigirId(valor, nome) {
@@ -79,4 +80,41 @@ async function listarPorEmpresa(executor, empresaId) {
   return rows.map(mapear);
 }
 
-module.exports = { MOTIVO_MAXIMO, inserir, remover, buscarPorUsuario, listarPorEmpresa };
+/**
+ * Página de vínculos da empresa, do mais novo ao mais antigo, com nome, perfil
+ * e situação do usuário (ligado pela chave composta). Única leitura deste
+ * repositório que toca `usuarios`, e só nessas três colunas: nunca e-mail,
+ * hash de senha nem CPF.
+ */
+async function listarComUsuario(executor, empresaId, { pagina, limite }) {
+  exigirId(empresaId, 'identificador de empresa');
+  if (!Number.isInteger(pagina) || pagina < 1) throw new TypeError('página inválida');
+  if (!Number.isInteger(limite) || limite < 1 || limite > LIMITE_MAXIMO) throw new TypeError('limite inválido');
+  const { rows } = await executor.query(
+    `SELECT v.usuario_id, v.concedido_por, v.concedido_em, v.motivo,
+            u.nome AS usuario_nome, u.perfil AS usuario_perfil, u.ativo AS usuario_ativo
+       FROM vinculo_sst v
+       JOIN usuarios u ON u.empresa_id = v.empresa_id AND u.id = v.usuario_id
+      WHERE v.empresa_id = $1
+      ORDER BY v.concedido_em DESC, v.usuario_id DESC
+      LIMIT $2 OFFSET $3`,
+    [empresaId, limite, (pagina - 1) * limite],
+  );
+  return rows.map((l) => ({
+    usuarioId: l.usuario_id,
+    concedidoPor: l.concedido_por,
+    concedidoEm: l.concedido_em,
+    motivo: l.motivo,
+    usuario: { nome: l.usuario_nome, perfil: l.usuario_perfil, ativo: l.usuario_ativo },
+  }));
+}
+
+async function contar(executor, empresaId) {
+  exigirId(empresaId, 'identificador de empresa');
+  const { rows } = await executor.query('SELECT count(*)::int AS total FROM vinculo_sst WHERE empresa_id = $1', [empresaId]);
+  return Number(rows[0].total);
+}
+
+module.exports = {
+  MOTIVO_MAXIMO, LIMITE_MAXIMO, inserir, remover, buscarPorUsuario, listarPorEmpresa, listarComUsuario, contar,
+};

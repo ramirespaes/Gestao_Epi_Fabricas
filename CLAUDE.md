@@ -371,7 +371,7 @@ Não alterar migrations antigas somente para:
 
 Se uma estrutura já aplicada precisar mudar, criar nova migration, salvo decisão explícita em contrário.
 
-Atualmente existem migrations versionadas de `000` a `067`, que devem ser executadas em ordem crescente de prefixo.
+Atualmente existem migrations versionadas de `000` a `068`, que devem ser executadas em ordem crescente de prefixo.
 
 Estar versionada não significa estar aplicada: o conjunto descreve o histórico do repositório, não o estado de nenhum banco. Depois de incorporadas ao histórico, essas migrations devem ser preservadas.
 
@@ -1291,7 +1291,7 @@ Em caso de conflito entre conveniência e qualidade técnica, priorizar nesta or
 
 # 63. Solicitação de EPI e reserva lógica de estoque
 
-Decisões do Bloco 12 que valem para as próximas subetapas. A 12A e a 12B estão na `main` (PR #49, merge `0ccf59d47527b58fd656a265a74fd763109fbd45`); a 12C e a 12D (12D-1, 12D-2 e 12D-3) estão concluídas no commit `997b7bc9bc6d04002539ec5046b19ce5da8efae7` (`feat(bloco12): concluir entrega por solicitacao e posicao de estoque`); a 12E (que traz a pendência obrigatória D6), a 12F e a 12G não foram iniciadas. A solicitação, a aprovação e a entrega por solicitação continuam sem frontend final e seguem para a 12E, a 12F e a 12G; a 12D integrou às telas existentes o saldo livre na entrega direta, os mínimos, Itens Disponíveis, o Dashboard e o histórico de entregas.
+Decisões do Bloco 12 que valem para as próximas subetapas. A 12A e a 12B estão na `main` (PR #49, merge `0ccf59d47527b58fd656a265a74fd763109fbd45`); a 12C e a 12D (12D-1, 12D-2 e 12D-3) estão concluídas no commit `997b7bc9bc6d04002539ec5046b19ce5da8efae7` (`feat(bloco12): concluir entrega por solicitacao e posicao de estoque`); a 12E (consultas, encerramento D6 e migration `068`) e a 12F (camada HTTP) estão concluídas na branch `feature/bloco12-12e-12f`, ainda sem commit na data desta revisão; a 12G (telas) não foi iniciada. A solicitação, a aprovação, o encerramento e a entrega por solicitação têm rotas HTTP, mas não têm tela; a 12D integrou às telas existentes o saldo livre na entrega direta, os mínimos, Itens Disponíveis, o Dashboard e o histórico de entregas.
 
 Fluxo: a solicitação é decidida pela **Segurança do Trabalho**, nunca pelo supervisor. Quem decide não pode ser quem solicitou (`AUTODECISAO_PROIBIDA`). A entrega direta do Bloco 10 (`origem = DIRETA`) não pode ser quebrada.
 
@@ -1306,7 +1306,11 @@ Entrega por solicitação (12C): o vínculo fica no item da entrega (`entregas_e
 
 Serviço da entrega por solicitação (`entrega-solicitacao.service.js`): o chamador informa só solicitação, chave, itens (item da solicitação, lote, quantidade) e confirmação; tudo o que o servidor deriva (trabalhador, material, tamanho, motivo, justificativas, GHE) vem da solicitação e do cadastro, e o item que o traz é recusado. A quantidade do ato é somada por item da solicitação e tem de caber no pendente e na cobertura FIFO, recalculada depois das travas na ordem aprovada; a cobertura é conferida antes do saldo do lote. A justificativa técnica da SST fora do GHE é reutilizada, nunca pedida de novo. Trabalhador ou material inativo torna a solicitação não entregável sem mudar o status histórico. O hash de conteúdo da entrega `DIRETA` não pode mudar byte a byte; o vínculo entra no hash só na entrega `SOLICITACAO`.
 
-Pendência obrigatória do Bloco 12 antes do fechamento final: a solicitação aprovada que não será mais entregue precisa poder ser encerrada, para não manter demanda comprometida indefinidamente (quem encerra, justificativa, efeito depois de entrega parcial, status histórico, auditoria e efeito sobre D, C, L e G). Inativar trabalhador ou material não substitui essa regra.
+Encerramento (D6, 12E-2, migration `068`): a solicitação `APROVADA` ou `APROVADA_PARCIAL` que não será mais entregue é encerrada com justificativa obrigatória (1 a 500, sem só espaços nem controle), e `ENCERRADA` é final. Nada é apagado nem desfeito: entregas, ficha, lotes e operações ficam, a entregue continua derivada, e só a aprovada ainda não entregue sai de D, porque a posição só conta `APROVADA` e `APROVADA_PARCIAL` (sem contador, reserva ou alocação). `ENTREGUE`, `PENDENTE`, `REPROVADA` e `CANCELADA` não são encerradas (409 `SOLICITACAO_NAO_ENCERRAVEL`), e a `ENCERRADA` não recebe entrega (409 `SOLICITACAO_NAO_ENTREGAVEL`). A autoridade é a ação `ENCERRAR_SOLICITACAO` (`exige_sst = true`, OBRIGATORIA), sem concessão automática a ninguém. O autoencerramento é permitido com autoridade válida; `AUTODECISAO_PROIBIDA` vale só para aprovar e reprovar. Travas: solicitação, depois os pares com pendente. A justificativa aparece só no detalhe, para quem pode vê-lo; nunca em lista nem na auditoria. Inativar trabalhador ou material continua só suspendendo, sem encerrar.
+
+Consultas e HTTP (12E-1, 12F): "minhas" (recurso `request`, visualizar; só as do próprio), fila (ação `APROVAR_SOLICITACAO`), entregáveis (ação `REALIZAR_ENTREGA`) e detalhe (quem tem `APROVAR_SOLICITACAO`, `REPROVAR_SOLICITACAO`, `ENCERRAR_SOLICITACAO` ou `REALIZAR_ENTREGA` vê qualquer uma da empresa, com cobertura e posição; quem só tem `request.visualizar` vê só as próprias, sem os números de estoque). Escrita: criar com `request.criar`; cancelar com `request.editar` (nunca `excluir`; o cancelamento não apaga o registro; não existe ação `CANCELAR_SOLICITACAO`); decidir exige `APROVAR_SOLICITACAO` se aprova algum item e `REPROVAR_SOLICITACAO` se reprova algum (a mista exige as duas, compostas a partir da fábrica central, nunca autorização manual); encerrar com `ENCERRAR_SOLICITACAO`; entregar por solicitação com `REALIZAR_ENTREGA`; conceder e remover vínculo SST só pelo MASTER ativo, no serviço. Empresa e ator vêm só da sessão; schemas estritos recusam empresa, solicitante, decisor, encerrador, responsável, status, instantes e hashes vindos do cliente; quem só pede não vê cobertura nem posição. Nenhum desses recursos ou ações entra no escopo de provisionamento do MASTER: `request.visualizar`, `request.criar` e `request.editar` são concedidos explicitamente por perfil, grupo ou exceção individual. Qualquer banco persistente que sirva essas rotas precisa estar migrado até a `068`.
+
+Para a 12G: a tela de permissões precisa tratar `request` como recurso funcional (não "sem efeito"), e menu e botões da solicitação obedecem `visualizar`, `criar` e `editar`; o backend continua validando tudo.
 
 Trava por par: operações que decidem sobre o saldo de um par usam `pg_advisory_xact_lock` de 64 bits (`backend/src/utils/lock-par-estoque.js`), um par por vez, em ordem canônica. Ordem global de travas: idempotência, solicitação, trabalhador, materiais, pares, lotes, numeração. Não inverter essa ordem.
 
@@ -1333,9 +1337,9 @@ Telas da 12D-3 (frontend, sem migration, sem rota nova e sem RBAC novo; só as p
 
 Vínculo SST: concedido e removido só pelo MASTER ativo da empresa. O MASTER administra vínculos, mas não é alvo de um novo vínculo (`VINCULO_SST_NAO_SE_APLICA_AO_MASTER`); vínculo legado de MASTER não é removido automaticamente. Usuário inativo não recebe vínculo novo, e o vínculo de um inativo pode ser removido.
 
-Anti-enumeração: cancelar sem ser o criador, ou com ator inexistente, devolve o mesmo 403 `CANCELAMENTO_NAO_PERMITIDO`, sem revelar a existência da solicitação nem quem a criou.
+Anti-enumeração: a solicitação que não pertence ao solicitante autenticado é "não encontrada" no cancelamento, inclusive dentro da mesma empresa: exatamente o mesmo 404 `SOLICITACAO_NAO_ENCONTRADA` (status e corpo) da inexistente e da de outra empresa, sem revelar que o id existe nem quem a criou. A própria solicitação fora de `PENDENTE` continua 409, e sem `request.editar` a autorização central responde 403 antes do domínio. Nas demais operações, a solicitação ou o usuário de outra empresa dá o mesmo 404 do inexistente.
 
-Auditoria da solicitação e do vínculo: identificadores e indicadores booleanos, sem texto livre, na mesma transação do ato.
+Auditoria da solicitação e do vínculo: identificadores, status e indicadores booleanos, sem texto livre, na mesma transação do ato. A observação da criação, a justificativa do cancelamento, a do encerramento e o motivo do vínculo ficam só no registro de negócio; a auditoria registra só se foram informados (`temObservacao`, `comJustificativa`, `comMotivo`), nunca o conteúdo, nem em `descricao`, nem em `contexto`, nem em `dados_anteriores` ou `dados_novos`.
 
 ---
 

@@ -157,6 +157,48 @@ describe('listarPorSolicitacaoComEntregue', () => {
   });
 });
 
+describe('listarPorSolicitacoesComEntregue', () => {
+  const comEntregue = (extra = {}) => linha({ quantidade_entregue: '0', ...extra });
+  const funcao = () => {
+    assert.equal(typeof repo().listarPorSolicitacoesComEntregue, 'function', 'função ainda não implementada: listarPorSolicitacoesComEntregue');
+    return repo().listarPorSolicitacoesComEntregue;
+  };
+
+  test('devolve os itens de várias solicitações com a entregue derivada, em Number, agrupáveis por solicitação', async () => {
+    const executor = executorFalso([
+      comEntregue({ id: 1, solicitacao_id: 17, decisao: 'APROVADO', quantidade_aprovada: 3, quantidade_entregue: '2' }),
+      comEntregue({ id: 5, solicitacao_id: 18 }),
+    ]);
+    const itens = await funcao()(executor, EMPRESA, [17, 18]);
+    assert.deepEqual(itens, [
+      publica({ id: 1, decisao: 'APROVADO', quantidadeAprovada: 3, quantidadeEntregue: 2 }),
+      publica({ id: 5, solicitacaoId: 18, quantidadeEntregue: 0 }),
+    ]);
+  });
+
+  test('a entregue é a soma das entregas da empresa ligadas ao item; o filtro é por empresa e pela lista, em ordem determinística, e só lê', async () => {
+    const executor = executorFalso([]);
+    await funcao()(executor, EMPRESA, [17, 18]);
+    const { texto, valores } = executor.chamadas[0];
+    assert.match(texto, /^SELECT\b/);
+    assert.doesNotMatch(texto, /\b(INSERT|UPDATE|DELETE)\b|FOR\s+(NO KEY\s+)?(UPDATE|SHARE)/i);
+    assert.match(texto, /LEFT JOIN LATERAL \(\s*SELECT COALESCE\(sum\(ei\.quantidade\), 0\)::bigint AS quantidade_entregue\s+FROM entregas_epi_itens ei\s+WHERE ei\.empresa_id = i\.empresa_id AND ei\.solicitacao_item_id = i\.id\s*\) e ON true/);
+    assert.match(texto, /WHERE i\.empresa_id = \$1 AND i\.solicitacao_id = ANY\(\$2::int\[\]\)\s+ORDER BY i\.solicitacao_id, i\.id$/);
+    assert.doesNotMatch(texto, /cpf/i);
+    assert.deepEqual(valores, [EMPRESA, [17, 18]]);
+  });
+
+  test('lista vazia volta vazia sem consultar; recusa empresa, lista ou identificador inválidos sem consultar', async () => {
+    const vazio = executorFalso();
+    assert.deepEqual(await funcao()(vazio, EMPRESA, []), []);
+    await assert.rejects(() => funcao()(vazio, 0, [17]), /empresa/);
+    await assert.rejects(() => funcao()(vazio, EMPRESA, 17), /solicitações/);
+    await assert.rejects(() => funcao()(vazio, EMPRESA, [17, 0]), /solicitação/);
+    await assert.rejects(() => funcao()(vazio, EMPRESA, [17, '18']), /solicitação/);
+    assert.equal(vazio.chamadas.length, 0);
+  });
+});
+
 describe('decidirTodos', () => {
   const decisoes = () => [
     { itemId: 1, decisao: 'APROVADO', quantidadeAprovada: 4, justificativa: null },

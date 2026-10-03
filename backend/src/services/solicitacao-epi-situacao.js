@@ -16,8 +16,9 @@
 const SITUACOES = Object.freeze([
   'AGUARDANDO_ESTOQUE', 'PARCIALMENTE_COBERTA', 'PRONTA_PARA_ENTREGA', 'PARCIALMENTE_ENTREGUE', 'ENTREGUE', 'SUSPENSA',
 ]);
-const STATUS = Object.freeze(['PENDENTE', 'APROVADA', 'APROVADA_PARCIAL', 'REPROVADA', 'CANCELADA', 'ENTREGUE']);
-const SEM_SITUACAO = Object.freeze(['PENDENTE', 'REPROVADA', 'CANCELADA']);
+const STATUS = Object.freeze(['PENDENTE', 'APROVADA', 'APROVADA_PARCIAL', 'REPROVADA', 'CANCELADA', 'ENTREGUE', 'ENCERRADA']);
+// ENCERRADA (12E-2): nada mais será entregue, então não há situação operacional a derivar.
+const SEM_SITUACAO = Object.freeze(['PENDENTE', 'REPROVADA', 'CANCELADA', 'ENCERRADA']);
 
 const inteiroNaoNegativo = (valor) => Number.isInteger(valor) && valor >= 0;
 
@@ -40,7 +41,7 @@ function situacaoDoItem({
 /**
  * Situação do cabeçalho a partir das situações dos itens (null para o item
  * não aprovado). Só existe para solicitação com aprovação ativa; PENDENTE,
- * REPROVADA e CANCELADA devolvem null.
+ * REPROVADA, CANCELADA e ENCERRADA devolvem null.
  */
 function situacaoDaSolicitacao(status, situacoesDosItens) {
   if (!STATUS.includes(status)) throw new TypeError('status da solicitação inválido');
@@ -64,4 +65,39 @@ function situacaoDaSolicitacao(status, situacoesDosItens) {
   return 'PARCIALMENTE_COBERTA';
 }
 
-module.exports = { SITUACOES, situacaoDoItem, situacaoDaSolicitacao };
+/**
+ * Quantidades da solicitação nas listagens, somadas dos itens: a solicitada
+ * vale sempre; a aprovada só depois da decisão (REPROVADA soma zero); a
+ * entregue e o restante só existem para a solicitação com aprovação ativa, já
+ * entregue ou encerrada. A entregue é a derivada das entregas ligadas aos itens
+ * aprovados; nada é gravado. Na ENCERRADA o restante é zero: o que faltava foi
+ * liberado, não está mais pendente.
+ */
+function quantidadesDaSolicitacao(status, itens) {
+  if (!STATUS.includes(status)) throw new TypeError('status da solicitação inválido');
+  if (!Array.isArray(itens)) throw new TypeError('itens da solicitação inválidos');
+
+  let solicitada = 0;
+  let aprovada = 0;
+  let entregue = 0;
+  for (const item of itens) {
+    if (!Number.isInteger(item.quantidade) || item.quantidade < 1) throw new TypeError('quantidade solicitada inválida');
+    solicitada += item.quantidade;
+    if (item.decisao !== 'APROVADO') continue;
+    const entregueDoItem = item.quantidadeEntregue ?? 0;
+    if (!Number.isInteger(item.quantidadeAprovada) || item.quantidadeAprovada < 1) throw new TypeError('quantidade aprovada inválida');
+    if (!inteiroNaoNegativo(entregueDoItem) || entregueDoItem > item.quantidadeAprovada) throw new TypeError('quantidade entregue inválida');
+    aprovada += item.quantidadeAprovada;
+    entregue += entregueDoItem;
+  }
+
+  if (status === 'PENDENTE' || status === 'CANCELADA') return { solicitada, aprovada: null, entregue: null, restante: null };
+  if (status === 'REPROVADA') return { solicitada, aprovada, entregue: null, restante: null };
+  return {
+    solicitada, aprovada, entregue, restante: status === 'ENCERRADA' ? 0 : aprovada - entregue,
+  };
+}
+
+module.exports = {
+  SITUACOES, situacaoDoItem, situacaoDaSolicitacao, quantidadesDaSolicitacao,
+};

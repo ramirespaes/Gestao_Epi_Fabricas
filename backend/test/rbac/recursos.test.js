@@ -85,4 +85,28 @@ describe('escopo do provisionamento do MASTER', () => {
       assert.ok(!recursosDoEscopo.has(legado), `${legado} não tem rota no backend e não entra no escopo`);
     }
   });
+
+  test('Bloco 12 (12F-1): as consultas da solicitação usam o recurso conhecido `request`, e nem ele nem as ações da SST entram no escopo do MASTER', () => {
+    const solicitacaoRoutes = require('../../src/routes/solicitacao-epi.routes');
+    assert.equal(solicitacaoRoutes.RECURSO_SOLICITACAO, 'request');
+    assert.ok(recursos.recursoConhecido(solicitacaoRoutes.RECURSO_SOLICITACAO));
+    assert.deepEqual([solicitacaoRoutes.ACAO_FILA, solicitacaoRoutes.ACAO_ENTREGAVEIS], ['APROVAR_SOLICITACAO', 'REALIZAR_ENTREGA']);
+    const recursosDoEscopo = recursos.ESCOPO_PROVISIONAMENTO_MASTER.recursos.map((r) => r.recurso);
+    assert.equal(recursosDoEscopo.includes('request'), false, 'ampliar o escopo do MASTER é decisão explícita');
+    for (const acao of ['APROVAR_SOLICITACAO', 'REPROVAR_SOLICITACAO', 'ENCERRAR_SOLICITACAO']) {
+      assert.equal(recursos.ESCOPO_PROVISIONAMENTO_MASTER.acoes.includes(acao), false, acao);
+    }
+  });
+
+  test('Bloco 12 (12F-2): criar é request.criar, cancelar é request.editar (nunca excluir); decidir, encerrar e entregar são ações do catálogo; nada disso entra no escopo do MASTER', () => {
+    const solicitacaoRoutes = require('../../src/routes/solicitacao-epi.routes');
+    assert.deepEqual([solicitacaoRoutes.OPERACAO_CRIAR, solicitacaoRoutes.OPERACAO_CANCELAR], ['criar', 'editar']);
+    for (const operacao of [solicitacaoRoutes.OPERACAO_CRIAR, solicitacaoRoutes.OPERACAO_CANCELAR]) assert.ok(recursos.OPERACOES.includes(operacao), operacao);
+    assert.deepEqual(
+      [solicitacaoRoutes.ACAO_APROVAR, solicitacaoRoutes.ACAO_REPROVAR, solicitacaoRoutes.ACAO_ENCERRAR, solicitacaoRoutes.ACAO_ENTREGAR],
+      ['APROVAR_SOLICITACAO', 'REPROVAR_SOLICITACAO', 'ENCERRAR_SOLICITACAO', 'REALIZAR_ENTREGA'],
+    );
+    assert.equal(recursos.ESCOPO_PROVISIONAMENTO_MASTER.recursos.some((r) => r.recurso === 'request'), false);
+    assert.deepEqual([...recursos.ESCOPO_PROVISIONAMENTO_MASTER.acoes], ['MOVIMENTAR_ESTOQUE', 'REALIZAR_ENTREGA'], 'o escopo do MASTER não muda na 12F-2');
+  });
 });

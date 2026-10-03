@@ -17,12 +17,14 @@ const { parOrdenados } = require('../utils/lock-par-estoque');
 const { dataOperacional, exigirDataOperacional } = require('../utils/data-operacional');
 const { situacaoDoItem, situacaoDaSolicitacao } = require('./solicitacao-epi-situacao');
 const { solicitacaoPublica, itemPublico } = require('./solicitacao-epi-publica');
+const { posicaoPublica } = require('./saldo-livre');
 
 /**
  * Solicitação de EPI (12B): criação, decisão da Segurança do Trabalho,
- * cancelamento e consulta. Só a camada de negócio, sem HTTP. A autorização
- * de quem pode criar, decidir ou cancelar é das rotas, quando existirem
- * (recurso `request`, ações APROVAR_SOLICITACAO e REPROVAR_SOLICITACAO); aqui
+ * cancelamento, encerramento (12E-2) e consulta. Só a camada de negócio, sem
+ * HTTP. A autorização de quem pode criar, decidir, cancelar ou encerrar é das
+ * rotas, quando existirem (recurso `request`, ações APROVAR_SOLICITACAO,
+ * REPROVAR_SOLICITACAO e ENCERRAR_SOLICITACAO, pela autorização central); aqui
  * ficam as regras que não dependem do middleware: separação de funções,
  * trabalhador e material ativos, justificativas e o estado da solicitação.
  * empresaId e atorId vêm da sessão. A solicitação não reserva nem baixa
@@ -47,6 +49,7 @@ const STATUS_COM_COBERTURA = Object.freeze(['APROVADA', 'APROVADA_PARCIAL']);
 const ACAO_CRIADA = 'SOLICITACAO_EPI_CRIADA';
 const ACAO_DECIDIDA = 'SOLICITACAO_EPI_DECIDIDA';
 const ACAO_CANCELADA = 'SOLICITACAO_EPI_CANCELADA';
+const ACAO_ENCERRADA = 'SOLICITACAO_EPI_ENCERRADA';
 const CARACTERE_CONTROLE = /\p{Cc}/u;
 const MSG_FORMATO_INVALIDO = 'Formato inválido';
 
@@ -110,6 +113,14 @@ function justificativaOpcional(valor, campo) {
   const texto = textoCanonico(valor, JUSTIFICATIVA_MAXIMA);
   if (texto === null) throw recusar(campo, 'JUSTIFICATIVA_INVALIDA', 'Justificativa inválida');
   return texto;
+}
+
+// Ausente, nula ou só com espaço em branco (inclusive os de Unicode) não é justificativa.
+function justificativaObrigatoria(valor, campo) {
+  if (valor === null || valor === undefined || (typeof valor === 'string' && valor.trim() === '')) {
+    throw recusar(campo, 'JUSTIFICATIVA_OBRIGATORIA', 'Justificativa obrigatória');
+  }
+  return justificativaOpcional(valor, campo);
 }
 
 function observacaoOpcional(valor) {
@@ -241,6 +252,7 @@ async function visaoDaSolicitacao(executor, empresaId, solicitacao, hoje) {
     posicaoPorPar = new Map(posicoes.map((p) => [chaveDoPar(p.materialId, p.tamanho), p]));
   }
 
+  const encerrada = solicitacao.status === 'ENCERRADA';
   const itensPublicos = itens.map((i) => {
     const aprovado = i.decisao === 'APROVADO';
     // Derivada das entregas ligadas ao item; só o item aprovado recebe entrega.
@@ -248,11 +260,13 @@ async function visaoDaSolicitacao(executor, empresaId, solicitacao, hoje) {
     const linha = coberturaPorItem.get(i.id) ?? null;
     const posicao = comCobertura && aprovado ? posicaoPorPar.get(chaveDoPar(i.materialId, i.tamanho)) ?? null : null;
     return {
-      situacao: situacaoDoItem({
+      // Fora da fila, o item encerrado pareceria SUSPENSO; encerrado não tem situação.
+      situacao: encerrada ? null : situacaoDoItem({
         decisao: i.decisao, quantidadeAprovada: i.quantidadeAprovada, quantidadeEntregue, coberta: linha === null ? null : linha.coberta,
       }),
       item: i,
       quantidadeEntregue,
+      encerrada,
       cobertura: linha === null
         ? null
         : {
@@ -537,10 +551,16 @@ async function decidirSolicitacao(pool, {
  * Cancela a solicitação PENDENTE, e só o próprio solicitante a cancela. Depois
  * de decidida, entregue ou cancelada, não. Solicitação de autoatendimento não
  * tem solicitante interno e não é cancelada por esta via. A justificativa é
- * opcional.
+ * opcional e fica só na solicitação; a auditoria registra se houve, nunca o
+ * texto.
  *
- * @throws {HttpError} 400 justificativa inválida; 403 não é o solicitante ou
- *   está inativo; 404 solicitação fora da empresa; 409 não está PENDENTE
+ * A solicitação de outro solicitante, mesmo da mesma empresa, é "não
+ * encontrada", com a mesma resposta da inexistente e da de outra empresa: o
+ * id de outra pessoa não se distingue de um id que não existe.
+ *
+ * @throws {HttpError} 400 justificativa inválida; 403 solicitante inativo;
+ *   404 solicitação inexistente, de outra empresa ou de outro solicitante;
+ *   409 não está PENDENTE
  */
 async function cancelarSolicitacao(pool, {
   empresaId, atorId, solicitacaoId, justificativa = null, hoje, ip = null, dispositivo = null,
@@ -553,10 +573,8 @@ async function cancelarSolicitacao(pool, {
 
   return emTransacao(pool, async (client) => {
     const solicitacao = await solicitacaoRepo.travarPorId(client, empresaId, solicitacaoId);
-    if (solicitacao === null) throw HttpError.notFound('SOLICITACAO_NAO_ENCONTRADA', 'Solicitação não encontrada');
-    if (solicitacao.origemSolicitacao !== 'USUARIO_INTERNO' || solicitacao.solicitanteUsuarioId !== atorId) {
-      throw HttpError.forbidden('CANCELAMENTO_NAO_PERMITIDO', 'Só o próprio solicitante cancela a solicitação');
-    }
+    const doProprioSolicitante = solicitacao !== null && solicitacao.origemSolicitacao === 'USUARIO_INTERNO' && solicitacao.solicitanteUsuarioId === atorId;
+    if (!doProprioSolicitante) throw HttpError.notFound('SOLICITACAO_NAO_ENCONTRADA', 'Solicitação não encontrada');
     await exigirAtorAtivo(client, empresaId, atorId);
     if (solicitacao.status !== 'PENDENTE') throw HttpError.conflict('SOLICITACAO_NAO_PENDENTE', 'A solicitação já foi decidida ou cancelada');
 
@@ -568,7 +586,6 @@ async function cancelarSolicitacao(pool, {
       usuarioId: atorId,
       acao: ACAO_CANCELADA,
       referencia: String(solicitacaoId),
-      descricao: justificativaN,
       ip,
       dispositivo,
       contexto: {
@@ -582,24 +599,122 @@ async function cancelarSolicitacao(pool, {
 }
 
 /**
+ * Encerra a solicitação aprovada que não será mais entregue (D6, 12E-2): só
+ * APROVADA ou APROVADA_PARCIAL, com justificativa obrigatória; ENCERRADA é
+ * final. As entregas feitas ficam como estão, e só a quantidade aprovada ainda
+ * não entregue sai da demanda: a posição só conta APROVADA e APROVADA_PARCIAL,
+ * então nada de estoque é gravado aqui. Quem criou a solicitação pode encerrá-la
+ * (a autodecisão é proibida só para aprovar e reprovar).
+ *
+ * Travas na ordem global: a solicitação (que a entrega por solicitação, a
+ * decisão e o cancelamento também tomam primeiro) e depois os pares dos itens
+ * com pendente, em ordem canônica. Os pares não protegem a correção, porque
+ * encerrar só libera saldo; eles fazem a posição antes e depois, gravada na
+ * auditoria, ser a do ato.
+ *
+ * @throws {HttpError} 400 justificativa ausente ou inválida; 403 encerrador
+ *   inativo; 404 solicitação ou encerrador fora da empresa; 409 solicitação que
+ *   não está APROVADA nem APROVADA_PARCIAL
+ */
+async function encerrarSolicitacao(pool, {
+  empresaId, atorId, solicitacaoId, justificativa, hoje, ip = null, dispositivo = null,
+}) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirId(atorId, 'identificador de ator');
+  exigirId(solicitacaoId, 'identificador de solicitação');
+  const dataOperacionalAtual = exigirDataOpcional(hoje);
+  const justificativaN = justificativaObrigatoria(justificativa, 'justificativa');
+
+  return emTransacao(pool, async (client) => {
+    const solicitacao = await solicitacaoRepo.travarPorId(client, empresaId, solicitacaoId);
+    if (solicitacao === null) throw HttpError.notFound('SOLICITACAO_NAO_ENCONTRADA', 'Solicitação não encontrada');
+    if (!STATUS_COM_COBERTURA.includes(solicitacao.status)) {
+      throw HttpError.conflict('SOLICITACAO_NAO_ENCERRAVEL', 'Só a solicitação aprovada e ainda não entregue pode ser encerrada');
+    }
+    await exigirAtorAtivo(client, empresaId, atorId);
+
+    // Com a solicitação travada, nenhuma entrega ligada a ela entra: a entregue lida aqui é a final.
+    const itens = await itemRepo.listarPorSolicitacaoComEntregue(client, empresaId, solicitacaoId);
+    const aprovados = itens.filter((i) => i.decisao === 'APROVADO').map((i) => ({
+      item: i, quantidadeLiberada: i.quantidadeAprovada - i.quantidadeEntregue,
+    }));
+    const pares = await parRepo.travarPares(
+      client, empresaId, aprovados.filter((a) => a.quantidadeLiberada > 0).map((a) => ({ materialId: a.item.materialId, tamanho: a.item.tamanho })),
+    );
+    const antes = await coberturaRepo.lerPosicoes(client, empresaId, pares, { hoje: dataOperacionalAtual });
+
+    const encerrada = await solicitacaoRepo.encerrar(client, empresaId, solicitacaoId, { encerradaPor: atorId, justificativa: justificativaN });
+    if (encerrada === null) throw HttpError.conflict('SOLICITACAO_ALTERADA', 'A solicitação foi alterada por outra operação');
+    const depois = await coberturaRepo.lerPosicoes(client, empresaId, pares, { hoje: dataOperacionalAtual });
+
+    const quantidadeAprovada = aprovados.reduce((total, a) => total + a.item.quantidadeAprovada, 0);
+    const quantidadeEntregue = aprovados.reduce((total, a) => total + a.item.quantidadeEntregue, 0);
+    await auditoriaRepo.registrar(client, {
+      empresaId,
+      usuarioId: atorId,
+      acao: ACAO_ENCERRADA,
+      referencia: String(solicitacaoId),
+      ip,
+      dispositivo,
+      contexto: {
+        solicitacaoId,
+        numero: solicitacao.numero,
+        funcionarioId: solicitacao.funcionarioId,
+        autoencerramento: solicitacao.origemSolicitacao === 'USUARIO_INTERNO' && solicitacao.solicitanteUsuarioId === atorId,
+        comEntregaAnterior: quantidadeEntregue > 0,
+        quantidadeAprovada,
+        quantidadeEntregue,
+        quantidadeLiberada: quantidadeAprovada - quantidadeEntregue,
+        itens: aprovados.map(({ item, quantidadeLiberada }) => ({
+          itemId: item.id,
+          materialId: item.materialId,
+          tamanho: item.tamanho,
+          quantidadeAprovada: item.quantidadeAprovada,
+          quantidadeEntregue: item.quantidadeEntregue,
+          quantidadeLiberada,
+        })),
+        pares: pares.map((par, indice) => ({
+          materialId: par.materialId,
+          tamanho: par.tamanho,
+          posicaoAntes: posicaoPublica(antes[indice]),
+          posicaoDepois: posicaoPublica(depois[indice]),
+        })),
+      },
+      dadosAnteriores: { status: solicitacao.status },
+      dadosNovos: { status: 'ENCERRADA' },
+    });
+    return visaoDaSolicitacao(client, empresaId, encerrada, dataOperacionalAtual);
+  });
+}
+
+/**
  * Consulta uma solicitação da empresa: cabeçalho, decisão, itens, cobertura e
  * posição atuais e situação operacional derivada. Só leitura, num retrato
  * único do banco.
  *
- * @throws {HttpError} 404 solicitação fora da empresa
+ * `solicitanteUsuarioId` (12F-1), quando informado, restringe às solicitações
+ * desse solicitante interno: a de outro solicitante é "não encontrada", como
+ * a inexistente e a de outra empresa, e é recusada antes de montar o detalhe.
+ *
+ * @throws {HttpError} 404 solicitação fora da empresa (ou de outro solicitante)
  */
-async function buscarSolicitacao(pool, { empresaId, solicitacaoId, hoje }) {
+async function buscarSolicitacao(pool, {
+  empresaId, solicitacaoId, hoje, solicitanteUsuarioId = null,
+}) {
   exigirId(empresaId, 'identificador de empresa');
   exigirId(solicitacaoId, 'identificador de solicitação');
+  if (solicitanteUsuarioId !== null) exigirId(solicitanteUsuarioId, 'identificador de solicitante');
   const dataOperacionalAtual = exigirDataOpcional(hoje);
 
   return emLeitura(pool, async (client) => {
     const solicitacao = await solicitacaoRepo.buscarPorId(client, empresaId, solicitacaoId);
-    if (solicitacao === null) throw HttpError.notFound('SOLICITACAO_NAO_ENCONTRADA', 'Solicitação não encontrada');
+    if (solicitacao === null || (solicitanteUsuarioId !== null && solicitacao.solicitanteUsuarioId !== solicitanteUsuarioId)) {
+      throw HttpError.notFound('SOLICITACAO_NAO_ENCONTRADA', 'Solicitação não encontrada');
+    }
     return visaoDaSolicitacao(client, empresaId, solicitacao, dataOperacionalAtual);
   });
 }
 
 module.exports = {
-  LIMITE_ITENS, criarSolicitacao, decidirSolicitacao, cancelarSolicitacao, buscarSolicitacao, hashDaRequisicao,
+  LIMITE_ITENS, criarSolicitacao, decidirSolicitacao, cancelarSolicitacao, encerrarSolicitacao, buscarSolicitacao, hashDaRequisicao,
 };

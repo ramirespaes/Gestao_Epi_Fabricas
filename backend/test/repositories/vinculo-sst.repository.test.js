@@ -104,6 +104,55 @@ describe('buscarPorUsuario e listarPorEmpresa', () => {
   });
 });
 
+describe('listagem paginada com o usuário (12E-1)', () => {
+  const funcao = (nome) => {
+    assert.equal(typeof repo()[nome], 'function', `função ainda não implementada: ${nome}`);
+    return repo()[nome];
+  };
+  const comUsuario = (extra = {}) => linha({ usuario_nome: 'Técnico Fictício', usuario_perfil: 'ADMINISTRADOR', usuario_ativo: true, ...extra });
+
+  test('mapeia o vínculo com nome, perfil e situação do usuário, sem e-mail, hash, CPF nem empresa', async () => {
+    const executor = executorFalso([
+      comUsuario(),
+      comUsuario({ usuario_id: 12, motivo: 'Legado', usuario_nome: 'Mestre Fictício', usuario_perfil: 'MASTER', usuario_ativo: false }),
+    ]);
+    const vinculos = await funcao('listarComUsuario')(executor, EMPRESA, { pagina: 1, limite: 20 });
+    assert.deepEqual(vinculos, [
+      { usuarioId: 11, concedidoPor: 7, concedidoEm: CONCEDIDO_EM, motivo: null, usuario: { nome: 'Técnico Fictício', perfil: 'ADMINISTRADOR', ativo: true } },
+      { usuarioId: 12, concedidoPor: 7, concedidoEm: CONCEDIDO_EM, motivo: 'Legado', usuario: { nome: 'Mestre Fictício', perfil: 'MASTER', ativo: false } },
+    ]);
+  });
+
+  test('lê só a empresa, liga o usuário pela chave composta, do vínculo mais novo ao mais antigo, e não seleciona credencial nem contato', async () => {
+    const executor = executorFalso([]);
+    await funcao('listarComUsuario')(executor, EMPRESA, { pagina: 3, limite: 20 });
+    const { texto, valores } = executor.chamadas[0];
+    assert.match(texto, /^\s*SELECT\b/);
+    assert.doesNotMatch(texto, /\b(INSERT|UPDATE|DELETE)\b|FOR\s+(NO KEY\s+)?(UPDATE|SHARE)/i);
+    assert.match(texto, /JOIN usuarios u ON u\.empresa_id = v\.empresa_id AND u\.id = v\.usuario_id/);
+    assert.match(texto, /WHERE v\.empresa_id = \$1\s+ORDER BY v\.concedido_em DESC, v\.usuario_id DESC\s+LIMIT \$2 OFFSET \$3/);
+    assert.doesNotMatch(texto, /senha|email|cpf|token/i);
+    assert.deepEqual(valores, [EMPRESA, 20, 40]);
+  });
+
+  test('contar devolve o total da empresa como número', async () => {
+    const executor = executorFalso([{ total: '4' }]);
+    assert.equal(await funcao('contar')(executor, EMPRESA), 4);
+    assert.match(executor.chamadas[0].texto, /count\(\*\).*FROM vinculo_sst WHERE empresa_id = \$1/s);
+    assert.deepEqual(executor.chamadas[0].valores, [EMPRESA]);
+  });
+
+  test('o limite máximo da página é 100; recusa empresa, página e limite inválidos sem consultar', async () => {
+    assert.equal(repo().LIMITE_MAXIMO, 100);
+    const vazio = executorFalso();
+    await assert.rejects(() => funcao('listarComUsuario')(vazio, 0, { pagina: 1, limite: 20 }), /empresa/);
+    for (const pagina of [0, 1.5, '1', undefined]) await assert.rejects(() => funcao('listarComUsuario')(vazio, EMPRESA, { pagina, limite: 20 }), /página/);
+    for (const limite of [0, 101, 1.5, '20', undefined]) await assert.rejects(() => funcao('listarComUsuario')(vazio, EMPRESA, { pagina: 1, limite }), /limite/);
+    await assert.rejects(() => funcao('contar')(vazio, -1), /empresa/);
+    assert.equal(vazio.chamadas.length, 0);
+  });
+});
+
 describe('o repositório não toca outras tabelas', () => {
   test('só vinculo_sst', async () => {
     const executor = executorFalso([linha()], [linha()], [linha()], [linha()]);

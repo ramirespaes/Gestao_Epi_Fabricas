@@ -133,6 +133,8 @@ const fichaEntregas = {
   }).superRefine(periodo),
 };
 
+// confirmacao e chaveIdempotencia: os mesmos da entrega por solicitação (12F-2), sem segunda versão.
 module.exports = {
   registrar, contextoFuncionarios, contextoConsultaCpf, contexto, contextoMateriais, contextoLotes, fichas, consultaCpf, porId, fichaEntregas, BUSCA_MAXIMA,
+  confirmacao, chaveIdempotencia,
 };

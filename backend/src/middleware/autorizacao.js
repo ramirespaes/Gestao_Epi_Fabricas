@@ -463,4 +463,6 @@ module.exports = {
   avaliarPermissaoRecurso,
   avaliarPermissaoAcao,
   OPERACOES_RECURSO: Object.freeze(Object.keys(MAPA_OPERACAO_FLAG)),
+  // Para quem decide a permissão fora da fábrica responder com o MESMO 403 genérico.
+  MENSAGEM_PERMISSAO_NEGADA,
 };

@@ -45,8 +45,10 @@ const LOTE = { lote: 'l', material: 'm', hoje: '$2' };
 
 // Fila das demandas atendíveis, com a soma da demanda anterior no mesmo par.
 // O pendente é a aprovada menos o entregue derivado; o item sem pendente não
-// entra, e por isso a janela soma só o que ainda falta entregar.
-const FILA = `fila AS (
+// entra, e por isso a janela soma só o que ainda falta entregar. `restricaoDosPares`
+// diz quais pares entram na fila (a empresa inteira ou só os das solicitações pedidas);
+// a janela, a ordem e a regra de atendível são as mesmas em qualquer caso.
+const filaDe = (restricaoDosPares) => `fila AS (
      SELECT i.id AS item_id, i.solicitacao_id, i.material_id, i.tamanho, ${sqlPosicao.pendenteDoItem(ITEM)} AS pendente, s.decidida_em,
             COALESCE(sum(${sqlPosicao.pendenteDoItem(ITEM)}) OVER (
               PARTITION BY i.material_id, COALESCE(i.tamanho, '')
@@ -63,11 +65,17 @@ const FILA = `fila AS (
         AND ${sqlPosicao.itemComPendente(ITEM)}
         AND f.ativo
         AND m.ativo
-        AND ($3::int IS NULL OR (i.material_id, COALESCE(i.tamanho, '')) IN (
+        AND ${restricaoDosPares}
+   )`;
+
+const PARES_DE_UMA = `($3::int IS NULL OR (i.material_id, COALESCE(i.tamanho, '')) IN (
               SELECT a.material_id, COALESCE(a.tamanho, '')
                 FROM solicitacoes_epi_itens a
-               WHERE a.empresa_id = $1 AND a.solicitacao_id = $3))
-   )`;
+               WHERE a.empresa_id = $1 AND a.solicitacao_id = $3))`;
+const PARES_DE_VARIAS = `((i.material_id, COALESCE(i.tamanho, '')) IN (
+              SELECT a.material_id, COALESCE(a.tamanho, '')
+                FROM solicitacoes_epi_itens a
+               WHERE a.empresa_id = $1 AND a.solicitacao_id = ANY($3::int[])))`;
 
 // U de cada par que aparece na fila.
 const FISICO_DA_FILA = `fisico AS (
@@ -79,6 +87,36 @@ const FISICO_DA_FILA = `fisico AS (
         AND COALESCE(l.tamanho, '') = COALESCE(fl.tamanho, '') AND l.saldo > 0
       GROUP BY fl.material_id, COALESCE(fl.tamanho, '')
    )`;
+
+const consultaDaCobertura = (restricaoDosPares, filtroDasSolicitacoes) => `WITH ${filaDe(restricaoDosPares)},
+     ${FISICO_DA_FILA}
+     SELECT fl.item_id, fl.solicitacao_id, fl.material_id, fl.tamanho, fl.decidida_em, fl.pendente, fl.acumulado_anterior,
+            fi.fisico_utilizavel,
+            LEAST(fl.pendente, GREATEST(0, fi.fisico_utilizavel - fl.acumulado_anterior)) AS coberta
+       FROM fila fl
+       JOIN fisico fi ON fi.material_id = fl.material_id AND fi.tamanho_chave = COALESCE(fl.tamanho, '')
+      WHERE ${filtroDasSolicitacoes}
+      ORDER BY fl.decidida_em, fl.solicitacao_id, fl.item_id`;
+
+const SQL_COBERTURA_DE_UMA = consultaDaCobertura(PARES_DE_UMA, '($3::int IS NULL OR fl.solicitacao_id = $3)');
+const SQL_COBERTURA_DE_VARIAS = consultaDaCobertura(PARES_DE_VARIAS, 'fl.solicitacao_id = ANY($3::int[])');
+
+function mapearCobertura(l) {
+  const pendente = Number(l.pendente);
+  const coberta = Number(l.coberta);
+  return {
+    itemId: l.item_id,
+    solicitacaoId: l.solicitacao_id,
+    materialId: l.material_id,
+    tamanho: l.tamanho,
+    decididaEm: l.decidida_em,
+    quantidadePendente: pendente,
+    acumuladoAnterior: Number(l.acumulado_anterior),
+    fisicoUtilizavel: Number(l.fisico_utilizavel),
+    coberta,
+    semCobertura: pendente - coberta,
+  };
+}
 
 /**
  * A fila FIFO de itens aprovados da empresa, cada um com a quantidade
@@ -92,34 +130,25 @@ async function listarCobertura(executor, empresaId, { hoje, solicitacaoId = null
   exigirDataOperacional(hoje);
   if (solicitacaoId !== null) exigirId(solicitacaoId, 'identificador de solicitação');
 
-  const { rows } = await executor.query(
-    `WITH ${FILA},
-     ${FISICO_DA_FILA}
-     SELECT fl.item_id, fl.solicitacao_id, fl.material_id, fl.tamanho, fl.decidida_em, fl.pendente, fl.acumulado_anterior,
-            fi.fisico_utilizavel,
-            LEAST(fl.pendente, GREATEST(0, fi.fisico_utilizavel - fl.acumulado_anterior)) AS coberta
-       FROM fila fl
-       JOIN fisico fi ON fi.material_id = fl.material_id AND fi.tamanho_chave = COALESCE(fl.tamanho, '')
-      WHERE ($3::int IS NULL OR fl.solicitacao_id = $3)
-      ORDER BY fl.decidida_em, fl.solicitacao_id, fl.item_id`,
-    [empresaId, hoje, solicitacaoId],
-  );
-  return rows.map((l) => {
-    const pendente = Number(l.pendente);
-    const coberta = Number(l.coberta);
-    return {
-      itemId: l.item_id,
-      solicitacaoId: l.solicitacao_id,
-      materialId: l.material_id,
-      tamanho: l.tamanho,
-      decididaEm: l.decidida_em,
-      quantidadePendente: pendente,
-      acumuladoAnterior: Number(l.acumulado_anterior),
-      fisicoUtilizavel: Number(l.fisico_utilizavel),
-      coberta,
-      semCobertura: pendente - coberta,
-    };
-  });
+  const { rows } = await executor.query(SQL_COBERTURA_DE_UMA, [empresaId, hoje, solicitacaoId]);
+  return rows.map(mapearCobertura);
+}
+
+/**
+ * Como listarCobertura, para várias solicitações numa consulta só (as
+ * listagens da 12E-1): devolve os itens delas, com a cobertura calculada
+ * contra a fila inteira dos pares envolvidos. Lista vazia volta vazia sem
+ * consultar.
+ */
+async function listarCoberturaDasSolicitacoes(executor, empresaId, { hoje, solicitacaoIds } = {}) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirDataOperacional(hoje);
+  if (!Array.isArray(solicitacaoIds)) throw new TypeError('lista de solicitações inválida');
+  for (const id of solicitacaoIds) exigirId(id, 'identificador de solicitação');
+  if (solicitacaoIds.length === 0) return [];
+
+  const { rows } = await executor.query(SQL_COBERTURA_DE_VARIAS, [empresaId, hoje, solicitacaoIds]);
+  return rows.map(mapearCobertura);
 }
 
 const POSICAO_ZERADA = Object.freeze({ fisico_utilizavel: 0, demanda_pendente: 0, comprometido: 0, saldo_livre: 0, sem_cobertura: 0 });
@@ -186,4 +215,4 @@ async function lerPosicoes(executor, empresaId, pares, { hoje } = {}) {
   });
 }
 
-module.exports = { listarCobertura, lerPosicoes };
+module.exports = { listarCobertura, listarCoberturaDasSolicitacoes, lerPosicoes };

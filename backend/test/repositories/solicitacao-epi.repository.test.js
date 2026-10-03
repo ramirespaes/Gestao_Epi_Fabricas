@@ -36,12 +36,14 @@ const executorFalso = (...respostas) => {
 const linha = (extra = {}) => ({
   id: ID, empresa_id: EMPRESA, numero: 5, funcionario_id: 30, ghe_id: 9, origem_solicitacao: 'USUARIO_INTERNO', solicitante_usuario_id: USUARIO,
   status: 'PENDENTE', quantidade_itens: 2, observacao: null, chave_idempotencia: CHAVE, requisicao_hash: HASH, criada_em: CRIADA_EM,
-  decidida_por: null, decidida_em: null, cancelada_por: null, cancelada_em: null, justificativa_cancelamento: null, entregue_em: null, ...extra,
+  decidida_por: null, decidida_em: null, cancelada_por: null, cancelada_em: null, justificativa_cancelamento: null, entregue_em: null,
+  encerrada_por: null, encerrada_em: null, justificativa_encerramento: null, ...extra,
 });
 const publica = (extra = {}) => ({
   id: ID, empresaId: EMPRESA, numero: 5, funcionarioId: 30, gheId: 9, origemSolicitacao: 'USUARIO_INTERNO', solicitanteUsuarioId: USUARIO,
   status: 'PENDENTE', quantidadeItens: 2, observacao: null, chaveIdempotencia: CHAVE, requisicaoHash: HASH, criadaEm: CRIADA_EM,
-  decididaPor: null, decididaEm: null, canceladaPor: null, canceladaEm: null, justificativaCancelamento: null, entregueEm: null, ...extra,
+  decididaPor: null, decididaEm: null, canceladaPor: null, canceladaEm: null, justificativaCancelamento: null, entregueEm: null,
+  encerradaPor: null, encerradaEm: null, justificativaEncerramento: null, ...extra,
 });
 
 const novo = (extra = {}) => ({
@@ -111,6 +113,14 @@ describe('buscarPorChave, buscarPorId e travarPorId', () => {
     const decidida = new Date('2026-10-02T16:00:00Z');
     const executor = executorFalso([linha({ status: 'APROVADA', decidida_por: 12, decidida_em: decidida })]);
     assert.deepEqual(await repo().buscarPorId(executor, EMPRESA, ID), publica({ status: 'APROVADA', decididaPor: 12, decididaEm: decidida }));
+  });
+
+  test('lê e mapeia o encerramento: quem, quando e a justificativa (12E-2)', async () => {
+    const encerradaEm = new Date('2026-10-03T18:00:00Z');
+    const executor = executorFalso([linha({ status: 'ENCERRADA', encerrada_por: 13, encerrada_em: encerradaEm, justificativa_encerramento: 'Transferido' })]);
+    const lida = await repo().buscarPorId(executor, EMPRESA, ID);
+    assert.deepEqual([lida.encerradaPor, lida.encerradaEm, lida.justificativaEncerramento], [13, encerradaEm, 'Transferido']);
+    assert.match(executor.chamadas[0].texto, /encerrada_por, encerrada_em, justificativa_encerramento/);
   });
 
   test('recusa identificadores inválidos sem consultar', async () => {
@@ -285,6 +295,50 @@ describe('marcarEntregue', () => {
   });
 });
 
+describe('encerrar (D6, 12E-2)', () => {
+  const funcao = () => {
+    assert.equal(typeof repo().encerrar, 'function', 'função ainda não implementada: encerrar');
+    return repo().encerrar;
+  };
+
+  test('encerra só uma solicitação APROVADA ou APROVADA_PARCIAL da empresa, com quem encerrou, a hora do relógio do banco e a justificativa', async () => {
+    const encerradaEm = new Date('2026-10-03T18:00:00Z');
+    const executor = executorFalso([linha({
+      status: 'ENCERRADA', decidida_por: 12, decidida_em: CRIADA_EM, encerrada_por: 13, encerrada_em: encerradaEm, justificativa_encerramento: 'Transferido',
+    })]);
+    const encerrada = await funcao()(executor, EMPRESA, ID, { encerradaPor: 13, justificativa: 'Transferido' });
+    assert.deepEqual(encerrada, publica({
+      status: 'ENCERRADA', decididaPor: 12, decididaEm: CRIADA_EM, encerradaPor: 13, encerradaEm: encerradaEm, justificativaEncerramento: 'Transferido',
+    }));
+    const { texto, valores } = executor.chamadas[0];
+    assert.match(texto, /^UPDATE solicitacoes_epi\s+SET status = 'ENCERRADA', encerrada_por = \$3, encerrada_em = clock_timestamp\(\), justificativa_encerramento = \$4/);
+    assert.match(texto, /WHERE empresa_id = \$1 AND id = \$2 AND status IN \('APROVADA', 'APROVADA_PARCIAL'\)/);
+    assert.match(texto, /RETURNING id, empresa_id/);
+    assert.doesNotMatch(texto, /now\(\)|CURRENT_TIMESTAMP/i);
+    assert.deepEqual(valores, [EMPRESA, ID, 13, 'Transferido']);
+  });
+
+  test('devolve null quando a solicitação não está aprovada em aberto ou não é da empresa (nenhuma linha atualizada)', async () => {
+    assert.equal(await funcao()(executorFalso([]), EMPRESA, ID, { encerradaPor: 13, justificativa: 'Transferido' }), null);
+  });
+
+  test('a justificativa é obrigatória e conta caracteres (até 500); identificadores inválidos são recusados sem consultar', async () => {
+    const executor = executorFalso([linha({ status: 'ENCERRADA' })]);
+    await funcao()(executor, EMPRESA, ID, { encerradaPor: 13, justificativa: ASTRAL.repeat(500) });
+    assert.equal(executor.chamadas[0].valores[3], ASTRAL.repeat(500));
+    const vazio = executorFalso();
+    for (const justificativa of [null, undefined, '', ASTRAL.repeat(501), 'x'.repeat(501), 7]) {
+      await assert.rejects(() => funcao()(vazio, EMPRESA, ID, { encerradaPor: 13, justificativa }), /justificativa/, String(justificativa).slice(0, 5));
+    }
+    for (const encerradaPor of [0, -1, '13', null, undefined, 1.5]) {
+      await assert.rejects(() => funcao()(vazio, EMPRESA, ID, { encerradaPor, justificativa: 'Transferido' }), /encerramento/, String(encerradaPor));
+    }
+    await assert.rejects(() => funcao()(vazio, 0, ID, { encerradaPor: 13, justificativa: 'Transferido' }), /empresa/);
+    await assert.rejects(() => funcao()(vazio, EMPRESA, '17', { encerradaPor: 13, justificativa: 'Transferido' }), /solicitação/);
+    assert.equal(vazio.chamadas.length, 0);
+  });
+});
+
 describe('o repositório não escreve em outra tabela nem muda o estoque', () => {
   test('nenhuma função toca estoque, lotes ou fichas; só a tabela solicitacoes_epi', async () => {
     const executor = executorFalso(...Array.from({ length: 10 }, () => [linha()]));
@@ -293,6 +347,8 @@ describe('o repositório não escreve em outra tabela nem muda o estoque', () =>
     await r.registrarDecisao(executor, EMPRESA, ID, { status: 'APROVADA', decididaPor: 12 });
     await r.cancelar(executor, EMPRESA, ID, { canceladaPor: USUARIO });
     await r.marcarEntregue(executor, EMPRESA, ID);
+    assert.equal(typeof r.encerrar, 'function', 'função ainda não implementada: encerrar');
+    await r.encerrar(executor, EMPRESA, ID, { encerradaPor: 13, justificativa: 'Transferido' });
     await r.buscarPorId(executor, EMPRESA, ID);
     await r.travarPorId(executor, EMPRESA, ID);
     await r.buscarPorChave(executor, EMPRESA, CHAVE);

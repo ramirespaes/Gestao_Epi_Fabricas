@@ -80,6 +80,13 @@ describe('situacaoDaSolicitacao', () => {
     assert.equal(situacaoDaSolicitacao('ENTREGUE', ['ENTREGUE', 'ENTREGUE']), 'ENTREGUE');
   });
 
+  test('ENCERRADA (12E-2) não tem situação operacional: nada mais será entregue, qualquer que seja a situação calculada dos itens', () => {
+    const { situacaoDaSolicitacao } = modulo();
+    assert.equal(situacaoDaSolicitacao('ENCERRADA', [null, null]), null);
+    assert.equal(situacaoDaSolicitacao('ENCERRADA', ['ENTREGUE', 'SUSPENSA']), null);
+    assert.equal(situacaoDaSolicitacao('ENCERRADA', ['SUSPENSA', null]), null);
+  });
+
   test('aprovada: todos prontos → PRONTA_PARA_ENTREGA; todos aguardando → AGUARDANDO_ESTOQUE; todos suspensos → SUSPENSA', () => {
     const { situacaoDaSolicitacao } = modulo();
     for (const status of ['APROVADA', 'APROVADA_PARCIAL']) {
@@ -125,6 +132,52 @@ describe('situacaoDaSolicitacao', () => {
     assert.throws(() => situacaoDaSolicitacao('APROVADA', 'x'), TypeError);
   });
 
+});
+
+describe('quantidadesDaSolicitacao — soma por solicitação, derivada dos itens', () => {
+  const funcao = () => {
+    assert.equal(typeof modulo().quantidadesDaSolicitacao, 'function', 'função ainda não implementada: quantidadesDaSolicitacao');
+    return modulo().quantidadesDaSolicitacao;
+  };
+  const pedido = (extra = {}) => ({ decisao: null, quantidade: 4, quantidadeAprovada: null, quantidadeEntregue: 0, ...extra });
+  const aprovadoCom = (quantidade, quantidadeAprovada, quantidadeEntregue = 0) => pedido({ decisao: 'APROVADO', quantidade, quantidadeAprovada, quantidadeEntregue });
+  const reprovado = (quantidade) => pedido({ decisao: 'REPROVADO', quantidade, quantidadeAprovada: 0 });
+
+  test('PENDENTE e CANCELADA: só a quantidade solicitada; o resto não se aplica', () => {
+    for (const status of ['PENDENTE', 'CANCELADA']) {
+      assert.deepEqual(funcao()(status, [pedido({ quantidade: 4 }), pedido({ quantidade: 1 })]), { solicitada: 5, aprovada: null, entregue: null, restante: null }, status);
+    }
+  });
+
+  test('REPROVADA: nada aprovado (zero), sem entregue nem restante', () => {
+    assert.deepEqual(funcao()('REPROVADA', [reprovado(4), reprovado(2)]), { solicitada: 6, aprovada: 0, entregue: null, restante: null });
+  });
+
+  test('APROVADA e APROVADA_PARCIAL: aprovada e entregue só dos itens aprovados; o restante é a diferença', () => {
+    const itens = [aprovadoCom(5, 3, 1), aprovadoCom(2, 2, 0), reprovado(4)];
+    for (const status of ['APROVADA', 'APROVADA_PARCIAL']) {
+      assert.deepEqual(funcao()(status, itens), { solicitada: 11, aprovada: 5, entregue: 1, restante: 4 }, status);
+    }
+  });
+
+  test('ENTREGUE: tudo o que foi aprovado foi entregue, restante zero', () => {
+    assert.deepEqual(funcao()('ENTREGUE', [aprovadoCom(5, 3, 3), reprovado(4)]), { solicitada: 9, aprovada: 3, entregue: 3, restante: 0 });
+  });
+
+  test('ENCERRADA (12E-2): a entregue continua a das entregas e o restante é zero; o que faltava foi liberado, não fica pendente', () => {
+    assert.deepEqual(funcao()('ENCERRADA', [aprovadoCom(5, 3, 1), aprovadoCom(2, 2, 0), reprovado(4)]), { solicitada: 11, aprovada: 5, entregue: 1, restante: 0 });
+    assert.deepEqual(funcao()('ENCERRADA', [aprovadoCom(2, 2, 0)]), { solicitada: 2, aprovada: 2, entregue: 0, restante: 0 });
+  });
+
+  test('recusa status desconhecido, itens fora de lista e entregue acima da aprovada (erro de programação)', () => {
+    assert.throws(() => funcao()('TALVEZ', []), TypeError);
+    assert.throws(() => funcao()('APROVADA', 'x'), TypeError);
+    assert.throws(() => funcao()('APROVADA', [aprovadoCom(5, 3, 4)]), TypeError);
+    assert.throws(() => funcao()('PENDENTE', [pedido({ quantidade: 0 })]), TypeError);
+  });
+});
+
+describe('SITUACOES', () => {
   test('o conjunto de situações é fechado e não inclui nenhum estado gravado', () => {
     const { SITUACOES } = modulo();
     assert.deepEqual([...SITUACOES].sort(), [

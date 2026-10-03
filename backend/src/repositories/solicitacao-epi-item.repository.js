@@ -21,6 +21,13 @@ const COLUNAS = Object.freeze([
 const COLUNAS_ITEM = COLUNAS.join(', ');
 const COLUNAS_RETORNO = COLUNAS.map((coluna) => `i.${coluna}`).join(', ');
 
+// A entregue de um item é a soma das entregas ligadas a ele (066); a única definição está aqui.
+const ENTREGUE_DO_ITEM = `LEFT JOIN LATERAL (
+         SELECT COALESCE(sum(ei.quantidade), 0)::bigint AS quantidade_entregue
+           FROM entregas_epi_itens ei
+          WHERE ei.empresa_id = i.empresa_id AND ei.solicitacao_item_id = i.id
+       ) e ON true`;
+
 function exigirId(valor, nome) {
   if (!Number.isInteger(valor) || valor <= 0) {
     throw new TypeError(`${nome} inválido`);
@@ -97,16 +104,33 @@ async function listarPorSolicitacaoComEntregue(executor, empresaId, solicitacaoI
   const { rows } = await executor.query(
     `SELECT ${COLUNAS_RETORNO}, e.quantidade_entregue
        FROM solicitacoes_epi_itens i
-       LEFT JOIN LATERAL (
-         SELECT COALESCE(sum(ei.quantidade), 0)::bigint AS quantidade_entregue
-           FROM entregas_epi_itens ei
-          WHERE ei.empresa_id = i.empresa_id AND ei.solicitacao_item_id = i.id
-       ) e ON true
+       ${ENTREGUE_DO_ITEM}
       WHERE i.empresa_id = $1 AND i.solicitacao_id = $2
       ORDER BY i.id`,
     [empresaId, solicitacaoId],
   );
   // bigint chega como texto no pg.
+  return rows.map((l) => ({ ...mapear(l), quantidadeEntregue: Number(l.quantidade_entregue) }));
+}
+
+/**
+ * Como listarPorSolicitacaoComEntregue, para várias solicitações da empresa
+ * numa consulta só (as listagens da 12E-1), em ordem de solicitação e de id.
+ * Lista vazia volta vazia sem consultar.
+ */
+async function listarPorSolicitacoesComEntregue(executor, empresaId, solicitacaoIds) {
+  exigirId(empresaId, 'identificador de empresa');
+  if (!Array.isArray(solicitacaoIds)) throw new TypeError('lista de solicitações inválida');
+  for (const id of solicitacaoIds) exigirId(id, 'identificador de solicitação');
+  if (solicitacaoIds.length === 0) return [];
+  const { rows } = await executor.query(
+    `SELECT ${COLUNAS_RETORNO}, e.quantidade_entregue
+       FROM solicitacoes_epi_itens i
+       ${ENTREGUE_DO_ITEM}
+      WHERE i.empresa_id = $1 AND i.solicitacao_id = ANY($2::int[])
+      ORDER BY i.solicitacao_id, i.id`,
+    [empresaId, solicitacaoIds],
+  );
   return rows.map((l) => ({ ...mapear(l), quantidadeEntregue: Number(l.quantidade_entregue) }));
 }
 
@@ -155,5 +179,5 @@ async function decidirTodos(executor, empresaId, solicitacaoId, decisoes) {
 }
 
 module.exports = {
-  MOTIVOS, DECISOES, criar, listarPorSolicitacao, listarPorSolicitacaoComEntregue, decidirTodos,
+  MOTIVOS, DECISOES, TAMANHO_MAXIMO, JUSTIFICATIVA_MAXIMA, criar, listarPorSolicitacao, listarPorSolicitacaoComEntregue, listarPorSolicitacoesComEntregue, decidirTodos,
 };
