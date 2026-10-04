@@ -34,6 +34,7 @@ function corpo(extra = {}) {
       vinculosGrupo: area(true),
       usuarios: area(false),
       autorizacoesIndividuais: { consultar: true, concederDireta: false, delegar: true },
+      vinculosSst: area(false),
     },
     ...extra,
   };
@@ -129,6 +130,26 @@ describe('carregar: do servidor, validado, da empresa certa', () => {
     assert.equal('segredo' in r.permissoes, false);
     assert.equal('extra' in r.permissoes.administracao, false);
   });
+
+  test('12G-0/12G-1: vínculos SST é área obrigatória do contrato; ausente ou fora do formato, nenhuma permissão', async () => {
+    const { vinculosSst, ...semVinculos } = corpo().administracao;
+    assert.deepEqual(vinculosSst, area(false));
+    for (const ruim of [semVinculos, { ...semVinculos, vinculosSst: { consultar: true } }, { ...semVinculos, vinculosSst: { consultar: 'true', alterar: true } }, { ...semVinculos, vinculosSst: true }]) {
+      servidor(resposta(200, corpo({ administracao: ruim })));
+      assert.deepEqual(await P.carregar(ESPERADO), { ok: false, motivo: 'RESPOSTA_INVALIDA' }, String(JSON.stringify(ruim.vinculosSst)));
+    }
+  });
+
+  test('12G-1: vínculos SST copiados só como consultar e alterar, e lidos por administra(); o perfil não decide', async () => {
+    servidor(resposta(200, corpo({ perfil: 'ADMINISTRADOR', administracao: { ...corpo().administracao, vinculosSst: { consultar: true, alterar: true, outro: true } } })));
+    const r = await P.carregar(ESPERADO);
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.permissoes.administracao.vinculosSst, { consultar: true, alterar: true });
+    assert.deepEqual([P.administra(r.permissoes, 'vinculosSst', 'consultar'), P.administra(r.permissoes, 'vinculosSst', 'alterar')], [true, true]);
+    servidor(resposta(200, corpo({ perfil: 'MASTER' })));
+    const master = await P.carregar({ ...ESPERADO, perfil: 'MASTER' });
+    assert.equal(P.administra(master.permissoes, 'vinculosSst', 'alterar'), false, 'MASTER sem a área do servidor não administra vínculos');
+  });
 });
 
 describe('decisões: só `true` explícito libera', () => {
@@ -204,8 +225,10 @@ describe('decisões: só `true` explícito libera', () => {
     assert.deepEqual(links.map((l) => l.style.display), ['', 'none'], 'quem só entrega vê a Ficha, não o Histórico');
     P.aplicarMenu(D, links);
     assert.deepEqual(links.map((l) => l.style.display), ['none', 'none']);
-    // A regra "qualquer uma" é exclusiva da Ficha: as demais páginas continuam exigindo todas.
-    for (const pagina of Object.keys(P.PAGINAS)) if (pagina !== 'epiFicha') assert.equal(P.PAGINAS[pagina].abrirComQualquer, undefined, pagina);
+    // A regra "qualquer uma" só onde foi decidida: a Ficha (10I) e, na 12G-1, o Pedido
+    // de EPI (ver OU criar) e as Entregas por solicitação (entregar OU encerrar).
+    const comQualquer = ['epiFicha', 'request', 'stockRequests'];
+    for (const pagina of Object.keys(P.PAGINAS)) assert.equal(P.PAGINAS[pagina].abrirComQualquer, comQualquer.includes(pagina) ? true : undefined, pagina);
   });
 });
 
@@ -304,8 +327,9 @@ describe('páginas (inspeção estática)', () => {
   test('portal/inicio: os quatro módulos administrativos (e, desde a C2, Materiais) nascem ocultos e dependem das permissões', () => {
     const html = ler('portal/inicio.html');
     const links = [...html.matchAll(/<a [^>]*data-pagina="([^"]+)"[^>]*>/g)];
-    // E10: na ordem do menu (fechamento-e10.test.js confere a ordem).
+    // E10: na ordem do menu (fechamento-e10.test.js confere a ordem); 12G-1: as três páginas da solicitação.
     assert.deepEqual(links.map((m) => m[1]), ['dashboard', 'materials', 'stockValidity', 'availableItems', 'operations', 'employeeGroups', 'epiFicha', 'employeeHistory',
+      'request', 'supervisorApproval', 'stockRequests',
       'grupos-acesso', 'grupo-permissoes', 'grupo-usuarios', 'autorizacoes-individuais', 'importEmployees', 'newUser', 'userAdmin']);
     for (const m of links) assert.match(m[0], /style="display:none"/);
     assert.match(html, /<script src="\.\.\/js\/permissoes-efetivas\.js"><\/script>/);

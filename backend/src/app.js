@@ -155,9 +155,10 @@ app.use(
 // trocaSenhaGlobalRoutes (Bloco 11E): troca de senha com a sessão global, na
 // mesma cadeia; a sessão e o limitador próprio ficam dentro da fábrica.
 //
-// solicitacaoEpiRoutes e vinculoSstRoutes (Bloco 12, 12F-1 e 12F-2): consultas
-// da solicitação de EPI (minhas, fila da SST, entregáveis e detalhe) e listagem
-// dos vínculos SST; escrita por POST (criar, cancelar, decidir, encerrar e
+// solicitacaoEpiRoutes e vinculoSstRoutes (Bloco 12, 12F-1, 12F-2 e 12G-0):
+// consultas da solicitação de EPI (minhas, fila da SST, entregáveis,
+// encerráveis, contexto da criação e detalhe) e listagem dos vínculos SST;
+// escrita por POST (criar, cancelar, decidir, encerrar e
 // entregar por solicitação; conceder vínculo) e DELETE (remover vínculo), mesma
 // cadeia, com a mesma verificação de origem e os mesmos métodos de CORS do
 // Portal; as autorizações ficam nas fábricas e, no detalhe e nos vínculos, nos

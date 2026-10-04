@@ -84,6 +84,63 @@ function linhaDaLista(l, { situacaoOperacional, quantidades, comEncerramento = f
   };
 }
 
+// ── 12G-0: formas públicas do contexto da criação, do detalhe e das encerráveis ──
+
+/** Trabalhador para quem pede escolher (L2): nunca CPF. Só ativos chegam aqui. */
+const trabalhadorDoContexto = (f) => ({
+  id: f.id, nome: f.nome, matricula: f.matricula, setor: f.setor, funcao: f.funcao,
+});
+
+/** Material para quem pede escolher (L2): nenhum número de estoque; os tamanhos são só sugestão. */
+const materialDoContexto = (m) => ({
+  id: m.id,
+  nome: m.nome,
+  unidade: m.unidade,
+  exigeTamanho: m.exigeTamanho,
+  previstoNoGhe: m.previstoNoGhe,
+  tamanhosSugeridos: [...m.tamanhosSugeridos],
+});
+
+/** Trabalhador do detalhe (L3), do cadastro atual; nunca CPF. */
+const trabalhadorDoDetalhe = (f) => (f === null || f === undefined ? null : {
+  id: f.id, nome: f.nome, matricula: f.matricula, setor: f.setor, funcao: f.funcao, ativo: f.ativo,
+});
+
+/** Quem solicitou, decidiu ou encerrou (D7): só id e nome; nunca e-mail, perfil ou situação. */
+const pessoaDoDetalhe = (u) => (u === null || u === undefined ? null : { id: u.id, nome: u.nome });
+
+/** Material do item no detalhe (L3), do cadastro atual. */
+const materialDoDetalhe = (m) => (m === null || m === undefined ? null : { nome: m.nome, unidade: m.unidade });
+
+/**
+ * Linha das encerráveis (L4): o que quem encerra precisa para localizar a
+ * solicitação. Sem situação derivada do estoque, cobertura, posição, texto
+ * livre nem itens.
+ */
+function linhaEncerravel(l, { quantidades }) {
+  return {
+    id: l.id,
+    numero: l.numero,
+    status: l.status,
+    funcionario: {
+      id: l.funcionarioId, nome: l.trabalhador.nome, matricula: l.trabalhador.matricula, ativo: l.trabalhador.ativo,
+    },
+    quantidadeItens: l.quantidadeItens,
+    quantidades: { ...quantidades },
+    criadaEm: l.criadaEm,
+    decididaEm: l.decididaEm,
+  };
+}
+
 module.exports = {
-  solicitacaoPublica, itemPublico, itensSemEstoque, linhaDaLista,
+  solicitacaoPublica,
+  itemPublico,
+  itensSemEstoque,
+  linhaDaLista,
+  trabalhadorDoContexto,
+  materialDoContexto,
+  trabalhadorDoDetalhe,
+  pessoaDoDetalhe,
+  materialDoDetalhe,
+  linhaEncerravel,
 };

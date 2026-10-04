@@ -22,6 +22,8 @@ const { criarEstoqueController } = require('../../src/controllers/estoque.contro
 const { criarEstoqueRoutes } = require('../../src/routes/estoque.routes');
 const { criarUsuarioAdministracaoController } = require('../../src/controllers/usuario-administracao.controller');
 const { criarUsuarioAdministracaoRoutes } = require('../../src/routes/usuario-administracao.routes');
+const { criarVinculoSstController } = require('../../src/controllers/vinculo-sst.controller');
+const { criarVinculoSstRoutes } = require('../../src/routes/vinculo-sst.routes');
 const { criarExigirSessao } = require('../../src/middleware/autenticacao');
 const { criarExigirSessaoGlobal } = require('../../src/middleware/autenticacao-global');
 const { criarLimitador } = require('../../src/middleware/rate-limit');
@@ -117,7 +119,9 @@ describe('C1 — permissões efetivas (PostgreSQL real)', () => {
     const grupos = passou(await request(app).get('/api/grupos-acesso').set('Cookie', cookie));
     const permissoesGrupo = passou(await request(app).get(`/api/grupos-acesso/${grupo.ativo}/permissoes/recursos`).set('Cookie', cookie));
     const usuarios = passou(await request(app).get('/api/administracao/usuarios').set('Cookie', cookie));
-    return { visualizar, criar, movimentar, grupos, permissoesGrupo, usuarios };
+    // 12G-0: a listagem real dos vínculos SST (o mesmo critério de conceder e remover).
+    const vinculosSst = passou(await request(app).get('/api/vinculos-sst').set('Cookie', cookie));
+    return { visualizar, criar, movimentar, grupos, permissoesGrupo, usuarios, vinculosSst };
   }
 
   function previsao(p) {
@@ -128,6 +132,7 @@ describe('C1 — permissões efetivas (PostgreSQL real)', () => {
       grupos: p.administracao.gruposAcesso.consultar,
       permissoesGrupo: p.administracao.permissoesGrupo.consultar,
       usuarios: p.administracao.usuarios.consultar,
+      vinculosSst: p.administracao.vinculosSst?.consultar,
     };
   }
 
@@ -191,6 +196,7 @@ describe('C1 — permissões efetivas (PostgreSQL real)', () => {
         criarMaterialRoutes({ controller: criarMaterialController({ pool }), exigirSessao, pool }),
         criarEstoqueRoutes({ controller: criarEstoqueController({ pool }), exigirSessao, pool }),
         criarUsuarioAdministracaoRoutes({ controller: criarUsuarioAdministracaoController({ pool }), exigirSessao }),
+        criarVinculoSstRoutes({ controller: criarVinculoSstController({ pool }), exigirSessao }),
       );
     });
     servidor = http.createServer(app);
@@ -204,14 +210,14 @@ describe('C1 — permissões efetivas (PostgreSQL real)', () => {
     if (contexto) await contexto.encerrar();
   });
 
-  test('formato: empresa/usuário/perfil da sessão, todos os recursos conhecidos, as ações do catálogo e as cinco áreas administrativas — só booleanos', async () => {
+  test('formato: empresa/usuário/perfil da sessão, todos os recursos conhecidos, as ações do catálogo e as seis áreas administrativas — só booleanos', async () => {
     const p = await permissoes(await sessao(EMAILS.master, empresa.A));
     assert.deepEqual([p.empresaId, p.usuarioId, p.perfil], [empresa.A, u.master, 'MASTER']);
     assert.deepEqual(Object.keys(p.recursos).sort(), [...RECURSOS_CONHECIDOS].sort());
     const catalogo = (await permissaoRepo.listarAcoes(pool)).map((a) => a.codigo).sort();
     assert.deepEqual(Object.keys(p.acoes).sort(), catalogo);
     for (const r of Object.values(p.recursos)) assert.deepEqual(Object.keys(r).sort(), ['criar', 'editar', 'excluir', 'visualizar']);
-    assert.deepEqual(Object.keys(p.administracao).sort(), ['autorizacoesIndividuais', 'gruposAcesso', 'permissoesGrupo', 'usuarios', 'vinculosGrupo']);
+    assert.deepEqual(Object.keys(p.administracao).sort(), ['autorizacoesIndividuais', 'gruposAcesso', 'permissoesGrupo', 'usuarios', 'vinculosGrupo', 'vinculosSst']);
     const valores = JSON.stringify(p.recursos) + JSON.stringify(p.acoes) + JSON.stringify(p.administracao);
     assert.equal(/"[a-zA-Z]+":(?!true|false|\{)/.test(valores), false, 'só booleanos');
   });
@@ -233,6 +239,15 @@ describe('C1 — permissões efetivas (PostgreSQL real)', () => {
       assert.deepEqual(p.administracao[area], { consultar: true, alterar: true }, area);
     }
     assert.deepEqual(p.administracao.autorizacoesIndividuais, { consultar: true, concederDireta: true, delegar: false });
+  });
+
+  test('vínculos SST (12G-0): só o MASTER ativo da empresa da sessão; ADMINISTRADOR (mesmo com autoridade administrativa), SUPERVISOR e USUARIO não; a mesma pessoa é MASTER em B e não em A', async () => {
+    assert.deepEqual((await permissoes(await sessao(EMAILS.master, empresa.A))).administracao.vinculosSst, { consultar: true, alterar: true });
+    for (const email of [EMAILS.adminGrupos, EMAILS.adminSem, EMAILS.adminUsuarios, EMAILS.supervisor, EMAILS.usuario]) {
+      assert.deepEqual((await permissoes(await sessao(email, empresa.A))).administracao.vinculosSst, { consultar: false, alterar: false }, email);
+    }
+    assert.deepEqual((await permissoes(await sessao(EMAILS.multi, empresa.B))).administracao.vinculosSst, { consultar: true, alterar: true }, 'MASTER em B');
+    assert.deepEqual((await permissoes(await sessao(EMAILS.multi, empresa.A))).administracao.vinculosSst, { consultar: false, alterar: false }, 'USUARIO em A');
   });
 
   test('parte F: usuários só com GERENCIAR_USUARIOS efetiva; ela não abre as áreas de grupos, nem a de grupos abre usuários', async () => {

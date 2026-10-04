@@ -23,7 +23,12 @@ const { pool } = require('../config/database');
  *                          algum exige `REPROVAR_SOLICITACAO`, a decisão mista as duas;
  *   - encerrar          -> AÇÃO `ENCERRAR_SOLICITACAO`;
  *   - entregáveis e
- *     entregar          -> AÇÃO `REALIZAR_ENTREGA`.
+ *     entregar          -> AÇÃO `REALIZAR_ENTREGA`;
+ *   - contexto da
+ *     criação (12G-0)   -> RECURSO `request`, criar (trabalhador e material para
+ *                          escolher, sem CPF e sem números de estoque);
+ *   - encerráveis (12G-0) -> AÇÃO `ENCERRAR_SOLICITACAO` (lista própria e mínima;
+ *                          não abre os entregáveis, que continuam de quem entrega).
  * As ações da SST exigem vínculo SST e autorização individual (catálogo 017 e
  * 068). O detalhe não tem uma permissão única: o serviço decide, com as mesmas
  * avaliações da autorização central, se quem pede trabalha a solicitação ou só
@@ -34,6 +39,9 @@ const { pool } = require('../config/database');
  *   GET  /api/solicitacoes-epi/minhas
  *   GET  /api/solicitacoes-epi/fila
  *   GET  /api/solicitacoes-epi/entregaveis
+ *   GET  /api/solicitacoes-epi/encerraveis
+ *   GET  /api/solicitacoes-epi/contexto/funcionarios
+ *   GET  /api/solicitacoes-epi/contexto/:funcionarioId/materiais
  *   GET  /api/solicitacoes-epi/:id
  *   POST /api/solicitacoes-epi
  *   POST /api/solicitacoes-epi/:id/cancelamento
@@ -51,6 +59,9 @@ const ACAO_ENCERRAR = 'ENCERRAR_SOLICITACAO';
 const ACAO_ENTREGAR = 'REALIZAR_ENTREGA';
 const ACAO_FILA = ACAO_APROVAR;
 const ACAO_ENTREGAVEIS = ACAO_ENTREGAR;
+// 12G-0: o contexto da criação é de quem cria; as encerráveis, de quem encerra (nunca de quem só entrega).
+const OPERACAO_CONTEXTO = OPERACAO_CRIAR;
+const ACAO_ENCERRAVEIS = ACAO_ENCERRAR;
 
 /** As ações que a decisão exige, pelo que ela faz com os itens. */
 function acoesDaDecisao(decisoes) {
@@ -97,6 +108,7 @@ function criarSolicitacaoEpiRoutes({ controller, exigirSessao: exigirSessaoInjet
   const dependencias = { pool: poolInjetado };
   const exigirVerSolicitacoes = criarExigirPermissaoRecurso(dependencias, RECURSO_SOLICITACAO, 'visualizar');
   const exigirCriar = criarExigirPermissaoRecurso(dependencias, RECURSO_SOLICITACAO, OPERACAO_CRIAR);
+  const exigirContexto = criarExigirPermissaoRecurso(dependencias, RECURSO_SOLICITACAO, OPERACAO_CONTEXTO);
   const exigirCancelar = criarExigirPermissaoRecurso(dependencias, RECURSO_SOLICITACAO, OPERACAO_CANCELAR);
   const exigirAprovar = criarExigirPermissaoAcao(dependencias, ACAO_APROVAR);
   const exigirReprovar = criarExigirPermissaoAcao(dependencias, ACAO_REPROVAR);
@@ -122,6 +134,24 @@ function criarSolicitacaoEpiRoutes({ controller, exigirSessao: exigirSessaoInjet
     exigirSessaoInjetado, exigirEntregar,
     validar({ query: schemas.entregaveis.query }),
     controller.entregaveis,
+  );
+  router.get(
+    '/solicitacoes-epi/encerraveis',
+    exigirSessaoInjetado, exigirEncerrar,
+    validar({ query: schemas.encerraveis.query }),
+    controller.encerraveis,
+  );
+  router.get(
+    '/solicitacoes-epi/contexto/funcionarios',
+    exigirSessaoInjetado, exigirContexto,
+    validar({ query: schemas.contextoFuncionarios.query }),
+    controller.contextoFuncionarios,
+  );
+  router.get(
+    '/solicitacoes-epi/contexto/:funcionarioId/materiais',
+    exigirSessaoInjetado, exigirContexto,
+    validar({ params: schemas.contextoMateriais.params, query: schemas.contextoMateriais.query }),
+    controller.contextoMateriais,
   );
   router.get(
     '/solicitacoes-epi/:id',
@@ -181,4 +211,6 @@ module.exports = {
   ACAO_ENTREGAR,
   ACAO_FILA,
   ACAO_ENTREGAVEIS,
+  OPERACAO_CONTEXTO,
+  ACAO_ENCERRAVEIS,
 };

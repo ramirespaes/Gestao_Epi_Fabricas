@@ -32,7 +32,7 @@ function permissoesCom(recursos, acoes = {}) {
   for (const r of RECURSOS_CONHECIDOS) todos[r] = { ...NENHUMA };
   const area = { consultar: false, alterar: false };
   const administracao = {
-    gruposAcesso: area, permissoesGrupo: area, vinculosGrupo: area, usuarios: area, autorizacoesIndividuais: { consultar: true, concederDireta: false, delegar: false },
+    gruposAcesso: area, permissoesGrupo: area, vinculosGrupo: area, usuarios: area, autorizacoesIndividuais: { consultar: true, concederDireta: false, delegar: false }, vinculosSst: area,
   };
   return { empresaId: 3, usuarioId: 7, perfil: 'USUARIO', recursos: { ...todos, ...recursos }, acoes, administracao };
 }
@@ -230,12 +230,21 @@ describe('Permissões do Grupo sem controle decorativo', () => {
     assert.equal(porId.operations.nome, 'Operações de estoque');
   });
 
-  test('cada operação oferecida na tela é exatamente uma que alguma rota do servidor exige (mesmo escopo do MASTER)', () => {
-    const escopo = Object.fromEntries(ESCOPO_PROVISIONAMENTO_MASTER.recursos.map((r) => [r.recurso, r.operacoes.map((o) => PARA_FLAG[o])]));
+  // 12G-1: `request` é exigido pelas rotas da solicitação (minhas = visualizar,
+  // criar, cancelar = editar), mas fica fora do escopo do MASTER (12E/12F): só
+  // vale o que for concedido por perfil, grupo ou exceção individual.
+  const FORA_DO_ESCOPO_DO_MASTER = { request: ['podeVisualizar', 'podeCriar', 'podeEditar'] };
+
+  test('cada operação oferecida na tela é exatamente uma que alguma rota do servidor exige (o escopo do MASTER e o request, concedido explicitamente)', () => {
+    const escopo = {
+      ...Object.fromEntries(ESCOPO_PROVISIONAMENTO_MASTER.recursos.map((r) => [r.recurso, r.operacoes.map((o) => PARA_FLAG[o])])),
+      ...FORA_DO_ESCOPO_DO_MASTER,
+    };
     for (const recurso of G.RECURSOS) {
       assert.deepEqual(recurso.operacoes, escopo[recurso.id] || [], recurso.id);
     }
     for (const id of Object.keys(escopo)) assert.ok(porId[id], `${id} precisa estar na tela`);
+    assert.equal(ESCOPO_PROVISIONAMENTO_MASTER.recursos.some((r) => Object.hasOwn(FORA_DO_ESCOPO_DO_MASTER, r.recurso)), false, 'o MASTER não recebe request automaticamente');
   });
 
   test('GHE e EPIs (employeeGroups) entra na tela: o servidor já protege o GHE com ele', () => {

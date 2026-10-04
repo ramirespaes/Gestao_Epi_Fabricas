@@ -1,6 +1,7 @@
 'use strict';
 
 const consulta = require('../services/solicitacao-epi-consulta.service');
+const contextoSvc = require('../services/solicitacao-epi-contexto.service');
 const solicitacaoSvc = require('../services/solicitacao-epi.service');
 const entregaSolicitacaoSvc = require('../services/entrega-solicitacao.service');
 const { itensSemEstoque } = require('../services/solicitacao-epi-publica');
@@ -40,6 +41,38 @@ function criarSolicitacaoEpiController({ pool: poolInjetado, relogio = () => new
       const { funcionarioId, pagina, limite } = req.validado.query;
       const resultado = await consulta.listarEntregaveis(poolInjetado, {
         empresaId: req.empresa.id, funcionarioId: funcionarioId ?? null, pagina, limite, hoje: hoje(),
+      });
+      res.status(200).json({ status: 'ok', ...resultado });
+    },
+
+    // 12G-0: o contexto da criação (quem pede escolhe trabalhador e material) e as encerráveis.
+    async contextoFuncionarios(req, res) {
+      const { busca, pagina, limite } = req.validado.query;
+      const resultado = await contextoSvc.localizarTrabalhadores(poolInjetado, {
+        empresaId: req.empresa.id, busca: busca ?? null, pagina, limite,
+      });
+      res.status(200).json({ status: 'ok', ...resultado });
+    },
+
+    async contextoMateriais(req, res) {
+      const {
+        busca, previstoNoGhe, pagina, limite,
+      } = req.validado.query;
+      const resultado = await contextoSvc.listarMateriais(poolInjetado, {
+        empresaId: req.empresa.id,
+        funcionarioId: req.validado.params.funcionarioId,
+        busca: busca ?? null,
+        previstoNoGhe: previstoNoGhe ?? null,
+        pagina,
+        limite,
+      });
+      res.status(200).json({ status: 'ok', ...resultado });
+    },
+
+    async encerraveis(req, res) {
+      const { funcionarioId, pagina, limite } = req.validado.query;
+      const resultado = await consulta.listarEncerraveis(poolInjetado, {
+        empresaId: req.empresa.id, funcionarioId: funcionarioId ?? null, pagina, limite,
       });
       res.status(200).json({ status: 'ok', ...resultado });
     },

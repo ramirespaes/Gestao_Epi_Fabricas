@@ -5,7 +5,9 @@ const itemRepo = require('../repositories/solicitacao-epi-item.repository');
 const coberturaRepo = require('../repositories/solicitacao-epi-cobertura.repository');
 const { dataOperacional, exigirDataOperacional } = require('../utils/data-operacional');
 const { situacaoDoItem, situacaoDaSolicitacao, quantidadesDaSolicitacao } = require('./solicitacao-epi-situacao');
-const { linhaDaLista, itensSemEstoque } = require('./solicitacao-epi-publica');
+const {
+  linhaDaLista, itensSemEstoque, linhaEncerravel, trabalhadorDoDetalhe, pessoaDoDetalhe, materialDoDetalhe,
+} = require('./solicitacao-epi-publica');
 const solicitacaoSvc = require('./solicitacao-epi.service');
 const autorizacao = require('../middleware/autorizacao');
 const { HttpError } = require('../errors/HttpError');
@@ -25,6 +27,11 @@ const { HttpError } = require('../errors/HttpError');
  * regras do detalhe, com a cobertura calculada contra a fila inteira dos pares
  * (não só contra a página) numa consulta única para todas as solicitações
  * aprovadas da página. A linha não leva CPF nem texto livre.
+ *
+ * 12G-0: as encerráveis (ação ENCERRAR_SOLICITACAO, na rota) são uma lista
+ * própria e mínima, sem nada do estoque; o detalhe ganha os dados de
+ * apresentação (trabalhador, material de cada item e os nomes de quem
+ * solicitou, decidiu e encerrou), lidos só depois da autorização e do 404.
  */
 
 const STATUS_COM_COBERTURA = Object.freeze(['APROVADA', 'APROVADA_PARCIAL']);
@@ -204,12 +211,56 @@ async function buscarDetalhe(pool, {
   const visao = await solicitacaoSvc.buscarSolicitacao(pool, {
     empresaId, solicitacaoId, hoje: dataOperacionalAtual, solicitanteUsuarioId: funcional ? null : usuarioId,
   });
+  // Só depois da autorização e do 404: o que não pode ser visto nunca chega a ser lido para apresentação.
+  const s = visao.solicitacao;
+  const apresentacao = await emLeitura(pool, (client) => consultaRepo.dadosDeApresentacao(client, empresaId, {
+    funcionarioId: s.funcionarioId,
+    materialIds: [...new Set(visao.itens.map((i) => i.materialId))],
+    usuarioIds: [...new Set([s.solicitanteUsuarioId, s.decisao?.decididaPor, s.encerramento?.encerradaPor].filter((id) => Number.isInteger(id)))],
+  }));
+  const usuarios = new Map(apresentacao.usuarios.map((u) => [u.id, u]));
+  const materiais = new Map(apresentacao.materiais.map((m) => [m.id, m]));
   return {
-    solicitacao: { ...visao.solicitacao, quantidades: quantidadesDaSolicitacao(visao.solicitacao.status, visao.itens) },
-    itens: funcional ? visao.itens : itensSemEstoque(visao.itens),
+    solicitacao: {
+      ...s,
+      quantidades: quantidadesDaSolicitacao(s.status, visao.itens),
+      funcionario: trabalhadorDoDetalhe(apresentacao.funcionario),
+      solicitante: pessoaDoDetalhe(usuarios.get(s.solicitanteUsuarioId)),
+      decisao: s.decisao === null ? null : { ...s.decisao, decisor: pessoaDoDetalhe(usuarios.get(s.decisao.decididaPor)) },
+      encerramento: s.encerramento === null ? null : { ...s.encerramento, encerrador: pessoaDoDetalhe(usuarios.get(s.encerramento.encerradaPor)) },
+    },
+    itens: (funcional ? visao.itens : itensSemEstoque(visao.itens)).map((i) => ({ ...i, material: materialDoDetalhe(materiais.get(i.materialId)) })),
   };
 }
 
+/**
+ * As solicitações que quem encerra pode encerrar (12G-0, L4): APROVADA e
+ * APROVADA_PARCIAL da empresa, inclusive a suspensa por trabalhador ou material
+ * inativo, na ordem da aprovação. Só o necessário para localizar: sem situação
+ * derivada do estoque, cobertura, posição, lote ou saldo; as quantidades são as
+ * da própria solicitação (aprovada, entregue e restante). `funcionarioId`
+ * opcional filtra por trabalhador.
+ */
+async function listarEncerraveis(pool, {
+  empresaId, funcionarioId = null, pagina, limite,
+}) {
+  exigirId(empresaId, 'identificador de empresa');
+  if (funcionarioId !== null) exigirId(funcionarioId, 'identificador de funcionário');
+  exigirPaginacao(pagina, limite);
+
+  return emLeitura(pool, async (client) => {
+    const linhas = await consultaRepo.listarEncerraveis(client, empresaId, { funcionarioId, pagina, limite });
+    const total = await consultaRepo.contarEncerraveis(client, empresaId, { funcionarioId });
+    const itensPorSolicitacao = linhas.length === 0
+      ? new Map()
+      : agruparPorSolicitacao(await itemRepo.listarPorSolicitacoesComEntregue(client, empresaId, linhas.map((l) => l.id)));
+    const solicitacoes = linhas.map((l) => linhaEncerravel(l, { quantidades: quantidadesDaSolicitacao(l.status, itensPorSolicitacao.get(l.id) ?? []) }));
+    return {
+      solicitacoes, total, pagina, limite,
+    };
+  });
+}
+
 module.exports = {
-  listarMinhas, listarFila, listarEntregaveis, buscarDetalhe,
+  listarMinhas, listarFila, listarEntregaveis, listarEncerraveis, buscarDetalhe,
 };

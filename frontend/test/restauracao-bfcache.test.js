@@ -32,7 +32,7 @@ const CONTEXTO = (usuarioId, empresaId, extra = {}) => ({
   empresa: { id: empresaId, nome: `Empresa ${empresaId}`, cnpj: '11222333000181' },
 });
 const GLOBAL_ME = (usuarioId, empresaId) => ({ status: 'ok', identidade: { id: 9, email: `p${usuarioId}@exemplo-cliente.com.br` }, empresas: [{ id: empresaId, nome: `Empresa ${empresaId}`, perfil: 'MASTER' }], contexto: CONTEXTO(usuarioId, empresaId) });
-const PERMISSOES = (usuarioId, empresaId) => ({ status: 'ok', empresaId, usuarioId, perfil: 'MASTER', recursos: {}, acoes: {}, administracao: { gruposAcesso: { consultar: true, alterar: true }, permissoesGrupo: { consultar: true, alterar: true }, vinculosGrupo: { consultar: true, alterar: true }, usuarios: { consultar: true, alterar: true }, autorizacoesIndividuais: { consultar: true, concederDireta: true, delegar: true } } });
+const PERMISSOES = (usuarioId, empresaId) => ({ status: 'ok', empresaId, usuarioId, perfil: 'MASTER', recursos: {}, acoes: {}, administracao: { gruposAcesso: { consultar: true, alterar: true }, permissoesGrupo: { consultar: true, alterar: true }, vinculosGrupo: { consultar: true, alterar: true }, usuarios: { consultar: true, alterar: true }, autorizacoesIndividuais: { consultar: true, concederDireta: true, delegar: true }, vinculosSst: { consultar: true, alterar: true } } });
 
 let chamadas;
 /** Servidor falso por rota; `rotas` mapeia "METODO caminho" -> resposta | Error | função(). */

@@ -85,8 +85,17 @@ async function travarUsuarios(client, empresaId, ids) {
   return lidos;
 }
 
+/**
+ * A autoridade sobre os vínculos SST: o usuário ativo de perfil MASTER, lido
+ * do banco. Exportada para as permissões efetivas (12G-0) mostrarem à tela a
+ * mesma decisão que os endpoints tomam, sem regra paralela.
+ */
+function temAutoridadeVinculoSst(ator) {
+  return ator !== null && ator !== undefined && ator.ativo === true && ator.perfil === PERFIL_MASTER;
+}
+
 function exigirAutoridade(ator) {
-  if (ator === null || ator === undefined || ator.ativo !== true || ator.perfil !== PERFIL_MASTER) {
+  if (!temAutoridadeVinculoSst(ator)) {
     throw HttpError.forbidden('SEM_AUTORIDADE_VINCULO_SST', 'Sem permissão para administrar o vínculo com a Segurança do Trabalho');
   }
 }
@@ -199,4 +208,6 @@ async function listarVinculos(pool, {
   });
 }
 
-module.exports = { concederVinculo, removerVinculo, listarVinculos };
+module.exports = {
+  concederVinculo, removerVinculo, listarVinculos, temAutoridadeVinculoSst,
+};

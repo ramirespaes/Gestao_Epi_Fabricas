@@ -66,6 +66,10 @@
 
   var janelaInjetada = null;
   var contextoAtual = null;
+  // Quem quer ser consultado quando a página volta pelo histórico com a MESMA
+  // sessão (EpiPermissoes, desde a 12G-1). Uma lista por montar(): cada página
+  // tem a sua.
+  var ouvintesDaRevalidacao = [];
 
   function janela() { return janelaInjetada || global; }
 
@@ -235,9 +239,11 @@
    * disponível para uma nova tentativa.
    *
    * `usuario` e `empresa` são opcionais: o bloco de conta do Dashboard mostra
-   * o nome e a empresa separados, sempre como texto.
+   * o nome e a empresa separados, sempre como texto. `conteudo`, também
+   * opcional, é o conteúdo protegido: na volta pelo histórico ele fica oculto
+   * durante a revalidação e só volta ao estado anterior se ela liberar.
    *
-   * @param {{elementos: {tela, mensagem, linkPortal, identificacao, usuario, empresa, botaoSair, botaoTrocar},
+   * @param {{elementos: {tela, mensagem, linkPortal, identificacao, usuario, empresa, botaoSair, botaoTrocar, conteudo},
    *          aoEncerrar?: Function, aoFalharSaida?: Function, janela?: object}} opcoes
    */
   async function montar(opcoes) {
@@ -245,6 +251,8 @@
     var el = o.elementos || {};
     var aoEncerrar = typeof o.aoEncerrar === 'function' ? o.aoEncerrar : function () {};
     var aoFalharSaida = typeof o.aoFalharSaida === 'function' ? o.aoFalharSaida : function () {};
+    var ouvintes = [];
+    ouvintesDaRevalidacao = ouvintes;
 
     if (el.mensagem) el.mensagem.textContent = MENSAGENS.VERIFICANDO;
 
@@ -285,8 +293,35 @@
       });
     }
     if (el.tela) el.tela.style.display = 'none';
-    registrarRestauracao(o, el, r.contexto);
+    registrarRestauracao(o, el, r.contexto, ouvintes);
     return r.contexto;
+  }
+
+  /**
+   * Registra quem decide, depois de uma volta pelo histórico com a MESMA
+   * sessão, se a página pode reaparecer como estava. `fn(contexto)` devolve
+   * {acao: 'liberar' | 'recarregar' | 'encerrada' | 'bloquear', mensagem?}.
+   * Enquanto decide, a tela de verificação continua cobrindo a página.
+   */
+  function aoRevalidar(fn) {
+    if (typeof fn === 'function') ouvintesDaRevalidacao.push(fn);
+  }
+
+  // A decisão mais restritiva vence; erro de um ouvinte é falha fechada.
+  var PESO = { liberar: 0, recarregar: 1, bloquear: 2, encerrada: 3 };
+  async function decidirRevalidacao(ouvintes, contexto) {
+    var decisao = { acao: 'liberar' };
+    for (var i = 0; i < ouvintes.length; i += 1) {
+      var d;
+      try {
+        d = await ouvintes[i](copiar(contexto));
+      } catch (erro) {
+        d = { acao: 'bloquear', mensagem: MENSAGENS.FALHA };
+      }
+      if (!d || !Object.prototype.hasOwnProperty.call(PESO, d.acao)) d = { acao: 'bloquear', mensagem: MENSAGENS.FALHA };
+      if (PESO[d.acao] > PESO[decisao.acao]) decisao = d;
+    }
+    return decisao;
   }
 
   /**
@@ -301,13 +336,13 @@
    * Nenhum bloqueio do histórico do navegador. Janelas sem
    * addEventListener (testes antigos) seguem aceitas.
    */
-  function registrarRestauracao(o, el, contextoExibido) {
+  function registrarRestauracao(o, el, contextoExibido, ouvintes) {
     var j = janela();
     if (!j || typeof j.addEventListener !== 'function') return;
     var aoEncerrar = typeof o.aoEncerrar === 'function' ? o.aoEncerrar : function () {};
     j.addEventListener('pageshow', function (evento) {
       if (!evento || !evento.persisted) return undefined;
-      return revalidar(o, el, contextoExibido, aoEncerrar);
+      return revalidar(o, el, contextoExibido, aoEncerrar, ouvintes);
     });
   }
 
@@ -321,7 +356,10 @@
     return !!(a && b && a.empresa.id === b.empresa.id && a.usuario.id === b.usuario.id && a.usuario.perfil === b.usuario.perfil);
   }
 
-  async function revalidar(o, el, contextoExibido, aoEncerrar) {
+  async function revalidar(o, el, contextoExibido, aoEncerrar, ouvintes) {
+    // Coberto não basta: leitor de tela e Tab ainda alcançariam o conteúdo antigo.
+    var conteudoAntes = el.conteudo ? el.conteudo.style.display : null;
+    if (el.conteudo) el.conteudo.style.display = 'none';
     if (el.tela) el.tela.style.display = '';
     if (el.mensagem) el.mensagem.textContent = MENSAGENS.VERIFICANDO;
     if (el.linkPortal) el.linkPortal.style.display = 'none';
@@ -346,9 +384,24 @@
     }
 
     if (mesmoContexto(r.contexto, contextoExibido)) {
+      // As permissões podem ter mudado enquanto a página estava guardada (12G-1):
+      // os ouvintes decidem antes de a tela sair, e a página antiga não reaparece à toa.
+      var decisao = await decidirRevalidacao(ouvintes || [], r.contexto);
+      if (decisao.acao !== 'liberar') {
+        aoEncerrar();
+        if (decisao.acao === 'recarregar') {
+          var jr = janela();
+          jr.location.replace(jr.location.pathname + (jr.location.search || '') + (jr.location.hash || ''));
+        } else if (decisao.acao === 'bloquear') {
+          if (el.mensagem) el.mensagem.textContent = decisao.mensagem || MENSAGENS.FALHA;
+          if (el.linkPortal) el.linkPortal.style.display = '';
+        }
+        return;
+      }
       if (el.identificacao) el.identificacao.textContent = rotuloIdentificacao(r.contexto);
       mostrarConta(el, r.contexto);
       if (el.botaoTrocar) el.botaoTrocar.style.display = r.podeTrocar ? '' : 'none';
+      if (el.conteudo) el.conteudo.style.display = conteudoAntes;
       if (el.tela) el.tela.style.display = 'none';
       return;
     }
@@ -365,6 +418,7 @@
   global.EpiSessaoEmpresarial = {
     iniciar: iniciar,
     montar: montar,
+    aoRevalidar: aoRevalidar,
     sessaoEncerrada: sessaoEncerrada,
     sair: sair,
     trocarEmpresa: trocarEmpresa,

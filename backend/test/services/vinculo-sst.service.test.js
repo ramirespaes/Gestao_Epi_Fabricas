@@ -54,6 +54,18 @@ describe('listarVinculos — validação antes de qualquer acesso ao banco (12E-
   });
 });
 
+describe('temAutoridadeVinculoSst — a autoridade dos endpoints, exposta às permissões efetivas (12G-0)', () => {
+  test('só o usuário ativo de perfil MASTER; inativo, outro perfil, ausente ou sem os campos: falso', () => {
+    const { temAutoridadeVinculoSst } = servico();
+    assert.equal(typeof temAutoridadeVinculoSst, 'function', 'predicado ainda não exportado: temAutoridadeVinculoSst');
+    assert.equal(temAutoridadeVinculoSst({ id: 1, ativo: true, perfil: 'MASTER' }), true);
+    for (const ator of [{ id: 1, ativo: false, perfil: 'MASTER' }, { id: 1, ativo: true, perfil: 'ADMINISTRADOR' }, { id: 1, ativo: true, perfil: 'master' },
+      { id: 1, ativo: 'true', perfil: 'MASTER' }, { id: 1, perfil: 'MASTER' }, null, undefined]) {
+      assert.equal(temAutoridadeVinculoSst(ator), false, JSON.stringify(ator));
+    }
+  });
+});
+
 describe('removerVinculo — validação antes de qualquer acesso ao banco', () => {
   test('identificadores inteiros positivos', async () => {
     for (const extra of [{ empresaId: 0 }, { atorId: 1.5 }, { usuarioId: null }]) {

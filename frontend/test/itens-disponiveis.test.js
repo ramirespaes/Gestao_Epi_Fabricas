@@ -334,14 +334,14 @@ describe('inspeção estática: pages/available-items.html integrada, interface 
 
   test('menu: estrutura preservada; Análise de estoque ativa; integrados por permissão; demais sem link', () => {
     const links = [...html.matchAll(/<a [^>]*data-pagina="([^"]+)"[^>]*>/g)];
-    assert.deepEqual(links.map((m) => m[1]).sort(), ['autorizacoes-individuais', 'availableItems', 'dashboard', 'employeeGroups', 'employeeHistory', 'epiFicha', 'grupo-permissoes', 'grupo-usuarios', 'grupos-acesso', 'importEmployees', 'materials', 'newUser', 'operations', 'stockValidity', 'userAdmin']);
+    assert.deepEqual(links.map((m) => m[1]).sort(), ['autorizacoes-individuais', 'availableItems', 'dashboard', 'employeeGroups', 'employeeHistory', 'epiFicha', 'grupo-permissoes', 'grupo-usuarios', 'grupos-acesso', 'importEmployees', 'materials', 'newUser', 'operations', 'request', 'stockRequests', 'stockValidity', 'supervisorApproval', 'userAdmin']);
     for (const m of links) assert.match(m[0], /style="display:none"/);
     assert.match(html, /<a class="active" href="javascript:void\(0\)" data-pagina="availableItems"/);
     const hrefs = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]).filter((h) => !h.startsWith('http') && !h.startsWith('../css/') && h !== 'javascript:void(0)');
-    const permitidos = new Set(['materials.html', 'stock-validity.html', 'operations.html', 'dashboard.html', 'employee-groups.html', 'epi-ficha.html', 'employee-history.html', 'import-employees.html', 'grupos-acesso.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'autorizacoes-individuais.html', 'new-user.html', 'user-admin.html', '../portal/index.html', '../portal/inicio.html']);
+    const permitidos = new Set(['materials.html', 'stock-validity.html', 'operations.html', 'dashboard.html', 'employee-groups.html', 'epi-ficha.html', 'employee-history.html', 'import-employees.html', 'request.html', 'supervisor-approval.html', 'stock-requests.html', 'grupos-acesso.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'autorizacoes-individuais.html', 'new-user.html', 'user-admin.html', '../portal/index.html', '../portal/inicio.html']);
     for (const h of hrefs) assert.ok(permitidos.has(h), h);
     // 20 na C3; a C4 integrou Histórico e Importar Funcionários (D9): restam 18.
-    assert.ok([...html.matchAll(/<a class="nav-pendente"/g)].length >= 12); // C6: Dashboard; E7: Validade; E8: Operações; F: Novo Usuário e Administração de Usuários; 10I: Ficha de EPI
+    assert.ok([...html.matchAll(/<a class="nav-pendente"/g)].length >= 9); // C6: Dashboard; E7: Validade; E8: Operações; F: Novo Usuário e Administração de Usuários; 10I: Ficha de EPI; 12G-1: as três da solicitação
   });
 
   test('a Gestão de estoque e o início do Portal oferecem a Análise de estoque (oculta até a permissão)', () => {

@@ -131,6 +131,46 @@ async function contarEntregaveis(executor, empresaId, { funcionarioId = null } =
   return contar(executor, FILTRO_ENTREGAVEIS, [empresaId, funcionarioId]);
 }
 
+// As encerráveis (12G-0) são as mesmas APROVADA e APROVADA_PARCIAL dos entregáveis: mesmo filtro, mesma ordem, mesmo
+// índice parcial. Um nome próprio para cada uso, para a dependência ficar explícita.
+const listarEncerraveis = listarEntregaveis;
+const contarEncerraveis = contarEntregaveis;
+
+/**
+ * Dados de apresentação do detalhe (12G-0): o trabalhador, os materiais dos
+ * itens e os usuários citados (quem solicitou, decidiu e encerrou), sempre pela
+ * empresa e com colunas explícitas. Nunca CPF, e-mail, perfil, credencial nem
+ * número de estoque. Só leitura, sem trava.
+ */
+async function dadosDeApresentacao(executor, empresaId, { funcionarioId, materialIds, usuarioIds }) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirId(funcionarioId, 'identificador de funcionário');
+  for (const id of [...materialIds, ...usuarioIds]) exigirId(id, 'identificador');
+  const { rows: [funcionario] } = await executor.query(
+    'SELECT id, nome, matricula, setor, funcao, ativo FROM funcionarios WHERE empresa_id = $1 AND id = $2',
+    [empresaId, funcionarioId],
+  );
+  const { rows: materiais } = await executor.query(
+    'SELECT id, nome, unidade FROM materiais WHERE empresa_id = $1 AND id = ANY($2::int[]) ORDER BY id',
+    [empresaId, materialIds],
+  );
+  const { rows: usuarios } = await executor.query(
+    'SELECT id, nome FROM usuarios WHERE empresa_id = $1 AND id = ANY($2::int[]) ORDER BY id',
+    [empresaId, usuarioIds],
+  );
+  return { funcionario: funcionario ?? null, materiais, usuarios };
+}
+
 module.exports = {
-  STATUS, LIMITE_MAXIMO, listarMinhas, contarMinhas, listarFila, contarFila, listarEntregaveis, contarEntregaveis,
+  STATUS,
+  LIMITE_MAXIMO,
+  listarMinhas,
+  contarMinhas,
+  listarFila,
+  contarFila,
+  listarEntregaveis,
+  contarEntregaveis,
+  listarEncerraveis,
+  contarEncerraveis,
+  dadosDeApresentacao,
 };
