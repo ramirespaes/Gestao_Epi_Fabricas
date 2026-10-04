@@ -37,7 +37,7 @@
     carregando: 'Carregando…',
     vazio: 'Nada para mostrar.',
     erro: 'Não foi possível carregar as informações. Recarregue a página para tentar novamente.',
-    'acesso-negado': 'Seu perfil nesta empresa não tem acesso a este módulo.',
+    'acesso-negado': 'Você não tem permissão para acessar este módulo nesta empresa.',
     'sessao-invalida': 'Sua sessão terminou. Você será levado ao Portal do Cliente para entrar novamente.',
     revalidando: 'Verificando sua sessão…',
     'em-integracao': 'Em integração: esta área será ligada ao servidor nas próximas etapas.',
