@@ -119,14 +119,14 @@ describe('12. URL direta não contorna o RBAC no frontend', () => {
     const pg = abrirPagina('pages/stock-validity.html', { EpiMateriais: require('../js/materiais'), EpiValidadeEstoque: require('../js/validade-estoque') }, SO_MATERIALS); // eslint-disable-line global-require
     await pg.esperar();
     assert.deepEqual(pg.chamadas, ['GET /api/auth/permissoes']);
-    assert.match(pg.el('aviso').innerHTML, /não tem acesso a este módulo/);
+    assert.match(pg.el('aviso').innerHTML, /não tem permissão para acessar este módulo/);
   });
 
   test('Operações de estoque com só materials.visualizar: aviso de acesso e nenhuma consulta de operações', async () => {
     const pg = abrirPagina('pages/operations.html', { EpiOperacoesEstoque: require('../js/operacoes-estoque') }, SO_MATERIALS); // eslint-disable-line global-require
     await pg.esperar();
     assert.deepEqual(pg.chamadas, ['GET /api/auth/permissoes']);
-    assert.match(pg.el('aviso').innerHTML, /não tem acesso a este módulo/);
+    assert.match(pg.el('aviso').innerHTML, /não tem permissão para acessar este módulo/);
   });
 
   test('com a permissão própria as páginas consultam; a Validade sem MOVIMENTAR_ESTOQUE não oferece baixa', async () => {

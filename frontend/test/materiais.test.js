@@ -403,7 +403,8 @@ describe('inspeção estática: pages/materials.html integrada, com a interface 
     assert.match(inicio, /<a href="\.\.\/pages\/materials\.html" data-pagina="materials" style="display:none">Gestão de estoque<\/a>/);
     const emIntegracao = inicio.slice(inicio.indexOf('Em integração'));
     assert.equal(/Gestão de estoque/.test(emIntegracao), false);
-    assert.match(emIntegracao, /Estoque/);
+    // 12G-5: o Estoque já está integrado e saiu de vez da lista "Em integração".
+    assert.equal(/\bEstoque\b/.test(emIntegracao), false);
   });
 });
 

@@ -111,7 +111,7 @@
     // 12G-1: as rotas da solicitação exigem request.visualizar (minhas), criar e
     // editar (cancelar). Fora do escopo do MASTER: só vale o que for concedido.
     { id: 'request', nome: 'Pedido de EPI', operacoes: [V, C, E] },
-    { id: 'supervisorApproval', nome: 'Aprovação da Segurança do Trabalho', operacoes: [], nota: 'Controlado pelas ações Aprovar solicitação e Reprovar solicitação (exigem vínculo SST), não por esta página.' },
+    { id: 'supervisorApproval', nome: 'Aprovação da Segurança do Trabalho', operacoes: [], nota: 'Controlado por ações, não por esta página: Aprovar solicitação abre a página; Reprovar solicitação sozinha não abre, só reprova dentro dela para quem também tem Aprovar. As duas exigem vínculo SST.' },
     { id: 'stockRequests', nome: 'Entregas por solicitação', operacoes: [], nota: 'Controlado pelas ações Realizar entrega de EPI e Encerrar solicitação, não por esta página.' },
     { id: 'importEmployees', nome: 'Importar Funcionários', operacoes: [], nota: 'Controlado pela permissão Criar de Histórico de Funcionários.' },
     { id: 'newUser', nome: 'Novo Usuário', operacoes: [], nota: GERENCIAR_USUARIOS },

@@ -147,7 +147,7 @@
 
   var MENSAGENS = {
     FALHA: 'Não foi possível carregar suas permissões nesta empresa. Nenhuma operação foi liberada. Recarregue a página para tentar novamente.',
-    SEM_ACESSO: 'Seu perfil nesta empresa não tem acesso a este módulo.',
+    SEM_ACESSO: 'Você não tem permissão para acessar este módulo nesta empresa.',
     CONTEXTO_DIVERGENTE: 'Sua sessão mudou (outra empresa, outro usuário ou outro perfil), provavelmente em outra aba. Nenhuma operação foi liberada. Recarregue a página.',
   };
 
