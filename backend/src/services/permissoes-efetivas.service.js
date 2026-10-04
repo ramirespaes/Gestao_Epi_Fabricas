@@ -4,6 +4,7 @@ const autorizacao = require('../middleware/autorizacao');
 const autoridade = require('./autoridade-administrativa');
 const delegacao = require('./delegacao-destinatarios.service');
 const autorizacaoIndividual = require('./autorizacao-individual.service');
+const vinculoSst = require('./vinculo-sst.service');
 const permissaoRepo = require('../repositories/permissao.repository');
 const usuarioRepo = require('../repositories/usuario.repository');
 const { RECURSOS_CONHECIDOS } = require('../rbac/recursos');
@@ -43,6 +44,10 @@ const { RECURSOS_CONHECIDOS } = require('../rbac/recursos');
  *                     concederDireta: autorizacaoIndividual.atorPodeConcederDireta
  *                     (só MASTER ativo); delegar: delegacao.atorPodeDelegar
  *                     (não-MASTER com ao menos uma origem própria efetiva).
+ *       vinculosSst (12G-0)
+ *                  -> vinculoSst.temAutoridadeVinculoSst: a autoridade dos
+ *                     endpoints de vínculo SST (MASTER ativo, lido do banco);
+ *                     consultar e alterar têm o mesmo critério no serviço.
  *
  * Empresa, usuário e perfil vêm SEMPRE da sessão validada (req.empresa /
  * req.usuario, relidos do banco pelo middleware de sessão a cada
@@ -99,6 +104,8 @@ async function calcular(pool, { empresaId, usuarioId, perfil }) {
 
   const ator = await usuarioRepo.buscarPorId(pool, empresaId, usuarioId);
   const atorAtivo = ator !== null && ator.ativo === true;
+  // 12G-0: listar, conceder e remover usam o mesmo critério no serviço dos vínculos.
+  const administraVinculosSst = vinculoSst.temAutoridadeVinculoSst(ator);
 
   return {
     empresaId,
@@ -117,6 +124,7 @@ async function calcular(pool, { empresaId, usuarioId, perfil }) {
         concederDireta: autorizacaoIndividual.atorPodeConcederDireta(ator),
         delegar: await delegacao.atorPodeDelegar(pool, empresaId, usuarioId),
       },
+      vinculosSst: { consultar: administraVinculosSst, alterar: administraVinculosSst },
     },
   };
 }

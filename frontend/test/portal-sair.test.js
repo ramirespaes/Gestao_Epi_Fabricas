@@ -28,7 +28,7 @@ const EMAIL = 'p7@exemplo-cliente.com.br';
 const CONTEXTO = { usuario: { id: 7, nome: 'Pessoa 7', email: EMAIL, perfil: 'MASTER' }, empresa: { id: 3, nome: 'Empresa 3', cnpj: '11222333000181' } };
 const GLOBAL_ME = { status: 'ok', identidade: { id: 9, email: EMAIL }, empresas: [{ id: 3, nome: 'Empresa 3', perfil: 'MASTER' }], contexto: CONTEXTO };
 const SEM_EMPRESA_ME = { status: 'ok', identidade: { id: 9, email: EMAIL }, empresas: [], contexto: null };
-const PERMISSOES = { status: 'ok', empresaId: 3, usuarioId: 7, perfil: 'MASTER', recursos: {}, acoes: {}, administracao: { gruposAcesso: { consultar: true, alterar: true }, permissoesGrupo: { consultar: true, alterar: true }, vinculosGrupo: { consultar: true, alterar: true }, usuarios: { consultar: true, alterar: true }, autorizacoesIndividuais: { consultar: true, concederDireta: true, delegar: true } } };
+const PERMISSOES = { status: 'ok', empresaId: 3, usuarioId: 7, perfil: 'MASTER', recursos: {}, acoes: {}, administracao: { gruposAcesso: { consultar: true, alterar: true }, permissoesGrupo: { consultar: true, alterar: true }, vinculosGrupo: { consultar: true, alterar: true }, usuarios: { consultar: true, alterar: true }, autorizacoesIndividuais: { consultar: true, concederDireta: true, delegar: true }, vinculosSst: { consultar: true, alterar: true } } };
 const NAO_AUTENTICADO = () => resposta(401, { status: 'erro', codigo: 'NAO_AUTENTICADO' });
 
 const SAIR_TUDO = 'POST /auth/global/logout';

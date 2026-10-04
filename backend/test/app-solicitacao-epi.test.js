@@ -18,7 +18,11 @@ describe('app.js — solicitação de EPI e vínculos SST (12F-1 e 12F-2)', () =
   const app = require('../src/app');
   const ORIGEM = 'http://localhost:5500';
   const ORIGEM_DO_PAINEL = 'http://localhost:5501';
-  const ROTAS = ['/api/solicitacoes-epi/minhas', '/api/solicitacoes-epi/fila', '/api/solicitacoes-epi/entregaveis', '/api/solicitacoes-epi/1', '/api/vinculos-sst'];
+  const ROTAS = [
+    '/api/solicitacoes-epi/minhas', '/api/solicitacoes-epi/fila', '/api/solicitacoes-epi/entregaveis', '/api/solicitacoes-epi/1', '/api/vinculos-sst',
+    // 12G-0
+    '/api/solicitacoes-epi/contexto/funcionarios', '/api/solicitacoes-epi/contexto/1/materiais', '/api/solicitacoes-epi/encerraveis',
+  ];
   const ESCRITAS = [
     ['post', '/api/solicitacoes-epi'],
     ['post', '/api/solicitacoes-epi/1/cancelamento'],
@@ -62,7 +66,7 @@ describe('app.js — solicitação de EPI e vínculos SST (12F-1 e 12F-2)', () =
     assert.equal(r.status, 415);
   });
 
-  test('os caminhos montados são exatamente as consultas da 12F-1 e as escritas da 12F-2 (só POST e DELETE)', () => {
+  test('os caminhos montados são exatamente as consultas da 12F-1 e da 12G-0 e as escritas da 12F-2 (só POST e DELETE)', () => {
     const caminhos = [];
     const percorrer = (pilha) => {
       for (const camada of pilha) {
@@ -75,7 +79,8 @@ describe('app.js — solicitação de EPI e vínculos SST (12F-1 e 12F-2)', () =
     const novos = caminhos.filter((c) => /\/solicitacoes-epi|\/vinculos-sst/.test(c)).sort();
     assert.deepEqual(novos, [
       'DELETE /vinculos-sst/:usuarioId',
-      'GET /solicitacoes-epi/:id', 'GET /solicitacoes-epi/entregaveis', 'GET /solicitacoes-epi/fila', 'GET /solicitacoes-epi/minhas', 'GET /vinculos-sst',
+      'GET /solicitacoes-epi/:id', 'GET /solicitacoes-epi/contexto/:funcionarioId/materiais', 'GET /solicitacoes-epi/contexto/funcionarios',
+      'GET /solicitacoes-epi/encerraveis', 'GET /solicitacoes-epi/entregaveis', 'GET /solicitacoes-epi/fila', 'GET /solicitacoes-epi/minhas', 'GET /vinculos-sst',
       'POST /solicitacoes-epi', 'POST /solicitacoes-epi/:id/cancelamento', 'POST /solicitacoes-epi/:id/decisao', 'POST /solicitacoes-epi/:id/encerramento',
       'POST /solicitacoes-epi/:id/entregas', 'POST /vinculos-sst',
     ]);

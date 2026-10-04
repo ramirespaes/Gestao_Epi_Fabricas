@@ -762,6 +762,8 @@ function abrirPagina(arquivoHtml, opcoes = {}) {
     URL,
     URLSearchParams,
     TextEncoder,
+    // Todo navegador atual tem crypto (randomUUID); as chaves de idempotência das telas dependem dele.
+    crypto: globalThis.crypto,
     alert: (m) => { alertas.push(String(m)); },
     setTimeout: (fn, ms = 0, ...args) => { const id = proximoTemporizador; proximoTemporizador += 1; temporizadores.push({ id, fn, ms: Number(ms) || 0, args }); return id; },
     clearTimeout: (id) => { const i = temporizadores.findIndex((t) => t.id === id); if (i !== -1) temporizadores.splice(i, 1); },

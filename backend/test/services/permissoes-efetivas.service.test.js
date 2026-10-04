@@ -69,6 +69,36 @@ describe('permissoes-efetivas.calcular', () => {
     assert.deepEqual(r.administracao.autorizacoesIndividuais, { consultar: false, concederDireta: false, delegar: false });
   });
 
+  test('vínculos SST (12G-0): consultar = alterar = a autoridade real dos endpoints (MASTER ativo lido do banco), nunca o perfil da sessão', async (t) => {
+    const vinculoSst = require('../../src/services/vinculo-sst.service');
+    assert.equal(typeof vinculoSst.temAutoridadeVinculoSst, 'function', 'predicado ainda não exportado: temAutoridadeVinculoSst');
+    const casos = [
+      [{ id: 70, ativo: true, perfil: 'MASTER' }, true],
+      [{ id: 70, ativo: false, perfil: 'MASTER' }, false],
+      [{ id: 70, ativo: true, perfil: 'ADMINISTRADOR' }, false],
+      [{ id: 70, ativo: true, perfil: 'USUARIO' }, false],
+      [null, false],
+    ];
+    for (const [ator, esperado] of casos) {
+      t.mock.restoreAll();
+      mockTudo(t, { ator });
+      // A sessão diz MASTER em todos os casos: quem decide é a linha do usuário no banco.
+      const r = await servico.calcular({}, { ...CONTEXTO, perfil: 'MASTER' });
+      assert.deepEqual(r.administracao.vinculosSst, { consultar: esperado, alterar: esperado }, JSON.stringify(ator));
+    }
+  });
+
+  test('vínculos SST: a decisão é o predicado exportado pelo serviço de vínculos (composição, não regra paralela)', async (t) => {
+    const vinculoSst = require('../../src/services/vinculo-sst.service');
+    assert.equal(typeof vinculoSst.temAutoridadeVinculoSst, 'function', 'predicado ainda não exportado: temAutoridadeVinculoSst');
+    const ator = { id: 70, ativo: true, perfil: 'SUPERVISOR' };
+    mockTudo(t, { ator });
+    const predicado = t.mock.method(vinculoSst, 'temAutoridadeVinculoSst', () => true);
+    const r = await servico.calcular({}, CONTEXTO);
+    assert.deepEqual(predicado.mock.calls.map((c) => c.arguments[0]), [ator]);
+    assert.deepEqual(r.administracao.vinculosSst, { consultar: true, alterar: true });
+  });
+
   test('uma falha em qualquer decisão propaga (o controller devolve 500) — nunca vira "permitido"', async (t) => {
     mockTudo(t, { acao: async () => { throw new Error('banco'); } });
     await assert.rejects(() => servico.calcular({}, CONTEXTO), /banco/);

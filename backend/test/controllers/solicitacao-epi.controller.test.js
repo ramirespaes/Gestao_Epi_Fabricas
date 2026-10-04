@@ -190,3 +190,56 @@ describe('solicitacao-epi.controller — escrita (12F-2)', () => {
     await assert.rejects(controller().encerrar(escrita({ params: { id: 17 }, body: { justificativa: 'x' } }), respostaFalsa()), erro);
   });
 });
+
+// ── 12G-0 ───────────────────────────────────────────────────────────
+
+describe('solicitacao-epi.controller — contexto da criação e encerráveis (12G-0)', () => {
+  const contextoSvc = () => exigirModulo('src/services/solicitacao-epi-contexto.service');
+
+  test('contexto de trabalhadores: só a empresa da sessão, a busca (null sem ela) e a paginação; 200 com o resultado do serviço', async (t) => {
+    const chamadas = [];
+    const resultado = { funcionarios: [{ id: 5 }], total: 1, pagina: 1, limite: 20 };
+    assert.equal(typeof contextoSvc().localizarTrabalhadores, 'function', 'função ainda não implementada: localizarTrabalhadores');
+    t.mock.method(contextoSvc(), 'localizarTrabalhadores', async (pool, dados) => { chamadas.push([pool, dados]); return resultado; });
+    const c = controller();
+    const res = respostaFalsa();
+    await c.contextoFuncionarios(requisicao({ query: { busca: 'Silva', pagina: 1, limite: 20 } }), res);
+    await c.contextoFuncionarios(requisicao({ query: { pagina: 2, limite: 10 } }), respostaFalsa());
+    assert.deepEqual(chamadas, [
+      [{ marca: 'pool' }, { empresaId: 3, busca: 'Silva', pagina: 1, limite: 20 }],
+      [{ marca: 'pool' }, { empresaId: 3, busca: null, pagina: 2, limite: 10 }],
+    ]);
+    assert.deepEqual([res.statusCode, res.corpo], [200, { status: 'ok', ...resultado }]);
+  });
+
+  test('contexto de materiais: empresa da sessão, trabalhador do caminho validado, filtros opcionais (null sem eles)', async (t) => {
+    const chamadas = [];
+    const resultado = { funcionarioId: 5, materiais: [], total: 0, pagina: 1, limite: 20 };
+    assert.equal(typeof contextoSvc().listarMateriais, 'function', 'função ainda não implementada: listarMateriais');
+    t.mock.method(contextoSvc(), 'listarMateriais', async (_pool, dados) => { chamadas.push(dados); return resultado; });
+    const c = controller();
+    const res = respostaFalsa();
+    await c.contextoMateriais(requisicao({ params: { funcionarioId: 5 }, query: { busca: 'Luva', previstoNoGhe: true, pagina: 1, limite: 20 } }, { params: { funcionarioId: '999' } }), res);
+    await c.contextoMateriais(requisicao({ params: { funcionarioId: 5 }, query: { pagina: 1, limite: 20 } }), respostaFalsa());
+    assert.deepEqual(chamadas, [
+      { empresaId: 3, funcionarioId: 5, busca: 'Luva', previstoNoGhe: true, pagina: 1, limite: 20 },
+      { empresaId: 3, funcionarioId: 5, busca: null, previstoNoGhe: null, pagina: 1, limite: 20 },
+    ]);
+    assert.deepEqual([res.statusCode, res.corpo], [200, { status: 'ok', ...resultado }]);
+  });
+
+  test('encerráveis: empresa da sessão, trabalhador opcional (null sem filtro) e paginação; 200 com o resultado do serviço', async (t) => {
+    const chamadas = [];
+    assert.equal(typeof consulta.listarEncerraveis, 'function', 'função ainda não implementada: listarEncerraveis');
+    t.mock.method(consulta, 'listarEncerraveis', async (_pool, dados) => { chamadas.push(dados); return pagina; });
+    const c = controller();
+    const res = respostaFalsa();
+    await c.encerraveis(requisicao({ query: { funcionarioId: 42, pagina: 2, limite: 10 } }), res);
+    await c.encerraveis(requisicao({ query: { pagina: 1, limite: 20 } }), respostaFalsa());
+    assert.deepEqual(chamadas, [
+      { empresaId: 3, funcionarioId: 42, pagina: 2, limite: 10 },
+      { empresaId: 3, funcionarioId: null, pagina: 1, limite: 20 },
+    ]);
+    assert.deepEqual([res.statusCode, res.corpo], [200, { status: 'ok', ...pagina }]);
+  });
+});

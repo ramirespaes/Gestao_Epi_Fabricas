@@ -782,7 +782,7 @@ function permissoesDaEmpresa({ ficha = false, entrega = false, perfil = 'USUARIO
   const area = { consultar: false, alterar: false };
   return {
     status: 'ok', empresaId: 3, usuarioId: 7, perfil, recursos, acoes: { MOVIMENTAR_ESTOQUE: false, REALIZAR_ENTREGA: entrega },
-    administracao: { gruposAcesso: area, permissoesGrupo: area, vinculosGrupo: area, usuarios: area, autorizacoesIndividuais: { consultar: false, concederDireta: false, delegar: false } },
+    administracao: { gruposAcesso: area, permissoesGrupo: area, vinculosGrupo: area, usuarios: area, autorizacoesIndividuais: { consultar: false, concederDireta: false, delegar: false }, vinculosSst: area },
   };
 }
 

@@ -335,6 +335,16 @@
       border:0.5px solid rgba(255,149,0,0.2);
     }
 
+    /* 12G-1: estados padrão das páginas integradas (js/estado-pagina.js), só com tokens do tema. */
+    .estado-pagina{display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px dashed var(--outline-variant);border-radius:16px;background:var(--surface);color:var(--on-surface-variant);font-size:13px;line-height:1.5}
+    .estado-pagina .material-symbols-outlined{font-size:22px;flex:none}
+    .estado-pagina p{margin:0}
+    .estado-erro,.estado-acesso-negado,.estado-sessao-invalida{border-style:solid;border-color:color-mix(in srgb,var(--error) 25%, transparent);background:var(--error-container);color:var(--error)}
+    html[data-theme="dark"] .estado-erro,html[data-theme="dark"] .estado-acesso-negado,html[data-theme="dark"] .estado-sessao-invalida{color:var(--on-surface)}
+    /* 12G-1: o que ainda está em integração não parece funcionar: cinza pelos tokens neutros do tema (nunca o azul de ação), apagado, cursor de bloqueio, igual sob o mouse. */
+    [data-area-integracao] button:disabled,[data-area-integracao] .select:disabled,.botao-em-integracao:disabled{background:var(--surface-container-high);color:var(--on-surface-variant);border:0.5px solid var(--outline-variant);opacity:.6;filter:grayscale(1);cursor:not-allowed;box-shadow:none}
+    [data-area-integracao] button:disabled:hover,.botao-em-integracao:disabled:hover{opacity:.6}
+
     .footer-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-top:18px}
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.42);display:none;align-items:center;justify-content:center;padding:20px;z-index:1000}
     .modal-overlay.open{display:flex}

@@ -82,7 +82,8 @@
    *
    * SÓ O QUE TEM EFEITO (E9): `operacoes` lista as operações que alguma
    * rota do servidor exige para aquela página — as mesmas do escopo de
-   * provisionamento do MASTER (backend/src/rbac/recursos.js). Só elas
+   * provisionamento do MASTER (backend/src/rbac/recursos.js) e, desde a
+   * 12G-1, as do `request`, que fica fora desse escopo (12E/12F). Só elas
    * ganham seletor; as demais aparecem como "não se aplica". Página ainda
    * não integrada, ou controlada por outra permissão, não tem seletor
    * nenhum: mostra `nota`, o motivo.
@@ -107,9 +108,11 @@
     // 10I: consultar fichas é Visualizar; realizar entrega é a ação REALIZAR_ENTREGA (tabela de ações).
     { id: 'epiFicha', nome: 'Ficha de EPI', operacoes: [V] },
     { id: 'employeeHistory', nome: 'Histórico de Funcionários', operacoes: [V, C, E] },
-    { id: 'request', nome: 'Pedido de EPI', operacoes: [], nota: SEM_EFEITO },
-    { id: 'supervisorApproval', nome: 'Aprovação do Supervisor', operacoes: [], nota: SEM_EFEITO },
-    { id: 'stockRequests', nome: 'Sem Estoque', operacoes: [], nota: SEM_EFEITO },
+    // 12G-1: as rotas da solicitação exigem request.visualizar (minhas), criar e
+    // editar (cancelar). Fora do escopo do MASTER: só vale o que for concedido.
+    { id: 'request', nome: 'Pedido de EPI', operacoes: [V, C, E] },
+    { id: 'supervisorApproval', nome: 'Aprovação da Segurança do Trabalho', operacoes: [], nota: 'Controlado pelas ações Aprovar solicitação e Reprovar solicitação (exigem vínculo SST), não por esta página.' },
+    { id: 'stockRequests', nome: 'Entregas por solicitação', operacoes: [], nota: 'Controlado pelas ações Realizar entrega de EPI e Encerrar solicitação, não por esta página.' },
     { id: 'importEmployees', nome: 'Importar Funcionários', operacoes: [], nota: 'Controlado pela permissão Criar de Histórico de Funcionários.' },
     { id: 'newUser', nome: 'Novo Usuário', operacoes: [], nota: GERENCIAR_USUARIOS },
     { id: 'userAdmin', nome: 'Administração de Usuários', operacoes: [], nota: GERENCIAR_USUARIOS },

@@ -198,3 +198,86 @@ describe('itensSemEstoque — a visão de quem só pede (12F-2)', () => {
     assert.deepEqual(Object.keys(entrada[0]).sort(), ['cobertura', 'id', 'posicao', 'quantidadePendente', 'situacao']);
   });
 });
+
+// ── 12G-0 ───────────────────────────────────────────────────────────
+
+const exigir = (nome) => {
+  assert.equal(typeof modulo()[nome], 'function', `função ainda não implementada: ${nome}`);
+  return modulo()[nome];
+};
+
+describe('formas públicas da 12G-0: só o que a tela precisa, nunca CPF, e-mail ou número de estoque', () => {
+  const funcionarioLido = {
+    id: 5, nome: 'Ana Souza', matricula: 'M-10', setor: 'Produção', funcao: 'Operadora', ativo: true, cpf: '12345678909', cpfMascarado: '***.***.789-09', ghe: { id: 2, nome: 'GHE' }, email: 'ana@exemplo.invalid', grupoHomogeneoId: 2,
+  };
+
+  test('trabalhadorDoContexto (L2): id, nome, matrícula, setor e função', () => {
+    const publico = exigir('trabalhadorDoContexto')(funcionarioLido);
+    assert.deepEqual(publico, {
+      id: 5, nome: 'Ana Souza', matricula: 'M-10', setor: 'Produção', funcao: 'Operadora',
+    });
+  });
+
+  test('materialDoContexto (L2): id, nome, unidade, exigeTamanho, previstoNoGhe e as sugestões de tamanho (cópia), sem saldo, lote, CA nem posição', () => {
+    const tamanhos = ['38', '40'];
+    const lido = {
+      id: 9, nome: 'Botina', unidade: 'par', exigeTamanho: true, previstoNoGhe: false, tamanhosSugeridos: tamanhos, codigoInterno: 'B-1', tipo: 'Calçado',
+      saldo: 12, fisicoUtilizavel: 12, saldoLivre: 3, comprometido: 9, prazoUsoDias: 180, exigeCa: true, oculosComGrau: null,
+    };
+    const publico = exigir('materialDoContexto')(lido);
+    assert.deepEqual(publico, {
+      id: 9, nome: 'Botina', unidade: 'par', exigeTamanho: true, previstoNoGhe: false, tamanhosSugeridos: ['38', '40'],
+    });
+    assert.notEqual(publico.tamanhosSugeridos, tamanhos);
+  });
+
+  test('trabalhadorDoDetalhe (L3): id, nome, matrícula, setor, função e situação', () => {
+    assert.deepEqual(exigir('trabalhadorDoDetalhe')(funcionarioLido), {
+      id: 5, nome: 'Ana Souza', matricula: 'M-10', setor: 'Produção', funcao: 'Operadora', ativo: true,
+    });
+    assert.equal(exigir('trabalhadorDoDetalhe')(null), null);
+  });
+
+  test('pessoaDoDetalhe (D7): só id e nome do usuário, nunca e-mail, perfil ou situação; ausente é null', () => {
+    const usuario = {
+      id: 7, nome: 'Bruno Lima', email: 'bruno@exemplo.invalid', perfil: 'ADMINISTRADOR', ativo: true, senhaHash: 'x',
+    };
+    assert.deepEqual(exigir('pessoaDoDetalhe')(usuario), { id: 7, nome: 'Bruno Lima' });
+    assert.equal(exigir('pessoaDoDetalhe')(null), null);
+    assert.equal(exigir('pessoaDoDetalhe')(undefined), null);
+  });
+
+  test('materialDoDetalhe (L3): nome e unidade; ausente é null', () => {
+    assert.deepEqual(exigir('materialDoDetalhe')({ id: 9, nome: 'Botina', unidade: 'par', ativo: true, codigoInterno: 'B-1', saldo: 4 }), { nome: 'Botina', unidade: 'par' });
+    assert.equal(exigir('materialDoDetalhe')(null), null);
+  });
+
+  test('linhaEncerravel (L4): identificação, trabalhador sem CPF, quantidades da solicitação e carimbos; sem situação, cobertura, posição, texto livre nem itens', () => {
+    const linha = {
+      id: 17, numero: 5, status: 'APROVADA_PARCIAL', solicitanteUsuarioId: 11, funcionarioId: 30, quantidadeItens: 2, criadaEm: 'c', decididaEm: 'd', canceladaEm: null, entregueEm: null,
+      trabalhador: {
+        nome: 'Ana', matricula: 'M-1', ativo: false, cpf: '12345678909',
+      },
+      observacao: 'livre', justificativaEncerramento: 'livre', itens: [{ id: 1 }], cobertura: { coberta: 1 }, situacaoOperacional: 'SUSPENSA',
+    };
+    const quantidades = {
+      solicitada: 6, aprovada: 5, entregue: 1, restante: 4,
+    };
+    const publica = exigir('linhaEncerravel')(linha, { quantidades });
+    assert.deepEqual(publica, {
+      id: 17,
+      numero: 5,
+      status: 'APROVADA_PARCIAL',
+      funcionario: {
+        id: 30, nome: 'Ana', matricula: 'M-1', ativo: false,
+      },
+      quantidadeItens: 2,
+      quantidades: {
+        solicitada: 6, aprovada: 5, entregue: 1, restante: 4,
+      },
+      criadaEm: 'c',
+      decididaEm: 'd',
+    });
+    assert.notEqual(publica.quantidades, quantidades);
+  });
+});

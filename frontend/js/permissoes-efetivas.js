@@ -124,6 +124,25 @@
       abrirComQualquer: true,
       alterar: [{ acao: 'REALIZAR_ENTREGA' }],
     },
+    // 12G-1: as telas da solicitação de EPI. Cada escrita é decidida por
+    // operação (EpiSolicitacoesEpi.capacidades), nunca por um "alterar" geral.
+    // Pedido de EPI: quem vê as próprias OU quem cria.
+    request: {
+      abrir: [{ recurso: 'request', operacao: 'visualizar' }, { recurso: 'request', operacao: 'criar' }],
+      abrirComQualquer: true,
+      alterar: [],
+    },
+    // Aprovação da Segurança do Trabalho: a fila exige APROVAR_SOLICITACAO no servidor.
+    supervisorApproval: {
+      abrir: [{ acao: 'APROVAR_SOLICITACAO' }],
+      alterar: [],
+    },
+    // Entregas por solicitação: entregáveis (REALIZAR_ENTREGA) OU encerráveis (ENCERRAR_SOLICITACAO).
+    stockRequests: {
+      abrir: [{ acao: 'REALIZAR_ENTREGA' }, { acao: 'ENCERRAR_SOLICITACAO' }],
+      abrirComQualquer: true,
+      alterar: [],
+    },
   };
 
   var MENSAGENS = {
@@ -132,7 +151,8 @@
     CONTEXTO_DIVERGENTE: 'Sua sessão mudou (outra empresa, outro usuário ou outro perfil), provavelmente em outra aba. Nenhuma operação foi liberada. Recarregue a página.',
   };
 
-  var AREAS = ['gruposAcesso', 'permissoesGrupo', 'vinculosGrupo', 'usuarios'];
+  // vinculosSst (12G-0): a mesma autoridade dos endpoints de vínculo SST.
+  var AREAS = ['gruposAcesso', 'permissoesGrupo', 'vinculosGrupo', 'usuarios', 'vinculosSst'];
   var OPERACOES_RECURSO = ['visualizar', 'criar', 'editar', 'excluir'];
 
   function http() {
@@ -350,7 +370,35 @@
       aviso(MENSAGENS.SEM_ACESSO);
       return null;
     }
+    acompanharRevalidacao(o.links, r.permissoes);
     return { permissoes: r.permissoes, podeAlterar: podeAlterar(r.permissoes, o.pagina) };
+  }
+
+  /**
+   * Volta pelo histórico (BFCache) com a MESMA sessão (12G-1): a página
+   * guardada traz o menu calculado na carga. As permissões são consultadas de
+   * novo, como o Início do Portal já fazia, e o menu é reaplicado antes de a
+   * página reaparecer. Mudou alguma coisa: a página recarrega e refaz o fluxo
+   * dela do zero (acesso, botões e dados). Iguais: reaparece como estava.
+   * 401: Portal. Falha ou outro contexto: menu fechado e a página não volta.
+   */
+  function acompanharRevalidacao(links, aplicadas) {
+    var sessao = global.EpiSessaoEmpresarial;
+    if (!sessao || typeof sessao.aoRevalidar !== 'function') return;
+    var assinatura = JSON.stringify(aplicadas);
+    sessao.aoRevalidar(async function (contexto) {
+      var r = await carregar(esperadoDoContexto(contexto));
+      if (!r.ok) {
+        aplicarMenu(null, links);
+        if (r.motivo === 'SEM_SESSAO') {
+          sessao.sessaoEncerrada();
+          return { acao: 'encerrada' };
+        }
+        return { acao: 'bloquear', mensagem: r.motivo === 'CONTEXTO_DIVERGENTE' ? MENSAGENS.CONTEXTO_DIVERGENTE : MENSAGENS.FALHA };
+      }
+      aplicarMenu(r.permissoes, links);
+      return { acao: JSON.stringify(r.permissoes) === assinatura ? 'liberar' : 'recarregar' };
+    });
   }
 
   /**

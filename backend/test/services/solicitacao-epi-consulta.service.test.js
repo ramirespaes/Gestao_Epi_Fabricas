@@ -258,27 +258,93 @@ describe('leitura em retrato único e montagem das linhas', () => {
   });
 });
 
+describe('listarEncerraveis — a lista mínima de quem encerra (12G-0)', () => {
+  test('validação antes do banco: empresa, trabalhador opcional e paginação', async () => {
+    for (const extra of [{ empresaId: 0 }, { funcionarioId: 0 }, { funcionarioId: '5' }, { pagina: 0 }, { limite: 101 }]) {
+      await assert.rejects(funcao('listarEncerraveis')(poolFechado, { empresaId: EMPRESA, pagina: 1, limite: 20, ...extra }), TypeError, JSON.stringify(extra));
+    }
+  });
+
+  test('retrato único: as aprovadas da empresa (pelo repositório das encerráveis), as quantidades derivadas dos itens e só a linha mínima; nenhuma cobertura é lida', async (t) => {
+    const lista = t.mock.method(consultaRepo(), 'listarEncerraveis', async () => [linha({ status: 'APROVADA_PARCIAL', decididaEm: DECIDIDA })]);
+    const conta = t.mock.method(consultaRepo(), 'contarEncerraveis', async () => 7);
+    const itens = t.mock.method(itemRepo(), 'listarPorSolicitacoesComEntregue', async () => [
+      itemDe({ decisao: 'APROVADO', quantidade: 4, quantidadeAprovada: 3, quantidadeEntregue: 1 }),
+    ]);
+    const cobertura = t.mock.method(coberturaRepo(), 'listarCoberturaDasSolicitacoes', async () => []);
+    const pool = poolFalso();
+    const r = await funcao('listarEncerraveis')(pool, {
+      empresaId: EMPRESA, funcionarioId: 30, pagina: 2, limite: 5,
+    });
+    assert.deepEqual(lista.mock.calls[0].arguments.slice(1), [EMPRESA, { funcionarioId: 30, pagina: 2, limite: 5 }]);
+    assert.deepEqual(conta.mock.calls[0].arguments.slice(1), [EMPRESA, { funcionarioId: 30 }]);
+    assert.deepEqual(itens.mock.calls[0].arguments.slice(1), [EMPRESA, [17]]);
+    assert.equal(cobertura.mock.calls.length, 0, 'a lista de quem encerra não calcula cobertura');
+    assert.deepEqual(r, {
+      solicitacoes: [{
+        id: 17,
+        numero: 5,
+        status: 'APROVADA_PARCIAL',
+        funcionario: {
+          id: 30, nome: 'Trabalhador Fictício', matricula: 'T-1', ativo: true,
+        },
+        quantidadeItens: 1,
+        quantidades: {
+          solicitada: 4, aprovada: 3, entregue: 1, restante: 2,
+        },
+        criadaEm: CRIADA,
+        decididaEm: DECIDIDA,
+      }],
+      total: 7,
+      pagina: 2,
+      limite: 5,
+    });
+    assert.deepEqual([pool.comandos[0], pool.comandos.at(-1)], ['BEGIN READ ONLY ISOLATION LEVEL REPEATABLE READ', 'COMMIT']);
+  });
+
+  test('página vazia: nenhum item é lido', async (t) => {
+    t.mock.method(consultaRepo(), 'listarEncerraveis', async () => []);
+    t.mock.method(consultaRepo(), 'contarEncerraveis', async () => 0);
+    const itens = t.mock.method(itemRepo(), 'listarPorSolicitacoesComEntregue', async () => []);
+    const r = await funcao('listarEncerraveis')(poolFalso(), { empresaId: EMPRESA, pagina: 9, limite: 20 });
+    assert.deepEqual([r.solicitacoes, r.total, itens.mock.calls.length], [[], 0, 0]);
+  });
+});
+
 describe('buscarDetalhe — quem vê o detalhe (12F-1)', () => {
   const autorizacao = () => require('../../src/middleware/autorizacao');
   const solicitacaoSvc = () => require('../../src/services/solicitacao-epi.service');
   const dados = (extra = {}) => ({ empresaId: EMPRESA, usuarioId: ATOR, perfil: 'USUARIO', solicitacaoId: 17, hoje: HOJE, ...extra });
+  const DECISOR = 8;
   const visao = () => ({
-    solicitacao: { id: 17, status: 'APROVADA', solicitanteUsuarioId: ATOR, encerramento: null, situacaoOperacional: 'PARCIALMENTE_COBERTA' },
+    solicitacao: {
+      id: 17, status: 'APROVADA', solicitanteUsuarioId: ATOR, funcionarioId: 30, decisao: { decididaPor: DECISOR, decididaEm: DECIDIDA }, encerramento: null, situacaoOperacional: 'PARCIALMENTE_COBERTA',
+    },
     itens: [
       {
-        id: 1, quantidade: 5, decisao: 'APROVADO', quantidadeAprovada: 4, quantidadeEntregue: 1, quantidadePendente: 3, situacao: 'PARCIALMENTE_COBERTA',
+        id: 1, materialId: 3, quantidade: 5, decisao: 'APROVADO', quantidadeAprovada: 4, quantidadeEntregue: 1, quantidadePendente: 3, situacao: 'PARCIALMENTE_COBERTA',
         cobertura: { coberta: 1, semCobertura: 2, acumuladoAnterior: 0, fisicoUtilizavel: 1 },
         posicao: { fisicoUtilizavel: 1, demandaPendente: 3, comprometido: 1, saldoLivre: 0, semCobertura: 2 },
       },
       {
-        id: 2, quantidade: 2, decisao: 'REPROVADO', quantidadeAprovada: 0, quantidadeEntregue: 0, quantidadePendente: null, situacao: null, cobertura: null, posicao: null,
+        id: 2, materialId: 4, quantidade: 2, decisao: 'REPROVADO', quantidadeAprovada: 0, quantidadeEntregue: 0, quantidadePendente: null, situacao: null, cobertura: null, posicao: null,
       },
     ],
+  });
+  // 12G-0: o que a leitura de apresentação devolve (já sem CPF e sem e-mail, pelas colunas do repositório).
+  const apresentacao = () => ({
+    funcionario: {
+      id: 30, nome: 'Trabalhador Fictício', matricula: 'T-1', setor: 'Produção', funcao: 'Operador', ativo: true,
+    },
+    materiais: [{ id: 3, nome: 'Botina', unidade: 'par' }, { id: 4, nome: 'Luva', unidade: 'par' }],
+    usuarios: [{ id: ATOR, nome: 'Quem pediu' }, { id: DECISOR, nome: 'Quem decidiu' }],
   });
 
   function simular(t, { acoes = [], visualizar = false, resultado = visao() } = {}) {
     const avaliadas = { acoes: [], recursos: [] };
     const leituras = [];
+    assert.equal(typeof consultaRepo().dadosDeApresentacao, 'function', 'função ainda não implementada: dadosDeApresentacao');
+    avaliadas.apresentacao = t.mock.method(consultaRepo(), 'dadosDeApresentacao', async () => apresentacao());
     t.mock.method(autorizacao(), 'avaliarPermissaoAcao', async (pool, contexto, acao) => { avaliadas.acoes.push([contexto, acao]); return acoes.includes(acao); });
     t.mock.method(autorizacao(), 'avaliarPermissaoRecurso', async (pool, contexto, recurso) => {
       avaliadas.recursos.push([contexto, recurso]);
@@ -351,5 +417,30 @@ describe('buscarDetalhe — quem vê o detalhe (12F-1)', () => {
     const erro = Object.assign(new Error('Solicitação não encontrada'), { status: 404, codigo: 'SOLICITACAO_NAO_ENCONTRADA' });
     solicitacaoSvc().buscarSolicitacao.mock.mockImplementation(async () => { throw erro; });
     await assert.rejects(funcao('buscarDetalhe')(poolFalso(), dados()), erro);
+  });
+
+  test('apresentação (12G-0): lida depois da autorização e do 404, só com os ids da própria solicitação; trabalhador, nomes e materiais anexados', async (t) => {
+    const { avaliadas } = simular(t, { acoes: ['APROVAR_SOLICITACAO'] });
+    const pool = poolFalso();
+    const detalhe = await funcao('buscarDetalhe')(pool, dados());
+    const chamadas = avaliadas.apresentacao.mock.calls.map((c) => c.arguments.slice(1));
+    assert.deepEqual(chamadas, [[EMPRESA, { funcionarioId: 30, materialIds: [3, 4], usuarioIds: [ATOR, DECISOR] }]]);
+    assert.deepEqual(pool.comandos.filter((c) => /^(BEGIN|COMMIT|ROLLBACK)/.test(c)), ['BEGIN READ ONLY ISOLATION LEVEL REPEATABLE READ', 'COMMIT'], 'somente leitura');
+    assert.deepEqual(detalhe.solicitacao.funcionario, apresentacao().funcionario);
+    assert.deepEqual(detalhe.solicitacao.solicitante, { id: ATOR, nome: 'Quem pediu' });
+    assert.deepEqual(detalhe.solicitacao.decisao, { decididaPor: DECISOR, decididaEm: DECIDIDA, decisor: { id: DECISOR, nome: 'Quem decidiu' } });
+    assert.equal(detalhe.solicitacao.encerramento, null);
+    assert.deepEqual(detalhe.itens.map((i) => i.material), [{ nome: 'Botina', unidade: 'par' }, { nome: 'Luva', unidade: 'par' }]);
+  });
+
+  test('sem autoridade (403) ou não encontrada (404): nenhum dado de apresentação é lido', async (t) => {
+    const negado = simular(t);
+    await assert.rejects(funcao('buscarDetalhe')(poolFalso(), dados()), (erro) => erro.status === 403);
+    assert.equal(negado.avaliadas.apresentacao.mock.calls.length, 0);
+    t.mock.restoreAll();
+    const naoEncontrada = simular(t, { visualizar: true });
+    solicitacaoSvc().buscarSolicitacao.mock.mockImplementation(async () => { throw Object.assign(new Error('x'), { status: 404 }); });
+    await assert.rejects(funcao('buscarDetalhe')(poolFalso(), dados()), (erro) => erro.status === 404);
+    assert.equal(naoEncontrada.avaliadas.apresentacao.mock.calls.length, 0);
   });
 });

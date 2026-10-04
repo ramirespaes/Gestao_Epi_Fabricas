@@ -290,3 +290,42 @@ describe('solicitacao-epi.schema — entregar (12F-2)', () => {
     assert.equal(body.safeParse(entregaValida({ confirmacao: undefined })).success, false);
   });
 });
+
+// ── 12G-0 ───────────────────────────────────────────────────────────
+
+describe('solicitacao-epi.schema — contexto da nova solicitação (12G-0)', () => {
+  test('trabalhadores: busca opcional aparada (até 100), paginação; nada de CPF, empresa ou campo desconhecido', () => {
+    const q = schema().contextoFuncionarios.query;
+    assert.deepEqual(q.safeParse({}).data, { pagina: 1, limite: 20 });
+    assert.deepEqual(q.safeParse({ busca: '  Silva ', pagina: '2', limite: '50' }).data, { busca: 'Silva', pagina: 2, limite: 50 });
+    assert.equal(q.safeParse({ busca: 'x'.repeat(100) }).success, true);
+    for (const bruto of [{ busca: '' }, { busca: '   ' }, { busca: 'x'.repeat(101) }, { busca: 'a\u0000' }, { limite: '101' }, { pagina: '0' },
+      { cpf: '12345678909' }, { empresaId: '2' }, { ativo: 'false' }, { funcionarioId: '1' }]) {
+      assert.equal(q.safeParse(bruto).success, false, JSON.stringify(bruto));
+    }
+  });
+
+  test('materiais: o trabalhador no caminho; busca, previsto no GHE (true/false) e paginação opcionais; nada além', () => {
+    const { params, query } = schema().contextoMateriais;
+    assert.deepEqual(params.safeParse({ funcionarioId: '7' }).data, { funcionarioId: 7 });
+    for (const funcionarioId of ['0', '-1', '07', 'abc', '2147483648']) assert.equal(params.safeParse({ funcionarioId }).success, false, funcionarioId);
+    assert.equal(params.safeParse({ funcionarioId: '7', empresaId: '2' }).success, false);
+    assert.deepEqual(query.safeParse({}).data, { pagina: 1, limite: 20 });
+    assert.deepEqual(query.safeParse({ busca: ' Luva ', previstoNoGhe: 'true' }).data, { busca: 'Luva', previstoNoGhe: true, pagina: 1, limite: 20 });
+    assert.equal(query.safeParse({ previstoNoGhe: 'false' }).data.previstoNoGhe, false);
+    for (const bruto of [{ previstoNoGhe: 'sim' }, { previstoNoGhe: '1' }, { busca: '' }, { saldo: '1' }, { comEstoque: 'true' }, { empresaId: '2' }, { limite: '0' }]) {
+      assert.equal(query.safeParse(bruto).success, false, JSON.stringify(bruto));
+    }
+  });
+});
+
+describe('solicitacao-epi.schema — encerráveis (12G-0)', () => {
+  test('trabalhador opcional e paginação; sem status, situação, empresa nem campo desconhecido', () => {
+    const q = schema().encerraveis.query;
+    assert.deepEqual(q.safeParse({}).data, { pagina: 1, limite: 20 });
+    assert.deepEqual(q.safeParse({ funcionarioId: '42', pagina: '3', limite: '10' }).data, { funcionarioId: 42, pagina: 3, limite: 10 });
+    for (const bruto of [{ funcionarioId: '0' }, { funcionarioId: 'abc' }, { status: 'APROVADA' }, { situacao: 'SUSPENSA' }, { empresaId: '2' }, { limite: '101' }]) {
+      assert.equal(q.safeParse(bruto).success, false, JSON.stringify(bruto));
+    }
+  });
+});

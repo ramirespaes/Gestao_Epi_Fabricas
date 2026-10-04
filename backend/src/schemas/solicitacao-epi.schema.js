@@ -2,7 +2,7 @@
 
 const { z } = require('zod');
 const {
-  LIMITES, inteiroQuery, idParametro, idCorpo, textoCurto, paginacaoQuery,
+  LIMITES, inteiroQuery, booleanoQuery, idParametro, idCorpo, textoCurto, paginacaoQuery,
 } = require('./campos.schema');
 const { confirmacao, chaveIdempotencia } = require('./entrega-epi.schema');
 const itemRepo = require('../repositories/solicitacao-epi-item.repository');
@@ -54,6 +54,28 @@ const entregaveis = {
 const detalhe = {
   params: porId,
   query: z.strictObject({}),
+};
+
+// ── 12G-0: contexto da criação e encerráveis ─────────────────────────
+
+const BUSCA_MAXIMA = 100;
+const busca = textoCurto(BUSCA_MAXIMA, 'BUSCA_INVALIDA', 'Termo de busca inválido');
+
+// Trabalhador por nome ou matrícula; o CPF não é critério de busca aqui.
+const contextoFuncionarios = {
+  query: z.strictObject({ busca: busca.optional(), ...paginacaoQuery }),
+};
+
+const contextoMateriais = {
+  params: z.strictObject({ funcionarioId: idParametro }),
+  query: z.strictObject({ busca: busca.optional(), previstoNoGhe: booleanoQuery.optional(), ...paginacaoQuery }),
+};
+
+const encerraveis = {
+  query: z.strictObject({
+    funcionarioId: inteiroQuery(1, LIMITES.ID_MAXIMO).optional(),
+    ...paginacaoQuery,
+  }),
 };
 
 // ── Escrita (12F-2) ─────────────────────────────────────────────────
@@ -129,5 +151,19 @@ const entregar = {
 };
 
 module.exports = {
-  minhas, fila, entregaveis, detalhe, criar, cancelar, decidir, encerrar, entregar, STATUS, MOTIVOS, DECISOES,
+  minhas,
+  fila,
+  entregaveis,
+  detalhe,
+  contextoFuncionarios,
+  contextoMateriais,
+  encerraveis,
+  criar,
+  cancelar,
+  decidir,
+  encerrar,
+  entregar,
+  STATUS,
+  MOTIVOS,
+  DECISOES,
 };

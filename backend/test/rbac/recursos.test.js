@@ -109,4 +109,13 @@ describe('escopo do provisionamento do MASTER', () => {
     assert.equal(recursos.ESCOPO_PROVISIONAMENTO_MASTER.recursos.some((r) => r.recurso === 'request'), false);
     assert.deepEqual([...recursos.ESCOPO_PROVISIONAMENTO_MASTER.acoes], ['MOVIMENTAR_ESTOQUE', 'REALIZAR_ENTREGA'], 'o escopo do MASTER não muda na 12F-2');
   });
+
+  test('Bloco 12 (12G-0): o contexto da criação é request.criar; as encerráveis são ENCERRAR_SOLICITACAO (não REALIZAR_ENTREGA); o escopo do MASTER não muda', () => {
+    const solicitacaoRoutes = require('../../src/routes/solicitacao-epi.routes');
+    assert.equal(solicitacaoRoutes.OPERACAO_CONTEXTO, 'criar');
+    assert.equal(solicitacaoRoutes.ACAO_ENCERRAVEIS, 'ENCERRAR_SOLICITACAO');
+    assert.notEqual(solicitacaoRoutes.ACAO_ENCERRAVEIS, solicitacaoRoutes.ACAO_ENTREGAVEIS);
+    assert.deepEqual([...recursos.ESCOPO_PROVISIONAMENTO_MASTER.acoes], ['MOVIMENTAR_ESTOQUE', 'REALIZAR_ENTREGA']);
+    assert.equal(recursos.ESCOPO_PROVISIONAMENTO_MASTER.recursos.some((r) => r.recurso === 'request'), false);
+  });
 });
