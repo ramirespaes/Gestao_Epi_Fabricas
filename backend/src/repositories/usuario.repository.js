@@ -124,6 +124,36 @@ async function buscarPorId(executor, empresaId, id) {
 }
 
 /**
+ * Situação do usuário e o funcionário EXPLICITAMENTE vinculado a ele
+ * (usuarios.funcionario_id, migration 073), sempre da mesma empresa. Nada é
+ * inferido por nome, e-mail, CPF ou matrícula: sem vínculo, `funcionario` é
+ * null. O CPF sai cru daqui e só o controller o mascara.
+ */
+async function buscarContaOperacional(executor, empresaId, id) {
+  exigirEmpresa(empresaId);
+  exigirIdentificador(id);
+
+  const { rows } = await executor.query(
+    `SELECT u.ativo, f.id AS funcionario_id, f.matricula, f.cpf, f.ativo AS funcionario_ativo
+       FROM usuarios u
+       LEFT JOIN funcionarios f ON f.empresa_id = u.empresa_id AND f.id = u.funcionario_id
+      WHERE u.empresa_id = $1 AND u.id = $2`,
+    [empresaId, id],
+  );
+
+  const linha = rows[0];
+  if (linha === undefined) {
+    return null;
+  }
+  return {
+    ativo: linha.ativo,
+    funcionario: linha.funcionario_id === null || linha.funcionario_id === undefined
+      ? null
+      : { id: linha.funcionario_id, matricula: linha.matricula, cpf: linha.cpf, ativo: linha.funcionario_ativo },
+  };
+}
+
+/**
  * Igual a buscarPorId, mas com FOR UPDATE: usada dentro de uma transação
  * para impedir que outra transação concorrente inative o usuário (ou altere
  * qualquer campo dele) enquanto esta decide algo com base no que leu —
@@ -473,6 +503,21 @@ async function buscarVinculoAtivoDaIdentidade(executor, identidadeId, empresaId)
   return rows[0] === undefined ? null : mapearVinculoIdentidade(rows[0]);
 }
 
+/**
+ * Quantos vínculos INATIVOS (em empresas ativas) a identidade tem. Só serve
+ * para o login dizer "usuário desativado" DEPOIS de a senha conferir e de
+ * não restar nenhuma empresa utilizável.
+ */
+async function contarVinculosInativosDaIdentidade(executor, identidadeId) {
+  exigirIdentidade(identidadeId);
+  const { rows } = await executor.query(
+    `SELECT count(*)::int AS total FROM usuarios u JOIN empresas e ON e.id = u.empresa_id
+      WHERE u.identidade_id = $1 AND NOT u.ativo AND e.ativo`,
+    [identidadeId],
+  );
+  return rows[0].total;
+}
+
 const PERFIS_CONHECIDOS = Object.freeze(['MASTER', 'ADMINISTRADOR', 'SUPERVISOR', 'USUARIO']);
 const TAMANHO_MAXIMO_NOME = 150;
 
@@ -489,10 +534,19 @@ const TAMANHO_MAXIMO_NOME = 150;
  * traduzir — uq_usuarios_empresa_identidade (025: uma identidade, um
  * vínculo por empresa) e a FK de perfil são interpretadas pelo serviço.
  *
+ * Dados ADMINISTRATIVOS do vínculo (076; criação pela Gestão de Usuários):
+ * `matricula` (única por empresa), `setor`, `horarioTrabalho` ({inicio, fim}
+ * em HH:MM, informativo) e `grupoAcessoId` (FK composta da 020: mesma
+ * empresa). Todos opcionais aqui; a obrigatoriedade é do serviço. Sem nenhum
+ * deles, o INSERT é o mesmo de sempre.
+ *
  * @param {{query: Function}} executor
- * @param {{empresaId: number, nome: string, perfil: string, identidadeId: number}} dados
+ * @param {{empresaId: number, nome: string, perfil: string, identidadeId: number,
+ *   matricula?: string|null, setor?: string|null, horarioTrabalho?: {inicio: string, fim: string}|null, grupoAcessoId?: number|null}} dados
  */
-async function criar(executor, { empresaId, nome, perfil, identidadeId }) {
+async function criar(executor, {
+  empresaId, nome, perfil, identidadeId, matricula = null, setor = null, horarioTrabalho = null, grupoAcessoId = null,
+}) {
   exigirEmpresa(empresaId);
   if (typeof nome !== 'string' || nome.length === 0 || nome.length > TAMANHO_MAXIMO_NOME) {
     throw new TypeError('nome de usuário inválido');
@@ -503,24 +557,81 @@ async function criar(executor, { empresaId, nome, perfil, identidadeId }) {
   if (!Number.isInteger(identidadeId) || identidadeId <= 0) {
     throw new TypeError('identificador de identidade inválido');
   }
+  exigirTextoOpcional(matricula, TAMANHO_MAXIMO_MATRICULA, 'matrícula');
+  exigirTextoOpcional(setor, TAMANHO_MAXIMO_SETOR, 'setor');
+  exigirHorarioOpcional(horarioTrabalho);
+  if (grupoAcessoId !== null && (!Number.isInteger(grupoAcessoId) || grupoAcessoId <= 0)) {
+    throw new TypeError('identificador de grupo de acesso inválido');
+  }
+
+  if (matricula === null && setor === null && horarioTrabalho === null && grupoAcessoId === null) {
+    const { rows } = await executor.query(
+      `INSERT INTO usuarios (empresa_id, nome, email, senha_hash, perfil, identidade_id)
+       VALUES ($1, $2, NULL, NULL, $3, $4)
+       RETURNING ${PROJECAO_PUBLICA}, identidade_id`,
+      [empresaId, nome, perfil, identidadeId],
+    );
+    const linha = rows[0];
+    return { ...mapearPublico(linha), identidadeId: linha.identidade_id };
+  }
 
   const { rows } = await executor.query(
-    `INSERT INTO usuarios (empresa_id, nome, email, senha_hash, perfil, identidade_id)
-     VALUES ($1, $2, NULL, NULL, $3, $4)
+    `INSERT INTO usuarios (empresa_id, nome, email, senha_hash, perfil, identidade_id,
+                           matricula, setor, horario_trabalho_inicio, horario_trabalho_fim, grupo_acesso_id)
+     VALUES ($1, $2, NULL, NULL, $3, $4, $5, $6, $7, $8, $9)
      RETURNING ${PROJECAO_PUBLICA}, identidade_id`,
-    [empresaId, nome, perfil, identidadeId],
+    [empresaId, nome, perfil, identidadeId, matricula, setor,
+      horarioTrabalho === null ? null : horarioTrabalho.inicio, horarioTrabalho === null ? null : horarioTrabalho.fim, grupoAcessoId],
   );
 
   const linha = rows[0];
   return { ...mapearPublico(linha), identidadeId: linha.identidade_id };
 }
 
+const TAMANHO_MAXIMO_MATRICULA = 30;
+const TAMANHO_MAXIMO_SETOR = 100;
+const HORA_HH_MM = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
+
+function exigirTextoOpcional(valor, maximo, nome) {
+  if (valor !== null && (typeof valor !== 'string' || valor.trim() !== valor || valor.length === 0 || Array.from(valor).length > maximo)) {
+    throw new TypeError(`${nome} inválida: texto aparado de 1 a ${maximo} caracteres, ou null`);
+  }
+}
+
+function exigirHorarioOpcional(horario) {
+  if (horario === null) {
+    return;
+  }
+  if (!horario || typeof horario !== 'object' || !HORA_HH_MM.test(horario.inicio) || !HORA_HH_MM.test(horario.fim)) {
+    throw new TypeError('horário de trabalho inválido: {inicio, fim} em HH:MM, ou null');
+  }
+}
+
+/** Matrícula já usada por outro vínculo DESTA empresa (uq_usuarios_empresa_matricula, 076). */
+async function existeMatricula(executor, empresaId, matricula) {
+  exigirEmpresa(empresaId);
+  exigirTextoOpcional(matricula, TAMANHO_MAXIMO_MATRICULA, 'matrícula');
+  if (matricula === null) {
+    throw new TypeError('matrícula inválida');
+  }
+
+  const { rows } = await executor.query(
+    'SELECT 1 FROM usuarios WHERE empresa_id = $1 AND matricula = $2 LIMIT 1',
+    [empresaId, matricula],
+  );
+
+  return rows.length > 0;
+}
+
 module.exports = {
   criar,
+  existeMatricula,
+  contarVinculosInativosDaIdentidade,
   listarVinculosAtivosDaIdentidade,
   buscarVinculoAtivoDaIdentidade,
   buscarPorEmail,
   buscarPorId,
+  buscarContaOperacional,
   buscarPorIdParaAtualizacao,
   buscarVinculoGrupoParaAtualizacao,
   atualizarGrupoAcesso,

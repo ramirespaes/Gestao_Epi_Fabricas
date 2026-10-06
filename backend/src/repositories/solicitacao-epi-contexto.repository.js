@@ -5,7 +5,8 @@ const { escaparCoringasLike } = require('../utils/like');
 /**
  * Materiais para quem pede escolher na nova solicitação de EPI (12G-0, L2):
  * os ativos, com a marca "previsto no GHE" do trabalhador e as sugestões de
- * tamanho tiradas dos lotes que já existiram para o material. O ainda não
+ * tamanho: a grade do material (12G-8) ou, no legado sem grade, os tamanhos
+ * dos lotes que já existiram para o material. O ainda não
  * classificado quanto ao tamanho (exige_tamanho nulo, como a 044 deixou os
  * antigos) também vem, para a tela explicar por que não pode ser pedido: a
  * criação continua recusando. Nenhum número de estoque: a sugestão não depende
@@ -23,8 +24,13 @@ const FILTRO = `FROM materiais m
     AND ($3::text IS NULL OR m.nome ILIKE '%' || $3::text || '%' OR m.codigo_interno ILIKE '%' || $3::text || '%')
     AND ($4::boolean IS NULL OR ${PREVISTO} = $4::boolean)`;
 
-const TAMANHOS = `ARRAY(SELECT DISTINCT l.tamanho FROM estoque_lotes l
-    WHERE l.empresa_id = m.empresa_id AND l.material_id = m.id AND l.tamanho IS NOT NULL ORDER BY l.tamanho)`;
+// 12G-8: material com grade sugere a grade, na ordem dela (inclusive tamanho sem
+// estoque); o legado sem grade continua sugerindo os tamanhos dos lotes.
+const TAMANHOS = `CASE WHEN EXISTS (SELECT 1 FROM material_tamanhos mt WHERE mt.empresa_id = m.empresa_id AND mt.material_id = m.id)
+    THEN ARRAY(SELECT mt.tamanho FROM material_tamanhos mt WHERE mt.empresa_id = m.empresa_id AND mt.material_id = m.id ORDER BY mt.ordem)
+    ELSE ARRAY(SELECT DISTINCT l.tamanho FROM estoque_lotes l
+      WHERE l.empresa_id = m.empresa_id AND l.material_id = m.id AND l.tamanho IS NOT NULL ORDER BY l.tamanho)
+  END`;
 
 function exigirId(valor, nome) {
   if (!Number.isInteger(valor) || valor <= 0) {

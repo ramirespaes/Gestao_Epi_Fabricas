@@ -105,6 +105,13 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
+  // 12G-7: pictograma do material (js/catalogo-visual.js); em Node os testes o carregam pelo require.
+  function catalogo() {
+    if (global.EpiCatalogoVisual) return global.EpiCatalogoVisual;
+    if (typeof module !== 'undefined' && module.exports) return require('./catalogo-visual'); // eslint-disable-line global-require
+    throw new Error('EpiCatalogoVisual não carregado: inclua js/catalogo-visual.js antes de js/validade-estoque.js');
+  }
+
   function situacaoDe(codigo) {
     return hasOwn(SITUACOES, codigo) ? SITUACOES[codigo] : { rotulo: texto(codigo), classe: 'badge-warning' };
   }
@@ -115,7 +122,7 @@
     var bloqueado = Number(l.bloqueado) || 0;
     var detalhe = function (v) { return texto(v) ? ' <small class="detalhe">' + escaparHtml(v) + '</small>' : ''; };
     return '<tr>'
-      + '<td>' + escaparHtml(l.material)
+      + '<td>' + catalogo().marcacao(l) + escaparHtml(l.material)
         + (l.materialAtivo === false ? ' <span class="tag-inativo">Material inativo</span>' : '') + detalhe(l.codigoInterno) + '</td>'
       + '<td>' + escaparHtml(texto(l.tipo) || TRACO) + detalhe(l.categoria) + '</td>'
       + '<td>' + escaparHtml(textoDe.tamanho(l.tamanho)) + '</td>'

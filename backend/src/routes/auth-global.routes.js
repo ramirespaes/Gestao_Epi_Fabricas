@@ -5,7 +5,7 @@ const { validar } = require('../middleware/validar');
 const authGlobalSchemas = require('../schemas/auth-global.schema');
 const { limitadorAutenticacao } = require('../middleware/rate-limit');
 const { authGlobalController } = require('../controllers/auth-global.controller');
-const { exigirSessaoGlobal } = require('../middleware/autenticacao-global');
+const { exigirSessaoGlobal, exigirSessaoGlobalComSenhaProvisoria } = require('../middleware/autenticacao-global');
 const { exigirTurnstilePortal } = require('../middleware/turnstile');
 const { turnstileController: turnstileControllerPadrao } = require('../controllers/turnstile.controller');
 
@@ -35,7 +35,7 @@ const { turnstileController: turnstileControllerPadrao } = require('../controlle
  */
 
 function criarAuthGlobalRoutes({
-  controller, limitador, exigirSessaoGlobal: exigirInjetado, exigirTurnstile, turnstileController,
+  controller, limitador, exigirSessaoGlobal: exigirInjetado, exigirSessaoGlobalMe = exigirInjetado, exigirTurnstile, turnstileController,
 }) {
   // Sem valor padrão de propósito: o login nunca é montado sem a verificação.
   if (typeof exigirTurnstile !== 'function') {
@@ -48,7 +48,8 @@ function criarAuthGlobalRoutes({
 
   router.post('/auth/global/login', limitador, validar({ body: authGlobalSchemas.login.body }), exigirTurnstile, controller.login);
   router.get('/auth/global/turnstile', turnstileController.configuracao);
-  router.get('/auth/global/me', exigirInjetado, controller.me);
+  // /me continua aberto à identidade em senha provisória (074): é como o Portal sabe que precisa trocar.
+  router.get('/auth/global/me', exigirSessaoGlobalMe, controller.me);
   router.post(
     '/auth/global/empresas/:id/selecionar',
     exigirInjetado,
@@ -64,6 +65,7 @@ const authGlobalRoutes = criarAuthGlobalRoutes({
   controller: authGlobalController,
   limitador: limitadorAutenticacao,
   exigirSessaoGlobal,
+  exigirSessaoGlobalMe: exigirSessaoGlobalComSenhaProvisoria,
   exigirTurnstile: exigirTurnstilePortal,
   turnstileController: turnstileControllerPadrao,
 });

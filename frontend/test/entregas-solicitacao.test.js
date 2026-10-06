@@ -660,16 +660,17 @@ describe('29. semântica, acessibilidade, segurança e visual', () => {
     assert.equal(pg.consulta('img').length, 0);
     assert.ok(pg.textoDoDom().includes(ATAQUE));
     assert.deepEqual(pg.documento.usosDeInnerHTML, []);
-    assert.deepEqual(pg.storage.filter((x) => !(x.operacao === 'removeItem' || x.storage === 'cookie')), []);
+    // Só o cache de pintura da aparência (js/tema.js, Configurações) toca o armazenamento; nada da página.
+    assert.deepEqual(pg.storage.filter((x) => !(x.operacao === 'removeItem' || x.storage === 'cookie' || x.chave === 'safework-aparencia')), []);
   });
 
-  test('nada de "Em integração" na área funcional; o alerta (12G-6) continua desabilitado; a regra futura segue preservada em comentário', () => {
+  test('nada de "Em integração" na área funcional; o "Gerar alerta" (12G-6, testado em alerta-falta-estoque.test.js) deixou de ser "Em integração"; a regra futura segue preservada em comentário', () => {
     const bruto = fs.readFileSync(path.join(RAIZ, PAGINA), 'utf8');
     assert.match(bruto, /<!--[\s\S]*Quando um funcionário solicitar um material sem estoque/);
     const html = bruto.replace(/<!--[\s\S]*?-->/g, '').replace(/<nav class="nav">[\s\S]*?<\/nav>/, '');
     const protegido = html.slice(html.indexOf('id="conteudoProtegido"'));
     assert.equal(/Em integração|data-area-integracao|data-estado-area/.test(protegido), false);
-    assert.match(html, /class="filled-btn botao-em-integracao"[^>]*disabled[^>]*>[\s\S]*?Gerar alerta/);
+    assert.match(html, /<button class="filled-btn" id="botaoGerarAlerta" type="button" disabled style="display:none">[\s\S]*?Gerar alerta<\/button>/);
   });
 
   for (const tema of ['light', 'dark']) {

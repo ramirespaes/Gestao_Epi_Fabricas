@@ -212,7 +212,8 @@ describe('C3 — Itens Disponíveis pela página integrada (PostgreSQL real)', (
   test('permissão independente: supervisor com materials SEM availableItems não abre e a API recusa (403, mensagem própria)', async () => {
     const pagina = await abrirPagina(EMAILS.supervisor);
     assert.equal(pagina.podeAbrir, false);
-    assert.equal(EpiPermissoes.podeAbrir(pagina.permissoes, 'materials'), true);
+    // 078: a Gestão de Estoque abre pelos três acessos (criar produto, entrada, baixa); só visualizar não abre.
+    assert.equal(EpiPermissoes.podeAbrir(pagina.permissoes, 'materials'), false);
     const r = await EpiItens.acoes.listar({});
     assert.deepEqual([r.ok, r.status], [false, 403]);
     assert.match(EpiItens.mensagens.erroConsulta(r), /não pode consultar os itens disponíveis/i);

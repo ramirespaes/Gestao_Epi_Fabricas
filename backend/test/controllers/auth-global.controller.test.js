@@ -121,16 +121,36 @@ describe('login', () => {
 });
 
 describe('me', () => {
-  test('apresenta o contexto empresarial só se for DA MESMA identidade', async (t) => {
+  test('apresenta o contexto empresarial só se for DA MESMA identidade; a identidade sai com telefone, aparência e último acesso (Configurações)', async (t) => {
     t.mock.method(contextoService, 'listarEmpresas', async () => [{ id: 3 }]);
+    const identidadeRepo = require('../../src/repositories/identidade.repository');
+    const sessaoGlobalRepo = require('../../src/repositories/sessao-global.repository');
+    t.mock.method(identidadeRepo, 'buscarPorId', async () => ({ id: 9, email: 'p@x.com', telefone: '(47) 9', tema: 'claro', modoVisual: 'padrao', ativo: true }));
+    const ultimo = t.mock.method(sessaoGlobalRepo, 'buscarUltimoAcessoAnterior', async () => new Date('2026-10-04T11:41:00.000Z'));
+    const usuarioRepo = require('../../src/repositories/usuario.repository');
+    const operacional = t.mock.method(usuarioRepo, 'buscarContaOperacional', async () => ({ ativo: true, funcionario: { id: 5, matricula: 'MAT-0077', cpf: '52998224725', ativo: true } }));
     const ctx = { usuario: { id: 70, identidadeId: 9 }, empresa: { id: 3 }, sessao: { id: '900' } };
     const buscar = t.mock.method(autenticacao, 'buscarContextoSessao', async () => ctx);
     const proprio = await request(montar({ comSessaoGlobal: true })).get('/me');
-    assert.deepEqual(proprio.body.contexto, { usuario: ctx.usuario, empresa: ctx.empresa });
+    assert.deepEqual(proprio.body.contexto, {
+      usuario: { ...ctx.usuario, ativo: true, funcionario: { vinculado: true, matricula: 'MAT-0077', cpfMascarado: '***.***.***-25' } },
+      empresa: ctx.empresa,
+    });
+    assert.equal(JSON.stringify(proprio.body).includes('52998224725'), false, 'o CPF completo nunca sai');
+    assert.deepEqual(operacional.mock.calls[0].arguments.slice(1), [3, 70], 'empresa e usuário da SESSÃO, nunca do cliente');
+    assert.deepEqual(proprio.body.identidade, { id: 9, email: 'p@x.com', telefone: '(47) 9', tema: 'claro', modoVisual: 'padrao', ultimoAcessoEm: '2026-10-04T11:41:00.000Z', trocaSenhaObrigatoria: false });
+    assert.deepEqual(ultimo.mock.calls[0].arguments.slice(1), [9, '55'], 'último acesso = sessão global anterior desta identidade, excluída a atual');
+
+    // Sem vínculo explícito: estado neutro, nada inferido; a situação vem do dado real.
+    operacional.mock.mockImplementation(async () => ({ ativo: false, funcionario: null }));
+    const semVinculo = await request(montar({ comSessaoGlobal: true })).get('/me');
+    assert.deepEqual(semVinculo.body.contexto.usuario, { ...ctx.usuario, ativo: false, funcionario: { vinculado: false, matricula: null, cpfMascarado: null } });
 
     buscar.mock.mockImplementation(async () => ({ ...ctx, usuario: { id: 71, identidadeId: 99 } }));
+    const antes = operacional.mock.callCount();
     const alheio = await request(montar({ comSessaoGlobal: true })).get('/me');
     assert.equal(alheio.body.contexto, null);
+    assert.equal(operacional.mock.callCount(), antes, 'contexto de outra identidade: nada é consultado');
   });
 });
 

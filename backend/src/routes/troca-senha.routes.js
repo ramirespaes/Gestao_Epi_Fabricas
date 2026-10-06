@@ -4,7 +4,7 @@ const { Router } = require('express');
 const { validar } = require('../middleware/validar');
 const schemas = require('../schemas/troca-senha.schema');
 const { limitadorTrocaSenha, limitadorPlataformaTrocaSenha } = require('../middleware/rate-limit');
-const { exigirSessaoGlobal } = require('../middleware/autenticacao-global');
+const { exigirSessaoGlobalComSenhaProvisoria } = require('../middleware/autenticacao-global');
 const { exigirSessaoPlataforma } = require('../middleware/autenticacao-plataforma');
 const {
   trocaSenhaGlobalController,
@@ -60,10 +60,11 @@ function criarTrocaSenhaPlataformaRoutes({ controller, limitador, exigirSessaoPl
   return router;
 }
 
+// A troca é a única escrita aberta à identidade em senha provisória (074).
 const trocaSenhaGlobalRoutes = criarTrocaSenhaGlobalRoutes({
   controller: trocaSenhaGlobalController,
   limitador: limitadorTrocaSenha,
-  exigirSessaoGlobal,
+  exigirSessaoGlobal: exigirSessaoGlobalComSenhaProvisoria,
 });
 
 const trocaSenhaPlataformaRoutes = criarTrocaSenhaPlataformaRoutes({

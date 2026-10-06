@@ -623,7 +623,8 @@ describe('27. semântica, acessibilidade, segurança e visual', () => {
     assert.equal(pg.consulta('img').length, 0);
     assert.ok(pg.textoDoDom().includes(ATAQUE));
     assert.deepEqual(pg.documento.usosDeInnerHTML, []);
-    assert.deepEqual(pg.storage.filter((x) => !(x.operacao === 'removeItem' || x.storage === 'cookie')), []);
+    // Só o cache de pintura da aparência (js/tema.js, Configurações) toca o armazenamento; nada da página.
+    assert.deepEqual(pg.storage.filter((x) => !(x.operacao === 'removeItem' || x.storage === 'cookie' || x.chave === 'safework-aparencia')), []);
   });
 
   test('nada de "Em integração" na página; o selo antigo e o estado de fundação saíram', async () => {

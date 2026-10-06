@@ -33,6 +33,12 @@ const { gerarHashSenha } = require('../../src/security/password');
 
 // Todas as migrations: o estoque do dashboard sai da posição (065 a 067) e um prefixo antigo daria 500.
 const MIGRATIONS = todasAsMigrations();
+// 12G-6: aqui ninguém tem ação concedida (só recursos), então os três indicadores das solicitações saem negados.
+const SOLICITACOES_NEGADAS = {
+  solicitacoesAguardandoSst: { permitido: false },
+  solicitacoesAguardandoEstoque: { permitido: false },
+  disponiveisParaEntrega: { permitido: false },
+};
 
 const HOJE = '2026-09-30';
 const RELOGIO = () => new Date('2026-09-30T15:00:00Z');
@@ -177,6 +183,7 @@ describe('GET /api/dashboard/indicadores com PostgreSQL real', () => {
       necessidadeReposicao: { permitido: true, valor: 6 },
       caVencido: { permitido: true, valor: 2, aVencer: 2, diasAlerta: 60 },
       funcionariosAtivos: { permitido: true, valor: 2 },
+      ...SOLICITACOES_NEGADAS,
     });
   });
 
@@ -192,6 +199,7 @@ describe('GET /api/dashboard/indicadores com PostgreSQL real', () => {
       necessidadeReposicao: { permitido: false },
       caVencido: { permitido: false },
       funcionariosAtivos: { permitido: false },
+      ...SOLICITACOES_NEGADAS,
     });
   });
 
@@ -207,6 +215,7 @@ describe('GET /api/dashboard/indicadores com PostgreSQL real', () => {
       necessidadeReposicao: { permitido: true, valor: 6 },
       caVencido: { permitido: false },
       funcionariosAtivos: { permitido: false },
+      ...SOLICITACOES_NEGADAS,
     });
   });
 
@@ -222,6 +231,7 @@ describe('GET /api/dashboard/indicadores com PostgreSQL real', () => {
       necessidadeReposicao: { permitido: true, valor: 1000 },
       caVencido: { permitido: true, valor: 1, aVencer: 0, diasAlerta: 60 },
       funcionariosAtivos: { permitido: true, valor: 1 },
+      ...SOLICITACOES_NEGADAS,
     });
   });
 

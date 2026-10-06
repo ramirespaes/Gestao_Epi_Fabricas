@@ -463,6 +463,9 @@ module.exports = {
   avaliarPermissaoRecurso,
   avaliarPermissaoAcao,
   OPERACOES_RECURSO: Object.freeze(Object.keys(MAPA_OPERACAO_FLAG)),
+  // As duas funções puras da cadeia perfil -> grupo -> individual, para a tela de permissões dizer a ORIGEM sem reinterpretar.
+  opiniaoDoGrupo,
+  opiniaoIndividual,
   // Para quem decide a permissão fora da fábrica responder com o MESMO 403 genérico.
   MENSAGEM_PERMISSAO_NEGADA,
 };

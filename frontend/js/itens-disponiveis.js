@@ -114,6 +114,12 @@
   function escaparHtml(s) {
     return texto(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
+  // 12G-7: pictograma do material (js/catalogo-visual.js); em Node os testes o carregam pelo require.
+  function catalogo() {
+    if (global.EpiCatalogoVisual) return global.EpiCatalogoVisual;
+    if (typeof module !== 'undefined' && module.exports) return require('./catalogo-visual'); // eslint-disable-line global-require
+    throw new Error('EpiCatalogoVisual não carregado: inclua js/catalogo-visual.js antes de js/itens-disponiveis.js');
+  }
   function unidadeExibida(u) {
     var t = texto(u);
     return t ? t.charAt(0).toUpperCase() + t.slice(1) : '—';
@@ -155,7 +161,7 @@
     escaparHtml: escaparHtml,
     linhas: function (itens) {
       return (itens || []).map(function (i) {
-        var material = escaparHtml(i.material)
+        var material = catalogo().marcacao(i) + escaparHtml(i.material)
           + (i.codigoInterno ? ' <small style="color:var(--on-surface-variant)">' + escaparHtml(i.codigoInterno) + '</small>' : '');
         var origem = origemDoMinimo(i);
         var minimo = escaparHtml(i.estoqueMinimo) + (origem ? ' <small style="color:var(--on-surface-variant)">' + escaparHtml(origem) + '</small>' : '');

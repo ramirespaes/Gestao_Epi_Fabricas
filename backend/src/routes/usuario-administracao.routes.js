@@ -22,7 +22,16 @@ function criarUsuarioAdministracaoRoutes({ controller, exigirSessao: exigirSessa
   const router = Router();
 
   router.get('/administracao/usuarios', exigirSessaoInjetado, validar({ query: schemas.listar.query }), controller.listar);
+  router.post('/administracao/usuarios', exigirSessaoInjetado, validar({ body: schemas.criar.body }), controller.criar);
   router.get('/administracao/usuarios/:id', exigirSessaoInjetado, validar({ params: schemas.buscar.params }), controller.buscar);
+  router.get('/administracao/usuarios/:id/permissoes', exigirSessaoInjetado, validar({ params: schemas.buscar.params }), controller.permissoes);
+  router.patch('/administracao/usuarios/:id/permissoes/recursos/:recurso', exigirSessaoInjetado, validar({ params: schemas.permissoesRecurso.params, body: schemas.permissoesRecurso.body }), controller.permissaoRecurso);
+  router.put('/administracao/usuarios/:id/permissoes/acoes/:codigo', exigirSessaoInjetado, validar({ params: schemas.permissoesAcao.params, body: schemas.permissoesAcao.body }), controller.permissaoAcao);
+  router.get('/administracao/usuarios/:id/acessos', exigirSessaoInjetado, validar({ params: schemas.buscar.params }), controller.acessos);
+  router.put('/administracao/usuarios/:id/acessos/:toggle', exigirSessaoInjetado, validar({ params: schemas.acessoToggle.params, body: schemas.acessoToggle.body }), controller.acesso);
+  router.post('/administracao/usuarios/:id/permissoes/copiar', exigirSessaoInjetado, validar({ params: schemas.permissoesCopiar.params, body: schemas.permissoesCopiar.body }), controller.copiarPermissoes);
+  router.post('/administracao/usuarios/:id/senha-provisoria', exigirSessaoInjetado, validar({ params: schemas.redefinirSenha.params, body: schemas.redefinirSenha.body }), controller.redefinirSenha);
+  router.get('/administracao/usuarios/:id/edicao', exigirSessaoInjetado, validar({ params: schemas.buscar.params }), controller.edicao);
   router.patch('/administracao/usuarios/:id', exigirSessaoInjetado, validar({ params: schemas.alterar.params, body: schemas.alterar.body }), controller.alterar);
   router.post('/administracao/usuarios/:id/inativar', exigirSessaoInjetado, validar({ params: schemas.inativar.params, body: schemas.inativar.body }), controller.inativar);
   router.post('/administracao/usuarios/:id/reativar', exigirSessaoInjetado, validar({ params: schemas.reativar.params, body: schemas.reativar.body }), controller.reativar);

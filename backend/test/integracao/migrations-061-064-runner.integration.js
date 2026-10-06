@@ -31,11 +31,21 @@ const PENDENTES = [
   '066_alter_entregas_epi_origem_solicitacao',
   '067_create_estoque_minimos',
   '068_alter_solicitacoes_epi_add_encerramento',
+  '069_create_alertas_estoque',
+  '070_create_material_tamanhos',
+  '071_alter_materiais_add_tipo_descricao_e_tipos_oculos',
+  '072_alter_identidades_add_telefone_tema_modo_visual',
+  '073_alter_usuarios_add_funcionario_id',
+  '074_alter_identidades_add_senha_provisoria',
+  '075_alter_identidades_add_cpf',
+  '076_alter_usuarios_add_matricula_setor_horario',
+  '077_create_usuario_ips_permitidos',
+  '078_insert_acoes_estoque_entrada_baixa',
 ];
 const TABELAS_NOVAS = ['redefinicoes_senha', 'redefinicoes_senha_plataforma', 'recuperacao_senha_solicitacoes', 'logs_auditoria_identidade'];
-const TOTAL = 69;
+const TOTAL = 79;
 
-describe('runner real: 061 a 068 numa transação, sobre a 060 com contas e sessões existentes', () => {
+describe('runner real: 061 a 074 numa transação, sobre a 060 com contas e sessões existentes', () => {
   let contexto;
   let c;
   let diretorioAteA060;
@@ -80,7 +90,7 @@ describe('runner real: 061 a 068 numa transação, sobre a 060 com contas e sess
     for (const tabela of TABELAS_NOVAS) assert.equal(await tabelaExiste(c, tabela), false, tabela);
   });
 
-  test('o runner aplica 061 a 068 juntas, em ordem, e registra as 69', async () => {
+  test('o runner aplica 061 a 077 juntas, em ordem, e registra as 78', async () => {
     const aplicadas = await aplicarMigrations({ schema: contexto.schema, diretorio: DIRETORIO_REAL });
 
     assert.deepEqual(aplicadas.map((migration) => migration.name), PENDENTES);
@@ -119,7 +129,7 @@ describe('runner real: 061 a 068 numa transação, sobre a 060 com contas e sess
     assert.equal(n, 1);
   });
 
-  test('manifesto: as entradas pendentes conferem com os arquivos e o total é 69', () => {
+  test('manifesto: as entradas pendentes conferem com os arquivos e o total é 78', () => {
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO_REAL, 'checksums.json'), 'utf8'));
     const arquivos = fs.readdirSync(DIRETORIO_REAL).filter((n) => /^\d{3}_.*\.sql$/.test(n)).sort();
     assert.equal(arquivos.length, TOTAL);

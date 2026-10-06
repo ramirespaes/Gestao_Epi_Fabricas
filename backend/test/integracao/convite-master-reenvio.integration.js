@@ -32,7 +32,7 @@ const { carregarConfigEmail } = require('../../src/config/email');
 // 048: a auditoria da plataforma grava ator e alvo; 053: criarInicial emite a
 // liberação do MFA; 049, 052, 054 e 055: a sessão administrativa só vale ligada
 // a um desafio de MFA concluído.
-const TODAS_AS_MIGRATIONS = [...Array.from({ length: 35 }, (_, i) => String(i).padStart(3, '0')), '048', '049', '052', '053', '054', '055'];
+const TODAS_AS_MIGRATIONS = [...Array.from({ length: 35 }, (_, i) => String(i).padStart(3, '0')), '048', '049', '052', '053', '054', '055', '072', '074', '075', '076', '077'];
 const SENHA_ADMIN = 'planeta-nebulosa-ozonio-42';
 const SENHA_MASTER = 'quasar-boreal-91-nebula';
 const PLATAFORMA = '/api/plataforma';

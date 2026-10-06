@@ -56,6 +56,15 @@ describe('exigirClassificacaoDoMaterial', () => {
     assert.deepEqual(codigoDe(() => exigir(material({ exigeTamanho: null }))), [409, 'MATERIAL_TAMANHO_NAO_CLASSIFICADO']);
     assert.deepEqual(codigoDe(() => exigir(material({ tipo: 'Óculos de proteção', oculosComGrau: null }))), [409, 'MATERIAL_OCULOS_NAO_CLASSIFICADO']);
   });
+
+  test('12G-8: Incolor e Ampla Visão são óculos como o nome histórico; "Outros" com texto de óculos não é', () => {
+    const { exigirClassificacaoDoMaterial: exigir } = comum();
+    for (const tipo of ['Óculos de Proteção Incolor', 'Óculos de Proteção Ampla Visão', 'Óculos de proteção']) {
+      assert.deepEqual(codigoDe(() => exigir(material({ tipo, oculosComGrau: null }))), [409, 'MATERIAL_OCULOS_NAO_CLASSIFICADO'], tipo);
+      assert.equal(exigir(material({ tipo, oculosComGrau: true })), undefined, tipo);
+    }
+    assert.equal(exigir(material({ tipo: 'Outros', tipoDescricao: 'Óculos de proteção', oculosComGrau: null })), undefined);
+  });
 });
 
 describe('exigirCaValidoDoLote', () => {

@@ -184,6 +184,8 @@ async function buscarValidaPorHash(executor, tokenHash, inatividadeMinutos) {
     `SELECT s.id, s.empresa_id, s.usuario_id, s.criado_em, s.expira_em, s.ultimo_uso_em,
             u.nome AS usuario_nome, COALESCE(i.email, u.email) AS usuario_email, u.perfil AS usuario_perfil,
             u.identidade_id AS usuario_identidade_id,
+            COALESCE(i.senha_provisoria, false) AS senha_provisoria,
+            EXISTS (SELECT 1 FROM usuario_ips_permitidos p WHERE p.empresa_id = u.empresa_id AND p.usuario_id = u.id) AS restricao_ip,
             e.nome AS empresa_nome, e.cnpj AS empresa_cnpj
        FROM sessoes s
        JOIN usuarios u ON u.empresa_id = s.empresa_id AND u.id = s.usuario_id
@@ -223,6 +225,10 @@ async function buscarValidaPorHash(executor, tokenHash, inatividadeMinutos) {
       nome: linha.empresa_nome,
       cnpj: linha.empresa_cnpj,
     },
+    // Troca obrigatória (074): decidida pelo middleware; fora de `usuario`, que chega às respostas.
+    senhaProvisoria: linha.senha_provisoria === true,
+    // Restrição por IP (077): o middleware só consulta a lista quando ela existe.
+    restricaoIp: linha.restricao_ip === true,
   };
 }
 

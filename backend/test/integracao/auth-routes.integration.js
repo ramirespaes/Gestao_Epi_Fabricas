@@ -74,7 +74,7 @@ describe('POST /api/auth/login com PostgreSQL real', () => {
   before(async () => {
     HASH_SENHA_CORRETA = await gerarHashSenha(SENHA_CORRETA);
 
-    contexto = await abrirPoolTemporario(['000', '001', '002', '005', '025', '013', '015']);
+    contexto = await abrirPoolTemporario(['000', '001', '002', '005', '025', '013', '015', '074', '075', '076', '077']);
 
     const controller = criarAuthController({ pool: contexto.pool });
     // MESMO pool temporário do controller — não o pool global, e nenhuma
@@ -286,7 +286,7 @@ describe('POST /api/auth/login com PostgreSQL real', () => {
 
       const me = await request(app).get('/api/auth/me').set('Cookie', cookie);
       assert.equal(me.status, 200);
-      assert.deepEqual(Object.keys(me.body).sort(), ['empresa', 'status', 'usuario']);
+      assert.deepEqual(Object.keys(me.body).sort(), ['empresa', 'preferencias', 'status', 'usuario']);
       assert.equal(me.body.usuario.id, usuarioId);
       assert.equal(me.body.empresa.id, empresaId);
       assert.equal('token' in me.body, false);

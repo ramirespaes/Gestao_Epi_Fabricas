@@ -1,5 +1,7 @@
 'use strict';
 
+const { mascararCpf } = require('../utils/normalizacao');
+
 /**
  * Leituras e escritas da administração de usuários da empresa (Bloco 9,
  * parte F). Executor por parâmetro, validação de formato e nenhuma regra
@@ -9,6 +11,12 @@
  * mora em identidades (025). A projeção lê COALESCE(i.email, u.email) para
  * mostrar o e-mail da conta de qualquer vínculo. identidade_id, senha_hash
  * e o id do grupo nunca saem daqui; do grupo só saem o nome e a situação.
+ *
+ * DADOS ADMINISTRATIVOS (05/10/2026; 075–077): CPF da identidade só
+ * MASCARADO (`***.***.***-XX`, o padrão da aplicação; o CPF em claro não
+ * sai do mapeamento), matrícula, setor, horário de trabalho e
+ * `acessoQualquerIp` (derivado: sem IP permitido cadastrado = true). A
+ * lista de IPs nunca sai pela listagem.
  *
  * ORDENAÇÃO: o nome público da ordem escolhe um fragmento FIXO deste
  * módulo. Nada que venha da requisição é concatenado no SQL.
@@ -25,7 +33,10 @@ const SITUACOES = Object.freeze(['ATIVO', 'INATIVO']);
 const PERFIL_MASTER = 'MASTER';
 
 const PROJECAO = `u.id, u.nome, COALESCE(i.email, u.email) AS email, u.perfil, u.ativo, u.criado_em,
-  g.nome AS grupo_nome, g.ativo AS grupo_ativo`;
+  g.nome AS grupo_nome, g.ativo AS grupo_ativo,
+  i.cpf, u.matricula, u.setor,
+  to_char(u.horario_trabalho_inicio, 'HH24:MI') AS horario_inicio, to_char(u.horario_trabalho_fim, 'HH24:MI') AS horario_fim,
+  EXISTS (SELECT 1 FROM usuario_ips_permitidos p WHERE p.empresa_id = u.empresa_id AND p.usuario_id = u.id) AS restricao_ip`;
 // O grupo é lido na MESMA empresa, além da FK composta da 020: só o nome e
 // se está ativo, para a tela mostrar o acesso real sem expor o id.
 const ORIGEM = `FROM usuarios u
@@ -57,6 +68,11 @@ const mapear = (linha) => (linha === undefined ? null : {
   ativo: linha.ativo,
   criadoEm: linha.criado_em,
   grupo: linha.grupo_nome === null ? null : { nome: linha.grupo_nome, ativo: linha.grupo_ativo },
+  cpfMascarado: mascararCpf(linha.cpf ?? null),
+  matricula: linha.matricula ?? null,
+  setor: linha.setor ?? null,
+  horarioTrabalho: linha.horario_inicio && linha.horario_fim ? { inicio: linha.horario_inicio, fim: linha.horario_fim } : null,
+  acessoQualquerIp: linha.restricao_ip !== true,
 });
 
 /**
@@ -144,6 +160,69 @@ async function buscarVinculoPorEmail(executor, empresaId, email) {
   return rows[0] === undefined ? null : { id: rows[0].id, ativo: rows[0].ativo };
 }
 
+/**
+ * Dados COMPLETOS para o modal de edição (CPF canônico em claro: só chega aqui
+ * quem administra). Com `travar`, FOR UPDATE OF u. Nunca senha nem hash.
+ */
+async function buscarDadosParaEdicao(executor, empresaId, id, { travar = false } = {}) {
+  exigirEmpresa(empresaId);
+  exigirUsuario(id);
+  const { rows } = await executor.query(
+    `SELECT u.id, u.nome, COALESCE(i.email, u.email) AS email, u.perfil, u.ativo, u.identidade_id, i.cpf, u.matricula, u.setor,
+            to_char(u.horario_trabalho_inicio, 'HH24:MI') AS horario_inicio, to_char(u.horario_trabalho_fim, 'HH24:MI') AS horario_fim,
+            u.grupo_acesso_id
+       FROM usuarios u LEFT JOIN identidades i ON i.id = u.identidade_id
+      WHERE u.empresa_id = $1 AND u.id = $2${travar ? ' FOR UPDATE OF u' : ''}`,
+    [empresaId, id],
+  );
+  const l = rows[0];
+  return l === undefined ? null : {
+    id: l.id,
+    nome: l.nome,
+    email: l.email,
+    perfil: l.perfil,
+    ativo: l.ativo,
+    identidadeId: l.identidade_id ?? null,
+    cpf: l.cpf ?? null,
+    matricula: l.matricula ?? null,
+    setor: l.setor ?? null,
+    horarioTrabalho: l.horario_inicio && l.horario_fim ? { inicio: l.horario_inicio, fim: l.horario_fim } : null,
+    grupoAcessoId: l.grupo_acesso_id ?? null,
+  };
+}
+
+/** Quantos vínculos (em qualquer empresa) a identidade tem: e-mail só muda se for 1. */
+async function contarVinculosDaIdentidade(executor, identidadeId) {
+  if (!Number.isInteger(identidadeId) || identidadeId <= 0) {
+    throw new TypeError('identificador de identidade inválido');
+  }
+  const { rows } = await executor.query('SELECT count(*)::int AS total FROM usuarios WHERE identidade_id = $1', [identidadeId]);
+  return rows[0].total;
+}
+
+/**
+ * Atualiza só os dados administrativos do vínculo informados (campo ausente
+ * não muda; horário/grupo `null` limpam). Matrícula/setor já chegam aparados.
+ */
+async function atualizarAdministrativo(executor, empresaId, id, campos) {
+  exigirEmpresa(empresaId);
+  exigirUsuario(id);
+  const tem = (c) => Object.hasOwn(campos, c);
+  const h = tem('horarioTrabalho') ? campos.horarioTrabalho : null;
+  const { rowCount } = await executor.query(
+    `UPDATE usuarios
+        SET matricula = CASE WHEN $3::boolean THEN $4 ELSE matricula END,
+            setor = CASE WHEN $5::boolean THEN $6 ELSE setor END,
+            horario_trabalho_inicio = CASE WHEN $7::boolean THEN $8::time ELSE horario_trabalho_inicio END,
+            horario_trabalho_fim = CASE WHEN $7::boolean THEN $9::time ELSE horario_trabalho_fim END,
+            grupo_acesso_id = CASE WHEN $10::boolean THEN $11::int ELSE grupo_acesso_id END
+      WHERE empresa_id = $1 AND id = $2`,
+    [empresaId, id, tem('matricula'), campos.matricula ?? null, tem('setor'), campos.setor ?? null,
+      tem('horarioTrabalho'), h === null ? null : h.inicio, h === null ? null : h.fim, tem('grupoAcessoId'), campos.grupoAcessoId ?? null],
+  );
+  return rowCount === 1;
+}
+
 async function contarMastersAtivos(executor, empresaId) {
   exigirEmpresa(empresaId);
   const { rows } = await executor.query(
@@ -211,6 +290,9 @@ module.exports = {
   listar,
   buscarPorId,
   buscarParaAtualizacao,
+  buscarDadosParaEdicao,
+  contarVinculosDaIdentidade,
+  atualizarAdministrativo,
   buscarVinculoPorEmail,
   contarMastersAtivos,
   travarMastersAtivos,

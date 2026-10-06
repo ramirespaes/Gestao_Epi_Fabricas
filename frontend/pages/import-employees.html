@@ -82,7 +82,7 @@
         <a href="stock-validity.html" data-pagina="stockValidity" style="display:none"><div class="nav-icon red">event_busy</div>Validade de estoque</a>
         <a href="available-items.html" data-pagina="availableItems" style="display:none"><div class="nav-icon green">checklist</div>Análise de estoque</a>
         <a href="operations.html" data-pagina="operations" style="display:none"><div class="nav-icon gray">receipt_long</div>Operações de estoque</a>
-        <a href="employee-groups.html" data-pagina="employeeGroups" style="display:none"><div class="nav-icon purple">group_work</div>GHE e EPIs</a>
+        <a href="employee-groups.html" data-pagina="employeeGroups" style="display:none"><div class="nav-icon purple">group_work</div>Gestão de GHE</a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor<span class="nav-etiqueta">Em integração</span></a>
         <div class="nav-section">Entregas</div>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon green">inventory</div>EPIs Entregues<span class="nav-etiqueta">Em integração</span></a>
@@ -101,7 +101,8 @@
         <a class="active" href="javascript:void(0)" data-pagina="importEmployees" style="display:none"><div class="nav-icon green">upload_file</div>Importar Funcionários</a>
         <a href="new-user.html" data-pagina="newUser" style="display:none"><div class="nav-icon green">person_add</div>Novo Usuário</a>
         <a href="user-admin.html" data-pagina="userAdmin" style="display:none"><div class="nav-icon indigo">group</div>Administração de Usuários</a>
-        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon gray">settings</div>Configurações<span class="nav-etiqueta">Em integração</span></a>
+        <a href="gestao-usuarios.html" data-pagina="gestaoUsuarios" style="display:none"><div class="nav-icon indigo">manage_accounts</div>Gestão de Usuários</a>
+        <a href="config.html" data-pagina="config" style="display:none"><div class="nav-icon gray">settings</div>Configurações</a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon teal">support_agent</div>Suporte<span class="nav-etiqueta">Em integração</span></a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">mark_email_read</div>Gestão de E-mails<span class="nav-etiqueta">Em integração</span></a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon indigo">privacy_tip</div>Privacidade / LGPD<span class="nav-etiqueta">Em integração</span></a>
@@ -145,7 +146,7 @@
           <div class="notice" style="margin-top:14px;background:rgba(0,122,255,0.06);color:var(--on-surface-variant);border-color:rgba(0,122,255,0.15);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
             <div>
               <strong style="color:var(--on-surface);display:block;margin-bottom:2px">Baixar modelo de planilha</strong>
-              Planilha com todas as colunas obrigatórias já formatadas e prontas para preencher.
+              Planilha com todas as colunas obrigatórias já formatadas e prontas para preencher. A coluna GHE recebe o nome exato de um GHE já cadastrado nesta empresa; a importação nunca cria GHE nem altera funcionário já cadastrado.
             </div>
             <button class="tonal-btn" id="botaoBaixarModelo" type="button">
               <span class="material-symbols-outlined" style="font-size:18px">download</span>Baixar modelo
@@ -206,6 +207,7 @@
                   <th>Nascimento</th>
                   <th>Contratação</th>
                   <th>Cargo</th>
+                  <th>GHE</th>
                   <th>Status</th>
                 </tr>
               </thead>
@@ -376,7 +378,7 @@
       var i = c.interrupcao;
       if (i && i.motivo === 'NAO_CONFIRMADO') mostrarAviso('A importação foi interrompida: não foi possível confirmar um lote (falha de rede ou do servidor). Consulte o Histórico de Funcionários antes de reenviar; linhas já gravadas voltam como "Duplicado".', 'atencao');
       else if (i && i.motivo === 'LOTE_RECUSADO') mostrarAviso('A importação foi interrompida porque o servidor recusou um lote. Veja o motivo no resultado.', 'erro');
-      else mostrarAviso('Importação concluída: ' + c.resumo.cadastrados + ' funcionário(s) cadastrado(s). Veja abaixo as linhas não cadastradas e o motivo.', 'sucesso');
+      else mostrarAviso('Importação concluída: ' + c.resumo.cadastrados + ' importado(s) com sucesso, ' + (c.resumo.jaCadastrados + c.resumo.divergentes) + ' já cadastrado(s) e ' + c.resumo.naoImportados + ' não importado(s). Veja abaixo o resultado de cada linha.', 'sucesso');
     } finally {
       enviando = false;
       $('importConfirmBtn').disabled = false;

@@ -68,10 +68,18 @@ function criarEntrega({ config = emailConfig, servico } = {}) {
     servicoDeEmail.enfileirar({ tipo: TIPOS.SENHA_ALTERADA, escopo, para: email, conteudo });
   }
 
+  /** Configurações: aviso de segurança ao endereço ANTIGO depois da troca do e-mail de acesso (só Portal). */
+  function enfileirarAvisoEmailAlterado({ escopo, email }) {
+    exigirEscopo(escopo);
+    exigirTexto(email, 'destinatário');
+    const conteudo = renderizar(TIPOS.EMAIL_ALTERADO, { escopo }, { suporte: config.suporte });
+    servicoDeEmail.enfileirar({ tipo: TIPOS.EMAIL_ALTERADO, escopo, para: email, conteudo });
+  }
+
   /** Espera o que já foi enfileirado terminar. Para testes e encerramento do processo. */
   const aguardarOciosidade = (limiteMs) => servicoDeEmail.aguardarOciosidade(limiteMs);
 
-  return { enfileirarRedefinicao, enfileirarAvisoSenhaAlterada, aguardarOciosidade, montarLinkRedefinicao };
+  return { enfileirarRedefinicao, enfileirarAvisoSenhaAlterada, enfileirarAvisoEmailAlterado, aguardarOciosidade, montarLinkRedefinicao };
 }
 
 // A instância da aplicação divide o serviço (fila e transporte) com os convites.
@@ -85,6 +93,7 @@ const padrao = criarEntrega({
 module.exports = {
   enfileirarRedefinicao: padrao.enfileirarRedefinicao,
   enfileirarAvisoSenhaAlterada: padrao.enfileirarAvisoSenhaAlterada,
+  enfileirarAvisoEmailAlterado: padrao.enfileirarAvisoEmailAlterado,
   aguardarOciosidade: padrao.aguardarOciosidade,
   montarLinkRedefinicao,
   criarEntrega,

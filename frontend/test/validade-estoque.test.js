@@ -8,6 +8,7 @@ const vm = require('node:vm');
 
 const EpiHttp = require('../js/api-http');
 const P = require('../js/permissoes-efetivas');
+const Catalogo = require('../js/catalogo-visual');
 
 /**
  * E7 — Validade de estoque: módulo js/validade-estoque.js com fetch
@@ -135,11 +136,48 @@ describe('módulo: filtro, consulta e textos', () => {
   });
 });
 
+describe('12G-7 — pictograma do material: na mesma célula, antes do nome, decorativo', () => {
+  const celulas = (html) => [...html.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((m) => m[1]);
+  const texto = (s) => s.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
+  test('o pictograma do tipo abre a célula do material; nome, "Material inativo" e código continuam; 9 colunas; tabela igual', () => {
+    const R = modulo().render;
+    const html = R.linhas([lote({ material: 'Luva de raspa', tipo: 'Luva', categoria: 'EPI', materialAtivo: false, codigoInterno: 'L-1' })], { podeBaixar: true });
+    const tds = celulas(html);
+    assert.equal(tds.length, 9);
+    assert.ok(tds[0].startsWith(Catalogo.marcacao({ tipo: 'Luva' })), tds[0]);
+    assert.match(tds[0], /^<svg [^>]*aria-hidden="true"[^>]*focusable="false"/);
+    assert.equal(texto(tds[0]), 'Luva de raspa Material inativo L-1');
+    assert.equal(texto(tds[1]), 'Luva EPI', 'a coluna do tipo continua só com texto');
+    assert.equal((html.match(/<svg /g) || []).length, 1, 'um pictograma por linha');
+    assert.match(html, /data-baixa-lote="11"/, 'a ação da linha não muda');
+  });
+
+  test('tipo desconhecido usa a categoria; sem categoria conhecida, o genérico', () => {
+    const chaveDa = (extra) => (modulo().render.linhas([lote(extra)], { podeBaixar: false }).match(/data-pictograma="([^"]+)"/) || [])[1];
+    assert.equal(chaveDa({ tipo: 'Capacete', categoria: 'EPI' }), 'capacete');
+    assert.equal(chaveDa({ tipo: 'Jaleco', categoria: 'Uniforme' }), 'uniforme');
+    assert.equal(chaveDa({ tipo: null, categoria: 'Ferramenta' }), 'ferramenta');
+    assert.equal(chaveDa({ tipo: null, categoria: null }), 'material');
+  });
+
+  test('tipo, categoria e nome maliciosos: nada vira elemento ou atributo; o SVG é o genérico, fixo', () => {
+    const html = modulo().render.linhas([lote({ material: ATAQUE, tipo: `" onload="alert(1)`, categoria: ATAQUE })], { podeBaixar: false });
+    semElementoInjetado(html);
+    assert.equal((html.match(/<svg [\s\S]*?<\/svg>/) || [])[0], Catalogo.marcacao({}));
+  });
+
+  test('a linha de estado não ganha pictograma', () => {
+    const R = modulo().render;
+    assert.equal(/<svg/.test(R.vazio('Carregando…')), false);
+  });
+});
+
 // ═══════════════════════════════════════════════════════════════════
 // Página em DOM simulado: o script embutido de stock-validity.html
 // ═══════════════════════════════════════════════════════════════════
 const CONTEXTO = { empresa: { id: 3, nome: 'Empresa' }, usuario: { id: 7, nome: 'Pessoa', perfil: 'MASTER' } };
-const PODE_TUDO = { recursos: { materials: { visualizar: true, criar: false, editar: false, excluir: false } }, acoes: { MOVIMENTAR_ESTOQUE: true }, administracao: {} };
+const PODE_TUDO = { recursos: { materials: { visualizar: true, criar: false, editar: false, excluir: false } }, acoes: { BAIXA_ESTOQUE: true }, administracao: {} };
 const SO_VER = { recursos: { materials: { visualizar: true, criar: false, editar: false, excluir: false } }, acoes: {}, administracao: {} };
 
 function montarPagina({ busca = '', permissoes = PODE_TUDO, responder } = {}) {
@@ -157,7 +195,7 @@ function montarPagina({ busca = '', permissoes = PODE_TUDO, responder } = {}) {
   const sandbox = {
     document: { getElementById: el, querySelectorAll: () => [] },
     window: { SAFEWORK_PORTAL_API_BASE_URL: BASE, location: { search: busca } },
-    EpiHttp, EpiMateriais: materiais(), EpiValidadeEstoque: modulo(),
+    EpiHttp, EpiMateriais: materiais(), EpiValidadeEstoque: modulo(), EpiCatalogoVisual: Catalogo,
     EpiPermissoes: { prepararPagina: async () => ({ permissoes, podeAlterar: false }), acao: P.acao, recurso: P.recurso },
     EpiSessaoEmpresarial: { montar: async (o) => { sandbox.opcoesMontar = o; return CONTEXTO; }, sessaoEncerrada() { sandbox.encerrada = true; } },
     showToast() {}, console, Promise, String, Number, Array, Object, JSON, crypto: globalThis.crypto,
@@ -263,7 +301,8 @@ describe('inspeção estática', () => {
 
   test('página integrada: sessão real, permissões do servidor, sem protótipo, sem biblioteca externa de planilha', () => {
     const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
-    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/materiais.js', '../js/validade-estoque.js']);
+    // 12G-7: o catálogo visual vem antes do módulo que desenha a linha.
+    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/materiais.js', '../js/catalogo-visual.js', '../js/validade-estoque.js']);
     for (const proibido of [/db-api\.js/, /main\.js/, /xlsx/, /localStorage/, /sessionStorage/, /document\.cookie/, /showView\(/, /setActiveNav/, /data-page=/, /localhost:3000/, /Fulano de Tal/]) {
       assert.equal(proibido.test(codigo.replace(/onclick="(closeMobileMenu|toggleSidebar)\(\)"/g, '')), false, `contém ${proibido}`);
     }

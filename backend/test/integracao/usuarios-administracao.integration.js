@@ -27,12 +27,13 @@ const { authConfig } = require('../../src/config/auth');
  * auditoria sem segredos. PostgreSQL real, schema temporário.
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 48 }, (_, i) => String(i).padStart(3, '0'));
+const TODAS_AS_MIGRATIONS = [...Array.from({ length: 48 }, (_, i) => String(i).padStart(3, '0')), '072', '074', '075', '076', '077'];
 const SENHA = 'senha-forte-da-parte-f-2026';
 const BASE = '/api/administracao/usuarios';
 const { cookieNome: C_EMPRESA, cookieNomeGlobal: C_GLOBAL } = authConfig.sessao;
 const PERFIS = ['MASTER', 'ADMINISTRADOR', 'SUPERVISOR', 'USUARIO'];
-const CAMPOS_DO_ITEM = ['ativo', 'criadoEm', 'email', 'grupo', 'id', 'nome', 'perfil', 'podeGerenciar', 'proprio'];
+// Desde 05/10/2026 (075–077): CPF só mascarado, matrícula, setor, horário e acessoQualquerIp (derivado); nunca a lista de IPs.
+const CAMPOS_DO_ITEM = ['acessoQualquerIp', 'ativo', 'cpfMascarado', 'criadoEm', 'email', 'grupo', 'horarioTrabalho', 'id', 'matricula', 'nome', 'perfil', 'perfilFixo', 'podeGerenciar', 'proprio', 'setor'];
 
 function cookiesDe(resposta) {
   const saida = {};
@@ -285,8 +286,8 @@ describe('Parte F — administração de usuários (PostgreSQL real)', () => {
     test('mass assignment: qualquer campo fora de nome e perfil é recusado e nada muda', async () => {
       const antes = await linha(u.usuA);
       for (const corpo of [
-        { email: 'outro@x.com' }, { ativo: false }, { empresaId: empresa.B }, { empresa_id: empresa.B }, { identidadeId: 1 },
-        { senha: 'nova-senha-muito-forte' }, { senhaHash: 'x' }, { grupoAcessoId: 1 }, { id: u.masterA }, { nome: 'Válido', ativo: false }, {},
+        { cpf: '52998224725' }, { ativo: false }, { empresaId: empresa.B }, { empresa_id: empresa.B }, { identidadeId: 1 },
+        { senha: 'nova-senha-muito-forte' }, { senhaHash: 'x' }, { senhaProvisoria: 'nova-senha-muito-forte' }, { id: u.masterA }, { nome: 'Válido', ativo: false }, {},
         // O perfil do alvo viaja como tipoConta; "perfil" no corpo é campo de autoridade.
         { perfil: 'MASTER' }, { usuarioId: u.masterA }, { master: true }, { permissoes: { materials: true } },
       ]) {
@@ -396,28 +397,29 @@ describe('Parte F — administração de usuários (PostgreSQL real)', () => {
   });
 
   describe('último MASTER', () => {
-    test('o único MASTER ativo não pode ser inativado nem rebaixado, nem por ele mesmo', async () => {
-      for (const r of [await patch('masterD', u.masterD, { tipoConta: 'ADMINISTRADOR' }), await post('masterD', u.masterD, 'inativar')]) {
-        assert.deepEqual([r.status, r.body.codigo], [409, 'USUARIO_ULTIMO_MASTER']);
-      }
+    test('o único MASTER ativo não pode ser inativado nem rebaixado, nem por ele mesmo (o perfil do MASTER é fixo nesta tela)', async () => {
+      const rebaixar = await patch('masterD', u.masterD, { tipoConta: 'ADMINISTRADOR' });
+      assert.deepEqual([rebaixar.status, rebaixar.body.codigo], [409, 'USUARIO_MASTER_PERFIL_FIXO']);
+      const inativar = await post('masterD', u.masterD, 'inativar');
+      assert.deepEqual([inativar.status, inativar.body.codigo], [409, 'USUARIO_ULTIMO_MASTER']);
       assert.deepEqual([(await linha(u.masterD)).perfil, (await linha(u.masterD)).ativo, await mastersAtivos(empresa.D)], ['MASTER', true, 1]);
       assert.equal((await patch('masterD', u.masterD, { nome: 'Dora Única Master' })).status, 200, 'o nome continua editável');
     });
 
-    test('com dois MASTERs, um rebaixa o outro; o que sobra passa a ser protegido', async () => {
-      assert.equal((await patch('masterC1', u.masterC2, { tipoConta: 'ADMINISTRADOR' })).status, 200);
+    test('com dois MASTERs (dado legado), ninguém rebaixa o outro; inativar um deixa o que sobra protegido', async () => {
+      const rebaixo = await patch('masterC1', u.masterC2, { tipoConta: 'ADMINISTRADOR' });
+      assert.deepEqual([rebaixo.status, rebaixo.body.codigo], [409, 'USUARIO_MASTER_PERFIL_FIXO']);
+      assert.equal((await post('masterC1', u.masterC2, 'inativar')).status, 200);
       const r = await post('masterC1', u.masterC1, 'inativar');
       assert.deepEqual([r.status, r.body.codigo], [409, 'USUARIO_ULTIMO_MASTER']);
-      assert.equal((await patch('masterC1', u.masterC2, { tipoConta: 'MASTER' })).status, 200);
+      assert.equal((await post('masterC1', u.masterC2, 'reativar')).status, 200);
       assert.equal(await mastersAtivos(empresa.C), 2);
     });
 
-    test('concorrência: inativações e rebaixamentos simultâneos nunca deixam a empresa sem MASTER', async () => {
+    test('concorrência: inativações simultâneas nunca deixam a empresa sem MASTER', async () => {
       const cenarios = [
         () => [post('masterC1', u.masterC1, 'inativar'), post('masterC2', u.masterC2, 'inativar')],
         () => [post('masterC1', u.masterC2, 'inativar'), post('masterC2', u.masterC1, 'inativar')],
-        () => [patch('masterC1', u.masterC1, { tipoConta: 'USUARIO' }), patch('masterC2', u.masterC2, { tipoConta: 'USUARIO' })],
-        () => [patch('masterC1', u.masterC2, { tipoConta: 'SUPERVISOR' }), patch('masterC2', u.masterC1, { tipoConta: 'SUPERVISOR' })],
       ];
       for (let rodada = 0; rodada < 3; rodada += 1) {
         for (const [i, cenario] of cenarios.entries()) {

@@ -10,8 +10,11 @@
    * estoque abaixo do mínimo, CA vencido (com a vencer) e funcionários
    * ativos. Os seis de estoque saem da mesma posição por par
    * (material, tamanho) e são somados pelo SERVIDOR; o frontend só os
-   * mostra, nunca recalcula livre, comprometido nem necessidade. Cada um só
-   * traz número se o usuário vê a FONTE (decisão do servidor); sem
+   * mostra, nunca recalcula livre, comprometido nem necessidade. A 12G-6
+   * acrescentou três contagens de solicitações (aguardando SST, aguardando
+   * estoque e disponíveis para entrega, as duas últimas exclusivas), cada uma
+   * liberada pela ação que a trabalha, sem atalho (os cliques ficam para a
+   * 12I). Cada um só traz número se o servidor o liberou; sem
    * permissão: "—" e "sem permissão", nunca um zero mascarado. Os demais
    * cards e painéis da página ficam em "—" / "em integração". Nenhum valor
    * fixo, nada guardado no navegador.
@@ -62,6 +65,9 @@
         necessidade: simples(i.necessidadeReposicao, 'Sem cobertura mais déficit do mínimo'),
         abaixoMinimo: simples(i.estoqueAbaixoMinimo, 'Itens (material × tamanho) abaixo do mínimo pelo saldo livre'),
         funcionarios: simples(i.funcionariosAtivos, 'Funcionários ativos cadastrados'),
+        aguardandoSst: simples(i.solicitacoesAguardandoSst, 'Pedidos aguardando a decisão da Segurança do Trabalho'),
+        aguardandoEstoque: simples(i.solicitacoesAguardandoEstoque, 'Pedidos aprovados sem nenhum item coberto pelo estoque'),
+        disponiveisEntrega: simples(i.disponiveisParaEntrega, 'Pedidos com algum item já coberto pelo estoque'),
       };
     },
     escaparHtml: function (s) {

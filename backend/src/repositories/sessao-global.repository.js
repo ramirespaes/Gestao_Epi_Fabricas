@@ -92,7 +92,7 @@ async function buscarValidaPorHash(executor, tokenHash, inatividadeMinutos) {
 
   const { rows } = await executor.query(
     `SELECT s.id, s.criado_em, s.expira_em, s.ultimo_uso_em,
-            i.id AS identidade_id, i.email AS identidade_email
+            i.id AS identidade_id, i.email AS identidade_email, i.senha_provisoria
        FROM sessoes_globais s
        JOIN identidades i ON i.id = s.identidade_id
       WHERE s.token_hash = $1
@@ -111,6 +111,8 @@ async function buscarValidaPorHash(executor, tokenHash, inatividadeMinutos) {
   return {
     sessao: { id: linha.id, criadoEm: linha.criado_em, expiraEm: linha.expira_em, ultimoUsoEm: linha.ultimo_uso_em },
     identidade: { id: linha.identidade_id, email: linha.identidade_email },
+    // Troca obrigatória (074): o middleware decide; nunca entra em `identidade`, que chega às respostas.
+    senhaProvisoria: linha.senha_provisoria === true,
   };
 }
 
@@ -190,4 +192,26 @@ async function revogarTodasDaIdentidade(executor, identidadeId, motivo, { exceto
   return rowCount;
 }
 
-module.exports = { criar, buscarValidaPorHash, registrarUso, bloquearValida, revogar, revogarTodasDaIdentidade };
+/**
+ * Configurações: "último acesso" = criação da sessão global mais recente
+ * desta identidade que NÃO seja a atual (revogada ou não). Null na primeira
+ * sessão da pessoa. Só leitura, sem lock.
+ */
+async function buscarUltimoAcessoAnterior(executor, identidadeId, sessaoAtualId) {
+  exigirIdentidade(identidadeId);
+  exigirSessao(sessaoAtualId);
+
+  const { rows } = await executor.query(
+    `SELECT criado_em
+       FROM sessoes_globais
+      WHERE identidade_id = $1
+        AND id <> $2
+      ORDER BY criado_em DESC, id DESC
+      LIMIT 1`,
+    [identidadeId, sessaoAtualId],
+  );
+
+  return rows[0] === undefined ? null : rows[0].criado_em;
+}
+
+module.exports = { criar, buscarValidaPorHash, registrarUso, bloquearValida, revogar, revogarTodasDaIdentidade, buscarUltimoAcessoAnterior };

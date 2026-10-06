@@ -177,7 +177,9 @@ describe('buscarValidaPorHash', () => {
 
     const contexto = await buscarValidaPorHash(executor, HASH, INATIVIDADE);
 
-    assert.deepEqual(Object.keys(contexto).sort(), ['empresa', 'sessao', 'usuario']);
+    assert.deepEqual(Object.keys(contexto).sort(), ['empresa', 'restricaoIp', 'senhaProvisoria', 'sessao', 'usuario']);
+    assert.equal(contexto.senhaProvisoria, false, 'linha sem senha provisória: estado falso, fora de usuario');
+    assert.equal(contexto.restricaoIp, false, 'linha sem restrição por IP (077): falso, fora de usuario');
     assert.equal(contexto.sessao.id, SESSAO);
     assert.equal(contexto.empresa.id, EMPRESA_A);
     assert.equal(contexto.usuario.perfil, 'ADMINISTRADOR');

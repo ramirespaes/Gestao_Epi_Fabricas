@@ -28,8 +28,11 @@ const { conviteUsuarioRoutes } = require('./routes/convite-usuario.routes');
 const { entregaEpiRoutes } = require('./routes/entrega-epi.routes');
 const { solicitacaoEpiRoutes } = require('./routes/solicitacao-epi.routes');
 const { vinculoSstRoutes } = require('./routes/vinculo-sst.routes');
+const { alertaEstoqueRoutes } = require('./routes/alerta-estoque.routes');
 const { recuperacaoSenhaPortalRoutes, recuperacaoSenhaPlataformaRoutes } = require('./routes/recuperacao-senha.routes');
 const { trocaSenhaGlobalRoutes, trocaSenhaPlataformaRoutes } = require('./routes/troca-senha.routes');
+// Configurações: telefone, aparência e e-mail de acesso da identidade da sessão global.
+const { contaRoutes } = require('./routes/conta.routes');
 const { cabecalhosSeguranca, semCache } = require('./middleware/cabecalhos');
 const { corsApi, corsPlataforma } = require('./middleware/cors');
 const { exigirJson, parserJson } = require('./middleware/conteudo');
@@ -163,7 +166,10 @@ app.use(
 // cadeia, com a mesma verificação de origem e os mesmos métodos de CORS do
 // Portal; as autorizações ficam nas fábricas e, no detalhe e nos vínculos, nos
 // serviços.
-app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeral, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, recuperacaoSenhaPortalRoutes, trocaSenhaGlobalRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, estoqueRoutes, itensDisponiveisRoutes, grupoHomogeneoExposicaoRoutes, gheMaterialRoutes, funcionarioRoutes, dashboardRoutes, usuarioAdministracaoRoutes, conviteUsuarioRoutes, entregaEpiRoutes, solicitacaoEpiRoutes, vinculoSstRoutes);
+//
+// alertaEstoqueRoutes (Bloco 12, 12G-6): o "Gerar alerta" de falta de estoque
+// (POST, REALIZAR_ENTREGA), na mesma cadeia e com a mesma verificação de origem.
+app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeral, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, recuperacaoSenhaPortalRoutes, trocaSenhaGlobalRoutes, contaRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, estoqueRoutes, itensDisponiveisRoutes, grupoHomogeneoExposicaoRoutes, gheMaterialRoutes, funcionarioRoutes, dashboardRoutes, usuarioAdministracaoRoutes, conviteUsuarioRoutes, entregaEpiRoutes, solicitacaoEpiRoutes, vinculoSstRoutes, alertaEstoqueRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

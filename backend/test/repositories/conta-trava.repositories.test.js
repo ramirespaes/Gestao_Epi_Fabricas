@@ -24,25 +24,38 @@ const executorFalso = (linhas = []) => {
   };
 };
 
-for (const { nome, repo, tabela, mensagemId } of [
-  { nome: 'identidade.repository — buscarPorIdParaAtualizacao', repo: identidadeRepo, tabela: 'identidades', mensagemId: /identidade/ },
-  { nome: 'administrador-plataforma.repository — buscarPorIdParaAtualizacao', repo: administradorRepo, tabela: 'administradores_plataforma', mensagemId: /administrador/ },
+// Configurações (migration 072): a identidade travada também traz telefone,
+// tema e modo visual (a conta compara o gravado antes de alterar); o
+// administrador da plataforma continua só com id, e-mail e situação.
+for (const { nome, repo, tabela, mensagemId, colunas, linha, esperado } of [
+  {
+    nome: 'identidade.repository — buscarPorIdParaAtualizacao', repo: identidadeRepo, tabela: 'identidades', mensagemId: /identidade/,
+    colunas: 'id, email, ativo, telefone, tema, modo_visual',
+    linha: { id: 7, email: 'pessoa@example.invalid', ativo: true, telefone: null, tema: 'sistema', modo_visual: 'padrao' },
+    esperado: { id: 7, email: 'pessoa@example.invalid', ativo: true, telefone: null, tema: 'sistema', modoVisual: 'padrao' },
+  },
+  {
+    nome: 'administrador-plataforma.repository — buscarPorIdParaAtualizacao', repo: administradorRepo, tabela: 'administradores_plataforma', mensagemId: /administrador/,
+    colunas: 'id, email, ativo',
+    linha: { id: 7, email: 'pessoa@example.invalid', ativo: true },
+    esperado: { id: 7, email: 'pessoa@example.invalid', ativo: true },
+  },
 ]) {
   describe(nome, () => {
     test('uma consulta parametrizada com FOR UPDATE na linha do id informado; devolve id, e-mail e situação', async () => {
-      const executor = executorFalso([{ id: 7, email: 'pessoa@example.invalid', ativo: true }]);
+      const executor = executorFalso([linha]);
       const conta = await repo.buscarPorIdParaAtualizacao(executor, 7);
-      assert.deepEqual(conta, { id: 7, email: 'pessoa@example.invalid', ativo: true });
+      assert.deepEqual(conta, esperado);
       assert.equal(executor.chamadas.length, 1);
       const [{ texto, valores }] = executor.chamadas;
-      assert.match(texto, new RegExp(`SELECT id, email, ativo\\s+FROM ${tabela}\\s+WHERE id = \\$1\\s+FOR UPDATE\\s*$`));
+      assert.match(texto, new RegExp(`SELECT ${colunas}\\s+FROM ${tabela}\\s+WHERE id = \\$1\\s+FOR UPDATE\\s*$`));
       assert.deepEqual(valores, [7]);
     });
 
     test('não devolve nem consulta o hash da senha', async () => {
-      const executor = executorFalso([{ id: 7, email: 'pessoa@example.invalid', ativo: false, senha_hash: 'nao-deveria-sair' }]);
+      const executor = executorFalso([{ ...linha, ativo: false, senha_hash: 'nao-deveria-sair' }]);
       const conta = await repo.buscarPorIdParaAtualizacao(executor, 7);
-      assert.deepEqual(Object.keys(conta).sort(), ['ativo', 'email', 'id']);
+      assert.deepEqual(Object.keys(conta).sort(), Object.keys(esperado).sort());
       assert.doesNotMatch(executor.chamadas[0].texto, /senha_hash/);
     });
 

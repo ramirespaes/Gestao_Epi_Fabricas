@@ -91,7 +91,7 @@
       }
       enviando = false;
       // Mensagem pública e genérica do backend; nunca ecoa e-mail ou senha.
-      mostrar(r.status === 401 ? Portal.mensagens.CREDENCIAIS : Portal.mensagens.deErro(r), 'erro');
+      mostrar(Portal.mensagens.deLogin(r), 'erro');
       atualizarBotao();
       campoSenha.focus();
     }).catch(function () {

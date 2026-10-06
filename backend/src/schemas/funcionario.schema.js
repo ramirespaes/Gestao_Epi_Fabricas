@@ -42,6 +42,10 @@ const setor = textoCurto(SETOR_MAXIMO, 'SETOR_INVALIDO', 'Setor inválido');
 const funcao = textoCurto(FUNCAO_MAXIMO, 'FUNCAO_INVALIDA', 'Função inválida');
 const cracha = textoCurto(CRACHA_MAXIMO, 'CRACHA_INVALIDO', 'Crachá inválido');
 const telefone = textoCurto(TELEFONE_MAXIMO, 'TELEFONE_INVALIDO', 'Telefone inválido');
+// 12G-9: a planilha traz o NOME do GHE (grupos_homogeneos_exposicao.nome,
+// VARCHAR(150)); existência, empresa e estado ativo são do serviço.
+const GHE_NOME_MAXIMO = 150;
+const gheNome = textoCurto(GHE_NOME_MAXIMO, 'GHE_INVALIDO', 'GHE inválido');
 const busca = textoCurto(BUSCA_MAXIMA, 'BUSCA_INVALIDA', 'Termo de busca inválido');
 const dataNascimento = dataCalendario('DATA_NASCIMENTO_INVALIDA', 'Data de nascimento inválida');
 // C4 (migration 040): mesma regra de calendário; a relação com o nascimento
@@ -134,10 +138,11 @@ const linhaImportacao = z.strictObject({
   matricula,
   dataAdmissao,
   dataNascimento: dataNascimento.nullable().optional(),
-  // Setor e função (cargo) são obrigatórios pela planilha de importação.
+  // Setor, função (cargo) e GHE são obrigatórios pela planilha de importação.
   setor,
   funcao,
   telefone: telefone.nullable().optional(),
+  ghe: gheNome,
 });
 
 const linhaEstrutura = z.strictObject({
@@ -150,6 +155,7 @@ const linhaEstrutura = z.strictObject({
   setor: textoEstrutura,
   funcao: textoEstrutura,
   telefone: textoEstrutura,
+  ghe: textoEstrutura,
 });
 
 const importacao = {

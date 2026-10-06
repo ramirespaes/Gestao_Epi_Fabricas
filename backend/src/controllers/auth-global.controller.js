@@ -3,6 +3,12 @@
 const loginGlobalService = require('../services/login-global.service');
 const contextoEmpresarialService = require('../services/contexto-empresarial.service');
 const sessaoRepo = require('../repositories/sessao.repository');
+const sessaoGlobalRepo = require('../repositories/sessao-global.repository');
+const identidadeRepo = require('../repositories/identidade.repository');
+const usuarioRepo = require('../repositories/usuario.repository');
+const { HttpError } = require('../errors/HttpError');
+const { PADRAO: PREFERENCIAS_PADRAO } = require('../utils/preferencias-aparencia');
+const { mascararCpf } = require('../utils/normalizacao');
 const autenticacaoMiddleware = require('../middleware/autenticacao');
 const autenticacaoGlobalMiddleware = require('../middleware/autenticacao-global');
 const {
@@ -77,6 +83,10 @@ function criarAuthGlobalController({ pool: poolInjetado }) {
           ip,
           dispositivo,
         }));
+        // Senha certa, nenhuma empresa utilizável e ao menos um vínculo desabilitado: a causa real é dita.
+        if (empresas.length === 0 && await usuarioRepo.contarVinculosInativosDaIdentidade(poolInjetado, autenticado.identidade.id) > 0) {
+          throw HttpError.unauthorized('USUARIO_DESATIVADO', 'Usuário desativado. Procure o administrador da empresa.');
+        }
         await contextoEmpresarialService.encerrarAnteriores(poolInjetado, {
           sessaoGlobalAnterior: anteriorGlobal(globalAnterior),
           sessaoEmpresarialAnterior: anteriorEmpresarial(empresarialAnterior),
@@ -103,16 +113,36 @@ function criarAuthGlobalController({ pool: poolInjetado }) {
      * nunca apresentado como contexto desta).
      */
     async me(req, res) {
-      const [empresas, empresarial] = await Promise.all([
+      // Configurações: a identidade sai com telefone, aparência e o último
+      // acesso (sessão global anterior) — leitura da própria conta, sem rota nova.
+      const [empresas, empresarial, conta, ultimoAcessoEm] = await Promise.all([
         contextoEmpresarialService.listarEmpresas(poolInjetado, { identidadeId: req.identidade.id }),
         autenticacaoMiddleware.buscarContextoSessao(poolInjetado, req),
+        identidadeRepo.buscarPorId(poolInjetado, req.identidade.id),
+        sessaoGlobalRepo.buscarUltimoAcessoAnterior(poolInjetado, req.identidade.id, req.sessaoGlobal.id),
       ]);
       const contexto = empresarial !== null && empresarial.usuario.identidadeId === req.identidade.id ? empresarial : null;
+      const preferencias = conta === null ? { telefone: null, ...PREFERENCIAS_PADRAO } : { telefone: conta.telefone, tema: conta.tema, modoVisual: conta.modoVisual };
+      // Minha Conta: situação real do vínculo e o funcionário explicitamente
+      // vinculado (073), com o CPF só mascarado — o padrão da aplicação.
+      const operacional = contexto === null ? null : await usuarioRepo.buscarContaOperacional(poolInjetado, contexto.empresa.id, contexto.usuario.id);
+      const funcionario = operacional === null || operacional.funcionario === null
+        ? { vinculado: false, matricula: null, cpfMascarado: null }
+        : { vinculado: true, matricula: operacional.funcionario.matricula, cpfMascarado: mascararCpf(operacional.funcionario.cpf) };
       res.status(200).json({
         status: 'ok',
-        identidade: req.identidade,
+        identidade: {
+          id: req.identidade.id,
+          email: req.identidade.email,
+          ...preferencias,
+          ultimoAcessoEm: ultimoAcessoEm === null ? null : ultimoAcessoEm.toISOString(),
+          trocaSenhaObrigatoria: conta !== null && conta.senhaProvisoria === true,
+        },
         empresas,
-        contexto: corpoContexto(contexto),
+        contexto: contexto === null ? null : {
+          usuario: { ...contexto.usuario, ativo: operacional === null ? null : operacional.ativo, funcionario },
+          empresa: contexto.empresa,
+        },
       });
     },
 

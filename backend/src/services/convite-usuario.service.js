@@ -206,6 +206,10 @@ async function criar(pool, {
   return emTransacao(pool, async (client) => {
     const ator = await exigirEscrita(client, empresaId, atorId);
     exigirPerfilGerenciavel(ator, perfil);
+    // O MASTER é único por empresa e só nasce pelo Painel Privado (convite do MASTER): nunca por este convite.
+    if (perfil === 'MASTER') {
+      throw HttpError.conflict('MASTER_SOMENTE_PELO_PAINEL_PRIVADO', 'O Master da empresa só é criado pelo Painel Privado');
+    }
 
     await client.query('SELECT pg_advisory_xact_lock($1::bigint)', [travaDeCriacao(empresaId, emailN)]);
 

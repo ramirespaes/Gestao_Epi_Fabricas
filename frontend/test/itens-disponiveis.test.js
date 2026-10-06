@@ -8,6 +8,7 @@ const vm = require('node:vm');
 
 const EpiHttp = require('../js/api-http');
 const P = require('../js/permissoes-efetivas');
+const Catalogo = require('../js/catalogo-visual');
 
 /**
  * Itens Disponíveis (Bloco 9, Etapa C, Parte C3; posição da 12D-3): módulo
@@ -112,6 +113,8 @@ describe('acoes: GET /estoque/itens-disponiveis', () => {
 // As células de uma linha, sem as marcações de formatação interna, na ordem da tabela.
 const celulasDe = (html) => [...html.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((m) => m[1]);
 const semMarcacao = (s) => s.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+// 12G-7: a célula do material começa pelo pictograma decorativo; o resto dela segue igual.
+const semPictograma = (s) => s.replace(/^<svg [^>]*>[\s\S]*?<\/svg>/, '');
 const COLUNAS = ['categoria', 'tipo', 'material', 'tamanho', 'fisico', 'comprometido', 'livre', 'semCobertura', 'minimo', 'deficit', 'necessidade', 'unidade', 'status'];
 const colunasDe = (html) => Object.fromEntries(celulasDe(html).map((c, i) => [COLUNAS[i], c]));
 
@@ -123,7 +126,7 @@ describe('render: tabela da posição (12D-3), 13 colunas', () => {
     const c = colunasDe(html);
     assert.equal(c.categoria, 'EPI');
     assert.equal(c.tipo, 'Sapatão / Botina');
-    assert.match(c.material, /^&lt;b&gt;x&lt;\/b&gt;/);
+    assert.match(semPictograma(c.material), /^&lt;b&gt;x&lt;\/b&gt;/);
     assert.match(c.material, /C&amp;D/);
     assert.deepEqual([c.tamanho, c.fisico, c.comprometido, c.livre, c.semCobertura, c.deficit, c.necessidade, c.unidade], ['40', '12', '2', '10', '0', '0', '0', 'Par']);
     assert.match(c.minimo, /^5\b/);
@@ -292,7 +295,8 @@ describe('inspeção estática: pages/available-items.html integrada, interface 
     }
     const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
     // 12D-3: a situação vem do servidor, então a regra local de js/materiais.js não é mais carregada aqui.
-    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/itens-disponiveis.js']);
+    // 12G-7: o catálogo visual vem antes do módulo que desenha a linha.
+    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/catalogo-visual.js', '../js/itens-disponiveis.js']);
     assert.match(codigo, /EpiSessaoEmpresarial\.montar\(/);
     assert.match(codigo, /EpiPermissoes\.prepararPagina\(\{\s*pagina: 'availableItems'/);
     for (const id of ['telaSessao', 'telaSessaoMensagem', 'telaSessaoPortal', 'aviso']) assert.ok(ids.includes(id), id);
@@ -334,14 +338,14 @@ describe('inspeção estática: pages/available-items.html integrada, interface 
 
   test('menu: estrutura preservada; Análise de estoque ativa; integrados por permissão; demais sem link', () => {
     const links = [...html.matchAll(/<a [^>]*data-pagina="([^"]+)"[^>]*>/g)];
-    assert.deepEqual(links.map((m) => m[1]).sort(), ['autorizacoes-individuais', 'availableItems', 'dashboard', 'employeeGroups', 'employeeHistory', 'epiFicha', 'grupo-permissoes', 'grupo-usuarios', 'grupos-acesso', 'importEmployees', 'materials', 'newUser', 'operations', 'request', 'stockRequests', 'stockValidity', 'supervisorApproval', 'userAdmin']);
+    assert.deepEqual(links.map((m) => m[1]).sort(), ['autorizacoes-individuais', 'availableItems', 'config', 'dashboard', 'employeeGroups', 'employeeHistory', 'epiFicha', 'gestaoUsuarios', 'grupo-permissoes', 'grupo-usuarios', 'grupos-acesso', 'importEmployees', 'materials', 'newUser', 'operations', 'request', 'stockRequests', 'stockValidity', 'supervisorApproval', 'userAdmin']);
     for (const m of links) assert.match(m[0], /style="display:none"/);
     assert.match(html, /<a class="active" href="javascript:void\(0\)" data-pagina="availableItems"/);
     const hrefs = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]).filter((h) => !h.startsWith('http') && !h.startsWith('../css/') && h !== 'javascript:void(0)');
-    const permitidos = new Set(['materials.html', 'stock-validity.html', 'operations.html', 'dashboard.html', 'employee-groups.html', 'epi-ficha.html', 'employee-history.html', 'import-employees.html', 'request.html', 'supervisor-approval.html', 'stock-requests.html', 'grupos-acesso.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'autorizacoes-individuais.html', 'new-user.html', 'user-admin.html', '../portal/index.html', '../portal/inicio.html']);
+    const permitidos = new Set(['materials.html', 'stock-validity.html', 'operations.html', 'dashboard.html', 'employee-groups.html', 'epi-ficha.html', 'employee-history.html', 'import-employees.html', 'request.html', 'supervisor-approval.html', 'stock-requests.html', 'grupos-acesso.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'autorizacoes-individuais.html', 'new-user.html', 'user-admin.html', 'gestao-usuarios.html', 'config.html', '../portal/index.html', '../portal/inicio.html']);
     for (const h of hrefs) assert.ok(permitidos.has(h), h);
-    // 20 na C3; a C4 integrou Histórico e Importar Funcionários (D9): restam 18.
-    assert.ok([...html.matchAll(/<a class="nav-pendente"/g)].length >= 9); // C6: Dashboard; E7: Validade; E8: Operações; F: Novo Usuário e Administração de Usuários; 10I: Ficha de EPI; 12G-1: as três da solicitação
+    // 20 na C3; a C4 integrou Histórico e Importar Funcionários (D9): restam 18; Configurações integrada: restam 8 pendentes.
+    assert.ok([...html.matchAll(/<a class="nav-pendente"/g)].length >= 8); // C6: Dashboard; E7: Validade; E8: Operações; F: Novo Usuário e Administração de Usuários; 10I: Ficha de EPI; 12G-1: as três da solicitação
   });
 
   test('a Gestão de estoque e o início do Portal oferecem a Análise de estoque (oculta até a permissão)', () => {
@@ -376,7 +380,7 @@ function montarPagina(responder, { acesso = { permissoes: PERMISSOES_OK, podeAlt
     window: { SAFEWORK_PORTAL_API_BASE_URL: BASE },
     URL: { createObjectURL: (b) => { downloads.push({ blob: b }); return 'blob:x'; }, revokeObjectURL() {} },
     Blob: class { constructor(partes, opcoes) { this.partes = partes; this.tipo = opcoes && opcoes.type; } },
-    EpiHttp, EpiItensDisponiveis: modulo(),
+    EpiHttp, EpiItensDisponiveis: modulo(), EpiCatalogoVisual: Catalogo,
     EpiPermissoes: { prepararPagina: async () => acesso },
     EpiSessaoEmpresarial: { montar: async (o) => { sandbox.opcoesMontar = o; return CONTEXTO; }, sessaoEncerrada() { sandbox.encerrada = true; } },
     console, setTimeout, Promise, String, Number, Array, Object, JSON,
@@ -703,6 +707,35 @@ describe('ajuste 3 — encerramento da sessão não preserva a consulta anterior
   });
 });
 
+describe('12G-7 — pictograma do material: na mesma célula, antes do nome, decorativo', () => {
+  test('o pictograma do tipo abre a célula do material; o nome e o código continuam em texto; 13 colunas', () => {
+    const html = modulo().render.linhas([item({ material: 'Luva de raspa', codigoInterno: 'L-1', categoria: 'EPI', tipo: 'Luva' })]);
+    const tds = celulasDe(html);
+    assert.equal(tds.length, 13);
+    const c = colunasDe(html);
+    assert.ok(c.material.startsWith(Catalogo.marcacao({ tipo: 'Luva' })), c.material);
+    assert.match(c.material, /^<svg [^>]*aria-hidden="true"[^>]*data-pictograma="luva"/);
+    assert.equal(semMarcacao(c.material), 'Luva de raspa L-1');
+    assert.equal((html.match(/<svg /g) || []).length, 1, 'um pictograma por linha');
+    for (const [nome, conteudo] of Object.entries(c)) if (nome !== 'material') assert.equal(/<svg/.test(conteudo), false, nome);
+  });
+
+  test('tipo "Outro" ou desconhecido usa o pictograma da categoria; sem categoria conhecida, o genérico', () => {
+    const chaveDa = (extra) => (colunasDe(modulo().render.linhas([item(extra)])).material.match(/data-pictograma="([^"]+)"/) || [])[1];
+    assert.equal(chaveDa({ tipo: 'Sapatão / Botina', categoria: 'EPI' }), 'botina');
+    assert.equal(chaveDa({ tipo: 'Avental', categoria: 'Uniforme' }), 'uniforme');
+    assert.equal(chaveDa({ tipo: null, categoria: 'Material de consumo' }), 'consumo');
+    assert.equal(chaveDa({ tipo: 'Outro', categoria: 'Brinde' }), 'material');
+    assert.equal(chaveDa({ tipo: null, categoria: null }), 'material');
+  });
+
+  test('as linhas de estado e as opções dos filtros não ganham pictograma', () => {
+    const { render } = modulo();
+    assert.equal(/<svg/.test(render.estado('Carregando…')), false);
+    assert.equal(/<svg/.test(render.opcoes(['Luva', 'Capacete'], 'Todos', 'Luva')), false);
+  });
+});
+
 describe('segurança: na Análise de estoque, conteúdo da API aparece como texto, nunca como elemento ou evento', () => {
   const ATAQUE = '<img src=x onerror=alert(1)>';
   const ESCAPADO = '&lt;img src=x onerror=alert(1)&gt;';
@@ -723,6 +756,14 @@ describe('segurança: na Análise de estoque, conteúdo da API aparece como text
     })]);
     assert.ok(html.includes(ESCAPADO));
     semElementoInjetado(html);
+  });
+
+  test('12G-7: tipo, categoria e nome maliciosos só escolhem o pictograma genérico; nada deles entra no SVG', () => {
+    const html = modulo().render.linhas([item({ categoria: ATAQUE, tipo: `" onload="alert(1)`, material: ATAQUE, codigoInterno: null })]);
+    semElementoInjetado(html);
+    const svg = (html.match(/<svg [\s\S]*?<\/svg>/) || [])[0];
+    assert.equal(svg, Catalogo.marcacao({}), 'o SVG é o genérico, fixo');
+    assert.equal(/alert|onerror|onload/.test(svg), false);
   });
 
   test('opções dos filtros e linha de estado: valores escapados, inclusive dentro de value="..."', () => {

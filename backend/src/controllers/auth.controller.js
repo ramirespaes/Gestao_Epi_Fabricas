@@ -3,6 +3,8 @@
 const loginService = require('../services/login.service');
 const permissoesEfetivasService = require('../services/permissoes-efetivas.service');
 const sessaoRepo = require('../repositories/sessao.repository');
+const identidadeRepo = require('../repositories/identidade.repository');
+const { PADRAO: PREFERENCIAS_PADRAO } = require('../utils/preferencias-aparencia');
 const autenticacaoMiddleware = require('../middleware/autenticacao');
 const { serializarCookieSessao, serializarRemocaoCookieSessao } = require('../security/cookie');
 const { pool } = require('../config/database');
@@ -44,12 +46,17 @@ function criarAuthController({ pool: poolInjetado }) {
      */
     async me(req, res) {
       // identidadeId (Pacote 4) é contexto interno da sessão; o corpo
-      // público de /auth/me permanece exatamente o de antes.
+      // público de /auth/me permanece o de antes, mais `preferencias`
+      // (Configurações): tema e modo visual da identidade, para toda página
+      // integrada aplicar a aparência da pessoa ao carregar.
       const { identidadeId, ...usuario } = req.usuario;
+      const conta = identidadeId ? await identidadeRepo.buscarPorId(poolInjetado, identidadeId) : null;
+      const preferencias = conta === null ? { ...PREFERENCIAS_PADRAO } : { tema: conta.tema, modoVisual: conta.modoVisual };
       res.status(200).json({
         status: 'ok',
         usuario,
         empresa: req.empresa,
+        preferencias,
       });
     },
 

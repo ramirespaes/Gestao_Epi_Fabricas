@@ -41,7 +41,7 @@ const { ESCOPO_PROVISIONAMENTO_MASTER } = require('../../src/rbac/recursos');
 // 048: a auditoria da plataforma grava ator e alvo; 053: criarInicial emite a
 // liberação do MFA; 054: a sessão administrativa grava o registro do MFA;
 // 049, 052 e 055: a sessão só vale ligada a um desafio de MFA concluído.
-const TODAS_AS_MIGRATIONS = [...Array.from({ length: 35 }, (_, i) => String(i).padStart(3, '0')), '048', '049', '052', '053', '054', '055'];
+const TODAS_AS_MIGRATIONS = [...Array.from({ length: 35 }, (_, i) => String(i).padStart(3, '0')), '048', '049', '052', '053', '054', '055', '072', '074', '075', '076', '077', '078'];
 const SENHA_ADMIN = 'planeta-nebulosa-ozonio-42';
 const SENHA_MASTER = 'quasar-boreal-91-nebula';
 const SENHA_CLIENTE = 'senha-correta-do-teste-http-2026';
@@ -169,7 +169,7 @@ describe('Pacote 3 — cadastro de empresas e convite do MASTER (HTTP + PostgreS
       const { rows: perms } = await contexto.pool.query("SELECT recurso FROM permissoes_recurso WHERE empresa_id = $1 AND perfil = 'MASTER' ORDER BY recurso", [empresaA.id]);
       assert.deepEqual(perms.map((p) => p.recurso).sort(), ESCOPO_PROVISIONAMENTO_MASTER.recursos.map((x) => x.recurso).sort());
       const { rows: acoes } = await contexto.pool.query("SELECT acao_codigo, permitido FROM permissoes_acao WHERE empresa_id = $1 AND perfil = 'MASTER' ORDER BY acao_codigo", [empresaA.id]);
-      assert.deepEqual(acoes, [{ acao_codigo: 'MOVIMENTAR_ESTOQUE', permitido: true }, { acao_codigo: 'REALIZAR_ENTREGA', permitido: true }]);
+      assert.deepEqual(acoes, ['BAIXA_ESTOQUE', 'ENTRADA_ESTOQUE', 'IMPORTAR_FUNCIONARIOS', 'REALIZAR_ENTREGA'].map((acao_codigo) => ({ acao_codigo, permitido: true })));
 
       // Auditoria: trilha da PLATAFORMA, com o administrador da sessão e a empresa afetada.
       const { rows: audit } = await contexto.pool.query("SELECT administrador_id, empresa_afetada_id, acao, dados_novos FROM logs_auditoria_plataforma WHERE acao = 'EMPRESA_CRIADA' AND empresa_afetada_id = $1", [empresaA.id]);

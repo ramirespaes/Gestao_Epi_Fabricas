@@ -186,7 +186,7 @@
   }
 
   /**
-   * @param {{capacidades: object, aoSessaoEncerrada: Function, documento?: object}} o
+   * @param {{capacidades: object, aoSessaoEncerrada: Function, aoMudarDetalhe?: Function, documento?: object}} o
    */
   function criarTela(o) {
     var doc = o.documento || global.document;
@@ -438,6 +438,8 @@
       $('botaoFecharDetalhe').disabled = travada() || enc.enviando;
       $('detalheAcoesDica').textContent = cap.entregar === true && ativa() && !algoDisponivel()
         ? 'Nada disponível agora para entrega: os itens pendentes aguardam estoque ou estão suspensos.' : '';
+      // 12G-6: o "Gerar alerta" acompanha o pedido aberto.
+      if (typeof o.aoMudarDetalhe === 'function') o.aoMudarDetalhe(ativa() ? det.dados : null);
     }
 
     // ── entrega ──────────────────────────────────────────────────────

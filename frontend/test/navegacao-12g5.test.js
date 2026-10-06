@@ -34,7 +34,7 @@ describe('Início do Portal', () => {
     assert.equal(/\bEstoque\b|\bGHE\b|Etapa C|Bloco 9/.test(pendentes), false, pendentes);
     const integrados = textoDe(secao('Módulos já integrados ao servidor'));
     assert.match(integrados, /Gestão de estoque/);
-    assert.match(integrados, /GHE e EPIs/);
+    assert.match(integrados, /Gestão de GHE/);
   });
 
   test('os módulos integrados seguem as permissões efetivas: o texto não atribui o acesso só ao perfil', () => {

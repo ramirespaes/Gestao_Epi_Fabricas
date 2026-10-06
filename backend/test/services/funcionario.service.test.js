@@ -43,15 +43,20 @@ function mundoValido(t, { existente = funcionario() } = {}) {
   t.mock.method(funcionarioRepo, 'buscarPorId', localizar);
   t.mock.method(funcionarioRepo, 'listarPorEmpresa', async () => [existente].filter(Boolean));
   t.mock.method(funcionarioRepo, 'contarPorEmpresa', async () => (existente ? 1 : 0));
-  const ghes = { [GHE_ATIVO]: { id: GHE_ATIVO, empresaId: EMPRESA, ativo: true }, [GHE_INATIVO]: { id: GHE_INATIVO, empresaId: EMPRESA, ativo: false } };
+  const ghes = { [GHE_ATIVO]: { id: GHE_ATIVO, empresaId: EMPRESA, nome: 'GHE Ativo', ativo: true }, [GHE_INATIVO]: { id: GHE_INATIVO, empresaId: EMPRESA, nome: 'GHE Inativo', ativo: false } };
+  const porNome = Object.fromEntries(Object.values(ghes).map((g) => [g.nome, g]));
   // Correção pós-auditoria da Etapa B: a verificação do GHE para vínculo
   // usa a leitura TRAVADA (buscarPorIdParaVinculo, FOR SHARE), nunca a
   // leitura sem lock (buscarPorId) — esta última fica mockada só para
   // comprovar que não é chamada.
   const buscarGhe = t.mock.method(gheRepo, 'buscarPorIdParaVinculo', async (_c, empresaId, id) => (empresaId === EMPRESA ? (ghes[id] ?? null) : null));
-  t.mock.method(gheRepo, 'buscarPorId', async () => { throw new Error('vínculo não pode usar leitura sem lock (buscarPorId)'); });
+  const buscarGheSemLock = t.mock.method(gheRepo, 'buscarPorId', async () => { throw new Error('vínculo não pode usar leitura sem lock (buscarPorId)'); });
   return {
     buscarGhe,
+    buscarGheSemLock,
+    // 12G-9: a importação resolve o GHE pelo nome exato (sem lock) e localiza o existente pelo CPF.
+    buscarGhePorNome: t.mock.method(gheRepo, 'buscarPorNome', async (_c, empresaId, nome) => (empresaId === EMPRESA ? (porNome[nome] ?? null) : null)),
+    buscarPorCpf: t.mock.method(funcionarioRepo, 'buscarPorCpf', async () => null),
     criar: t.mock.method(funcionarioRepo, 'criar', async (_c, dados) => funcionario({ ...dados })),
     atualizar: t.mock.method(funcionarioRepo, 'atualizar', async (_c, _e, _id, campos) => funcionario({
       nome: campos.nome ?? existente.nome, cpf: existente.cpf, telefone: campos.telefoneInformado ? campos.telefone : existente.telefone,
@@ -355,7 +360,7 @@ describe('C4 — importação em lote', () => {
   const IMPORTACAO = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
   const linhaImp = (linha, extra = {}) => ({
     linha, nome: `Funcionário ${linha}`, cpf: '52998224725', matricula: `MAT-${linha}`, dataAdmissao: '2020-06-01',
-    dataNascimento: '1990-03-15', setor: 'Produção', funcao: 'Operador', telefone: '47999990000', ...extra,
+    dataNascimento: '1990-03-15', setor: 'Produção', funcao: 'Operador', telefone: '47999990000', ghe: 'GHE Ativo', ...extra,
   });
   const pedido = (linhas, extra = {}) => ({
     empresaId: EMPRESA, atorId: ATOR_ID, importacaoId: IMPORTACAO, lote: { numero: 1, total: 2 },
@@ -387,7 +392,7 @@ describe('C4 — importação em lote', () => {
       { linha: 7, situacao: 'RECUSADO', codigo: 'FUNCIONARIO_DATA_ADMISSAO_INVALIDA', motivo: 'Data de admissão inválida: deve ser a partir de 1900 e posterior ao nascimento.', campos: ['dataAdmissao'] },
       { linha: 8, situacao: 'CADASTRADO', funcionarioId: 1002 },
     ]);
-    assert.deepEqual(r.resumo, { cadastrados: 2, duplicados: 2, recusados: 2, erros: 1 });
+    assert.deepEqual(r.resumo, { cadastrados: 2, jaCadastrados: 0, divergentes: 0, duplicados: 2, recusados: 2, erros: 1 });
     assert.deepEqual([r.importacaoId, r.lote], [IMPORTACAO, { numero: 1, total: 2 }]);
     // linhas que chegaram ao banco (2, 4, 5, 6, 8) + o registro do lote: uma transação cada
     assert.equal(contar(cliente.chamadas, /^BEGIN$/), 6);
@@ -422,9 +427,13 @@ describe('C4 — importação em lote', () => {
       hashTextoDeclaracao: declaracao.hashDaVersao('IMPORTACAO-FUNCIONARIOS-V1'),
       declaracaoConfirmada: true,
       lote: 1, totalLotes: 2, formato: 'xlsx', nomeArquivo: 'funcionarios.xlsx', totalLinhasArquivo: 150,
-      linhasNoLote: 2, cadastrados: 1, duplicados: 0, recusados: 1, erros: 0,
+      linhasNoLote: 2, cadastrados: 1, jaCadastrados: 0, divergentes: 0, duplicados: 0, recusados: 1, erros: 0,
+      linhas: [
+        { linha: 2, situacao: 'CADASTRADO', codigo: null, funcionarioId: FUNC_ID, campos: [] },
+        { linha: 3, situacao: 'RECUSADO', codigo: 'FUNCIONARIO_CPF_INVALIDO', funcionarioId: null, campos: ['cpf'] },
+      ],
     });
-    assert.doesNotMatch(JSON.stringify(lote), /52998224725|Funcionário|47999990000|1990-03-15/);
+    assert.doesNotMatch(JSON.stringify(lote), /52998224725|Funcionário|47999990000|1990-03-15|GHE Ativo/);
   });
 
   test('declaração ausente, não confirmada ou de versão desconhecida: 400 IMPORTACAO_DECLARACAO_LGPD_INVALIDA antes de qualquer transação', async (t) => {
@@ -445,14 +454,118 @@ describe('C4 — importação em lote', () => {
     assert.equal(escritas.criar.mock.calls.length, 0);
   });
 
-  test('importação nunca vincula GHE nem aceita crachá: o repositório recebe só os campos da planilha', async (t) => {
+  test('importação vincula o GHE resolvido pelo nome (12G-9) e nunca aceita crachá: o repositório recebe os campos da planilha e o id do GHE', async (t) => {
     const escritas = mundoValido(t);
     await servico.importar(criarPoolFalso(criarClienteFalso()), pedido([linhaImp(2)]));
     const dados = escritas.criar.mock.calls[0].arguments[1];
     assert.deepEqual(dados, {
-      empresaId: EMPRESA, matricula: 'MAT-2', nome: 'Funcionário 2', cpf: '52998224725', grupoHomogeneoId: null,
+      empresaId: EMPRESA, matricula: 'MAT-2', nome: 'Funcionário 2', cpf: '52998224725', grupoHomogeneoId: GHE_ATIVO,
       dataNascimento: '1990-03-15', dataAdmissao: '2020-06-01', setor: 'Produção', funcao: 'Operador', cracha: null, telefone: '47999990000',
     });
-    assert.equal(escritas.buscarGhe.mock.calls.length, 0);
+    assert.deepEqual(escritas.buscarGhePorNome.mock.calls.map((c) => c.arguments.slice(1)), [[EMPRESA, 'GHE Ativo']]);
+    assert.equal(escritas.buscarGhe.mock.calls.length, 1, 'o GHE é relido FOR SHARE na transação da gravação');
+  });
+
+  // ── 12G-9: GHE pelo nome e funcionário existente, sem sobrescrever ──
+  const MOTIVO_GHE_NAO_INFORMADO = 'GHE não informado: preencha a coluna GHE com o nome exato de um GHE cadastrado nesta empresa.';
+  const MOTIVO_GHE_INEXISTENTE = 'GHE inexistente nesta empresa: informe o nome exato de um GHE já cadastrado (a importação nunca cria GHE).';
+  const MOTIVO_GHE_INATIVO = 'GHE inativo não aceita novos vínculos: reative o GHE ou informe outro.';
+  const MOTIVO_JA_CADASTRADO = 'Já cadastrado — sem alterações.';
+  const MOTIVO_DIVERGENTE = 'Já cadastrado — dados divergentes. Nenhuma alteração realizada.';
+  const CPF_NOVO = '11144477735';
+
+  test('12G-9 GHE pelo nome exato: ativo vincula; ausente, vazio, inexistente, inativo e com caixa diferente recusam só a linha; nenhum GHE é criado', async (t) => {
+    const escritas = mundoValido(t);
+    const criarGhe = t.mock.method(gheRepo, 'criar', async () => { throw new Error('a importação nunca cria GHE'); });
+    const cliente = criarClienteFalso();
+    const r = await servico.importar(criarPoolFalso(cliente), pedido([
+      linhaImp(2), linhaImp(3, { ghe: undefined }), linhaImp(4, { ghe: '   ' }), linhaImp(5, { ghe: 'GHE Que Não Existe' }),
+      linhaImp(6, { ghe: 'GHE Inativo' }), linhaImp(7, { ghe: 'ghe ativo' }), linhaImp(8, { ghe: 'G'.repeat(151) }),
+    ]));
+    // GHE inexistente ou inativo é decidido ANTES de abrir transação: só a linha 2 e a auditoria do lote gravam.
+    assert.equal(contar(cliente.chamadas, /^BEGIN$/), 2);
+    assert.deepEqual(r.linhas, [
+      { linha: 2, situacao: 'CADASTRADO', funcionarioId: FUNC_ID },
+      { linha: 3, situacao: 'RECUSADO', codigo: 'FUNCIONARIO_GHE_NAO_INFORMADO', motivo: MOTIVO_GHE_NAO_INFORMADO, campos: ['ghe'] },
+      { linha: 4, situacao: 'RECUSADO', codigo: 'FUNCIONARIO_GHE_NAO_INFORMADO', motivo: MOTIVO_GHE_NAO_INFORMADO, campos: ['ghe'] },
+      { linha: 5, situacao: 'RECUSADO', codigo: 'FUNCIONARIO_GHE_INEXISTENTE', motivo: MOTIVO_GHE_INEXISTENTE, campos: ['ghe'] },
+      { linha: 6, situacao: 'RECUSADO', codigo: 'FUNCIONARIO_GHE_INATIVO', motivo: MOTIVO_GHE_INATIVO, campos: ['ghe'] },
+      { linha: 7, situacao: 'RECUSADO', codigo: 'FUNCIONARIO_GHE_INEXISTENTE', motivo: MOTIVO_GHE_INEXISTENTE, campos: ['ghe'] },
+      { linha: 8, situacao: 'RECUSADO', codigo: 'FUNCIONARIO_GHE_NAO_INFORMADO', motivo: MOTIVO_GHE_NAO_INFORMADO, campos: ['ghe'] },
+    ]);
+    assert.deepEqual(escritas.criar.mock.calls.map((c) => c.arguments[1].grupoHomogeneoId), [GHE_ATIVO]);
+    assert.equal(criarGhe.mock.calls.length, 0);
+    assert.deepEqual(r.resumo, { cadastrados: 1, jaCadastrados: 0, divergentes: 0, duplicados: 0, recusados: 6, erros: 0 });
+    assert.doesNotMatch(JSON.stringify(r), /GHE Que Não Existe|ghe ativo|GGGG/, 'o GHE informado não é ecoado');
+  });
+
+  test('12G-9 existente pelo CPF: equivalente → JA_CADASTRADO sem alterações; diferente → divergências com campo e valor atual (nascimento e telefone só sinalizados); opcional vazio na planilha não diverge; nada é criado, alterado ou reativado', async (t) => {
+    const existente = funcionario({
+      grupoHomogeneoId: GHE_ATIVO, matricula: 'MAT-2', nome: 'Funcionário 2', setor: 'Produção', funcao: 'Operador',
+      telefone: '47999990000', dataNascimento: '1990-03-15', dataAdmissao: '2020-06-01', ativo: false,
+    });
+    const escritas = mundoValido(t, { existente });
+    escritas.buscarPorCpf.mock.mockImplementation(async (_c, empresaId, cpf) => (empresaId === EMPRESA && cpf === '52998224725' ? existente : null));
+    // Comparação: leitura SEM lock do GHE atual do existente (nada será gravado).
+    const nomeGhe = escritas.buscarGheSemLock;
+    nomeGhe.mock.mockImplementation(async (_c, empresaId, id) => (empresaId === EMPRESA && id === GHE_ATIVO ? { id: GHE_ATIVO, empresaId: EMPRESA, nome: 'GHE Ativo', ativo: true } : null));
+    const cliente = criarClienteFalso();
+    const r = await servico.importar(criarPoolFalso(cliente), pedido([
+      linhaImp(2),
+      linhaImp(3, {
+        matricula: 'MAT-2', nome: 'Funcionário 2 Silva', setor: 'Qualidade', ghe: 'GHE Inexistente', telefone: '47988880000',
+        dataNascimento: '1991-01-01', dataAdmissao: '2021-01-01',
+      }),
+      linhaImp(4, { matricula: 'MAT-2', nome: 'Funcionário 2', dataNascimento: null, telefone: null }),
+      linhaImp(5, { matricula: 'MAT-2', nome: 'Funcionário 2', ghe: 'GHE Inativo' }),
+    ]));
+    assert.deepEqual(r.linhas, [
+      { linha: 2, situacao: 'JA_CADASTRADO', codigo: 'FUNCIONARIO_JA_CADASTRADO', motivo: MOTIVO_JA_CADASTRADO, funcionarioId: FUNC_ID, ativo: false },
+      {
+        linha: 3, situacao: 'JA_CADASTRADO', codigo: 'FUNCIONARIO_JA_CADASTRADO_DIVERGENTE', motivo: MOTIVO_DIVERGENTE, funcionarioId: FUNC_ID, ativo: false,
+        divergencias: [
+          { campo: 'nome', atual: 'Funcionário 2' }, { campo: 'setor', atual: 'Produção' }, { campo: 'dataAdmissao', atual: '2020-06-01' },
+          { campo: 'dataNascimento' }, { campo: 'telefone' }, { campo: 'ghe', atual: 'GHE Ativo' },
+        ],
+      },
+      { linha: 4, situacao: 'JA_CADASTRADO', codigo: 'FUNCIONARIO_JA_CADASTRADO', motivo: MOTIVO_JA_CADASTRADO, funcionarioId: FUNC_ID, ativo: false },
+      {
+        linha: 5, situacao: 'JA_CADASTRADO', codigo: 'FUNCIONARIO_JA_CADASTRADO_DIVERGENTE', motivo: MOTIVO_DIVERGENTE, funcionarioId: FUNC_ID, ativo: false,
+        divergencias: [{ campo: 'ghe', atual: 'GHE Ativo' }],
+      },
+    ]);
+    assert.deepEqual(r.resumo, { cadastrados: 0, jaCadastrados: 2, divergentes: 2, duplicados: 0, recusados: 0, erros: 0 });
+    assert.equal(escritas.criar.mock.calls.length, 0);
+    assert.equal(escritas.atualizar.mock.calls.length, 0);
+    assert.equal(escritas.buscarGhe.mock.calls.length, 0, 'sem gravação, nenhum lock de GHE');
+    assert.equal(escritas.buscarGhePorNome.mock.calls.length, 0, 'o GHE da planilha não é resolvido para quem já existe: só comparado pelo nome');
+    assert.ok(nomeGhe.mock.calls.length >= 1);
+    assert.equal(contar(cliente.chamadas, /^BEGIN$/), 1, 'só a auditoria do lote abre transação');
+    const texto = JSON.stringify(r);
+    assert.doesNotMatch(texto, /52998224725|47999990000|47988880000|1990-03-15|1991-01-01/, 'CPF, telefone e nascimento nunca saem, nem o atual nem o da planilha');
+    assert.doesNotMatch(texto, /Funcionário 2 Silva|Qualidade|2021-01-01|GHE Inexistente/, 'o valor da planilha não é ecoado');
+  });
+
+  test('12G-9 auditoria do lote: contadores de já cadastrados e divergentes e o resultado compacto por linha (situação, código, funcionário e campos), sem nenhum valor', async (t) => {
+    const existente = funcionario({ grupoHomogeneoId: GHE_ATIVO, matricula: 'MAT-2', nome: 'Funcionário 2', setor: 'Produção', funcao: 'Operador', telefone: '47999990000', dataNascimento: '1990-03-15', dataAdmissao: '2020-06-01' });
+    const escritas = mundoValido(t, { existente });
+    escritas.buscarPorCpf.mock.mockImplementation(async (_c, _e, cpf) => (cpf === '52998224725' ? existente : null));
+    escritas.buscarGheSemLock.mock.mockImplementation(async () => ({ id: GHE_ATIVO, empresaId: EMPRESA, nome: 'GHE Ativo', ativo: true }));
+    await servico.importar(criarPoolFalso(criarClienteFalso()), pedido([
+      linhaImp(2), linhaImp(3, { matricula: 'MAT-2', nome: 'Funcionário 2', setor: 'Qualidade' }),
+      linhaImp(4, { cpf: CPF_NOVO, ghe: 'X' }), linhaImp(5, { cpf: '1' }), linhaImp(6, { cpf: CPF_NOVO }),
+    ]));
+    const eventos = escritas.registrar.mock.calls.map((c) => c.arguments[1]);
+    assert.deepEqual(eventos.map((e) => e.acao), ['FUNCIONARIO_CRIADO', 'FUNCIONARIOS_IMPORTACAO_LOTE']);
+    const lote = eventos[1];
+    assert.deepEqual([lote.contexto.cadastrados, lote.contexto.jaCadastrados, lote.contexto.divergentes, lote.contexto.duplicados, lote.contexto.recusados, lote.contexto.erros], [1, 1, 1, 0, 2, 0]);
+    assert.deepEqual(lote.contexto.linhas, [
+      { linha: 2, situacao: 'JA_CADASTRADO', codigo: 'FUNCIONARIO_JA_CADASTRADO', funcionarioId: FUNC_ID, campos: [] },
+      { linha: 3, situacao: 'JA_CADASTRADO', codigo: 'FUNCIONARIO_JA_CADASTRADO_DIVERGENTE', funcionarioId: FUNC_ID, campos: ['setor'] },
+      { linha: 4, situacao: 'RECUSADO', codigo: 'FUNCIONARIO_GHE_INEXISTENTE', funcionarioId: null, campos: ['ghe'] },
+      { linha: 5, situacao: 'RECUSADO', codigo: 'FUNCIONARIO_CPF_INVALIDO', funcionarioId: null, campos: ['cpf'] },
+      { linha: 6, situacao: 'CADASTRADO', codigo: null, funcionarioId: FUNC_ID, campos: [] },
+    ]);
+    assert.doesNotMatch(JSON.stringify(lote), /52998224725|11144477735|Funcionário|Produção|Qualidade|47999990000|1990-03-15|GHE Ativo|\bX\b/);
   });
 });

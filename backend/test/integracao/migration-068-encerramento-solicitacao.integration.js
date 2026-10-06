@@ -157,13 +157,23 @@ describe('migration 068 — estrutura', () => {
     assert.doesNotMatch(conteudoDaMigration('068'), /INSERT INTO (permissoes_acao|usuario_autorizacoes|grupo_permissoes_acao)/);
   });
 
-  test('a 068 não edita nenhuma migration antiga e só acrescenta a sua entrada ao manifesto: 69 migrations, 000 a 068', () => {
+  test('a 068 não edita nenhuma migration antiga e só acrescenta a sua entrada ao manifesto: 78 migrations, 000 a 077 (a 069 é da 12G-6; a 070 e a 071 são da 12G-8; a 072 e a 073 são das Configurações; a 074 é da Gestão de Usuários)', () => {
     exigirMigration068();
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO, 'checksums.json'), 'utf8'));
     const arquivos = fs.readdirSync(DIRETORIO).filter((n) => /^\d{3}_.*\.sql$/.test(n)).sort();
-    assert.equal(arquivos.length, 69);
+    assert.equal(arquivos.length, 79);
     assert.equal(arquivos[0].slice(0, 3), '000');
-    assert.equal(arquivos[arquivos.length - 1].slice(0, 3), '068');
+    assert.equal(arquivos[arquivos.length - 11].slice(0, 3), '068');
+    assert.equal(arquivos[arquivos.length - 10].slice(0, 3), '069');
+    assert.equal(arquivos[arquivos.length - 9].slice(0, 3), '070');
+    assert.equal(arquivos[arquivos.length - 8].slice(0, 3), '071');
+    assert.equal(arquivos[arquivos.length - 7].slice(0, 3), '072');
+    assert.equal(arquivos[arquivos.length - 6].slice(0, 3), '073');
+    assert.equal(arquivos[arquivos.length - 5].slice(0, 3), '074');
+    assert.equal(arquivos[arquivos.length - 4].slice(0, 3), '075');
+    assert.equal(arquivos[arquivos.length - 3].slice(0, 3), '076');
+    assert.equal(arquivos[arquivos.length - 2].slice(0, 3), '077');
+    assert.equal(arquivos[arquivos.length - 1].slice(0, 3), '078');
     assert.deepEqual(Object.keys(manifesto.migrations).sort(), arquivos);
     for (const nome of arquivos) {
       const sha = crypto.createHash('sha256').update(fs.readFileSync(path.join(DIRETORIO, nome))).digest('hex');

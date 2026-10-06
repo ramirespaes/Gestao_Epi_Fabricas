@@ -98,8 +98,11 @@ const consultaDaCobertura = (restricaoDosPares, filtroDasSolicitacoes) => `WITH 
       WHERE ${filtroDasSolicitacoes}
       ORDER BY fl.decidida_em, fl.solicitacao_id, fl.item_id`;
 
+const PAR_UNICO = `(i.material_id = $3 AND COALESCE(i.tamanho, '') = $4)`;
+
 const SQL_COBERTURA_DE_UMA = consultaDaCobertura(PARES_DE_UMA, '($3::int IS NULL OR fl.solicitacao_id = $3)');
 const SQL_COBERTURA_DE_VARIAS = consultaDaCobertura(PARES_DE_VARIAS, 'fl.solicitacao_id = ANY($3::int[])');
+const SQL_COBERTURA_DO_PAR = consultaDaCobertura(PAR_UNICO, 'true');
 
 function mapearCobertura(l) {
   const pendente = Number(l.pendente);
@@ -148,6 +151,60 @@ async function listarCoberturaDasSolicitacoes(executor, empresaId, { hoje, solic
   if (solicitacaoIds.length === 0) return [];
 
   const { rows } = await executor.query(SQL_COBERTURA_DE_VARIAS, [empresaId, hoje, solicitacaoIds]);
+  return rows.map(mapearCobertura);
+}
+
+/**
+ * As solicitações da fila (aprovadas, com pendente, de trabalhador e material
+ * ativos), em duas populações exclusivas medidas agora (Dashboard da 12G-6):
+ * com algum item coberto e sem nenhum item coberto. A solicitação toda
+ * suspensa não está na fila e não entra em nenhuma das duas.
+ */
+async function contarSolicitacoesPorCobertura(executor, empresaId, { hoje } = {}) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirDataOperacional(hoje);
+
+  const { rows } = await executor.query(
+    `SELECT count(*) FILTER (WHERE t.maior_coberta > 0)::int AS com_cobertura,
+            count(*) FILTER (WHERE t.maior_coberta = 0)::int AS sem_cobertura
+       FROM (SELECT c.solicitacao_id, max(c.coberta) AS maior_coberta FROM (${SQL_COBERTURA_DE_UMA}) c GROUP BY c.solicitacao_id) t`,
+    [empresaId, hoje, null],
+  );
+  return { comCobertura: rows[0].com_cobertura, semCobertura: rows[0].sem_cobertura };
+}
+
+/**
+ * O que está disponível para entrega agora na empresa, agregado por par
+ * (material, tamanho): a soma do que a fila cobre e quantas solicitações têm
+ * algo coberto nele. Só pares com cobertura; nada de trabalhador ou pedido.
+ */
+async function resumirCoberturaPorPar(executor, empresaId, { hoje } = {}) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirDataOperacional(hoje);
+
+  const { rows } = await executor.query(
+    `SELECT c.material_id, c.tamanho, sum(c.coberta)::int AS coberta, count(DISTINCT c.solicitacao_id)::int AS solicitacoes
+       FROM (${SQL_COBERTURA_DE_UMA}) c
+      WHERE c.coberta > 0
+      GROUP BY c.material_id, c.tamanho
+      ORDER BY c.material_id, c.tamanho NULLS FIRST`,
+    [empresaId, hoje, null],
+  );
+  return rows.map((l) => ({
+    materialId: l.material_id, tamanho: l.tamanho, coberta: l.coberta, solicitacoes: l.solicitacoes,
+  }));
+}
+
+/**
+ * A fila FIFO de um par só (empresa, material, tamanho), com a cobertura de
+ * cada item. Par sem demanda volta vazio.
+ */
+async function listarCoberturaDoPar(executor, empresaId, { hoje, materialId, tamanho = null } = {}) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirDataOperacional(hoje);
+  exigirId(materialId, 'identificador de material');
+
+  const { rows } = await executor.query(SQL_COBERTURA_DO_PAR, [empresaId, hoje, materialId, chaveDoTamanho(tamanho)]);
   return rows.map(mapearCobertura);
 }
 
@@ -215,4 +272,6 @@ async function lerPosicoes(executor, empresaId, pares, { hoje } = {}) {
   });
 }
 
-module.exports = { listarCobertura, listarCoberturaDasSolicitacoes, lerPosicoes };
+module.exports = {
+  listarCobertura, listarCoberturaDasSolicitacoes, listarCoberturaDoPar, contarSolicitacoesPorCobertura, resumirCoberturaPorPar, lerPosicoes,
+};

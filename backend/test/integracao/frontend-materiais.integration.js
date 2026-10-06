@@ -95,7 +95,7 @@ function janela() {
 }
 
 const FORMULARIO_COMPLETO = {
-  nome: 'Botina de segurança C2', categoria: 'EPI', tipo: 'Sapatão / Botina', tipoCustom: '', controleTamanho: 'grade',
+  nome: 'Botina de segurança C2', categoria: 'EPI', tipo: 'Botina de Segurança', tipoCustom: '', controleTamanho: 'grade',
   fabricante: 'Bracol', codigoInterno: 'EPI-000245', quantidadeComprada: '120', tamanhoEntrada: '42', caEntrada: '38271', caValidadeEntrada: '2030-12-31',
   unidade: 'Par', estoqueMinimo: '5', prazoUnidade: 'meses', prazo: '6', descricao: 'Biqueira de composite, solado antiderrapante', registrarEntrada: 'sim',
 };
@@ -134,7 +134,7 @@ describe('C2 — cadastro real de materiais pela página integrada (PostgreSQL r
       nav, janela: j, contexto: sessao.contexto, permissoes: p,
       podeAbrir: EpiPermissoes.podeAbrir(p, 'materials'),
       podeAlterar: EpiPermissoes.podeAlterar(p, 'materials'),
-      podeMovimentar: EpiPermissoes.acao(p, 'MOVIMENTAR_ESTOQUE'),
+      podeMovimentar: EpiPermissoes.acao(p, 'ENTRADA_ESTOQUE'),
     };
   }
 
@@ -214,7 +214,7 @@ describe('C2 — cadastro real de materiais pela página integrada (PostgreSQL r
       assert.equal(m.empresa_id, empresa.A, 'empresa da sessão, nunca do cliente');
       assert.deepEqual(
         [m.nome, m.categoria, m.tipo, m.fabricante, m.codigo_interno, m.unidade, m.estoque_minimo, m.prazo_uso_dias, m.exige_tamanho, m.descricao, m.ativo],
-        ['Botina de segurança C2', 'EPI', 'Sapatão / Botina', 'Bracol', 'EPI-000245', 'par', 5, 180, true, 'Biqueira de composite, solado antiderrapante', true],
+        ['Botina de segurança C2', 'EPI', 'Botina de Segurança', 'Bracol', 'EPI-000245', 'par', 5, 180, true, 'Biqueira de composite, solado antiderrapante', true],
       );
       assert.deepEqual([m.ca_numero, m.ca_validade], [null, null], 'o CA fica no lote, não no cadastro');
       const lotes = await pool.query('SELECT tamanho, ca_numero, ca_validade::text, origem, saldo FROM estoque_lotes WHERE material_id = $1', [idBotina]);
@@ -237,9 +237,9 @@ describe('C2 — cadastro real de materiais pela página integrada (PostgreSQL r
       assert.deepEqual((await EpiMateriais.fluxo.carregarEstoque(idBotina)).totais, { fisico: 3, bloqueado: 0, disponivel: 3 });
     });
 
-    test('seletor lista só materiais ativos da empresa da sessão; perfil com visualizar (sem criar) abre a página e consulta os lotes', async () => {
+    test('seletor lista só materiais ativos da empresa da sessão; perfil com visualizar (sem criar, sem entrada nem baixa) não abre a página (078), mas a API de consulta segue por visualizar', async () => {
       const pagina = await abrirPagina(EMAILS.leitor, empresa.A);
-      assert.deepEqual([pagina.podeAbrir, pagina.podeAlterar, pagina.podeMovimentar], [true, false, false]);
+      assert.deepEqual([pagina.podeAbrir, pagina.podeAlterar, pagina.podeMovimentar], [false, false, false]);
       const lista = await EpiMateriais.acoes.listar({ ativo: true, limite: 100 });
       assert.equal(lista.ok, true, JSON.stringify(lista));
       assert.ok(lista.dados.materiais.some((m) => m.id === idBotina));
@@ -258,7 +258,8 @@ describe('C2 — cadastro real de materiais pela página integrada (PostgreSQL r
     test('sem prazo ou sem controle de tamanho a página não envia e a API recusa; com os dois, o cadastro mínimo grava NULL nos opcionais e não cria estoque', async () => {
       await abrirPagina(EMAILS.master, empresa.A);
       const minimo = {
-        nome: 'Protetor auricular', categoria: '', tipo: 'Protetor auricular', tipoCustom: '', fabricante: '', codigoInterno: '', controleTamanho: '',
+        // Sem categoria só existe "Outros" (12G-8): o tipo vai como "Outros" + descrição.
+        nome: 'Protetor auricular', categoria: '', tipo: 'Outros', tipoCustom: 'Protetor auricular', fabricante: '', codigoInterno: '', controleTamanho: '',
         quantidadeComprada: '', tamanhoEntrada: '', unidade: 'Unidade', estoqueMinimo: '', prazoUnidade: 'meses', prazo: '', descricao: '', registrarEntrada: 'nao',
       };
       const local = EpiMateriais.formulario.montarCorpo(minimo);
@@ -283,7 +284,7 @@ describe('C2 — cadastro real de materiais pela página integrada (PostgreSQL r
       const pagina = await abrirPagina(EMAILS.master, empresa.A);
       const legadoAntes = await contar('SELECT count(*)::int AS n FROM estoque_tamanhos');
       const m = EpiMateriais.formulario.montarCorpo({
-        nome: 'Óculos incolor por lote', categoria: 'EPI', tipo: 'Óculos de proteção', tipoCustom: '', fabricante: '', codigoInterno: 'LOTE-001', unidade: 'Unidade',
+        nome: 'Óculos incolor por lote', categoria: 'EPI', tipo: 'Óculos de Proteção Incolor', tipoCustom: '', fabricante: '', codigoInterno: 'LOTE-001', unidade: 'Unidade',
         estoqueMinimo: '5', prazoUnidade: 'meses', prazo: '6', controleTamanho: 'unico', descricao: '', registrarEntrada: 'sim',
         quantidadeComprada: '12', tamanhoEntrada: '', caEntrada: '38271', caValidadeEntrada: '2030-12-31',
       });
@@ -466,7 +467,7 @@ describe('C2 — cadastro real de materiais pela página integrada (PostgreSQL r
 
     test('nenhuma requisição da página carrega empresaId, usuarioId ou perfil; nenhuma usa ?_s=', async () => {
       const pagina = await abrirPagina(EMAILS.master, empresa.A);
-      const r = await cadastrar({ ...FORMULARIO_COMPLETO, nome: 'Respirador PFF2', codigoInterno: 'EPI-000500', tipo: 'Respirador', controleTamanho: 'unico', quantidadeComprada: '10' }, true);
+      const r = await cadastrar({ ...FORMULARIO_COMPLETO, nome: 'Respirador PFF2', codigoInterno: 'EPI-000500', tipo: 'Respirador PFF2', controleTamanho: 'unico', quantidadeComprada: '10' }, true);
       const e = await EpiMateriais.fluxo.carregarEstoque(r.material.id);
       await EpiMateriais.fluxo.registrarBaixa(e.lotes[0].loteId, { quantidade: 1, motivo: 'PERDA' }, EpiMateriais.idempotencia.criar());
       await EpiMateriais.acoes.listar({ ativo: true, limite: 100 });

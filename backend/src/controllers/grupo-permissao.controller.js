@@ -1,6 +1,7 @@
 'use strict';
 
 const grupoPermissaoService = require('../services/grupo-permissao.service');
+const grupoAcessosService = require('../services/grupo-acessos.service');
 const { pool } = require('../config/database');
 
 /**
@@ -78,6 +79,30 @@ function criarGrupoPermissaoController({ pool: poolInjetado }) {
       });
 
       res.status(200).json({ status: 'ok', configuracao, alterado });
+    },
+
+    async acessos(req, res) {
+      const acessos = await grupoAcessosService.detalhar(poolInjetado, {
+        empresaId: req.empresa.id,
+        atorId: req.usuario.id,
+        grupoId: req.validado.params.id,
+      });
+
+      res.status(200).json({ status: 'ok', acessos });
+    },
+
+    async acesso(req, res) {
+      const acesso = await grupoAcessosService.configurarToggle(poolInjetado, {
+        empresaId: req.empresa.id,
+        atorId: req.usuario.id,
+        grupoId: req.validado.params.id,
+        toggleId: req.validado.params.toggle,
+        ligado: req.validado.body.ligado,
+        ip: req.ip,
+        dispositivo: req.headers['user-agent'],
+      });
+
+      res.status(200).json({ status: 'ok', acesso });
     },
 
     async configurarAcao(req, res) {

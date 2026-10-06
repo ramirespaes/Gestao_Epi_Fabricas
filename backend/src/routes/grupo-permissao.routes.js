@@ -64,6 +64,19 @@ function criarGrupoPermissaoRoutes({ controller, exigirSessao: exigirSessaoInjet
     validar({ params: grupoPermissaoSchemas.listarAcoes.params }),
     controller.listarAcoes,
   );
+  // Visão binária (ON/OFF) das mesmas permissões de grupo, usada pela Gestão de Usuários.
+  router.get(
+    '/grupos-acesso/:id/acessos',
+    exigirSessaoInjetado,
+    validar({ params: grupoPermissaoSchemas.listarRecursos.params }),
+    controller.acessos,
+  );
+  router.put(
+    '/grupos-acesso/:id/acessos/:toggle',
+    exigirSessaoInjetado,
+    validar({ params: grupoPermissaoSchemas.acessoToggle.params, body: grupoPermissaoSchemas.acessoToggle.body }),
+    controller.acesso,
+  );
   router.patch(
     '/grupos-acesso/:id/permissoes/recursos/:recurso',
     exigirSessaoInjetado,

@@ -49,7 +49,8 @@ const { assertSemSensiveis } = require('../helpers/sensiveis');
 // 048: a auditoria da plataforma grava ator e alvo; 053: criarInicial emite a
 // liberação do MFA; 054: a sessão administrativa grava o registro do MFA;
 // 049, 052 e 055: a sessão só vale ligada a um desafio de MFA concluído.
-const TODAS_AS_MIGRATIONS = [...Array.from({ length: 40 }, (_, i) => String(i).padStart(3, '0')), '048', '049', '052', '053', '054', '055'];
+// 041, 042 e 057: a FK composta da 073 referencia uq_funcionarios_empresa_id (057), que também exige estoque_lotes (042) e uq_materiais_empresa_id (041).
+const TODAS_AS_MIGRATIONS = [...Array.from({ length: 40 }, (_, i) => String(i).padStart(3, '0')), '041', '042', '057', '048', '049', '052', '053', '054', '055', '072', '073', '074', '075', '076', '077'];
 const SENHA = 'senha-forte-do-portal-2026';
 const SENHA_ERRADA = 'senha-errada-do-portal-2026';
 const SENHA_ADMIN = 'planeta-nebulosa-ozonio-42';
@@ -165,7 +166,7 @@ describe('Portal do Cliente — login global, seleção de empresa e sessões (P
       const r = await login(BRUNO);
       assert.equal(r.status, 200, JSON.stringify(r.body));
       assert.deepEqual(Object.keys(r.body).sort(), ['contexto', 'empresas', 'identidade', 'status']);
-      assert.deepEqual(r.body.identidade, { id: identidade.bruno, email: BRUNO });
+      assert.deepEqual(r.body.identidade, { id: identidade.bruno, email: BRUNO, trocaSenhaObrigatoria: false });
       assert.deepEqual(r.body.empresas, [{ id: empresa.C, nome: 'Empresa C', cnpj: '33444555000119', perfil: 'ADMINISTRADOR' }]);
       assert.equal(r.body.contexto.empresa.id, empresa.C);
       assert.deepEqual(r.body.contexto.usuario, { id: usuario.brunoC, nome: 'Pessoa brunoC', email: BRUNO, perfil: 'ADMINISTRADOR' });

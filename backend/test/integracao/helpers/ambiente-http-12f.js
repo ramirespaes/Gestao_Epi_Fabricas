@@ -9,6 +9,8 @@ const { sessaoDeTeste, CABECALHO } = require('./ambiente-http-12d2');
 const { exigirModulo } = require('../../helpers/exigir-modulo');
 const { criarAppTeste } = require('../../helpers/app-teste');
 const provisionamento = require('../../../src/services/provisionamento-permissoes.service');
+const { criarAlertaEstoqueRoutes } = require('../../../src/routes/alerta-estoque.routes');
+const { criarAlertaEstoqueController } = require('../../../src/controllers/alerta-estoque.controller');
 
 /**
  * Ambiente HTTP da 12F contra PostgreSQL real: schema temporário com TODAS as
@@ -22,7 +24,9 @@ const provisionamento = require('../../../src/services/provisionamento-permissoe
  * real de /api.
  */
 
-async function montarAmbiente12f() {
+// 12G-6: também monta o alerta de falta (POST /api/alertas-estoque/falta); `servicoEmail` é o
+// serviço que ele usa (sem ele, o padrão da aplicação).
+async function montarAmbiente12f({ servicoEmail } = {}) {
   const rotasSolicitacao = exigirModulo('src/routes/solicitacao-epi.routes');
   const controllerSolicitacao = exigirModulo('src/controllers/solicitacao-epi.controller');
   const rotasVinculo = exigirModulo('src/routes/vinculo-sst.routes');
@@ -41,6 +45,7 @@ async function montarAmbiente12f() {
       '/api',
       rotasSolicitacao.criarSolicitacaoEpiRoutes({ controller: controllerSolicitacao.criarSolicitacaoEpiController({ pool, relogio }), exigirSessao, pool }),
       rotasVinculo.criarVinculoSstRoutes({ controller: controllerVinculo.criarVinculoSstController({ pool }), exigirSessao, pool }),
+      criarAlertaEstoqueRoutes({ controller: criarAlertaEstoqueController({ pool, relogio, servicoEmail }), exigirSessao, pool }),
     );
   });
 

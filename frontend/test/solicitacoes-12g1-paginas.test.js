@@ -35,16 +35,17 @@ const SCRIPTS_FUNDACAO = ['../js/api-http.js', '../portal/config.js', '../js/ses
 const SCRIPTS = {
   'request.html': [...SCRIPTS_FUNDACAO, '../js/epi-ficha.js', '../js/pedido-epi.js'],
   'supervisor-approval.html': [...SCRIPTS_FUNDACAO, '../js/epi-ficha.js', '../js/aprovacao-sst.js'],
-  'stock-requests.html': [...SCRIPTS_FUNDACAO, '../js/epi-ficha.js', '../js/entregas-solicitacao.js'],
+  'stock-requests.html': [...SCRIPTS_FUNDACAO, '../js/epi-ficha.js', '../js/entregas-solicitacao.js', '../js/alerta-falta-estoque.js'],
 };
 // Só as páginas que continuam na fundação (Pedido em pedido-epi.test.js; Aprovação em aprovacao-sst.test.js; Entregas em entregas-solicitacao.test.js).
 const AINDA_EM_INTEGRACAO = [];
 const EXEMPLOS = /Tício|Ticio|João Pereira|Carlos Mendes|Ana Souza|Fulano|CR-00\d|MAT-00\d|\d{2}\/04\/2026|3 pendências|Saldo atual: 60/;
 
 // As 11 integradas antes da 12G-1 e as três desta subetapa.
-const INTEGRADAS_ANTES = ['available-items.html', 'dashboard.html', 'employee-groups.html', 'employee-history.html', 'epi-ficha.html', 'import-employees.html', 'materials.html', 'new-user.html', 'operations.html', 'stock-validity.html', 'user-admin.html'];
+// Configurações (05/10/2026) passou a página integrada depois da 12G-1.
+const INTEGRADAS_ANTES = ['available-items.html', 'config.html', 'dashboard.html', 'employee-groups.html', 'employee-history.html', 'epi-ficha.html', 'import-employees.html', 'materials.html', 'operations.html', 'stock-validity.html', 'gestao-usuarios.html'];
 const INTEGRADAS = [...INTEGRADAS_ANTES, ...Object.keys(NOVAS)].sort();
-const ADMINISTRATIVAS = ['autorizacoes-individuais.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'grupos-acesso.html'];
+const ADMINISTRATIVAS = ['autorizacoes-individuais.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'grupos-acesso.html', 'new-user.html', 'user-admin.html'];
 const COM_MENU_COMPLETO = fs.readdirSync(path.join(RAIZ, 'pages')).filter((f) => f.endsWith('.html') && !ADMINISTRATIVAS.includes(f)).sort();
 
 function secoesDoMenu(html) {
@@ -196,9 +197,8 @@ describe('ajuste visual final: nada em integração parece funcionar, e nada de 
 
   // Estilo que VENCE de fato na cascata (main.css + <style> da página sobre o DOM real), não a presença da regra.
   // 12G-2: os controles do Pedido de EPI funcionam e saíram daqui; ficam os que ainda estão em integração.
-  const ALVOS = {
-    'stock-requests.html': ['Gerar alerta'],
-  };
+  // 12G-6: o "Gerar alerta" das Entregas funciona e também saiu (alerta-falta-estoque.test.js).
+  const ALVOS = {};
   const PROPS = ['opacity', 'filter', 'cursor', 'color', 'background', 'background-color', 'border', 'border-color', 'box-shadow'];
   for (const [arquivo, nomes] of Object.entries(ALVOS)) {
     for (const tema of ['light', 'dark']) {
@@ -235,17 +235,17 @@ describe('ajuste visual final: nada em integração parece funcionar, e nada de 
     assert.equal(/Workflow/.test(html('supervisor-approval.html')), false);
   });
 
-  test('Entregas por solicitação: sem o quadro de regra futura na tela; a regra fica preservada como comentário da página; "Gerar alerta" claramente desabilitado', () => {
+  test('Entregas por solicitação: sem o quadro de regra futura na tela; a regra fica preservada como comentário da página; "Gerar alerta" (12G-6) nasce oculto e desabilitado, sem "Em integração"', () => {
     const visivel = html('stock-requests.html');
     assert.equal(/alert-banner|Alertas de materiais pendentes|Quando um funcionário solicitar um material sem estoque/.test(visivel), false);
     assert.match(ler('pages/stock-requests.html'), /<!--[\s\S]*Quando um funcionário solicitar um material sem estoque, o item deve aparecer nesta lista e gerar alerta para compras\/almoxarifado[\s\S]*-->/);
-    const gerar = visivel.match(/<button [^>]*>[\s\S]*?Gerar alerta[\s\S]*?<\/button>/)[0];
-    assert.match(gerar, /class="filled-btn botao-em-integracao"/);
+    const gerar = visivel.match(/<button [^>]*id="botaoGerarAlerta"[^>]*>[\s\S]*?<\/button>/)[0];
     assert.match(gerar, /\sdisabled[\s>]/);
-    assert.match(gerar, /title="Em integração"/);
+    assert.match(gerar, /style="display:none"/);
+    assert.equal(/botao-em-integracao|Em integração/.test(gerar), false);
   });
 
-  test('abertas no navegador: nenhum controle da área em integração, nem "Gerar alerta", fica ativo', async () => {
+  test('abertas no navegador: nenhum controle da área em integração fica ativo', async () => {
     for (const arquivo of ['stock-requests.html']) {
       const pg = abrirPagina(`pages/${arquivo}`, { rotas: rotas(QUEM_ABRE[arquivo]) });
       await pg.esperar();
@@ -257,7 +257,7 @@ describe('ajuste visual final: nada em integração parece funcionar, e nada de 
 
 // ─────────────────────────────────────────────────────────────────────
 describe('menu, Portal e Permissões do Grupo', () => {
-  test('nas 14 páginas integradas com menu completo, Solicitações liga as três páginas por permissão; o Totem segue "Em integração"', () => {
+  test('nas 16 páginas integradas com menu completo, Solicitações liga as três páginas por permissão; o Totem segue "Em integração"', () => {
     assert.equal(INTEGRADAS.length, 14);
     const destino = { 'Pedido de EPI': ['request.html', 'request'], 'Aprovação da Segurança do Trabalho': ['supervisor-approval.html', 'supervisorApproval'], 'Entregas por solicitação': ['stock-requests.html', 'stockRequests'] };
     for (const arquivo of INTEGRADAS) {
@@ -274,8 +274,8 @@ describe('menu, Portal e Permissões do Grupo', () => {
     }
   });
 
-  test('nenhuma das 23 páginas de menu completo usa os nomes antigos; os protótipos mantêm a navegação deles com os nomes novos', () => {
-    assert.equal(COM_MENU_COMPLETO.length, 23);
+  test('nenhuma das 24 páginas de menu completo usa os nomes antigos; os protótipos mantêm a navegação deles com os nomes novos', () => {
+    assert.equal(COM_MENU_COMPLETO.length, 22);
     for (const arquivo of COM_MENU_COMPLETO) {
       const rotulos = secao(ler(`pages/${arquivo}`), 'Solicitações').itens.map((i) => i.rotulo);
       assert.deepEqual(rotulos, ['Autoatendimento (Totem)', 'Pedido de EPI', 'Aprovação da Segurança do Trabalho', 'Entregas por solicitação'], arquivo);
@@ -292,7 +292,7 @@ describe('menu, Portal e Permissões do Grupo', () => {
     const paginas = [...inicio.matchAll(/<a href="\.\.\/pages\/[^"]+" data-pagina="([^"]+)" style="display:none">/g)].map((m) => m[1]);
     assert.deepEqual(paginas, ['dashboard', 'materials', 'stockValidity', 'availableItems', 'operations', 'employeeGroups', 'epiFicha', 'employeeHistory',
       'request', 'supervisorApproval', 'stockRequests',
-      'grupos-acesso', 'grupo-permissoes', 'grupo-usuarios', 'autorizacoes-individuais', 'importEmployees', 'newUser', 'userAdmin']);
+      'grupos-acesso', 'grupo-permissoes', 'grupo-usuarios', 'autorizacoes-individuais', 'importEmployees', 'newUser', 'userAdmin', 'config']);
     assert.match(inicio, /<a href="\.\.\/pages\/request\.html" data-pagina="request" style="display:none">Pedido de EPI<\/a>/);
     assert.match(inicio, /<a href="\.\.\/pages\/supervisor-approval\.html" data-pagina="supervisorApproval" style="display:none">Aprovação da Segurança do Trabalho<\/a>/);
     assert.match(inicio, /<a href="\.\.\/pages\/stock-requests\.html" data-pagina="stockRequests" style="display:none">Entregas por solicitação<\/a>/);

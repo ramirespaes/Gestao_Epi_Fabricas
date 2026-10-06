@@ -17,7 +17,7 @@ const RAIZ = path.join(__dirname, '..');
 const ler = (rel) => fs.readFileSync(path.join(RAIZ, rel), 'utf8');
 const semComentarios = (s) => s.replace(/<!--[\s\S]*?-->/g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
 const PAGINAS = fs.readdirSync(path.join(RAIZ, 'pages')).filter((f) => f.endsWith('.html')).sort();
-const INTERNAS = ['materials', 'available-items', 'employee-groups', 'employee-history', 'import-employees', 'grupos-acesso', 'grupo-permissoes', 'grupo-usuarios', 'autorizacoes-individuais'];
+const INTERNAS = ['materials', 'available-items', 'employee-groups', 'employee-history', 'import-employees'];
 const SUBTITULO = 'Cadastre materiais e gerencie entradas, lotes, validade de CA, saldos e baixas de estoque.';
 // 12D-3: a página passou a mostrar a posição (físico utilizável, comprometido e saldo livre).
 const SUBTITULO_ANALISE = 'Consulte a posição do estoque por categoria, tipo e tamanho: o que está fisicamente utilizável, o que já está comprometido com solicitações aprovadas e o saldo livre. Filtre pela validade do CA e identifique itens abaixo do mínimo, sem estoque ou sem cobertura.';
@@ -26,7 +26,7 @@ const rotulosDoMenu = (html, icone) => [...html.matchAll(new RegExp(`<div class=
 
 describe('nomes: Gestão de estoque e Análise de estoque', () => {
   // As quatro páginas de Administração têm menu próprio, sem a seção Estoque.
-  const MENU_ADMINISTRATIVO = ['autorizacoes-individuais.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'grupos-acesso.html'];
+  const MENU_ADMINISTRATIVO = ['autorizacoes-individuais.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'grupos-acesso.html', 'new-user.html', 'user-admin.html'];
 
   test('o menu usa os nomes novos em todas as páginas que têm a seção Estoque, e nenhuma página usa os antigos', () => {
     for (const arquivo of PAGINAS) {
@@ -41,7 +41,7 @@ describe('nomes: Gestão de estoque e Análise de estoque', () => {
       assert.ok(estoque.length >= 1 && estoque.every((r) => r === 'Gestão de estoque'), `${arquivo}: ${JSON.stringify(estoque)}`);
       assert.ok(analise.length >= 1 && analise.every((r) => r === 'Análise de estoque'), `${arquivo}: ${JSON.stringify(analise)}`);
     }
-    assert.equal(PAGINAS.length - MENU_ADMINISTRATIVO.length, 23);
+    assert.equal(PAGINAS.length - MENU_ADMINISTRATIVO.length, 22);
   });
 
   test('título e cabeçalho das duas páginas', () => {
@@ -144,6 +144,8 @@ describe('segurança: innerHTML só com texto fixo ou HTML escapado', () => {
     /^''$/,
     /^'<div class="notice" style="' \+ cor \+ '">' \+ render\.escaparHtml\(texto\) \+ '<\/div>'$/,
     /^render\.opcoesTamanhos\(lista\)$/,
+    // 12G-8: tipos da categoria, pelo render escapado de js/materiais.js.
+    /^render\.opcoesTipos\(categoria, extra\)$/,
     /^'<span class="material-symbols-outlined">save<\/span>' \+ t\.salvar$/,
     /^\$\(id\)\.innerHTML \+ '<option value="' \+ render\.escaparHtml\(extra\.valor\) \+ '">' \+ render\.escaparHtml\(extra\.rotulo\) \+ '<\/option>'$/,
     /^OPCOES_ORIGINAIS\[id\]$/,

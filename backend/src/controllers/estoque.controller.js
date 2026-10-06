@@ -9,8 +9,8 @@ const { pool } = require('../config/database');
  *
  * Mesmo padrão de material.controller.js. Empresa e ator vêm sempre da
  * sessão; a data operacional, do relógio do servidor em São Paulo. A
- * autorização (recurso nas leituras, MOVIMENTAR_ESTOQUE na entrada e na
- * baixa) é decidida pela rota, nunca aqui.
+ * autorização (recurso nas leituras, ENTRADA_ESTOQUE na entrada e
+ * BAIXA_ESTOQUE na baixa) é decidida pela rota, nunca aqui.
  */
 
 function criarEstoqueController({ pool: poolInjetado, relogio = () => new Date() }) {

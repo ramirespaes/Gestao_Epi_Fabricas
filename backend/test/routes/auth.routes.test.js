@@ -236,7 +236,7 @@ describe('GET /api/auth/me', () => {
     const resposta = await request(app).get('/api/auth/me');
 
     assert.equal(resposta.status, 200);
-    assert.deepEqual(Object.keys(resposta.body).sort(), ['empresa', 'status', 'usuario']);
+    assert.deepEqual(Object.keys(resposta.body).sort(), ['empresa', 'preferencias', 'status', 'usuario']);
     assert.deepEqual(resposta.body.usuario, RESULTADO_SUCESSO.usuario);
     assert.deepEqual(resposta.body.empresa, RESULTADO_SUCESSO.empresa);
     assert.equal(me.mock.calls.length, 1);

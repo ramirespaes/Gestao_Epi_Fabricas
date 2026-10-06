@@ -30,7 +30,7 @@
 
   var CAMINHO = '/funcionarios';
   var LIMITES = {
-    nome: 150, matricula: 30, setor: 100, funcao: 100, telefone: 20, busca: 100,
+    nome: 150, matricula: 30, setor: 100, funcao: 100, telefone: 20, ghe: 150, busca: 100,
     arquivoBytes: 10 * 1024 * 1024, linhasArquivo: 1000, linhasLote: 100,
     // Corpo JSON da API: 32 KB (JSON_LIMITE). Margem para cabeçalhos do lote.
     bytesLote: 28 * 1024, nomeArquivo: 100, limitePagina: 20,
@@ -226,8 +226,10 @@
     ['contratacao', ['contratação', 'contratacao', 'admissão', 'admissao', 'data de contratação', 'data contratação', 'data de admissão', 'data de admissao', 'data admissão']],
     ['telefone', ['telefone', 'tel', 'celular', 'fone', 'whatsapp', 'contato', 'número', 'numero']],
     ['cargo', ['cargo', 'função', 'funcao', 'função/cargo', 'posição']],
+    // 12G-9: nome exato do GHE da empresa (resolvido e validado no servidor; nunca criado nem aproximado).
+    ['ghe', ['ghe', 'g.h.e.', 'g.h.e', 'grupo homogêneo', 'grupo homogeneo', 'grupo homogêneo de exposição', 'grupo homogeneo de exposicao', 'grupo homogêneo de exposicao', 'grupo homogeneo de exposição']],
   ].forEach(function (par) { par[1].forEach(function (s) { CABECALHOS[s] = par[0]; }); });
-  var OBRIGATORIAS = [['nome', 'Nome'], ['setor', 'Setor'], ['cpf', 'CPF'], ['matricula', 'Matrícula'], ['contratacao', 'Contratação'], ['cargo', 'Cargo']];
+  var OBRIGATORIAS = [['nome', 'Nome'], ['setor', 'Setor'], ['cpf', 'CPF'], ['matricula', 'Matrícula'], ['contratacao', 'Contratação'], ['cargo', 'Cargo'], ['ghe', 'GHE']];
 
   function normalizarCabecalho(v) { return texto(v).toLowerCase().replace(/\s+/g, ' '); }
 
@@ -280,6 +282,7 @@
     var nome = textoObrigatorio('nome', celula('nome'), LIMITES.nome, 'Nome');
     var setor = textoObrigatorio('setor', celula('setor'), LIMITES.setor, 'Setor');
     var funcao = textoObrigatorio('funcao', celula('cargo'), LIMITES.funcao, 'Cargo');
+    var ghe = textoObrigatorio('ghe', celula('ghe'), LIMITES.ghe, 'GHE');
 
     // Matrícula: número do Excel é lido como está — zeros à esquerda perdidos NÃO são recriados.
     var matriculaBruta = celula('matricula');
@@ -334,11 +337,11 @@
       linha: numero,
       dados: {
         nome: nome, setor: setor, telefone: telefone || null, cpf: cpf, matricula: matricula,
-        dataNascimento: nasc.valor || null, dataAdmissao: adm.valor || null, funcao: funcao,
+        dataNascimento: nasc.valor || null, dataAdmissao: adm.valor || null, funcao: funcao, ghe: ghe,
       },
       exibicao: {
         nome: nome, setor: setor, telefone: telefone, cpf: mascararCpf(cpf), matricula: matricula,
-        nascimento: exibirData(nasc.valor, celula('nascimento')), contratacao: exibirData(adm.valor, celula('contratacao')), cargo: funcao,
+        nascimento: exibirData(nasc.valor, celula('nascimento')), contratacao: exibirData(adm.valor, celula('contratacao')), cargo: funcao, ghe: ghe,
       },
       erros: erros,
       avisos: avisos,
@@ -394,7 +397,7 @@
 
   /** Modelo para download: só o cabeçalho (nenhum funcionário fictício), ';' e BOM para o Excel. */
   function modeloCsv() {
-    return '﻿Nome;Setor;Telefone;CPF;Matrícula;Nascimento;Contratação;Cargo\r\n';
+    return '﻿Nome;Setor;Telefone;CPF;Matrícula;Nascimento;Contratação;Cargo;GHE\r\n';
   }
 
   var planilha = { interpretar: interpretar, modeloCsv: modeloCsv, OBRIGATORIAS: OBRIGATORIAS };
@@ -434,7 +437,7 @@
       var d = l.dados;
       var item = {
         linha: l.linha, nome: d.nome, cpf: d.cpf, matricula: d.matricula, dataAdmissao: d.dataAdmissao,
-        dataNascimento: d.dataNascimento, setor: d.setor, funcao: d.funcao, telefone: d.telefone,
+        dataNascimento: d.dataNascimento, setor: d.setor, funcao: d.funcao, telefone: d.telefone, ghe: d.ghe,
       };
       var tentativa = atual.concat([item]);
       // Números do lote no pior caso de dígitos, para a conta de bytes ser conservadora.
@@ -456,9 +459,22 @@
   // ───────────────────────────────────────────────────────────────────
 
   var SITUACOES = {
-    CADASTRADO: 'Cadastrado', DUPLICADO: 'Duplicado', RECUSADO: 'Recusado', ERRO: 'Erro de processamento',
+    CADASTRADO: 'Cadastrado', JA_CADASTRADO: 'Já cadastrado', DUPLICADO: 'Duplicado', RECUSADO: 'Recusado', ERRO: 'Erro de processamento',
     NAO_CONFIRMADO: 'Não confirmado', NAO_ENVIADO: 'Não enviado',
   };
+  // Rótulos do resultado (12G-9): um por pessoa/linha, com o motivo resumido de quem não entrou.
+  var ROTULOS = {
+    IMPORTADO: 'Importado com sucesso', JA_CADASTRADO: 'Já cadastrado — sem alterações', DIVERGENTE: 'Já cadastrado — dados divergentes', NAO_IMPORTADO: 'Não importado — ',
+    OUTRO: 'Outro erro de validação',
+  };
+  var MOTIVO_POR_CODIGO = {
+    FUNCIONARIO_GHE_NAO_INFORMADO: 'GHE não informado', FUNCIONARIO_GHE_INEXISTENTE: 'GHE inexistente', FUNCIONARIO_GHE_INVALIDO: 'GHE inexistente', FUNCIONARIO_GHE_INATIVO: 'GHE inativo',
+    FUNCIONARIO_CPF_INVALIDO: 'CPF inválido', FUNCIONARIO_CPF_EM_USO: 'CPF já em uso', FUNCIONARIO_MATRICULA_EM_USO: 'Matrícula já em uso', ERRO_INTERNO: 'Erro de processamento',
+  };
+  var ROTULOS_CAMPO = { nome: 'Nome', matricula: 'Matrícula', setor: 'Setor', funcao: 'Cargo', dataAdmissao: 'Contratação', dataNascimento: 'Nascimento', telefone: 'Telefone', ghe: 'GHE' };
+  var EXIBICAO_POR_CAMPO = { funcao: 'cargo', dataAdmissao: 'contratacao', dataNascimento: 'nascimento' };
+  // O valor atual destes campos nunca é exibido; o servidor só sinaliza a divergência.
+  var CAMPOS_SENSIVEIS = ['cpf', 'dataNascimento', 'telefone'];
 
   var MSG = {
     NAO_CONFIRMADO: 'Não foi possível confirmar se esta linha foi gravada (falha de rede ou do servidor). Consulte o Histórico de Funcionários antes de reenviar; uma linha já gravada volta como "Duplicado".',
@@ -556,24 +572,67 @@
   }
 
   /** Junta o resultado do servidor às linhas com erro na prévia (RECUSADO local), na ordem da planilha. */
+  /** Divergências do servidor (campo e valor atual) completadas com o valor da PLANILHA, que só a tela conhece. */
+  function divergenciasDaLinha(interpretada, servidor) {
+    var e = (interpretada && interpretada.exibicao) || {};
+    return (Array.isArray(servidor) ? servidor : []).map(function (d) {
+      var campo = texto(d && d.campo);
+      var oculto = CAMPOS_SENSIVEIS.indexOf(campo) !== -1 || !hasOwn(d, 'atual');
+      var atual = oculto || d.atual === null || d.atual === undefined ? null : String(d.atual);
+      if (atual !== null && (campo === 'dataAdmissao' || campo === 'dataNascimento') && /^\d{4}-\d{2}-\d{2}$/.test(atual)) atual = exibirData(atual);
+      return { campo: campo, rotulo: ROTULOS_CAMPO[campo] || campo, atual: atual, planilha: texto(e[EXIBICAO_POR_CAMPO[campo] || campo]), oculto: oculto };
+    });
+  }
+
+  function motivoResumido(l) {
+    if (l.situacao === 'NAO_CONFIRMADO' || l.situacao === 'NAO_ENVIADO') return SITUACOES[l.situacao];
+    if (l.situacao === 'ERRO') return MOTIVO_POR_CODIGO.ERRO_INTERNO;
+    if (l.origem === 'previa') {
+      var obrigatorio = /obrigat/i.test(l.motivo || '');
+      if (l.campo === 'ghe') return obrigatorio ? MOTIVO_POR_CODIGO.FUNCIONARIO_GHE_NAO_INFORMADO : 'GHE inválido';
+      if (l.campo === 'cpf') return obrigatorio ? 'CPF ausente' : MOTIVO_POR_CODIGO.FUNCIONARIO_CPF_INVALIDO;
+      return ROTULOS.OUTRO;
+    }
+    return MOTIVO_POR_CODIGO[l.codigo] || ROTULOS.OUTRO;
+  }
+
+  function rotulo(l) {
+    if (l.situacao === 'CADASTRADO') return ROTULOS.IMPORTADO;
+    if (l.situacao === 'JA_CADASTRADO') return l.codigo === 'FUNCIONARIO_JA_CADASTRADO_DIVERGENTE' ? ROTULOS.DIVERGENTE : ROTULOS.JA_CADASTRADO;
+    if (l.situacao === 'NAO_CONFIRMADO' || l.situacao === 'NAO_ENVIADO') return SITUACOES[l.situacao];
+    return ROTULOS.NAO_IMPORTADO + motivoResumido(l);
+  }
+
   function consolidar(interpretadas, enviado) {
     var porLinha = Object.create(null);
     ((enviado && enviado.linhas) || []).forEach(function (l) { porLinha[l.linha] = l; });
     var linhas = (interpretadas || []).map(function (l) {
-      var base = { linha: l.linha, matricula: (l.dados && l.dados.matricula) || '' };
-      if (l.erros.length) return Object.assign(base, { situacao: 'RECUSADO', origem: 'previa', motivo: l.erros.map(function (e) { return e.mensagem; }).join(' ') });
+      var base = { linha: l.linha, matricula: (l.dados && l.dados.matricula) || '', nome: (l.dados && l.dados.nome) || '' };
+      if (l.erros.length) return Object.assign(base, { situacao: 'RECUSADO', origem: 'previa', campo: l.erros[0].campo, motivo: l.erros.map(function (e) { return e.mensagem; }).join(' ') });
       var r = porLinha[l.linha] || { situacao: 'NAO_ENVIADO', motivo: MSG.NAO_ENVIADO };
-      return Object.assign(base, { situacao: r.situacao, codigo: r.codigo || null, motivo: r.motivo || '' });
+      var saida = Object.assign(base, { situacao: r.situacao, codigo: r.codigo || null, motivo: r.motivo || '' });
+      if (typeof r.ativo === 'boolean') saida.ativo = r.ativo;
+      if (r.situacao === 'JA_CADASTRADO' && r.codigo === 'FUNCIONARIO_JA_CADASTRADO_DIVERGENTE') saida.divergencias = divergenciasDaLinha(l, r.divergencias);
+      return saida;
     });
     var contar = function (s) { return linhas.filter(function (l) { return l.situacao === s; }).length; };
-    return {
-      linhas: linhas,
-      resumo: {
-        cadastrados: contar('CADASTRADO'), duplicados: contar('DUPLICADO'), recusados: contar('RECUSADO'),
-        erros: contar('ERRO'), naoConfirmados: contar('NAO_CONFIRMADO'), naoEnviados: contar('NAO_ENVIADO'),
-      },
-      interrupcao: (enviado && enviado.interrupcao) || null,
+    var contarCodigo = function (c) { return linhas.filter(function (l) { return l.codigo === c; }).length; };
+    var resumo = {
+      total: linhas.length,
+      cadastrados: contar('CADASTRADO'), jaCadastrados: contarCodigo('FUNCIONARIO_JA_CADASTRADO'), divergentes: contarCodigo('FUNCIONARIO_JA_CADASTRADO_DIVERGENTE'),
+      duplicados: contar('DUPLICADO'), recusados: contar('RECUSADO'),
+      erros: contar('ERRO'), naoConfirmados: contar('NAO_CONFIRMADO'), naoEnviados: contar('NAO_ENVIADO'),
     };
+    resumo.naoImportados = resumo.duplicados + resumo.recusados + resumo.erros + resumo.naoConfirmados + resumo.naoEnviados;
+    // Não importados por motivo, na ordem em que cada motivo aparece.
+    var porMotivo = [];
+    linhas.forEach(function (l) {
+      if (l.situacao === 'CADASTRADO' || l.situacao === 'JA_CADASTRADO') return;
+      var m = motivoResumido(l);
+      var par = porMotivo.filter(function (p) { return p[0] === m; })[0];
+      if (par) par[1] += 1; else porMotivo.push([m, 1]);
+    });
+    return { linhas: linhas, resumo: resumo, porMotivo: porMotivo, interrupcao: (enviado && enviado.interrupcao) || null };
   }
 
   /**
@@ -594,7 +653,7 @@
     return { ok: true };
   }
 
-  var fluxo = { importar: importar, consolidar: consolidar, verificarConfirmacoes: verificarConfirmacoes };
+  var fluxo = { importar: importar, consolidar: consolidar, verificarConfirmacoes: verificarConfirmacoes, rotulo: rotulo };
 
   // ───────────────────────────────────────────────────────────────────
   // Histórico
@@ -635,7 +694,7 @@
       var status = l.erros.length ? 'err' : (l.avisos.length ? 'warn' : 'ok');
       var rotulo = l.erros.length ? 'Erro' : (l.avisos.length ? 'Atenção' : 'Válido');
       return '<tr class="import-row-' + status + '"><td>' + l.linha + '</td><td><strong>' + (escaparHtml(e.nome) || '—') + '</strong></td>'
-        + ['setor', 'telefone', 'cpf', 'matricula', 'nascimento', 'contratacao', 'cargo'].map(function (k) { return '<td>' + (escaparHtml(e[k]) || '—') + '</td>'; }).join('')
+        + ['setor', 'telefone', 'cpf', 'matricula', 'nascimento', 'contratacao', 'cargo', 'ghe'].map(function (k) { return '<td>' + (escaparHtml(e[k]) || '—') + '</td>'; }).join('')
         + '<td><span class="import-row-badge ' + status + '">' + rotulo + '</span></td></tr>';
     }).join('');
   }
@@ -658,19 +717,38 @@
       + '<div class="import-stat"><span>Arquivo</span><strong style="font-size:13px;margin-top:8px">' + escaparHtml(nomeArquivo) + '</strong></div>';
   }
 
-  /** Relatório final: contadores e as linhas não cadastradas, com o motivo — nunca CPF. */
+  /** Detalhe de uma linha já cadastrada com divergências: Campo / Sistema atual / Planilha — e nada foi alterado. */
+  function detalheDivergencias(divergencias) {
+    return '<table class="import-divergencias" style="margin:0;font-size:12px"><thead><tr><th>Campo</th><th>Sistema atual</th><th>Planilha</th></tr></thead><tbody>'
+      + divergencias.map(function (d) {
+        var atual = d.oculto ? '<em>não exibido (dado sensível)</em>' : (escaparHtml(d.atual) || '—');
+        return '<tr><td>' + escaparHtml(d.rotulo) + '</td><td>' + atual + '</td><td>' + (escaparHtml(d.planilha) || '—') + '</td></tr>';
+      }).join('')
+      + '</tbody></table><div style="margin-top:6px;font-size:12px;color:var(--on-surface-variant)">Nenhuma alteração realizada.</div>';
+  }
+
+  /** Relatório final (12G-9): resumo, não importados por motivo e o resultado de cada pessoa/linha — nunca CPF. */
   function relatorio(c) {
     var r = c.resumo;
-    var stat = function (rotulo, n, classe) { return '<div class="import-stat' + (classe ? ' ' + classe : '') + '"><span>' + rotulo + '</span><strong>' + n + '</strong></div>'; };
-    var grade = '<div class="import-result-grid">' + stat('Cadastrados', r.cadastrados, 'ok') + stat('Duplicados (não alterados)', r.duplicados) + stat('Recusados', r.recusados, 'err')
-      + stat('Erro de processamento', r.erros, 'err') + stat('Não confirmados', r.naoConfirmados, 'err') + stat('Não enviados', r.naoEnviados) + '</div>';
-    var pendentes = c.linhas.filter(function (l) { return l.situacao !== 'CADASTRADO'; });
-    var tabela = pendentes.length
-      ? '<div class="table-wrap" style="margin-top:14px"><table><thead><tr><th>Linha</th><th>Matrícula</th><th>Situação</th><th>Motivo</th></tr></thead><tbody>'
-        + pendentes.map(function (l) { return '<tr><td>' + l.linha + '</td><td>' + (escaparHtml(l.matricula) || '—') + '</td><td>' + escaparHtml(SITUACOES[l.situacao] || l.situacao) + '</td><td>' + escaparHtml(l.motivo) + '</td></tr>'; }).join('')
-        + '</tbody></table></div>'
+    var stat = function (rotuloStat, n, classe) { return '<div class="import-stat' + (classe ? ' ' + classe : '') + '"><span>' + rotuloStat + '</span><strong>' + n + '</strong></div>'; };
+    var grade = '<div class="import-result-grid">' + stat('Total processado', r.total) + stat('Importados com sucesso', r.cadastrados, 'ok') + stat('Já cadastrados sem alteração', r.jaCadastrados)
+      + stat('Já cadastrados com divergência', r.divergentes, 'warn') + stat('Não importados', r.naoImportados, 'err') + '</div>';
+    var motivos = (c.porMotivo || []).length
+      ? '<div class="import-error-list" style="margin-top:14px"><strong>Não importados por motivo</strong>'
+        + c.porMotivo.map(function (p) { return '<div class="import-error-item">' + escaparHtml(p[0]) + ': ' + p[1] + '</div>'; }).join('') + '</div>'
       : '';
-    return grade + tabela;
+    var classe = function (l) { return l.situacao === 'CADASTRADO' ? 'ok' : (l.situacao === 'JA_CADASTRADO' ? 'warn' : 'err'); };
+    var detalhe = function (l) {
+      if (l.divergencias && l.divergencias.length) return detalheDivergencias(l.divergencias);
+      return l.situacao === 'CADASTRADO' ? '—' : escaparHtml(l.motivo);
+    };
+    var tabela = '<div class="table-wrap" style="margin-top:14px"><table><thead><tr><th>Linha</th><th>Nome</th><th>Matrícula</th><th>Resultado</th><th>Detalhes</th></tr></thead><tbody>'
+      + c.linhas.map(function (l) {
+        return '<tr class="import-row-' + classe(l) + '"><td>' + l.linha + '</td><td>' + (escaparHtml(l.nome) || '—') + '</td><td>' + (escaparHtml(l.matricula) || '—') + '</td><td>'
+          + escaparHtml(rotulo(l)) + (l.ativo === false ? ' (inativo)' : '') + '</td><td>' + detalhe(l) + '</td></tr>';
+      }).join('')
+      + '</tbody></table></div>';
+    return grade + motivos + tabela;
   }
 
   function resultados(lista) {

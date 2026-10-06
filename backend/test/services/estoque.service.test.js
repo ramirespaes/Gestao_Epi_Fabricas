@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 
 const servico = require('../../src/services/estoque.service');
 const materialRepo = require('../../src/repositories/material.repository');
+const materialTamanhoRepo = require('../../src/repositories/material-tamanho.repository');
 const loteRepo = require('../../src/repositories/estoque-lote.repository');
 const posicaoRepo = require('../../src/repositories/posicao-estoque.repository');
 const autorizacao = require('../../src/middleware/autorizacao');
@@ -194,6 +195,8 @@ describe('listarLotes — lotes com saldo do material', () => {
 
   test('material da empresa: devolve os lotes e agrega físico, bloqueado e disponível por tamanho e no total', async (t) => {
     t.mock.method(materialRepo, 'buscarPorId', async () => material());
+    // 12G-8: a grade do material vai junto, para a entrada oferecer só os tamanhos dela.
+    t.mock.method(materialTamanhoRepo, 'listarPorMaterial', async () => ['40', '41']);
     const recebido = {};
     t.mock.method(loteRepo, 'listarPorMaterial', async (_p, empresaId, materialId, opcoes) => {
       recebido.args = [empresaId, materialId, opcoes];
@@ -205,7 +208,7 @@ describe('listarLotes — lotes com saldo do material', () => {
     });
     const r = await servico.listarLotes({}, { empresaId: EMPRESA, materialId: MATERIAL_ID, hoje: '2026-09-30' });
     assert.deepEqual(recebido.args, [EMPRESA, MATERIAL_ID, { hoje: '2026-09-30', diasAlerta: 60 }]);
-    assert.deepEqual(r.material, material());
+    assert.deepEqual(r.material, { ...material(), tamanhos: ['40', '41'] });
     assert.deepEqual([r.hoje, r.diasAlerta, r.lotes.length], ['2026-09-30', 60, 3]);
     assert.deepEqual(r.porTamanho, [
       { tamanho: '40', fisico: 15, bloqueado: 5, disponivel: 10 },

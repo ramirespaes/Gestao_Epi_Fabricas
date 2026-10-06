@@ -30,4 +30,11 @@ function montar(familia, chave, token, urls) {
 const linkRedefinicao = (escopo, token, urls = httpConfig.urlsPublicas) => montar('REDEFINICAO', escopo, token, urls);
 const linkConvite = (tipo, token, urls = httpConfig.urlsPublicas) => montar('CONVITE', tipo, token, urls);
 
-module.exports = { linkRedefinicao, linkConvite, CAMINHOS };
+// Telas do Portal citadas nos alertas de estoque (12G-6): sem token.
+const PAGINAS = Object.freeze({ ENTREGAS_POR_SOLICITACAO: '/pages/stock-requests.html', MATERIAIS: '/pages/materials.html' });
+const linkEntregasPorSolicitacao = (urls = httpConfig.urlsPublicas) => `${urls.portal}${PAGINAS.ENTREGAS_POR_SOLICITACAO}`;
+const linkMateriais = (urls = httpConfig.urlsPublicas) => `${urls.portal}${PAGINAS.MATERIAIS}`;
+
+module.exports = {
+  linkRedefinicao, linkConvite, linkEntregasPorSolicitacao, linkMateriais, CAMINHOS, PAGINAS,
+};

@@ -40,7 +40,11 @@ for (const { nome, repo, tabela, mensagemId } of [
       assert.deepEqual(r, { id: 7, atualizadoEm: ATUALIZADO });
       assert.equal(executor.chamadas.length, 1);
       const [{ texto, valores }] = executor.chamadas;
-      assert.match(texto, new RegExp(`UPDATE ${tabela}\\s+SET senha_hash = \\$2\\s+WHERE id = \\$1\\s+RETURNING id, atualizado_em`));
+      // identidades (074): a nova senha definitiva também encerra o estado provisório, no mesmo UPDATE.
+      const limpezaProvisoria = tabela === 'identidades'
+        ? ',\\s+senha_provisoria = false,\\s+senha_provisoria_definida_em = NULL,\\s+senha_provisoria_expira_em = NULL'
+        : '';
+      assert.match(texto, new RegExp(`UPDATE ${tabela}\\s+SET senha_hash = \\$2${limpezaProvisoria}\\s+WHERE id = \\$1\\s+RETURNING id, atualizado_em`));
       assert.deepEqual(valores, [7, HASH_NOVO]);
       assert.equal(texto.includes(HASH_NOVO), false, 'hash só por parâmetro');
     });

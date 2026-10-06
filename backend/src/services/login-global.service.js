@@ -9,6 +9,7 @@ const loginTentativaGlobalRepo = require('../repositories/login-tentativa-global
 const cooldown = require('../security/cooldown');
 const password = require('../security/password');
 const token = require('../security/token');
+const senhaProvisoriaUtil = require('../utils/senha-provisoria');
 
 /**
  * Serviço de LOGIN GLOBAL do Portal do Cliente (Autenticação Global —
@@ -115,6 +116,15 @@ async function resolverCredencial(client, { emailNormalizado, senha, chaveCooldo
     return { tipo: 'CREDENCIAIS_INVALIDAS' };
   }
 
+  // Senha provisória (074) vencida: a senha confere, mas não entra mais; não é
+  // senha errada (não conta no cooldown) e nada é renovado. Só a recuperação
+  // por e-mail devolve o acesso.
+  const trocaSenhaObrigatoria = identidade.senhaProvisoria === true;
+  if (trocaSenhaObrigatoria && identidade.senhaProvisoriaExpiraEm instanceof Date
+    && senhaProvisoriaUtil.expirada(identidade.senhaProvisoriaExpiraEm, await buscarInstanteReal(client))) {
+    return { tipo: 'SENHA_PROVISORIA_EXPIRADA' };
+  }
+
   await loginTentativaGlobalRepo.registrarTentativa(client, {
     chaveCooldown, identidadeId: identidade.id, sucesso: true, ip, dispositivo,
   });
@@ -136,7 +146,7 @@ async function resolverCredencial(client, { emailNormalizado, senha, chaveCooldo
   return {
     tipo: 'SUCESSO',
     resultado: {
-      identidade: { id: identidade.id, email: identidade.email },
+      identidade: { id: identidade.id, email: identidade.email, trocaSenhaObrigatoria },
       sessao: { id: sessaoId, expiraEm },
       token: tokenClaro,
     },
@@ -200,6 +210,10 @@ async function autenticar(pool, { email, senha, ip = null, dispositivo = null })
   if (desfecho.tipo === 'COOLDOWN_ATIVO') {
     const retryAfterSegundos = Math.max(1, Math.ceil((desfecho.ativoAte.getTime() - Date.now()) / 1000));
     throw HttpError.tooManyRequests('LOGIN_EM_COOLDOWN', MENSAGEM_COOLDOWN, { retryAfterSegundos });
+  }
+
+  if (desfecho.tipo === 'SENHA_PROVISORIA_EXPIRADA') {
+    throw HttpError.unauthorized('SENHA_PROVISORIA_EXPIRADA', 'A senha provisória expirou. Use "Esqueci minha senha" para definir uma nova');
   }
 
   throw HttpError.unauthorized('CREDENCIAIS_INVALIDAS', MENSAGEM_CREDENCIAIS_INVALIDAS);

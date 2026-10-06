@@ -27,9 +27,15 @@
 
   var enviando = false;
 
+  var AVISO_PROVISORIA = 'Você entrou com uma senha provisória. Defina uma nova senha para continuar usando o sistema.';
+
   function mostrar(texto) {
     mensagem.textContent = texto || '';
     mensagem.className = texto ? 'mensagem erro' : 'mensagem';
+  }
+  function avisar(texto) {
+    mensagem.textContent = texto;
+    mensagem.className = 'mensagem info';
   }
   function limparCampos() {
     campoAtual.value = '';
@@ -52,6 +58,7 @@
     el('carregando').hidden = true;
     if (r.ok) {
       form.hidden = false;
+      if (r.dados && r.dados.identidade && r.dados.identidade.trocaSenhaObrigatoria === true) avisar(AVISO_PROVISORIA);
       campoAtual.focus();
       return;
     }

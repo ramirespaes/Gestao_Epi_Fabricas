@@ -66,6 +66,7 @@ const mapeada = {
   descricao: null,
   exigeTamanho: null,
   oculosComGrau: null,
+  tipoDescricao: null,
   ativo: true,
   criadoEm: new Date('2026-09-23T12:00:00Z'),
   atualizadoEm: new Date('2026-09-23T12:00:00Z'),
@@ -82,7 +83,7 @@ describe('criar', () => {
     assert.match(texto, /returning/i);
     const colunas = texto.slice(texto.indexOf('('), texto.search(/\bvalues\b/i));
     assert.doesNotMatch(colunas, /\bativo\b/i, 'ativo nasce do DEFAULT, não é enviado');
-    assert.deepEqual(valores, [EMPRESA_A, 'Botina de segurança', null, null, null, 'unidade', 0, null, null, null, null, null]);
+    assert.deepEqual(valores, [EMPRESA_A, 'Botina de segurança', null, null, null, 'unidade', 0, null, null, null, null, null, null]);
     assert.deepEqual(material, mapeada);
   });
 
@@ -101,7 +102,7 @@ describe('criar', () => {
 
     assert.deepEqual(executor.chamadas[0].valores, [
       EMPRESA_A, 'Botina de segurança', 'Sapatão / Botina', 'Bracol', 365, 'par', 5,
-      null, null, null, null, null,
+      null, null, null, null, null, null,
     ]);
   });
 
@@ -269,12 +270,14 @@ describe('atualizar', () => {
     assert.doesNotMatch(set, /empresa_id\s*=/i);
     assert.doesNotMatch(set, /criado_em\s*=/i);
     assert.doesNotMatch(set, /\bid\s*=/i);
+    assert.match(set, /tipo_descricao\s*=/i);
     assert.deepEqual(valores, [
       EMPRESA_A, 30, 'Botina reforçada',
       false, null, false, null, false, null,
       null, null, null,
       false, null, false, null, false, null,
       null,
+      false, null,
       false, null,
     ]);
   });
@@ -290,6 +293,7 @@ describe('atualizar', () => {
       null, null, null,
       false, null, false, null, false, null,
       null,
+      false, null,
       false, null,
     ]);
   });
@@ -398,7 +402,7 @@ describe('exige_tamanho — migration 044', () => {
     await atualizar(executor, EMPRESA_A, 30, { exigeTamanho: true });
     const [ausente, informado] = executor.chamadas;
     assert.match(ausente.texto, /exige_tamanho\s*=\s*COALESCE\(\$19::boolean,\s*exige_tamanho\)/);
-    assert.deepEqual([ausente.valores.length, ausente.valores[18], informado.valores[18]], [21, null, true]);
+    assert.deepEqual([ausente.valores.length, ausente.valores[18], informado.valores[18]], [23, null, true]);
   });
 
   test('recusa valor que não é booleano antes de consultar', async () => {
@@ -425,7 +429,8 @@ describe('oculos_com_grau — migration 045', () => {
     await criar(executor, { empresaId: EMPRESA_A, nome: 'Luva', prazoUsoDias: 180, exigeTamanho: true });
     const [comValor, semValor] = executor.chamadas;
     assert.match(comValor.texto.slice(0, comValor.texto.search(/\bvalues\b/i)), /\boculos_com_grau\b/);
-    assert.deepEqual([comValor.valores.length, comValor.valores.at(-1), semValor.valores.at(-1)], [12, true, null]);
+    // oculos_com_grau é o 12º parâmetro; o 13º é tipo_descricao (071).
+    assert.deepEqual([comValor.valores.length, comValor.valores[11], semValor.valores[11], comValor.valores[12]], [13, true, null, null]);
   });
 
   test('atualizar: não informado mantém o valor atual; informado grava true, false ou null', async () => {
@@ -436,8 +441,8 @@ describe('oculos_com_grau — migration 045', () => {
     }
     const [ausente, ...informados] = executor.chamadas;
     assert.match(ausente.texto, /oculos_com_grau\s*=\s*CASE WHEN \$20::boolean THEN \$21::boolean ELSE oculos_com_grau END/);
-    assert.deepEqual(ausente.valores.slice(19), [false, null]);
-    assert.deepEqual(informados.map((c) => c.valores.slice(19)), [[true, true], [true, false], [true, null]]);
+    assert.deepEqual(ausente.valores.slice(19, 21), [false, null]);
+    assert.deepEqual(informados.map((c) => c.valores.slice(19, 21)), [[true, true], [true, false], [true, null]]);
   });
 
   test('recusa valor que não é booleano nem null antes de consultar', async () => {
