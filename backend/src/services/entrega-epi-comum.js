@@ -18,7 +18,8 @@ const fichaRepo = require('../repositories/ficha-epi.repository');
 
 const LIMITE_ITENS = 20;
 const LIMITE_INTEGER_POSTGRES = 2147483647;
-const TIPO_OCULOS = 'Óculos de proteção';
+// Óculos: os dois tipos oficiais e o nome histórico (12G-8); a constante segue exportada pelo legado.
+const { ehOculos, TIPO_OCULOS_LEGADO: TIPO_OCULOS } = require('../utils/classificacao-material');
 const { MODOS, DECLARACAO_VERSAO_FORMATO, DECLARACAO_TEXTO_MAXIMO } = confirmacaoRepo;
 
 // Traços: lista de traços, cada um lista de pontos [x, y] inteiros já
@@ -221,7 +222,7 @@ function exigirClassificacaoDoMaterial(material) {
   if (material.exigeTamanho === null) {
     throw HttpError.conflict('MATERIAL_TAMANHO_NAO_CLASSIFICADO', 'Defina no cadastro se o material exige tamanho antes de entregá-lo');
   }
-  if (material.tipo === TIPO_OCULOS && material.oculosComGrau === null) {
+  if (ehOculos(material.tipo) && material.oculosComGrau === null) {
     throw HttpError.conflict('MATERIAL_OCULOS_NAO_CLASSIFICADO', 'Defina no cadastro se os óculos são com ou sem grau antes de entregá-los');
   }
 }

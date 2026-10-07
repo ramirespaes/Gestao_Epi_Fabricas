@@ -10,7 +10,7 @@ const { authConfig } = require('../../src/config/auth');
 const { criarTurnstileController } = require('../../src/controllers/turnstile.controller');
 const turnstileMiddleware = require('../../src/middleware/turnstile');
 const rateLimit = require('../../src/middleware/rate-limit');
-const { exigirSessaoGlobal } = require('../../src/middleware/autenticacao-global');
+const { exigirSessaoGlobal, exigirSessaoGlobalComSenhaProvisoria } = require('../../src/middleware/autenticacao-global');
 const { exigirSessaoPlataforma } = require('../../src/middleware/autenticacao-plataforma');
 const { criarAuthGlobalRoutes } = require('../../src/routes/auth-global.routes');
 const { criarAuthPlataformaRoutes } = require('../../src/routes/auth-plataforma.routes');
@@ -429,7 +429,9 @@ describe('limitadores da troca de senha', () => {
     const portal = manipuladores(trocaSenhaGlobalRoutes, CAMINHO_PORTAL);
     assert.equal(portal.length, 4, 'limitador, sessão, validação, controller');
     assert.equal(portal[0], rateLimit.limitadorTrocaSenha);
-    assert.equal(portal[1], exigirSessaoGlobal);
+    // A troca é a saída da senha provisória (074): aceita a sessão global ainda em troca obrigatória.
+    assert.equal(portal[1], exigirSessaoGlobalComSenhaProvisoria);
+    assert.notEqual(portal[1], exigirSessaoGlobal, 'a instância estrita bloquearia quem precisa trocar');
     assert.equal(portal[3], trocaSenhaGlobalController.trocar);
 
     const painel = manipuladores(trocaSenhaPlataformaRoutes, CAMINHO_PAINEL);

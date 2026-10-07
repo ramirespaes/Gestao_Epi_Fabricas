@@ -27,8 +27,8 @@ function criarMaterialController({ pool: poolInjetado }) {
   return {
     async criar(req, res) {
       const {
-        nome, tipo, fabricante, prazoUsoDias, exigeTamanho, oculosComGrau, unidade, estoqueMinimo,
-        categoria, codigoInterno, descricao,
+        nome, tipo, tipoDescricao, fabricante, prazoUsoDias, exigeTamanho, oculosComGrau, unidade, estoqueMinimo,
+        categoria, codigoInterno, descricao, tamanhos,
       } = req.validado.body;
 
       const material = await materialService.criar(poolInjetado, {
@@ -36,6 +36,7 @@ function criarMaterialController({ pool: poolInjetado }) {
         atorId: req.usuario.id,
         nome,
         tipo: tipo ?? null,
+        tipoDescricao: tipoDescricao ?? null,
         fabricante: fabricante ?? null,
         prazoUsoDias: prazoUsoDias ?? null,
         exigeTamanho,
@@ -45,6 +46,7 @@ function criarMaterialController({ pool: poolInjetado }) {
         categoria: categoria ?? null,
         codigoInterno: codigoInterno ?? null,
         descricao: descricao ?? null,
+        tamanhos: tamanhos ?? [],
         ip: req.ip,
         dispositivo: req.headers['user-agent'],
       });
@@ -92,6 +94,7 @@ function criarMaterialController({ pool: poolInjetado }) {
         materialId: req.validado.params.id,
         ...(Object.hasOwn(corpo, 'nome') ? { nome: corpo.nome } : {}),
         ...(Object.hasOwn(corpo, 'tipo') ? { tipo: corpo.tipo, tipoInformado: true } : {}),
+        ...(Object.hasOwn(corpo, 'tipoDescricao') ? { tipoDescricao: corpo.tipoDescricao, tipoDescricaoInformado: true } : {}),
         ...(Object.hasOwn(corpo, 'fabricante') ? { fabricante: corpo.fabricante, fabricanteInformado: true } : {}),
         ...(Object.hasOwn(corpo, 'prazoUsoDias') ? { prazoUsoDias: corpo.prazoUsoDias, prazoUsoDiasInformado: true } : {}),
         ...(Object.hasOwn(corpo, 'exigeTamanho') ? { exigeTamanho: corpo.exigeTamanho } : {}),
@@ -101,6 +104,7 @@ function criarMaterialController({ pool: poolInjetado }) {
         ...(Object.hasOwn(corpo, 'categoria') ? { categoria: corpo.categoria, categoriaInformado: true } : {}),
         ...(Object.hasOwn(corpo, 'codigoInterno') ? { codigoInterno: corpo.codigoInterno, codigoInternoInformado: true } : {}),
         ...(Object.hasOwn(corpo, 'descricao') ? { descricao: corpo.descricao, descricaoInformado: true } : {}),
+        ...(Object.hasOwn(corpo, 'tamanhos') ? { tamanhos: corpo.tamanhos, tamanhosInformado: true } : {}),
         ip: req.ip,
         dispositivo: req.headers['user-agent'],
       });

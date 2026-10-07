@@ -18,7 +18,9 @@ const Sessao = require('../js/sessao-empresarial');
 
 const BASE = 'http://localhost:3000/api';
 const RAIZ = path.join(__dirname, '..');
-const PAGINAS_INTEGRADAS = ['grupos-acesso', 'grupo-permissoes', 'grupo-usuarios', 'autorizacoes-individuais'];
+// As quatro telas foram APOSENTADAS (só redirecionam para a Gestão de Usuários, sem sessão nem módulo): a lista fica
+// vazia e a conferência delas está em permissoes-efetivas.test.js. O arquivo abaixo segue valendo para o resto do módulo.
+const PAGINAS_INTEGRADAS = [];
 
 const ME = {
   status: 'ok',
@@ -393,7 +395,7 @@ describe('as quatro páginas integradas (inspeção estática)', () => {
 
     test(`${pagina}: navegação só entre páginas integradas e o Portal — nenhum link para o protótipo`, () => {
       const hrefs = [...ler(pagina).matchAll(/href="([^"]+)"/g)].map((m) => m[1]).filter((h) => !h.startsWith('http') && !h.startsWith('../css/') && h !== 'javascript:void(0)');
-      const permitidos = new Set(['grupos-acesso.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'autorizacoes-individuais.html', 'new-user.html', 'user-admin.html', '../portal/index.html', '../portal/inicio.html']);
+      const permitidos = new Set(['grupos-acesso.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'autorizacoes-individuais.html', 'new-user.html', 'user-admin.html', 'gestao-usuarios.html', '../portal/index.html', '../portal/inicio.html']);
       for (const h of hrefs) assert.ok(permitidos.has(h), `${pagina} aponta para ${h}`);
     });
   }

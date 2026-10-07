@@ -84,7 +84,14 @@ async function buscarContextoSessaoGlobal(pool, req) {
   return sessaoGlobalRepo.buscarValidaPorHash(pool, tokenHash, authConfig.sessao.inatividadeMinutos);
 }
 
-function criarExigirSessaoGlobal({ pool }) {
+const MENSAGEM_TROCA_OBRIGATORIA = 'Defina uma nova senha para continuar';
+
+/**
+ * `permitirSenhaProvisoria`: só as rotas indispensáveis à troca obrigatória
+ * (sessão própria e troca de senha) aceitam a identidade em senha provisória
+ * (074); todas as outras respondem 403 TROCA_SENHA_OBRIGATORIA.
+ */
+function criarExigirSessaoGlobal({ pool, permitirSenhaProvisoria = false }) {
   return async function exigirSessaoGlobal(req, res, next) {
     const contexto = await buscarContextoSessaoGlobal(pool, req);
     if (contexto === null) {
@@ -98,6 +105,11 @@ function criarExigirSessaoGlobal({ pool }) {
       return;
     }
 
+    if (contexto.senhaProvisoria === true && !permitirSenhaProvisoria) {
+      next(HttpError.forbidden('TROCA_SENHA_OBRIGATORIA', MENSAGEM_TROCA_OBRIGATORIA));
+      return;
+    }
+
     req.sessaoGlobal = contexto.sessao;
     req.identidade = contexto.identidade;
     next();
@@ -105,10 +117,12 @@ function criarExigirSessaoGlobal({ pool }) {
 }
 
 const exigirSessaoGlobal = criarExigirSessaoGlobal({ pool });
+const exigirSessaoGlobalComSenhaProvisoria = criarExigirSessaoGlobal({ pool, permitirSenhaProvisoria: true });
 
 module.exports = {
   criarExigirSessaoGlobal,
   exigirSessaoGlobal,
+  exigirSessaoGlobalComSenhaProvisoria,
   buscarContextoSessaoGlobal,
   extrairTokenDoCookie,
 };

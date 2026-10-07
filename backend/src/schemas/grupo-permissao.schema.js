@@ -80,4 +80,11 @@ const configurarAcao = {
   body: z.strictObject({ permitido: triState }),
 };
 
-module.exports = { listarRecursos, listarAcoes, configurarRecurso, configurarAcao };
+const acessoToggle = {
+  params: z.strictObject({ id: idParametro, toggle: z.string().regex(/^[a-zA-Z][a-zA-Z0-9]{0,39}$/) }),
+  body: z.strictObject({ ligado: z.boolean() }),
+};
+
+module.exports = {
+  listarRecursos, listarAcoes, configurarRecurso, configurarAcao, acessoToggle,
+};

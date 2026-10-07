@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 
 const { abrirPoolTemporario, inserirEmpresa } = require('./helpers/schema-temporario');
+const { todasAsMigrations } = require('./helpers/entrega-epi');
 const { criarAppTeste } = require('../helpers/app-teste');
 const { criarAuthController } = require('../../src/controllers/auth.controller');
 const { criarAuthRoutes } = require('../../src/routes/auth.routes');
@@ -26,10 +27,8 @@ const { gerarHashSenha } = require('../../src/security/password');
  * sempre da empresa da sessão; o banco repete a garantia (FKs compostas).
  */
 
-const MIGRATIONS = [
-  '000', '001', '002', '003', '004', '005', '025', '006', '007', '008', '009', '010', '011',
-  '012', '013', '014', '015', '016', '017', '018', '019', '020', '021', '022', '023', '039', '041', '042', '044', '045',
-];
+// O serviço de materiais lê tipo_descricao (071): o schema precisa de todas as migrations.
+const MIGRATIONS = todasAsMigrations();
 
 const SENHA = 'senha-correta-do-teste-bloco9-c5-2026';
 let HASH_SENHA;

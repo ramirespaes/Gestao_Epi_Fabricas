@@ -14,9 +14,9 @@ const administradorRepo = require('../../src/repositories/administrador-platafor
  * a transação.
  */
 
-for (const { nome, repo, tabela, criar } of [
-  { nome: 'identidade.repository', repo: identidadeRepo, tabela: 'identidades', criar: criarIdentidade },
-  { nome: 'administrador-plataforma.repository', repo: administradorRepo, tabela: 'administradores_plataforma', criar: criarAdministrador },
+for (const { nome, repo, tabela, criar, extras } of [
+  { nome: 'identidade.repository', repo: identidadeRepo, tabela: 'identidades', criar: criarIdentidade, extras: { telefone: null, tema: 'sistema', modoVisual: 'padrao' } },
+  { nome: 'administrador-plataforma.repository', repo: administradorRepo, tabela: 'administradores_plataforma', criar: criarAdministrador, extras: {} },
 ]) {
   describe(`${nome} — buscarPorIdParaAtualizacao (PostgreSQL real)`, () => {
     let contexto;
@@ -41,7 +41,7 @@ for (const { nome, repo, tabela, criar } of [
       const cliente = await pool.connect();
       try {
         await cliente.query('BEGIN');
-        assert.deepEqual(await repo.buscarPorIdParaAtualizacao(cliente, conta.id), { id: conta.id, email: conta.email, ativo: true });
+        assert.deepEqual(await repo.buscarPorIdParaAtualizacao(cliente, conta.id), { id: conta.id, email: conta.email, ativo: true, ...extras });
         assert.equal(await sondarLinha(pool, tabela, conta.id), 'TRAVADA');
         assert.equal(await sondarLinha(pool, tabela, outra.id), 'LIVRE');
         await cliente.query('COMMIT');
@@ -79,7 +79,7 @@ for (const { nome, repo, tabela, criar } of [
         assert.match(espera, /^(transactionid|tuple)$/, 'parada numa trava de linha');
 
         await primeira.query('COMMIT');
-        assert.deepEqual(await leitura, { id: conta.id, email: conta.email, ativo: false });
+        assert.deepEqual(await leitura, { id: conta.id, email: conta.email, ativo: false, ...extras });
         await segunda.query('COMMIT');
       } finally {
         await primeira.query('ROLLBACK').catch(() => {});

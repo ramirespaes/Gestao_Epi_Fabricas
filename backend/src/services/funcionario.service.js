@@ -469,6 +469,12 @@ const MOTIVOS = {
   FUNCIONARIO_DADOS_INVALIDOS: 'Dados inválidos.',
   FUNCIONARIO_CPF_EM_USO: 'CPF já cadastrado nesta empresa.',
   FUNCIONARIO_MATRICULA_EM_USO: 'Matrícula já cadastrada nesta empresa.',
+  FUNCIONARIO_GHE_NAO_INFORMADO: 'GHE não informado: preencha a coluna GHE com o nome exato de um GHE cadastrado nesta empresa.',
+  FUNCIONARIO_GHE_INEXISTENTE: 'GHE inexistente nesta empresa: informe o nome exato de um GHE já cadastrado (a importação nunca cria GHE).',
+  FUNCIONARIO_GHE_INVALIDO: 'GHE inexistente nesta empresa: informe o nome exato de um GHE já cadastrado (a importação nunca cria GHE).',
+  FUNCIONARIO_GHE_INATIVO: 'GHE inativo não aceita novos vínculos: reative o GHE ou informe outro.',
+  FUNCIONARIO_JA_CADASTRADO: 'Já cadastrado — sem alterações.',
+  FUNCIONARIO_JA_CADASTRADO_DIVERGENTE: 'Já cadastrado — dados divergentes. Nenhuma alteração realizada.',
   ERRO_INTERNO: 'Erro ao processar esta linha. Ela não foi gravada.',
 };
 const CODIGO_POR_CAMPO = {
@@ -477,14 +483,51 @@ const CODIGO_POR_CAMPO = {
   matricula: 'FUNCIONARIO_MATRICULA_INVALIDA',
   dataAdmissao: 'FUNCIONARIO_DATA_ADMISSAO_INVALIDA',
   dataNascimento: 'FUNCIONARIO_DATA_NASCIMENTO_INVALIDA',
+  ghe: 'FUNCIONARIO_GHE_NAO_INFORMADO',
 };
 const MOTIVO_POR_CAMPO = {
   setor: 'Setor obrigatório (até 100 caracteres).',
   funcao: 'Função/cargo obrigatória (até 100 caracteres).',
   telefone: 'Telefone inválido (até 20 caracteres).',
 };
-const CAMPO_POR_CODIGO = Object.fromEntries(Object.entries(CODIGO_POR_CAMPO).map(([campo, codigo]) => [codigo, campo]));
+const CAMPO_POR_CODIGO = {
+  ...Object.fromEntries(Object.entries(CODIGO_POR_CAMPO).map(([campo, codigo]) => [codigo, campo])),
+  FUNCIONARIO_GHE_INEXISTENTE: 'ghe', FUNCIONARIO_GHE_INVALIDO: 'ghe', FUNCIONARIO_GHE_INATIVO: 'ghe',
+};
 const CODIGOS_DUPLICIDADE = ['FUNCIONARIO_CPF_EM_USO', 'FUNCIONARIO_MATRICULA_EM_USO'];
+
+// 12G-9: funcionário já existente (mesmo CPF nesta empresa) NUNCA é alterado,
+// reativado ou completado; a linha é só comparada com o cadastro atual. Os
+// campos sensíveis (CAMPOS_SENSIVEIS) apenas sinalizam a divergência, sem o
+// valor atual — a mesma minimização do instantâneo de auditoria. Opcional
+// vazio na planilha não é divergência (a planilha não afirma nada sobre ele).
+const CAMPOS_COMPARADOS = ['matricula', 'nome', 'setor', 'funcao', 'dataAdmissao', 'dataNascimento', 'telefone'];
+const CAMPOS_OPCIONAIS_PLANILHA = ['dataNascimento', 'telefone'];
+
+function recusa(linha, codigo, campos) {
+  return { linha, situacao: 'RECUSADO', codigo, motivo: MOTIVOS[codigo], campos };
+}
+
+async function compararComExistente(pool, empresaId, existente, dados, ghePlanilha) {
+  const divergencias = [];
+  for (const campo of CAMPOS_COMPARADOS) {
+    const planilha = dados[campo] ?? null;
+    if (planilha === null && CAMPOS_OPCIONAIS_PLANILHA.includes(campo)) {
+      continue;
+    }
+    const atual = existente[campo] ?? null;
+    if (atual !== planilha) {
+      divergencias.push(CAMPOS_SENSIVEIS.includes(campo) ? { campo } : { campo, atual });
+    }
+  }
+  const gheId = existente.grupoHomogeneoId ?? null;
+  const gheAtual = gheId === null ? null : await gheRepo.buscarPorId(pool, empresaId, gheId);
+  const nomeAtual = gheAtual === null ? null : gheAtual.nome;
+  if (nomeAtual !== ghePlanilha) {
+    divergencias.push({ campo: 'ghe', atual: nomeAtual });
+  }
+  return divergencias;
+}
 
 /** Recusa por validação de conteúdo (schema da linha): campos e motivo, sem valores. */
 function recusaPorValidacao(linha, issues) {
@@ -508,8 +551,26 @@ async function importarLinha(pool, { empresaId, atorId, ip, dispositivo, importa
       dataNascimento: v.dataNascimento ?? null, dataAdmissao: v.dataAdmissao,
       setor: v.setor, funcao: v.funcao, cracha: null, telefone: v.telefone ?? null,
     });
+    // Regra oficial de existência: CPF único por empresa (uq_funcionarios_empresa_cpf).
+    const existente = await funcionarioRepo.buscarPorCpf(pool, empresaId, dados.cpf);
+    if (existente !== null) {
+      const divergencias = await compararComExistente(pool, empresaId, existente, dados, v.ghe);
+      const codigo = divergencias.length > 0 ? 'FUNCIONARIO_JA_CADASTRADO_DIVERGENTE' : 'FUNCIONARIO_JA_CADASTRADO';
+      return {
+        linha, situacao: 'JA_CADASTRADO', codigo, motivo: MOTIVOS[codigo], funcionarioId: existente.id, ativo: existente.ativo,
+        ...(divergencias.length > 0 ? { divergencias } : {}),
+      };
+    }
+    // GHE pelo nome exato desta empresa: nunca criado, nunca aproximado, nunca padrão.
+    const ghe = await gheRepo.buscarPorNome(pool, empresaId, v.ghe);
+    if (ghe === null) {
+      return recusa(linha, 'FUNCIONARIO_GHE_INEXISTENTE', ['ghe']);
+    }
+    if (ghe.ativo !== true) {
+      return recusa(linha, 'FUNCIONARIO_GHE_INATIVO', ['ghe']);
+    }
     const funcionario = await emTransacao(pool, (client) => gravarCadastro(client, {
-      empresaId, atorId, ip, dispositivo, dados,
+      empresaId, atorId, ip, dispositivo, dados: { ...dados, grupoHomogeneoId: ghe.id },
       contextoAuditoria: { origem: 'importacao', importacaoId, linha },
     }));
     return { linha, situacao: 'CADASTRADO', funcionarioId: funcionario.id };
@@ -546,8 +607,10 @@ async function importarLinha(pool, { empresaId, atorId, ip, dispositivo, importa
  * responsável, os contadores e nenhum dado pessoal das linhas. A declaração
  * é do responsável pela importação — não é consentimento dos trabalhadores.
  *
- * A resposta traz um resultado por linha e nunca devolve nome, CPF,
- * telefone ou datas.
+ * A resposta traz um resultado por linha e nunca ecoa os valores da linha
+ * (nome, CPF, telefone, datas, GHE). Para quem já existe (12G-9), devolve o
+ * valor ATUAL do sistema só dos campos divergentes que o instantâneo de
+ * auditoria também carrega; CPF nunca, nascimento e telefone só sinalizados.
  */
 async function importar(pool, {
   empresaId, atorId, importacaoId, lote, arquivo, declaracaoLgpd: declaracao, linhas, ip = null, dispositivo = null,
@@ -569,7 +632,15 @@ async function importar(pool, {
   }
 
   const contar = (situacao) => resultados.filter((r) => r.situacao === situacao).length;
-  const resumo = { cadastrados: contar('CADASTRADO'), duplicados: contar('DUPLICADO'), recusados: contar('RECUSADO'), erros: contar('ERRO') };
+  const contarCodigo = (codigo) => resultados.filter((r) => r.codigo === codigo).length;
+  const resumo = {
+    cadastrados: contar('CADASTRADO'),
+    jaCadastrados: contarCodigo('FUNCIONARIO_JA_CADASTRADO'),
+    divergentes: contarCodigo('FUNCIONARIO_JA_CADASTRADO_DIVERGENTE'),
+    duplicados: contar('DUPLICADO'),
+    recusados: contar('RECUSADO'),
+    erros: contar('ERRO'),
+  };
 
   await emTransacao(pool, (client) => auditoriaRepo.registrar(client, {
     empresaId, usuarioId: atorId, acao: ACAO_AUDITORIA_IMPORTACAO_LOTE, referencia: importacaoId, ip, dispositivo,
@@ -581,6 +652,11 @@ async function importar(pool, {
       formato: arquivo.formato, nomeArquivo: arquivo.nome, totalLinhasArquivo: arquivo.totalLinhas,
       linhasNoLote: linhas.length,
       ...resumo,
+      // Rastreabilidade por linha (12G-9): resultado, código, funcionário e nomes dos campos; nunca valores.
+      linhas: resultados.map((r) => ({
+        linha: r.linha, situacao: r.situacao, codigo: r.codigo ?? null, funcionarioId: r.funcionarioId ?? null,
+        campos: r.campos ?? (r.divergencias ?? []).map((d) => d.campo),
+      })),
     },
   }));
 

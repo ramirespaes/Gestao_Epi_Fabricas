@@ -55,6 +55,8 @@
     inicio: 'inicio.html',
     // Parte C7: com empresa selecionada, o Portal leva ao dashboard.
     painel: '../pages/dashboard.html',
+    // Senha provisória: a mesma página de troca, antes de qualquer outro destino.
+    trocarSenha: 'trocar-senha.html',
   };
 
   var ROTULOS_PERFIL = {
@@ -158,6 +160,7 @@
      */
     destino: function (dados) {
       if (!dados) return 'login';
+      if (dados.identidade && dados.identidade.trocaSenhaObrigatoria === true) return 'trocarSenha';
       if (dados.contexto) return 'inicio';
       if (!Array.isArray(dados.empresas) || dados.empresas.length === 0) return 'semEmpresa';
       return 'selecionar';
@@ -231,10 +234,26 @@
     VERIFICACAO_PENDENTE: 'Aguarde a verificação de segurança para entrar.',
     VERIFICACAO_EXPIRADA: 'A verificação de segurança expirou. Aguarde uma nova verificação.',
     VERIFICACAO_ERRO: 'Não foi possível concluir a verificação de segurança. Recarregue a página e tente novamente.',
+    DESATIVADO: 'Usuário desativado. Procure o administrador da empresa.',
+    SENHA_PROVISORIA_EXPIRADA: 'A senha provisória expirou. Use "Esqueci minha senha" para definir uma nova.',
+    /**
+     * Mensagem do LOGIN pelo código do servidor. 401 de credencial continua genérico (nunca revela a conta); só
+     * "credenciais corretas + usuário desativado" e "senha provisória vencida" têm texto próprio — o servidor só os
+     * devolve depois de a senha conferir.
+     */
+    deLogin: function (r) {
+      if (r && r.status === 401 && r.codigo === 'USUARIO_DESATIVADO') return mensagens.DESATIVADO;
+      if (r && r.status === 401 && r.codigo === 'SENHA_PROVISORIA_EXPIRADA') return mensagens.SENHA_PROVISORIA_EXPIRADA;
+      return r && r.status === 401 ? mensagens.CREDENCIAIS : mensagens.deErro(r);
+    },
     deErro: function (resposta) {
       if (!resposta) return 'Não foi possível concluir a operação.';
       if (resposta.status === 403 && resposta.codigo === 'EMPRESA_NAO_AUTORIZADA') {
         return 'Esta empresa não está mais disponível para o seu acesso. A lista foi atualizada.';
+      }
+      // Restrição por IP do usuário na empresa: o servidor decide pelo endereço que ele resolveu.
+      if (resposta.status === 403 && resposta.codigo === 'ACESSO_IP_NAO_PERMITIDO') {
+        return 'Seu acesso a esta empresa não é permitido a partir deste endereço de rede. Procure o administrador da empresa.';
       }
       if (resposta.codigo === 'VERIFICACAO_SEGURANCA_INVALIDA') {
         return 'A verificação de segurança não foi aceita. Aguarde uma nova verificação e tente novamente.';

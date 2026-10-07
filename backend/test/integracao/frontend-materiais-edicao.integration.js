@@ -76,7 +76,7 @@ function criarNavegador(origem) {
 }
 
 const FORMULARIO = {
-  nome: 'Botina edição C2', categoria: 'EPI', tipo: 'Sapatão / Botina', tipoCustom: '', controleTamanho: 'grade',
+  nome: 'Botina edição C2', categoria: 'EPI', tipo: 'Botina de Segurança', tipoCustom: '', controleTamanho: 'grade',
   fabricante: 'Bracol', codigoInterno: 'ED-001', quantidadeComprada: '30', tamanhoEntrada: '42', caEntrada: '38271', caValidadeEntrada: '2030-12-31',
   unidade: 'Par', estoqueMinimo: '5', prazoUnidade: 'meses', prazo: '6', descricao: 'Material da melhoria C2', registrarEntrada: 'sim',
 };
@@ -279,19 +279,21 @@ describe('Melhoria C2 — edição de material e entrada inicial (PostgreSQL rea
   test('trocar categoria e tipo não mexe nos lotes: o lote 42 continua com saldo, a lista de tamanhos segue o novo tipo, e Itens Disponíveis mostra o novo tipo', async () => {
     await entrar(EMAILS.master, empresa.A);
     const antes = await lotes(idBotina);
-    const { resposta } = await editar(idBotina, { categoria: 'Uniforme', tipo: 'Luva' });
+    // 12G-8: o tipo tem de ser da nova categoria (Luva é de EPI); Camisa é de Uniforme.
+    const { resposta } = await editar(idBotina, { categoria: 'Uniforme', tipo: 'Camisa' });
     assert.equal(resposta.ok, true, JSON.stringify(resposta));
     assert.deepEqual(await lotes(idBotina), antes, 'lotes intactos');
 
     const e = await EpiMateriais.fluxo.carregarEstoque(idBotina);
     assert.equal(e.ok, true, JSON.stringify(e));
     assert.deepEqual(e.lotes.map((l) => [l.tamanho, l.fisico]), [['42', 30]]);
-    assert.deepEqual(EpiMateriais.formulario.tamanhosDaEntrada(e.lotes, e.material.tipo).slice(0, 6), ['42', 'PP', 'P', 'M', 'G', 'GG']);
+    // Sem grade e sem sugestão própria para o tipo: o lote existente, depois a lista padrão.
+    assert.deepEqual(EpiMateriais.formulario.tamanhosDaEntrada(e.lotes, e.material.tipo).slice(0, 6), ['42', '34', '35', '36', '37', '38']);
 
     const c3 = await EpiHttp.requisitar('GET', '/estoque/itens-disponiveis?limite=100');
     assert.equal(c3.ok, true, JSON.stringify(c3));
     const linhas = c3.dados.itens.filter((i) => i.materialId === idBotina);
-    assert.deepEqual(linhas.map((i) => [i.tamanho, i.saldo, i.tipo, i.categoria]), [['42', 30, 'Luva', 'Uniforme']]);
+    assert.deepEqual(linhas.map((i) => [i.tamanho, i.saldo, i.tipo, i.categoria]), [['42', 30, 'Camisa', 'Uniforme']]);
   });
 
   test('entrada inicial "Não": material criado sem lote e sem movimentação, mesmo com quantidade no formulário', async () => {
@@ -336,8 +338,10 @@ describe('Melhoria C2 — edição de material e entrada inicial (PostgreSQL rea
   });
 
   describe('óculos de proteção com ou sem grau', () => {
+    // OCULOS é o nome histórico (só legado gravado por SQL); INCOLOR é um dos dois tipos oficiais (12G-8).
     const OCULOS = 'Óculos de proteção';
-    const OCULOS_FORM = { ...FORMULARIO, tipo: OCULOS, controleTamanho: 'unico', codigoInterno: '', registrarEntrada: 'nao', unidade: 'Unidade' };
+    const INCOLOR = 'Óculos de Proteção Incolor';
+    const OCULOS_FORM = { ...FORMULARIO, tipo: INCOLOR, controleTamanho: 'unico', codigoInterno: '', registrarEntrada: 'nao', unidade: 'Unidade' };
     const noBanco = async (id) => (await pool.query('SELECT tipo, oculos_com_grau FROM materiais WHERE id = $1', [id])).rows[0];
     const cadastrar = async (campos) => {
       const m = EpiMateriais.formulario.montarCorpo(campos);
@@ -353,7 +357,7 @@ describe('Melhoria C2 — edição de material e entrada inicial (PostgreSQL rea
         const { corpo, material } = await cadastrar({ ...OCULOS_FORM, nome: `Óculos ${oculosComGrau}`, oculosComGrau });
         assert.equal(corpo.oculosComGrau, oculosComGrau);
         assert.equal(material.oculosComGrau, oculosComGrau);
-        assert.deepEqual(await noBanco(material.id), { tipo: OCULOS, oculos_com_grau: oculosComGrau });
+        assert.deepEqual(await noBanco(material.id), { tipo: INCOLOR, oculos_com_grau: oculosComGrau });
       }
       const { corpo, material } = await cadastrar({ ...OCULOS_FORM, nome: 'Luva com caixa escondida', tipo: 'Luva', oculosComGrau: true });
       assert.equal(Object.hasOwn(corpo, 'oculosComGrau'), false);
@@ -392,10 +396,10 @@ describe('Melhoria C2 — edição de material e entrada inicial (PostgreSQL rea
       assert.equal(paraLuva.resposta.ok, true, JSON.stringify(paraLuva.resposta));
       assert.deepEqual(await noBanco(oculos.id), { tipo: 'Luva', oculos_com_grau: null });
 
-      const paraOculos = await editar(oculos.id, { tipo: OCULOS, oculosComGrau: true, oculosComGrauTocado: true });
-      assert.deepEqual(paraOculos.montado.corpo, { tipo: OCULOS, oculosComGrau: true });
+      const paraOculos = await editar(oculos.id, { tipo: INCOLOR, oculosComGrau: true, oculosComGrauTocado: true });
+      assert.deepEqual(paraOculos.montado.corpo, { tipo: INCOLOR, oculosComGrau: true });
       assert.equal(paraOculos.resposta.ok, true, JSON.stringify(paraOculos.resposta));
-      assert.deepEqual(await noBanco(oculos.id), { tipo: OCULOS, oculos_com_grau: true });
+      assert.deepEqual(await noBanco(oculos.id), { tipo: INCOLOR, oculos_com_grau: true });
     });
   });
 

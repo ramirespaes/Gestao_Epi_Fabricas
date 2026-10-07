@@ -32,7 +32,7 @@ const path = require('node:path');
 
 const RAIZ = path.resolve(__dirname, '..');
 const ARQUIVO_ALLOWLIST = path.join(__dirname, 'allowlist.json');
-const NUNCA_PUBLICAR = ['js/main.js', 'js/db-api.js', 'painel-privado/'];
+const NUNCA_PUBLICAR = ['js/main.js', 'js/db-api.js', 'js/inspecao-visual.js', 'painel-privado/'];
 const COM_ESQUEMA = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i;
 // Única exceção: o script oficial do Turnstile, só no login e na recuperação de
 // senha do Portal. Comparação literal da página e da URL; nada de prefixo,

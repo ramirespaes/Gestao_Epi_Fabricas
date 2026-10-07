@@ -25,7 +25,7 @@ const declaracao = require('../../src/services/declaracao-lgpd');
  * com TODAS as migrations (000–040).
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 41 }, (_, i) => String(i).padStart(3, '0'));
+const TODAS_AS_MIGRATIONS = [...Array.from({ length: 41 }, (_, i) => String(i).padStart(3, '0')), '072', '074', '075', '076', '077'];
 const SENHA = 'senha-forte-da-parte-c4-2026';
 const EMAILS = {
   masterA: 'master.a.c4@exemplo-cliente.com.br',
@@ -58,9 +58,11 @@ function cookiesDe(resposta) {
   return saida;
 }
 
+// 12G-9: a coluna GHE é obrigatória e traz o NOME exato de um GHE da empresa.
+const GHE = { ativoA: 'GHE Produção', inativoA: 'GHE Antigo', ativoB: 'GHE Beta' };
 const linhaImp = (linha, cpf, extra = {}) => ({
   linha, nome: `Funcionário C4 ${linha}`, cpf, matricula: `C4-${linha}`, dataAdmissao: '2020-06-01',
-  dataNascimento: '1990-03-15', setor: 'Produção', funcao: 'Operador', telefone: '(47) 99999-0001', ...extra,
+  dataNascimento: '1990-03-15', setor: 'Produção', funcao: 'Operador', telefone: '(47) 99999-0001', ghe: GHE.ativoA, ...extra,
 });
 const lote = (linhas, extra = {}) => ({
   importacaoId: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
@@ -78,6 +80,7 @@ describe('C4 — funcionários: importação em lote, CPF exato e admissão (Pos
   const empresa = {};
   const u = {};
   const cookie = {};
+  const ghe = {};
 
   async function sessao(email) {
     const login = await request(app).post('/api/auth/global/login').send({ email, senha: SENHA, turnstileToken: TOKEN_TURNSTILE_TESTE });
@@ -87,8 +90,9 @@ describe('C4 — funcionários: importação em lote, CPF exato e admissão (Pos
   }
   const importar = (quem, corpo) => request(app).post(ROTA).set('Cookie', cookie[quem]).send(corpo);
   const funcionariosDe = async (empresaId) => (await pool.query(
-    "SELECT matricula, nome, cpf, ativo, to_char(data_admissao, 'YYYY-MM-DD') AS admissao FROM funcionarios WHERE empresa_id = $1 ORDER BY id", [empresaId],
+    "SELECT matricula, nome, cpf, ativo, to_char(data_admissao, 'YYYY-MM-DD') AS admissao, grupo_homogeneo_id AS ghe, atualizado_em FROM funcionarios WHERE empresa_id = $1 ORDER BY id", [empresaId],
   )).rows;
+  const totalGhes = async () => (await pool.query('SELECT count(*)::int AS n FROM grupos_homogeneos_exposicao')).rows[0].n;
 
   before(async () => {
     contexto = await abrirPoolTemporario(TODAS_AS_MIGRATIONS);
@@ -109,6 +113,11 @@ describe('C4 — funcionários: importação em lote, CPF exato e admissão (Pos
     await q("INSERT INTO permissoes_recurso (empresa_id, perfil, recurso, pode_visualizar, pode_criar) VALUES ($1, 'SUPERVISOR', 'employeeHistory', true, false)", [empresa.A]);
     // Funcionário já existente e INATIVO na empresa A: a importação nunca o altera nem reativa.
     await q("INSERT INTO funcionarios (empresa_id, matricula, nome, cpf, ativo) VALUES ($1, 'EXISTENTE-1', 'Existente Inativo', $2, false)", [empresa.A, gerarCpf(900)]);
+    // GHEs (12G-9): um ativo e um inativo em A; um ativo em B, cujo nome não vale em A.
+    const criarGhe = async (empresaId, nome, ativo) => (await q('INSERT INTO grupos_homogeneos_exposicao (empresa_id, nome, ativo) VALUES ($1, $2, $3) RETURNING id', [empresaId, nome, ativo])).rows[0].id;
+    ghe.ativoA = await criarGhe(empresa.A, GHE.ativoA, true);
+    ghe.inativoA = await criarGhe(empresa.A, GHE.inativoA, false);
+    ghe.ativoB = await criarGhe(empresa.B, GHE.ativoB, true);
 
     const semLimite = () => criarLimitador({ limite: 100000, janelaSegundos: 60 });
     const exigirSessao = criarExigirSessao({ pool });
@@ -124,13 +133,14 @@ describe('C4 — funcionários: importação em lote, CPF exato e admissão (Pos
 
   after(async () => { if (contexto) await contexto.encerrar(); });
 
-  test('lote misto: um resultado por linha; linha inválida, duplicada (inclusive existente inativo) e repetida no lote não desfazem as demais', async () => {
+  test('lote misto: um resultado por linha; linha inválida, já cadastrada (inclusive existente inativo) e repetida no lote não desfazem as demais; GHE vinculado pelo nome', async () => {
     const antes = await funcionariosDe(empresa.A);
+    const existenteAntes = antes.find((f) => f.matricula === 'EXISTENTE-1');
     const r = await importar('masterA', lote([
       linhaImp(2, gerarCpf(1)),
       linhaImp(3, '52998224726'), // DV inválido
-      linhaImp(4, gerarCpf(900)), // CPF do existente inativo
-      linhaImp(5, gerarCpf(1), { matricula: 'C4-5B' }), // CPF repetido no mesmo lote
+      linhaImp(4, gerarCpf(900)), // CPF do existente inativo: já cadastrado, com divergências
+      linhaImp(5, gerarCpf(1), { matricula: 'C4-5B' }), // CPF repetido no mesmo lote: já cadastrado pela linha 2
       linhaImp(6, gerarCpf(2), { dataAdmissao: '1985-01-01' }), // admissão antes do nascimento
       linhaImp(7, gerarCpf(3), { setor: null }), // setor obrigatório na planilha
       linhaImp(8, gerarCpf(4), { dataNascimento: null, telefone: null }),
@@ -139,20 +149,27 @@ describe('C4 — funcionários: importação em lote, CPF exato e admissão (Pos
     assert.deepEqual(r.body.linhas.map((l) => [l.linha, l.situacao, l.codigo ?? null]), [
       [2, 'CADASTRADO', null],
       [3, 'RECUSADO', 'FUNCIONARIO_CPF_INVALIDO'],
-      [4, 'DUPLICADO', 'FUNCIONARIO_CPF_EM_USO'],
-      [5, 'DUPLICADO', 'FUNCIONARIO_CPF_EM_USO'],
+      [4, 'JA_CADASTRADO', 'FUNCIONARIO_JA_CADASTRADO_DIVERGENTE'],
+      [5, 'JA_CADASTRADO', 'FUNCIONARIO_JA_CADASTRADO_DIVERGENTE'],
       [6, 'RECUSADO', 'FUNCIONARIO_DATA_ADMISSAO_INVALIDA'],
       [7, 'RECUSADO', 'FUNCIONARIO_DADOS_INVALIDOS'],
       [8, 'CADASTRADO', null],
     ]);
-    assert.deepEqual(r.body.resumo, { cadastrados: 2, duplicados: 2, recusados: 3, erros: 0 });
-    assert.doesNotMatch(JSON.stringify(r.body), new RegExp(`${gerarCpf(1)}|Funcionário C4|99999-0001|1990-03-15`), 'a resposta não ecoa dados pessoais');
+    assert.deepEqual(r.body.resumo, { cadastrados: 2, jaCadastrados: 0, divergentes: 2, duplicados: 0, recusados: 3, erros: 0 });
+    // Divergências: campo e valor ATUAL do sistema (nunca CPF; nascimento e telefone só sinalizados); o valor da planilha não é ecoado.
+    assert.equal(r.body.linhas[2].ativo, false);
+    assert.deepEqual(r.body.linhas[2].divergencias, [
+      { campo: 'matricula', atual: 'EXISTENTE-1' }, { campo: 'nome', atual: 'Existente Inativo' }, { campo: 'setor', atual: null }, { campo: 'funcao', atual: null },
+      { campo: 'dataAdmissao', atual: null }, { campo: 'dataNascimento' }, { campo: 'telefone' }, { campo: 'ghe', atual: null },
+    ]);
+    assert.deepEqual(r.body.linhas[3].divergencias, [{ campo: 'matricula', atual: 'C4-2' }, { campo: 'nome', atual: 'Funcionário C4 2' }]);
+    assert.doesNotMatch(JSON.stringify(r.body), new RegExp(`${gerarCpf(1)}|${gerarCpf(900)}|Funcionário C4 [45]|C4-5B|99999-0001|1990-03-15`), 'a resposta não ecoa CPF, telefone, nascimento nem os valores da planilha');
 
     const depois = await funcionariosDe(empresa.A);
     assert.equal(depois.length, antes.length + 2);
-    assert.deepEqual(depois.find((f) => f.matricula === 'EXISTENTE-1'), { matricula: 'EXISTENTE-1', nome: 'Existente Inativo', cpf: gerarCpf(900), ativo: false, admissao: null }, 'existente intocado e inativo');
-    assert.deepEqual(depois.filter((f) => f.matricula.startsWith('C4-')).map((f) => [f.matricula, f.cpf, f.admissao, f.ativo]),
-      [['C4-2', gerarCpf(1), '2020-06-01', true], ['C4-8', gerarCpf(4), '2020-06-01', true]]);
+    assert.deepEqual(depois.find((f) => f.matricula === 'EXISTENTE-1'), existenteAntes, 'existente intocado (inclusive atualizado_em) e não reativado');
+    assert.deepEqual(depois.filter((f) => f.matricula.startsWith('C4-')).map((f) => [f.matricula, f.cpf, f.admissao, f.ativo, f.ghe]),
+      [['C4-2', gerarCpf(1), '2020-06-01', true, ghe.ativoA], ['C4-8', gerarCpf(4), '2020-06-01', true, ghe.ativoA]]);
   });
 
   test('auditoria: FUNCIONARIO_CRIADO por linha criada (origem importação) e um evento do lote com a declaração (versão, hash), usuário e contadores — sem CPF, telefone ou nascimento', async () => {
@@ -165,17 +182,88 @@ describe('C4 — funcionários: importação em lote, CPF exato e admissão (Pos
     assert.ok(l.criado_em instanceof Date);
     assert.deepEqual([l.contexto.versaoDeclaracao, l.contexto.hashTextoDeclaracao, l.contexto.declaracaoConfirmada],
       [declaracao.VERSAO_ATUAL, declaracao.hashDaVersao(declaracao.VERSAO_ATUAL), true]);
-    assert.deepEqual([l.contexto.cadastrados, l.contexto.duplicados, l.contexto.recusados, l.contexto.erros, l.contexto.linhasNoLote], [2, 2, 3, 0, 7]);
+    assert.deepEqual(
+      [l.contexto.cadastrados, l.contexto.jaCadastrados, l.contexto.divergentes, l.contexto.duplicados, l.contexto.recusados, l.contexto.erros, l.contexto.linhasNoLote],
+      [2, 0, 2, 0, 3, 0, 7],
+    );
+    // 12G-9: resultado compacto por linha no evento do lote — situação, código, funcionário e campos; nenhum valor.
+    assert.deepEqual(l.contexto.linhas.map((x) => [x.linha, x.situacao, x.codigo, x.funcionarioId !== null, x.campos]), [
+      [2, 'CADASTRADO', null, true, []],
+      [3, 'RECUSADO', 'FUNCIONARIO_CPF_INVALIDO', false, ['cpf']],
+      [4, 'JA_CADASTRADO', 'FUNCIONARIO_JA_CADASTRADO_DIVERGENTE', true, ['matricula', 'nome', 'setor', 'funcao', 'dataAdmissao', 'dataNascimento', 'telefone', 'ghe']],
+      [5, 'JA_CADASTRADO', 'FUNCIONARIO_JA_CADASTRADO_DIVERGENTE', true, ['matricula', 'nome']],
+      [6, 'RECUSADO', 'FUNCIONARIO_DATA_ADMISSAO_INVALIDA', false, ['dataAdmissao']],
+      [7, 'RECUSADO', 'FUNCIONARIO_DADOS_INVALIDOS', false, ['setor']],
+      [8, 'CADASTRADO', null, true, []],
+    ]);
     const todo = JSON.stringify((await pool.query('SELECT contexto, dados_anteriores, dados_novos FROM logs_auditoria WHERE empresa_id = $1', [empresa.A])).rows);
-    assert.doesNotMatch(todo, new RegExp(`${gerarCpf(1)}|${gerarCpf(4)}|99999-0001|1990-03-15`), 'nenhum dado pessoal em toda a auditoria da empresa');
+    assert.doesNotMatch(todo, new RegExp(`${gerarCpf(1)}|${gerarCpf(4)}|${gerarCpf(900)}|99999-0001|1990-03-15|Existente Inativo|C4-5B|${GHE.ativoA}`), 'nenhum dado pessoal nem valor de linha em toda a auditoria da empresa');
   });
 
-  test('reenvio do mesmo lote (ex.: após resultado incerto): nada é criado em dobro — os já gravados voltam como DUPLICADO', async () => {
+  test('reenvio do mesmo lote (ex.: após resultado incerto): nada é criado em dobro — os já gravados voltam como JA_CADASTRADO sem alterações, e o banco não muda', async () => {
     const antes = await funcionariosDe(empresa.A);
     const r = await importar('masterA', lote([linhaImp(2, gerarCpf(1)), linhaImp(8, gerarCpf(4), { dataNascimento: null, telefone: null })]));
     assert.equal(r.status, 200);
-    assert.deepEqual(r.body.linhas.map((l) => l.situacao), ['DUPLICADO', 'DUPLICADO']);
+    assert.deepEqual(r.body.linhas.map((l) => [l.situacao, l.codigo, l.ativo, 'divergencias' in l]), [
+      ['JA_CADASTRADO', 'FUNCIONARIO_JA_CADASTRADO', true, false], ['JA_CADASTRADO', 'FUNCIONARIO_JA_CADASTRADO', true, false],
+    ]);
+    assert.deepEqual(r.body.resumo, { cadastrados: 0, jaCadastrados: 2, divergentes: 0, duplicados: 0, recusados: 0, erros: 0 });
     assert.deepEqual(await funcionariosDe(empresa.A), antes);
+  });
+
+  test('12G-9 existente com dados diferentes: JA_CADASTRADO_DIVERGENTE lista campo e valor atual, nada é alterado (nem auditoria de alteração); opcional vazio na planilha não diverge', async () => {
+    const antes = await funcionariosDe(empresa.A);
+    const alteracoesAntes = (await pool.query("SELECT count(*)::int AS n FROM logs_auditoria WHERE empresa_id = $1 AND acao IN ('FUNCIONARIO_ALTERADO', 'FUNCIONARIO_REATIVADO', 'FUNCIONARIO_INATIVADO')", [empresa.A])).rows[0].n;
+    const r = await importar('masterA', lote([
+      linhaImp(2, gerarCpf(1), { setor: 'Qualidade', ghe: GHE.inativoA, telefone: '(47) 98888-0002', dataAdmissao: '2021-01-01' }),
+      linhaImp(8, gerarCpf(4), { dataNascimento: null, telefone: null, ghe: 'GHE Que Não Existe' }),
+      linhaImp(9, gerarCpf(4), { nome: 'Funcionário C4 8', matricula: 'C4-8', dataNascimento: null, telefone: null }),
+    ]));
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual(r.body.linhas.map((l) => [l.linha, l.situacao, l.codigo]), [
+      [2, 'JA_CADASTRADO', 'FUNCIONARIO_JA_CADASTRADO_DIVERGENTE'], [8, 'JA_CADASTRADO', 'FUNCIONARIO_JA_CADASTRADO_DIVERGENTE'], [9, 'JA_CADASTRADO', 'FUNCIONARIO_JA_CADASTRADO'],
+    ]);
+    assert.deepEqual(r.body.linhas[0].divergencias, [
+      { campo: 'setor', atual: 'Produção' }, { campo: 'dataAdmissao', atual: '2020-06-01' }, { campo: 'telefone' }, { campo: 'ghe', atual: GHE.ativoA },
+    ]);
+    assert.deepEqual(r.body.linhas[1].divergencias, [{ campo: 'ghe', atual: GHE.ativoA }]);
+    assert.doesNotMatch(JSON.stringify(r.body), /99999-0001|98888-0002|Qualidade|2021-01-01|GHE Que Não Existe|GHE Antigo/);
+    assert.deepEqual(await funcionariosDe(empresa.A), antes, 'nenhuma coluna de nenhum funcionário mudou');
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM logs_auditoria WHERE empresa_id = $1 AND acao IN ('FUNCIONARIO_ALTERADO', 'FUNCIONARIO_REATIVADO', 'FUNCIONARIO_INATIVADO')", [empresa.A])).rows[0].n, alteracoesAntes);
+  });
+
+  test('12G-9 GHE: ausente, vazio, inexistente, inativo e o nome do GHE de outra empresa recusam só a linha; ativo vincula; nenhum GHE é criado; linhas inválidas entre válidas não bloqueiam', async () => {
+    const antes = await funcionariosDe(empresa.A);
+    const ghesAntes = await totalGhes();
+    const semGhe = linhaImp(60, gerarCpf(60));
+    delete semGhe.ghe;
+    const r = await importar('masterA', lote([
+      semGhe,
+      linhaImp(61, gerarCpf(61), { ghe: '' }),
+      linhaImp(62, gerarCpf(62)),
+      linhaImp(63, gerarCpf(63), { ghe: 'GHE Que Não Existe' }),
+      linhaImp(64, gerarCpf(64), { ghe: GHE.inativoA }),
+      linhaImp(65, gerarCpf(65), { ghe: GHE.ativoB }),
+      linhaImp(66, gerarCpf(66), { ghe: ` ${GHE.ativoA} ` }),
+      linhaImp(67, gerarCpf(67), { ghe: GHE.ativoA.toUpperCase() }),
+    ]));
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual(r.body.linhas.map((l) => [l.linha, l.situacao, l.codigo ?? null, l.campos ?? null]), [
+      [60, 'RECUSADO', 'FUNCIONARIO_GHE_NAO_INFORMADO', ['ghe']],
+      [61, 'RECUSADO', 'FUNCIONARIO_GHE_NAO_INFORMADO', ['ghe']],
+      [62, 'CADASTRADO', null, null],
+      [63, 'RECUSADO', 'FUNCIONARIO_GHE_INEXISTENTE', ['ghe']],
+      [64, 'RECUSADO', 'FUNCIONARIO_GHE_INATIVO', ['ghe']],
+      [65, 'RECUSADO', 'FUNCIONARIO_GHE_INEXISTENTE', ['ghe']],
+      [66, 'CADASTRADO', null, null],
+      [67, 'RECUSADO', 'FUNCIONARIO_GHE_INEXISTENTE', ['ghe']],
+    ]);
+    for (const l of r.body.linhas.filter((x) => x.situacao === 'RECUSADO')) assert.match(l.motivo, /GHE/);
+    assert.doesNotMatch(JSON.stringify(r.body), /GHE Que Não Existe|GHE Beta|GHE Antigo/, 'o GHE informado não é ecoado');
+    assert.deepEqual(r.body.resumo, { cadastrados: 2, jaCadastrados: 0, divergentes: 0, duplicados: 0, recusados: 6, erros: 0 });
+    const depois = await funcionariosDe(empresa.A);
+    assert.deepEqual(depois.slice(antes.length).map((f) => [f.matricula, f.ghe]), [['C4-62', ghe.ativoA], ['C4-66', ghe.ativoA]]);
+    assert.equal(await totalGhes(), ghesAntes, 'nenhum GHE criado');
   });
 
   test('matrícula repetida com CPF novo também é DUPLICADO (por matrícula); nada é sobrescrito', async () => {
@@ -191,12 +279,12 @@ describe('C4 — funcionários: importação em lote, CPF exato e admissão (Pos
     assert.deepEqual(await funcionariosDe(empresa.A), antes);
   });
 
-  test('isolamento: o mesmo CPF e a mesma matrícula na empresa B são cadastrados em B; A continua igual', async () => {
+  test('isolamento: o mesmo CPF e a mesma matrícula na empresa B são cadastrados em B (com o GHE de B); o GHE de A não existe em B; A continua igual', async () => {
     const antesA = await funcionariosDe(empresa.A);
-    const r = await importar('masterB', lote([linhaImp(2, gerarCpf(1))]));
-    assert.deepEqual(r.body.linhas.map((l) => l.situacao), ['CADASTRADO']);
+    const r = await importar('masterB', lote([linhaImp(2, gerarCpf(1), { ghe: GHE.ativoB }), linhaImp(3, gerarCpf(3))]));
+    assert.deepEqual(r.body.linhas.map((l) => [l.situacao, l.codigo ?? null]), [['CADASTRADO', null], ['RECUSADO', 'FUNCIONARIO_GHE_INEXISTENTE']]);
     assert.deepEqual(await funcionariosDe(empresa.A), antesA);
-    assert.deepEqual((await funcionariosDe(empresa.B)).map((f) => f.cpf), [gerarCpf(1)]);
+    assert.deepEqual((await funcionariosDe(empresa.B)).map((f) => [f.cpf, f.ghe]), [[gerarCpf(1), ghe.ativoB]]);
   });
 
   test('limites do lote: 101 linhas, declaração não confirmada, versão desconhecida, empresaId no corpo e formato xls → 400; corpo acima de 32 KB → 413; nada é gravado', async () => {
@@ -220,13 +308,15 @@ describe('C4 — funcionários: importação em lote, CPF exato e admissão (Pos
     assert.deepEqual(await funcionariosDe(empresa.A), antes);
   });
 
-  test('concorrência: dois lotes simultâneos com o mesmo CPF — um cadastra, o outro recebe DUPLICADO; uma única linha no banco', async () => {
+  test('concorrência: dois lotes simultâneos com o mesmo CPF — um cadastra; o outro recebe DUPLICADO (corrida no INSERT) ou JA_CADASTRADO (leu o já gravado); uma única linha no banco', async () => {
     const cpf = gerarCpf(40);
     const [r1, r2] = await Promise.all([
       importar('masterA', lote([linhaImp(40, cpf, { matricula: 'C4-CONC-1' })])),
       importar('masterA', lote([linhaImp(40, cpf, { matricula: 'C4-CONC-2' })])),
     ]);
-    assert.deepEqual([r1.body.linhas[0].situacao, r2.body.linhas[0].situacao].sort(), ['CADASTRADO', 'DUPLICADO']);
+    const situacoes = [r1.body.linhas[0].situacao, r2.body.linhas[0].situacao].sort();
+    assert.equal(situacoes[0], 'CADASTRADO');
+    assert.ok(['DUPLICADO', 'JA_CADASTRADO'].includes(situacoes[1]), situacoes[1]);
     assert.equal((await pool.query('SELECT count(*)::int AS n FROM funcionarios WHERE empresa_id = $1 AND cpf = $2', [empresa.A, cpf])).rows[0].n, 1);
   });
 

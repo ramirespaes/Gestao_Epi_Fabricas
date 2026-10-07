@@ -3,6 +3,7 @@
 const { HttpError } = require('../errors/HttpError');
 const funcionarioRepo = require('../repositories/funcionario.repository');
 const materialRepo = require('../repositories/material.repository');
+const materialTamanhoRepo = require('../repositories/material-tamanho.repository');
 const gheRepo = require('../repositories/grupo-homogeneo-exposicao.repository');
 const gheMaterialRepo = require('../repositories/ghe-material.repository');
 const usuarioRepo = require('../repositories/usuario.repository');
@@ -327,6 +328,16 @@ function validarTamanhos(itens, materiais) {
   }
 }
 
+// 12G-8: material com grade só aceita tamanho da grade; sem grade, o legado de antes.
+function validarGrade(itens, grades) {
+  for (const item of itens) {
+    const grade = grades.get(item.materialId) || [];
+    if (item.tamanho !== null && grade.length > 0 && !grade.includes(item.tamanho)) {
+      throw recusar(`itens[${item.indice}].tamanho`, 'TAMANHO_FORA_DA_GRADE', 'Este tamanho não está na grade do material');
+    }
+  }
+}
+
 /**
  * Cria a solicitação PENDENTE de um usuário interno para um trabalhador ativo
  * da empresa: de 1 a 20 itens, material ativo e tamanho conforme a
@@ -366,6 +377,8 @@ async function criarSolicitacao(pool, {
     const materialIds = [...new Set(itensN.map((i) => i.materialId))].sort((a, b) => a - b);
     const materiais = validarMateriaisDaSolicitacao(await materialRepo.listarPorIdsParaVinculo(client, empresaId, materialIds), materialIds);
     validarTamanhos(itensN, materiais);
+    // Os materiais já estão FOR SHARE: a troca da grade (FOR UPDATE) espera esta criação.
+    validarGrade(itensN, await materialTamanhoRepo.listarPorMateriais(client, empresaId, materialIds));
 
     const ghe = funcionario.grupoHomogeneoId === null ? null : await gheRepo.buscarPorId(client, empresaId, funcionario.grupoHomogeneoId);
     const previstos = new Set(ghe === null ? [] : await gheMaterialRepo.listarMaterialIdsVinculados(client, empresaId, ghe.id));

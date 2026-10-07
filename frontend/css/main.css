@@ -299,6 +299,11 @@
       width:40px;height:40px;border-radius:14px;background:var(--primary-container);color:var(--primary);
       display:grid;place-items:center;font:700 14px var(--font-brand)
     }
+    /* 12G-7: pictograma ilustrativo do tipo do material, decorativo; o nome segue em texto ao lado. */
+    .pictograma-material{width:24px;height:24px;flex:none;vertical-align:middle;margin-right:6px;color:var(--on-surface-variant)}
+    .pictograma-material-atual{display:inline-flex;flex:none}
+    .pictograma-material-atual[hidden]{display:none}
+    .pictograma-material-atual .pictograma-material{margin-right:0}
 
     .badge{
       display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;
@@ -1042,6 +1047,9 @@
       .stat-row         { grid-template-columns: repeat(2,1fr) !important; }
       .auto-alert-panel { grid-template-columns: 1fr !important; }
       .detail-grid      { grid-template-columns: 1fr !important; }
+      .account-summary  { grid-template-columns: 72px 1fr; gap: 14px; }
+      .account-avatar   { width: 72px; height: 72px; border-radius: 22px; font-size: 26px; }
+      .account-summary .tonal-btn { grid-column: 1 / -1; justify-self: start; }
       .table-wrap       { overflow-x: auto; }
       .footer-actions   { flex-wrap: wrap; }
       .page-actions     { flex-wrap: wrap; gap: 10px; }

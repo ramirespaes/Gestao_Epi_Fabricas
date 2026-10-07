@@ -30,6 +30,8 @@ const MIGRATIONS = [
   '000', '001', '002', '003', '004', '005', '025', '006', '007', '008', '009', '010', '011',
   '012', '013', '014', '015', '016', '017', '018', '019', '020', '021', '022', '023',
   '040', // C4: funcionarios.data_admissao (lida pela projeção do repositório)
+  '074', // Gestão de Usuários: identidades.senha_provisoria (lida pela sessão empresarial)
+  '075', '076', '077', // Novo → Usuário: CPF da identidade, dados do vínculo e IPs permitidos (lidos pela sessão empresarial)
 ];
 
 const SENHA = 'senha-correta-do-teste-bloco9-etapa-b-2026';

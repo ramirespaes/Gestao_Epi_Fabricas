@@ -32,7 +32,7 @@ const { assertSemSensiveis } = require('../helpers/sensiveis');
  * sessão global. A auditoria anda na mesma transação da troca.
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 46 }, (_, i) => String(i).padStart(3, '0'));
+const TODAS_AS_MIGRATIONS = [...Array.from({ length: 46 }, (_, i) => String(i).padStart(3, '0')), '072', '074', '075', '076', '077'];
 const SENHA = 'senha-forte-da-troca-2026';
 const { cookieNome: C_EMPRESA, cookieNomeGlobal: C_GLOBAL } = authConfig.sessao;
 const ACOES = ['EMPRESA_SELECIONADA', 'EMPRESA_CONTEXTO_ENCERRADO'];

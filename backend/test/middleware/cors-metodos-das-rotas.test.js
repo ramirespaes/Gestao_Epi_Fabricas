@@ -57,7 +57,7 @@ describe('CORS: métodos anunciados por namespace x métodos das rotas montadas'
   });
 
   // Todas estas já precisavam de PUT ou DELETE no CORS (só funcionavam no mesmo site); a remoção do vínculo SST (12F-2) é a mais recente.
-  test('as rotas PUT e DELETE do Portal são conhecidas: autorizações individuais, vínculo de material ao GHE, vínculo de usuário a grupo, mínimos e vínculo SST', () => {
+  test('as rotas PUT e DELETE do Portal são conhecidas: autorizações individuais, vínculo de material ao GHE, vínculo de usuário a grupo, mínimos, vínculo SST e estado individual de ação do usuário', () => {
     const verbosInseguros = rotasDoNamespace('portal').filter((r) => r.metodo === 'PUT' || r.metodo === 'DELETE').map((r) => `${r.metodo} ${r.caminho}`).sort();
     assert.deepEqual(verbosInseguros, [
       'DELETE /autorizacoes-individuais/:id',
@@ -65,6 +65,9 @@ describe('CORS: métodos anunciados por namespace x métodos das rotas montadas'
       'DELETE /materiais/:id/minimos/:tamanho',
       'DELETE /usuarios/:usuarioId/grupo-acesso',
       'DELETE /vinculos-sst/:usuarioId',
+      'PUT /administracao/usuarios/:id/acessos/:toggle',
+      'PUT /administracao/usuarios/:id/permissoes/acoes/:codigo',
+      'PUT /grupos-acesso/:id/acessos/:toggle',
       'PUT /grupos-acesso/:id/usuarios/:usuarioId',
       'PUT /materiais/:id/minimos/:tamanho',
     ]);

@@ -64,12 +64,29 @@
       abrir: [['usuarios', 'consultar']],
       alterar: [['usuarios', 'alterar']],
     },
+    // Gestão de Usuários (tela consolidada, primeira subetapa: só listagem).
+    // Mesma autoridade real da Administração de Usuários; nada a alterar ainda.
+    gestaoUsuarios: {
+      abrir: [['usuarios', 'consultar']],
+      alterar: [],
+    },
+    // Configurações (05/10/2026): tela PESSOAL — a conta da própria pessoa.
+    // Abre para qualquer sessão autenticada (nenhuma exigência além das
+    // permissões válidas) e não tem "alterar" geral: cada escrita é da
+    // própria identidade, decidida pelo servidor pela sessão.
+    config: {
+      abrir: [],
+      alterar: [],
+    },
     // Parte C2: primeira página por RECURSO (não por área administrativa).
     // Abrir = materials.visualizar; salvar = materials.criar. A entrada
     // inicial de estoque é a ação MOVIMENTAR_ESTOQUE, consultada à parte
     // pela página (acao()), independente de criar.
+    // Gestão de Estoque: a página deriva dos três acessos independentes (Cadastrar Produto = materials.criar,
+    // Entrada por Lote = ENTRADA_ESTOQUE, Registrar Baixa / Saída = BAIXA_ESTOQUE): qualquer um abre.
     materials: {
-      abrir: [{ recurso: 'materials', operacao: 'visualizar' }],
+      abrir: [{ recurso: 'materials', operacao: 'criar' }, { acao: 'ENTRADA_ESTOQUE' }, { acao: 'BAIXA_ESTOQUE' }],
+      abrirComQualquer: true,
       alterar: [{ recurso: 'materials', operacao: 'criar' }],
     },
     // Parte C3: consulta de itens disponíveis — recurso próprio, independente
@@ -86,9 +103,10 @@
       abrir: [{ recurso: 'employeeHistory', operacao: 'visualizar' }],
       alterar: [],
     },
+    // Importação tem permissão PRÓPRIA (ação IMPORTAR_FUNCIONARIOS), independente de employeeHistory.criar.
     importEmployees: {
-      abrir: [{ recurso: 'employeeHistory', operacao: 'criar' }],
-      alterar: [{ recurso: 'employeeHistory', operacao: 'criar' }],
+      abrir: [{ acao: 'IMPORTAR_FUNCIONARIOS' }],
+      alterar: [{ acao: 'IMPORTAR_FUNCIONARIOS' }],
     },
     // Parte C5: GHE e matriz GHE × EPI (recurso employeeGroups, sem recurso
     // novo). Abrir = visualizar; alterar GHE e vínculos = editar. Cadastrar
@@ -317,16 +335,97 @@
     return !!(p && podeAbrir(permissoes, pagina) && p.alterar.length > 0 && todas(permissoes, p.alterar));
   }
 
+  // Ocultação temporária da NAVEGAÇÃO (05/10/2026): módulos fora do foco atual
+  // somem do menu lateral e do Início do Portal mesmo com permissão. Só a
+  // navegação: páginas, rotas, permissões, testes e o acesso direto legado
+  // continuam. Validade, Compras / Entradas e Regras Função / Setor ficam
+  // adiados; as seis telas de acessos são substituídas pela Gestão de
+  // Usuários e serão desativadas de vez quando ela estiver completa.
+  var NAVEGACAO_OCULTA = ['stockValidity', 'grupos-acesso', 'grupo-permissoes', 'grupo-usuarios', 'autorizacoes-individuais', 'newUser', 'userAdmin'];
+  var NAVEGACAO_OCULTA_PENDENTES = ['Compras / Entradas', 'Regras Função / Setor'];
+
+  function navegacaoOculta(pagina) {
+    return NAVEGACAO_OCULTA.indexOf(pagina) !== -1;
+  }
+
   /**
    * Mostra só os links de páginas que o usuário pode abrir. Links com
    * `data-pagina` nascem ocultos no HTML (falha fechada até a resposta);
-   * com permissoes null, todos continuam ocultos.
+   * com permissoes null, todos continuam ocultos. Os módulos fora do foco
+   * (NAVEGACAO_OCULTA) nunca aparecem, com ou sem permissão.
    */
   function aplicarMenu(permissoes, links) {
     var lista = links ? Array.prototype.slice.call(links) : [];
     lista.forEach(function (a) {
       var pagina = a.getAttribute('data-pagina');
-      a.style.display = podeAbrir(permissoes, pagina) ? '' : 'none';
+      a.style.display = !navegacaoOculta(pagina) && podeAbrir(permissoes, pagina) ? '' : 'none';
+    });
+  }
+
+  // Liberação visual controlada (05/10/2026, TEMPORÁRIA): o MASTER abre os
+  // protótipos ainda "Em integração" só para inspeção. É a única decisão do
+  // frontend pelo NOME do perfil, de propósito e provisória: não é
+  // autorização (os protótipos não têm backend nem gravam nada) e a matriz
+  // definitiva é da 12J. O rótulo do item escolhe o arquivo; a classe
+  // nav-pendente e a etiqueta "Em integração" ficam. O ?inspecao=1 é lido
+  // por js/inspecao-visual.js no protótipo (nunca publicado).
+  // Compras / Entradas (purchases.html) e Regras Função / Setor
+  // (eligibility-rules.html) são MÓDULOS TEMPORARIAMENTE DESATIVADOS / ADIADOS
+  // (05/10/2026): saíram da inspeção, sem link mesmo para o MASTER; os
+  // arquivos ficam preservados para retomada futura.
+  var INSPECAO_PROTOTIPOS = {
+    'Relatórios': 'reports.html',
+    'EPIs Entregues': 'delivered-items.html',
+    'Autoatendimento (Totem)': 'self-service.html',
+    'Suporte': 'support.html',
+    'Gestão de E-mails': 'emails-gestao.html',
+    'Privacidade / LGPD': 'lgpd.html',
+  };
+  var MARCADOR_INSPECAO = 'inspecao=1';
+  var TITULO_INSPECAO = 'Em integração — aberta só para inspeção visual (MASTER)';
+
+  // Acrescenta o marcador uma vez só, preservando parâmetros e fragmento já presentes.
+  function hrefDeInspecao(url) {
+    var partes = String(url).split('#');
+    var fragmento = partes.length > 1 ? '#' + partes.slice(1).join('#') : '';
+    var semFragmento = partes[0].split('?');
+    var pares = semFragmento.length > 1 ? semFragmento.slice(1).join('?').split('&') : [];
+    pares = pares.filter(function (p) { return p !== '' && p.indexOf('inspecao=') !== 0; });
+    pares.push(MARCADOR_INSPECAO);
+    return semFragmento[0] + '?' + pares.join('&') + fragmento;
+  }
+
+  function rotuloDoItem(a) {
+    var nos = a.childNodes || [];
+    var partes = [];
+    for (var i = 0; i < nos.length; i += 1) {
+      if (nos[i].nodeType === 3) partes.push(String(nos[i].textContent));
+    }
+    return partes.join('').trim();
+  }
+
+  function liberarInspecao(permissoes, raiz) {
+    if (!raiz || typeof raiz.querySelectorAll !== 'function') return;
+    var master = !!(permissoes && permissoes.perfil === 'MASTER');
+    Array.prototype.forEach.call(raiz.querySelectorAll('a.nav-pendente'), function (a) {
+      var rotulo = rotuloDoItem(a);
+      // Fora do foco atual: some do menu, sem link, sem etiqueta visível.
+      if (NAVEGACAO_OCULTA_PENDENTES.indexOf(rotulo) !== -1) {
+        a.style.display = 'none';
+        return;
+      }
+      if (!Object.prototype.hasOwnProperty.call(INSPECAO_PROTOTIPOS, rotulo)) return;
+      if (master) {
+        a.setAttribute('href', hrefDeInspecao(INSPECAO_PROTOTIPOS[rotulo]));
+        a.removeAttribute('aria-disabled');
+        a.setAttribute('title', TITULO_INSPECAO);
+        a.style.cursor = 'pointer';
+      } else {
+        a.removeAttribute('href');
+        a.setAttribute('aria-disabled', 'true');
+        a.setAttribute('title', 'Em integração');
+        a.style.cursor = '';
+      }
     });
   }
 
@@ -354,9 +453,11 @@
   async function prepararPagina(opcoes) {
     var o = opcoes || {};
     var aviso = typeof o.aviso === 'function' ? o.aviso : function () {};
+    var documento = o.documento || global.document || null;
     var r = await carregar(esperadoDoContexto(o.contexto));
     if (!r.ok) {
       aplicarMenu(null, o.links);
+      liberarInspecao(null, documento);
       if (r.motivo === 'SEM_SESSAO' && global.EpiSessaoEmpresarial) {
         global.EpiSessaoEmpresarial.sessaoEncerrada();
         return null;
@@ -366,11 +467,12 @@
     }
 
     aplicarMenu(r.permissoes, o.links);
+    liberarInspecao(r.permissoes, documento);
     if (!podeAbrir(r.permissoes, o.pagina)) {
       aviso(MENSAGENS.SEM_ACESSO);
       return null;
     }
-    acompanharRevalidacao(o.links, r.permissoes);
+    acompanharRevalidacao(o.links, r.permissoes, documento);
     return { permissoes: r.permissoes, podeAlterar: podeAlterar(r.permissoes, o.pagina) };
   }
 
@@ -382,7 +484,7 @@
    * dela do zero (acesso, botões e dados). Iguais: reaparece como estava.
    * 401: Portal. Falha ou outro contexto: menu fechado e a página não volta.
    */
-  function acompanharRevalidacao(links, aplicadas) {
+  function acompanharRevalidacao(links, aplicadas, documento) {
     var sessao = global.EpiSessaoEmpresarial;
     if (!sessao || typeof sessao.aoRevalidar !== 'function') return;
     var assinatura = JSON.stringify(aplicadas);
@@ -390,6 +492,7 @@
       var r = await carregar(esperadoDoContexto(contexto));
       if (!r.ok) {
         aplicarMenu(null, links);
+        liberarInspecao(null, documento);
         if (r.motivo === 'SEM_SESSAO') {
           sessao.sessaoEncerrada();
           return { acao: 'encerrada' };
@@ -397,6 +500,7 @@
         return { acao: 'bloquear', mensagem: r.motivo === 'CONTEXTO_DIVERGENTE' ? MENSAGENS.CONTEXTO_DIVERGENTE : MENSAGENS.FALHA };
       }
       aplicarMenu(r.permissoes, links);
+      liberarInspecao(r.permissoes, documento);
       return { acao: JSON.stringify(r.permissoes) === assinatura ? 'liberar' : 'recarregar' };
     });
   }
@@ -423,6 +527,12 @@
     prepararPagina: prepararPagina,
     somenteLeitura: somenteLeitura,
     aplicarMenu: aplicarMenu,
+    navegacaoOculta: navegacaoOculta,
+    NAVEGACAO_OCULTA: NAVEGACAO_OCULTA,
+    NAVEGACAO_OCULTA_PENDENTES: NAVEGACAO_OCULTA_PENDENTES,
+    liberarInspecao: liberarInspecao,
+    hrefDeInspecao: hrefDeInspecao,
+    INSPECAO_PROTOTIPOS: INSPECAO_PROTOTIPOS,
     podeAbrir: podeAbrir,
     podeAlterar: podeAlterar,
     administra: administra,

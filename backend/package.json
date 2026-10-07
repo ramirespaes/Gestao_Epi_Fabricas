@@ -19,7 +19,8 @@
     "db:provisionar:master": "node --require dotenv/config scripts/provisionar-permissoes-master.js",
     "db:criar-administrador-plataforma": "node --require dotenv/config scripts/criar-administrador-plataforma.js",
     "db:mfa:liberar-cadastro": "node --require dotenv/config scripts/mfa-liberar-cadastro.js",
-    "db:mfa:redefinir": "node --require dotenv/config scripts/mfa-redefinir.js"
+    "db:mfa:redefinir": "node --require dotenv/config scripts/mfa-redefinir.js",
+    "alertas:processar": "node --require dotenv/config scripts/processar-alertas-estoque.js"
   },
   "keywords": [],
   "author": "",

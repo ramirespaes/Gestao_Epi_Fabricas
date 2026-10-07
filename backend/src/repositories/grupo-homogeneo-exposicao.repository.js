@@ -146,6 +146,24 @@ async function buscarPorIdParaVinculo(executor, empresaId, id) {
 }
 
 /**
+ * GHE pelo NOME EXATO nesta empresa — a mesma igualdade de
+ * uq_ghe_empresa_nome (caixa ou acento diferente é outro nome; nunca ILIKE).
+ * Leitura sem lock, usada pela importação de funcionários (12G-9) para
+ * resolver a coluna GHE; a gravação do vínculo relê o GHE por id FOR SHARE.
+ */
+async function buscarPorNome(executor, empresaId, nome) {
+  exigirEmpresa(empresaId);
+  exigirNome(nome);
+
+  const { rows } = await executor.query(
+    `SELECT ${PROJECAO} FROM grupos_homogeneos_exposicao WHERE empresa_id = $1 AND nome = $2`,
+    [empresaId, nome],
+  );
+
+  return mapear(rows[0]);
+}
+
+/**
  * Lista os GHE de uma empresa, paginados e ordenados por nome (sem
  * diferenciar maiúsculas). `busca` filtra por nome, como texto literal.
  */
@@ -270,6 +288,7 @@ module.exports = {
   buscarPorId,
   buscarPorIdParaAtualizacao,
   buscarPorIdParaVinculo,
+  buscarPorNome,
   listarPorEmpresa,
   contarPorEmpresa,
   atualizar,

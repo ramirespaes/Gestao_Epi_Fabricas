@@ -231,6 +231,8 @@
     TAMANHO_OBRIGATORIO: 'Informe o tamanho deste EPI.',
     TAMANHO_NAO_SE_APLICA: 'Este EPI não usa tamanho.',
     TAMANHO_INVALIDO: 'Tamanho inválido (até 20 caracteres).',
+    // 12G-8: material com grade só aceita tamanho da grade (o servidor recusa).
+    TAMANHO_FORA_DA_GRADE: 'Este tamanho não está na grade de tamanhos deste EPI. Escolha um tamanho sugerido.',
     QUANTIDADE_INVALIDA: 'Informe uma quantidade inteira a partir de 1.',
     JUSTIFICATIVA_OBRIGATORIA: 'Explique o motivo deste item.',
     JUSTIFICATIVA_INVALIDA: 'Justificativa inválida (até 500 caracteres).',

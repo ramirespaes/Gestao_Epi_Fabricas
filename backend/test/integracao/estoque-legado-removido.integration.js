@@ -8,6 +8,7 @@ const path = require('node:path');
 const request = require('supertest');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { todasAsMigrations } = require('./helpers/entrega-epi');
 const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { criarAppTeste } = require('../helpers/app-teste');
 const { criarAuthGlobalController } = require('../../src/controllers/auth-global.controller');
@@ -28,7 +29,8 @@ const provisionamento = require('../../src/services/provisionamento-permissoes.s
  * tabela antiga continua no banco (histórico da migration 043), intocada.
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 46 }, (_, i) => String(i).padStart(3, '0'));
+// Todas: desde a 12G-6 a entrada lê a fila da solicitação (065) e grava o aviso de disponibilidade (069).
+const TODAS_AS_MIGRATIONS = todasAsMigrations();
 const SENHA = 'senha-forte-do-legado-e10-2026';
 const EMAIL = 'master.legado.e10@exemplo-cliente.com.br';
 const { cookieNome: C_EMPRESA, cookieNomeGlobal: C_GLOBAL } = authConfig.sessao;

@@ -4,6 +4,8 @@ const { HttpError } = require('../errors/HttpError');
 const { authConfig } = require('../config/auth');
 const identidadeRepo = require('../repositories/identidade.repository');
 const usuarioRepo = require('../repositories/usuario.repository');
+const usuarioIpRepo = require('../repositories/usuario-ip.repository');
+const { normalizarIp } = require('../utils/ip');
 const sessaoRepo = require('../repositories/sessao.repository');
 const sessaoGlobalRepo = require('../repositories/sessao-global.repository');
 const auditoriaRepo = require('../repositories/auditoria.repository');
@@ -76,6 +78,7 @@ const TIPO_SELECAO = Object.freeze({
 const MSG = Object.freeze({
   SESSAO_INVALIDA: 'Sessão inválida ou expirada',
   EMPRESA_NAO_AUTORIZADA: 'Empresa não autorizada para esta identidade',
+  ACESSO_IP_NAO_PERMITIDO: 'Acesso não permitido a partir deste endereço',
 });
 
 function prepararCampoOpcional(valor, tamanhoMaximo, nomeCampo) {
@@ -181,6 +184,11 @@ async function selecionar(pool, {
     const vinculo = await usuarioRepo.buscarVinculoAtivoDaIdentidade(client, identidadeId, empresaId);
     if (vinculo === null) {
       throw HttpError.forbidden('EMPRESA_NAO_AUTORIZADA', MSG.EMPRESA_NAO_AUTORIZADA);
+    }
+    // Restrição por IP do vínculo (077): sem lista, qualquer endereço; com
+    // lista, só o endereço que o servidor resolveu. Nenhuma sessão nasce fora dela.
+    if (!(await usuarioIpRepo.acessoPermitido(client, vinculo.empresa.id, vinculo.usuarioId, normalizarIp(ipP)))) {
+      throw HttpError.forbidden('ACESSO_IP_NAO_PERMITIDO', MSG.ACESSO_IP_NAO_PERMITIDO);
     }
 
     // Troca: TODA sessão empresarial ainda viva nascida deste login global

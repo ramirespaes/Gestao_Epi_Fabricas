@@ -2,6 +2,7 @@
 
 const { HttpError } = require('../errors/HttpError');
 const materialRepo = require('../repositories/material.repository');
+const materialTamanhoRepo = require('../repositories/material-tamanho.repository');
 const loteRepo = require('../repositories/estoque-lote.repository');
 const posicaoRepo = require('../repositories/posicao-estoque.repository');
 const operacaoRepo = require('../repositories/estoque-operacao.repository');
@@ -12,6 +13,7 @@ const coberturaRepo = require('../repositories/solicitacao-epi-cobertura.reposit
 const entregaRepo = require('../repositories/entrega-epi.repository');
 const saldoLivre = require('./saldo-livre');
 const auditoriaRecusa = require('./auditoria-recusa-saldo-livre');
+const alertaDisponibilidade = require('./alerta-disponibilidade.service');
 const { DIAS_ALERTA_VALIDADE_CA } = require('../schemas/itens-disponiveis.schema');
 const {
   MOTIVOS_BAIXA, TAMANHO_MAXIMO, CA_NUMERO_MAXIMO, JUSTIFICATIVA_MAXIMA,
@@ -29,8 +31,8 @@ const idempotencia = require('../utils/idempotencia');
  * nenhuma rota o lê nem o grava.
  *
  * Autorização é decidida nas rotas, nunca aqui: leituras por permissão de
- * RECURSO; entrada e baixa pela AÇÃO `MOVIMENTAR_ESTOQUE` (migrations
- * 003/017), dimensão separada da edição do cadastro do material.
+ * RECURSO; entrada pela AÇÃO `ENTRADA_ESTOQUE` e baixa pela AÇÃO `BAIXA_ESTOQUE`
+ * (migration 078), dimensão separada da edição do cadastro do material.
  *
  * MATERIAL INATIVO NÃO RECEBE ENTRADA: restrição estrutural, não de
  * permissão — vale para qualquer perfil, MASTER incluído. A baixa continua
@@ -213,7 +215,11 @@ async function listarLotes(pool, { empresaId, materialId, hoje }) {
   const lotes = await loteRepo.listarPorMaterial(pool, empresaId, materialId, { hoje, diasAlerta: DIAS_ALERTA_VALIDADE_CA });
   const tamanhos = [...new Set(lotes.map((l) => l.tamanho))];
   const porTamanho = tamanhos.map((tamanho) => ({ tamanho, ...somarSaldos(lotes.filter((l) => l.tamanho === tamanho)) }));
-  return { material, hoje, diasAlerta: DIAS_ALERTA_VALIDADE_CA, lotes, porTamanho, totais: somarSaldos(lotes) };
+  // 12G-8: a grade vai junto do material, para a entrada oferecer só os tamanhos dela.
+  const grade = await materialTamanhoRepo.listarPorMaterial(pool, empresaId, materialId);
+  return {
+    material: { ...material, tamanhos: grade }, hoje, diasAlerta: DIAS_ALERTA_VALIDADE_CA, lotes, porTamanho, totais: somarSaldos(lotes),
+  };
 }
 
 // ── Entrada e baixa por lote ────────────────────────────────────────
@@ -287,7 +293,10 @@ async function repetirSeJaRegistrada(client, empresaId, chave, requisicaoHash) {
  * esteja marcado como dispensado de CA. A validade pode vencer hoje: o CA
  * vale até o fim do dia. O tamanho segue o material: obrigatório quando ele
  * exige, null quando não usa, e material não classificado não recebe entrada.
- * Não escreve em estoque_tamanhos.
+ * Não escreve em estoque_tamanhos. Por último, na mesma transação, se algum
+ * item de solicitação passou de cobertura zero para positiva, a entrada abre
+ * ou estende o agendamento do aviso de disponibilidade (12G-6); só a linha do
+ * agendamento é travada, e nada do item é gravado.
  *
  * @param {object} dados empresaId e atorId vêm da sessão; hoje é a data operacional de São Paulo
  * @returns {Promise<{repetida: boolean, operacao: object, lote: object}>}
@@ -335,6 +344,13 @@ async function registrarEntrada(pool, {
     if (!material.exigeTamanho && tamanhoN !== null) {
       throw recusar('tamanho', 'TAMANHO_NAO_SE_APLICA', 'Este material não usa tamanho');
     }
+    // 12G-8: material com grade só recebe tamanho da grade; sem grade, o legado de antes.
+    if (material.exigeTamanho) {
+      const grade = await materialTamanhoRepo.listarPorMaterial(client, empresaId, materialId);
+      if (grade.length > 0 && !grade.includes(tamanhoN)) {
+        throw recusar('tamanho', 'TAMANHO_FORA_DA_GRADE', 'Este tamanho não está na grade do material');
+      }
+    }
     if (caValidade < hoje) {
       throw recusar('caValidade', 'CA_VENCIDO', 'A validade do CA precisa ser hoje ou uma data futura');
     }
@@ -353,6 +369,9 @@ async function registrarEntrada(pool, {
         operacaoId: operacao.id, materialId, loteId: lote.loteId, tamanho: tamanhoN, caNumero: caNumeroN, caValidade, quantidade,
       },
       dadosNovos: { saldo: lote.saldo },
+    });
+    await alertaDisponibilidade.agendarSeRelevante(client, {
+      empresaId, materialId, tamanho: tamanhoN, quantidade, hoje,
     });
     return { repetida: false, operacao, lote };
   });

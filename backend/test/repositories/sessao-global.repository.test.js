@@ -89,12 +89,14 @@ describe('buscarValidaPorHash', () => {
   test('devolve { sessao, identidade } sem hash de senha nem token', async () => {
     const contexto = await buscarValidaPorHash(executorFalso([linhaSessao()]), HASH, INATIVIDADE);
 
-    assert.deepEqual(Object.keys(contexto).sort(), ['identidade', 'sessao']);
+    assert.deepEqual(Object.keys(contexto).sort(), ['identidade', 'senhaProvisoria', 'sessao']);
+    assert.equal(contexto.senhaProvisoria, false, 'linha sem senha provisória: estado falso, fora de identidade');
     assert.deepEqual(contexto.identidade, { id: IDENTIDADE_ID, email: 'pessoa@exemplo-cliente.com.br' });
     assert.equal(contexto.sessao.id, SESSAO);
     const serializado = JSON.stringify(contexto);
-    assert.equal(serializado.includes('senha'), false);
-    assert.equal(serializado.includes(HASH), false);
+    // `senhaProvisoria` é um estado booleano, não um segredo; o que não pode sair é hash ou token.
+    for (const proibido of ['senha_hash', 'senhaHash', 'hash', 'token', HASH, '$argon2']) assert.equal(serializado.includes(proibido), false, proibido);
+    assert.equal(typeof contexto.senhaProvisoria, 'boolean');
   });
 
   test('sessão inválida devolve null; entradas inválidas são recusadas antes de consultar', async () => {

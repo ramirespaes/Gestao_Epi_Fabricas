@@ -196,7 +196,7 @@ describe('rotas da entrega de EPI — 10E e 10F (PostgreSQL real)', () => {
         "SELECT acao_codigo, permitido FROM permissoes_acao WHERE empresa_id = $1 AND perfil = 'MASTER' ORDER BY acao_codigo",
         [empresa.A],
       );
-      assert.deepEqual(acoesMaster, [{ acao_codigo: 'MOVIMENTAR_ESTOQUE', permitido: true }, { acao_codigo: 'REALIZAR_ENTREGA', permitido: true }]);
+      assert.deepEqual(acoesMaster, ['BAIXA_ESTOQUE', 'ENTRADA_ESTOQUE', 'IMPORTAR_FUNCIONARIOS', 'REALIZAR_ENTREGA'].map((acao_codigo) => ({ acao_codigo, permitido: true })));
       assert.equal((await get('masterA', '/api/fichas-epi')).status, 200);
       assert.equal((await get('masterA', '/api/entregas-epi/contexto/funcionarios')).status, 200);
       assert.equal((await get('masterB', '/api/fichas-epi')).status, 200);

@@ -99,7 +99,7 @@
     { id: 'operations', nome: 'Operações de estoque', operacoes: [V] },
     { id: 'reports', nome: 'Relatórios', operacoes: [], nota: SEM_EFEITO },
     { id: 'materials', nome: 'Gestão de estoque', operacoes: [V, C, E] },
-    { id: 'employeeGroups', nome: 'GHE e EPIs', operacoes: [V, C, E] },
+    { id: 'employeeGroups', nome: 'Gestão de GHE', operacoes: [V, C, E] },
     { id: 'eligibilityRules', nome: 'Regras Função / Setor', operacoes: [], nota: SEM_EFEITO },
     { id: 'purchases', nome: 'Compras / Entradas', operacoes: [], nota: SEM_EFEITO },
     { id: 'stockValidity', nome: 'Validade de estoque', operacoes: [V] },

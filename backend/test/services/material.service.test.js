@@ -565,10 +565,12 @@ describe('exige tamanho', () => {
 });
 
 describe('óculos com grau (migration 045)', () => {
+  // OCULOS é o nome histórico (só legado gravado); INCOLOR é um dos dois tipos oficiais (12G-8).
   const OCULOS = 'Óculos de proteção';
-  const novo = (extra) => ({ empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Óculos', prazoUsoDias: 180, exigeTamanho: false, ...extra });
+  const INCOLOR = 'Óculos de Proteção Incolor';
+  const novo = (extra) => ({ empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Óculos', categoria: 'EPI', prazoUsoDias: 180, exigeTamanho: false, ...extra });
   const alteracao = (extra) => ({ empresaId: EMPRESA, atorId: ATOR_ID, materialId: MATERIAL_ID, ...extra });
-  const oculos = (oculosComGrau) => material({ tipo: OCULOS, oculosComGrau, exigeTamanho: false });
+  const oculos = (oculosComGrau) => material({ categoria: 'EPI', tipo: OCULOS, oculosComGrau, exigeTamanho: false });
 
   async function esperarRecusa(promessa, codigo) {
     await assert.rejects(promessa, (erro) => {
@@ -582,7 +584,7 @@ describe('óculos com grau (migration 045)', () => {
   test('cadastro de óculos com true ou false: grava e audita o valor escolhido', async (t) => {
     for (const oculosComGrau of [true, false]) {
       const escritas = mundoValido(t);
-      await servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipo: OCULOS, oculosComGrau }));
+      await servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipo: INCOLOR, oculosComGrau }));
       assert.equal(escritas.criar.mock.calls[0].arguments[1].oculosComGrau, oculosComGrau);
       assert.equal(escritas.registrar.mock.calls[0].arguments[1].dadosNovos.oculosComGrau, oculosComGrau);
     }
@@ -592,19 +594,25 @@ describe('óculos com grau (migration 045)', () => {
     for (const extra of [{}, { oculosComGrau: null }]) {
       const escritas = mundoValido(t);
       const cliente = criarClienteFalso();
-      await esperarRecusa(servico.criar(criarPoolFalso(cliente), novo({ tipo: OCULOS, ...extra })), 'OCULOS_COM_GRAU_OBRIGATORIO');
+      await esperarRecusa(servico.criar(criarPoolFalso(cliente), novo({ tipo: INCOLOR, ...extra })), 'OCULOS_COM_GRAU_OBRIGATORIO');
       assert.deepEqual([cliente.chamadas.length, escritas.criar.mock.calls.length], [0, 0], JSON.stringify(extra));
     }
   });
 
-  test('o tipo é comparado exatamente: aparado vale; minúsculo, abreviado ou nome com "óculos" não é óculos de proteção', async (t) => {
+  test('o tipo é comparado exatamente: aparado vale; nome com "óculos" em outro tipo não é óculos; grafia fora da lista nem chega à regra (TIPO_FORA_DA_CATEGORIA)', async (t) => {
     const aparado = mundoValido(t);
-    await servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipo: `  ${OCULOS}  `, oculosComGrau: true }));
+    await servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipo: `  ${INCOLOR}  `, oculosComGrau: true }));
     assert.equal(aparado.criar.mock.calls[0].arguments[1].oculosComGrau, true);
-    for (const extra of [{ tipo: 'óculos de proteção' }, { tipo: 'Óculos' }, { tipo: 'Luva', nome: 'Óculos de proteção incolor' }]) {
-      const escritas = mundoValido(t);
-      await esperarRecusa(servico.criar(criarPoolFalso(criarClienteFalso()), novo({ ...extra, oculosComGrau: true })), 'OCULOS_COM_GRAU_NAO_SE_APLICA');
-      assert.equal(escritas.criar.mock.calls.length, 0, JSON.stringify(extra));
+    const escritas = mundoValido(t);
+    await esperarRecusa(servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipo: 'Luva', nome: 'Óculos de proteção incolor', oculosComGrau: true })), 'OCULOS_COM_GRAU_NAO_SE_APLICA');
+    assert.equal(escritas.criar.mock.calls.length, 0);
+    for (const tipo of ['óculos de proteção incolor', 'Óculos', OCULOS]) {
+      const fora = mundoValido(t);
+      await assert.rejects(servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipo, oculosComGrau: true })), (erro) => {
+        assert.deepEqual(erro.detalhes.map((d) => [d.campo, d.codigo]), [['body.tipo', 'TIPO_FORA_DA_CATEGORIA']]);
+        return true;
+      });
+      assert.equal(fora.criar.mock.calls.length, 0, tipo);
     }
   });
 
@@ -625,7 +633,7 @@ describe('óculos com grau (migration 045)', () => {
 
   test('valor que não é booleano nem null: 400 MATERIAL_DADOS_INVALIDOS, no cadastro e na edição', async (t) => {
     const escritas = mundoValido(t, { existente: oculos(true) });
-    await esperarHttpError(servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipo: OCULOS, oculosComGrau: 'sim' })), 400, 'MATERIAL_DADOS_INVALIDOS');
+    await esperarHttpError(servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipo: INCOLOR, oculosComGrau: 'sim' })), 400, 'MATERIAL_DADOS_INVALIDOS');
     await esperarHttpError(servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ oculosComGrau: 1, oculosComGrauInformado: true })), 400, 'MATERIAL_DADOS_INVALIDOS');
     assert.deepEqual([escritas.criar.mock.calls.length, escritas.atualizar.mock.calls.length], [0, 0]);
   });
@@ -674,16 +682,17 @@ describe('óculos com grau (migration 045)', () => {
   });
 
   test('outro tipo que passa a óculos: sem a informação é 400 OCULOS_COM_GRAU_OBRIGATORIO; com true ou false grava', async (t) => {
-    const recusa = mundoValido(t, { existente: material({ tipo: 'Luva', oculosComGrau: null }) });
+    const luva = () => material({ categoria: 'EPI', tipo: 'Luva', oculosComGrau: null });
+    const recusa = mundoValido(t, { existente: luva() });
     const cliente = criarClienteFalso();
-    await esperarRecusa(servico.alterar(criarPoolFalso(cliente), alteracao({ tipo: OCULOS, tipoInformado: true })), 'OCULOS_COM_GRAU_OBRIGATORIO');
+    await esperarRecusa(servico.alterar(criarPoolFalso(cliente), alteracao({ tipo: INCOLOR, tipoInformado: true })), 'OCULOS_COM_GRAU_OBRIGATORIO');
     assertRecusaSemRastro(cliente, recusa);
 
     for (const oculosComGrau of [true, false]) {
-      const escritas = mundoValido(t, { existente: material({ tipo: 'Luva', oculosComGrau: null }) });
-      await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ tipo: OCULOS, tipoInformado: true, oculosComGrau, oculosComGrauInformado: true }));
+      const escritas = mundoValido(t, { existente: luva() });
+      await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ tipo: INCOLOR, tipoInformado: true, oculosComGrau, oculosComGrauInformado: true }));
       const campos = escritas.atualizar.mock.calls[0].arguments[3];
-      assert.deepEqual([campos.tipo, campos.oculosComGrauInformado, campos.oculosComGrau], [OCULOS, true, oculosComGrau]);
+      assert.deepEqual([campos.tipo, campos.oculosComGrauInformado, campos.oculosComGrau], [INCOLOR, true, oculosComGrau]);
     }
   });
 
@@ -693,5 +702,20 @@ describe('óculos com grau (migration 045)', () => {
       await esperarRecusa(servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ oculosComGrau, oculosComGrauInformado: true })), 'OCULOS_COM_GRAU_NAO_SE_APLICA');
       assert.equal(escritas.atualizar.mock.calls.length, 0);
     }
+  });
+
+  test('12G-8: Incolor e Ampla Visão seguem a regra dos óculos no cadastro; o legado que vira Incolor mantém o grau sem informar de novo', async (t) => {
+    for (const tipo of ['Óculos de Proteção Incolor', 'Óculos de Proteção Ampla Visão']) {
+      const recusa = mundoValido(t);
+      await esperarRecusa(servico.criar(criarPoolFalso(criarClienteFalso()), novo({ categoria: 'EPI', tipo })), 'OCULOS_COM_GRAU_OBRIGATORIO');
+      assert.equal(recusa.criar.mock.calls.length, 0, tipo);
+      const escritas = mundoValido(t);
+      await servico.criar(criarPoolFalso(criarClienteFalso()), novo({ categoria: 'EPI', tipo, oculosComGrau: true }));
+      assert.deepEqual([escritas.criar.mock.calls[0].arguments[1].tipo, escritas.criar.mock.calls[0].arguments[1].oculosComGrau], [tipo, true]);
+    }
+    const legado = mundoValido(t, { existente: material({ categoria: 'EPI', tipo: OCULOS, oculosComGrau: false }) });
+    await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ tipo: 'Óculos de Proteção Incolor', tipoInformado: true }));
+    const campos = legado.atualizar.mock.calls[0].arguments[3];
+    assert.deepEqual([campos.tipo, campos.oculosComGrauInformado], ['Óculos de Proteção Incolor', false]);
   });
 });

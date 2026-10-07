@@ -467,7 +467,7 @@ describe('inspeção estática', () => {
 
 describe('permissão, menus, Portal e publicação', () => {
   const NAO_ADMINISTRATIVAS = fs.readdirSync(path.join(RAIZ, 'pages')).filter((f) => f.endsWith('.html'))
-    .filter((f) => !['autorizacoes-individuais.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'grupos-acesso.html'].includes(f));
+    .filter((f) => !['autorizacoes-individuais.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'grupos-acesso.html', 'new-user.html', 'user-admin.html'].includes(f));
 
   test('a página abre com operations.visualizar, a permissão própria (E9)', () => {
     assert.deepEqual(P.PAGINAS.operations, { abrir: [{ recurso: 'operations', operacao: 'visualizar' }], alterar: [] });
@@ -482,14 +482,14 @@ describe('permissão, menus, Portal e publicação', () => {
   });
 
   test('o mesmo nome em todo menu que tem o item, no Portal, no catálogo de permissões e na administração de usuários', () => {
-    assert.equal(NAO_ADMINISTRATIVAS.length, 23);
+    assert.equal(NAO_ADMINISTRATIVAS.length, 22);
     for (const arquivo of NAO_ADMINISTRATIVAS) {
       const rotulos = [...ler(`pages/${arquivo}`).matchAll(/<div class="nav-icon gray">receipt_long<\/div>([^<]*)</g)].map((m) => m[1]);
       assert.deepEqual(rotulos, [NOME], arquivo);
     }
     assert.match(ler('portal/inicio.html'), /<a href="\.\.\/pages\/operations\.html" data-pagina="operations" style="display:none">Operações de estoque<\/a>/);
     assert.equal(require('../js/grupo-permissoes').RECURSOS.find((r) => r.id === 'operations').nome, NOME); // eslint-disable-line global-require
-    const admin = ler('pages/user-admin.html');
+    const admin = ler('pages/gestao-usuarios.html');
     assert.equal(/<strong>Operações<\/strong>/.test(admin), false);
     assert.equal(/Logs e auditoria|Consulta logs/.test(admin), false);
   });

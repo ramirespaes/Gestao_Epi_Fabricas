@@ -49,6 +49,7 @@
     login: '../portal/index.html',
     empresas: '../portal/empresas.html',
     inicio: '../portal/inicio.html',
+    trocarSenha: '../portal/trocar-senha.html',
   };
 
   // Rastros do protótipo (js/main.js): SESSION_KEY e o parâmetro de URL.
@@ -61,6 +62,7 @@
   var MENSAGENS = {
     VERIFICANDO: 'Verificando sua sessão…',
     FALHA: 'Não foi possível confirmar sua sessão agora. Verifique a conexão e tente novamente pelo Portal do Cliente.',
+    IP_NAO_PERMITIDO: 'Seu acesso a esta empresa não é permitido a partir deste endereço de rede. Procure o administrador da empresa ou volte ao Portal do Cliente.',
     FALHA_SAIDA: 'Não foi possível confirmar a saída com o servidor. Sua sessão pode continuar ativa. Verifique a conexão e clique em Sair novamente.',
   };
 
@@ -159,6 +161,16 @@
         irPara('login');
         return { autenticado: false, motivo: 'SEM_SESSAO' };
       }
+      // Senha provisória: o servidor recusa tudo até a troca; a página vai à troca do Portal.
+      if (resposta.status === 403 && resposta.codigo === 'TROCA_SENHA_OBRIGATORIA') {
+        irPara('trocarSenha');
+        return { autenticado: false, motivo: 'TROCA_SENHA_OBRIGATORIA' };
+      }
+      // Restrição por IP do usuário na empresa (decidida só no servidor): a
+      // sessão existe, mas não vale deste endereço; a tela fica fechada.
+      if (resposta.status === 403 && resposta.codigo === 'ACESSO_IP_NAO_PERMITIDO') {
+        return { autenticado: false, motivo: 'FALHA', mensagem: MENSAGENS.IP_NAO_PERMITIDO };
+      }
       return { autenticado: false, motivo: 'FALHA' };
     }
 
@@ -168,6 +180,12 @@
       return { autenticado: false, motivo: 'RESPOSTA_INVALIDA' };
     }
     contextoAtual = ctx;
+    // Configurações: a aparência da pessoa (tema e modo visual) vem com
+    // /auth/me e é aplicada em toda página integrada; o servidor sempre vence
+    // o cache de pintura inicial de js/tema.js.
+    if (global.EpiTema && typeof global.EpiTema.aplicarPreferencias === 'function' && resposta.dados && resposta.dados.preferencias) {
+      global.EpiTema.aplicarPreferencias(resposta.dados.preferencias);
+    }
 
     // Só apresentação: "Trocar de empresa" aparece quando a pessoa tem
     // mais de uma empresa autorizada. Falha aqui não derruba a página.
@@ -213,6 +231,8 @@
       return { ok: false, motivo: status === 0 ? 'REDE' : 'HTTP', status: status, mensagem: MENSAGENS.FALHA_SAIDA };
     }
     contextoAtual = null;
+    // A aparência é da pessoa que saiu: o cache de pintura não fica para a próxima.
+    if (global.EpiTema && typeof global.EpiTema.limparCache === 'function') global.EpiTema.limparCache();
     irPara('login');
     return { ok: true };
   }
@@ -265,7 +285,7 @@
 
     if (!r.autenticado) {
       if (r.motivo === 'FALHA') {
-        if (el.mensagem) el.mensagem.textContent = MENSAGENS.FALHA;
+        if (el.mensagem) el.mensagem.textContent = r.mensagem || MENSAGENS.FALHA;
         if (el.linkPortal) el.linkPortal.style.display = '';
       }
       return null;
@@ -375,7 +395,7 @@
 
     if (!r.autenticado) {
       if (r.motivo === 'FALHA') {
-        if (el.mensagem) el.mensagem.textContent = MENSAGENS.FALHA;
+        if (el.mensagem) el.mensagem.textContent = r.mensagem || MENSAGENS.FALHA;
         if (el.linkPortal) el.linkPortal.style.display = '';
         return;
       }

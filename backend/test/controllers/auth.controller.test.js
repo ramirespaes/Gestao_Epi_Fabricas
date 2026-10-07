@@ -181,10 +181,12 @@ describe('criarAuthController.me', () => {
     const resposta = await request(montarAppMe(controller)).get('/me');
 
     assert.equal(resposta.status, 200);
-    assert.deepEqual(Object.keys(resposta.body).sort(), ['empresa', 'status', 'usuario']);
+    // Configurações: `preferencias` (tema e modo visual da identidade) entrou no corpo; sem identidade, os padrões.
+    assert.deepEqual(Object.keys(resposta.body).sort(), ['empresa', 'preferencias', 'status', 'usuario']);
     assert.equal(resposta.body.status, 'ok');
     assert.deepEqual(resposta.body.usuario, RESULTADO_SUCESSO.usuario);
     assert.deepEqual(resposta.body.empresa, RESULTADO_SUCESSO.empresa);
+    assert.deepEqual(resposta.body.preferencias, { tema: 'sistema', modoVisual: 'padrao' });
   });
 
   test('não consulta o banco nem chama loginService.autenticar: usa só o que o middleware já populou', async (t) => {
@@ -323,13 +325,16 @@ describe('authController (instância padrão)', () => {
 });
 
 describe('me — corpo público estável (Pacote 4)', () => {
-  test('identidadeId do contexto interno da sessão nunca sai no corpo de /auth/me', async () => {
+  test('identidadeId do contexto interno da sessão nunca sai no corpo de /auth/me; com identidade, as preferências dela vêm junto (Configurações)', async (t) => {
+    const identidadeRepo = require('../../src/repositories/identidade.repository');
+    const buscar = t.mock.method(identidadeRepo, 'buscarPorId', async () => ({ id: 9, email: 'e@x.com', telefone: null, tema: 'escuro', modoVisual: 'baixa_visao', ativo: true }));
     const { criarAuthController } = require('../../src/controllers/auth.controller');
     const controller = criarAuthController({ pool: {} });
     let corpo;
     const res = { status() { return this; }, json(c) { corpo = c; return this; } };
     await controller.me({ usuario: { id: 1, nome: 'n', email: 'e@x.com', perfil: 'MASTER', identidadeId: 9 }, empresa: { id: 3 } }, res);
-    assert.deepEqual(corpo, { status: 'ok', usuario: { id: 1, nome: 'n', email: 'e@x.com', perfil: 'MASTER' }, empresa: { id: 3 } });
+    assert.deepEqual(corpo, { status: 'ok', usuario: { id: 1, nome: 'n', email: 'e@x.com', perfil: 'MASTER' }, empresa: { id: 3 }, preferencias: { tema: 'escuro', modoVisual: 'baixa_visao' } });
+    assert.deepEqual(buscar.mock.calls[0].arguments[1], 9, 'as preferências são lidas da identidade da sessão, nunca de um id do cliente');
   });
 });
 

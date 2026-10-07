@@ -47,13 +47,13 @@ function servidor(...respostas) {
 }
 
 const MATERIAL = {
-  id: 77, empresaId: 3, nome: 'Botina de segurança', tipo: 'Sapatão / Botina', fabricante: 'Bracol',
+  id: 77, empresaId: 3, nome: 'Botina de segurança', tipo: 'Botina de Segurança', tipoDescricao: null, fabricante: 'Bracol',
   caNumero: '38271', caValidade: '2027-01-31', prazoUsoDias: 180, unidade: 'par', estoqueMinimo: 5,
   categoria: 'EPI', codigoInterno: 'EPI-000245', descricao: 'Biqueira de composite', exigeTamanho: true, ativo: true,
 };
 
 const FORMULARIO = {
-  nome: '  Botina de segurança  ', categoria: 'EPI', tipo: 'Sapatão / Botina', tipoCustom: '',
+  nome: '  Botina de segurança  ', categoria: 'EPI', tipo: 'Botina de Segurança', tipoCustom: '',
   fabricante: 'Bracol', codigoInterno: ' EPI-000245 ', controleTamanho: 'grade',
   quantidadeComprada: '120', tamanhoEntrada: '42', caEntrada: ' 38271 ', caValidadeEntrada: '2027-01-31', unidade: 'Par', estoqueMinimo: '5',
   prazoUnidade: 'meses', prazo: '6', descricao: 'Biqueira de composite', registrarEntrada: 'sim',
@@ -88,7 +88,7 @@ describe('formulário: corpo do POST /materiais montado só com o que o contrato
     const r = formulario.montarCorpo(FORMULARIO);
     assert.equal(r.ok, true, JSON.stringify(r));
     assert.deepEqual(r.corpo, {
-      nome: 'Botina de segurança', categoria: 'EPI', tipo: 'Sapatão / Botina', fabricante: 'Bracol', codigoInterno: 'EPI-000245',
+      nome: 'Botina de segurança', categoria: 'EPI', tipo: 'Botina de Segurança', fabricante: 'Bracol', codigoInterno: 'EPI-000245',
       unidade: 'par', estoqueMinimo: 5, prazoUsoDias: 180, exigeTamanho: true, descricao: 'Biqueira de composite',
     });
     assert.deepEqual(r.entrada, { tamanho: '42', quantidade: 120, caNumero: '38271', caValidade: '2027-01-31' });
@@ -96,22 +96,23 @@ describe('formulário: corpo do POST /materiais montado só com o que o contrato
     assert.equal('empresaId' in r.corpo, false, 'a empresa vem da sessão');
   });
 
-  test('tipo "Outro" envia o texto do campo livre; "Outro" sem texto é erro do campo tipo', () => {
+  test('tipo "Outros" envia "Outros" e o texto como descrição do tipo (12G-8); sem texto é erro do campo da descrição', () => {
     const { formulario } = carregarMateriais();
-    const ok = formulario.montarCorpo({ ...FORMULARIO, tipo: 'Outro', tipoCustom: '  Perneira  ' });
-    assert.equal(ok.corpo.tipo, 'Perneira');
-    const erro = formulario.montarCorpo({ ...FORMULARIO, tipo: 'Outro', tipoCustom: '   ' });
-    assert.deepEqual([erro.ok, erro.erros.map((e) => e.campo)], [false, ['tipo']]);
+    const ok = formulario.montarCorpo({ ...FORMULARIO, tipo: 'Outros', tipoCustom: '  Perneira  ' });
+    assert.deepEqual([ok.corpo.tipo, ok.corpo.tipoDescricao], ['Outros', 'Perneira']);
+    const erro = formulario.montarCorpo({ ...FORMULARIO, tipo: 'Outros', tipoCustom: '   ' });
+    assert.deepEqual([erro.ok, erro.erros.map((e) => e.campo)], [false, ['tipoDescricao']]);
   });
 
   test('opcionais vazios são omitidos (o servidor grava NULL); sem "Sim" não há entrada', () => {
     const { formulario } = carregarMateriais();
+    // Sem categoria só existe "Outros" (12G-8); os demais opcionais vazios continuam omitidos.
     const r = formulario.montarCorpo({
-      nome: 'Luva', categoria: '', tipo: 'Luva', tipoCustom: '', fabricante: '  ', codigoInterno: '', controleTamanho: 'grade',
+      nome: 'Luva', categoria: '', tipo: 'Outros', tipoCustom: 'Luva de raspa', fabricante: '  ', codigoInterno: '', controleTamanho: 'grade',
       quantidadeComprada: '', tamanhoEntrada: '', unidade: 'Unidade', estoqueMinimo: '', prazoUnidade: 'meses', prazo: '6', descricao: '',
     });
     assert.equal(r.ok, true, JSON.stringify(r));
-    assert.deepEqual(r.corpo, { nome: 'Luva', tipo: 'Luva', unidade: 'unidade', prazoUsoDias: 180, exigeTamanho: true });
+    assert.deepEqual(r.corpo, { nome: 'Luva', tipo: 'Outros', tipoDescricao: 'Luva de raspa', unidade: 'unidade', prazoUsoDias: 180, exigeTamanho: true });
     assert.equal(r.entrada, null);
   });
 
@@ -129,7 +130,8 @@ describe('formulário: corpo do POST /materiais montado só com o que o contrato
     assert.deepEqual(campos(formulario.montarCorpo({ ...FORMULARIO, caEntrada: 'x'.repeat(21) })), ['caEntrada']);
     assert.deepEqual(campos(formulario.montarCorpo({ ...FORMULARIO, nome: 'x'.repeat(151) })), ['nome']);
     assert.deepEqual(campos(formulario.montarCorpo({ ...FORMULARIO, codigoInterno: 'x'.repeat(31) })), ['codigoInterno']);
-    assert.deepEqual(campos(formulario.montarCorpo({ ...FORMULARIO, categoria: 'x'.repeat(31) })), ['categoria']);
+    // Categoria fora das listas só aceita "Outros": o tipo da lista de EPI também é recusado (12G-8).
+    assert.deepEqual(campos(formulario.montarCorpo({ ...FORMULARIO, categoria: 'x'.repeat(31) })), ['categoria', 'tipo']);
     assert.deepEqual(campos(formulario.montarCorpo({ ...FORMULARIO, descricao: 'x'.repeat(501) })), ['descricao']);
     assert.deepEqual(campos(formulario.montarCorpo({ ...FORMULARIO, tamanhoEntrada: 'x'.repeat(21) })), ['tamanhoEntrada']);
     const varios = formulario.montarCorpo({ ...FORMULARIO, nome: '', prazo: 'abc', tamanhoEntrada: '' });
@@ -255,21 +257,23 @@ describe('fluxo: cadastro e entrada inicial são duas operações, na ordem cert
 });
 
 describe('permissões: a página de materiais no mapa PAGINAS (extensão da C1 por recurso)', () => {
-  const p = (visualizar, criar, movimentar) => ({
+  const p = (visualizar, criar, entrada, baixa = false) => ({
     recursos: { materials: { visualizar, criar, editar: false, excluir: false } },
-    acoes: { MOVIMENTAR_ESTOQUE: movimentar },
+    acoes: { ENTRADA_ESTOQUE: entrada, BAIXA_ESTOQUE: baixa },
     administracao: {},
   });
 
-  test('abrir exige materials.visualizar; alterar exige materials.criar; movimentar é a ação MOVIMENTAR_ESTOQUE, independente', () => {
+  test('a Gestão de Estoque abre com QUALQUER um dos três acessos independentes (criar produto, entrada, baixa); só criar altera o cadastro', () => {
     assert.ok(P.PAGINAS.materials, 'entrada materials');
-    assert.equal(P.podeAbrir(p(true, false, false), 'materials'), true);
-    assert.equal(P.podeAlterar(p(true, false, false), 'materials'), false);
+    assert.equal(P.podeAbrir(p(false, true, false), 'materials'), true, 'só Cadastrar Produto');
+    assert.equal(P.podeAbrir(p(true, false, true), 'materials'), true, 'só Entrada por Lote');
+    assert.equal(P.podeAbrir(p(true, false, false, true), 'materials'), true, 'só Registrar Baixa');
+    assert.equal(P.podeAbrir(p(true, false, false, false), 'materials'), false, 'os três OFF: fechada, mesmo com visualizar');
+    assert.equal(P.podeAlterar(p(true, false, true, true), 'materials'), false);
     assert.equal(P.podeAlterar(p(true, true, false), 'materials'), true);
-    assert.equal(P.podeAbrir(p(false, true, true), 'materials'), false, 'criar sem visualizar não abre');
-    assert.equal(P.podeAlterar(p(false, true, true), 'materials'), false);
-    assert.equal(P.acao(p(true, true, true), 'MOVIMENTAR_ESTOQUE'), true);
-    assert.equal(P.acao(p(true, true, false), 'MOVIMENTAR_ESTOQUE'), false);
+    assert.equal(P.acao(p(true, true, true), 'ENTRADA_ESTOQUE'), true);
+    assert.equal(P.acao(p(true, true, true, false), 'BAIXA_ESTOQUE'), false, 'uma ação não concede a outra');
+    assert.equal(P.acao(p(true, true, false, true), 'ENTRADA_ESTOQUE'), false);
     assert.equal(P.podeAbrir(null, 'materials'), false);
     assert.equal(P.podeAbrir({ recursos: { materials: { visualizar: 'true' } }, acoes: {}, administracao: {} }, 'materials'), false, 'só true explícito');
   });
@@ -281,12 +285,17 @@ describe('permissões: a página de materiais no mapa PAGINAS (extensão da C1 p
     assert.deepEqual(P.PAGINAS['autorizacoes-individuais'], { abrir: [['autorizacoesIndividuais', 'consultar']], alterar: [] });
   });
 
-  test('menu: o link de materiais aparece só com visualizar; com permissões nulas fica oculto', () => {
+  test('menu: o link da Gestão de Estoque aparece com qualquer um dos três acessos; com os três OFF ou permissões nulas fica oculto', () => {
     const link = { style: { display: '' }, getAttribute: (n) => (n === 'data-pagina' ? 'materials' : null) };
     P.aplicarMenu(p(false, false, false), [link]);
     assert.equal(link.style.display, 'none');
     P.aplicarMenu(p(true, false, false), [link]);
-    assert.equal(link.style.display, '');
+    assert.equal(link.style.display, 'none', 'só visualizar o cadastro não abre a página');
+    for (const permissoes of [p(false, true, false), p(false, false, true), p(false, false, false, true)]) {
+      P.aplicarMenu(permissoes, [link]);
+      assert.equal(link.style.display, '');
+      link.style.display = 'none';
+    }
     P.aplicarMenu(null, [link]);
     assert.equal(link.style.display, 'none');
   });
@@ -346,7 +355,8 @@ describe('inspeção estática: pages/materials.html integrada, com a interface 
     }
     const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
     // 12D-3: o painel do mínimo por tamanho é um módulo próprio, carregado depois do de materiais.
-    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/materiais.js', '../js/estoque-minimos.js']);
+    // 12G-7: o catálogo visual desenha o pictograma do material escolhido.
+    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/materiais.js', '../js/estoque-minimos.js', '../js/catalogo-visual.js']);
     assert.match(codigo, /EpiHttp\.configurar\(\{ baseUrl: window\.SAFEWORK_PORTAL_API_BASE_URL \}\)/);
     assert.match(codigo, /EpiSessaoEmpresarial\.montar\(/);
     assert.match(codigo, /EpiPermissoes\.prepararPagina\(\{\s*pagina: 'materials'/);
@@ -365,12 +375,12 @@ describe('inspeção estática: pages/materials.html integrada, com a interface 
     assert.match(html, /<select id="gradeMaterial" class="select"/);
     assert.match(html, /<input id="materialDocumentoValidade" class="input" type="file"[^>]*disabled/);
     assert.match(html, /em desenvolvimento/i);
-    for (const opcao of ['EPI', 'Uniforme', 'Ferramenta', 'Material de consumo', 'Sapatão / Botina', 'Óculos de proteção', 'Luva', 'Protetor auricular', 'Capacete', 'Respirador', 'Outro', 'Par', 'Unidade', 'Caixa', 'Pacote', 'Kit']) {
+    for (const opcao of ['EPI', 'Uniforme', 'Ferramenta', 'Material de consumo', 'Par', 'Unidade', 'Caixa', 'Pacote', 'Kit']) {
       assert.match(html, new RegExp(`<option[^>]*>${opcao.replace(/[/]/g, '\\/')}</option>`), `opção ${opcao}`);
     }
     assert.match(html, /<button id="botaoLimpar" class="outlined-btn" type="button">Limpar<\/button>/);
     assert.match(html, /<button id="botaoSalvar" class="filled-btn" type="button"[^>]*><span class="material-symbols-outlined">save<\/span>Salvar material<\/button>/);
-    assert.match(html, /Exemplos de tipos/);
+    assert.equal(/Exemplos de tipos|Base inicial para organizar/.test(html), false, 'o quadro "Exemplos de tipos" saiu da tela');
     assert.match(html, /Estoque por lote/);
     assert.equal(/Atualiza automaticamente ao lançar entradas em Compras/.test(html), false, 'texto do simulado substituído');
     assert.equal((html.match(/class="size-chip/g) || []).length, 0, 'a grade antiga de chips saiu');
@@ -379,11 +389,11 @@ describe('inspeção estática: pages/materials.html integrada, com a interface 
   test('menu: estrutura original preservada; integrados com data-pagina ocultos; demais sem link e com "Em integração"; nenhum link para o protótipo', () => {
     for (const secao of ['Visão geral', 'Estoque', 'Entregas', 'Solicitações', 'Administração']) assert.match(html, new RegExp(`<div class="nav-section">${secao}</div>`));
     const links = [...html.matchAll(/<a [^>]*data-pagina="([^"]+)"[^>]*>/g)];
-    assert.deepEqual(links.map((m) => m[1]).sort(), ['autorizacoes-individuais', 'availableItems', 'dashboard', 'employeeGroups', 'employeeHistory', 'epiFicha', 'grupo-permissoes', 'grupo-usuarios', 'grupos-acesso', 'importEmployees', 'materials', 'newUser', 'operations', 'request', 'stockRequests', 'stockValidity', 'supervisorApproval', 'userAdmin']);
+    assert.deepEqual(links.map((m) => m[1]).sort(), ['autorizacoes-individuais', 'availableItems', 'config', 'dashboard', 'employeeGroups', 'employeeHistory', 'epiFicha', 'gestaoUsuarios', 'grupo-permissoes', 'grupo-usuarios', 'grupos-acesso', 'importEmployees', 'materials', 'newUser', 'operations', 'request', 'stockRequests', 'stockValidity', 'supervisorApproval', 'userAdmin']);
     for (const m of links) assert.match(m[0], /style="display:none"/, `${m[1]} deve nascer oculto`);
     assert.equal(/data-page=/.test(html), false, 'o mapa de arquivos do protótipo saiu');
     const pendentes = [...html.matchAll(/<a class="nav-pendente"[^>]*>[\s\S]*?<\/a>/g)];
-    assert.ok(pendentes.length >= 9, `itens não integrados presentes (${pendentes.length})`); // E7: Validade; E8: Operações; F: Novo Usuário e Administração de Usuários; 10I: Ficha de EPI; 12G-1: as três da solicitação
+    assert.ok(pendentes.length >= 8, `itens não integrados presentes (${pendentes.length})`); // E7: Validade; E8: Operações; F: Novo Usuário e Administração de Usuários; 10I: Ficha de EPI; 12G-1: as três da solicitação
     for (const m of pendentes) {
       assert.equal(/href=/.test(m[0]), false, 'não integrado não tem link');
       assert.match(m[0], /Em integração/);
@@ -392,7 +402,7 @@ describe('inspeção estática: pages/materials.html integrada, com a interface 
       assert.ok(html.includes(rotulo), `rótulo ${rotulo} preservado`);
     }
     const hrefs = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]).filter((h) => !h.startsWith('http') && !h.startsWith('../css/') && h !== 'javascript:void(0)');
-    const permitidos = new Set(['available-items.html', 'stock-validity.html', 'operations.html', 'dashboard.html', 'employee-groups.html', 'epi-ficha.html', 'employee-history.html', 'import-employees.html', 'request.html', 'supervisor-approval.html', 'stock-requests.html', 'grupos-acesso.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'autorizacoes-individuais.html', 'new-user.html', 'user-admin.html', '../portal/index.html', '../portal/inicio.html']);
+    const permitidos = new Set(['available-items.html', 'stock-validity.html', 'operations.html', 'dashboard.html', 'employee-groups.html', 'epi-ficha.html', 'employee-history.html', 'import-employees.html', 'request.html', 'supervisor-approval.html', 'stock-requests.html', 'grupos-acesso.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'autorizacoes-individuais.html', 'new-user.html', 'user-admin.html', 'gestao-usuarios.html', 'config.html', '../portal/index.html', '../portal/inicio.html']);
     for (const h of hrefs) assert.ok(permitidos.has(h), `materials.html aponta para ${h}`);
     assert.match(html, /onclick="toggleSidebar\(\)"/);
     assert.match(html, /onclick="closeMobileMenu\(\)"/);
@@ -477,7 +487,7 @@ function estadoPadrao(extra = {}) {
 }
 
 /** Executa o script embutido de materials.html sobre um DOM mínimo simulado. */
-function montarPagina({ permissoes = { recursos: { materials: { visualizar: true, criar: true, editar: false, excluir: false } }, acoes: { MOVIMENTAR_ESTOQUE: true }, administracao: {} }, podeAlterar = true } = {}) {
+function montarPagina({ permissoes = { recursos: { materials: { visualizar: true, criar: true, editar: false, excluir: false } }, acoes: { ENTRADA_ESTOQUE: true, BAIXA_ESTOQUE: true }, administracao: {} }, podeAlterar = true } = {}) {
   const html = ler('pages/materials.html');
   const script = html.slice(html.lastIndexOf('<script>') + '<script>'.length, html.lastIndexOf('</script>'));
   const SELECTS = new Set(['materialCategoria', 'materialTipo', 'materialUnidade', 'materialValidade', 'materialValidadeTipo', 'materialTamanhoEntrada', 'gradeMaterial', 'materialRegistrarEntrada', 'entradaTamanho',
@@ -488,6 +498,8 @@ function montarPagina({ permissoes = { recursos: { materials: { visualizar: true
     return {
       id, value: '', checked: false, textContent: '', innerHTML: '', disabled: false, selectedIndex: 0, style: {}, atributos: {}, listeners,
       tagName: SELECTS.has(id) ? 'SELECT' : 'INPUT',
+      // 12G-7: o pictograma do material escolhido entra por nós do DOM, nunca por innerHTML.
+      hidden: false, filhos: [], replaceChildren(...nos) { this.filhos = nos; },
       addEventListener(ev, fn) { (listeners[ev] = listeners[ev] || []).push(fn); },
       setAttribute(k, v) { this.atributos[k] = v; }, removeAttribute(k) { delete this.atributos[k]; }, focus() {},
       querySelector() { return elemento('form-grid'); }, querySelectorAll() { return []; },
@@ -495,10 +507,14 @@ function montarPagina({ permissoes = { recursos: { materials: { visualizar: true
   };
   const el = (id) => (mapa[id] = mapa[id] || elemento(id));
   const toasts = [];
+  const noSvg = (ns, tag) => ({
+    namespaceURI: ns, tagName: tag, atributos: {}, filhos: [],
+    setAttribute(k, v) { this.atributos[k] = String(v); }, appendChild(n) { this.filhos.push(n); return n; },
+  });
   const sandbox = {
-    document: { getElementById: el, querySelectorAll: () => [] },
+    document: { getElementById: el, querySelectorAll: () => [], createElementNS: noSvg },
     window: { SAFEWORK_PORTAL_API_BASE_URL: BASE },
-    EpiHttp, EpiMateriais: carregarMateriais(), EpiEstoqueMinimos: require('../js/estoque-minimos'), EpiPermissoes: { prepararPagina: async () => ({ permissoes, podeAlterar }), acao: P.acao, recurso: P.recurso, somenteLeitura() {} },
+    EpiHttp, EpiMateriais: carregarMateriais(), EpiEstoqueMinimos: require('../js/estoque-minimos'), EpiCatalogoVisual: require('../js/catalogo-visual'), EpiPermissoes: { prepararPagina: async () => ({ permissoes, podeAlterar }), acao: P.acao, recurso: P.recurso, somenteLeitura() {} },
     EpiSessaoEmpresarial: { montar: async (o) => { sandbox.opcoesMontar = o; return CONTEXTO; }, sessaoEncerrada() { sandbox.encerrada = true; } },
     showToast: (m, t) => toasts.push([m, t]), toasts, console, setTimeout, Promise, String, Number, Array, Object, JSON, crypto: globalThis.crypto,
   };
@@ -510,7 +526,7 @@ function montarPagina({ permissoes = { recursos: { materials: { visualizar: true
 }
 
 const FORMULARIO_DOM = {
-  materialNome: 'Botina nova', materialCategoria: 'EPI', materialTipo: 'Sapatão / Botina', materialControleTamanho: 'grade', materialUnidade: 'Par', materialEstoqueMinimo: '5',
+  materialNome: 'Botina nova', materialCategoria: 'EPI', materialTipo: 'Botina de Segurança', materialControleTamanho: 'grade', materialUnidade: 'Par', materialEstoqueMinimo: '5',
   materialValidadeTipo: 'meses', materialPrazo: '6', materialQuantidadeComprada: '10', materialTamanhoEntrada: '42', materialEntradaCa: '38271',
   materialEntradaCaValidade: '2027-01-31', materialRegistrarEntrada: 'sim',
 };
@@ -700,6 +716,71 @@ describe('correção 4 — resultado não confirmado (rede / 5xx) é diferente d
   });
 });
 
+describe('12G-7 — Materiais: pictograma do material escolhido, ao lado do seletor', () => {
+  const html = ler('pages/materials.html');
+  const marcacao = html.slice(0, html.lastIndexOf('<script>'));
+  const pictograma = (pg) => pg.el('pictogramaMaterialAtual');
+  const chave = (pg) => (pictograma(pg).filhos[0] ? pictograma(pg).filhos[0].atributos['data-pictograma'] : null);
+
+  test('estrutura: o espaço do pictograma fica na linha do seletor, antes dele, oculto e decorativo; nada mais da tela muda', () => {
+    assert.match(marcacao, /<div style="display:flex;gap:8px;align-items:center">\s*<span id="pictogramaMaterialAtual" class="pictograma-material-atual" aria-hidden="true" hidden><\/span>\s*<select id="gradeMaterial" class="select" style="flex:1"><\/select>/);
+    assert.equal((marcacao.match(/<[^>]*pictograma[^>]*>/g) || []).length, 1, 'um único espaço, só no estoque do material escolhido');
+    assert.match(html, /EpiCatalogoVisual\.elemento\(document, /);
+    assert.equal(/pictograma[^;\n]*innerHTML|innerHTML[^;\n]*Catalogo/.test(html), false, 'o pictograma nunca entra por innerHTML');
+  });
+
+  test('as opções do seletor de materiais continuam só texto (nenhum SVG dentro de <option>)', () => {
+    const opcoes = carregarMateriais().render.opcoesMateriais([MATERIAL, { ...MATERIAL, id: 78, tipo: 'Luva' }]);
+    assert.equal(/<svg/.test(opcoes), false);
+  });
+
+  test('ao escolher um material, o pictograma do tipo aparece ao lado do seletor; trocar para nenhum o tira', async () => {
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL] }));
+    const pg = montarPagina();
+    await pg.esperar();
+    pg.el('gradeMaterial').value = '77';
+    await pg.disparar('gradeMaterial', 'change');
+    assert.equal(pictograma(pg).hidden, false);
+    assert.equal(pictograma(pg).filhos.length, 1);
+    const svg = pictograma(pg).filhos[0];
+    assert.deepEqual([svg.namespaceURI, svg.tagName, svg.atributos['aria-hidden'], svg.atributos.focusable], ['http://www.w3.org/2000/svg', 'svg', 'true', 'false']);
+    assert.equal(chave(pg), 'botina');
+    pg.el('gradeMaterial').value = '';
+    await pg.disparar('gradeMaterial', 'change');
+    assert.deepEqual([pictograma(pg).hidden, pictograma(pg).filhos.length], [true, 0]);
+  });
+
+  test('tipo desconhecido usa a categoria e, sem categoria conhecida, o genérico (o mesmo catálogo das tabelas)', async () => {
+    for (const [materialEstoque, esperada] of [[{ tipo: 'Avental', categoria: 'Uniforme' }, 'uniforme'], [{ tipo: 'Avental', categoria: null }, 'material']]) {
+      servidorRotas(estadoPadrao({ materiais: [MATERIAL], materialEstoque }));
+      const pg = montarPagina();
+      await pg.esperar();
+      pg.el('gradeMaterial').value = '77';
+      await pg.disparar('gradeMaterial', 'change');
+      assert.equal(chave(pg), esperada);
+    }
+  });
+
+  test('falha na consulta do estoque ou sessão encerrada: o pictograma sai junto com os saldos', async () => {
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL], estoqueLotes: () => resposta(500, { status: 'erro', codigo: 'ERRO_INTERNO' }) }));
+    const falha = montarPagina();
+    await falha.esperar();
+    falha.el('gradeMaterial').value = '77';
+    await falha.disparar('gradeMaterial', 'change');
+    assert.deepEqual([pictograma(falha).hidden, pictograma(falha).filhos.length], [true, 0]);
+
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL] }));
+    const pg = montarPagina();
+    await pg.esperar();
+    pg.el('gradeMaterial').value = '77';
+    await pg.disparar('gradeMaterial', 'change');
+    assert.equal(pictograma(pg).filhos.length, 1);
+    pg.sandbox.opcoesMontar.aoEncerrar();
+    await pg.esperar();
+    assert.deepEqual([pictograma(pg).hidden, pictograma(pg).filhos.length], [true, 0]);
+  });
+});
+
 // ═══════════════════════════════════════════════════════════════════
 // Melhoria da C2 (25/09/2026): edição de material existente na mesma
 // tela (GET/PATCH /materiais/:id, que já existem), entrada inicial só com
@@ -707,8 +788,8 @@ describe('correção 4 — resultado não confirmado (rede / 5xx) é diferente d
 // controle bloqueada na edição e validade do CA preservada.
 // ═══════════════════════════════════════════════════════════════════
 
-const PERMISSOES_EDITAR = { recursos: { materials: { visualizar: true, criar: true, editar: true, excluir: false } }, acoes: { MOVIMENTAR_ESTOQUE: true }, administracao: {} };
-const PERMISSOES_SO_EDITAR = { recursos: { materials: { visualizar: true, criar: false, editar: true, excluir: false } }, acoes: { MOVIMENTAR_ESTOQUE: true }, administracao: {} };
+const PERMISSOES_EDITAR = { recursos: { materials: { visualizar: true, criar: true, editar: true, excluir: false } }, acoes: { ENTRADA_ESTOQUE: true, BAIXA_ESTOQUE: true }, administracao: {} };
+const PERMISSOES_SO_EDITAR = { recursos: { materials: { visualizar: true, criar: false, editar: true, excluir: false } }, acoes: { ENTRADA_ESTOQUE: true, BAIXA_ESTOQUE: true }, administracao: {} };
 const MATERIAL_CA = { ...MATERIAL, caValidade: '2026-10-15' };
 const pendente = () => { let resolver; const promessa = new Promise((r) => { resolver = r; }); return { promessa, resolver }; };
 
@@ -754,20 +835,20 @@ describe('melhoria C2 — módulo: carregar e editar material existente', () => 
     assert.equal('caValidade' in formulario.camposDoMaterial(MATERIAL_CA).campos, false);
   });
 
-  test('camposDoMaterial: preenche o formulário com o registro real; tipo fora da lista vira "Outro"; valores fora das listas ganham opção temporária, nunca trocados em silêncio', () => {
+  test('camposDoMaterial: preenche o formulário com o registro real; tipo fora da lista vira "Outros" + descrição; valores fora das listas ganham opção temporária, nunca trocados em silêncio', () => {
     const { formulario } = carregarMateriais();
     const r = formulario.camposDoMaterial(MATERIAL);
     assert.deepEqual(r.campos, {
-      nome: 'Botina de segurança', categoria: 'EPI', tipo: 'Sapatão / Botina', tipoCustom: '', fabricante: 'Bracol', codigoInterno: 'EPI-000245',
-      unidade: 'Par', estoqueMinimo: '5', prazoUnidade: 'meses', prazo: '6', controleTamanho: 'grade', oculosComGrau: false, oculosComGrauTocado: false,
+      nome: 'Botina de segurança', categoria: 'EPI', tipo: 'Botina de Segurança', tipoCustom: '', fabricante: 'Bracol', codigoInterno: 'EPI-000245',
+      unidade: 'Par', estoqueMinimo: '5', prazoUnidade: 'meses', prazo: '6', controleTamanho: 'grade', grade: '', oculosComGrau: false, oculosComGrauTocado: false,
       descricao: 'Biqueira de composite', registrarEntrada: 'nao', quantidadeComprada: '', tamanhoEntrada: '', caEntrada: '', caValidadeEntrada: '',
     });
-    assert.deepEqual(r.opcoesExtras, { categoria: null, unidade: null });
+    assert.deepEqual(r.opcoesExtras, { categoria: null, tipo: null, unidade: null });
     const outro = formulario.camposDoMaterial({ ...MATERIAL, tipo: 'Perneira', categoria: null, unidade: 'rolo', caNumero: null, caValidade: null, fabricante: null, codigoInterno: null, descricao: null, prazoUsoDias: null });
-    assert.deepEqual([outro.campos.tipo, outro.campos.tipoCustom, outro.campos.categoria, outro.campos.unidade], ['Outro', 'Perneira', '', 'rolo']);
+    assert.deepEqual([outro.campos.tipo, outro.campos.tipoCustom, outro.campos.categoria, outro.campos.unidade], ['Outros', 'Perneira', '', 'rolo']);
     assert.deepEqual([outro.campos.fabricante, outro.campos.codigoInterno, outro.campos.descricao, outro.campos.prazo], ['', '', '', '']);
-    assert.deepEqual(outro.opcoesExtras, { categoria: { valor: '', rotulo: 'Sem categoria' }, unidade: { valor: 'rolo', rotulo: 'rolo' } });
-    assert.deepEqual(formulario.camposDoMaterial({ ...MATERIAL, tipo: null }).campos.tipo, 'Outro');
+    assert.deepEqual(outro.opcoesExtras, { categoria: { valor: '', rotulo: 'Sem categoria' }, tipo: null, unidade: { valor: 'rolo', rotulo: 'rolo' } });
+    assert.deepEqual(formulario.camposDoMaterial({ ...MATERIAL, tipo: null }).campos.tipo, '');
     assert.equal(formulario.camposDoMaterial({ ...MATERIAL, unidade: 'caixa' }).campos.unidade, 'Caixa');
     assert.deepEqual(formulario.camposDoMaterial({ ...MATERIAL, categoria: 'Químicos' }).opcoesExtras.categoria, { valor: 'Químicos', rotulo: 'Químicos' });
   });
@@ -790,8 +871,11 @@ describe('melhoria C2 — módulo: carregar e editar material existente', () => 
   test('montarEdicao: opcional apagado vai como null; prazo equivalente não é reenviado; o prazo não pode ser apagado; novo prazo em dias', () => {
     const { formulario } = carregarMateriais();
     const campos = formulario.camposDoMaterial(MATERIAL).campos;
-    const limpo = formulario.montarEdicao({ ...campos, fabricante: ' ', codigoInterno: '', descricao: '', categoria: '' }, MATERIAL);
-    assert.deepEqual(limpo.corpo, { fabricante: null, codigoInterno: null, descricao: null, categoria: null });
+    const limpo = formulario.montarEdicao({ ...campos, fabricante: ' ', codigoInterno: '', descricao: '' }, MATERIAL);
+    assert.deepEqual(limpo.corpo, { fabricante: null, codigoInterno: null, descricao: null });
+    // Sem categoria só existe "Outros" (12G-8): apagar a categoria exige trocar o tipo junto.
+    assert.deepEqual(formulario.montarEdicao({ ...campos, categoria: '' }, MATERIAL).erros.map((e) => e.campo), ['tipo']);
+    assert.deepEqual(formulario.montarEdicao({ ...campos, categoria: '', tipo: 'Outros', tipoCustom: 'Botina importada' }, MATERIAL).corpo, { categoria: null, tipo: 'Outros', tipoDescricao: 'Botina importada' });
     assert.equal(formulario.montarEdicao({ ...campos, prazoUnidade: 'dias', prazo: '180' }, MATERIAL).alterado, false, '180 dias = 6 meses: nada muda');
     assert.equal(formulario.montarEdicao({ ...campos, definePrazo: 'nao', prazo: '' }, MATERIAL).ok, false);
     assert.deepEqual(formulario.montarEdicao({ ...campos, prazoUnidade: 'anos', prazo: '1' }, MATERIAL).corpo, { prazoUsoDias: 365 });
@@ -813,10 +897,10 @@ describe('melhoria C2 — módulo: carregar e editar material existente', () => 
     const erros = (r) => (r.ok ? [] : r.erros.map((e) => e.campo).sort());
     assert.deepEqual(erros(formulario.montarEdicao({ ...campos, nome: '  ' }, MATERIAL)), ['nome']);
     assert.deepEqual(erros(formulario.montarEdicao({ ...campos, estoqueMinimo: '' }, MATERIAL)), ['estoqueMinimo']);
-    assert.deepEqual(erros(formulario.montarEdicao({ ...campos, categoria: 'x'.repeat(31) }, MATERIAL)), ['categoria']);
+    assert.deepEqual(erros(formulario.montarEdicao({ ...campos, categoria: 'x'.repeat(31) }, MATERIAL)), ['categoria', 'tipo']);
     assert.deepEqual(erros(formulario.montarEdicao({ ...campos, controleTamanho: '' }, MATERIAL)), ['controleTamanho']);
     assert.deepEqual(erros(formulario.montarEdicao({ ...campos, prazo: '0' }, MATERIAL)), ['prazo']);
-    assert.deepEqual(erros(formulario.montarEdicao({ ...campos, tipo: 'Outro', tipoCustom: '' }, MATERIAL)), ['tipo']);
+    assert.deepEqual(erros(formulario.montarEdicao({ ...campos, tipo: 'Outros', tipoCustom: '' }, MATERIAL)), ['tipoDescricao']);
     const semTipo = { ...MATERIAL, tipo: null };
     assert.deepEqual(formulario.montarEdicao(formulario.camposDoMaterial(semTipo).campos, semTipo), { ok: true, corpo: {}, alterado: false });
   });
@@ -887,7 +971,9 @@ describe('melhoria C2 — inspeção estática: acréscimos mínimos ao HTML ori
   test('as listas do módulo são exatamente as opções do HTML (categoria, tipo, unidade)', () => {
     const { formulario } = carregarMateriais();
     assert.deepEqual(opcoes('materialCategoria'), formulario.CATEGORIAS);
-    assert.deepEqual(opcoes('materialTipo'), formulario.TIPOS.concat(['Outro']));
+    // 12G-8: o tipo depende da categoria e é montado pela página (render.opcoesTipos); o HTML só tem o placeholder.
+    assert.deepEqual(opcoes('materialTipo'), ['Selecione']);
+    assert.deepEqual(formulario.tiposDe('EPI'), formulario.TIPOS_POR_CATEGORIA.EPI);
     assert.deepEqual(opcoes('materialUnidade'), formulario.UNIDADES);
   });
 
@@ -935,7 +1021,7 @@ describe('melhoria C2 — página: editar material existente', () => {
     const valores = Object.fromEntries(['materialNome', 'materialCategoria', 'materialTipo', 'materialFabricante', 'materialCodigo', 'materialControleTamanho',
       'materialUnidade', 'materialEstoqueMinimo', 'materialValidadeTipo', 'materialPrazo', 'materialDesc'].map((id) => [id, pg.el(id).value]));
     assert.deepEqual(valores, {
-      materialNome: 'Botina de segurança', materialCategoria: 'EPI', materialTipo: 'Sapatão / Botina', materialFabricante: 'Bracol', materialCodigo: 'EPI-000245',
+      materialNome: 'Botina de segurança', materialCategoria: 'EPI', materialTipo: 'Botina de Segurança', materialFabricante: 'Bracol', materialCodigo: 'EPI-000245',
       materialControleTamanho: 'grade', materialUnidade: 'Par', materialEstoqueMinimo: '5', materialValidadeTipo: 'meses', materialPrazo: '6', materialDesc: 'Biqueira de composite',
     });
     assert.equal(pg.el('materialPrazoPreviewText').textContent, '6 meses = 180 dias');
@@ -1262,7 +1348,7 @@ describe('entrada de estoque posterior — módulo', () => {
 describe('entrada de estoque posterior — inspeção estática', () => {
   const html = ler('pages/materials.html');
   test('entrada e baixa no quadro Estoque por lote, ocultas até a permissão; tamanho sem seleção', () => {
-    const quadro = html.slice(html.indexOf('<h2>Estoque por lote</h2>'), html.indexOf('Exemplos de tipos'));
+    const quadro = html.slice(html.indexOf('<h2>Estoque por lote</h2>'), html.indexOf('<h2>Estoque mínimo por tamanho</h2>'));
     assert.match(quadro, /<div id="blocoEntradaEstoque" style="display:none[^"]*">/);
     assert.match(quadro, /<div id="blocoBaixaEstoque" style="display:none[^"]*">/);
     assert.match(quadro, /Registrar entrada de estoque/);
@@ -1435,13 +1521,13 @@ const LOTES = [
   lote({ loteId: 2, tamanho: '41', caNumero: '54321', caValidade: '2026-10-20', quantidadeEntrada: 20, fisico: 20, disponivel: 20, situacaoCa: 'A_VENCER' }),
   lote({ loteId: 3, tamanho: null, caNumero: null, caValidade: null, origem: 'SALDO_INICIAL', quantidadeEntrada: 5, fisico: 5, bloqueado: 5, disponivel: 0, situacaoCa: 'SEM_CA' }),
 ];
-const PODE_EDITAR = { recursos: { materials: { visualizar: true, criar: true, editar: true, excluir: false } }, acoes: { MOVIMENTAR_ESTOQUE: true }, administracao: {} };
+const PODE_EDITAR = { recursos: { materials: { visualizar: true, criar: true, editar: true, excluir: false } }, acoes: { ENTRADA_ESTOQUE: true, BAIXA_ESTOQUE: true }, administracao: {} };
 const escritas = () => chamadas.filter((c) => c.metodo !== 'GET');
 const semChave = (corpo) => ({ ...corpo, chaveIdempotencia: undefined });
 
 describe('cadastro do material: prazo de uso e controle de tamanho obrigatórios', () => {
   const base = (extra = {}) => ({
-    nome: 'Botina', categoria: 'EPI', tipo: 'Sapatão / Botina', tipoCustom: '', fabricante: '', codigoInterno: '', unidade: 'Par', estoqueMinimo: '5',
+    nome: 'Botina', categoria: 'EPI', tipo: 'Botina de Segurança', tipoCustom: '', fabricante: '', codigoInterno: '', unidade: 'Par', estoqueMinimo: '5',
     prazoUnidade: 'meses', prazo: '6', controleTamanho: 'grade', descricao: '', registrarEntrada: 'nao', quantidadeComprada: '', tamanhoEntrada: '',
     caEntrada: '', caValidadeEntrada: '', ...extra,
   });
@@ -1770,7 +1856,7 @@ describe('tela de materiais com estoque por lote: inspeção estática', () => {
 
 describe('página: cadastro com prazo, controle de tamanho e entrada inicial por lote', () => {
   const DOM = (extra = {}) => ({
-    materialNome: 'Óculos incolor', materialCategoria: 'EPI', materialTipo: 'Óculos de proteção', materialUnidade: 'Unidade', materialEstoqueMinimo: '5',
+    materialNome: 'Óculos incolor', materialCategoria: 'EPI', materialTipo: 'Óculos de Proteção Incolor', materialUnidade: 'Unidade', materialEstoqueMinimo: '5',
     materialValidadeTipo: 'meses', materialPrazo: '6', materialControleTamanho: 'unico', materialRegistrarEntrada: 'nao', ...extra,
   });
 
@@ -1809,7 +1895,7 @@ describe('página: cadastro com prazo, controle de tamanho e entrada inicial por
     servidorRotas(estadoPadrao({ proximoId: 89 }));
     const pg = montarPagina();
     await pg.esperar();
-    pg.preencher(DOM({ materialNome: 'Botina', materialTipo: 'Sapatão / Botina', materialControleTamanho: 'grade', materialRegistrarEntrada: 'sim', materialQuantidadeComprada: '10', materialEntradaCa: '1', materialEntradaCaValidade: '2027-01-31' }));
+    pg.preencher(DOM({ materialNome: 'Botina', materialTipo: 'Botina de Segurança', materialControleTamanho: 'grade', materialRegistrarEntrada: 'sim', materialQuantidadeComprada: '10', materialEntradaCa: '1', materialEntradaCaValidade: '2027-01-31' }));
     await pg.disparar('materialRegistrarEntrada', 'change');
     await pg.disparar('materialControleTamanho', 'change');
     assert.deepEqual([pg.el('campoTamanhoEntrada').style.display, pg.el('campoTamanhoEntradaUnico').style.display], ['', 'none']);
@@ -1999,20 +2085,23 @@ describe('página: estoque por lote, entrada e baixa', () => {
 });
 
 describe('óculos com grau — módulo', () => {
+  // OCULOS é o nome histórico (só legado gravado); INCOLOR é um dos dois tipos oficiais (12G-8).
   const OCULOS = 'Óculos de proteção';
+  const INCOLOR = 'Óculos de Proteção Incolor';
   const F = () => carregarMateriais().formulario;
   const base = (extra = {}) => ({
-    nome: 'Óculos', categoria: 'EPI', tipo: OCULOS, tipoCustom: '', fabricante: '', codigoInterno: '', unidade: 'Unidade', estoqueMinimo: '5',
+    nome: 'Óculos', categoria: 'EPI', tipo: INCOLOR, tipoCustom: '', fabricante: '', codigoInterno: '', unidade: 'Unidade', estoqueMinimo: '5',
     prazoUnidade: 'meses', prazo: '6', controleTamanho: 'unico', descricao: '', registrarEntrada: 'nao', quantidadeComprada: '', tamanhoEntrada: '',
     caEntrada: '', caValidadeEntrada: '', ...extra,
   });
   const salvo = (extra = {}) => ({ ...MATERIAL, tipo: OCULOS, exigeTamanho: false, unidade: 'unidade', oculosComGrau: null, ...extra });
   const camposDe = (material, extra = {}) => ({ ...F().camposDoMaterial(material).campos, ...extra });
 
-  test('o tipo canônico é o texto da lista de tipos; só ele, aparado, é óculos de proteção', () => {
+  test('os tipos de óculos são os da lista (Incolor e Ampla Visão) e o nome histórico; só eles, aparados, são óculos de proteção', () => {
     assert.equal(F().TIPO_OCULOS, OCULOS);
-    assert.ok(F().TIPOS.includes(F().TIPO_OCULOS));
-    for (const tipo of [OCULOS, `  ${OCULOS} `]) assert.equal(F().ehOculos(tipo), true, tipo);
+    assert.ok(F().TIPOS.includes(F().TIPOS_OCULOS[0]) && F().TIPOS.includes(F().TIPOS_OCULOS[1]));
+    assert.equal(F().TIPOS.includes(OCULOS), false, 'o nome histórico não é oferecido');
+    for (const tipo of [OCULOS, `  ${OCULOS} `, INCOLOR, `  ${INCOLOR} `]) assert.equal(F().ehOculos(tipo), true, tipo);
     for (const tipo of ['óculos de proteção', 'Óculos', 'Oculos de protecao', 'Óculos de proteção incolor', 'Luva', '', null, undefined]) {
       assert.equal(F().ehOculos(tipo), false, String(tipo));
     }
@@ -2023,8 +2112,8 @@ describe('óculos com grau — módulo', () => {
     assert.equal(F().montarCorpo(base({ oculosComGrau: false })).corpo.oculosComGrau, false);
     assert.equal(F().montarCorpo(base()).corpo.oculosComGrau, false, 'caixa não marcada no cadastro novo = sem grau');
     assert.equal('oculosComGrau' in F().montarCorpo(base({ tipo: 'Luva', controleTamanho: 'grade', oculosComGrau: true })).corpo, false);
-    assert.equal(F().montarCorpo(base({ tipo: 'Outro', tipoCustom: OCULOS, oculosComGrau: true })).corpo.oculosComGrau, true, '"Outro" com o texto canônico também é óculos');
-    assert.equal('oculosComGrau' in F().montarCorpo(base({ tipo: 'Outro', tipoCustom: 'Óculos de sol', oculosComGrau: true })).corpo, false);
+    assert.equal('oculosComGrau' in F().montarCorpo(base({ tipo: 'Outros', tipoCustom: OCULOS, oculosComGrau: true })).corpo, false, '"Outros" com texto de óculos não é óculos (12G-8)');
+    assert.equal('oculosComGrau' in F().montarCorpo(base({ tipo: 'Outros', tipoCustom: 'Óculos de sol', oculosComGrau: true })).corpo, false);
   });
 
   test('edição carrega true marcado e false desmarcado; o NULL do legado vem desmarcado e marcado como não classificado', () => {
@@ -2056,7 +2145,7 @@ describe('óculos com grau — módulo', () => {
     assert.deepEqual(F().montarEdicao(camposDe(oculos, { tipo: 'Luva' }), oculos).corpo, { tipo: 'Luva', oculosComGrau: null });
     const luva = { ...MATERIAL, tipo: 'Luva', oculosComGrau: null };
     for (const valor of [true, false]) {
-      assert.deepEqual(F().montarEdicao(camposDe(luva, { tipo: OCULOS, oculosComGrau: valor }), luva).corpo, { tipo: OCULOS, oculosComGrau: valor });
+      assert.deepEqual(F().montarEdicao(camposDe(luva, { tipo: INCOLOR, oculosComGrau: valor }), luva).corpo, { tipo: INCOLOR, oculosComGrau: valor });
     }
   });
 
@@ -2065,7 +2154,7 @@ describe('óculos com grau — módulo', () => {
     const r = (codigo) => ({ ok: false, status: 400, codigo: 'VALIDACAO', detalhes: [{ campo: 'body.oculosComGrau', codigo }] });
     for (const fn of [M.erroCadastro, M.erroEdicao]) {
       assert.match(fn(r('OCULOS_COM_GRAU_OBRIGATORIO')), /com grau/i);
-      assert.match(fn(r('OCULOS_COM_GRAU_NAO_SE_APLICA')), /Óculos de proteção/);
+      assert.match(fn(r('OCULOS_COM_GRAU_NAO_SE_APLICA')), /óculos de proteção/i);
     }
   });
 });
@@ -2109,7 +2198,7 @@ describe('entrada inicial: bloco próprio do primeiro lote, com CA e validade', 
     const pg = montarPagina();
     await pg.esperar();
     pg.preencher({
-      materialNome: 'Óculos com grau', materialCategoria: 'EPI', materialTipo: 'Óculos de proteção', materialUnidade: 'Unidade', materialEstoqueMinimo: '2',
+      materialNome: 'Óculos com grau', materialCategoria: 'EPI', materialTipo: 'Óculos de Proteção Incolor', materialUnidade: 'Unidade', materialEstoqueMinimo: '2',
       materialValidadeTipo: 'meses', materialPrazo: '12', materialControleTamanho: 'unico', materialRegistrarEntrada: 'sim',
     });
     await pg.disparar('materialTipo', 'change');
@@ -2143,7 +2232,7 @@ describe('entrada inicial: bloco próprio do primeiro lote, com CA e validade', 
     const pg = montarPagina();
     await pg.esperar();
     pg.preencher({
-      materialNome: 'Óculos', materialCategoria: 'EPI', materialTipo: 'Óculos de proteção', materialUnidade: 'Unidade', materialEstoqueMinimo: '0',
+      materialNome: 'Óculos', materialCategoria: 'EPI', materialTipo: 'Óculos de Proteção Incolor', materialUnidade: 'Unidade', materialEstoqueMinimo: '0',
       materialValidadeTipo: 'meses', materialPrazo: '12', materialControleTamanho: 'unico', materialRegistrarEntrada: 'sim', materialQuantidadeComprada: '2',
     });
     await pg.disparar('materialTipo', 'change');
@@ -2154,9 +2243,11 @@ describe('entrada inicial: bloco próprio do primeiro lote, com CA e validade', 
 });
 
 describe('óculos com grau — página', () => {
+  // OCULOS é o nome histórico (só legado gravado, aceito na edição); INCOLOR é um dos dois tipos oficiais (12G-8).
   const OCULOS = 'Óculos de proteção';
+  const INCOLOR = 'Óculos de Proteção Incolor';
   const DOM = (extra = {}) => ({
-    materialNome: 'Óculos incolor', materialCategoria: 'EPI', materialTipo: OCULOS, materialUnidade: 'Unidade', materialEstoqueMinimo: '5',
+    materialNome: 'Óculos incolor', materialCategoria: 'EPI', materialTipo: INCOLOR, materialUnidade: 'Unidade', materialEstoqueMinimo: '5',
     materialValidadeTipo: 'meses', materialPrazo: '6', materialControleTamanho: 'unico', materialRegistrarEntrada: 'nao', ...extra,
   });
   const trocarTipo = async (pg, tipo) => { pg.el('materialTipo').value = tipo; await pg.disparar('materialTipo', 'change'); };
@@ -2177,29 +2268,31 @@ describe('óculos com grau — página', () => {
     servidorRotas(estadoPadrao());
     const pg = montarPagina();
     await pg.esperar();
-    assert.equal(visivel(pg), false, 'Sapatão / Botina, o tipo inicial');
-    for (const tipo of ['Luva', 'Protetor auricular', 'Capacete', 'Respirador', 'Outro']) {
+    assert.equal(visivel(pg), false, 'sem tipo escolhido no início');
+    for (const tipo of ['Luva', 'Proteção Auricular Concha', 'Capacete', 'Respirador PFF2', 'Outros']) {
       await trocarTipo(pg, tipo);
       assert.equal(visivel(pg), false, tipo);
     }
-    await trocarTipo(pg, OCULOS);
-    assert.deepEqual([visivel(pg), pg.el('materialOculosComGrau').checked, legadoVisivel(pg)], [true, false, false]);
-    await marcar(pg, true);
-    await trocarTipo(pg, 'Luva');
-    assert.deepEqual([visivel(pg), pg.el('materialOculosComGrau').checked], [false, false]);
-    await trocarTipo(pg, OCULOS);
-    assert.equal(pg.el('materialOculosComGrau').checked, false);
+    for (const oculos of [INCOLOR, 'Óculos de Proteção Ampla Visão']) {
+      await trocarTipo(pg, oculos);
+      assert.deepEqual([visivel(pg), pg.el('materialOculosComGrau').checked, legadoVisivel(pg)], [true, false, false], oculos);
+      await marcar(pg, true);
+      await trocarTipo(pg, 'Luva');
+      assert.deepEqual([visivel(pg), pg.el('materialOculosComGrau').checked], [false, false], oculos);
+      await trocarTipo(pg, oculos);
+      assert.equal(pg.el('materialOculosComGrau').checked, false, oculos);
+    }
   });
 
-  test('"Outro" com o texto canônico mostra a caixa; outro texto não', async () => {
+  test('"Outros" com texto de óculos na descrição não mostra a caixa: a descrição é texto, não tipo (12G-8)', async () => {
     servidorRotas(estadoPadrao());
     const pg = montarPagina();
     await pg.esperar();
-    await trocarTipo(pg, 'Outro');
-    for (const [texto, esperado] of [['Óculos de sol', false], [OCULOS, true], ['óculos de proteção', false]]) {
+    await trocarTipo(pg, 'Outros');
+    for (const texto of ['Óculos de sol', OCULOS, INCOLOR, 'óculos de proteção']) {
       pg.el('materialTipoCustom').value = texto;
       await pg.disparar('materialTipoCustom', 'input');
-      assert.equal(visivel(pg), esperado, texto);
+      assert.equal(visivel(pg), false, texto);
     }
   });
 
@@ -2269,10 +2362,10 @@ describe('óculos com grau — página', () => {
 
     const luva = await editarMaterial({ tipo: 'Luva', oculosComGrau: null });
     assert.equal(visivel(luva), false);
-    await trocarTipo(luva, OCULOS);
+    await trocarTipo(luva, INCOLOR);
     assert.deepEqual([visivel(luva), luva.el('materialOculosComGrau').checked, legadoVisivel(luva)], [true, false, false]);
     await luva.disparar('botaoSalvar');
-    assert.deepEqual(escritas().map((c) => c.corpo), [{ tipo: OCULOS, oculosComGrau: false }]);
+    assert.deepEqual(escritas().map((c) => c.corpo), [{ tipo: INCOLOR, oculosComGrau: false }]);
   });
 
   test('edição: voltar ao tipo original mostra o valor gravado, não a marcação feita antes da troca', async () => {
@@ -2778,5 +2871,385 @@ describe('12D-3 — página: baixa discricionária recusada por saldo livre', ()
     assert.equal(escritas().length, 1);
     assert.deepEqual([pg.el('baixaQuantidade').value, pg.el('baixaMotivo').value, pg.el('baixaJustificativa').value], ['4', 'OUTRO', 'Doação para treinamento']);
     assert.equal(pg.el('botaoRegistrarBaixa').disabled, false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 12G-8: grade de tamanhos do material. A grade é do cadastro, explícita,
+// nunca deduzida dos lotes; material sem grade segue como antes.
+// ═══════════════════════════════════════════════════════════════════
+
+describe('12G-8 — grade de tamanhos: módulo', () => {
+  test('lerGrade: tamanhos separados por vírgula, aparados e na ordem digitada; vazio é "sem grade"', () => {
+    const { formulario } = carregarMateriais();
+    assert.deepEqual(formulario.lerGrade(' 38, 39 ,40 '), { tamanhos: ['38', '39', '40'], erro: null });
+    assert.deepEqual(formulario.lerGrade(''), { tamanhos: [], erro: null });
+    assert.deepEqual(formulario.lerGrade(' , ,'), { tamanhos: [], erro: null });
+    assert.deepEqual(formulario.lerGrade('PP,P,M').tamanhos, ['PP', 'P', 'M']);
+  });
+
+  test('lerGrade recusa tamanho repetido (sem diferenciar maiúsculas), longo demais e grade com mais de 50 tamanhos', () => {
+    const { formulario } = carregarMateriais();
+    for (const texto of ['M, m', '40, 40', 'x'.repeat(21), Array.from({ length: 51 }, (_, i) => `T${i}`).join(',')]) {
+      const r = formulario.lerGrade(texto);
+      assert.deepEqual(r.tamanhos, [], texto);
+      assert.equal(typeof r.erro, 'string', texto);
+    }
+  });
+
+  test('cadastro com "Possui tamanhos": a grade vai no corpo; em branco, nada vai (legado); em "Tamanho único", a grade nunca vai', () => {
+    const { formulario } = carregarMateriais();
+    const base = { nome: 'Botina', categoria: 'EPI', tipo: 'Botina de Segurança', unidade: 'Par', prazo: '6', prazoUnidade: 'meses', registrarEntrada: 'nao' };
+    assert.deepEqual(formulario.montarCorpo({ ...base, controleTamanho: 'grade', grade: '38, 39' }).corpo.tamanhos, ['38', '39']);
+    assert.equal(Object.hasOwn(formulario.montarCorpo({ ...base, controleTamanho: 'grade', grade: '' }).corpo, 'tamanhos'), false);
+    assert.equal(Object.hasOwn(formulario.montarCorpo({ ...base, controleTamanho: 'unico', grade: '38' }).corpo, 'tamanhos'), false);
+    const repetida = formulario.montarCorpo({ ...base, controleTamanho: 'grade', grade: 'M, m' });
+    assert.equal(repetida.ok, false);
+    assert.deepEqual(repetida.erros.map((e) => e.campo), ['grade']);
+  });
+
+  test('entrada inicial com grade: o tamanho tem de ser da grade', () => {
+    const { formulario } = carregarMateriais();
+    const base = {
+      nome: 'Botina', categoria: 'EPI', tipo: 'Botina de Segurança', unidade: 'Par', prazo: '6', prazoUnidade: 'meses', controleTamanho: 'grade', grade: '38, 39',
+      registrarEntrada: 'sim', quantidadeComprada: '5', caEntrada: '38271', caValidadeEntrada: '2030-01-31',
+    };
+    assert.equal(formulario.montarCorpo({ ...base, tamanhoEntrada: '39' }).ok, true);
+    const fora = formulario.montarCorpo({ ...base, tamanhoEntrada: '42' });
+    assert.equal(fora.ok, false);
+    assert.deepEqual(fora.erros.map((e) => e.campo), ['tamanhoEntrada']);
+  });
+
+  test('edição: a grade só vai no PATCH quando muda; passar a tamanho único tira a grade junto', () => {
+    const { formulario } = carregarMateriais();
+    const original = { ...MATERIAL, tamanhos: ['P', 'M'] };
+    const campos = formulario.camposDoMaterial(original).campos;
+    assert.equal(campos.grade, 'P, M');
+    assert.equal(Object.hasOwn(formulario.montarEdicao(campos, original).corpo, 'tamanhos'), false);
+    assert.deepEqual(formulario.montarEdicao({ ...campos, grade: 'P, M, G' }, original).corpo, { tamanhos: ['P', 'M', 'G'] });
+    assert.deepEqual(formulario.montarEdicao({ ...campos, grade: '' }, original).corpo, { tamanhos: [] });
+    assert.deepEqual(formulario.montarEdicao({ ...campos, controleTamanho: 'unico' }, original).corpo, { exigeTamanho: false, tamanhos: [] });
+    assert.equal(formulario.camposDoMaterial({ ...MATERIAL, tamanhos: [] }).campos.grade, '');
+  });
+
+  test('tamanhos da entrada: com grade, só a grade e na ordem dela; sem grade, a lista de antes (lotes, sugestões do tipo e padrão)', () => {
+    const { formulario } = carregarMateriais();
+    assert.deepEqual(formulario.tamanhosDaEntrada([{ tamanho: '47' }], 'Sapatão / Botina', ['40', '38']), ['40', '38']);
+    assert.deepEqual(formulario.tamanhosDaEntrada([{ tamanho: '47' }], 'Sapatão / Botina', []), formulario.tamanhosDaEntrada([{ tamanho: '47' }], 'Sapatão / Botina'));
+  });
+
+  test('mensagens próprias da grade, sem repetir o texto do servidor', () => {
+    const { mensagens } = carregarMateriais();
+    const r = (status, corpo) => ({ ok: false, status, ...corpo });
+    assert.match(mensagens.erroEdicao(r(409, { codigo: 'MATERIAL_GRADE_TAMANHO_EM_USO', mensagem: 'SEGREDO' })), /saldo em estoque, mínimo próprio ou solicitação em aberto/);
+    assert.match(mensagens.erroEdicao(r(409, { codigo: 'MATERIAL_TAMANHO_GRADE_INCOMPATIVEL', mensagem: 'SEGREDO' })), /grade/);
+    assert.match(mensagens.erroCadastro(r(400, { codigo: 'VALIDACAO', detalhes: [{ campo: 'body.tamanhos.1', codigo: 'TAMANHO_REPETIDO' }] })), /repetido/);
+    assert.match(mensagens.erroCadastro(r(400, { codigo: 'VALIDACAO', detalhes: [{ campo: 'body.tamanhos', codigo: 'GRADE_NAO_SE_APLICA' }] })), /tamanho único/);
+    assert.match(mensagens.erroEntrada(r(400, { codigo: 'VALIDACAO', detalhes: [{ campo: 'body.tamanho', codigo: 'TAMANHO_FORA_DA_GRADE' }] })), /grade/);
+    for (const texto of [mensagens.erroEdicao(r(409, { codigo: 'MATERIAL_GRADE_TAMANHO_EM_USO', mensagem: 'SEGREDO' }))]) assert.equal(/SEGREDO/.test(texto), false);
+  });
+});
+
+describe('12G-8 — grade de tamanhos: tela de Materiais', () => {
+  const html = ler('pages/materials.html');
+  const marcacao = html.slice(0, html.lastIndexOf('<script>'));
+  const opcoes = (innerHTML) => [...innerHTML.matchAll(/<option value="([^"]*)"/g)].map((m) => m[1]).filter(Boolean);
+
+  test('estrutura: o campo da grade vem logo depois do controle de tamanho, oculto até "Possui tamanhos", com orientação de uso', () => {
+    assert.match(marcacao, /id="materialControleTamanho"[\s\S]*?<\/div>\s*<\/div>\s*<div class="field full" id="campoGradeTamanhos" style="display:none">\s*<label for="materialGrade">Grade de tamanhos<\/label>\s*<input id="materialGrade" class="input" type="text"/);
+    assert.match(marcacao, /separados por vírgula/);
+    assert.match(marcacao, /Em branco: material sem grade definida/);
+  });
+
+  test('o campo aparece só com "Possui tamanhos"; a entrada inicial oferece os tamanhos da grade digitada', async () => {
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL] }));
+    const pg = montarPagina();
+    await pg.esperar();
+    pg.el('materialControleTamanho').value = 'grade';
+    await pg.disparar('materialControleTamanho', 'change');
+    assert.equal(pg.el('campoGradeTamanhos').style.display, '');
+    pg.el('materialGrade').value = '40, 38';
+    await pg.disparar('materialGrade', 'input');
+    assert.deepEqual(opcoes(pg.el('materialTamanhoEntrada').innerHTML), ['40', '38']);
+    pg.el('materialControleTamanho').value = 'unico';
+    await pg.disparar('materialControleTamanho', 'change');
+    assert.equal(pg.el('campoGradeTamanhos').style.display, 'none');
+  });
+
+  test('cadastro com grade: o POST leva a grade na ordem digitada', async () => {
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL] }));
+    const pg = montarPagina();
+    await pg.esperar();
+    pg.preencher({ ...FORMULARIO_DOM, materialRegistrarEntrada: 'nao', materialGrade: '39, 40, 41' });
+    await pg.disparar('botaoSalvar');
+    const post = chamadas.find((c) => c.metodo === 'POST' && c.caminho === '/api/materiais');
+    assert.deepEqual(post.corpo.tamanhos, ['39', '40', '41']);
+  });
+
+  test('edição: o formulário mostra a grade gravada; mudar a grade envia só ela; recusa por tamanho em uso mostra a explicação', async () => {
+    const comGrade = { ...MATERIAL, tamanhos: ['P', 'M'] };
+    servidorRotas(estadoPadrao({
+      materiais: [comGrade], buscar: (id) => resposta(200, { status: 'ok', material: { ...comGrade, id } }),
+      alterar: () => resposta(409, { status: 'erro', codigo: 'MATERIAL_GRADE_TAMANHO_EM_USO', mensagem: 'SEGREDO' }),
+    }));
+    const pg = montarPagina({ permissoes: PERMISSOES_EDITAR });
+    await pg.esperar();
+    await abrirEdicao(pg);
+    assert.equal(pg.el('materialGrade').value, 'P, M');
+    pg.preencher({ materialGrade: 'P' });
+    await pg.disparar('botaoSalvar');
+    assert.deepEqual(chamadas.filter((c) => c.metodo === 'PATCH').map((c) => c.corpo), [{ tamanhos: ['P'] }]);
+    assert.match(pg.el('aviso').innerHTML, /saldo em estoque, mínimo próprio ou solicitação em aberto/);
+    assert.equal(/SEGREDO/.test(pg.el('aviso').innerHTML), false);
+  });
+
+  test('entrada no estoque por lote: material com grade oferece só a grade; tamanho com marcação aparece escapado', async () => {
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL], materialEstoque: { tamanhos: ['40', '<img src=x>'] } }));
+    const pg = montarPagina();
+    await pg.esperar();
+    pg.el('gradeMaterial').value = '77';
+    await pg.disparar('gradeMaterial', 'change');
+    const html = pg.el('entradaTamanho').innerHTML;
+    assert.deepEqual(opcoes(html), ['40', '&lt;img src=x&gt;']);
+    assert.equal(/<img/.test(html), false);
+  });
+
+  test('material antigo sem grade: a entrada continua com a lista de antes', async () => {
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL], materialEstoque: { tamanhos: [] } }));
+    const pg = montarPagina();
+    await pg.esperar();
+    pg.el('gradeMaterial').value = '77';
+    await pg.disparar('gradeMaterial', 'change');
+    assert.ok(opcoes(pg.el('entradaTamanho').innerHTML).length > 10, 'lista padrão de tamanhos');
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// 12G-8 — Categoria → Tipo: listas oficiais por categoria, "Outros" com
+// descrição própria (tipo = "Outros", tipoDescricao = texto), legado fora das
+// listas e os dois tipos de óculos. O backend confere tudo de novo.
+// ───────────────────────────────────────────────────────────────────────────
+
+const LISTA_EPI = [
+  'Botina de Segurança', 'Capacete', 'Creme de Proteção', 'Luva', 'Mangote', 'Óculos de Proteção Ampla Visão',
+  'Óculos de Proteção Incolor', 'Outros', 'Palmilha', 'Proteção Auricular Concha', 'Proteção Auricular Descartável',
+  'Respirador PFF2', 'Sapato de Segurança', 'Viseira Película Ouro',
+];
+const LISTA_UNIFORME = ['Calça', 'Calça de Forneiro', 'Calça Eletricista', 'Camisa', 'Camisa de Forneiro', 'Camisa Eletricista', 'Camiseta', 'Outros'];
+const OPCOES_TIPO = (html) => [...String(html).matchAll(/<option value="([^"]*)">/g)].map((m) => m[1]).slice(1);
+
+describe('12G-8 — Categoria → Tipo: módulo', () => {
+  const F = () => carregarMateriais().formulario;
+  const R = () => carregarMateriais().render;
+  const ordenado = (lista) => [...lista].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const base = (extra = {}) => ({
+    nome: 'Item', categoria: 'EPI', tipo: 'Luva', tipoCustom: '', fabricante: '', codigoInterno: '', unidade: 'Unidade', estoqueMinimo: '0',
+    prazoUnidade: 'meses', prazo: '6', controleTamanho: 'unico', descricao: '', registrarEntrada: 'nao', quantidadeComprada: '', tamanhoEntrada: '',
+    caEntrada: '', caValidadeEntrada: '', ...extra,
+  });
+  const salvo = (extra = {}) => ({
+    id: 7, nome: 'Item', categoria: 'EPI', tipo: 'Luva', tipoDescricao: null, prazoUsoDias: 180, exigeTamanho: false, unidade: 'unidade',
+    estoqueMinimo: 0, oculosComGrau: null, fabricante: null, codigoInterno: null, descricao: null, tamanhos: [], ...extra,
+  });
+  const campos = (m, extra = {}) => ({ ...F().camposDoMaterial(m).campos, ...extra });
+  const erros = (r) => (r.ok ? [] : r.erros.map((e) => e.campo));
+
+  test('listas oficiais por categoria, em ordem alfabética, sem cruzar tipos; as mesmas do backend', () => {
+    assert.equal(F().OUTROS, 'Outros');
+    assert.deepEqual(F().TIPOS_POR_CATEGORIA.EPI, LISTA_EPI);
+    assert.deepEqual(F().TIPOS_POR_CATEGORIA.Uniforme, LISTA_UNIFORME);
+    assert.deepEqual(F().TIPOS_POR_CATEGORIA['Material de consumo'], ['Outros']);
+    assert.deepEqual(F().TIPOS_POR_CATEGORIA.Ferramenta, ['Outros']);
+    assert.deepEqual(ordenado(LISTA_EPI), LISTA_EPI);
+    assert.deepEqual(ordenado(LISTA_UNIFORME), LISTA_UNIFORME);
+    for (const t of LISTA_UNIFORME) if (t !== 'Outros') assert.equal(LISTA_EPI.includes(t), false, t);
+    for (const t of ['Sapatão / Botina', 'Protetor auricular', 'Respirador', 'Óculos de proteção', 'Outro']) assert.equal(LISTA_EPI.includes(t), false, t);
+    assert.deepEqual(F().tiposDe('EPI'), LISTA_EPI);
+    assert.deepEqual(F().tiposDe('Uniforme'), LISTA_UNIFORME);
+    for (const c of ['Material de consumo', 'Ferramenta', '', null, undefined, 'Brinde', '__proto__']) assert.deepEqual(F().tiposDe(c), ['Outros'], String(c));
+    const backend = require('../../backend/src/utils/classificacao-material');
+    assert.deepEqual(F().TIPOS_POR_CATEGORIA, backend.TIPOS_POR_CATEGORIA);
+    assert.deepEqual([F().TIPOS_OCULOS, F().TIPO_OCULOS_LEGADO, F().OUTROS], [backend.TIPOS_OCULOS, backend.TIPO_OCULOS_LEGADO, backend.OUTROS]);
+  });
+
+  test('cadastro: o tipo tem de ser da lista da categoria; vazio é recusado', () => {
+    assert.deepEqual(erros(F().montarCorpo(base({ categoria: 'Uniforme', tipo: 'Luva' }))), ['tipo']);
+    assert.deepEqual(erros(F().montarCorpo(base({ categoria: 'EPI', tipo: 'Sapatão / Botina' }))), ['tipo']);
+    assert.deepEqual(erros(F().montarCorpo(base({ categoria: 'EPI', tipo: 'Óculos de proteção' }))), ['tipo']);
+    assert.deepEqual(erros(F().montarCorpo(base({ categoria: 'Material de consumo', tipo: 'Luva' }))), ['tipo']);
+    assert.deepEqual(erros(F().montarCorpo(base({ tipo: '' }))), ['tipo']);
+    const ok = F().montarCorpo(base({ categoria: 'Uniforme', tipo: 'Camisa de Forneiro' }));
+    assert.deepEqual([ok.ok, ok.corpo.categoria, ok.corpo.tipo, 'tipoDescricao' in ok.corpo], [true, 'Uniforme', 'Camisa de Forneiro', false]);
+  });
+
+  test('"Outros": tipo vai como "Outros" e a descrição à parte, aparada e limitada; sem descrição é erro no campo dela; texto puro', () => {
+    const ok = F().montarCorpo(base({ categoria: 'Material de consumo', tipo: 'Outros', tipoCustom: '  Fita isolante  ' }));
+    assert.deepEqual([ok.corpo.tipo, ok.corpo.tipoDescricao], ['Outros', 'Fita isolante']);
+    assert.deepEqual(erros(F().montarCorpo(base({ categoria: 'EPI', tipo: 'Outros', tipoCustom: '   ' }))), ['tipoDescricao']);
+    assert.deepEqual(erros(F().montarCorpo(base({ categoria: 'Uniforme', tipo: 'Outros', tipoCustom: 'x'.repeat(101) }))), ['tipoDescricao']);
+    assert.equal('tipoDescricao' in F().montarCorpo(base({ categoria: 'EPI', tipo: 'Luva', tipoCustom: 'texto esquecido' })).corpo, false, 'tipo normal nunca leva descrição');
+    const xss = F().montarCorpo(base({ categoria: 'Ferramenta', tipo: 'Outros', tipoCustom: '<img src=x onerror=alert(1)>' }));
+    assert.equal(xss.corpo.tipoDescricao, '<img src=x onerror=alert(1)>', 'texto puro: quem escapa é a renderização');
+  });
+
+  test('edição carrega: tipo da lista; "Outros" com a descrição; legado fora da lista como "Outros" + descrição; óculos legado como opção temporária', () => {
+    const lista = F().camposDoMaterial(salvo({ tipo: 'Capacete' }));
+    assert.deepEqual([lista.campos.tipo, lista.campos.tipoCustom, lista.opcoesExtras.tipo], ['Capacete', '', null]);
+    const outros = F().camposDoMaterial(salvo({ tipo: 'Outros', tipoDescricao: 'Perneira' }));
+    assert.deepEqual([outros.campos.tipo, outros.campos.tipoCustom, outros.opcoesExtras.tipo], ['Outros', 'Perneira', null]);
+    const legado = F().camposDoMaterial(salvo({ tipo: 'Sapatão / Botina' }));
+    assert.deepEqual([legado.campos.tipo, legado.campos.tipoCustom, legado.opcoesExtras.tipo], ['Outros', 'Sapatão / Botina', null]);
+    const oculos = F().camposDoMaterial(salvo({ tipo: 'Óculos de proteção', oculosComGrau: true }));
+    assert.deepEqual([oculos.campos.tipo, oculos.campos.tipoCustom], ['Óculos de proteção', '']);
+    assert.deepEqual(oculos.opcoesExtras.tipo, { valor: 'Óculos de proteção', rotulo: 'Óculos de proteção (legado)' });
+    assert.deepEqual(F().camposDoMaterial(salvo({ tipo: null })).campos.tipo, '');
+  });
+
+  test('edição envia: o legado vira "Outros" + descrição ao salvar; sair de "Outros" limpa a descrição; só a descrição também muda; legado intocado não vai', () => {
+    const legado = salvo({ tipo: 'Sapatão / Botina' });
+    assert.deepEqual(F().montarEdicao(campos(legado, { nome: 'Botina nova' }), legado).corpo, { nome: 'Botina nova', tipo: 'Outros', tipoDescricao: 'Sapatão / Botina' });
+    const outros = salvo({ tipo: 'Outros', tipoDescricao: 'Perneira' });
+    assert.equal(F().montarEdicao(campos(outros), outros).alterado, false);
+    assert.deepEqual(F().montarEdicao(campos(outros, { tipo: 'Luva', tipoCustom: 'Perneira' }), outros).corpo, { tipo: 'Luva', tipoDescricao: null });
+    assert.deepEqual(F().montarEdicao(campos(outros, { tipoCustom: 'Perneira de raspa' }), outros).corpo, { tipoDescricao: 'Perneira de raspa' });
+    assert.deepEqual(erros(F().montarEdicao(campos(outros, { tipoCustom: '' }), outros)), ['tipoDescricao']);
+    const oculos = salvo({ tipo: 'Óculos de proteção', oculosComGrau: true });
+    assert.equal(F().montarEdicao(campos(oculos), oculos).alterado, false);
+    assert.deepEqual(F().montarEdicao(campos(oculos, { nome: 'Óculos novo' }), oculos).corpo, { nome: 'Óculos novo' });
+    assert.deepEqual(F().montarEdicao(campos(oculos, { tipo: 'Óculos de Proteção Incolor' }), oculos).corpo, { tipo: 'Óculos de Proteção Incolor' });
+    const semTipo = salvo({ tipo: null });
+    assert.deepEqual(F().montarEdicao(campos(semTipo, { nome: 'Novo' }), semTipo).corpo, { nome: 'Novo' });
+    assert.deepEqual(erros(F().montarEdicao(campos(semTipo, { tipo: 'Camisa' }), semTipo)), ['tipo'], 'Camisa não é tipo de EPI');
+  });
+
+  test('óculos: os dois tipos novos e o nome histórico são óculos; "Outros" com texto de óculos não é; calçados novos sugerem numeração', () => {
+    assert.deepEqual(F().TIPOS_OCULOS, ['Óculos de Proteção Incolor', 'Óculos de Proteção Ampla Visão']);
+    assert.equal(F().TIPO_OCULOS_LEGADO, 'Óculos de proteção');
+    for (const t of ['Óculos de Proteção Incolor', 'Óculos de Proteção Ampla Visão', 'Óculos de proteção', ' Óculos de Proteção Incolor ']) assert.equal(F().ehOculos(t), true, t);
+    for (const t of ['Outros', 'óculos de proteção incolor', 'Óculos', 'Luva', '', null]) assert.equal(F().ehOculos(t), false, String(t));
+    const corpo = F().montarCorpo(base({ tipo: 'Óculos de Proteção Ampla Visão', oculosComGrau: true })).corpo;
+    assert.deepEqual([corpo.tipo, corpo.oculosComGrau], ['Óculos de Proteção Ampla Visão', true]);
+    assert.equal('oculosComGrau' in F().montarCorpo(base({ categoria: 'Material de consumo', tipo: 'Outros', tipoCustom: 'Óculos de proteção' })).corpo, false);
+    for (const t of ['Botina de Segurança', 'Sapato de Segurança', 'Sapatão / Botina']) assert.deepEqual(F().tamanhosSugeridos(t), F().TAMANHOS_GRADE.slice(0, 11), t);
+  });
+
+  test('render.opcoesTipos: placeholder vazio, só os tipos da categoria, a opção legada quando houver, tudo escapado', () => {
+    const html = R().opcoesTipos('Uniforme');
+    assert.ok(String(html).startsWith('<option value="">Selecione</option>'), html);
+    assert.deepEqual(OPCOES_TIPO(html), LISTA_UNIFORME);
+    assert.equal(/Luva|Capacete/.test(html), false);
+    const comLegado = R().opcoesTipos('EPI', { valor: 'Óculos de proteção', rotulo: 'Óculos de proteção (legado)' });
+    assert.match(comLegado, /<option value="Óculos de proteção">Óculos de proteção \(legado\)<\/option>/);
+    assert.deepEqual(OPCOES_TIPO(comLegado).slice(0, -1), LISTA_EPI);
+    const xss = R().opcoesTipos('EPI', { valor: '"><script>alert(1)</script>', rotulo: '<img src=x onerror=alert(1)>' });
+    assert.equal(/<script>|<img/.test(xss), false);
+    assert.match(xss, /&lt;script&gt;/);
+  });
+});
+
+describe('12G-8 — Categoria → Tipo: tela de Materiais', () => {
+  const html = ler('pages/materials.html');
+  const valores = (pg) => OPCOES_TIPO(pg.el('materialTipo').innerHTML);
+  const DOM_OUTROS = {
+    materialNome: 'Fita isolante', materialCategoria: 'Material de consumo', materialTipo: 'Outros', materialTipoCustom: '  Fita isolante  ', materialUnidade: 'Unidade',
+    materialEstoqueMinimo: '0', materialValidadeTipo: 'meses', materialPrazo: '6', materialControleTamanho: 'unico', materialRegistrarEntrada: 'nao',
+  };
+
+  test('o HTML não traz lista fixa de tipos (só o placeholder); o campo da descrição chama-se "Descrição do tipo"', () => {
+    const inicio = html.indexOf('<select id="materialTipo"');
+    const select = html.slice(inicio, html.indexOf('</select>', inicio));
+    assert.deepEqual([...select.matchAll(/<option[^>]*>([^<]*)<\/option>/g)].map((m) => m[1]), ['Selecione']);
+    assert.match(html, /<label for="materialTipoCustom">Descrição do tipo<\/label>/);
+    assert.equal(/<option>Sapatão \/ Botina<\/option>|<option>Outro<\/option>|Exemplos de tipos/.test(html), false);
+  });
+
+  test('ao trocar a categoria: lista da nova categoria; tipo e descrição SEMPRE limpos, mesmo "Outros" (a pessoa escolhe de novo)', async () => {
+    servidorRotas(estadoPadrao());
+    const pg = montarPagina();
+    await pg.esperar();
+    pg.el('materialCategoria').value = 'EPI';
+    await pg.disparar('materialCategoria', 'change');
+    assert.deepEqual(valores(pg), LISTA_EPI);
+    pg.el('materialTipo').value = 'Botina de Segurança';
+    await pg.disparar('materialTipo', 'change');
+    pg.el('materialCategoria').value = 'Uniforme';
+    await pg.disparar('materialCategoria', 'change');
+    assert.deepEqual([valores(pg), pg.el('materialTipo').value, pg.el('customMaterialTypeField').style.display], [LISTA_UNIFORME, '', 'none']);
+    pg.el('materialTipo').value = 'Outros';
+    await pg.disparar('materialTipo', 'change');
+    pg.el('materialTipoCustom').value = 'Colete refletivo';
+    pg.el('materialCategoria').value = 'Material de consumo';
+    await pg.disparar('materialCategoria', 'change');
+    // Decisão de 04/10/2026: "Outros" e a descrição não sobrevivem à troca, mesmo existindo na nova categoria.
+    assert.deepEqual([valores(pg), pg.el('materialTipo').value, pg.el('materialTipoCustom').value, pg.el('customMaterialTypeField').style.display], [['Outros'], '', '', 'none']);
+    pg.el('materialCategoria').value = 'EPI';
+    await pg.disparar('materialCategoria', 'change');
+    pg.el('materialTipo').value = 'Luva';
+    await pg.disparar('materialTipo', 'change');
+    assert.deepEqual([pg.el('materialTipo').value, pg.el('materialTipoCustom').value, pg.el('customMaterialTypeField').style.display], ['Luva', '', 'none']);
+  });
+
+  test('na edição, trocar a categoria também limpa tipo e descrição, inclusive de um "Outros" gravado', async () => {
+    servidorRotas(estadoPadrao({ materiais: [MATERIAL], buscar: (id) => resposta(200, { status: 'ok', material: { ...MATERIAL, categoria: 'Ferramenta', tipo: 'Outros', tipoDescricao: 'Chave de fenda', id } }) }));
+    const pg = montarPagina({ permissoes: PODE_EDITAR });
+    await pg.esperar();
+    await escolherMaterial(pg);
+    await pg.disparar('botaoEditarMaterial');
+    assert.deepEqual([pg.el('materialTipo').value, pg.el('materialTipoCustom').value], ['Outros', 'Chave de fenda']);
+    pg.el('materialCategoria').value = 'Uniforme';
+    await pg.disparar('materialCategoria', 'change');
+    assert.deepEqual([valores(pg), pg.el('materialTipo').value, pg.el('materialTipoCustom').value, pg.el('customMaterialTypeField').style.display], [LISTA_UNIFORME, '', '', 'none']);
+  });
+
+  test('cadastro envia categoria, tipo "Outros" e a descrição aparada; sem descrição nada é enviado e o campo é marcado', async () => {
+    servidorRotas(estadoPadrao({ proximoId: 93 }));
+    const pg = montarPagina();
+    await pg.esperar();
+    pg.preencher(DOM_OUTROS);
+    await pg.disparar('materialTipo', 'change');
+    await pg.disparar('botaoSalvar');
+    const [material, ...resto] = escritas();
+    assert.deepEqual([material.caminho, resto.length], ['/api/materiais', 0]);
+    assert.deepEqual([material.corpo.categoria, material.corpo.tipo, material.corpo.tipoDescricao], ['Material de consumo', 'Outros', 'Fita isolante']);
+
+    servidorRotas(estadoPadrao());
+    const sem = montarPagina();
+    await sem.esperar();
+    sem.preencher({ ...DOM_OUTROS, materialTipoCustom: '' });
+    await sem.disparar('materialTipo', 'change');
+    await sem.disparar('botaoSalvar');
+    assert.equal(escritas().length, 0);
+    assert.equal(sem.el('materialTipoCustom').atributos['aria-invalid'], 'true');
+  });
+
+  test('edição: tipo da lista vem selecionado; legado fora da lista vem como "Outros" + descrição; óculos legado vem como opção legada e mantém a caixa do grau', async () => {
+    const editar = async (salvoExtra) => {
+      servidorRotas(estadoPadrao({ materiais: [MATERIAL], buscar: (id) => resposta(200, { status: 'ok', material: { ...MATERIAL, ...salvoExtra, id } }) }));
+      const pg = montarPagina({ permissoes: PODE_EDITAR });
+      await pg.esperar();
+      await escolherMaterial(pg);
+      await pg.disparar('botaoEditarMaterial');
+      return pg;
+    };
+    const lista = await editar({ categoria: 'Uniforme', tipo: 'Camiseta', tipoDescricao: null });
+    assert.deepEqual([valores(lista), lista.el('materialTipo').value, lista.el('customMaterialTypeField').style.display], [LISTA_UNIFORME, 'Camiseta', 'none']);
+    const outros = await editar({ categoria: 'Ferramenta', tipo: 'Outros', tipoDescricao: 'Chave de fenda' });
+    assert.deepEqual([valores(outros), outros.el('materialTipo').value, outros.el('materialTipoCustom').value, outros.el('customMaterialTypeField').style.display], [['Outros'], 'Outros', 'Chave de fenda', '']);
+    const legado = await editar({ categoria: 'EPI', tipo: 'Sapatão / Botina', tipoDescricao: null });
+    assert.deepEqual([legado.el('materialTipo').value, legado.el('materialTipoCustom').value, legado.el('customMaterialTypeField').style.display], ['Outros', 'Sapatão / Botina', '']);
+    const oculos = await editar({ categoria: 'EPI', tipo: 'Óculos de proteção', tipoDescricao: null, oculosComGrau: true, exigeTamanho: false });
+    assert.deepEqual([oculos.el('materialTipo').value, valores(oculos).at(-1), oculos.el('campoOculosComGrau').style.display, oculos.el('materialOculosComGrau').checked], ['Óculos de proteção', 'Óculos de proteção', '', true]);
+    assert.match(oculos.el('materialTipo').innerHTML, /\(legado\)/);
+  });
+
+  test('"Limpar" não escolhe tipo nenhum sozinho', async () => {
+    servidorRotas(estadoPadrao());
+    const pg = montarPagina();
+    await pg.esperar();
+    pg.el('materialCategoria').value = 'EPI';
+    await pg.disparar('materialCategoria', 'change');
+    pg.el('materialTipo').value = 'Luva';
+    await pg.disparar('botaoLimpar');
+    assert.equal(pg.el('materialTipo').value, '');
   });
 });

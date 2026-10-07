@@ -20,6 +20,7 @@
   var CAMINHO = '/administracao/usuarios';
   var CAMINHO_CONVITES = '/administracao/convites-usuario';
   var LIMITE = 20;
+  var LIMITE_MAXIMO = 100;
   var TRACO = '—';
   var ID_CONVITE = /^[1-9][0-9]{0,17}$/;
   var PERFIL_MASTER = 'MASTER';
@@ -75,7 +76,8 @@
       if (perfilPermitido(f.perfil)) q.push('perfil=' + f.perfil);
       if (daLista(ORDENS, f.ordem)) q.push('ordem=' + f.ordem);
       q.push('pagina=' + (inteiroPositivo(f.pagina) ? f.pagina : 1));
-      q.push('limite=' + LIMITE);
+      // Limite do backend (1–100); fora dele, o padrão da tela.
+      q.push('limite=' + (inteiroPositivo(f.limite) && f.limite <= LIMITE_MAXIMO ? f.limite : LIMITE));
       return http().requisitar('GET', CAMINHO + '?' + q.join('&'));
     },
     /**
@@ -88,7 +90,42 @@
       var corpo = {};
       if (typeof d.nome === 'string') corpo.nome = d.nome.trim();
       if (perfilPermitido(d.tipoConta)) corpo.tipoConta = d.tipoConta;
+      // Gestão de Usuários → Alterar usuário (CPF e senha nunca vão por aqui).
+      if (typeof d.email === 'string') corpo.email = d.email.trim();
+      if (typeof d.matricula === 'string') corpo.matricula = d.matricula.trim();
+      if (typeof d.setor === 'string') corpo.setor = d.setor.trim();
+      if (d.horarioTrabalho === null) corpo.horarioTrabalho = null;
+      else if (d.horarioTrabalho && typeof d.horarioTrabalho === 'object') corpo.horarioTrabalho = { inicio: texto(d.horarioTrabalho.inicio), fim: texto(d.horarioTrabalho.fim) };
+      if (Array.isArray(d.ipsPermitidos)) corpo.ipsPermitidos = d.ipsPermitidos.map(texto);
+      if (d.grupoAcessoId === null) corpo.grupoAcessoId = null;
+      else if (inteiroPositivo(d.grupoAcessoId)) corpo.grupoAcessoId = d.grupoAcessoId;
       return http().requisitar('PATCH', CAMINHO + '/' + exigirId(id), { corpo: corpo });
+    },
+    /** Contingência administrativa: NOVA SENHA PROVISÓRIA (a confirmação fica na tela; a senha viaja uma vez, no corpo). */
+    redefinirSenha: function (id, senhaProvisoria) {
+      return http().requisitar('POST', CAMINHO + '/' + exigirId(id) + '/senha-provisoria', { corpo: { senhaProvisoria: typeof senhaProvisoria === 'string' ? senhaProvisoria : '' } });
+    },
+    /** Dados do modal de edição (CPF completo): só para quem administra usuários. */
+    edicao: function (id) {
+      return http().requisitar('GET', CAMINHO + '/' + exigirId(id) + '/edicao');
+    },
+    /**
+     * Criação direta do usuário ADMINISTRATIVO (Gestão de Usuários → Novo →
+     * Usuário). Só os campos do contrato, pelos nomes do backend: a
+     * confirmação da senha fica na tela; empresa e ator vêm da sessão. A
+     * senha provisória viaja uma vez, no corpo, e não é guardada.
+     */
+    criar: function (dados) {
+      var d = dados || {};
+      var corpo = {
+        nome: texto(d.nome), email: texto(d.email), tipoConta: d.tipoConta, senhaProvisoria: typeof d.senhaProvisoria === 'string' ? d.senhaProvisoria : '',
+        cpf: texto(d.cpf), matricula: texto(d.matricula), setor: texto(d.setor),
+      };
+      if (d.horarioTrabalho && typeof d.horarioTrabalho === 'object') corpo.horarioTrabalho = { inicio: texto(d.horarioTrabalho.inicio), fim: texto(d.horarioTrabalho.fim) };
+      if (Array.isArray(d.ipsPermitidos) && d.ipsPermitidos.length) corpo.ipsPermitidos = d.ipsPermitidos.map(texto);
+      if (inteiroPositivo(d.grupoAcessoId)) corpo.grupoAcessoId = d.grupoAcessoId;
+      if (inteiroPositivo(d.usuarioModeloId)) corpo.usuarioModeloId = d.usuarioModeloId;
+      return http().requisitar('POST', CAMINHO, { corpo: corpo });
     },
     inativar: function (id) {
       return http().requisitar('POST', CAMINHO + '/' + exigirId(id) + '/inativar', { corpo: {} });

@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const {
   buscarPorEmail,
   buscarPorId,
+  buscarContaOperacional,
   buscarPorIdParaAtualizacao,
   buscarVinculoGrupoParaAtualizacao,
   atualizarGrupoAcesso,
@@ -59,6 +60,35 @@ const linhaUsuario = (extra = {}) => ({
   ativo: true,
   biometria_cadastrada: false,
   ...extra,
+});
+
+describe('buscarContaOperacional (Configurações: situação e funcionário explicitamente vinculado, 073)', () => {
+  test('filtra só por empresa e id do usuário e liga o funcionário SÓ por usuarios.funcionario_id, na mesma empresa; nenhuma inferência por nome, e-mail, CPF ou matrícula', async () => {
+    const executor = executorFalso([{ ativo: true, funcionario_id: 5, matricula: 'MAT-0077', cpf: '52998224725', funcionario_ativo: true }]);
+    const conta = await buscarContaOperacional(executor, EMPRESA_A, 10);
+    assert.deepEqual(conta, { ativo: true, funcionario: { id: 5, matricula: 'MAT-0077', cpf: '52998224725', ativo: true } });
+    const { texto, valores } = executor.chamadas[0];
+    assert.deepEqual(valores, [EMPRESA_A, 10]);
+    assert.match(texto, /LEFT JOIN funcionarios f ON f\.empresa_id = u\.empresa_id AND f\.id = u\.funcionario_id/);
+    assert.match(texto, /WHERE u\.empresa_id = \$1 AND u\.id = \$2\s*$/);
+    const where = texto.slice(texto.indexOf('WHERE'));
+    assert.doesNotMatch(where, /nome|email|cpf|matricula/i, 'o vínculo nunca é deduzido por outro campo');
+    assert.doesNotMatch(texto, /senha_hash/);
+  });
+
+  test('sem vínculo, funcionario é null e a situação continua real; usuário inexistente devolve null', async () => {
+    const semVinculo = await buscarContaOperacional(executorFalso([{ ativo: false, funcionario_id: null, matricula: null, cpf: null, funcionario_ativo: null }]), EMPRESA_A, 10);
+    assert.deepEqual(semVinculo, { ativo: false, funcionario: null });
+    assert.equal(await buscarContaOperacional(executorFalso([]), EMPRESA_A, 10), null);
+  });
+
+  test('empresa e identificador inválidos são recusados antes de qualquer consulta', async () => {
+    for (const [empresa, id] of [[undefined, 10], [0, 10], [EMPRESA_A, 'x'], [EMPRESA_A, -1]]) {
+      const executor = executorFalso([]);
+      await assert.rejects(() => buscarContaOperacional(executor, empresa, id));
+      assert.equal(executor.chamadas.length, 0);
+    }
+  });
 });
 
 describe('buscarPorEmail', () => {

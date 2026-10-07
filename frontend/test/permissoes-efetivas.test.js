@@ -27,7 +27,8 @@ function corpo(extra = {}) {
     usuarioId: 7,
     perfil: 'ADMINISTRADOR',
     recursos: { materials: { visualizar: true, criar: false, editar: false, excluir: false } },
-    acoes: { MOVIMENTAR_ESTOQUE: false },
+    // Cadastrar Produto está OFF, mas Entrada por Lote está ON: a Gestão de Estoque abre (qualquer um dos três).
+    acoes: { ENTRADA_ESTOQUE: true, BAIXA_ESTOQUE: false },
     administracao: {
       gruposAcesso: area(true),
       permissoesGrupo: area(false),
@@ -227,26 +228,28 @@ describe('decisões: só `true` explícito libera', () => {
     assert.deepEqual(links.map((l) => l.style.display), ['none', 'none']);
     // A regra "qualquer uma" só onde foi decidida: a Ficha (10I) e, na 12G-1, o Pedido
     // de EPI (ver OU criar) e as Entregas por solicitação (entregar OU encerrar).
-    const comQualquer = ['epiFicha', 'request', 'stockRequests'];
+    // E a Gestão de Estoque (`materials`): abre com qualquer um dos três acessos independentes.
+    const comQualquer = ['epiFicha', 'request', 'stockRequests', 'materials'];
     for (const pagina of Object.keys(P.PAGINAS)) assert.equal(P.PAGINAS[pagina].abrirComQualquer, comQualquer.includes(pagina) ? true : undefined, pagina);
   });
 });
 
 describe('menu, página e somente leitura', () => {
-  test('aplicarMenu mostra só o que abre; com null esconde tudo', () => {
-    const links = PAGINAS.map(linkFalso);
+  test('aplicarMenu mostra só o que abre; com null esconde tudo; as páginas de acessos estão fora da navegação (05/10/2026) e nunca aparecem, mesmo permitidas', () => {
+    const links = [...PAGINAS, 'materials'].map(linkFalso);
     P.aplicarMenu(corpo(), links);
-    assert.deepEqual(links.map((l) => l.style.display), ['', 'none', '', '']);
+    assert.deepEqual(links.map((l) => l.style.display), ['none', 'none', 'none', 'none', ''], 'grupos-acesso e grupo-usuarios abririam pela permissão, mas estão ocultas da navegação; materials abre por materials.visualizar');
+    assert.deepEqual([P.podeAbrir(corpo(), 'grupos-acesso'), P.navegacaoOculta('grupos-acesso'), P.navegacaoOculta('materials')], [true, true, false], 'a permissão continua: só a navegação esconde');
     P.aplicarMenu(null, links);
-    assert.deepEqual(links.map((l) => l.style.display), ['none', 'none', 'none', 'none']);
+    assert.deepEqual(links.map((l) => l.style.display), ['none', 'none', 'none', 'none', 'none']);
   });
 
   test('prepararPagina: sucesso devolve podeAlterar e aplica o menu', async () => {
-    const links = PAGINAS.map(linkFalso);
+    const links = [...PAGINAS, 'materials'].map(linkFalso);
     const avisos = [];
     const r = await P.prepararPagina({ pagina: 'grupos-acesso', contexto: CONTEXTO, links, aviso: (m) => avisos.push(m) });
-    assert.deepEqual(r.podeAlterar, true);
-    assert.deepEqual([avisos, links[0].style.display], [[], '']);
+    assert.deepEqual(r.podeAlterar, true, 'a página legada continua abrindo por acesso direto');
+    assert.deepEqual([avisos, links[0].style.display, links[4].style.display], [[], 'none', ''], 'o menu esconde a página de acessos e mostra materials');
   });
 
   test('prepararPagina: falha na consulta -> nada abre, menu todo oculto, aviso de falha', async () => {
@@ -300,29 +303,153 @@ describe('menu, página e somente leitura', () => {
   });
 });
 
+describe('liberação visual controlada (temporária, 05/10/2026): o MASTER abre os protótipos "Em integração" só para inspeção', () => {
+  // 05/10/2026: Compras / Entradas (purchases.html) e Regras Função / Setor (eligibility-rules.html)
+  // são MÓDULOS TEMPORARIAMENTE DESATIVADOS / ADIADOS: fora da inspeção, sem link mesmo para o MASTER.
+  const LEGADAS = {
+    'Relatórios': 'reports.html', 'EPIs Entregues': 'delivered-items.html',
+    'Autoatendimento (Totem)': 'self-service.html', 'Suporte': 'support.html', 'Gestão de E-mails': 'emails-gestao.html', 'Privacidade / LGPD': 'lgpd.html',
+  };
+  const DESATIVADAS = { 'Compras / Entradas': 'purchases.html', 'Regras Função / Setor': 'eligibility-rules.html' };
+  // <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon">ícone</div>Rótulo<span class="nav-etiqueta">Em integração</span></a>
+  function pendente(rotulo) {
+    const atributos = { class: 'nav-pendente', 'aria-disabled': 'true', title: 'Em integração' };
+    return {
+      atributos,
+      style: {},
+      childNodes: [{ nodeType: 1, textContent: 'analytics' }, { nodeType: 3, textContent: rotulo }, { nodeType: 1, textContent: 'Em integração' }],
+      getAttribute: (n) => (Object.hasOwn(atributos, n) ? atributos[n] : null),
+      setAttribute: (n, v) => { atributos[n] = String(v); },
+      removeAttribute: (n) => { delete atributos[n]; },
+    };
+  }
+  const raizCom = (itens) => ({ querySelectorAll: (sel) => (sel === 'a.nav-pendente' ? itens : []) });
+
+  test('mapa: os seis itens apontam para páginas legadas existentes, com script externo (protótipos) e fora da allowlist de publicação; Configurações saiu (página integrada); os dois módulos adiados ficam fora, com os arquivos preservados', () => {
+    assert.deepEqual(P.INSPECAO_PROTOTIPOS, LEGADAS);
+    assert.equal('Configurações' in P.INSPECAO_PROTOTIPOS, false);
+    for (const [rotulo, arquivo] of Object.entries(DESATIVADAS)) {
+      assert.equal(rotulo in P.INSPECAO_PROTOTIPOS, false, rotulo);
+      assert.equal(Object.values(P.INSPECAO_PROTOTIPOS).includes(arquivo), false, arquivo);
+      assert.ok(fs.existsSync(path.join(RAIZ, 'pages', arquivo)), `${arquivo} preservado`);
+    }
+    const allowlist = JSON.parse(fs.readFileSync(path.join(RAIZ, 'publicacao', 'allowlist.json'), 'utf8')).arquivos;
+    for (const arquivo of Object.values(LEGADAS)) {
+      const html = fs.readFileSync(path.join(RAIZ, 'pages', arquivo), 'utf8');
+      assert.ok(/<script[^>]+src=["']https?:/i.test(html), `${arquivo} é protótipo`);
+      assert.ok(!allowlist.includes(`pages/${arquivo}`), `${arquivo} não é publicada`);
+    }
+  });
+
+  test('MASTER: os seis itens pendentes (6/6) ganham href com o marcador de inspeção, perdem aria-disabled e mantêm classe e etiqueta; rótulo desconhecido, "Configurações" e os dois módulos adiados não mudam', () => {
+    const rotulos = Object.keys(LEGADAS);
+    const adiados = Object.keys(DESATIVADAS).map(pendente);
+    const itens = rotulos.map(pendente).concat([pendente('Módulo Inexistente'), pendente('Configurações')], adiados);
+    P.liberarInspecao({ perfil: 'MASTER' }, raizCom(itens));
+    for (const a of adiados) {
+      assert.equal(a.atributos.href, undefined, 'módulo adiado: sem link mesmo para o MASTER');
+      assert.equal(a.atributos['aria-disabled'], 'true');
+      assert.equal(a.atributos.title, 'Em integração');
+    }
+    rotulos.forEach((rotulo, n) => {
+      const i = itens[n];
+      assert.equal(i.atributos.href, `${LEGADAS[rotulo]}?inspecao=1`, rotulo);
+      assert.equal(i.atributos['aria-disabled'], undefined, rotulo);
+      assert.match(i.atributos.title, /Em integração/);
+      assert.match(i.atributos.title, /inspeção/i);
+      assert.equal(i.atributos.class, 'nav-pendente');
+      assert.equal(i.childNodes[2].textContent, 'Em integração', 'etiqueta preservada');
+      assert.equal(i.style.cursor, 'pointer');
+    });
+    for (const i of itens.slice(rotulos.length)) {
+      assert.equal(i.atributos.href, undefined);
+      assert.equal(i.atributos['aria-disabled'], 'true');
+    }
+  });
+
+  test('hrefDeInspecao: acrescenta o marcador uma vez só e preserva parâmetros e fragmento já presentes', () => {
+    assert.equal(P.hrefDeInspecao('reports.html'), 'reports.html?inspecao=1');
+    assert.equal(P.hrefDeInspecao('reports.html?_s=abc'), 'reports.html?_s=abc&inspecao=1');
+    assert.equal(P.hrefDeInspecao('reports.html?inspecao=1'), 'reports.html?inspecao=1');
+    assert.equal(P.hrefDeInspecao('reports.html?_s=abc&inspecao=1'), 'reports.html?_s=abc&inspecao=1');
+    assert.equal(P.hrefDeInspecao('reports.html?inspecao=0'), 'reports.html?inspecao=1');
+    assert.equal(P.hrefDeInspecao('reports.html#topo'), 'reports.html?inspecao=1#topo');
+    for (const arquivo of Object.values(LEGADAS)) {
+      assert.equal((P.hrefDeInspecao(P.hrefDeInspecao(arquivo)).match(/inspecao=1/g) || []).length, 1, arquivo);
+    }
+  });
+
+  test('não MASTER, perfil em outra caixa ou sem permissões: nada ganha link; o que tinha sido liberado volta a ficar sem link (revalidação com outro perfil)', () => {
+    const itens = [pendente('Relatórios')];
+    P.liberarInspecao({ perfil: 'ADMINISTRADOR' }, raizCom(itens));
+    assert.equal(itens[0].atributos.href, undefined);
+    P.liberarInspecao({ perfil: 'master' }, raizCom(itens));
+    assert.equal(itens[0].atributos.href, undefined, 'comparação exata do perfil');
+    P.liberarInspecao({ perfil: 'MASTER' }, raizCom(itens));
+    assert.equal(itens[0].atributos.href, 'reports.html?inspecao=1');
+    P.liberarInspecao({ perfil: 'SUPERVISOR' }, raizCom(itens));
+    assert.deepEqual([itens[0].atributos.href, itens[0].atributos['aria-disabled'], itens[0].atributos.title, itens[0].style.cursor], [undefined, 'true', 'Em integração', '']);
+    P.liberarInspecao({ perfil: 'MASTER' }, raizCom(itens));
+    P.liberarInspecao(null, raizCom(itens));
+    assert.equal(itens[0].atributos.href, undefined);
+    assert.doesNotThrow(() => P.liberarInspecao({ perfil: 'MASTER' }, null), 'sem documento (testes de módulo), não falha');
+  });
+
+  test('prepararPagina: só o perfil MASTER confirmado pelo servidor libera os pendentes do documento; falha na consulta recolhe; podeAbrir dos protótipos continua falso', async () => {
+    const itens = [pendente('Suporte')];
+    servidor(resposta(200, corpo({ perfil: 'MASTER' })));
+    const contextoMaster = { ...CONTEXTO, usuario: { ...CONTEXTO.usuario, perfil: 'MASTER' } };
+    const r = await P.prepararPagina({ pagina: 'grupos-acesso', contexto: contextoMaster, links: [], aviso: () => {}, documento: raizCom(itens) });
+    assert.equal(itens[0].atributos.href, 'support.html?inspecao=1');
+    assert.equal(r.podeAlterar, true);
+
+    const outros = [pendente('Suporte')];
+    servidor(resposta(200, corpo()));
+    await P.prepararPagina({ pagina: 'grupos-acesso', contexto: CONTEXTO, links: [], aviso: () => {}, documento: raizCom(outros) });
+    assert.equal(outros[0].atributos.href, undefined);
+
+    servidor(resposta(500, {}));
+    assert.equal(await P.prepararPagina({ pagina: 'grupos-acesso', contexto: contextoMaster, links: [], aviso: () => {}, documento: raizCom(itens) }), null);
+    assert.equal(itens[0].atributos.href, undefined, 'sem permissões confirmadas, o link some');
+
+    for (const arquivo of Object.values(P.INSPECAO_PROTOTIPOS)) assert.equal(P.podeAbrir(corpo({ perfil: 'MASTER' }), arquivo.replace('.html', '')), false, arquivo);
+  });
+});
+
+describe('Configurações: página pessoal, aberta a qualquer sessão autenticada', () => {
+  test('config abre com qualquer conjunto válido de permissões (a conta é da própria pessoa) e nunca tem "alterar" geral; null continua fechado', () => {
+    assert.deepEqual(P.PAGINAS.config, { abrir: [], alterar: [] });
+    assert.equal(P.podeAbrir(corpo(), 'config'), true);
+    assert.equal(P.podeAbrir(corpo({ perfil: 'USUARIO', recursos: {}, acoes: {}, administracao: corpo().administracao }), 'config'), true);
+    assert.equal(P.podeAlterar(corpo(), 'config'), false);
+    assert.equal(P.podeAbrir(null, 'config'), false);
+    // materials como par de comparação: grupos-acesso saiu da navegação em 05/10/2026 (fica 'none' mesmo permitido).
+    const links = [linkFalso('config'), linkFalso('materials')];
+    P.aplicarMenu(corpo(), links);
+    assert.deepEqual(links.map((l) => l.style.display), ['', '']);
+    P.aplicarMenu(null, links);
+    assert.deepEqual(links.map((l) => l.style.display), ['none', 'none']);
+  });
+});
+
 describe('páginas (inspeção estática)', () => {
   const ler = (f) => fs.readFileSync(path.join(RAIZ, f), 'utf8');
   const semComentarios = (s) => s.replace(/<!--[\s\S]*?-->/g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
 
+  // As quatro telas legadas de grupos e autorizações foram APOSENTADAS: só redirecionam para a Gestão de Usuários.
   for (const pagina of PAGINAS) {
-    test(`${pagina}: carrega o módulo após a sessão, prepara a página com o próprio nome, e os seis links nascem ocultos`, () => {
+    test(`${pagina}: aposentada — sem módulo, sem API, sem armazenamento, e redireciona para a Gestão de Usuários`, () => {
       const html = ler(`pages/${pagina}.html`);
       const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
-      assert.ok(scripts.indexOf('../js/sessao-empresarial.js') < scripts.indexOf('../js/permissoes-efetivas.js'));
-      assert.match(semComentarios(html), new RegExp(`EpiPermissoes\\.prepararPagina\\(\\{\\s*pagina: '${pagina}'`));
-      const links = [...html.matchAll(/<a [^>]*data-pagina="([^"]+)"[^>]*>/g)];
-      // Parte F: as páginas de usuários entraram no menu administrativo.
-      assert.deepEqual(links.map((m) => m[1]).sort(), [...PAGINAS, 'newUser', 'userAdmin'].sort());
-      for (const m of links) assert.match(m[0], /style="display:none"/, `${m[1]} deve nascer oculto`);
-      assert.equal(/localStorage|sessionStorage/.test(semComentarios(html)), false);
+      assert.deepEqual(scripts, ['../js/tema.js'], 'só o tema; nenhum módulo administrativo');
+      const codigo = semComentarios(html);
+      assert.equal(/EpiHttp|EpiPermissoes|requisitar|fetch\(|XMLHttpRequest|localStorage|sessionStorage|innerHTML/.test(codigo), false);
+      assert.match(html, /http-equiv="refresh" content="0; url=gestao-usuarios\.html"/);
+      assert.match(codigo, /window\.location\.replace\(/);
+      assert.match(html, /<a href="gestao-usuarios\.html" id="destino">Gestão de Usuários<\/a>/);
+      assert.equal(/<form|<input|<button|<table|<select/.test(codigo), false, 'nenhum controle administrativo');
     });
   }
-
-  test('grupos-acesso: "Novo grupo" nasce oculto e só aparece com alterar', () => {
-    const html = ler('pages/grupos-acesso.html');
-    assert.match(html, /<button id="botaoNovo" class="filled-btn" style="display:none">/);
-    assert.match(semComentarios(html), /\$\('botaoNovo'\)\.style\.display = acesso\.podeAlterar \? '' : 'none';/);
-  });
 
   test('portal/inicio: os quatro módulos administrativos (e, desde a C2, Materiais) nascem ocultos e dependem das permissões', () => {
     const html = ler('portal/inicio.html');
@@ -330,7 +457,7 @@ describe('páginas (inspeção estática)', () => {
     // E10: na ordem do menu (fechamento-e10.test.js confere a ordem); 12G-1: as três páginas da solicitação.
     assert.deepEqual(links.map((m) => m[1]), ['dashboard', 'materials', 'stockValidity', 'availableItems', 'operations', 'employeeGroups', 'epiFicha', 'employeeHistory',
       'request', 'supervisorApproval', 'stockRequests',
-      'grupos-acesso', 'grupo-permissoes', 'grupo-usuarios', 'autorizacoes-individuais', 'importEmployees', 'newUser', 'userAdmin']);
+      'grupos-acesso', 'grupo-permissoes', 'grupo-usuarios', 'autorizacoes-individuais', 'importEmployees', 'newUser', 'userAdmin', 'config']);
     for (const m of links) assert.match(m[0], /style="display:none"/);
     assert.match(html, /<script src="\.\.\/js\/permissoes-efetivas\.js"><\/script>/);
     assert.match(ler('portal/inicio.js'), /EpiPermissoes\.carregar\(window\.EpiPermissoes\.esperadoDoContexto\(ctx\)\)/, 'o Portal confere empresa, usuário e perfil');

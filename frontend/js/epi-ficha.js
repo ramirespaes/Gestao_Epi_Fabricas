@@ -43,7 +43,8 @@
     versao: 'NR6-ENTREGA-V1',
     texto: 'Declaro ter recebido os EPIs listados, em perfeito estado, comprometendo-me a utilizá-los conforme instruções e a comunicar qualquer necessidade de substituição.',
   };
-  var TIPO_OCULOS = 'Óculos de proteção';
+  // Óculos de proteção: os dois tipos oficiais (12G-8) e o nome histórico do legado.
+  var TIPOS_OCULOS = ['Óculos de proteção', 'Óculos de Proteção Incolor', 'Óculos de Proteção Ampla Visão'];
   var CONTROLE = /[\u0000-\u001f\u007f]/;
 
   function http() {
@@ -195,7 +196,7 @@
     if (!m) return false;
     if (!inteiroPositivo(m.prazoUsoDias)) return false;
     if (typeof m.exigeTamanho !== 'boolean') return false;
-    if (m.tipo === TIPO_OCULOS && typeof m.oculosComGrau !== 'boolean') return false;
+    if (TIPOS_OCULOS.indexOf(m.tipo) !== -1 && typeof m.oculosComGrau !== 'boolean') return false;
     return true;
   }
 

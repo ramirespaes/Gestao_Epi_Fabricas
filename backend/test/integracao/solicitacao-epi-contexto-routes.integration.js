@@ -84,11 +84,12 @@ describe('contexto da nova solicitação de EPI — HTTP (PostgreSQL real)', () 
   after(async () => { if (env) await env.encerrar(); });
 
   describe('GET /solicitacoes-epi/contexto/funcionarios', () => {
-    test('exige request.criar: só visualizar, só editar, a SST, quem entrega, sem nada e o MASTER provisionado recebem o mesmo 403; sem sessão, 401', async () => {
+    test('exige request.criar: só visualizar, só editar, a SST, quem entrega e sem nada recebem o mesmo 403; o MASTER provisionado passa (request no escopo desde 05/10/2026); sem sessão, 401', async () => {
       const respostas = [];
-      for (const usuario of [u.soVe, u.soEdita, u.sst, u.entregador, u.semNada, d.master]) respostas.push(resposta(await como(usuario).get(`${URL_FUNCIONARIOS}?busca=Zelia`)));
+      for (const usuario of [u.soVe, u.soEdita, u.sst, u.entregador, u.semNada]) respostas.push(resposta(await como(usuario).get(`${URL_FUNCIONARIOS}?busca=Zelia`)));
       assert.deepEqual([respostas[0].status, respostas[0].corpo.codigo], [403, 'PERMISSAO_NEGADA']);
       for (const r of respostas) assert.deepEqual(r, respostas[0]);
+      assert.equal((await como(d.master).get(`${URL_FUNCIONARIOS}?busca=Zelia`)).status, 200, 'MASTER provisionado: request.criar vem do provisionamento, não do nome do perfil');
       assert.equal((await env.anonimo.get(URL_FUNCIONARIOS)).status, 401);
     });
 
@@ -144,11 +145,12 @@ describe('contexto da nova solicitação de EPI — HTTP (PostgreSQL real)', () 
   describe('GET /solicitacoes-epi/contexto/:funcionarioId/materiais', () => {
     const doContexto = async (funcionarioId, consulta = 'busca=Ytrium&limite=100') => como(u.criador).get(`${materiaisDe(funcionarioId)}?${consulta}`);
 
-    test('exige request.criar: os mesmos 403 de quem não cria; sem sessão, 401', async () => {
+    test('exige request.criar: os mesmos 403 de quem não cria; o MASTER provisionado passa (05/10/2026); sem sessão, 401', async () => {
       const respostas = [];
-      for (const usuario of [u.soVe, u.soEdita, u.sst, u.entregador, u.semNada, d.master]) respostas.push(resposta(await como(usuario).get(materiaisDe(t.ana))));
+      for (const usuario of [u.soVe, u.soEdita, u.sst, u.entregador, u.semNada]) respostas.push(resposta(await como(usuario).get(materiaisDe(t.ana))));
       assert.deepEqual([respostas[0].status, respostas[0].corpo.codigo], [403, 'PERMISSAO_NEGADA']);
       for (const r of respostas) assert.deepEqual(r, respostas[0]);
+      assert.equal((await como(d.master).get(materiaisDe(t.ana))).status, 200, 'MASTER provisionado: request.criar vem do provisionamento');
       assert.equal((await env.anonimo.get(materiaisDe(t.ana))).status, 401);
     });
 

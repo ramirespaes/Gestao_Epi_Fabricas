@@ -98,7 +98,7 @@ describe('repositório de sessões em PostgreSQL real', () => {
   let usuarioDaEmpresaInativa;
 
   before(async () => {
-    contexto = await abrirSchemaTemporario(['000', '001', '002', '005', '025', '013', '016']);
+    contexto = await abrirSchemaTemporario(['000', '001', '002', '005', '025', '013', '016', '074', '075', '076', '077']);
     const { cliente } = contexto;
 
     assert.equal(await inserirEmpresa(cliente, CNPJ_A, 'Empresa A'), 'ok');
@@ -361,7 +361,9 @@ describe('repositório de sessões em PostgreSQL real', () => {
     assert.equal(serializado.includes(tokenHash), false, 'nem o digest precisa voltar ao chamador');
     assert.equal(serializado.includes('argon2'), false);
     assert.equal(serializado.includes(HASH_SENHA), false);
-    assert.deepEqual(Object.keys(resultado).sort(), ['empresa', 'sessao', 'usuario']);
+    assert.deepEqual(Object.keys(resultado).sort(), ['empresa', 'restricaoIp', 'senhaProvisoria', 'sessao', 'usuario']);
+    assert.equal(resultado.senhaProvisoria, false, 'sem identidade (074): estado falso, fora de usuario');
+    assert.equal(resultado.restricaoIp, false, 'sem IPs cadastrados (077): sem restrição, fora de usuario');
     // identidadeId (Pacote 4): de qual identidade global é este vínculo —
     // null no modelo anterior. Uso interno (o /auth/me público não o expõe).
     assert.deepEqual(Object.keys(resultado.usuario).sort(), ['email', 'id', 'identidadeId', 'nome', 'perfil']);

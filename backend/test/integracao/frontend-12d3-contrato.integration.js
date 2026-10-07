@@ -29,7 +29,9 @@ const EpiMinimos = require('../../../frontend/js/estoque-minimos');
 
 const CHAVES_DO_ITEM = ['abaixoDoMinimo', 'bloqueado', 'caValidade', 'categoria', 'codigoInterno', 'comprometido', 'deficit', 'disponivel', 'estoqueMinimo', 'fisicoUtilizavel',
   'material', 'materialId', 'minimoOrigem', 'necessidade', 'saldo', 'saldoLivre', 'semCobertura', 'tamanho', 'tipo', 'unidade', 'validade'];
-const CHAVES_DO_DASHBOARD = ['caVencido', 'comprometido', 'estoqueAbaixoMinimo', 'funcionariosAtivos', 'itensDisponiveis', 'necessidadeReposicao', 'saldoLivre', 'semCobertura'];
+// As oito fontes de recurso da 12D; a 12G-6 acrescentou três contagens de solicitações, liberadas por ação.
+const CHAVES_DAS_FONTES = ['caVencido', 'comprometido', 'estoqueAbaixoMinimo', 'funcionariosAtivos', 'itensDisponiveis', 'necessidadeReposicao', 'saldoLivre', 'semCobertura'];
+const CHAVES_DO_DASHBOARD = [...CHAVES_DAS_FONTES, 'disponiveisParaEntrega', 'solicitacoesAguardandoEstoque', 'solicitacoesAguardandoSst'].sort();
 
 describe('12D-3 — módulos reais do frontend contra servidor e PostgreSQL reais', () => {
   let amb;
@@ -121,11 +123,11 @@ describe('12D-3 — módulos reais do frontend contra servidor e PostgreSQL reai
   });
 
   describe('Dashboard', () => {
-    test('os oito indicadores têm as chaves que a tela lê; os valores do cenário aparecem como o servidor mediu (deltas sobre o estado anterior)', async () => {
+    test('os onze indicadores têm as chaves que a tela lê; os valores do cenário aparecem como o servidor mediu (deltas sobre o estado anterior)', async () => {
       comoUsuario(amb.d.master);
       const antes = await cartoes();
       assert.deepEqual(Object.keys(antes.bruto).sort(), CHAVES_DO_DASHBOARD);
-      for (const k of CHAVES_DO_DASHBOARD) assert.equal(antes.bruto[k].permitido, true, k);
+      for (const k of CHAVES_DAS_FONTES) assert.equal(antes.bruto[k].permitido, true, k);
 
       const id = await amb.f.material();
       await q('UPDATE materiais SET estoque_minimo = 5 WHERE id = $1', [id]);

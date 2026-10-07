@@ -68,9 +68,15 @@ const ESCOPO_PROVISIONAMENTO_MASTER = Object.freeze({
     Object.freeze({ recurso: 'operations', operacoes: Object.freeze(['visualizar']) }),
     // 10I: a ficha e o histórico de entregas são consulta — só visualizar; entregar é a ação abaixo.
     Object.freeze({ recurso: 'epiFicha', operacoes: Object.freeze(['visualizar']) }),
+    // Decisão de 05/10/2026 (supera a do 12E/12F): o MASTER tem autoridade máxima na
+    // empresa e recebe o Pedido de EPI — solicitacao-epi.routes.js: minhas/detalhe
+    // (visualizar), criar (criar) e cancelar (editar). As ações da SST
+    // (APROVAR/REPROVAR/ENCERRAR_SOLICITACAO) continuam fora: exigem vínculo SST,
+    // que não se aplica ao MASTER, e a autodecisão segue proibida.
+    Object.freeze({ recurso: 'request', operacoes: Object.freeze(['visualizar', 'criar', 'editar']) }),
   ]),
   // estoque.routes.js: entradas e baixas por lote; entrega-epi.routes.js: entrega e seu contexto (migrations 003/017)
-  acoes: Object.freeze(['MOVIMENTAR_ESTOQUE', 'REALIZAR_ENTREGA']),
+  acoes: Object.freeze(['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS']),
 });
 
 for (const recurso of RECURSOS_CONHECIDOS) {
@@ -96,7 +102,44 @@ function recursoConhecido(recurso) {
   return typeof recurso === 'string' && RECURSOS_CONHECIDOS.includes(recurso);
 }
 
+// Nome de apresentação dos recursos que as rotas realmente protegem (o escopo acima). Vive aqui, do lado do backend,
+// para a tela de permissões do usuário montar o catálogo a partir da API, sem lista de páginas no navegador.
+const ROTULOS_RECURSOS = Object.freeze({
+  materials: 'Materiais',
+  employeeHistory: 'Funcionários',
+  employeeGroups: 'Gestão de GHE',
+  availableItems: 'Itens disponíveis',
+  dashboard: 'Dashboard',
+  stockValidity: 'Validade do estoque',
+  operations: 'Operações de estoque',
+  epiFicha: 'Ficha de EPI',
+  request: 'Pedido de EPI',
+});
+for (const { recurso } of ESCOPO_PROVISIONAMENTO_MASTER.recursos) {
+  if (typeof ROTULOS_RECURSOS[recurso] !== 'string') {
+    throw new Error(`recurso do escopo sem rótulo de apresentação: ${recurso}`);
+  }
+}
+
+/** Recursos e operações que alguma rota exige de fato (o único conjunto em que uma permissão tem efeito real). */
+const RECURSOS_COM_EFEITO = Object.freeze(ESCOPO_PROVISIONAMENTO_MASTER.recursos.map((r) => Object.freeze({
+  recurso: r.recurso, rotulo: ROTULOS_RECURSOS[r.recurso], operacoes: r.operacoes,
+})));
+
+/**
+ * Ações do catálogo (`acoes`) que o backend de fato aplica (rota, serviço ou autoridade administrativa). Só estas
+ * aparecem na tela de permissões do usuário: uma ação sem uso no código seria um controle sem efeito. Há teste que
+ * confere o uso de cada código e que nenhum outro código do catálogo é usado sem estar aqui.
+ */
+const ACOES_COM_EFEITO = Object.freeze([
+  'ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'IMPORTAR_FUNCIONARIOS', 'REALIZAR_ENTREGA', 'APROVAR_SOLICITACAO', 'REPROVAR_SOLICITACAO', 'ENCERRAR_SOLICITACAO',
+  'GERENCIAR_USUARIOS', 'ADMINISTRAR_GRUPOS_ACESSO', 'ADMINISTRAR_PERMISSOES_GRUPO', 'ADMINISTRAR_VINCULOS_GRUPO',
+]);
+
 module.exports = {
+  ACOES_COM_EFEITO,
+  ROTULOS_RECURSOS,
+  RECURSOS_COM_EFEITO,
   FORMATO_RECURSO,
   OPERACOES,
   RECURSOS_LEGADOS,

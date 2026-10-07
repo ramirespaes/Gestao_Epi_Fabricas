@@ -28,6 +28,7 @@ const CASOS = Object.freeze({
   recuperacaoPainel: ['RECUPERACAO_SENHA', { escopo: 'PLATAFORMA', link: LINK_PAINEL, expiraEm: EXPIRA }, 'Redefinição de senha — Painel Privado'],
   alteradaPortal: ['SENHA_ALTERADA', { escopo: 'PORTAL', origem: 'TROCA' }, 'Sua senha foi alterada — Portal do Cliente'],
   alteradaPainel: ['SENHA_ALTERADA', { escopo: 'PLATAFORMA', origem: 'REDEFINICAO' }, 'Sua senha foi alterada — Painel Privado'],
+  emailAlteradoPortal: ['EMAIL_ALTERADO', { escopo: 'PORTAL' }, 'O e-mail de acesso da sua conta foi alterado — Portal do Cliente'],
   conviteUsuario: ['CONVITE_USUARIO', { link: LINK_CONVITE_USUARIO, expiraEm: EXPIRA, empresa: 'Empresa Convidante Ltda', nome: 'Ana Souza', perfil: 'SUPERVISOR' }, 'Convite para acessar o Portal do Cliente — SafeWork Engenharia'],
   conviteUsuarioReenvio: ['CONVITE_USUARIO', { link: LINK_CONVITE_USUARIO, expiraEm: EXPIRA, empresa: 'Empresa Convidante Ltda', nome: 'Ana Souza', perfil: 'SUPERVISOR', reenvio: true }, 'Novo convite para acessar o Portal do Cliente — SafeWork Engenharia'],
   conviteMaster: ['CONVITE_MASTER', { link: LINK_CONVITE_MASTER, expiraEm: EXPIRA, empresa: 'Empresa Convidante Ltda' }, 'Convite para administrar sua empresa no SafeWork Engenharia'],
@@ -38,8 +39,10 @@ const COM_LINK = ['recuperacaoPortal', 'recuperacaoPainel', 'conviteUsuario', 'c
 const linkDe = (nome) => CASOS[nome][1].link;
 
 describe('tipos e assuntos', () => {
-  test('os quatro tipos existem e cada caso devolve assunto, texto e html', () => {
-    assert.deepEqual(Object.keys(modulo().TIPOS).sort(), ['CONVITE_MASTER', 'CONVITE_USUARIO', 'RECUPERACAO_SENHA', 'SENHA_ALTERADA']);
+  test('os sete tipos existem (os dois alertas de estoque da 12G-6 têm testes próprios) e cada caso devolve assunto, texto e html', () => {
+    assert.deepEqual(Object.keys(modulo().TIPOS).sort(), [
+      'CONVITE_MASTER', 'CONVITE_USUARIO', 'DISPONIBILIDADE_ESTOQUE_ENTREGA', 'EMAIL_ALTERADO', 'FALTA_ESTOQUE_ENTREGA', 'RECUPERACAO_SENHA', 'SENHA_ALTERADA',
+    ]);
     for (const [nome, [tipo, dados]] of Object.entries(CASOS)) {
       const r = render(tipo, dados);
       assert.deepEqual(Object.keys(r).sort(), ['assunto', 'html', 'texto'], nome);
@@ -85,6 +88,16 @@ describe('conteúdo em texto', () => {
     assert.match(render(...CASOS.recuperacaoPortal.slice(0, 2)).texto, /ignore esta mensagem/);
     assert.match(render(...CASOS.conviteUsuario.slice(0, 2)).texto, /não esperava este convite, ignore esta mensagem/);
     assert.match(render(...CASOS.conviteMaster.slice(0, 2)).texto, /não esperava este convite, ignore esta mensagem/);
+  });
+
+  test('e-mail de acesso alterado (Configurações): aviso ao endereço antigo, sem link, sem token, sem o endereço novo, só no Portal', () => {
+    const texto = render(...CASOS.emailAlteradoPortal.slice(0, 2)).texto;
+    assert.match(texto, /O e-mail de acesso da sua conta acabou de ser alterado e os demais acessos foram encerrados\./);
+    assert.match(texto, /Este endereço deixou de valer para entrar\./);
+    assert.ok(texto.includes(`fale com o suporte: ${SUPORTE}`));
+    assert.doesNotMatch(texto, /https?:\/\/|#token=|@example/);
+    assert.throws(() => render('EMAIL_ALTERADO', { escopo: 'PLATAFORMA' }), TypeError, 'o Painel Privado não troca e-mail por aqui');
+    assert.throws(() => render('EMAIL_ALTERADO', { escopo: 'PORTAL', email: 'novo@example.invalid' }), TypeError, 'o template recusa campos fora do contrato');
   });
 
   test('senha alterada: texto próprio da origem, sem link, sem token e com o suporte', () => {

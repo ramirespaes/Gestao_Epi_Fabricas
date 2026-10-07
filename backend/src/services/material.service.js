@@ -4,7 +4,9 @@ const { HttpError } = require('../errors/HttpError');
 const materialRepo = require('../repositories/material.repository');
 const loteRepo = require('../repositories/estoque-lote.repository');
 const minimoRepo = require('../repositories/estoque-minimo.repository');
+const tamanhoRepo = require('../repositories/material-tamanho.repository');
 const auditoriaRepo = require('../repositories/auditoria.repository');
+const classificacao = require('../utils/classificacao-material');
 
 /**
  * Serviço de cadastro de materiais (Bloco 9, Etapa A).
@@ -58,18 +60,51 @@ const MSG_UNIDADE_NAO_EDITAVEL = 'A unidade de controle de um material existente
 const MSG_DADOS_INVALIDOS = 'Dados de material inválidos';
 const MSG_TAMANHO_SALDO_INCOMPATIVEL = 'Há saldo em estoque incompatível com a nova exigência de tamanho';
 const MSG_TAMANHO_MINIMOS_INCOMPATIVEIS = 'Há mínimos por tamanho cadastrados para este material: remova-os antes de mudar a exigência de tamanho';
+// 12G-8 (migration 070): grade de tamanhos do material.
+const MSG_GRADE_NAO_SE_APLICA = 'Material de tamanho único não tem grade de tamanhos';
+const MSG_TAMANHO_GRADE_INCOMPATIVEL = 'Este material tem grade de tamanhos: apague a grade na mesma alteração para deixar de usar tamanho';
+const MSG_GRADE_TAMANHO_EM_USO = 'Um tamanho que sai da grade ainda tem saldo em estoque, mínimo próprio ou solicitação em aberto';
+const CARACTERE_CONTROLE = /\p{Cc}/u;
 // Parte C2 (migration 039): índice único parcial do código interno por empresa.
 const INDICE_CODIGO_INTERNO = 'uq_materiais_empresa_codigo_interno';
 const MSG_CODIGO_INTERNO_DUPLICADO = 'Já existe um material com este código interno nesta empresa';
 
-// Tipo canônico dos óculos de proteção: o texto da lista de tipos da tela e
-// do CHECK da migration 045. Comparo o tipo gravado, nunca o nome do material.
-const TIPO_OCULOS_PROTECAO = 'Óculos de proteção';
+// Óculos de proteção: os dois tipos oficiais e o nome histórico, pelo tipo
+// gravado, nunca pelo nome do material (classificacao-material.js, CHECKs da 071).
 const MSG_OCULOS_OBRIGATORIO = 'Informe se os óculos de proteção são com grau';
-const MSG_OCULOS_NAO_SE_APLICA = 'Óculos com grau só se aplica ao tipo Óculos de proteção';
+const MSG_OCULOS_NAO_SE_APLICA = 'Óculos com grau só se aplica aos tipos de óculos de proteção';
+// 12G-8 (migration 071): Categoria → Tipo e "Outros" com descrição própria.
+const MSG_TIPO_FORA_DA_CATEGORIA = 'Este tipo não pertence à categoria do material';
+const MSG_TIPO_DESCRICAO_OBRIGATORIA = 'Descreva o tipo quando ele é "Outros"';
+const MSG_TIPO_DESCRICAO_NAO_SE_APLICA = 'A descrição do tipo só se aplica ao tipo "Outros"';
 
 function recusarOculos(codigo, mensagem) {
   return HttpError.validacao([{ campo: 'body.oculosComGrau', codigo, mensagem }]);
+}
+
+function recusarClassificacao(campo, codigo, mensagem) {
+  return HttpError.validacao([{ campo, codigo, mensagem }]);
+}
+
+/**
+ * Tipo e descrição coerentes com a categoria final. A lista só é conferida
+ * quando tipo ou categoria vêm na requisição: o legado fora das listas segue
+ * editável nos demais campos. Devolve a descrição a gravar: {informado, valor}.
+ */
+function classificar({ categoriaFinal, tipoFinal, conferirLista, descricao, descricaoInformada, descricaoAnterior }) {
+  if (conferirLista && tipoFinal !== null && !classificacao.tipoPermitido(categoriaFinal, tipoFinal)) {
+    throw recusarClassificacao('body.tipo', 'TIPO_FORA_DA_CATEGORIA', MSG_TIPO_FORA_DA_CATEGORIA);
+  }
+  const descricaoFinal = descricaoInformada ? descricao : descricaoAnterior;
+  if (tipoFinal === classificacao.OUTROS) {
+    if (descricaoFinal === null) throw recusarClassificacao('body.tipoDescricao', 'TIPO_DESCRICAO_OBRIGATORIA', MSG_TIPO_DESCRICAO_OBRIGATORIA);
+    return { informado: descricaoInformada, valor: descricaoFinal };
+  }
+  if (descricaoInformada && descricao !== null) {
+    throw recusarClassificacao('body.tipoDescricao', 'TIPO_DESCRICAO_NAO_SE_APLICA', MSG_TIPO_DESCRICAO_NAO_SE_APLICA);
+  }
+  // Quem deixa de ser "Outros" não guarda descrição escondida.
+  return { informado: descricaoAnterior !== null, valor: null };
 }
 
 function oculosComGrauValido(valor) {
@@ -78,7 +113,7 @@ function oculosComGrauValido(valor) {
 
 /** No cadastro, óculos de proteção sempre dizem se são com grau; outro tipo não diz nada. */
 function oculosNoCadastro(tipo, valor) {
-  if (tipo === TIPO_OCULOS_PROTECAO) {
+  if (classificacao.ehOculos(tipo)) {
     if (typeof valor !== 'boolean') throw recusarOculos('OCULOS_COM_GRAU_OBRIGATORIO', MSG_OCULOS_OBRIGATORIO);
     return valor;
   }
@@ -93,12 +128,12 @@ function oculosNoCadastro(tipo, valor) {
  * ser óculos perde a informação. Devolve o que gravar: {informado, valor}.
  */
 function oculosNaEdicao(anterior, tipoFinal, informado, valor) {
-  if (tipoFinal === TIPO_OCULOS_PROTECAO) {
+  if (classificacao.ehOculos(tipoFinal)) {
     if (informado) {
       if (typeof valor !== 'boolean') throw recusarOculos('OCULOS_COM_GRAU_OBRIGATORIO', MSG_OCULOS_OBRIGATORIO);
       return { informado: true, valor };
     }
-    if (anterior.tipo !== TIPO_OCULOS_PROTECAO) throw recusarOculos('OCULOS_COM_GRAU_OBRIGATORIO', MSG_OCULOS_OBRIGATORIO);
+    if (!classificacao.ehOculos(anterior.tipo)) throw recusarOculos('OCULOS_COM_GRAU_OBRIGATORIO', MSG_OCULOS_OBRIGATORIO);
     return { informado: false, valor: null };
   }
   if (informado && valor !== null) throw recusarOculos('OCULOS_COM_GRAU_NAO_SE_APLICA', MSG_OCULOS_NAO_SE_APLICA);
@@ -116,6 +151,46 @@ function traduzirViolacao(erro) {
 function exigirId(valor, nome) {
   if (!Number.isInteger(valor) || valor <= 0) {
     throw new TypeError(`${nome} inválido`);
+  }
+}
+
+function recusarGrade(campo, codigo, mensagem) {
+  return HttpError.validacao([{ campo, codigo, mensagem }]);
+}
+
+/**
+ * Grade no formato do tamanho do lote (aparado, NFC, 1 a 20, sem controle),
+ * na ordem recebida e sem repetir sem diferenciar maiúsculas. A rota já
+ * valida; esta é a defesa para qualquer outro chamador.
+ */
+function normalizarGrade(tamanhos) {
+  if (!Array.isArray(tamanhos)) {
+    throw new TypeError('grade deve ser uma lista');
+  }
+  if (tamanhos.length > tamanhoRepo.LIMITE_GRADE) {
+    throw recusarGrade('body.tamanhos', 'TAMANHO_MAXIMO', 'Grade com tamanhos demais');
+  }
+  const vistos = new Set();
+  return tamanhos.map((valor, indice) => {
+    const texto = typeof valor === 'string' ? valor.trim().normalize('NFC') : '';
+    const comprimento = Array.from(texto).length;
+    if (comprimento === 0 || comprimento > tamanhoRepo.TAMANHO_MAXIMO || CARACTERE_CONTROLE.test(texto)) {
+      throw recusarGrade(`body.tamanhos.${indice}`, 'TAMANHO_INVALIDO', 'Tamanho inválido');
+    }
+    if (vistos.has(texto.toUpperCase())) {
+      throw recusarGrade(`body.tamanhos.${indice}`, 'TAMANHO_REPETIDO', 'Tamanho repetido na grade');
+    }
+    vistos.add(texto.toUpperCase());
+    return texto;
+  });
+}
+
+/** A grade nova não pode deixar de fora tamanho com saldo, mínimo próprio ou solicitação em aberto. */
+async function conferirGradeEmUso(client, empresaId, materialId, grade) {
+  if (grade.length === 0) return;
+  const emUso = await tamanhoRepo.listarEmUso(client, empresaId, materialId);
+  if (emUso.some((tamanho) => !grade.includes(tamanho))) {
+    throw HttpError.conflict('MATERIAL_GRADE_TAMANHO_EM_USO', MSG_GRADE_TAMANHO_EM_USO);
   }
 }
 
@@ -195,6 +270,7 @@ async function emTransacao(pool, operacao) {
 const instantaneo = (material) => ({
   nome: material.nome,
   tipo: material.tipo,
+  tipoDescricao: material.tipoDescricao ?? null,
   fabricante: material.fabricante,
   prazoUsoDias: material.prazoUsoDias,
   exigeTamanho: material.exigeTamanho,
@@ -205,6 +281,7 @@ const instantaneo = (material) => ({
   codigoInterno: material.codigoInterno,
   descricao: material.descricao,
   ativo: material.ativo,
+  ...(material.tamanhos !== undefined ? { tamanhos: material.tamanhos } : {}),
 });
 
 /**
@@ -218,9 +295,9 @@ const instantaneo = (material) => ({
  *   material não tem CA: o CA e a validade são do lote, na entrada.
  */
 async function criar(pool, {
-  empresaId, atorId, nome, tipo = null, fabricante = null,
+  empresaId, atorId, nome, tipo = null, tipoDescricao = null, fabricante = null,
   prazoUsoDias = null, exigeTamanho = null, oculosComGrau, unidade, estoqueMinimo = 0,
-  categoria = null, codigoInterno = null, descricao = null,
+  categoria = null, codigoInterno = null, descricao = null, tamanhos = [],
   ip = null, dispositivo = null,
 }) {
   exigirId(empresaId, 'identificador de empresa');
@@ -231,13 +308,14 @@ async function criar(pool, {
   const codigoInternoNormalizado = normalizarTextoOpcional(codigoInterno, materialRepo.TAMANHO_MAXIMO_CODIGO_INTERNO);
   const descricaoNormalizada = normalizarTextoOpcional(descricao, materialRepo.TAMANHO_MAXIMO_DESCRICAO);
   const tipoNormalizado = normalizarTextoOpcional(tipo, materialRepo.TAMANHO_MAXIMO_TIPO);
+  const tipoDescricaoNormalizada = normalizarTextoOpcional(tipoDescricao, materialRepo.TAMANHO_MAXIMO_TIPO_DESCRICAO);
   const fabricanteNormalizado = normalizarTextoOpcional(fabricante, materialRepo.TAMANHO_MAXIMO_FABRICANTE);
   const unidadeNormalizada = normalizarUnidade(unidade);
 
   if (nomeNormalizado === null) {
     throw HttpError.badRequest('MATERIAL_NOME_INVALIDO', MSG_NOME_INVALIDO);
   }
-  if (tipoNormalizado === undefined || fabricanteNormalizado === undefined
+  if (tipoNormalizado === undefined || tipoDescricaoNormalizada === undefined || fabricanteNormalizado === undefined
     || categoriaNormalizada === undefined || codigoInternoNormalizado === undefined || descricaoNormalizada === undefined) {
     throw HttpError.badRequest('MATERIAL_DADOS_INVALIDOS', MSG_DADOS_INVALIDOS);
   }
@@ -245,7 +323,15 @@ async function criar(pool, {
     || unidadeNormalizada === null || !estoqueMinimoValido(estoqueMinimo) || !oculosComGrauValido(oculosComGrau)) {
     throw HttpError.badRequest('MATERIAL_DADOS_INVALIDOS', MSG_DADOS_INVALIDOS);
   }
+  const descricaoTipo = classificar({
+    categoriaFinal: categoriaNormalizada, tipoFinal: tipoNormalizado, conferirLista: true,
+    descricao: tipoDescricaoNormalizada, descricaoInformada: true, descricaoAnterior: null,
+  });
   const oculosNormalizado = oculosNoCadastro(tipoNormalizado, oculosComGrau);
+  const grade = normalizarGrade(tamanhos);
+  if (grade.length > 0 && exigeTamanho !== true) {
+    throw recusarGrade('body.tamanhos', 'GRADE_NAO_SE_APLICA', MSG_GRADE_NAO_SE_APLICA);
+  }
 
   return emTransacao(pool, async (client) => {
     let material;
@@ -254,6 +340,7 @@ async function criar(pool, {
         empresaId,
         nome: nomeNormalizado,
         tipo: tipoNormalizado,
+        tipoDescricao: descricaoTipo.valor,
         fabricante: fabricanteNormalizado,
         prazoUsoDias: prazoUsoDias ?? null,
         exigeTamanho,
@@ -274,6 +361,10 @@ async function criar(pool, {
       }
       throw erro;
     }
+    if (grade.length > 0) {
+      await tamanhoRepo.substituir(client, empresaId, material.id, grade);
+    }
+    material.tamanhos = grade;
 
     await auditoriaRepo.registrar(client, {
       empresaId,
@@ -306,7 +397,7 @@ async function buscar(pool, { empresaId, materialId }) {
   if (material === null) {
     throw HttpError.notFound('MATERIAL_NAO_ENCONTRADO', MSG_MATERIAL_NAO_ENCONTRADO);
   }
-  return material;
+  return { ...material, tamanhos: await tamanhoRepo.listarPorMaterial(pool, empresaId, materialId) };
 }
 
 /**
@@ -338,6 +429,7 @@ async function listar(pool, {
 async function alterar(pool, {
   empresaId, atorId, materialId,
   nome, tipo, tipoInformado = false,
+  tipoDescricao, tipoDescricaoInformado = false,
   fabricante, fabricanteInformado = false,
   prazoUsoDias, prazoUsoDiasInformado = false,
   exigeTamanho,
@@ -346,12 +438,15 @@ async function alterar(pool, {
   categoria, categoriaInformado = false,
   codigoInterno, codigoInternoInformado = false,
   descricao, descricaoInformado = false,
+  tamanhos, tamanhosInformado = false,
   ip = null, dispositivo = null,
 }) {
   exigirId(empresaId, 'identificador de empresa');
   exigirId(atorId, 'identificador de ator');
   exigirId(materialId, 'identificador de material');
 
+  const grade = tamanhosInformado ? normalizarGrade(tamanhos) : null;
+  const tipoDescricaoNormalizada = tipoDescricaoInformado ? normalizarTextoOpcional(tipoDescricao, materialRepo.TAMANHO_MAXIMO_TIPO_DESCRICAO) : null;
   const categoriaNormalizada = categoriaInformado ? normalizarTextoOpcional(categoria, materialRepo.TAMANHO_MAXIMO_CATEGORIA) : null;
   const codigoInternoNormalizado = codigoInternoInformado
     ? normalizarTextoOpcional(codigoInterno, materialRepo.TAMANHO_MAXIMO_CODIGO_INTERNO) : null;
@@ -371,9 +466,9 @@ async function alterar(pool, {
     throw HttpError.badRequest('MATERIAL_UNIDADE_NAO_EDITAVEL', MSG_UNIDADE_NAO_EDITAVEL);
   }
 
-  const nenhumCampo = !alterarNome && !tipoInformado && !fabricanteInformado
+  const nenhumCampo = !alterarNome && !tipoInformado && !tipoDescricaoInformado && !fabricanteInformado
     && !prazoUsoDiasInformado && exigeTamanho === undefined && estoqueMinimo === undefined
-    && !categoriaInformado && !codigoInternoInformado && !descricaoInformado && !oculosComGrauInformado;
+    && !categoriaInformado && !codigoInternoInformado && !descricaoInformado && !oculosComGrauInformado && !tamanhosInformado;
 
   return emTransacao(pool, async (client) => {
     if (nenhumCampo) {
@@ -383,6 +478,7 @@ async function alterar(pool, {
       throw HttpError.badRequest('MATERIAL_NOME_INVALIDO', MSG_NOME_INVALIDO);
     }
     if ((tipoInformado && tipoNormalizado === undefined)
+      || (tipoDescricaoInformado && tipoDescricaoNormalizada === undefined)
       || (fabricanteInformado && fabricanteNormalizado === undefined)
       || (prazoUsoDiasInformado && !prazoUsoDiasValido(prazoUsoDias))
       || (exigeTamanho !== undefined && typeof exigeTamanho !== 'boolean')
@@ -411,13 +507,36 @@ async function alterar(pool, {
     if (trocaClassificacao && anterior.exigeTamanho === true && await minimoRepo.possuiOverrides(client, empresaId, materialId)) {
       throw HttpError.conflict('MATERIAL_TAMANHO_MINIMOS_INCOMPATIVEIS', MSG_TAMANHO_MINIMOS_INCOMPATIVEIS);
     }
-    const oculos = oculosNaEdicao(anterior, tipoInformado ? tipoNormalizado : anterior.tipo, oculosComGrauInformado, oculosComGrau);
+    // Grade (12G-8): lida com o material já travado, a mesma trava que segura entradas e solicitações novas.
+    const gradeAnterior = await tamanhoRepo.listarPorMaterial(client, empresaId, materialId);
+    const exigeFinal = exigeTamanho !== undefined ? exigeTamanho : anterior.exigeTamanho;
+    if (grade !== null && grade.length > 0 && exigeFinal !== true) {
+      throw recusarGrade('body.tamanhos', 'GRADE_NAO_SE_APLICA', MSG_GRADE_NAO_SE_APLICA);
+    }
+    if (exigeFinal !== true && (grade !== null ? grade : gradeAnterior).length > 0) {
+      throw HttpError.conflict('MATERIAL_TAMANHO_GRADE_INCOMPATIVEL', MSG_TAMANHO_GRADE_INCOMPATIVEL);
+    }
+    if (grade !== null) {
+      await conferirGradeEmUso(client, empresaId, materialId, grade);
+    }
+    // Categoria → Tipo (12G-8): a lista vale para o estado final; o legado intocado não é reconferido.
+    const tipoFinal = tipoInformado ? tipoNormalizado : anterior.tipo;
+    const descricaoTipo = classificar({
+      categoriaFinal: categoriaInformado ? categoriaNormalizada : anterior.categoria,
+      tipoFinal,
+      conferirLista: tipoInformado || categoriaInformado,
+      descricao: tipoDescricaoNormalizada,
+      descricaoInformada: tipoDescricaoInformado,
+      descricaoAnterior: anterior.tipoDescricao ?? null,
+    });
+    const oculos = oculosNaEdicao(anterior, tipoFinal, oculosComGrauInformado, oculosComGrau);
 
     let atualizado;
     try {
       atualizado = await materialRepo.atualizar(client, empresaId, materialId, {
         nome: nomeNormalizado,
         tipo: tipoNormalizado, tipoInformado,
+        tipoDescricao: descricaoTipo.valor, tipoDescricaoInformado: descricaoTipo.informado,
         fabricante: fabricanteNormalizado, fabricanteInformado,
         prazoUsoDias: prazoUsoDiasInformado ? prazoUsoDias : null, prazoUsoDiasInformado,
         unidade: null, // null = manter a unidade atual (nunca alterada pela edição)
@@ -438,6 +557,11 @@ async function alterar(pool, {
       }
       throw erro;
     }
+    // Depois do UPDATE: o gatilho da 070 já vê a classificação nova do material.
+    if (grade !== null) {
+      await tamanhoRepo.substituir(client, empresaId, materialId, grade);
+    }
+    atualizado.tamanhos = grade !== null ? grade : gradeAnterior;
 
     await auditoriaRepo.registrar(client, {
       empresaId,
@@ -446,7 +570,7 @@ async function alterar(pool, {
       referencia: String(materialId),
       ip,
       dispositivo,
-      dadosAnteriores: instantaneo(anterior),
+      dadosAnteriores: instantaneo({ ...anterior, tamanhos: gradeAnterior }),
       dadosNovos: instantaneo(atualizado),
     });
 

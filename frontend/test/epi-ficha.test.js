@@ -183,11 +183,15 @@ describe('rascunho da entrega — itens, motivos, justificativas, limites', () =
 
   test('classificação incompleta bloqueia o item; CA vencido e sem CA (material que exige) bloqueiam; vence hoje e não exige CA passam', () => {
     const r = novo();
-    for (const m of [material({ prazoUsoDias: null }), material({ exigeTamanho: null }), material({ tipo: 'Óculos de proteção', oculosComGrau: null })]) {
-      assert.equal(F.rascunho.adicionarItem(r, itemDe({ material: m })).codigo, 'CADASTRO_INCOMPLETO', m.nome);
-      assert.equal(F.rascunho.materialCompleto(m), false);
+    const oculosSemGrau = ['Óculos de proteção', 'Óculos de Proteção Incolor', 'Óculos de Proteção Ampla Visão'].map((tipo) => material({ tipo, oculosComGrau: null }));
+    for (const m of [material({ prazoUsoDias: null }), material({ exigeTamanho: null }), ...oculosSemGrau]) {
+      assert.equal(F.rascunho.adicionarItem(r, itemDe({ material: m })).codigo, 'CADASTRO_INCOMPLETO', `${m.nome} ${m.tipo}`);
+      assert.equal(F.rascunho.materialCompleto(m), false, m.tipo);
     }
-    assert.equal(F.rascunho.materialCompleto(material({ tipo: 'Óculos de proteção', oculosComGrau: false })), true);
+    for (const tipo of ['Óculos de proteção', 'Óculos de Proteção Incolor', 'Óculos de Proteção Ampla Visão']) {
+      assert.equal(F.rascunho.materialCompleto(material({ tipo, oculosComGrau: false })), true, tipo);
+    }
+    assert.equal(F.rascunho.materialCompleto(material({ tipo: 'Outros', tipoDescricao: 'Óculos de proteção', oculosComGrau: null })), true, '"Outros" não é óculos');
     assert.equal(F.rascunho.adicionarItem(r, itemDe({ lote: lote({ situacaoCa: 'VENCIDO' }) })).codigo, 'CA_VENCIDO');
     assert.equal(F.rascunho.adicionarItem(r, itemDe({ lote: lote({ situacaoCa: 'SEM_CA', caNumero: null, caValidade: null }) })).codigo, 'CA_AUSENTE');
     assert.equal(F.rascunho.adicionarItem(r, itemDe({ lote: lote({ situacaoCa: 'VENCE_HOJE' }) })).ok, true);
@@ -882,7 +886,7 @@ describe('10I — editor de permissões e escopo do MASTER', () => {
   test('o escopo oficial do MASTER cobre a ficha (visualizar) e a entrega (REALIZAR_ENTREGA), coerente com o editor', () => {
     const escopo = Object.fromEntries(ESCOPO_PROVISIONAMENTO_MASTER.recursos.map((r) => [r.recurso, [...r.operacoes]]));
     assert.deepEqual(escopo.epiFicha, ['visualizar']);
-    assert.deepEqual([...ESCOPO_PROVISIONAMENTO_MASTER.acoes], ['MOVIMENTAR_ESTOQUE', 'REALIZAR_ENTREGA']);
+    assert.deepEqual([...ESCOPO_PROVISIONAMENTO_MASTER.acoes], ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS']);
   });
 });
 

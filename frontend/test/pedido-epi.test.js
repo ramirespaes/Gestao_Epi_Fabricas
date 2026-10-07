@@ -167,6 +167,15 @@ describe('contrato: motivos e limites são os do backend, nunca inventados', () 
     const F = require('../js/epi-ficha'); // eslint-disable-line global-require
     for (const m of F.MOTIVOS) assert.equal(S.ROTULOS_MOTIVO[m.codigo], m.rotulo, 'o mesmo rótulo da Ficha de EPI');
   });
+
+  test('12G-8: tamanho fora da grade do EPI tem texto próprio no campo do item (o backend recusa)', () => {
+    const S = require('../js/solicitacoes-epi'); // eslint-disable-line global-require
+    const r = { ok: false, status: 400, codigo: 'VALIDACAO', detalhes: [{ campo: 'body.itens[0].tamanho', codigo: 'TAMANHO_FORA_DA_GRADE', mensagem: 'SEGREDO' }] };
+    const [campo] = S.mensagens.deCampos(r);
+    assert.deepEqual([campo.campo, campo.codigo], ['body.itens[0].tamanho', 'TAMANHO_FORA_DA_GRADE']);
+    assert.match(campo.mensagem, /grade de tamanhos deste EPI/);
+    assert.equal(/SEGREDO/.test(campo.mensagem), false);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────
@@ -816,7 +825,8 @@ describe('J. semântica, acessibilidade e segurança', () => {
     assert.equal(pg.consulta('img').length, 0);
     assert.ok(pg.textoDoDom().includes(ATAQUE), 'o texto aparece como texto');
     assert.deepEqual(pg.documento.usosDeInnerHTML, []);
-    assert.deepEqual(pg.storage.filter((x) => !(x.operacao === 'removeItem' || x.storage === 'cookie')), []);
+    // Só o cache de pintura da aparência (js/tema.js, Configurações) toca o armazenamento; nada da página.
+    assert.deepEqual(pg.storage.filter((x) => !(x.operacao === 'removeItem' || x.storage === 'cookie' || x.chave === 'safework-aparencia')), []);
   });
 
   test('os itens cabem no cartão (estilo que vence na cascata): colunas que encolhem, campos na largura da coluna, "Remover" do tamanho do conteúdo', async () => {

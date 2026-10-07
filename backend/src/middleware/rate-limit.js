@@ -82,6 +82,8 @@ const limitadorPlataformaRecuperacaoSenhaRedefinir = criarLimitador(httpConfig.r
 // Troca de senha autenticada: um contador por portal, independente do login e
 // da recuperação. Complementa o cooldown persistente do service.
 const limitadorTrocaSenha = criarLimitador(httpConfig.rateLimit.autenticacao);
+// Configurações: a troca do e-mail de acesso confere a senha atual — mesmo orçamento da autenticação.
+const limitadorTrocaEmail = criarLimitador(httpConfig.rateLimit.autenticacao);
 const limitadorPlataformaTrocaSenha = criarLimitador(httpConfig.rateLimit.autenticacao);
 
 module.exports = {
@@ -100,5 +102,6 @@ module.exports = {
   limitadorPlataformaRecuperacaoSenhaSolicitar,
   limitadorPlataformaRecuperacaoSenhaRedefinir,
   limitadorTrocaSenha,
+  limitadorTrocaEmail,
   limitadorPlataformaTrocaSenha,
 };

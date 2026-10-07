@@ -77,7 +77,7 @@ describe('consultas: só o contrato de cada rota, nunca empresa, identidade ou s
     await U.acoes.inativar(12);
     await U.acoes.reativar(12);
     assert.deepEqual(chamadas.map((c) => [c.metodo, c.caminho, c.corpo]), [
-      ['PATCH', '/api/administracao/usuarios/12', { nome: 'Ana  Souza', tipoConta: 'SUPERVISOR' }],
+      ['PATCH', '/api/administracao/usuarios/12', { nome: 'Ana  Souza', tipoConta: 'SUPERVISOR', email: 'x@y.com' }],
       ['PATCH', '/api/administracao/usuarios/12', {}],
       ['POST', '/api/administracao/usuarios/12/inativar', {}],
       ['POST', '/api/administracao/usuarios/12/reativar', {}],

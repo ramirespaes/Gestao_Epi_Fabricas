@@ -47,7 +47,8 @@ const EpiGrupos = require('../../../frontend/js/grupos-acesso');
  * registra redirecionamentos, reescritas de URL e o uso de armazenamento.
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 40 }, (_, i) => String(i).padStart(3, '0'));
+// 041, 042 e 057: a FK composta da 073 referencia uq_funcionarios_empresa_id (057), que também exige estoque_lotes (042) e uq_materiais_empresa_id (041).
+const TODAS_AS_MIGRATIONS = [...Array.from({ length: 40 }, (_, i) => String(i).padStart(3, '0')), '041', '042', '057', '072', '073', '074', '075', '076', '077'];
 const SENHA = 'senha-forte-da-etapa-c-2026';
 const ANA = 'ana.c0@exemplo-cliente.com.br';   // MASTER em A, USUARIO em B
 const BIA = 'bia.c0@exemplo-cliente.com.br';   // MASTER só em A

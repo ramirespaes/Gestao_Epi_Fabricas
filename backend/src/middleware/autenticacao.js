@@ -5,6 +5,8 @@ const { HttpError } = require('../errors/HttpError');
 const { authConfig } = require('../config/auth');
 const { tokenSessaoTemFormatoValido, hashTokenSessao } = require('../security/token');
 const sessaoRepo = require('../repositories/sessao.repository');
+const usuarioIpRepo = require('../repositories/usuario-ip.repository');
+const { ipDaRequisicao } = require('../utils/ip');
 const { pool } = require('../config/database');
 
 /**
@@ -31,6 +33,7 @@ const { pool } = require('../config/database');
  */
 
 const MENSAGEM_SESSAO_INVALIDA = 'Sessão inválida ou expirada';
+const MENSAGEM_IP_NAO_PERMITIDO = 'Acesso não permitido a partir deste endereço';
 
 /**
  * Conta quantas vezes o cookie de nome `nome` aparece no cabeçalho Cookie
@@ -122,12 +125,23 @@ async function buscarContextoSessao(pool, req) {
  *
  * @param {{pool: import('pg').Pool}} dependencias
  */
-function criarExigirSessao({ pool }) {
+function criarExigirSessao({ pool, permitirSenhaProvisoria = false }) {
   return async function exigirSessao(req, res, next) {
     const contexto = await buscarContextoSessao(pool, req);
     if (contexto === null) {
       next(HttpError.unauthorized('SESSAO_INVALIDA', MENSAGEM_SESSAO_INVALIDA));
       return;
+    }
+
+    // Restrição por IP (077): com lista, só o endereço resolvido pelo servidor
+    // (req.ip sob TRUST_PROXY_HOPS) que estiver nela passa; a sessão não é
+    // renovada nem encerrada — de um endereço permitido ela segue valendo.
+    if (contexto.restricaoIp === true) {
+      const ip = ipDaRequisicao(req);
+      if (ip === null || !(await usuarioIpRepo.acessoPermitido(pool, contexto.empresa.id, contexto.usuario.id, ip))) {
+        next(HttpError.forbidden('ACESSO_IP_NAO_PERMITIDO', MENSAGEM_IP_NAO_PERMITIDO));
+        return;
+      }
     }
 
     const atualizou = await sessaoRepo.registrarUso(
@@ -140,6 +154,12 @@ function criarExigirSessao({ pool }) {
       return;
     }
 
+    // Troca obrigatória (074): a identidade em senha provisória não usa a empresa.
+    if (contexto.senhaProvisoria === true && !permitirSenhaProvisoria) {
+      next(HttpError.forbidden('TROCA_SENHA_OBRIGATORIA', 'Defina uma nova senha para continuar'));
+      return;
+    }
+
     req.sessao = contexto.sessao;
     req.usuario = contexto.usuario;
     req.empresa = contexto.empresa;
@@ -149,4 +169,6 @@ function criarExigirSessao({ pool }) {
 
 const exigirSessao = criarExigirSessao({ pool });
 
-module.exports = { criarExigirSessao, exigirSessao, buscarContextoSessao, extrairTokenDoCookie };
+module.exports = {
+  criarExigirSessao, exigirSessao, buscarContextoSessao, extrairTokenDoCookie, MENSAGEM_IP_NAO_PERMITIDO,
+};

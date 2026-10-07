@@ -6,6 +6,7 @@ const http = require('node:http');
 const request = require('supertest');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { todasAsMigrations } = require('./helpers/entrega-epi');
 const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { criarAppTeste } = require('../helpers/app-teste');
 const { criarAuthController } = require('../../src/controllers/auth.controller');
@@ -55,7 +56,8 @@ const EpiPermissoes = require('../../../frontend/js/permissoes-efetivas');
  * consulta; e o módulo real do frontend (falha fechada, empresa divergente).
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 48 }, (_, i) => String(i).padStart(3, '0'));
+// O serviço de materiais lê tipo_descricao (071): o schema precisa de todas as migrations.
+const TODAS_AS_MIGRATIONS = todasAsMigrations();
 const SENHA = 'senha-forte-da-parte-c1-2026';
 const { cookieNome: C_EMPRESA, cookieNomeGlobal: C_GLOBAL } = authConfig.sessao;
 
@@ -128,7 +130,7 @@ describe('C1 — permissões efetivas (PostgreSQL real)', () => {
     return {
       visualizar: p.recursos.materials.visualizar,
       criar: p.recursos.materials.criar,
-      movimentar: p.acoes.MOVIMENTAR_ESTOQUE,
+      movimentar: p.acoes.ENTRADA_ESTOQUE,
       grupos: p.administracao.gruposAcesso.consultar,
       permissoesGrupo: p.administracao.permissoesGrupo.consultar,
       usuarios: p.administracao.usuarios.consultar,
@@ -178,8 +180,8 @@ describe('C1 — permissões efetivas (PostgreSQL real)', () => {
     await q("INSERT INTO usuario_autorizacoes (empresa_id, usuario_id, acao_codigo, autorizado_por) VALUES ($1, $2, 'ADMINISTRAR_GRUPOS_ACESSO', $3)", [empresa.A, u.adminGrupos, u.master]);
     // Parte F: ADMINISTRADOR com GERENCIAR_USUARIOS (047, OBRIGATORIA), só essa.
     await q("INSERT INTO usuario_autorizacoes (empresa_id, usuario_id, acao_codigo, autorizado_por) VALUES ($1, $2, 'GERENCIAR_USUARIOS', $3)", [empresa.A, u.adminUsuarios, u.master]);
-    // Delegação: USUARIO com MOVIMENTAR_ESTOQUE repassável (ALTERNATIVA) — pode movimentar e delegar.
-    await q("INSERT INTO usuario_autorizacoes (empresa_id, usuario_id, acao_codigo, autorizado_por, pode_delegar) VALUES ($1, $2, 'MOVIMENTAR_ESTOQUE', $3, true)", [empresa.A, u.usuario, u.master]);
+    // Delegação: USUARIO com ENTRADA_ESTOQUE repassável (ALTERNATIVA) — pode movimentar e delegar.
+    await q("INSERT INTO usuario_autorizacoes (empresa_id, usuario_id, acao_codigo, autorizado_por, pode_delegar) VALUES ($1, $2, 'ENTRADA_ESTOQUE', $3, true)", [empresa.A, u.usuario, u.master]);
 
     const materialA = await pool.query("INSERT INTO materiais (empresa_id, nome) VALUES ($1, 'Luva C1') RETURNING id", [empresa.A]);
     u.materialA = materialA.rows[0].id;
@@ -233,8 +235,9 @@ describe('C1 — permissões efetivas (PostgreSQL real)', () => {
   test('MASTER: recursos provisionados, ação provisionada, autoridade administrativa plena, concede direto, não delega', async () => {
     const p = await permissoes(await sessao(EMAILS.master, empresa.A));
     assert.deepEqual(p.recursos.materials, { visualizar: true, criar: true, editar: true, excluir: false });
+    assert.deepEqual(p.recursos.request, { visualizar: true, criar: true, editar: true, excluir: false }, '05/10/2026: o Pedido de EPI vem pelo provisionamento do perfil MASTER');
     assert.equal(p.recursos.reports.visualizar, false, 'MASTER só tem o que foi provisionado — nada "de graça"');
-    assert.equal(p.acoes.MOVIMENTAR_ESTOQUE, true);
+    assert.equal(p.acoes.ENTRADA_ESTOQUE, true);
     for (const area of ['gruposAcesso', 'permissoesGrupo', 'vinculosGrupo', 'usuarios']) {
       assert.deepEqual(p.administracao[area], { consultar: true, alterar: true }, area);
     }
@@ -289,7 +292,7 @@ describe('C1 — permissões efetivas (PostgreSQL real)', () => {
     const p = await permissoes(await sessao(EMAILS.usuario, empresa.A));
     assert.deepEqual(p.recursos.materials, { visualizar: false, criar: false, editar: false, excluir: false });
     assert.equal(p.recursos.dashboard.visualizar, true);
-    assert.equal(p.acoes.MOVIMENTAR_ESTOQUE, true, 'ALTERNATIVA: a autorização individual concede');
+    assert.equal(p.acoes.ENTRADA_ESTOQUE, true, 'ALTERNATIVA: a autorização individual concede');
     assert.deepEqual(p.administracao.autorizacoesIndividuais, { consultar: true, concederDireta: false, delegar: true });
     for (const area of ['gruposAcesso', 'permissoesGrupo', 'vinculosGrupo']) assert.equal(p.administracao[area].consultar, false);
   });
@@ -309,7 +312,7 @@ describe('C1 — permissões efetivas (PostgreSQL real)', () => {
     const selA = await request(app).post(`/api/auth/global/empresas/${empresa.A}/selecionar`).set('Cookie', global);
     const cookieA = `${global}; ${C_EMPRESA}=${cookiesDe(selA)[C_EMPRESA]}`;
     const emA = await permissoes(cookieA);
-    assert.deepEqual([emA.empresaId, emA.perfil, emA.administracao.gruposAcesso.consultar, emA.recursos.materials.visualizar], [empresa.A, 'USUARIO', false, false]);
+    assert.deepEqual([emA.empresaId, emA.perfil, emA.administracao.gruposAcesso.consultar, emA.recursos.materials.visualizar, emA.recursos.request.visualizar], [empresa.A, 'USUARIO', false, false, false], 'USUARIO sem grupo: nada do provisionamento do MASTER');
 
     const selB = await request(app).post(`/api/auth/global/empresas/${empresa.B}/selecionar`).set('Cookie', cookieA);
     const cookieB = `${global}; ${C_EMPRESA}=${cookiesDe(selB)[C_EMPRESA]}`;

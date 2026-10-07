@@ -196,4 +196,6 @@ async function trocar(pool, dados) {
   }
 }
 
-module.exports = { trocar };
+// Os dois helpers de sessão são reutilizados pela troca do e-mail de acesso
+// (troca-email-global.service.js), que segue a mesma ordem de travas.
+module.exports = { trocar, sessaoGlobalAtual, empresarialAtual };

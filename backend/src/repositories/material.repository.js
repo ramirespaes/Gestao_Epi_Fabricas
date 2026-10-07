@@ -39,11 +39,13 @@ const LIMITE_INTEGER_POSTGRES = 2147483647;
 // categoria, codigo_interno e descricao: migration 039 (Parte C2).
 // O material não tem CA (E10): ca_numero e ca_validade ficam no banco só
 // como histórico, fora da projeção, do INSERT e do UPDATE. O CA é do lote.
-const PROJECAO = `id, empresa_id, nome, tipo, fabricante,
+const PROJECAO = `id, empresa_id, nome, tipo, tipo_descricao, fabricante,
   prazo_uso_dias, unidade, estoque_minimo, categoria, codigo_interno, descricao, exige_tamanho, oculos_com_grau, ativo, criado_em, atualizado_em`;
 const TAMANHO_MAXIMO_CATEGORIA = 30;
 const TAMANHO_MAXIMO_CODIGO_INTERNO = 30;
 const TAMANHO_MAXIMO_DESCRICAO = 500;
+// tipo_descricao VARCHAR(100): migration 071 (12G-8), só com tipo "Outros".
+const TAMANHO_MAXIMO_TIPO_DESCRICAO = 100;
 
 function exigirEmpresa(empresaId) {
   if (!Number.isInteger(empresaId) || empresaId <= 0) {
@@ -112,6 +114,7 @@ const mapear = (linha) => (linha === undefined ? null : {
   empresaId: linha.empresa_id,
   nome: linha.nome,
   tipo: linha.tipo,
+  tipoDescricao: linha.tipo_descricao ?? null,
   fabricante: linha.fabricante,
   prazoUsoDias: linha.prazo_uso_dias,
   unidade: linha.unidade,
@@ -136,13 +139,14 @@ const mapear = (linha) => (linha === undefined ? null : {
  *   exigeTamanho?: boolean|null, oculosComGrau?: boolean|null}} dados
  */
 async function criar(executor, {
-  empresaId, nome, tipo = null, fabricante = null,
+  empresaId, nome, tipo = null, tipoDescricao = null, fabricante = null,
   prazoUsoDias = null, unidade = 'unidade', estoqueMinimo = 0,
   categoria = null, codigoInterno = null, descricao = null, exigeTamanho = null, oculosComGrau = null,
 }) {
   exigirEmpresa(empresaId);
   exigirNome(nome);
   exigirTextoOpcional(tipo, 'tipo', TAMANHO_MAXIMO_TIPO);
+  exigirTextoOpcional(tipoDescricao, 'descrição do tipo', TAMANHO_MAXIMO_TIPO_DESCRICAO);
   exigirTextoOpcional(fabricante, 'fabricante', TAMANHO_MAXIMO_FABRICANTE);
   exigirPrazoUsoDiasOpcional(prazoUsoDias);
   exigirUnidade(unidade);
@@ -154,10 +158,10 @@ async function criar(executor, {
   exigirOculosComGrauOpcional(oculosComGrau);
 
   const { rows } = await executor.query(
-    `INSERT INTO materiais (empresa_id, nome, tipo, fabricante, prazo_uso_dias, unidade, estoque_minimo, categoria, codigo_interno, descricao, exige_tamanho, oculos_com_grau)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    `INSERT INTO materiais (empresa_id, nome, tipo, fabricante, prazo_uso_dias, unidade, estoque_minimo, categoria, codigo_interno, descricao, exige_tamanho, oculos_com_grau, tipo_descricao)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING ${PROJECAO}`,
-    [empresaId, nome, tipo, fabricante, prazoUsoDias, unidade, estoqueMinimo, categoria, codigoInterno, descricao, exigeTamanho, oculosComGrau],
+    [empresaId, nome, tipo, fabricante, prazoUsoDias, unidade, estoqueMinimo, categoria, codigoInterno, descricao, exigeTamanho, oculosComGrau, tipoDescricao],
   );
 
   return mapear(rows[0]);
@@ -331,6 +335,7 @@ async function atualizar(executor, empresaId, id, {
   descricao = null, descricaoInformado = false,
   exigeTamanho = null,
   oculosComGrau = null, oculosComGrauInformado = false,
+  tipoDescricao = null, tipoDescricaoInformado = false,
 } = {}) {
   exigirEmpresa(empresaId);
   exigirId(id, 'identificador de material');
@@ -343,6 +348,9 @@ async function atualizar(executor, empresaId, id, {
   }
   if (tipoInformado) {
     exigirTextoOpcional(tipo, 'tipo', TAMANHO_MAXIMO_TIPO);
+  }
+  if (tipoDescricaoInformado) {
+    exigirTextoOpcional(tipoDescricao, 'descrição do tipo', TAMANHO_MAXIMO_TIPO_DESCRICAO);
   }
   if (fabricanteInformado) {
     exigirTextoOpcional(fabricante, 'fabricante', TAMANHO_MAXIMO_FABRICANTE);
@@ -382,7 +390,8 @@ async function atualizar(executor, empresaId, id, {
             codigo_interno = CASE WHEN $15::boolean THEN $16 ELSE codigo_interno END,
             descricao = CASE WHEN $17::boolean THEN $18 ELSE descricao END,
             exige_tamanho = COALESCE($19::boolean, exige_tamanho),
-            oculos_com_grau = CASE WHEN $20::boolean THEN $21::boolean ELSE oculos_com_grau END
+            oculos_com_grau = CASE WHEN $20::boolean THEN $21::boolean ELSE oculos_com_grau END,
+            tipo_descricao = CASE WHEN $22::boolean THEN $23 ELSE tipo_descricao END
       WHERE empresa_id = $1 AND id = $2
       RETURNING ${PROJECAO}`,
     [
@@ -396,6 +405,7 @@ async function atualizar(executor, empresaId, id, {
       descricaoInformado, descricao,
       exigeTamanho,
       oculosComGrauInformado, oculosComGrau,
+      tipoDescricaoInformado, tipoDescricao,
     ],
   );
 
@@ -418,4 +428,5 @@ module.exports = {
   TAMANHO_MAXIMO_CATEGORIA,
   TAMANHO_MAXIMO_CODIGO_INTERNO,
   TAMANHO_MAXIMO_DESCRICAO,
+  TAMANHO_MAXIMO_TIPO_DESCRICAO,
 };

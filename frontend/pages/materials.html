@@ -82,7 +82,7 @@
         <a href="stock-validity.html" data-pagina="stockValidity" style="display:none"><div class="nav-icon red">event_busy</div>Validade de estoque</a>
         <a href="available-items.html" data-pagina="availableItems" style="display:none"><div class="nav-icon green">checklist</div>Análise de estoque</a>
         <a href="operations.html" data-pagina="operations" style="display:none"><div class="nav-icon gray">receipt_long</div>Operações de estoque</a>
-        <a href="employee-groups.html" data-pagina="employeeGroups" style="display:none"><div class="nav-icon purple">group_work</div>GHE e EPIs</a>
+        <a href="employee-groups.html" data-pagina="employeeGroups" style="display:none"><div class="nav-icon purple">group_work</div>Gestão de GHE</a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor<span class="nav-etiqueta">Em integração</span></a>
         <div class="nav-section">Entregas</div>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon green">inventory</div>EPIs Entregues<span class="nav-etiqueta">Em integração</span></a>
@@ -101,7 +101,8 @@
         <a href="import-employees.html" data-pagina="importEmployees" style="display:none"><div class="nav-icon green">upload_file</div>Importar Funcionários</a>
         <a href="new-user.html" data-pagina="newUser" style="display:none"><div class="nav-icon green">person_add</div>Novo Usuário</a>
         <a href="user-admin.html" data-pagina="userAdmin" style="display:none"><div class="nav-icon indigo">group</div>Administração de Usuários</a>
-        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon gray">settings</div>Configurações<span class="nav-etiqueta">Em integração</span></a>
+        <a href="gestao-usuarios.html" data-pagina="gestaoUsuarios" style="display:none"><div class="nav-icon indigo">manage_accounts</div>Gestão de Usuários</a>
+        <a href="config.html" data-pagina="config" style="display:none"><div class="nav-icon gray">settings</div>Configurações</a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon teal">support_agent</div>Suporte<span class="nav-etiqueta">Em integração</span></a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">mark_email_read</div>Gestão de E-mails<span class="nav-etiqueta">Em integração</span></a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon indigo">privacy_tip</div>Privacidade / LGPD<span class="nav-etiqueta">Em integração</span></a>
@@ -151,20 +152,15 @@
                 </div>
                 <div class="field">
                   <label for="materialTipo">Tipo</label>
+                  <!-- Os tipos são os da categoria escolhida (js/materiais.js, 12G-8); a lista é montada pela página. -->
                   <select id="materialTipo" class="select">
-                    <option>Sapatão / Botina</option>
-                    <option>Óculos de proteção</option>
-                    <option>Luva</option>
-                    <option>Protetor auricular</option>
-                    <option>Capacete</option>
-                    <option>Respirador</option>
-                    <option>Outro</option>
+                    <option value="">Selecione</option>
                   </select>
                 </div>
                 <div class="field" id="customMaterialTypeField" style="display:none">
-                  <label for="materialTipoCustom">Nome do tipo</label>
-                  <input id="materialTipoCustom" class="input" type="text" placeholder="Digite o nome do tipo desejado" />
-                  <div class="helper">Use este campo quando o tipo não estiver na lista padrão.</div>
+                  <label for="materialTipoCustom">Descrição do tipo</label>
+                  <input id="materialTipoCustom" class="input" type="text" maxlength="100" placeholder="Ex.: Fita isolante" />
+                  <div class="helper">Obrigatória quando o tipo é "Outros": descreva o item em texto. Não substitui um tipo da lista.</div>
                 </div>
                 <div class="field" id="campoOculosComGrau" style="display:none">
                   <label for="materialOculosComGrau" style="display:flex;align-items:center;gap:8px;cursor:pointer">
@@ -181,6 +177,11 @@
                     <option value="grade">Possui tamanhos</option>
                   </select>
                   <div class="helper">Com "Possui tamanhos", cada entrada informa o tamanho.</div>
+                </div>
+                <div class="field full" id="campoGradeTamanhos" style="display:none">
+                  <label for="materialGrade">Grade de tamanhos</label>
+                  <input id="materialGrade" class="input" type="text" placeholder="Ex.: 38, 39, 40, 41" />
+                  <div class="helper">Tamanhos válidos deste material, separados por vírgula, na ordem em que devem aparecer. Com grade, a entrada de estoque e o pedido só aceitam esses tamanhos, mesmo sem estoque. Em branco: material sem grade definida (aceita o tamanho como antes).</div>
                 </div>
                 <div class="field">
                   <label for="materialFabricante">Fabricante</label>
@@ -298,6 +299,7 @@
                 <div class="field full" style="margin-bottom:12px">
                   <label for="gradeMaterial">Material</label>
                   <div style="display:flex;gap:8px;align-items:center">
+                    <span id="pictogramaMaterialAtual" class="pictograma-material-atual" aria-hidden="true" hidden></span>
                     <select id="gradeMaterial" class="select" style="flex:1"></select>
                     <button id="botaoEditarMaterial" class="outlined-btn" type="button" style="display:none" disabled><span class="material-symbols-outlined">edit</span>Editar material</button>
                   </div>
@@ -453,52 +455,6 @@
               </div>
               <div id="minimosStatus" role="status" aria-live="polite" style="margin-top:10px;font-size:12px"></div>
             </section>
-
-            <section class="card">
-              <div class="card-header">
-                <div class="card-title">
-                  <div class="card-icon">category</div>
-                  <div>
-                    <h2>Exemplos de tipos</h2>
-                    <p>Base inicial para organizar o cadastro de materiais.</p>
-                  </div>
-                </div>
-              </div>
-
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Categoria</th>
-                      <th>Tipo</th>
-                      <th>Controle de tamanho</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>EPI</td>
-                      <td>Sapatão / Botina</td>
-                      <td>Possui tamanhos (34 a 44)</td>
-                    </tr>
-                    <tr>
-                      <td>EPI</td>
-                      <td>Óculos de proteção</td>
-                      <td>Tamanho único</td>
-                    </tr>
-                    <tr>
-                      <td>EPI</td>
-                      <td>Luva de segurança</td>
-                      <td>Possui tamanhos (PP a GG)</td>
-                    </tr>
-                    <tr>
-                      <td>EPI</td>
-                      <td>Protetor auricular</td>
-                      <td>Depende do modelo</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </section>
           </div>
         </section>
       </section>
@@ -512,6 +468,7 @@
 <script src="../js/pagina-base.js"></script>
 <script src="../js/materiais.js"></script>
 <script src="../js/estoque-minimos.js"></script>
+<script src="../js/catalogo-visual.js"></script>
 <script>
 /*
   Ligação com o DOM — deliberadamente fina. Toda a lógica (corpo do POST,
@@ -528,7 +485,7 @@
 
   // O que o servidor disse que esta pessoa pode fazer aqui. Começa sem nada;
   // só aplicarAcesso() (após GET /api/auth/permissoes) libera.
-  var acessoAtual = { permissoes: null, podeAlterar: false, podeMovimentar: false, podeEditar: false };
+  var acessoAtual = { permissoes: null, podeAlterar: false, podeEntrada: false, podeBaixa: false, podeEditar: false };
 
   // Modo edição: `edicao` guarda o registro carregado; `cargaEdicao` numera
   // cada carga ou salvamento para descartar respostas antigas; `telaEncerrada`
@@ -567,10 +524,10 @@
   EpiHttp.configurar({ baseUrl: window.SAFEWORK_PORTAL_API_BASE_URL });
 
   var CAMPOS = ['materialNome', 'materialCategoria', 'materialTipo', 'materialTipoCustom', 'materialOculosComGrau', 'materialFabricante', 'materialCodigo', 'materialControleTamanho',
-    'materialQuantidadeComprada', 'materialTamanhoEntrada', 'materialEntradaCa', 'materialEntradaCaValidade', 'materialUnidade', 'materialEstoqueMinimo',
+    'materialGrade', 'materialQuantidadeComprada', 'materialTamanhoEntrada', 'materialEntradaCa', 'materialEntradaCaValidade', 'materialUnidade', 'materialEstoqueMinimo',
     'materialValidadeTipo', 'materialPrazo', 'materialDesc', 'materialRegistrarEntrada'];
-  var CAMPO_POR_ERRO = { nome: 'materialNome', categoria: 'materialCategoria', tipo: 'materialTipo', fabricante: 'materialFabricante', codigoInterno: 'materialCodigo',
-    controleTamanho: 'materialControleTamanho', quantidadeComprada: 'materialQuantidadeComprada', tamanhoEntrada: 'materialTamanhoEntrada', caEntrada: 'materialEntradaCa',
+  var CAMPO_POR_ERRO = { nome: 'materialNome', categoria: 'materialCategoria', tipo: 'materialTipo', tipoDescricao: 'materialTipoCustom', fabricante: 'materialFabricante', codigoInterno: 'materialCodigo',
+    controleTamanho: 'materialControleTamanho', grade: 'materialGrade', quantidadeComprada: 'materialQuantidadeComprada', tamanhoEntrada: 'materialTamanhoEntrada', caEntrada: 'materialEntradaCa',
     caValidadeEntrada: 'materialEntradaCaValidade', unidade: 'materialUnidade', estoqueMinimo: 'materialEstoqueMinimo', prazo: 'materialPrazo', descricao: 'materialDesc',
     oculosComGrau: 'materialOculosComGrau' };
   var CAMPOS_ENTRADA_INICIAL = ['materialRegistrarEntrada', 'materialQuantidadeComprada', 'materialTamanhoEntrada', 'materialEntradaCa', 'materialEntradaCaValidade'];
@@ -633,11 +590,26 @@
 
   // ── formulário do material ──
   function toggleCustomMaterialType() {
-    var outro = $('materialTipo').value === 'Outro';
-    $('customMaterialTypeField').style.display = outro ? '' : 'none';
-    if (!outro) $('materialTipoCustom').value = '';
+    var outros = $('materialTipo').value === formulario.OUTROS;
+    $('customMaterialTypeField').style.display = outros ? '' : 'none';
+    if (!outros) $('materialTipoCustom').value = '';
     preencherTamanhosEntrada();
     tipoMudou();
+  }
+
+  /** Opções de tipo da categoria atual (12G-8). O valor só fica se pertencer à lista nova ou for a opção legada do registro aberto. */
+  function preencherTipos(valor, extra) {
+    var select = $('materialTipo');
+    var categoria = $('materialCategoria').value;
+    select.innerHTML = render.opcoesTipos(categoria, extra);
+    var validos = formulario.tiposDe(categoria).concat(extra && extra.valor ? [extra.valor] : []);
+    select.value = validos.indexOf(valor) !== -1 ? valor : '';
+  }
+
+  /** Trocar a categoria recarrega os tipos e SEMPRE limpa tipo e descrição, mesmo "Outros": a pessoa escolhe de novo. */
+  function categoriaMudou() {
+    preencherTipos('', null);
+    toggleCustomMaterialType();
   }
 
   function tipoCustomMudou() {
@@ -687,16 +659,23 @@
     $('materialPrazoPreviewText').textContent = texto || '—';
   }
 
+  /** O tipo escolhido; a descrição de "Outros" é texto e nunca age como tipo (12G-8). */
   function tipoAtual() {
-    var t = $('materialTipo').value;
-    return t === 'Outro' ? $('materialTipoCustom').value : t;
+    return $('materialTipo').value;
   }
 
-  /** Tamanhos da entrada inicial; a primeira opção é vazia e nada é escolhido sozinho. */
+  /** O campo da grade só existe com "Possui tamanhos" (12G-8). */
+  function toggleGrade() {
+    $('campoGradeTamanhos').style.display = $('materialControleTamanho').value === 'grade' ? '' : 'none';
+    preencherTamanhosEntrada();
+  }
+
+  /** Tamanhos da entrada inicial (a grade digitada, quando há); a primeira opção é vazia e nada é escolhido sozinho. */
   function preencherTamanhosEntrada() {
     var select = $('materialTamanhoEntrada');
     var atual = select.value;
-    var lista = formulario.tamanhosDaEntrada([], tipoAtual());
+    var grade = $('materialControleTamanho').value === 'grade' ? formulario.lerGrade($('materialGrade').value).tamanhos : [];
+    var lista = formulario.tamanhosDaEntrada([], tipoAtual(), grade);
     select.innerHTML = render.opcoesTamanhos(lista);
     select.value = lista.indexOf(atual) !== -1 ? atual : '';
   }
@@ -726,14 +705,15 @@
       var el = $(id);
       if (el.tagName === 'SELECT') el.selectedIndex = 0; else el.value = '';
     });
-    $('materialTipo').value = 'Sapatão / Botina';
     $('materialControleTamanho').value = '';
     $('materialValidadeTipo').value = 'meses';
     $('materialRegistrarEntrada').value = 'nao';
     limparErros();
+    preencherTipos('', null);
     toggleCustomMaterialType();
     reiniciarOculos();
     updatePrazoLabel();
+    toggleGrade();
     toggleEntradaInicial();
     $('materialNome').focus();
   }
@@ -748,7 +728,7 @@
     return {
       nome: $('materialNome').value, categoria: $('materialCategoria').value, tipo: $('materialTipo').value, tipoCustom: $('materialTipoCustom').value,
       fabricante: $('materialFabricante').value, codigoInterno: $('materialCodigo').value, controleTamanho: $('materialControleTamanho').value,
-      quantidadeComprada: $('materialQuantidadeComprada').value, tamanhoEntrada: $('materialTamanhoEntrada').value, caEntrada: $('materialEntradaCa').value,
+      grade: $('materialGrade').value, quantidadeComprada: $('materialQuantidadeComprada').value, tamanhoEntrada: $('materialTamanhoEntrada').value, caEntrada: $('materialEntradaCa').value,
       caValidadeEntrada: $('materialEntradaCaValidade').value, unidade: $('materialUnidade').value, estoqueMinimo: $('materialEstoqueMinimo').value,
       prazoUnidade: $('materialValidadeTipo').value, prazo: $('materialPrazo').value, descricao: $('materialDesc').value, registrarEntrada: $('materialRegistrarEntrada').value,
       oculosComGrau: $('materialOculosComGrau').checked === true, oculosComGrauTocado: oculosTocado,
@@ -768,7 +748,7 @@
     var botao = $('botaoSalvar');
     botao.disabled = true;
     try {
-      var r = await fluxo.cadastrar({ corpo: montado.corpo, entrada: montado.entrada, podeMovimentar: acessoAtual.podeMovimentar, idempotencia: operacaoEntrada });
+      var r = await fluxo.cadastrar({ corpo: montado.corpo, entrada: montado.entrada, podeMovimentar: acessoAtual.podeEntrada, idempotencia: operacaoEntrada });
       if (!r.ok) {
         if (tratarSessao(r.resposta)) return;
         if (r.confirmado) {
@@ -806,7 +786,7 @@
     var emEdicao = !!edicao;
     var liberado = emEdicao || acessoAtual.podeAlterar;
     CAMPOS.forEach(function (id) { $(id).disabled = !liberado; });
-    var entradaPossivel = liberado && !emEdicao && acessoAtual.podeMovimentar;
+    var entradaPossivel = liberado && !emEdicao && acessoAtual.podeEntrada;
     CAMPOS_ENTRADA_INICIAL.forEach(function (id) { $(id).disabled = !entradaPossivel; });
     if (!entradaPossivel && $('materialRegistrarEntrada').value !== 'nao') {
       $('materialRegistrarEntrada').value = 'nao';
@@ -815,7 +795,7 @@
     $('materialUnidade').disabled = !liberado || emEdicao;
     $('materialUnidadeHelper').style.display = emEdicao ? '' : 'none';
     $('materialRegistrarEntradaHelper').textContent = emEdicao ? TEXTOS_ENTRADA.edicao
-      : (liberado && !acessoAtual.podeMovimentar ? TEXTOS_ENTRADA.semMovimentar : TEXTOS_ENTRADA.padrao);
+      : (liberado && !acessoAtual.podeEntrada ?TEXTOS_ENTRADA.semMovimentar : TEXTOS_ENTRADA.padrao);
   }
 
   /** Título, identificação e botões do modo atual (cadastro ou edição). */
@@ -887,16 +867,18 @@
     acrescentarOpcao('materialUnidade', preparado.opcoesExtras.unidade);
     edicao = { id: material.id, original: material };
     limparErros();
-    $('materialTipo').value = c.tipo;
-    toggleCustomMaterialType();
     var valores = {
       materialNome: c.nome, materialCategoria: c.categoria, materialTipoCustom: c.tipoCustom, materialFabricante: c.fabricante, materialCodigo: c.codigoInterno,
       materialControleTamanho: c.controleTamanho, materialUnidade: c.unidade, materialEstoqueMinimo: c.estoqueMinimo, materialValidadeTipo: c.prazoUnidade,
-      materialPrazo: c.prazo, materialDesc: c.descricao, materialRegistrarEntrada: 'nao',
+      materialPrazo: c.prazo, materialDesc: c.descricao, materialRegistrarEntrada: 'nao', materialGrade: c.grade,
     };
     Object.keys(valores).forEach(function (id) { $(id).value = valores[id]; });
+    // Tipos da categoria do registro; o óculos legado entra como opção temporária, nunca trocado em silêncio.
+    preencherTipos(c.tipo, preparado.opcoesExtras.tipo);
+    toggleCustomMaterialType();
     reiniciarOculos();
     updatePrazoLabel();
+    toggleGrade();
     toggleEntradaInicial();
     aplicarModo();
     mostrarAviso(c.controleTamanho ? '' : AVISO_SEM_CLASSIFICACAO, c.controleTamanho ? null : 'atencao');
@@ -988,9 +970,18 @@
     atualizarEstoqueAcoes();
   }
 
+  /** 12G-7: pictograma do material escolhido, decorativo; o nome continua no seletor. */
+  function mostrarPictograma(material) {
+    var alvo = $('pictogramaMaterialAtual');
+    if (material) alvo.replaceChildren(EpiCatalogoVisual.elemento(document, material));
+    else alvo.replaceChildren();
+    alvo.hidden = !material;
+  }
+
   /** Saldos, lotes e as opções de entrada e baixa da última consulta; `falha` mostra o motivo. */
   function mostrarEstoque(dados, falha) {
     var t = dados ? dados.totais : null;
+    mostrarPictograma(dados ? dados.material : null);
     $('saldoFisico').textContent = t ? String(t.fisico) : '—';
     $('saldoBloqueado').textContent = t ? String(t.bloqueado) : '—';
     $('saldoDisponivel').textContent = t ? String(t.disponivel) : '—';
@@ -1034,7 +1025,7 @@
     $('entradaTamanhoUnico').style.display = exige === false ? '' : 'none';
     $('entradaTamanhoUnico').textContent = 'Tamanho: ' + estoque.TAMANHO_UNICO;
     var atual = $('entradaTamanho').value;
-    var lista = formulario.tamanhosDaEntrada(lotesAtuais, m ? m.tipo : '');
+    var lista = formulario.tamanhosDaEntrada(lotesAtuais, m ? m.tipo : '', m ? m.tamanhos : []);
     $('entradaTamanho').innerHTML = render.opcoesTamanhos(lista);
     $('entradaTamanho').value = lista.indexOf(atual) !== -1 ? atual : '';
     $('entradaEstoqueHelper').textContent = m && exige === null ? TEXTOS_ESTOQUE.semClassificacao : TEXTOS_ESTOQUE.entrada;
@@ -1061,14 +1052,15 @@
     desmarcarCampos(Object.keys(CAMPO_BAIXA_POR_ERRO).map(function (k) { return CAMPO_BAIXA_POR_ERRO[k]; }));
   }
 
-  /** Blocos visíveis só com MOVIMENTAR_ESTOQUE; botões só com material consultado e sem envio em andamento. */
+  /** Entrada só com ENTRADA_ESTOQUE e baixa só com BAIXA_ESTOQUE (independentes); botões só com material consultado e sem envio em andamento. */
   function atualizarEstoqueAcoes() {
-    var permitido = acessoAtual.podeMovimentar && !telaEncerrada;
-    $('blocoEntradaEstoque').style.display = permitido ? '' : 'none';
-    $('blocoBaixaEstoque').style.display = permitido ? '' : 'none';
+    var permitidoEntrada = acessoAtual.podeEntrada && !telaEncerrada;
+    var permitidoBaixa = acessoAtual.podeBaixa && !telaEncerrada;
+    $('blocoEntradaEstoque').style.display = permitidoEntrada ? '' : 'none';
+    $('blocoBaixaEstoque').style.display = permitidoBaixa ? '' : 'none';
     var consultado = !!materialDoEstoque && $('gradeMaterial').value === String(materialDoEstoque.id);
-    $('botaoRegistrarEntrada').disabled = !permitido || entradaEmAndamento || !consultado || exigeTamanhoDe(materialDoEstoque) === null;
-    $('botaoRegistrarBaixa').disabled = !permitido || baixaEmAndamento || !consultado || lotesAtuais.length === 0;
+    $('botaoRegistrarEntrada').disabled = !permitidoEntrada || entradaEmAndamento || !consultado || exigeTamanhoDe(materialDoEstoque) === null;
+    $('botaoRegistrarBaixa').disabled = !permitidoBaixa || baixaEmAndamento || !consultado || lotesAtuais.length === 0;
   }
 
   function materialConsultado() {
@@ -1076,7 +1068,7 @@
   }
 
   async function registrarEntradaPosterior() {
-    if (!acessoAtual.podeMovimentar || telaEncerrada || entradaEmAndamento || !materialConsultado()) return;
+    if (!acessoAtual.podeEntrada || telaEncerrada || entradaEmAndamento || !materialConsultado()) return;
     var material = materialDoEstoque;
     desmarcarCampos(Object.keys(CAMPO_ENTRADA_POR_ERRO).map(function (k) { return CAMPO_ENTRADA_POR_ERRO[k]; }));
     var montado = formulario.montarEntrada({
@@ -1129,7 +1121,7 @@
   }
 
   async function registrarBaixa() {
-    if (!acessoAtual.podeMovimentar || telaEncerrada || baixaEmAndamento || !materialConsultado()) return;
+    if (!acessoAtual.podeBaixa || telaEncerrada || baixaEmAndamento || !materialConsultado()) return;
     var material = materialDoEstoque;
     desmarcarCampos(Object.keys(CAMPO_BAIXA_POR_ERRO).map(function (k) { return CAMPO_BAIXA_POR_ERRO[k]; }));
     var montado = formulario.montarBaixa({
@@ -1304,7 +1296,7 @@
   // ── acesso e sessão ──
   function aplicarAcesso(acesso) {
     acessoAtual = {
-      permissoes: acesso.permissoes, podeAlterar: acesso.podeAlterar, podeMovimentar: EpiPermissoes.acao(acesso.permissoes, 'MOVIMENTAR_ESTOQUE'),
+      permissoes: acesso.permissoes, podeAlterar: acesso.podeAlterar, podeEntrada: EpiPermissoes.acao(acesso.permissoes, 'ENTRADA_ESTOQUE'), podeBaixa: EpiPermissoes.acao(acesso.permissoes, 'BAIXA_ESTOQUE'),
       // Editar é independente de criar; o backend recusa com 403 de qualquer forma.
       podeEditar: EpiPermissoes.recurso(acesso.permissoes, 'materials', 'editar'),
     };
@@ -1344,12 +1336,15 @@
   }
 
   // ── eventos ──
+  $('materialCategoria').addEventListener('change', categoriaMudou);
   $('materialTipo').addEventListener('change', toggleCustomMaterialType);
   $('materialTipoCustom').addEventListener('input', tipoCustomMudou);
   $('materialOculosComGrau').addEventListener('change', function () { oculosTocado = true; atualizarOculos(); });
   $('materialValidadeTipo').addEventListener('change', updatePrazoLabel);
   $('materialPrazo').addEventListener('input', updatePrazoPreview);
   $('materialControleTamanho').addEventListener('change', toggleEntradaInicial);
+  $('materialControleTamanho').addEventListener('change', toggleGrade);
+  $('materialGrade').addEventListener('input', preencherTamanhosEntrada);
   $('materialRegistrarEntrada').addEventListener('change', toggleEntradaInicial);
   $('botaoLimpar').addEventListener('click', limpar);
   $('botaoSalvar').addEventListener('click', salvar);
@@ -1372,6 +1367,7 @@
   $('botaoRegistrarBaixa').addEventListener('click', registrarBaixa);
   $('botaoEditarMaterial').addEventListener('click', iniciarEdicao);
   $('botaoCancelarEdicao').addEventListener('click', cancelarEdicao);
+  preencherTipos('', null);
   preencherTamanhosEntrada();
   updatePrazoLabel();
   $('materialRegistrarEntrada').value = 'nao';

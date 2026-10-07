@@ -5,7 +5,7 @@ const { validar } = require('../middleware/validar');
 const funcionarioSchemas = require('../schemas/funcionario.schema');
 const { funcionarioController } = require('../controllers/funcionario.controller');
 const { exigirSessao } = require('../middleware/autenticacao');
-const { criarExigirPermissaoRecurso } = require('../middleware/autorizacao');
+const { criarExigirPermissaoRecurso, criarExigirPermissaoAcao } = require('../middleware/autorizacao');
 const { pool } = require('../config/database');
 
 /**
@@ -40,9 +40,11 @@ function criarFuncionarioRoutes({ controller, exigirSessao: exigirSessaoInjetado
   const exigirCriar = criarExigirPermissaoRecurso({ pool: poolInjetado }, RECURSO, 'criar');
   const exigirEditar = criarExigirPermissaoRecurso({ pool: poolInjetado }, RECURSO, 'editar');
 
+  const exigirImportar = criarExigirPermissaoAcao({ pool: poolInjetado }, 'IMPORTAR_FUNCIONARIOS');
+
   router.post('/funcionarios', exigirSessaoInjetado, exigirCriar, validar({ body: funcionarioSchemas.criar.body }), controller.criar);
-  // C4 (D1/D8): importação em lote, mesma permissão de criar funcionários.
-  router.post('/funcionarios/importacao', exigirSessaoInjetado, exigirCriar, validar({ body: funcionarioSchemas.importacao.body }), controller.importar);
+  // Importação em lote: permissão PRÓPRIA (ação IMPORTAR_FUNCIONARIOS), independente de employeeHistory.criar.
+  router.post('/funcionarios/importacao', exigirSessaoInjetado, exigirImportar, validar({ body: funcionarioSchemas.importacao.body }), controller.importar);
   router.get('/funcionarios', exigirSessaoInjetado, exigirVisualizar, validar({ query: funcionarioSchemas.listar.query }), controller.listar);
   // SEC-008: consulta por CPF completo, só leitura, com o CPF no corpo.
   router.post('/funcionarios/consulta-cpf', exigirSessaoInjetado, exigirVisualizar, validar({ body: funcionarioSchemas.consultaCpf.body }), controller.consultarCpf);

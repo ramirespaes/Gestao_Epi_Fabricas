@@ -69,6 +69,16 @@
     "065_create_solicitacoes_epi.sql": "de25e05955fdda5e4d4732f1e8bd12ed64e815b057a458f675bba4234d073c97",
     "066_alter_entregas_epi_origem_solicitacao.sql": "b9f098f9bd68f996a51d8175f302cbb2c02c6878762ae2444d0ee2c3c35e93c1",
     "067_create_estoque_minimos.sql": "91c461e485875f8900282462737ca830b32a42fd56651732fee1e3d539665d1b",
-    "068_alter_solicitacoes_epi_add_encerramento.sql": "125ff4b8a11d5f9e80f39bfe30b9534fa666b3e8a267b07aa7c9be2a68673280"
+    "068_alter_solicitacoes_epi_add_encerramento.sql": "125ff4b8a11d5f9e80f39bfe30b9534fa666b3e8a267b07aa7c9be2a68673280",
+    "069_create_alertas_estoque.sql": "8257067ead654f6ba5bec8f7897a174f8af250fa0255d8e0558ac1619a980353",
+    "070_create_material_tamanhos.sql": "132f4758995ceed81b1575245790c49892bc5b16ecfe45adff1251b01c4f8833",
+    "071_alter_materiais_add_tipo_descricao_e_tipos_oculos.sql": "d82d58a366cc6462698f823dc5938f85477f7657aa8c8f74b781af13cb0ae463",
+    "072_alter_identidades_add_telefone_tema_modo_visual.sql": "80f130f53921ca2def1f30a3ca238ea0a138a34d01fe6d97653f97255c222a20",
+    "073_alter_usuarios_add_funcionario_id.sql": "5f7e7f76a042d2456e403750e5db15159fd177394f8a2700f767dd401488a9b5",
+    "074_alter_identidades_add_senha_provisoria.sql": "e0305c5b18deea79c689508d885751a46fdc68340cf7faf9124aa7908e42ed4d",
+    "075_alter_identidades_add_cpf.sql": "0d9c32a5e97879e190c0bbf06b37d6c00da509f1e368d0155df1380f5a5e218b",
+    "076_alter_usuarios_add_matricula_setor_horario.sql": "a5487bd69af729fb56002e4394aba8363ff6df119c9f4b545600e734a2d0c5d0",
+    "077_create_usuario_ips_permitidos.sql": "30e7ada8aa7f7b7b77e605b3362e71e040751ab4c9519950e586c0b2c015b96d",
+    "078_insert_acoes_estoque_entrada_baixa.sql": "1d3f4b8eb2ceb8389ebc7e5dcb75e39efe8dfb5da177becb496e19e4777efa81"
   }
 }

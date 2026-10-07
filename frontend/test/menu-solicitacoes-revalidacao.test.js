@@ -17,8 +17,8 @@ const { abrirPagina } = require('./helpers/dom-pagina');
 
 // A Ficha de EPI fica fora só da abertura por DOM: o harness não tem canvas (assinatura). O menu
 // dela é conferido estaticamente em solicitacoes-12g1-paginas.test.js e a página em epi-ficha.test.js.
-const INTEGRADAS = ['available-items.html', 'dashboard.html', 'employee-groups.html', 'employee-history.html', 'import-employees.html', 'materials.html', 'new-user.html', 'operations.html',
-  'request.html', 'stock-requests.html', 'stock-validity.html', 'supervisor-approval.html', 'user-admin.html'];
+const INTEGRADAS = ['available-items.html', 'dashboard.html', 'employee-groups.html', 'employee-history.html', 'gestao-usuarios.html', 'import-employees.html', 'materials.html', 'operations.html',
+  'request.html', 'stock-requests.html', 'stock-validity.html', 'supervisor-approval.html'];
 const ITENS = { request: 'Pedido de EPI', supervisorApproval: 'Aprovação da Segurança do Trabalho', stockRequests: 'Entregas por solicitação' };
 
 const NENHUMA = { visualizar: false, criar: false, editar: false, excluir: false };

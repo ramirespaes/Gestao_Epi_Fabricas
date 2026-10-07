@@ -98,14 +98,15 @@ describe('12G-1 — módulos do frontend da solicitação contra servidor e Post
   const PAGINAS = ['request', 'supervisorApproval', 'stockRequests'];
 
   describe('permissões reais lidas pelo frontend', () => {
-    test('a resposta real (com vínculos SST) passa na validação estrita; o MASTER provisionado administra vínculos, não pede nem decide, e só abre Entregas pela REALIZAR_ENTREGA provisionada', async () => {
+    test('a resposta real (com vínculos SST) passa na validação estrita; o MASTER provisionado administra vínculos, pede (request, 05/10/2026) e entrega (REALIZAR_ENTREGA), mas não decide nem encerra', async () => {
       const p = await permissoesDe(env.d.master);
       assert.deepEqual(p.administracao.vinculosSst, { consultar: true, alterar: true });
       const c = S.capacidades(p);
-      for (const k of ['verMinhas', 'criar', 'cancelar', 'aprovar', 'reprovar', 'entregar', 'encerrar']) {
-        assert.equal(c[k], k === 'entregar', `MASTER ${k}: só o que o provisionamento dá (REALIZAR_ENTREGA)`);
+      const esperado = { verMinhas: true, criar: true, cancelar: true, aprovar: false, reprovar: false, entregar: true, encerrar: false };
+      for (const k of Object.keys(esperado)) {
+        assert.equal(c[k], esperado[k], `MASTER ${k}: só o que o provisionamento dá (request e REALIZAR_ENTREGA)`);
       }
-      assert.deepEqual(PAGINAS.map((pg) => EpiPermissoes.podeAbrir(p, pg)), [false, false, true], 'Entregas abre pela REALIZAR_ENTREGA provisionada, nunca pelo nome do perfil');
+      assert.deepEqual(PAGINAS.map((pg) => EpiPermissoes.podeAbrir(p, pg)), [true, false, true], 'Pedido pelo request provisionado e Entregas pela REALIZAR_ENTREGA provisionada, nunca pelo nome do perfil');
     });
 
     test('cada perfil de uso abre só a sua tela, pelas concessões reais', async () => {

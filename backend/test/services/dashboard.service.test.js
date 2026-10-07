@@ -27,6 +27,8 @@ function simular(t, { fontes = {}, resumo = RESUMO, validade = { caVencido: 4, c
   const permissoes = { availableItems: true, stockValidity: true, employeeHistory: true, ...fontes };
   const chamadas = { recursos: [], posicao: [], validade: [], funcionarios: [] };
   t.mock.method(autorizacao, 'avaliarPermissaoRecurso', async (_p, ctx, recurso) => { chamadas.recursos.push([ctx, recurso]); return { visualizar: permissoes[recurso] === true }; });
+  // As contagens das solicitações (12G-6) dependem de ações; aqui, nenhuma: ficam negadas e não consultam nada.
+  t.mock.method(autorizacao, 'avaliarPermissaoAcao', async () => false);
   t.mock.method(posicaoRepo, 'resumirPosicoes', async (_p, empresaId, ref) => { chamadas.posicao.push([empresaId, ref]); return resumo; });
   t.mock.method(loteRepo, 'resumirIndicadores', async (_p, empresaId, ref) => { chamadas.validade.push([empresaId, ref]); return validade; });
   t.mock.method(funcionarioRepo, 'contarPorEmpresa', async (_p, empresaId, f) => { chamadas.funcionarios.push([empresaId, f]); return 17; });
@@ -46,6 +48,9 @@ describe('dashboard.service.consultar — estoque pela posição (12D-2)', () =>
       necessidadeReposicao: { permitido: true, valor: 11 },
       caVencido: { permitido: true, valor: 4, aVencer: 5, diasAlerta: 60 },
       funcionariosAtivos: { permitido: true, valor: 17 },
+      solicitacoesAguardandoSst: { permitido: false },
+      solicitacoesAguardandoEstoque: { permitido: false },
+      disponiveisParaEntrega: { permitido: false },
     });
     assert.deepEqual(chamadas.posicao, [[42, { hoje: '2026-10-02' }]]);
     assert.deepEqual(chamadas.validade, [[42, { hoje: '2026-10-02', diasAlerta: 60 }]]);

@@ -46,7 +46,8 @@ const SENHA = 'senha-correta-do-teste-bloco9-etapa-a-2026';
 let HASH_SENHA;
 
 const RECURSO = 'materials';
-const ACAO_MOVIMENTAR_ESTOQUE = 'MOVIMENTAR_ESTOQUE';
+// 078: entrada e baixa são ações independentes; os cenários antigos concedem as duas juntas (a independência tem teste próprio).
+const ACOES_ESTOQUE = ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE'];
 
 async function inserirUsuario(pool, empresaId, email, perfil = 'ADMINISTRADOR', ativo = true) {
   const { rows } = await pool.query(
@@ -74,12 +75,14 @@ async function concederRecursoMaterials(pool, empresaId, perfil, flags) {
 }
 
 async function concederAcaoMovimentarEstoque(pool, empresaId, perfil, permitido) {
-  await pool.query(
-    `INSERT INTO permissoes_acao (empresa_id, perfil, acao_codigo, permitido)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT (empresa_id, perfil, acao_codigo) DO UPDATE SET permitido = EXCLUDED.permitido`,
-    [empresaId, perfil, ACAO_MOVIMENTAR_ESTOQUE, permitido],
-  );
+  for (const acao of ACOES_ESTOQUE) {
+    await pool.query(
+      `INSERT INTO permissoes_acao (empresa_id, perfil, acao_codigo, permitido)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (empresa_id, perfil, acao_codigo) DO UPDATE SET permitido = EXCLUDED.permitido`,
+      [empresaId, perfil, acao, permitido],
+    );
+  }
 }
 
 async function contarAuditoria(pool, empresaId, acao) {
@@ -191,7 +194,7 @@ describe('API HTTP de materiais e estoque com PostgreSQL real', () => {
       const antes = await contarAuditoria(pool, empresaA, 'MATERIAL_CRIADO');
 
       const resposta = await request(app).post('/api/materiais').set('Cookie', cookieMasterA).send({
-        nome: 'Botina de segurança', tipo: 'Sapatão / Botina', fabricante: 'Bracol',
+        nome: 'Botina de segurança', categoria: 'EPI', tipo: 'Botina de Segurança', fabricante: 'Bracol',
         prazoUsoDias: 365, exigeTamanho: true, unidade: 'par', estoqueMinimo: 5,
       });
 
@@ -602,8 +605,10 @@ describe('API HTTP de materiais e estoque com PostgreSQL real', () => {
   });
 
   describe('Cenário 11 — óculos de proteção com ou sem grau (migration 045)', () => {
+    // OCULOS é o nome histórico (só legado gravado por SQL); INCOLOR é um dos dois tipos oficiais (12G-8).
     const OCULOS = 'Óculos de proteção';
-    const cadastro = (extra) => ({ nome: `Material ${Math.random()}`, prazoUsoDias: 180, exigeTamanho: false, ...extra });
+    const INCOLOR = 'Óculos de Proteção Incolor';
+    const cadastro = (extra) => ({ nome: `Material ${Math.random()}`, categoria: 'EPI', prazoUsoDias: 180, exigeTamanho: false, ...extra });
     const criar = (extra) => request(app).post('/api/materiais').set('Cookie', cookieMasterA).send(cadastro(extra));
     const patch = (id, corpo, cookie = cookieMasterA) => request(app).patch(`/api/materiais/${id}`).set('Cookie', cookie).send(corpo);
     const consultar = async (id) => (await request(app).get(`/api/materiais/${id}`).set('Cookie', cookieMasterA)).body.material;
@@ -619,20 +624,20 @@ describe('API HTTP de materiais e estoque com PostgreSQL real', () => {
 
     test('cadastro de óculos com true e com false: 201; o valor volta no cadastro, na consulta, na lista e fica no banco', async () => {
       for (const oculosComGrau of [true, false]) {
-        const r = await criar({ tipo: OCULOS, oculosComGrau });
+        const r = await criar({ tipo: INCOLOR, oculosComGrau });
         assert.equal(r.status, 201, JSON.stringify(r.body));
         assert.equal(r.body.material.oculosComGrau, oculosComGrau);
         assert.equal((await consultar(r.body.material.id)).oculosComGrau, oculosComGrau);
         const lista = await request(app).get('/api/materiais?limite=100').set('Cookie', cookieMasterA);
         assert.equal(lista.body.materiais.find((m) => m.id === r.body.material.id).oculosComGrau, oculosComGrau);
-        assert.deepEqual(await noBanco(r.body.material.id), { tipo: OCULOS, oculos_com_grau: oculosComGrau });
+        assert.deepEqual(await noBanco(r.body.material.id), { tipo: INCOLOR, oculos_com_grau: oculosComGrau });
       }
     });
 
     test('cadastro de óculos sem a informação ou com null: 400 OCULOS_COM_GRAU_OBRIGATORIO, nada criado', async () => {
       const antes = (await pool.query('SELECT count(*)::int AS n FROM materiais WHERE empresa_id = $1', [empresaA])).rows[0].n;
-      recusa(await criar({ tipo: OCULOS }), 'OCULOS_COM_GRAU_OBRIGATORIO');
-      recusa(await criar({ tipo: OCULOS, oculosComGrau: null }), 'OCULOS_COM_GRAU_OBRIGATORIO');
+      recusa(await criar({ tipo: INCOLOR }), 'OCULOS_COM_GRAU_OBRIGATORIO');
+      recusa(await criar({ tipo: INCOLOR, oculosComGrau: null }), 'OCULOS_COM_GRAU_OBRIGATORIO');
       assert.equal((await pool.query('SELECT count(*)::int AS n FROM materiais WHERE empresa_id = $1', [empresaA])).rows[0].n, antes);
     });
 
@@ -647,7 +652,7 @@ describe('API HTTP de materiais e estoque com PostgreSQL real', () => {
     });
 
     test('texto no lugar do booleano: 400 VALIDACAO de tipo, antes do serviço', async () => {
-      const r = await criar({ tipo: OCULOS, oculosComGrau: 'true' });
+      const r = await criar({ tipo: INCOLOR, oculosComGrau: 'true' });
       assert.deepEqual([r.status, r.body.codigo, r.body.detalhes.map((d) => [d.campo, d.codigo])], [400, 'VALIDACAO', [['body.oculosComGrau', 'TIPO_INVALIDO']]]);
     });
 
@@ -664,15 +669,15 @@ describe('API HTTP de materiais e estoque com PostgreSQL real', () => {
     });
 
     test('óculos classificados: null explícito é 400 e o valor fica', async () => {
-      const r = await criar({ tipo: OCULOS, oculosComGrau: true });
+      const r = await criar({ tipo: INCOLOR, oculosComGrau: true });
       recusa(await patch(r.body.material.id, { oculosComGrau: null }), 'OCULOS_COM_GRAU_OBRIGATORIO');
       assert.equal((await noBanco(r.body.material.id)).oculos_com_grau, true);
     });
 
     test('óculos que passam a outro tipo: a informação vira NULL; mandar true junto é 400 e nada muda', async () => {
-      const r = await criar({ tipo: OCULOS, oculosComGrau: true });
+      const r = await criar({ tipo: INCOLOR, oculosComGrau: true });
       recusa(await patch(r.body.material.id, { tipo: 'Luva', oculosComGrau: true }), 'OCULOS_COM_GRAU_NAO_SE_APLICA');
-      assert.deepEqual(await noBanco(r.body.material.id), { tipo: OCULOS, oculos_com_grau: true });
+      assert.deepEqual(await noBanco(r.body.material.id), { tipo: INCOLOR, oculos_com_grau: true });
       const troca = await patch(r.body.material.id, { tipo: 'Luva' });
       assert.deepEqual([troca.status, troca.body.material.tipo, troca.body.material.oculosComGrau], [200, 'Luva', null]);
       assert.deepEqual(await noBanco(r.body.material.id), { tipo: 'Luva', oculos_com_grau: null });
@@ -680,11 +685,11 @@ describe('API HTTP de materiais e estoque com PostgreSQL real', () => {
 
     test('outro tipo que passa a óculos: sem classificar é 400 e nada muda; classificando, grava', async () => {
       const r = await criar({ tipo: 'Luva' });
-      recusa(await patch(r.body.material.id, { tipo: OCULOS }), 'OCULOS_COM_GRAU_OBRIGATORIO');
+      recusa(await patch(r.body.material.id, { tipo: INCOLOR }), 'OCULOS_COM_GRAU_OBRIGATORIO');
       assert.deepEqual(await noBanco(r.body.material.id), { tipo: 'Luva', oculos_com_grau: null });
-      const troca = await patch(r.body.material.id, { tipo: OCULOS, oculosComGrau: false });
+      const troca = await patch(r.body.material.id, { tipo: INCOLOR, oculosComGrau: false });
       assert.deepEqual([troca.status, troca.body.material.oculosComGrau], [200, false]);
-      assert.deepEqual(await noBanco(r.body.material.id), { tipo: OCULOS, oculos_com_grau: false });
+      assert.deepEqual(await noBanco(r.body.material.id), { tipo: INCOLOR, oculos_com_grau: false });
     });
 
     test('a auditoria registra o valor anterior e o novo, sem nenhum dado do corpo além dos campos do material', async () => {
@@ -700,7 +705,7 @@ describe('API HTTP de materiais e estoque com PostgreSQL real', () => {
     });
 
     test('isolamento e permissão: outra empresa recebe 404; perfil sem editar recebe 403; nada muda', async () => {
-      const r = await criar({ tipo: OCULOS, oculosComGrau: false });
+      const r = await criar({ tipo: INCOLOR, oculosComGrau: false });
       assert.equal((await patch(r.body.material.id, { oculosComGrau: true }, cookieMasterB)).status, 404);
       assert.equal((await patch(r.body.material.id, { oculosComGrau: true }, cookieAdminSemPermissaoA)).status, 403);
       assert.equal((await noBanco(r.body.material.id)).oculos_com_grau, false);

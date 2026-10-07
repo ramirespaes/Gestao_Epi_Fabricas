@@ -45,14 +45,15 @@ describe('GHE e EPIs: sem CA mestre', () => {
 // Menu: a mesma organização em todas as páginas que têm o menu completo
 // ═══════════════════════════════════════════════════════════════════
 const VISAO_GERAL = ['Dashboard', 'Relatórios'];
-const ESTOQUE = ['Gestão de estoque', 'Compras / Entradas', 'Validade de estoque', 'Análise de estoque', 'Operações de estoque', 'GHE e EPIs', 'Regras Função / Setor'];
-const ADMINISTRATIVAS = ['autorizacoes-individuais.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'grupos-acesso.html'];
+const ESTOQUE = ['Gestão de estoque', 'Compras / Entradas', 'Validade de estoque', 'Análise de estoque', 'Operações de estoque', 'Gestão de GHE', 'Regras Função / Setor'];
+// As seis telas de usuários e grupos foram APOSENTADAS (só redirecionam para a Gestão de Usuários): sem menu próprio.
+const ADMINISTRATIVAS = ['autorizacoes-individuais.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'grupos-acesso.html', 'new-user.html', 'user-admin.html'];
 const COM_MENU_COMPLETO = fs.readdirSync(path.join(RAIZ, 'pages')).filter((f) => f.endsWith('.html') && !ADMINISTRATIVAS.includes(f)).sort();
 // Parte F: Novo Usuário e Administração de Usuários deixaram de ser protótipo.
 // Bloco 10 (10G): a Ficha de EPI passou a ser integrada.
 // Bloco 12 (12G-1): Pedido de EPI, Aprovação da Segurança do Trabalho e Entregas por solicitação.
-const INTEGRADAS = ['available-items.html', 'dashboard.html', 'employee-groups.html', 'employee-history.html', 'epi-ficha.html', 'import-employees.html', 'materials.html', 'new-user.html', 'operations.html',
-  'request.html', 'stock-requests.html', 'stock-validity.html', 'supervisor-approval.html', 'user-admin.html'];
+const INTEGRADAS = ['available-items.html', 'config.html', 'dashboard.html', 'employee-groups.html', 'employee-history.html', 'epi-ficha.html', 'gestao-usuarios.html', 'import-employees.html', 'materials.html', 'operations.html',
+  'request.html', 'stock-requests.html', 'stock-validity.html', 'supervisor-approval.html'];
 
 /** Seções do menu lateral: [{ nome, itens: [{ rotulo, html }] }]. */
 function secoesDoMenu(html) {
@@ -68,8 +69,8 @@ function secoesDoMenu(html) {
 const secao = (html, nome) => secoesDoMenu(html).find((s) => s.nome === nome);
 
 describe('menu: Operações de estoque em ESTOQUE, na mesma ordem em todas as páginas', () => {
-  test('as 23 páginas com menu completo: Visão geral só com Dashboard e Relatórios; Estoque na ordem aprovada', () => {
-    assert.equal(COM_MENU_COMPLETO.length, 23);
+  test('as 24 páginas com menu completo: Visão geral só com Dashboard e Relatórios; Estoque na ordem aprovada', () => {
+    assert.equal(COM_MENU_COMPLETO.length, 22);
     for (const arquivo of COM_MENU_COMPLETO) {
       const html = ler(`pages/${arquivo}`);
       assert.deepEqual(secao(html, 'Visão geral').itens.map((i) => i.rotulo), VISAO_GERAL, arquivo);
@@ -100,7 +101,7 @@ describe('menu: Operações de estoque em ESTOQUE, na mesma ordem em todas as p�
   test('nos protótipos, GHE e EPIs leva à página real; os demais itens seguem a navegação do protótipo', () => {
     for (const arquivo of COM_MENU_COMPLETO.filter((f) => !INTEGRADAS.includes(f))) {
       const itens = secao(ler(`pages/${arquivo}`), 'Estoque').itens;
-      assert.match(itens.find((i) => i.rotulo === 'GHE e EPIs').html, /^<a href="employee-groups\.html"><div class="nav-icon purple">group_work<\/div>/, arquivo);
+      assert.match(itens.find((i) => i.rotulo === 'Gestão de GHE').html, /^<a href="employee-groups\.html"><div class="nav-icon purple">group_work<\/div>/, arquivo);
       assert.match(itens.find((i) => i.rotulo === 'Operações de estoque').html, /data-page="operations"/, arquivo);
     }
   });
@@ -110,7 +111,7 @@ describe('menu: Operações de estoque em ESTOQUE, na mesma ordem em todas as p�
     const paginas = [...inicio.matchAll(/<a href="\.\.\/pages\/[^"]+" data-pagina="([^"]+)" style="display:none">/g)].map((m) => m[1]);
     assert.deepEqual(paginas, ['dashboard', 'materials', 'stockValidity', 'availableItems', 'operations', 'employeeGroups', 'epiFicha', 'employeeHistory',
       'request', 'supervisorApproval', 'stockRequests',
-      'grupos-acesso', 'grupo-permissoes', 'grupo-usuarios', 'autorizacoes-individuais', 'importEmployees', 'newUser', 'userAdmin']);
+      'grupos-acesso', 'grupo-permissoes', 'grupo-usuarios', 'autorizacoes-individuais', 'importEmployees', 'newUser', 'userAdmin', 'config']);
     assert.match(inicio, /<a href="\.\.\/pages\/epi-ficha\.html" data-pagina="epiFicha" style="display:none">Ficha de EPI<\/a>/);
     assert.doesNotMatch(inicio, /Entregas e fichas de EPI/, 'a Ficha deixou de ser módulo futuro');
   });
@@ -129,9 +130,10 @@ describe('menu: Operações de estoque em ESTOQUE, na mesma ordem em todas as p�
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// Tema: segue o sistema operacional, sem botão e sem preferência guardada
+// Tema: por identidade (Configurações), servidor vence; "sistema" segue o SO; sem botão nas páginas
 // ═══════════════════════════════════════════════════════════════════
-const PAGINAS_INTEGRADAS = [...INTEGRADAS, ...ADMINISTRATIVAS].sort();
+// As seis telas aposentadas (ADMINISTRATIVAS) não carregam CSS nem módulos: só o tema e o redirecionamento.
+const PAGINAS_INTEGRADAS = [...INTEGRADAS].sort();
 
 function janelaFalsa(escuroInicial) {
   const atributos = {};
@@ -169,13 +171,16 @@ describe('tema claro e escuro automático', () => {
     assert.equal(janela.atributos['data-theme'], 'light');
   });
 
-  test('sem botão e sem preferência guardada: o módulo não usa armazenamento nem cookie', () => {
+  test('sem botão: o módulo não usa cookie, sessionStorage nem indexedDB; o localStorage é só o cache de pintura "safework-aparencia" (Configurações)', () => {
     const codigo = semComentarios(ler('js/tema.js'));
-    assert.equal(/localStorage|sessionStorage|document\.cookie|indexedDB|addEventListener\('click'/.test(codigo), false);
+    assert.equal(/sessionStorage|document\.cookie|indexedDB|addEventListener\('click'/.test(codigo), false);
+    assert.equal((codigo.match(/localStorage/g) || []).length, 1);
+    assert.equal((codigo.match(/(setItem|getItem|removeItem)\(/g) || []).length, 3);
+    assert.equal((codigo.match(/(setItem|getItem|removeItem)\(CHAVE_CACHE/g) || []).length, 3);
   });
 
-  test('as 18 páginas integradas carregam o tema no <head>, logo depois do CSS, antes de pintar', () => {
-    assert.equal(PAGINAS_INTEGRADAS.length, 18);
+  test('as 14 páginas integradas carregam o tema no <head>, logo depois do CSS, antes de pintar', () => {
+    assert.equal(PAGINAS_INTEGRADAS.length, 14);
     for (const arquivo of PAGINAS_INTEGRADAS) {
       const head = ler(`pages/${arquivo}`).split('</head>')[0];
       assert.match(head, /<link rel="stylesheet" href="\.\.\/css\/main\.css">\s*<script src="\.\.\/js\/tema\.js"><\/script>/, arquivo);

@@ -85,7 +85,7 @@ describe('autenticar — login válido', () => {
 
     const resultado = await autenticar(pool, { email: EMAIL, senha: SENHA });
 
-    assert.deepEqual(resultado.identidade, { id: IDENTIDADE_ID, email: EMAIL });
+    assert.deepEqual(resultado.identidade, { id: IDENTIDADE_ID, email: EMAIL, trocaSenhaObrigatoria: false });
     assert.equal(resultado.sessao.id, SESSAO_ID);
     assert.match(resultado.token, /^[A-Za-z0-9_-]{43}$/);
     assert.equal('empresa' in resultado, false, 'login administrativo nunca devolve empresa alguma');

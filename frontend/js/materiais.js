@@ -29,7 +29,7 @@
   var CAMINHO = '/materiais';
 
   // Tetos dos contratos (schemas do backend e migrations).
-  var LIMITES = { nome: 150, tipo: 100, fabricante: 100, caNumero: 20, unidade: 20, categoria: 30, codigoInterno: 30, descricao: 500, tamanho: 20, justificativa: 500 };
+  var LIMITES = { nome: 150, tipo: 100, tipoDescricao: 100, fabricante: 100, caNumero: 20, unidade: 20, categoria: 30, codigoInterno: 30, descricao: 500, tamanho: 20, justificativa: 500 };
   // Teto das colunas INTEGER (int4) do PostgreSQL, o mesmo do backend:
   // prazo em dias, estoque mínimo e quantidade.
   var INTEGER_MAXIMO = 2147483647;
@@ -52,10 +52,30 @@
   // Opções dos selects do formulário (materials.html), na mesma ordem.
   // Usadas para reabrir um material sem trocar valores em silêncio.
   var CATEGORIAS = ['EPI', 'Uniforme', 'Ferramenta', 'Material de consumo'];
-  // Tipo canônico dos óculos de proteção: o mesmo texto do backend e do CHECK
-  // da migration 045. Óculos são reconhecidos por este tipo, nunca pelo nome.
-  var TIPO_OCULOS = 'Óculos de proteção';
-  var TIPOS = ['Sapatão / Botina', TIPO_OCULOS, 'Luva', 'Protetor auricular', 'Capacete', 'Respirador'];
+  // 12G-8 — Categoria → Tipo: as mesmas listas do backend
+  // (utils/classificacao-material.js), conferidas por teste. "Outros" vale em
+  // toda categoria e leva a descrição em campo próprio; categoria sem lista
+  // própria (Ferramenta, sem categoria) só oferece "Outros".
+  var OUTROS = 'Outros';
+  var TIPOS_EPI = [
+    'Botina de Segurança', 'Capacete', 'Creme de Proteção', 'Luva', 'Mangote', 'Óculos de Proteção Ampla Visão',
+    'Óculos de Proteção Incolor', OUTROS, 'Palmilha', 'Proteção Auricular Concha', 'Proteção Auricular Descartável',
+    'Respirador PFF2', 'Sapato de Segurança', 'Viseira Película Ouro',
+  ];
+  var TIPOS_UNIFORME = ['Calça', 'Calça de Forneiro', 'Calça Eletricista', 'Camisa', 'Camisa de Forneiro', 'Camisa Eletricista', 'Camiseta', OUTROS];
+  var TIPOS_POR_CATEGORIA = { EPI: TIPOS_EPI, Uniforme: TIPOS_UNIFORME, Ferramenta: [OUTROS], 'Material de consumo': [OUTROS] };
+  // Tipos oficiais com nome próprio (sem "Outros"): o catálogo visual parte daqui.
+  var TIPOS = TIPOS_EPI.concat(TIPOS_UNIFORME).filter(function (t) { return t !== OUTROS; });
+  // Óculos de proteção são reconhecidos pelo tipo gravado, nunca pelo nome: os
+  // dois tipos oficiais e o nome histórico, que só vale para o legado.
+  var TIPOS_OCULOS = ['Óculos de Proteção Incolor', 'Óculos de Proteção Ampla Visão'];
+  var TIPO_OCULOS_LEGADO = 'Óculos de proteção';
+  var TIPO_OCULOS = TIPO_OCULOS_LEGADO;
+  var CALCADOS = ['Sapatão / Botina', 'Botina de Segurança', 'Sapato de Segurança'];
+  function tiposDe(categoria) {
+    var c = texto(categoria);
+    return hasOwn(TIPOS_POR_CATEGORIA, c) ? TIPOS_POR_CATEGORIA[c].slice() : [OUTROS];
+  }
   var UNIDADES = ['Par', 'Unidade', 'Caixa', 'Pacote', 'Kit'];
 
   // Controle de tamanho escolhido na tela → exigeTamanho do backend.
@@ -64,7 +84,7 @@
   // Campos que a edição pode enviar ao PATCH. A unidade de controle fica de
   // fora (mudaria o sentido do saldo), e o CA do cadastro também: o CA que
   // vale é o de cada lote.
-  var CAMPOS_EDITAVEIS = ['nome', 'categoria', 'tipo', 'fabricante', 'codigoInterno', 'descricao', 'prazoUsoDias', 'exigeTamanho', 'oculosComGrau', 'estoqueMinimo'];
+  var CAMPOS_EDITAVEIS = ['nome', 'categoria', 'tipo', 'tipoDescricao', 'fabricante', 'codigoInterno', 'descricao', 'prazoUsoDias', 'exigeTamanho', 'oculosComGrau', 'estoqueMinimo'];
 
   var MOTIVOS_BAIXA = [
     { codigo: 'CA_VENCIDO', rotulo: 'CA vencido' },
@@ -187,19 +207,39 @@
   /** Só ordena a lista de tamanhos; não decide se o material possui tamanhos. */
   function tamanhosSugeridos(tipo) {
     var t = texto(tipo);
-    if (t === 'Sapatão / Botina') return TAMANHOS_CALCADO.slice();
+    if (CALCADOS.indexOf(t) !== -1) return TAMANHOS_CALCADO.slice();
     if (/^luva/i.test(t)) return TAMANHOS_LUVA.slice();
     return [];
   }
 
-  /** Tamanhos que já têm lote, depois os sugeridos pelo tipo e o resto da lista padrão. */
-  function tamanhosDaEntrada(lotes, tipo) {
+  /**
+   * Com grade (12G-8), só a grade, na ordem dela. Sem grade: tamanhos que já
+   * têm lote, depois os sugeridos pelo tipo e o resto da lista padrão.
+   */
+  function tamanhosDaEntrada(lotes, tipo, grade) {
+    if (Array.isArray(grade) && grade.length > 0) return grade.slice();
     var lista = [];
     var incluir = function (t) { if (t !== null && t !== undefined && t !== '' && lista.indexOf(t) === -1) lista.push(t); };
     (lotes || []).forEach(function (l) { incluir(l.tamanho); });
     tamanhosSugeridos(tipo).forEach(incluir);
     TAMANHOS_GRADE.forEach(incluir);
     return lista;
+  }
+
+  // 12G-8: grade de tamanhos do material, separados por vírgula, na ordem
+  // digitada. Vazio é "sem grade" (legado). O servidor confere de novo.
+  var LIMITE_GRADE = 50;
+  function lerGrade(valor) {
+    var tamanhos = texto(valor).split(',').map(function (t) { return t.trim(); }).filter(Boolean);
+    if (tamanhos.length > LIMITE_GRADE) return { tamanhos: [], erro: 'A grade aceita até ' + LIMITE_GRADE + ' tamanhos.' };
+    var vistos = Object.create(null);
+    for (var i = 0; i < tamanhos.length; i += 1) {
+      if (tamanhos[i].length > LIMITES.tamanho) return { tamanhos: [], erro: 'Cada tamanho da grade pode ter até ' + LIMITES.tamanho + ' caracteres.' };
+      var chave = tamanhos[i].toUpperCase();
+      if (vistos[chave] === true) return { tamanhos: [], erro: 'A grade tem um tamanho repetido: ' + tamanhos[i] + '.' };
+      vistos[chave] = true;
+    }
+    return { tamanhos: tamanhos, erro: null };
   }
 
   function exigeTamanhoDoControle(controle) {
@@ -215,8 +255,11 @@
 
   function dataIso(s) { return /^\d{4}-\d{2}-\d{2}$/.test(s); }
 
-  /** O tipo, aparado, é exatamente o tipo canônico dos óculos de proteção. */
-  function ehOculos(tipo) { return texto(tipo) === TIPO_OCULOS; }
+  /** O tipo, aparado, é exatamente um dos tipos de óculos de proteção (oficiais ou o histórico). */
+  function ehOculos(tipo) {
+    var t = texto(tipo);
+    return TIPOS_OCULOS.indexOf(t) !== -1 || t === TIPO_OCULOS_LEGADO;
+  }
 
   /** Óculos gravados antes da informação existir: nem com grau, nem sem grau. */
   function oculosSemClassificacao(material) {
@@ -280,14 +323,19 @@
     else if (nome.length > LIMITES.nome) erro('nome', 'Nome com mais de ' + LIMITES.nome + ' caracteres.');
     else corpo.nome = nome;
 
+    // Categoria → Tipo (12G-8): só tipo da lista da categoria; na edição, o
+    // tipo histórico de óculos do próprio registro (c.tipoLegado) continua valendo.
     var tipo = texto(c.tipo);
-    if (tipo === 'Outro') {
-      tipo = texto(c.tipoCustom);
-      if (!tipo) erro('tipo', 'Informe o nome do tipo.');
-    }
-    if (tipo) {
-      if (tipo.length > LIMITES.tipo) erro('tipo', 'Tipo com mais de ' + LIMITES.tipo + ' caracteres.');
-      else corpo.tipo = tipo;
+    var tipoLegado = texto(c.tipoLegado);
+    if (!tipo) erro('tipo', 'Selecione o tipo.');
+    else if (tiposDe(c.categoria).indexOf(tipo) === -1 && !(tipoLegado && tipo === tipoLegado)) erro('tipo', 'Este tipo não pertence à categoria escolhida.');
+    else corpo.tipo = tipo;
+    // "Outros" leva a descrição em campo próprio; tipo normal nunca a envia.
+    if (tipo === OUTROS) {
+      var descricaoTipo = texto(c.tipoCustom);
+      if (!descricaoTipo) erro('tipoDescricao', 'Descreva o tipo em "Descrição do tipo".');
+      else if (descricaoTipo.length > LIMITES.tipoDescricao) erro('tipoDescricao', 'Descrição do tipo com mais de ' + LIMITES.tipoDescricao + ' caracteres.');
+      else corpo.tipoDescricao = descricaoTipo;
     }
     // Óculos de proteção sempre dizem se são com grau; outro tipo não leva a
     // informação, e o servidor grava NULL.
@@ -319,13 +367,23 @@
     if (exigeTamanho === null) erro('controleTamanho', 'Escolha o controle de tamanho: tamanho único ou possui tamanhos.');
     else corpo.exigeTamanho = exigeTamanho;
 
+    // Grade (12G-8): só com "Possui tamanhos"; em branco, o material fica sem grade.
+    var grade = [];
+    if (exigeTamanho === true) {
+      var lida = lerGrade(c.grade);
+      if (lida.erro) erro('grade', lida.erro);
+      grade = lida.tamanhos;
+      if (grade.length > 0) corpo.tamanhos = grade;
+    }
+
     // Entrada inicial só com "Sim" explícito. Ela vira uma entrada separada,
     // registrada depois do cadastro, com o CA e a validade do lote.
     var entrada = null;
     if (texto(c.registrarEntrada) === 'sim') {
       var montada = montarEntrada({ tamanho: c.tamanhoEntrada, quantidade: c.quantidadeComprada, caNumero: c.caEntrada, caValidade: c.caValidadeEntrada }, exigeTamanho === true);
-      if (montada.ok) entrada = montada.corpo;
-      else montada.erros.forEach(function (e) { erro(CAMPO_DA_ENTRADA_INICIAL[e.campo], e.mensagem); });
+      if (!montada.ok) montada.erros.forEach(function (e) { erro(CAMPO_DA_ENTRADA_INICIAL[e.campo], e.mensagem); });
+      else if (grade.length > 0 && grade.indexOf(montada.corpo.tamanho) === -1) erro('tamanhoEntrada', 'Escolha para a entrada inicial um tamanho da grade.');
+      else entrada = montada.corpo;
     }
     return { erros: erros, corpo: corpo, entrada: entrada };
   }
@@ -376,9 +434,13 @@
   function camposDoMaterial(material) {
     var m = material || {};
     var tipo = texto(m.tipo);
-    var tipoLista = naLista(TIPOS, tipo);
     var categoria = texto(m.categoria);
     var categoriaLista = categoria ? naLista(CATEGORIAS, categoria) : null;
+    // Tipo da lista da categoria vem como está; "Outros" traz a descrição; o
+    // legado fora da lista vira "Outros" + descrição (convertido só ao salvar);
+    // o óculos histórico fica como opção temporária, com a regra do grau.
+    var tipoNaLista = tiposDe(categoriaLista || categoria).indexOf(tipo) !== -1;
+    var oculosLegado = tipo === TIPO_OCULOS_LEGADO;
     var unidade = texto(m.unidade);
     var unidadeLista = naLista(UNIDADES, unidade);
     var prazo = prazoParaCampos(m.prazoUsoDias);
@@ -386,8 +448,8 @@
       campos: {
         nome: texto(m.nome),
         categoria: categoriaLista || categoria,
-        tipo: tipoLista || 'Outro',
-        tipoCustom: tipoLista ? '' : tipo,
+        tipo: tipoNaLista || oculosLegado ? tipo : (tipo ? OUTROS : ''),
+        tipoCustom: tipo === OUTROS ? texto(m.tipoDescricao) : (tipoNaLista || oculosLegado ? '' : tipo),
         fabricante: texto(m.fabricante),
         codigoInterno: texto(m.codigoInterno),
         unidade: unidadeLista || unidade,
@@ -395,6 +457,7 @@
         prazoUnidade: prazo.prazoUnidade,
         prazo: prazo.prazo,
         controleTamanho: controleDoMaterial(m.exigeTamanho),
+        grade: Array.isArray(m.tamanhos) ? m.tamanhos.join(', ') : '',
         oculosComGrau: m.oculosComGrau === true,
         oculosComGrauTocado: false,
         descricao: texto(m.descricao),
@@ -406,6 +469,7 @@
       },
       opcoesExtras: {
         categoria: !categoria ? { valor: '', rotulo: 'Sem categoria' } : (categoriaLista ? null : { valor: categoria, rotulo: categoria }),
+        tipo: oculosLegado ? { valor: TIPO_OCULOS_LEGADO, rotulo: TIPO_OCULOS_LEGADO + ' (legado)' } : null,
         unidade: unidadeLista || !unidade ? null : { valor: unidade, rotulo: unidade },
       },
     };
@@ -429,8 +493,8 @@
     var base = {};
     Object.keys(campos || {}).forEach(function (k) { base[k] = campos[k]; });
     base.registrarEntrada = 'nao';
-    // "Outro" sem texto só é aceito quando o material já não tinha tipo.
-    if (texto(base.tipo) === 'Outro' && !texto(base.tipoCustom) && !texto(o.tipo)) base.tipo = '';
+    // Óculos legado: o tipo histórico do próprio registro continua aceito enquanto não muda.
+    if (texto(o.tipo) === TIPO_OCULOS_LEGADO) base.tipoLegado = TIPO_OCULOS_LEGADO;
     var montado = montarCadastro(base);
     // Legado sem classificação continua sem classificação até a pessoa mexer na caixa.
     if (ehOculos(montado.corpo.tipo) && oculosSemClassificacao(o) && base.oculosComGrauTocado !== true) delete montado.corpo.oculosComGrau;
@@ -439,6 +503,7 @@
     var erros = montado.erros.filter(function (e) {
       if (e.campo === 'prazo' && !texto(base.prazo) && valorOriginal('prazoUsoDias', o.prazoUsoDias) === null) return false;
       if (e.campo === 'controleTamanho' && !texto(base.controleTamanho) && valorOriginal('exigeTamanho', o.exigeTamanho) === null) return false;
+      if (e.campo === 'tipo' && !texto(base.tipo) && valorOriginal('tipo', o.tipo) === null) return false;
       return true;
     });
     if (!texto(base.estoqueMinimo) && !erros.some(function (e) { return e.campo === 'estoqueMinimo'; })) {
@@ -450,6 +515,10 @@
       var novo = hasOwn(montado.corpo, campo) ? montado.corpo[campo] : null;
       if (novo !== valorOriginal(campo, o[campo])) corpo[campo] = novo;
     });
+    // Grade (12G-8): vai só quando muda; [] apaga, inclusive ao passar a tamanho único.
+    var gradeNova = montado.corpo.tamanhos || [];
+    var gradeOriginal = Array.isArray(o.tamanhos) ? o.tamanhos : [];
+    if (gradeNova.join('\n') !== gradeOriginal.join('\n')) corpo.tamanhos = gradeNova;
     return { ok: true, corpo: corpo, alterado: Object.keys(corpo).length > 0 };
   }
 
@@ -494,6 +563,11 @@
     CATEGORIAS: CATEGORIAS,
     TIPOS: TIPOS,
     TIPO_OCULOS: TIPO_OCULOS,
+    OUTROS: OUTROS,
+    TIPOS_POR_CATEGORIA: TIPOS_POR_CATEGORIA,
+    TIPOS_OCULOS: TIPOS_OCULOS,
+    TIPO_OCULOS_LEGADO: TIPO_OCULOS_LEGADO,
+    tiposDe: tiposDe,
     UNIDADES: UNIDADES,
     CONTROLES_TAMANHO: CONTROLES_TAMANHO,
     MOTIVOS_BAIXA: MOTIVOS_BAIXA,
@@ -501,6 +575,7 @@
     textoPrazo: textoPrazo,
     tamanhosSugeridos: tamanhosSugeridos,
     tamanhosDaEntrada: tamanhosDaEntrada,
+    lerGrade: lerGrade,
     exigeTamanhoDoControle: exigeTamanhoDoControle,
     controleDoMaterial: controleDoMaterial,
     montarCorpo: montarCorpo,
@@ -639,6 +714,10 @@
     SEM_VISUALIZAR: 'Seu perfil não pode consultar o estoque nesta empresa.',
     NAO_ENCONTRADO: 'Material não encontrado nesta empresa.',
     CODIGO_DUPLICADO: 'Já existe um material com este código interno nesta empresa. Use outro código ou deixe em branco.',
+    TIPO_FORA_DA_CATEGORIA: 'O tipo escolhido não pertence à categoria do material. Escolha um tipo da lista da categoria.',
+    TIPO_DESCRICAO_OBRIGATORIA: 'Com o tipo "Outros", descreva o tipo em "Descrição do tipo".',
+    TIPO_DESCRICAO_NAO_SE_APLICA: 'A descrição do tipo só vale para o tipo "Outros".',
+    TIPO_DESCRICAO_INVALIDA: 'Descrição do tipo inválida: até 100 caracteres, sem caracteres de controle.',
     CADASTRO_GENERICO: 'Não foi possível cadastrar o material. Tente novamente.',
     ENTRADA_GENERICO: 'não foi possível registrar a entrada de estoque.',
     BAIXA_GENERICO: 'não foi possível registrar a baixa de estoque.',
@@ -658,7 +737,13 @@
     AVISO_MOTIVO_SALDO_LIVRE: 'Esta baixa só pode usar o saldo livre: não pode reduzir o estoque comprometido com solicitações já aprovadas.',
     CARREGAR_GENERICO: 'Não foi possível abrir o material para edição.',
     OCULOS_OBRIGATORIO: 'Informe se os óculos de proteção são com grau: marque "Óculos com grau" ou deixe desmarcado para sem grau.',
-    OCULOS_NAO_SE_APLICA: '"Óculos com grau" só vale para o tipo Óculos de proteção.',
+    OCULOS_NAO_SE_APLICA: '"Óculos com grau" só vale para os tipos de óculos de proteção (Incolor e Ampla Visão).',
+    GRADE_EM_USO: 'Não foi possível salvar a grade: um tamanho que saiu dela ainda tem saldo em estoque, mínimo próprio ou solicitação em aberto. Mantenha esse tamanho na grade ou resolva antes o que o usa.',
+    GRADE_INCOMPATIVEL: 'Para passar a tamanho único, apague a grade de tamanhos deste material na mesma alteração.',
+    GRADE_REPETIDA: 'A grade tem um tamanho repetido.',
+    GRADE_NAO_SE_APLICA: 'Material de tamanho único não tem grade de tamanhos.',
+    GRADE_TAMANHO_INVALIDO: 'Cada tamanho da grade precisa ter de 1 a 20 caracteres.',
+    GRADE_GRANDE_DEMAIS: 'A grade aceita até 50 tamanhos.',
   };
 
   function ehRede(r) { return !r || r.status === 0 || typeof r.status !== 'number'; }
@@ -682,10 +767,34 @@
     return (r && Array.isArray(r.detalhes) ? r.detalhes : []).some(function (d) { return !!d && d.codigo === codigo; });
   }
 
+  function temDetalheNaGrade(r, codigo) {
+    return (r && Array.isArray(r.detalhes) ? r.detalhes : []).some(function (d) {
+      return !!d && d.codigo === codigo && typeof d.campo === 'string' && d.campo.indexOf('body.tamanhos') === 0;
+    });
+  }
+
+  /** Recusa da grade de tamanhos (12G-8), no cadastro ou na edição; null quando não é o caso. */
+  function erroGrade(r) {
+    if (temDetalheNaGrade(r, 'TAMANHO_REPETIDO')) return MSG.GRADE_REPETIDA;
+    if (temDetalheNaGrade(r, 'GRADE_NAO_SE_APLICA')) return MSG.GRADE_NAO_SE_APLICA;
+    if (temDetalheNaGrade(r, 'TAMANHO_INVALIDO')) return MSG.GRADE_TAMANHO_INVALIDO;
+    if (temDetalheNaGrade(r, 'TAMANHO_MAXIMO')) return MSG.GRADE_GRANDE_DEMAIS;
+    return null;
+  }
+
   /** Recusa da regra dos óculos com grau, no cadastro ou na edição; null quando não é o caso. */
   function erroOculos(r) {
     if (temDetalhe(r, 'OCULOS_COM_GRAU_OBRIGATORIO')) return MSG.OCULOS_OBRIGATORIO;
     if (temDetalhe(r, 'OCULOS_COM_GRAU_NAO_SE_APLICA')) return MSG.OCULOS_NAO_SE_APLICA;
+    return null;
+  }
+
+  /** Recusa de Categoria → Tipo ou da descrição de "Outros" (12G-8); null quando não é o caso. */
+  function erroClassificacao(r) {
+    if (temDetalhe(r, 'TIPO_FORA_DA_CATEGORIA')) return MSG.TIPO_FORA_DA_CATEGORIA;
+    if (temDetalhe(r, 'TIPO_DESCRICAO_OBRIGATORIA')) return MSG.TIPO_DESCRICAO_OBRIGATORIA;
+    if (temDetalhe(r, 'TIPO_DESCRICAO_NAO_SE_APLICA')) return MSG.TIPO_DESCRICAO_NAO_SE_APLICA;
+    if (temDetalhe(r, 'TIPO_DESCRICAO_INVALIDA')) return MSG.TIPO_DESCRICAO_INVALIDA;
     return null;
   }
 
@@ -695,7 +804,9 @@
     if (r.status === 401) return MSG.SESSAO;
     if (r.status === 403) return MSG.SEM_CRIAR;
     if (r.codigo === 'MATERIAL_CODIGO_INTERNO_DUPLICADO') return MSG.CODIGO_DUPLICADO;
+    if (erroGrade(r)) return erroGrade(r);
     if (erroOculos(r)) return erroOculos(r);
+    if (erroClassificacao(r)) return erroClassificacao(r);
     if (r.status === 400) return 'Dados recusados pelo servidor.' + camposDe(r);
     return MSG.CADASTRO_GENERICO;
   }
@@ -713,6 +824,7 @@
     if (temDetalhe(r, 'CA_VENCIDO')) return 'CA vencido: a validade precisa ser hoje ou uma data futura.';
     if (temDetalhe(r, 'TAMANHO_OBRIGATORIO')) return 'informe o tamanho: este material possui tamanhos.';
     if (temDetalhe(r, 'TAMANHO_NAO_SE_APLICA')) return 'este material é de tamanho único: a entrada não leva tamanho.';
+    if (temDetalhe(r, 'TAMANHO_FORA_DA_GRADE')) return 'este tamanho não está na grade do material: escolha um tamanho da grade.';
     if (r.status === 400) return 'dados da entrada recusados pelo servidor.' + camposDe(r);
     return MSG.ENTRADA_GENERICO;
   }
@@ -751,6 +863,9 @@
     if (r.codigo === 'MATERIAL_SEM_ALTERACAO') return MSG.EDICAO_SEM_ALTERACAO;
     if (r.codigo === 'MATERIAL_TAMANHO_SALDO_INCOMPATIVEL') return MSG.TAMANHO_SALDO_INCOMPATIVEL;
     if (r.codigo === 'MATERIAL_TAMANHO_MINIMOS_INCOMPATIVEIS') return MSG.TAMANHO_MINIMOS_INCOMPATIVEIS;
+    if (r.codigo === 'MATERIAL_GRADE_TAMANHO_EM_USO') return MSG.GRADE_EM_USO;
+    if (r.codigo === 'MATERIAL_TAMANHO_GRADE_INCOMPATIVEL') return MSG.GRADE_INCOMPATIVEL;
+    if (erroGrade(r)) return erroGrade(r);
     if (erroOculos(r)) return erroOculos(r);
     if (r.status === 400) return 'Dados recusados pelo servidor.' + camposDe(r);
     return MSG.EDICAO_GENERICO;
@@ -840,7 +955,16 @@
       + (lista || []).map(function (t) { return '<option value="' + escaparHtml(t) + '">' + escaparHtml(t) + '</option>'; }).join('');
   }
 
-  var render = { escaparHtml: escaparHtml, opcoesMateriais: opcoesMateriais, opcoesTamanhos: opcoesTamanhos };
+  /** Opções do seletor de tipo: placeholder, a lista da categoria e, se houver, a opção legada do registro aberto. Tudo escapado. */
+  function opcoesTipos(categoria, extra) {
+    var html = '<option value="">Selecione</option>' + tiposDe(categoria).map(function (t) {
+      return '<option value="' + escaparHtml(t) + '">' + escaparHtml(t) + '</option>';
+    }).join('');
+    if (extra && extra.valor) html += '<option value="' + escaparHtml(extra.valor) + '">' + escaparHtml(extra.rotulo) + '</option>';
+    return html;
+  }
+
+  var render = { escaparHtml: escaparHtml, opcoesMateriais: opcoesMateriais, opcoesTamanhos: opcoesTamanhos, opcoesTipos: opcoesTipos };
 
   // ───────────────────────────────────────────────────────────────────
   // Fluxo

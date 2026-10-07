@@ -36,7 +36,8 @@ function permissoesCom(recursos, acoes = {}) {
   };
   return { empresaId: 3, usuarioId: 7, perfil: 'USUARIO', recursos: { ...todos, ...recursos }, acoes, administracao };
 }
-const SO_MATERIALS = permissoesCom({ materials: SO_VER });
+// A página de estoque abre pelos três acessos independentes; aqui, só a Entrada por Lote.
+const SO_MATERIALS = permissoesCom({ materials: SO_VER }, { ENTRADA_ESTOQUE: true });
 const SO_VALIDADE = permissoesCom({ stockValidity: SO_VER });
 const SO_OPERACOES = permissoesCom({ operations: SO_VER });
 
@@ -54,8 +55,9 @@ describe('páginas, menus e Portal pela permissão própria', () => {
     assert.deepEqual([P.podeAbrir(SO_OPERACOES, 'stockValidity'), P.podeAbrir(SO_OPERACOES, 'operations')], [false, true]);
   });
 
-  test('15. menu: o link aparece só com a permissão da própria área', () => {
-    const casos = [[SO_MATERIALS, ['', 'none', 'none']], [SO_VALIDADE, ['none', '', 'none']], [SO_OPERACOES, ['none', 'none', '']], [null, ['none', 'none', 'none']]];
+  test('15. menu: o link aparece só com a permissão da própria área; Validade está fora da navegação desde 05/10/2026 (adiada) e não aparece nem com a permissão', () => {
+    const casos = [[SO_MATERIALS, ['', 'none', 'none']], [SO_VALIDADE, ['none', 'none', 'none']], [SO_OPERACOES, ['none', 'none', '']], [null, ['none', 'none', 'none']]];
+    assert.equal(P.podeAbrir(SO_VALIDADE, 'stockValidity'), true, 'a permissão e o acesso direto continuam');
     for (const [permissoes, esperado] of casos) {
       const links = ['materials', 'stockValidity', 'operations'].map(linkFalso);
       P.aplicarMenu(permissoes, links);
@@ -231,24 +233,20 @@ describe('Permissões do Grupo sem controle decorativo', () => {
   });
 
   // 12G-1: `request` é exigido pelas rotas da solicitação (minhas = visualizar,
-  // criar, cancelar = editar), mas fica fora do escopo do MASTER (12E/12F): só
-  // vale o que for concedido por perfil, grupo ou exceção individual.
-  const FORA_DO_ESCOPO_DO_MASTER = { request: ['podeVisualizar', 'podeCriar', 'podeEditar'] };
-
-  test('cada operação oferecida na tela é exatamente uma que alguma rota do servidor exige (o escopo do MASTER e o request, concedido explicitamente)', () => {
-    const escopo = {
-      ...Object.fromEntries(ESCOPO_PROVISIONAMENTO_MASTER.recursos.map((r) => [r.recurso, r.operacoes.map((o) => PARA_FLAG[o])])),
-      ...FORA_DO_ESCOPO_DO_MASTER,
-    };
+  // criar, cancelar = editar). Desde 05/10/2026 ele também entra no escopo do
+  // MASTER (autoridade máxima na empresa); para os demais perfis continua
+  // valendo só o que for concedido por grupo ou exceção individual.
+  test('cada operação oferecida na tela é exatamente uma que alguma rota do servidor exige (o escopo do MASTER, que desde 05/10/2026 inclui request)', () => {
+    const escopo = Object.fromEntries(ESCOPO_PROVISIONAMENTO_MASTER.recursos.map((r) => [r.recurso, r.operacoes.map((o) => PARA_FLAG[o])]));
     for (const recurso of G.RECURSOS) {
       assert.deepEqual(recurso.operacoes, escopo[recurso.id] || [], recurso.id);
     }
     for (const id of Object.keys(escopo)) assert.ok(porId[id], `${id} precisa estar na tela`);
-    assert.equal(ESCOPO_PROVISIONAMENTO_MASTER.recursos.some((r) => Object.hasOwn(FORA_DO_ESCOPO_DO_MASTER, r.recurso)), false, 'o MASTER não recebe request automaticamente');
+    assert.deepEqual(escopo.request, ['podeVisualizar', 'podeCriar', 'podeEditar'], 'o MASTER recebe o Pedido de EPI pelo provisionamento');
   });
 
   test('GHE e EPIs (employeeGroups) entra na tela: o servidor já protege o GHE com ele', () => {
-    assert.deepEqual(porId.employeeGroups, { id: 'employeeGroups', nome: 'GHE e EPIs', operacoes: ['podeVisualizar', 'podeCriar', 'podeEditar'] });
+    assert.deepEqual(porId.employeeGroups, { id: 'employeeGroups', nome: 'Gestão de GHE', operacoes: ['podeVisualizar', 'podeCriar', 'podeEditar'] });
     assert.deepEqual(G.RECURSOS.map((r) => r.id).sort(), [...RECURSOS_CONHECIDOS].sort());
   });
 

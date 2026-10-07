@@ -39,6 +39,16 @@ const PENDENTES = [
   '066_alter_entregas_epi_origem_solicitacao',
   '067_create_estoque_minimos',
   '068_alter_solicitacoes_epi_add_encerramento',
+  '069_create_alertas_estoque',
+  '070_create_material_tamanhos',
+  '071_alter_materiais_add_tipo_descricao_e_tipos_oculos',
+  '072_alter_identidades_add_telefone_tema_modo_visual',
+  '073_alter_usuarios_add_funcionario_id',
+  '074_alter_identidades_add_senha_provisoria',
+  '075_alter_identidades_add_cpf',
+  '076_alter_usuarios_add_matricula_setor_horario',
+  '077_create_usuario_ips_permitidos',
+  '078_insert_acoes_estoque_entrada_baixa',
 ];
 const CNPJ = '11222333000181';
 const VIOLACAO_CHECK = '23514';
@@ -106,12 +116,12 @@ describe('runner real: 057 a 060 numa transação, sobre a 056 com estoque movim
     }
   });
 
-  test('o runner aplica 057 a 068 juntas, em ordem, e registra as 69', async () => {
+  test('o runner aplica 057 a 077 juntas, em ordem, e registra as 78', async () => {
     const aplicadas = await aplicarMigrations({ schema: contexto.schema, diretorio: DIRETORIO_REAL });
 
     assert.deepEqual(aplicadas.map((migration) => migration.name), PENDENTES);
     const linhas = await registradas();
-    assert.equal(linhas.length, 69);
+    assert.equal(linhas.length, 79);
     assert.deepEqual(linhas.slice(-PENDENTES.length).map((linha) => linha.name), PENDENTES);
   });
 
@@ -195,10 +205,10 @@ describe('runner real: 057 a 060 numa transação, sobre a 056 com estoque movim
     assert.equal(confirmada, true);
   });
 
-  test('manifesto: as entradas pendentes conferem com os arquivos e o total é 69', () => {
+  test('manifesto: as entradas pendentes conferem com os arquivos e o total é 78', () => {
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO_REAL, 'checksums.json'), 'utf8'));
     const arquivos = fs.readdirSync(DIRETORIO_REAL).filter((n) => /^\d{3}_.*\.sql$/.test(n)).sort();
-    assert.equal(arquivos.length, 69);
+    assert.equal(arquivos.length, 79);
     assert.deepEqual(Object.keys(manifesto.migrations).sort(), arquivos);
     for (const nome of PENDENTES) {
       const arquivo = `${nome}.sql`;

@@ -75,7 +75,7 @@
     #assinaturaCanvas{touch-action:none;background:#fff;border:1.5px dashed var(--outline-variant);border-radius:12px;width:100%;height:200px;display:block}
     #assinaturaModalAviso{color:var(--error);font-size:12px;margin:8px 0 0}
     #assinaturaModalAviso:empty{display:none}
-    #conteudoProtegido button:disabled{background:var(--surface-container-high);color:var(--on-surface-variant);border:0.5px solid var(--outline-variant);opacity:.6;filter:grayscale(1);cursor:not-allowed;box-shadow:none}
+    #conteudoProtegido button:disabled,#botaoGerarAlerta:disabled{background:var(--surface-container-high);color:var(--on-surface-variant);border:0.5px solid var(--outline-variant);opacity:.6;filter:grayscale(1);cursor:not-allowed;box-shadow:none}
     @media (max-width: 1100px){.entregas-grid{grid-template-columns:minmax(0,1fr)}}
     @media (max-width: 560px){.detalhe-pedido{grid-template-columns:1fr}.detalhe-pedido dd{margin-bottom:6px}.entrega-lote{grid-template-columns:1fr}.acoes-painel button,.acoes-detalhe button{flex:1 1 auto}}
   </style>
@@ -88,8 +88,9 @@
   encerráveis), com os estados padrão de js/estado-pagina.js. A lista, o
   detalhe, a entrega com os lotes e o encerramento estão em
   js/entregas-solicitacao.js, sobre as rotas da 12F e o contexto da entrega
-  do Bloco 10; o servidor decide tudo de novo. Alerta, SMS e compra vinculada
-  seguem "Em integração" (decisão D3).
+  do Bloco 10; o servidor decide tudo de novo. O "Gerar alerta" (12G-6) é o
+  alerta manual de falta de estoque do pedido aberto, em js/alerta-falta-estoque.js;
+  SMS e compra vinculada seguem fora (decisão D3).
 -->
 <body>
 
@@ -146,7 +147,7 @@
         <a href="stock-validity.html" data-pagina="stockValidity" style="display:none"><div class="nav-icon red">event_busy</div>Validade de estoque</a>
         <a href="available-items.html" data-pagina="availableItems" style="display:none"><div class="nav-icon green">checklist</div>Análise de estoque</a>
         <a href="operations.html" data-pagina="operations" style="display:none"><div class="nav-icon gray">receipt_long</div>Operações de estoque</a>
-        <a href="employee-groups.html" data-pagina="employeeGroups" style="display:none"><div class="nav-icon purple">group_work</div>GHE e EPIs</a>
+        <a href="employee-groups.html" data-pagina="employeeGroups" style="display:none"><div class="nav-icon purple">group_work</div>Gestão de GHE</a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor<span class="nav-etiqueta">Em integração</span></a>
         <div class="nav-section">Entregas</div>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon green">inventory</div>EPIs Entregues<span class="nav-etiqueta">Em integração</span></a>
@@ -165,7 +166,8 @@
         <a href="import-employees.html" data-pagina="importEmployees" style="display:none"><div class="nav-icon green">upload_file</div>Importar Funcionários</a>
         <a href="new-user.html" data-pagina="newUser" style="display:none"><div class="nav-icon green">person_add</div>Novo Usuário</a>
         <a href="user-admin.html" data-pagina="userAdmin" style="display:none"><div class="nav-icon indigo">group</div>Administração de Usuários</a>
-        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon gray">settings</div>Configurações<span class="nav-etiqueta">Em integração</span></a>
+        <a href="gestao-usuarios.html" data-pagina="gestaoUsuarios" style="display:none"><div class="nav-icon indigo">manage_accounts</div>Gestão de Usuários</a>
+        <a href="config.html" data-pagina="config" style="display:none"><div class="nav-icon gray">settings</div>Configurações</a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon teal">support_agent</div>Suporte<span class="nav-etiqueta">Em integração</span></a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">mark_email_read</div>Gestão de E-mails<span class="nav-etiqueta">Em integração</span></a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon indigo">privacy_tip</div>Privacidade / LGPD<span class="nav-etiqueta">Em integração</span></a>
@@ -180,12 +182,13 @@
             <h2 style="font-family:var(--font-brand);font-size:22px;line-height:1.1;letter-spacing:-0.4px;font-weight:500">Entregas por solicitação</h2>
             <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Solicitações aprovadas pela Segurança do Trabalho: entregue os itens aprovados ou encerre a solicitação que não será mais entregue.</p>
           </div>
-          <button class="filled-btn botao-em-integracao" type="button" disabled title="Em integração"><span class="material-symbols-outlined">notifications_active</span>Gerar alerta<span class="nav-etiqueta">Em integração</span></button>
+          <button class="filled-btn" id="botaoGerarAlerta" type="button" disabled style="display:none"><span class="material-symbols-outlined">notifications_active</span>Gerar alerta</button>
         </div>
 
         <div id="estadoPagina" style="display:none"></div>
 
         <div id="conteudoProtegido" style="display:none">
+        <div id="avisoAlerta" class="aviso-area" style="display:none"></div>
         <!--
           Regra futura dos alertas de materiais pendentes (texto do protótipo,
           preservado aqui fora da tela; alerta, SMS e compra vinculada seguem
@@ -322,18 +325,25 @@
 <script src="../js/solicitacoes-epi.js"></script>
 <script src="../js/epi-ficha.js"></script>
 <script src="../js/entregas-solicitacao.js"></script>
+<script src="../js/alerta-falta-estoque.js"></script>
 <script>
 /*
   Ligação com o DOM — deliberadamente fina. Sessão e permissões reais
   (js/estado-pagina.js); a lista, o detalhe, a entrega e o encerramento vivem
-  em js/entregas-solicitacao.js, js/solicitacoes-epi.js e js/epi-ficha.js
-  (testados sem navegador).
+  em js/entregas-solicitacao.js, js/solicitacoes-epi.js e js/epi-ficha.js, e o
+  "Gerar alerta" em js/alerta-falta-estoque.js (testados sem navegador).
 */
 (function () {
   'use strict';
 
   var $ = function (id) { return document.getElementById(id); };
   var tela = null;
+  var alerta = null;
+
+  function encerrarTudo() {
+    if (tela) tela.encerrar();
+    if (alerta) alerta.encerrar();
+  }
 
   // Mesmo endereço do Portal do Cliente (portal/config.js).
   EpiHttp.configurar({ baseUrl: window.SAFEWORK_PORTAL_API_BASE_URL });
@@ -348,15 +358,21 @@
       estado: $('estadoPagina'),
       links: document.querySelectorAll('.nav a[data-pagina]'),
     },
-    aoEncerrar: function () { if (tela) tela.encerrar(); },
+    aoEncerrar: encerrarTudo,
   }).then(function (acesso) {
     if (!acesso) return undefined;
+    var capacidades = EpiSolicitacoesEpi.capacidades(acesso.permissoes);
+    var aoSessaoEncerrada = function () {
+      encerrarTudo();
+      EpiEstadoPagina.sessaoEncerrada({ conteudo: $('conteudoProtegido'), estado: $('estadoPagina') });
+    };
+    alerta = EpiAlertaFaltaEstoque.criar({
+      capacidades: capacidades, botao: $('botaoGerarAlerta'), aviso: $('avisoAlerta'), aoSessaoEncerrada: aoSessaoEncerrada,
+    });
     tela = EpiEntregasSolicitacao.criarTela({
-      capacidades: EpiSolicitacoesEpi.capacidades(acesso.permissoes),
-      aoSessaoEncerrada: function () {
-        if (tela) tela.encerrar();
-        EpiEstadoPagina.sessaoEncerrada({ conteudo: $('conteudoProtegido'), estado: $('estadoPagina') });
-      },
+      capacidades: capacidades,
+      aoSessaoEncerrada: aoSessaoEncerrada,
+      aoMudarDetalhe: alerta.atualizar,
     });
     return tela.iniciar();
   });

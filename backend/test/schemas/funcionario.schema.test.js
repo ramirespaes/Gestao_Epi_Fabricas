@@ -93,7 +93,7 @@ describe('alterar / listar', () => {
 describe('C4 (25/09/2026) — admissão, CPF exato na busca e importação em lote', () => {
   const linhaValida = (extra = {}) => ({
     linha: 2, nome: 'João Pereira', cpf: '52998224725', matricula: 'MAT-000001', dataAdmissao: '2020-06-01',
-    dataNascimento: '1990-03-15', setor: 'Produção', funcao: 'Operador', telefone: null, ...extra,
+    dataNascimento: '1990-03-15', setor: 'Produção', funcao: 'Operador', telefone: null, ghe: 'GHE Produção', ...extra,
   });
   const loteValido = (extra = {}) => ({
     importacaoId: '7c9e6679-7425-40de-944b-e07fc1f90ae7',
@@ -158,10 +158,15 @@ describe('C4 (25/09/2026) — admissão, CPF exato na busca e importação em lo
       'chave desconhecida na linha': loteValido({ linhas: [linhaValida({ empresaId: 2 })] }),
       'número de linha fora do intervalo': loteValido({ linhas: [linhaValida({ linha: 1 })] }),
       'mais de 1.000 linhas no arquivo': loteValido({ arquivo: { nome: 'a.csv', formato: 'csv', totalLinhas: 1001 } }),
+      'ghe acima do teto estrutural (500)': loteValido({ linhas: [linhaValida({ ghe: 'x'.repeat(501) })] }),
     };
     for (const [caso, corpo] of Object.entries(recusas)) {
       assert.equal(f.importacao.body.safeParse(corpo).success, false, caso);
     }
+    // 12G-9: GHE ausente ou vazio é conteúdo de UMA linha (recusa por linha no serviço), não erro do envelope.
+    const semGhe = linhaValida();
+    delete semGhe.ghe;
+    assert.equal(f.importacao.body.safeParse(loteValido({ linhas: [semGhe, linhaValida({ linha: 3, ghe: '' })] })).success, true);
   });
 
   test('importação: conteúdo inválido de uma linha NÃO invalida o lote (a linha é avaliada à parte)', () => {
@@ -169,15 +174,17 @@ describe('C4 (25/09/2026) — admissão, CPF exato na busca e importação em lo
     assert.equal(f.importacao.body.safeParse(lote).success, true);
   });
 
-  test('linhaImportacao: regras do cadastro por linha; admissão, setor e função obrigatórios; campo de cada erro identificado', () => {
-    const ok = f.linhaImportacao.safeParse(linhaValida({ cpf: '529.982.247-25' }));
+  test('linhaImportacao: regras do cadastro por linha; admissão, setor, função e GHE obrigatórios; campo de cada erro identificado', () => {
+    const ok = f.linhaImportacao.safeParse(linhaValida({ cpf: '529.982.247-25', ghe: '  GHE Produção ' }));
     assert.equal(ok.success, true);
     assert.equal(ok.data.cpf, '52998224725');
+    assert.equal(ok.data.ghe, 'GHE Produção', 'GHE aparado nas pontas; a comparação exata é do serviço');
     const casos = [
       [{ cpf: '52998224726' }, 'cpf'], [{ cpf: '123' }, 'cpf'], [{ nome: 'x'.repeat(151) }, 'nome'], [{ nome: '  ' }, 'nome'],
       [{ matricula: '' }, 'matricula'], [{ dataAdmissao: null }, 'dataAdmissao'], [{ dataAdmissao: '31/02/2020' }, 'dataAdmissao'],
       [{ dataNascimento: '1990-02-30' }, 'dataNascimento'], [{ setor: null }, 'setor'], [{ funcao: null }, 'funcao'],
       [{ telefone: 'x'.repeat(21) }, 'telefone'],
+      [{ ghe: undefined }, 'ghe'], [{ ghe: null }, 'ghe'], [{ ghe: '' }, 'ghe'], [{ ghe: '   ' }, 'ghe'], [{ ghe: 'x'.repeat(151) }, 'ghe'], [{ ghe: 'GHE\u0007' }, 'ghe'], [{ ghe: 7 }, 'ghe'],
     ];
     for (const [extra, campo] of casos) {
       const r = f.linhaImportacao.safeParse(linhaValida(extra));

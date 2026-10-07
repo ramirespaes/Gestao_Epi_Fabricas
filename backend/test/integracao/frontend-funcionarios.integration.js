@@ -37,7 +37,8 @@ const EpiFuncionarios = require('../../../frontend/js/funcionarios');
  * cookies HttpOnly).
  */
 
-const TODAS_AS_MIGRATIONS = Array.from({ length: 41 }, (_, i) => String(i).padStart(3, '0'));
+// 041, 042 e 057: a FK composta da 073 referencia uq_funcionarios_empresa_id (057), que também exige estoque_lotes (042) e uq_materiais_empresa_id (041).
+const TODAS_AS_MIGRATIONS = [...Array.from({ length: 41 }, (_, i) => String(i).padStart(3, '0')), '041', '042', '057', '072', '073', '074', '075', '076', '077'];
 const SENHA = 'senha-forte-da-parte-c4-ponta-a-ponta';
 const EMAILS = { master: 'master.c4e2e@exemplo-cliente.com.br', leitor: 'leitor.c4e2e@exemplo-cliente.com.br' };
 
@@ -90,6 +91,8 @@ describe('C4 — importação e histórico pelo módulo real das páginas (Postg
       await pool.query('INSERT INTO usuarios (empresa_id, nome, email, senha_hash, perfil, identidade_id) VALUES ($1, $2, NULL, NULL, $3, $4)', [empresaId, perfil, perfil, id]);
     }
     await pool.query("INSERT INTO permissoes_recurso (empresa_id, perfil, recurso, pode_visualizar, pode_criar) VALUES ($1, 'SUPERVISOR', 'employeeHistory', true, false)", [empresaId]);
+    // 12G-9: a coluna GHE da planilha traz o nome exato de um GHE da empresa.
+    await pool.query("INSERT INTO grupos_homogeneos_exposicao (empresa_id, nome) VALUES ($1, 'GHE e2e')", [empresaId]);
 
     const semLimite = () => criarLimitador({ limite: 100000, janelaSegundos: 60 });
     const exigirSessao = criarExigirSessao({ pool });
@@ -122,12 +125,12 @@ describe('C4 — importação e histórico pelo módulo real das páginas (Postg
 
   test('CSV com 250 funcionários (acentos longos) e 2 linhas com erro: lotes dentro dos 32 KB reais, 250 cadastrados, erros não enviados, relatório sem CPF', async () => {
     await entrar(EMAILS.master);
-    const linhas = ['Nome;Setor;Telefone;CPF;Matrícula;Nascimento;Contratação;Cargo'];
+    const linhas = ['Nome;Setor;Telefone;CPF;Matrícula;Nascimento;Contratação;Cargo;GHE'];
     for (let i = 0; i < 250; i += 1) {
-      linhas.push(`Funcionária ${'Ç'.repeat(100)} ${i};Produção ${'Á'.repeat(60)};(47) 9999-${String(i).padStart(4, '0')};${gerarCpf(i + 1)};E2E-${i};15/03/1990;01/06/2020;Operação ${'É'.repeat(60)}`);
+      linhas.push(`Funcionária ${'Ç'.repeat(100)} ${i};Produção ${'Á'.repeat(60)};(47) 9999-${String(i).padStart(4, '0')};${gerarCpf(i + 1)};E2E-${i};15/03/1990;01/06/2020;Operação ${'É'.repeat(60)};GHE e2e`);
     }
-    linhas.push('Erro CPF;TI;;529.982.247-26;E2E-X1;;01/06/2020;Analista');
-    linhas.push(`Repetido;TI;;${gerarCpf(1)};E2E-X2;;01/06/2020;Analista`);
+    linhas.push('Erro CPF;TI;;529.982.247-26;E2E-X1;;01/06/2020;Analista;GHE e2e');
+    linhas.push(`Repetido;TI;;${gerarCpf(1)};E2E-X2;;01/06/2020;Analista;GHE e2e`);
     const bytes = new TextEncoder().encode(`﻿${linhas.join('\r\n')}\r\n`);
     const { texto } = EpiFuncionarios.arquivo.decodificarCsv(bytes);
     const interpretado = EpiFuncionarios.planilha.interpretar(EpiFuncionarios.arquivo.lerCsv(texto));
@@ -141,26 +144,32 @@ describe('C4 — importação e histórico pelo módulo real das páginas (Postg
     const enviado = await EpiFuncionarios.fluxo.importar(corpos);
     assert.equal(enviado.interrupcao, null, JSON.stringify(enviado.interrupcao));
     const consolidado = EpiFuncionarios.fluxo.consolidar(interpretado.linhas, enviado);
-    assert.deepEqual(consolidado.resumo, { cadastrados: 250, duplicados: 0, recusados: 2, erros: 0, naoConfirmados: 0, naoEnviados: 0 });
+    assert.deepEqual(consolidado.resumo, { total: 252, cadastrados: 250, jaCadastrados: 0, divergentes: 0, duplicados: 0, recusados: 2, erros: 0, naoConfirmados: 0, naoEnviados: 0, naoImportados: 2 });
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM funcionarios WHERE empresa_id = $1 AND grupo_homogeneo_id IS NOT NULL', [empresaId])).rows[0].n, 250, 'todos vinculados ao GHE pelo nome');
     assert.equal((await pool.query('SELECT count(*)::int AS n FROM funcionarios WHERE empresa_id = $1', [empresaId])).rows[0].n, 250);
     assert.doesNotMatch(EpiFuncionarios.render.relatorio(consolidado), new RegExp(gerarCpf(1)));
     const lotesAuditados = (await pool.query("SELECT count(*)::int AS n FROM logs_auditoria WHERE empresa_id = $1 AND acao = 'FUNCIONARIOS_IMPORTACAO_LOTE'", [empresaId])).rows[0].n;
     assert.equal(lotesAuditados, corpos.length, 'um registro de declaração por lote');
   });
 
-  test('reimportar o mesmo arquivo: nada em dobro — tudo volta como duplicado', async () => {
+  test('reimportar um CPF já cadastrado com outros dados: nada em dobro — volta como já cadastrado com divergências (campo e valor atual) e nada é alterado', async () => {
     await entrar(EMAILS.master);
-    const csv = `Nome;Setor;Telefone;CPF;Matrícula;Nascimento;Contratação;Cargo\r\nA;S;;${gerarCpf(1)};E2E-0;;01/06/2020;C\r\n`;
+    const csv = `Nome;Setor;Telefone;CPF;Matrícula;Nascimento;Contratação;Cargo;GHE\r\nA;S;;${gerarCpf(1)};E2E-0;;01/06/2020;C;GHE e2e\r\n`;
     const interpretado = EpiFuncionarios.planilha.interpretar(EpiFuncionarios.arquivo.lerCsv(csv));
     const corpos = EpiFuncionarios.lotes.montar(interpretado.linhas, { importacaoId: '6f1c1b1e-8d5a-4c7e-9b2a-1d3e5f7a9c0c', arquivo: { nome: 'a.csv', formato: 'csv', totalLinhas: 1 } });
     const r = await EpiFuncionarios.fluxo.importar(corpos);
-    assert.deepEqual(r.linhas.map((l) => l.situacao), ['DUPLICADO']);
+    assert.deepEqual(r.linhas.map((l) => [l.situacao, l.codigo]), [['JA_CADASTRADO', 'FUNCIONARIO_JA_CADASTRADO_DIVERGENTE']]);
+    assert.deepEqual(r.linhas[0].divergencias.map((d) => d.campo), ['nome', 'setor', 'funcao']);
+    const consolidado = EpiFuncionarios.fluxo.consolidar(interpretado.linhas, r);
+    assert.deepEqual(consolidado.linhas[0].divergencias.map((d) => [d.rotulo, d.planilha, d.oculto]), [['Nome', 'A', false], ['Setor', 'S', false], ['Cargo', 'C', false]]);
+    assert.match(EpiFuncionarios.render.relatorio(consolidado), /Já cadastrado — dados divergentes/);
     assert.equal((await pool.query('SELECT count(*)::int AS n FROM funcionarios WHERE empresa_id = $1', [empresaId])).rows[0].n, 250);
+    assert.equal((await pool.query("SELECT nome FROM funcionarios WHERE empresa_id = $1 AND matricula = 'E2E-0'", [empresaId])).rows[0].nome, `Funcionária ${'Ç'.repeat(100)} 0`, 'nada sobrescrito');
   });
 
   test('perfil só com visualizar: a importação é recusada (403) e a página mostra o motivo; o histórico funciona', async () => {
     await entrar(EMAILS.leitor);
-    const csv = `Nome;Setor;Telefone;CPF;Matrícula;Nascimento;Contratação;Cargo\r\nB;S;;${gerarCpf(900)};E2E-L;;01/06/2020;C\r\n`;
+    const csv = `Nome;Setor;Telefone;CPF;Matrícula;Nascimento;Contratação;Cargo;GHE\r\nB;S;;${gerarCpf(900)};E2E-L;;01/06/2020;C;GHE e2e\r\n`;
     const interpretado = EpiFuncionarios.planilha.interpretar(EpiFuncionarios.arquivo.lerCsv(csv));
     const corpos = EpiFuncionarios.lotes.montar(interpretado.linhas, { importacaoId: '6f1c1b1e-8d5a-4c7e-9b2a-1d3e5f7a9c0d', arquivo: { nome: 'b.csv', formato: 'csv', totalLinhas: 1 } });
     const r = await EpiFuncionarios.fluxo.importar(corpos);

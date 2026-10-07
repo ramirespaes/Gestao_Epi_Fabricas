@@ -331,3 +331,30 @@ describe('página de login do Portal', () => {
     }
   });
 });
+
+describe('login do Portal — mensagem por código do servidor (credencial errada x usuário desativado)', () => {
+  const GENERICA = 'E-mail ou senha inválidos.';
+  const DESATIVADO = 'Usuário desativado. Procure o administrador da empresa.';
+  const tentar = async (corpo, status = 401) => {
+    const { els, turnstile, enviar } = abrirLogin({ respostasDoLogin: [resposta(status, corpo)] });
+    await assentar();
+    turnstile.emitir('callback', TOKEN_1);
+    await enviar();
+    return els.mensagem.textContent;
+  };
+
+  test('credencial incorreta (inclusive usuário desativado com senha errada) mostra a mensagem genérica, sem revelar a conta', async () => {
+    assert.equal(await tentar({ status: 'error', codigo: 'CREDENCIAIS_INVALIDAS', message: 'E-mail ou senha inválidos' }), GENERICA);
+    assert.equal(await tentar({ status: 'error', codigo: 'CREDENCIAIS_INVALIDAS', message: 'texto qualquer do servidor' }), GENERICA);
+  });
+
+  test('credenciais corretas + usuário desativado (USUARIO_DESATIVADO) mostra o texto próprio, da tela, não o do servidor', async () => {
+    assert.equal(await tentar({ status: 'error', codigo: 'USUARIO_DESATIVADO', message: 'texto do servidor que a tela não usa' }), DESATIVADO);
+  });
+
+  test('senha provisória vencida (SENHA_PROVISORIA_EXPIRADA) também não vira "senha inválida": orienta a recuperação', async () => {
+    const m = await tentar({ status: 'error', codigo: 'SENHA_PROVISORIA_EXPIRADA', message: 'x' });
+    assert.notEqual(m, GENERICA);
+    assert.match(m, /Esqueci minha senha/);
+  });
+});

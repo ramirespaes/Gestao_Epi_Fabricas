@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gestão de Usuários — Gestão de EPIs</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+  <link rel="stylesheet" href="../css/main.css">
+  <script src="../js/tema.js"></script>
+  <style>
+    /* Parte C2: itens do menu ainda não integrados ao backend (sem link) */
+    .nav a.nav-pendente{cursor:default;opacity:.55}
+    .nav a.nav-pendente:hover{background:transparent}
+    .nav-etiqueta{margin-left:auto;font-size:10px;font-weight:500;color:var(--on-surface-variant);border:1px solid var(--outline);border-radius:99px;padding:1px 7px;white-space:nowrap}
+
+    /* Aviso de acesso/contexto fora do HTML aprovado: só texto. */
+    .estado-pagina{font-size:13px;color:var(--on-surface-variant);margin:0 0 12px}
+
+    /*
+      Gestão de Usuários — a folha do HTML aprovado (safe-work-usuarios.html),
+      transcrita sem alteração de valores e restrita ao contêiner .gu, para
+      conviver com a moldura padrão (css/main.css) sem vazar para o menu nem
+      receber dele. Os tokens (--bg, --panel, --ink…) ficam no contêiner; o
+      escuro segue o data-theme que js/tema.js liga no <html>.
+    */
+    .gu{
+      --bg:#F2F2F7; --bg2:#E5E5EA; --panel:#FFFFFF; --panel2:#F2F2F7; --line:rgba(60,60,67,.18);
+      --ink:#1C1C1E; --muted:#6D6D72; --accent:#007AFF; --on-accent:#ffffff;
+      --danger:#FF3B30; --on-danger:#ffffff; --ok:#34C759; --head:#E5E5EA;
+      --container:rgba(0,122,255,.10); --on-container:#004A9E;
+      --elev1:none; --elev3:0 8px 32px rgba(0,0,0,.10);
+      box-sizing:border-box;
+      background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','SF Pro Text','Helvetica Neue',system-ui,sans-serif;font-size:15px
+    }
+    html[data-theme="dark"] .gu{
+      --bg:#1C1C1E; --bg2:#3A3A3C; --panel:#2C2C2E; --panel2:#3A3A3C; --line:rgba(255,255,255,.15);
+      --ink:#F2F2F7; --muted:#AEAEB2; --accent:#0A84FF; --on-accent:#ffffff;
+      --danger:#FF453A; --on-danger:#ffffff; --ok:#30D158; --head:#48484A;
+      --container:rgba(10,132,255,.15); --on-container:#59ACFF; --elev3:0 8px 32px rgba(0,0,0,.36);
+    }
+    .gu *,.gu *::before,.gu *::after{box-sizing:border-box}
+    /* main.css zera margens; o HTML aprovado conta com a margem padrão dos parágrafos. */
+    .gu p{margin:1em 0}
+    .gu button,.gu input,.gu select{font:inherit;color:inherit}
+    .gu :focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+    .gu svg{width:18px;height:18px;flex:none}
+
+    /* Barra do sistema */
+    .gu .appbar{display:flex;align-items:center;gap:16px;padding:12px 20px;background:var(--panel);color:var(--ink);border-bottom:0.5px solid var(--line)}
+    .gu .brand{display:block;justify-content:normal;gap:0;padding:0;margin:0;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','SF Pro Text','Helvetica Neue',system-ui,sans-serif;font-weight:500;font-size:1.1rem;letter-spacing:-.3px}
+    .gu .brand small{font-weight:400;font-size:.85rem;color:var(--muted);margin-left:8px}
+    .gu .appbar .sp{flex:1}
+    .gu .appbar .who{font-size:.9rem;color:var(--muted);text-align:right;line-height:1.2}
+    .gu .appbar .who b{color:var(--ink);font-weight:500}
+
+    /* Cabeçalho da página */
+    .gu .page{padding:20px;max-width:100%}
+    .gu .ph{display:flex;flex-wrap:wrap;align-items:flex-start;gap:12px;margin-bottom:16px}
+    .gu .ph h1{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','SF Pro Text','Helvetica Neue',system-ui,sans-serif;font-size:1.6rem;font-weight:500;letter-spacing:-.5px;margin:0;line-height:1.1}
+    .gu .ph p{margin:6px 0 0;color:var(--muted)}
+    .gu .ph .sp{flex:1}
+    .gu.focus .ph{display:none}
+
+    .gu .btn{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 18px;border-radius:20px;border:0.5px solid var(--line);background:var(--panel);cursor:pointer;font-weight:500;white-space:nowrap}
+    .gu .btn:hover{border-color:var(--muted)}
+    .gu .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+    .gu .btn.primary:disabled{opacity:.4;cursor:not-allowed}
+    .gu .btn.ghost{background:transparent;border-color:transparent;color:var(--ink)}
+    .gu .btn.link{background:transparent;border:0;color:var(--muted);text-decoration:underline;text-underline-offset:3px}
+    .gu .btn.danger{background:var(--danger);border-color:var(--danger);color:var(--on-danger)}
+    .gu .btn.icon{width:40px;padding:0;justify-content:center}
+
+    /* Toolbar */
+    .gu .toolbar{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+    .gu .search{flex:1 1 260px;display:flex;align-items:center;gap:8px;padding:0 12px;border:0.5px solid var(--line);border-radius:999px;background:var(--panel)}
+    .gu .search input{flex:1;border:0;background:transparent;padding:10px 0;outline:none}
+    .gu .search svg{color:var(--muted)}
+    .gu .seg{display:inline-flex;border:0.5px solid var(--line);border-radius:999px;overflow:hidden}
+    .gu .seg button{border:0;background:var(--panel);padding:9px 11px;cursor:pointer;color:var(--muted)}
+    .gu .seg button.on{background:var(--accent);color:var(--on-accent)}
+
+    /* Dropdown */
+    .gu .dd{position:relative}
+    .gu .dd-menu{position:absolute;top:calc(100% + 6px);left:0;min-width:180px;background:var(--panel);border:0.5px solid var(--line);border-radius:12px;padding:8px;z-index:30;display:none;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+    .gu .dd.right .dd-menu{left:auto;right:0}
+    .gu .dd.open .dd-menu{display:block}
+    .gu .dd-menu button{display:flex;width:100%;align-items:center;gap:10px;text-align:left;border:0;background:transparent;padding:10px 12px;border-radius:8px;cursor:pointer}
+    .gu .dd-menu button:hover{background:var(--panel2)}
+    .gu .dd-menu button.sel{color:var(--accent);font-weight:600}
+    .gu .dd-menu .danger{color:var(--danger)}
+
+    /* Tabela */
+    .gu .tablewrap{overflow-x:auto;border:0.5px solid var(--line);border-radius:16px;background:var(--panel);box-shadow:var(--elev1)}
+    .gu table{width:100%;border-collapse:collapse;min-width:1100px}
+    .gu thead th{background:var(--head);color:var(--muted);text-align:left;font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.05em;padding:12px 14px;white-space:nowrap;cursor:pointer;user-select:none}
+    .gu thead th.noclick{cursor:default}
+    .gu thead th .arr{color:var(--accent);margin-left:4px}
+    .gu tbody td{padding:12px;border-top:1px solid var(--line);font-size:.9rem;white-space:nowrap}
+    .gu tbody tr:nth-child(even) td{background:var(--panel2)}
+    .gu tbody tr.grp td{background:var(--bg2);font-weight:500;color:var(--muted);font-size:.85rem}
+    .gu td.c{text-align:center}
+    .gu .tag{display:inline-block;font-size:.72rem;font-weight:600;padding:2px 7px;border-radius:999px;margin-left:6px;vertical-align:1px}
+    .gu .tag.off{background:var(--line);color:var(--muted)}
+    .gu .tag.lock{background:var(--danger);color:var(--on-danger)}
+    .gu .dim{color:var(--muted)}
+    .gu .kebab{border:1px solid transparent;background:transparent;border-radius:6px;padding:4px 6px;cursor:pointer;color:var(--ink)}
+    .gu .kebab:hover,.gu .kebab.on{border-color:var(--accent)}
+    .gu .empty{padding:40px;text-align:center;color:var(--muted)}
+
+    /* Cards */
+    .gu .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+    .gu .card{background:var(--panel);border:0.5px solid var(--line);border-radius:16px;padding:16px;position:relative;box-shadow:var(--elev1)}
+    .gu .card h3{margin:0 30px 2px 0;font-size:1.05rem}
+    .gu .card .meta{font-size:.88rem;color:var(--muted);line-height:1.6}
+    .gu .card .kebab{position:absolute;top:10px;right:8px}
+    .gu .cards .grptitle{grid-column:1/-1;font-weight:600;color:var(--muted);margin-top:6px}
+
+    /* Menu de ações flutuante */
+    .gu #actionMenu{position:fixed;display:none;z-index:40}
+    .gu #actionMenu.open{display:block}
+    .gu #actionMenu .dd-menu{display:block;position:static;min-width:220px}
+
+    /* Modal */
+    .gu .overlay{position:fixed;inset:0;background:rgba(10,16,20,.6);display:none;align-items:flex-start;justify-content:center;padding:calc(env(safe-area-inset-top,0px) + 24px) 16px 24px;z-index:50;overflow:auto}
+    .gu .overlay.open{display:flex}
+    .gu .modal{background:var(--panel);border:0.5px solid var(--line);border-radius:20px;box-shadow:var(--elev3);width:min(1100px,100%);display:flex;flex-direction:column;max-height:calc(100vh - 48px)}
+    .gu .modal.sm{width:min(480px,100%)}
+    .gu .mh{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:0.5px solid var(--line)}
+    .gu .mh h2{margin:0;font-size:1.45rem;font-weight:600;flex:1}
+    .gu .mb{padding:18px 20px;overflow:auto}
+    .gu .mf{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 20px;border-top:0.5px solid var(--line)}
+    .gu .mb h3{margin:4px 0 12px;font-size:1.15rem;font-weight:600}
+    .gu .mb h3:not(:first-child){margin-top:24px}
+
+    .gu .grid{display:grid;gap:14px;grid-template-columns:none}
+    .gu .g-user1{grid-template-columns:2fr 1.1fr 1.6fr auto}
+    .gu .g-user2{grid-template-columns:1.4fr 1fr 1fr}
+    .gu .g-est{grid-template-columns:1fr 1fr 1fr 1fr 1fr}
+    .gu .g-2{grid-template-columns:1fr 1fr}
+    @media (max-width:820px){.gu .g-user1,.gu .g-user2,.gu .g-est,.gu .g-2{grid-template-columns:1fr}}
+    .gu label.f{display:flex;flex-direction:column;gap:8px;font-weight:700;font-size:12px;color:var(--muted);letter-spacing:.02em}
+    .gu div.f{display:flex;flex-direction:column;gap:8px;font-weight:700;font-size:12px;color:var(--muted);letter-spacing:.02em}
+    /* main.css tem um .switch próprio (interruptor); aqui .switch é o rótulo do HTML aprovado. */
+    .gu .switch{width:auto;height:auto;border-radius:0;background:transparent;border:0;transition:none;position:static;flex-shrink:1;font-weight:400;font-size:14px;letter-spacing:0;color:var(--ink)}
+    .gu .switch::after{content:none}
+    .gu label.f .req{color:var(--danger)}
+    .gu .in,.gu select.in{width:100%;height:44px;padding:0 14px;border:0.5px solid var(--line);border-radius:10px;font-weight:400;font-size:14px;letter-spacing:0;color:var(--ink);background:var(--bg);outline:none}
+    .gu .in:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(0,122,255,.18)}
+    .gu .in.bad{border-color:var(--danger)}
+    .gu .in:disabled{opacity:.55;cursor:not-allowed}
+    .gu .in[readonly]{opacity:.7;cursor:not-allowed}
+    .gu .suffix{display:flex}
+    .gu .suffix .in{border-radius:10px 0 0 10px}
+    .gu .suffix span{display:flex;align-items:center;padding:0 12px;border:0.5px solid var(--line);border-left:0;border-radius:0 10px 10px 0;background:var(--panel2);color:var(--muted);white-space:nowrap}
+    .gu .hint{font-size:.82rem;color:var(--danger);min-height:1em}
+
+    .gu .switch{display:inline-flex;align-items:center;gap:10px;cursor:pointer;padding-top:6px}
+    .gu .switch input{position:absolute;opacity:0;width:1px;height:1px}
+    .gu .switch .t{width:51px;height:31px;border-radius:999px;background:rgba(120,120,128,.32);position:relative;transition:background .22s ease;flex:none}
+    .gu .switch .t::after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 3px 6px rgba(0,0,0,.22),0 1px 2px rgba(0,0,0,.14);transition:transform .22s ease}
+    .gu .switch input:checked + .t{background:var(--ok)}
+    .gu .switch input:checked + .t::after{transform:translateX(20px)}
+    .gu .switch input:focus-visible + .t{outline:3px solid var(--accent);outline-offset:2px}
+
+    .gu .checks{display:flex;flex-direction:column;gap:10px}
+    .gu .chk{display:flex;align-items:center;gap:10px;cursor:pointer}
+    .gu .chk input{width:18px;height:18px;accent-color:var(--accent)}
+
+    .gu .mfa{display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:16px;border:0.5px solid var(--line);border-radius:16px;background:var(--container);color:var(--ink);margin-top:18px}
+    .gu .mfa div{flex:1 1 300px}
+    .gu .mfa b{display:block;font-size:1.05rem;margin-bottom:4px}
+    .gu .mfa span{opacity:.85;font-size:.9rem}
+
+    .gu .etable{width:100%;min-width:600px}
+    .gu .etable th{cursor:default}
+    .gu .etable td{background:transparent !important}
+
+    /* Tela de permissões */
+    .gu #permView{position:fixed;inset:0;background:var(--bg);z-index:45;display:none;flex-direction:column;padding-top:env(safe-area-inset-top,0px)}
+    .gu #permView.open{display:flex}
+    .gu .pv-h{display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:14px 20px;background:var(--panel);border-bottom:0.5px solid var(--line)}
+    .gu .pv-h h2{margin:0;font-size:1.4rem;font-weight:600}
+    .gu .pv-h .sub{color:var(--muted);font-size:.9rem;display:flex;align-items:center;gap:8px}
+    .gu .pill{background:var(--accent);color:var(--on-accent);font-size:.75rem;font-weight:600;padding:2px 9px;border-radius:999px}
+    .gu .pv-h .search{max-width:380px;margin-left:auto}
+    .gu .pv-b{flex:1;display:flex;min-height:0}
+    .gu .pv-nav{width:300px;flex:none;overflow:auto;border-right:0.5px solid var(--line);background:var(--panel);padding:8px}
+    .gu .pv-nav .mod{display:flex;width:100%;justify-content:space-between;align-items:center;border:0;background:transparent;padding:10px 12px;border-radius:10px;font-weight:400;cursor:pointer;text-align:left}
+    .gu .pv-nav .mod.on{background:var(--container);color:var(--accent);font-weight:500}
+    .gu .pv-nav .mod .cnt{font-size:.78rem;color:var(--muted);font-weight:500}
+    .gu .pv-nav .secs{display:none;padding:0 0 6px 14px}
+    .gu .pv-nav .mod.on + .secs{display:block}
+    .gu .pv-nav .secs button{display:block;width:100%;text-align:left;border:0;background:transparent;padding:8px 12px;border-radius:6px;cursor:pointer;font-size:.9rem;color:var(--muted)}
+    .gu .pv-nav .secs button:hover{color:var(--ink);background:var(--panel2)}
+    .gu .pv-main{flex:1;overflow:auto;padding:24px clamp(16px,5vw,80px)}
+    .gu .pv-main h2{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','SF Pro Text','Helvetica Neue',system-ui,sans-serif;font-size:1.7rem;font-weight:500;letter-spacing:-.5px;margin:0 0 8px}
+    .gu .pv-main h3{font-size:1.25rem;margin:28px 0 6px;font-weight:600}
+    .gu .prow{display:flex;align-items:center;gap:16px;justify-content:space-between;padding:14px 0;border-bottom:0.5px solid var(--line)}
+    .gu .prow .lbl{font-weight:500}
+    .gu .prow .lbl small{display:block;color:var(--muted);font-weight:400;font-size:.85rem;margin-top:2px}
+    .gu .prow .in{width:110px}
+    .gu .prow .switch{padding:0}
+    .gu .pv-f{display:flex;align-items:center;justify-content:flex-end;gap:12px;padding:12px 20px calc(12px + env(safe-area-inset-bottom,0px));background:var(--panel);border-top:0.5px solid var(--line)}
+    .gu .pv-f .dirty{color:var(--accent);font-size:.9rem;margin-right:auto}
+    .gu .mark{background:var(--accent);color:var(--on-accent);border-radius:3px;padding:0 2px}
+    @media (max-width:820px){.gu .pv-nav{display:none}}
+
+    /* Toast */
+    .gu #toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 20px);transform:translateX(-50%) translateY(20px);background:var(--ink);color:var(--bg);padding:12px 18px;border-radius:12px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:60;font-weight:500}
+    .gu #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+    @media (prefers-reduced-motion:reduce){.gu *{transition:none !important}}
+  </style>
+</head>
+<!--
+  Gestão de Usuários (consolidação de acessos, primeira subetapa visível): o
+  HTML aprovado (safe-work-usuarios.html) dentro da moldura padrão, ligado à
+  sessão empresarial do Portal, à empresa da sessão e à listagem real
+  (GET /api/administracao/usuarios), pela mesma autoridade da Administração de
+  Usuários. Busca, situação, ordenação, agrupamento por grupo, tabela/cartões
+  e CSV sobre o conjunto real; as demais ações só avisam. Sem js/db-api.js,
+  sem js/main.js, sem dados nem localStorage do protótipo.
+-->
+<body>
+
+<div id="telaSessao" style="position:fixed;inset:0;z-index:10000;background:var(--surface);
+     display:flex;align-items:center;justify-content:center;padding:20px">
+  <div style="width:100%;max-width:400px;text-align:center">
+    <div style="width:64px;height:64px;border-radius:20px;background:#1a3a6b;
+                display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
+      <span class="material-symbols-outlined" style="font-size:32px;color:#fff">safety_check</span>
+    </div>
+    <h1 style="font-size:20px;font-weight:700;margin:0">Gestão de EPIs</h1>
+    <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">SafeWork Engenharia</p>
+    <p id="telaSessaoMensagem" role="status" aria-live="polite" style="font-size:13px;color:var(--on-surface-variant);margin-top:8px">Verificando sua sessão…</p>
+    <a id="telaSessaoPortal" href="../portal/index.html" class="filled-btn" style="display:none;margin-top:16px">
+      <span class="material-symbols-outlined">login</span>Ir para o Portal do Cliente
+    </a>
+  </div>
+</div>
+
+<div class="mobile-overlay" onclick="closeMobileMenu()"></div>
+<div class="mobile-topbar">
+    <div class="mobile-topbar-icon">safety_check</div>
+    <span class="mobile-topbar-title">Gestão de EPIs</span>
+  </div>
+  <button class="mobile-global-menu" type="button" onclick="toggleSidebar()" aria-label="Abrir menu">
+    <svg width="20" height="14" viewBox="0 0 20 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <line x1="0" y1="1"  x2="20" y2="1"  stroke="#1C1C1E" stroke-width="1.8" stroke-linecap="round"/>
+      <line x1="0" y1="7"  x2="20" y2="7"  stroke="#1C1C1E" stroke-width="1.8" stroke-linecap="round"/>
+      <line x1="0" y1="13" x2="20" y2="13" stroke="#1C1C1E" stroke-width="1.8" stroke-linecap="round"/>
+    </svg>
+  </button>
+  <div class="layout">
+<aside class="sidebar">
+      <div class="brand">
+        <div class="brand-left">
+          <div class="brand-badge">security</div>
+          <div>
+            <div class="brand-title">Gestão de EPIs</div>
+            <div class="brand-sub" style="font-size:11px;color:var(--on-surface-variant);margin-top:2px;">v1.0</div>
+          </div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <div class="nav-section">Visão geral</div>
+        <a href="dashboard.html" data-pagina="dashboard" style="display:none"><div class="nav-icon blue">dashboard</div>Dashboard</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon indigo">analytics</div>Relatórios<span class="nav-etiqueta">Em integração</span></a>
+        <div class="nav-section">Estoque</div>
+        <a href="materials.html" data-pagina="materials" style="display:none"><div class="nav-icon teal">inventory_2</div>Gestão de estoque</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon orange">shopping_cart</div>Compras / Entradas<span class="nav-etiqueta">Em integração</span></a>
+        <a href="stock-validity.html" data-pagina="stockValidity" style="display:none"><div class="nav-icon red">event_busy</div>Validade de estoque</a>
+        <a href="available-items.html" data-pagina="availableItems" style="display:none"><div class="nav-icon green">checklist</div>Análise de estoque</a>
+        <a href="operations.html" data-pagina="operations" style="display:none"><div class="nav-icon gray">receipt_long</div>Operações de estoque</a>
+        <a href="employee-groups.html" data-pagina="employeeGroups" style="display:none"><div class="nav-icon purple">group_work</div>Gestão de GHE</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor<span class="nav-etiqueta">Em integração</span></a>
+        <div class="nav-section">Entregas</div>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon green">inventory</div>EPIs Entregues<span class="nav-etiqueta">Em integração</span></a>
+        <a href="epi-ficha.html" data-pagina="epiFicha" style="display:none"><div class="nav-icon brown">description</div>Ficha de EPI</a>
+        <a href="employee-history.html" data-pagina="employeeHistory" style="display:none"><div class="nav-icon blue">history</div>Histórico de Funcionários</a>
+        <div class="nav-section">Solicitações</div>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">badge</div>Autoatendimento (Totem)<span class="nav-etiqueta">Em integração</span></a>
+        <a href="request.html" data-pagina="request" style="display:none"><div class="nav-icon blue">assignment</div>Pedido de EPI</a>
+        <a href="supervisor-approval.html" data-pagina="supervisorApproval" style="display:none"><div class="nav-icon orange">fact_check</div>Aprovação da Segurança do Trabalho</a>
+        <a href="stock-requests.html" data-pagina="stockRequests" style="display:none"><div class="nav-icon red">playlist_add_check_circle</div>Entregas por solicitação</a>
+        <div class="nav-section">Administração</div>
+        <a href="grupos-acesso.html" data-pagina="grupos-acesso" style="display:none"><div class="nav-icon indigo">groups</div>Grupos de Acesso</a>
+        <a href="grupo-permissoes.html" data-pagina="grupo-permissoes" style="display:none"><div class="nav-icon indigo">lock_person</div>Permissões do Grupo</a>
+        <a href="grupo-usuarios.html" data-pagina="grupo-usuarios" style="display:none"><div class="nav-icon indigo">group_add</div>Integrantes do Grupo</a>
+        <a href="autorizacoes-individuais.html" data-pagina="autorizacoes-individuais" style="display:none"><div class="nav-icon indigo">verified_user</div>Autorizações Individuais</a>
+        <a href="import-employees.html" data-pagina="importEmployees" style="display:none"><div class="nav-icon green">upload_file</div>Importar Funcionários</a>
+        <a href="new-user.html" data-pagina="newUser" style="display:none"><div class="nav-icon green">person_add</div>Novo Usuário</a>
+        <a href="user-admin.html" data-pagina="userAdmin" style="display:none"><div class="nav-icon indigo">group</div>Administração de Usuários</a>
+        <a class="active" href="javascript:void(0)" data-pagina="gestaoUsuarios" style="display:none"><div class="nav-icon indigo">manage_accounts</div>Gestão de Usuários</a>
+        <a href="config.html" data-pagina="config" style="display:none"><div class="nav-icon gray">settings</div>Configurações</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon teal">support_agent</div>Suporte<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">mark_email_read</div>Gestão de E-mails<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon indigo">privacy_tip</div>Privacidade / LGPD<span class="nav-etiqueta">Em integração</span></a>
+        <a href="../portal/inicio.html"><div class="nav-icon blue">home</div>Início</a>
+      </nav>
+    </aside>
+
+    <main class="content">
+<p id="estadoPagina" class="estado-pagina" role="status" aria-live="polite" style="display:none"></p>
+
+<!-- Conteúdo protegido: o HTML aprovado, intocado dentro de .gu; nasce oculto até a sessão e as permissões confirmarem. -->
+<div id="conteudoProtegido" class="gu" style="display:none">
+
+<header class="appbar">
+  <div class="brand" id="whoEmpresa"></div>
+  <div class="sp"></div>
+  <div class="who"><span id="whoNome"></span> - <span id="whoPerfil"></span></div>
+</header>
+
+<div class="page">
+  <div class="ph">
+    <div>
+      <h1>Gestão de usuários</h1>
+      <p>Cadastre quem acessa o sistema, defina grupos e permissões por módulo.</p>
+    </div>
+    <div class="sp"></div>
+    <button class="btn ghost" data-act="guia"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4h7a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H2zM22 4h-7a3 3 0 0 0-3 3v13a2 2 0 0 1 2-2h8z"/></svg>Guia rápido</button>
+    <button class="btn" data-act="grupos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.2"/><path d="M3 20v-1a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5v1"/><path d="M16 5.2a3 3 0 0 1 0 5.6M18 14.4a5 5 0 0 1 3 4.6v1"/></svg>Grupos</button>
+    <div class="dd right" id="ddNovo">
+      <button class="btn primary" data-dd="ddNovo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>Novo</button>
+      <div class="dd-menu">
+        <button data-act="novoUsuario">Usuário</button>
+        <button data-act="novoGrupo">Grupo</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <div class="dd" id="ddStatus">
+      <button class="btn" data-dd="ddStatus"><span id="lblStatus">Habilitados</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button>
+      <div class="dd-menu" id="menuStatus"></div>
+    </div>
+    <label class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="Pesquise pelo ID, nome, login ou grupo" aria-label="Pesquisar usuários">
+    </label>
+    <div class="dd right" id="ddGroup">
+      <button class="btn" data-dd="ddGroup">Agrupar por: <span id="lblGroup">Nenhum</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button>
+      <div class="dd-menu" id="menuGroup"></div>
+    </div>
+    <button class="btn" data-act="exportar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Exportar</button>
+    <div class="seg" role="group" aria-label="Modo de visualização">
+      <button data-view="table" class="on" title="Tabela" aria-label="Tabela"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+      <button data-view="cards" title="Cartões" aria-label="Cartões"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></button>
+    </div>
+    <button class="btn icon" data-act="tema" title="Alternar claro/escuro" aria-label="Alternar claro/escuro"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+    <button class="btn icon" data-act="foco" title="Modo foco" aria-label="Modo foco"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
+  </div>
+
+  <div id="list"></div>
+</div>
+
+<div id="actionMenu"><div class="dd-menu" id="actionMenuInner"></div></div>
+
+<div class="overlay" id="overlay"><div class="modal" id="modal"></div></div>
+
+<section id="permView" aria-label="Permissões do usuário"></section>
+
+<div id="toast" role="status"></div>
+
+</div>
+    </main>
+  </div>
+
+<script src="../js/api-http.js"></script>
+<script src="../portal/config.js"></script>
+<script src="../js/sessao-empresarial.js"></script>
+<script src="../js/permissoes-efetivas.js"></script>
+<script src="../js/pagina-base.js"></script>
+<script src="../js/grupos-acesso.js"></script>
+<script src="../js/usuarios.js"></script>
+<script src="../js/gestao-usuarios.js"></script>
+<script src="../js/permissoes-usuario.js"></script>
+<script>
+/*
+  Ligação com o DOM — fina. Marcação (nós e texto), filtros, ordenação,
+  agrupamento, CSV e o formulário de Novo → Usuário ficam em
+  js/gestao-usuarios.js; a listagem e a criação são as reais, por
+  js/usuarios.js (grupos por js/grupos-acesso.js). Sessão, empresa e
+  permissões vêm do servidor, que decide tudo de novo. As demais ações ainda
+  não integradas só avisam: nada é gravado, nem localmente.
+*/
+(function () {
+  'use strict';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var G = EpiGestaoUsuarios;
+  var U = EpiUsuarios;
+
+  var view = { status: 'hab', q: '', agrupar: 'nenhum', modo: 'table', sort: { col: 'id', dir: 1 } };
+  var usuarios = [];
+  var perfisGerenciaveis = [];
+  var perfisCadastraveis = [];
+  var liberada = false;
+  var encerrada = false;
+  var carga = 0;
+  var enviando = false;
+
+  EpiHttp.configurar({ baseUrl: window.SAFEWORK_PORTAL_API_BASE_URL });
+
+  function toast(msg) {
+    var t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(t.temporizador);
+    t.temporizador = setTimeout(function () { t.classList.remove('show'); }, 2600);
+  }
+  function emIntegracao() { toast(G.TEXTOS.EM_INTEGRACAO); }
+
+  function estado(texto) {
+    var p = $('estadoPagina');
+    p.textContent = texto || '';
+    p.style.display = texto ? '' : 'none';
+  }
+
+  /** 401 devolve a pessoa ao Portal: a sessão acabou no servidor. */
+  function tratarSessao(resposta) {
+    if (!U.mensagens.exigeNovoLogin(resposta)) return false;
+    EpiSessaoEmpresarial.sessaoEncerrada();
+    return true;
+  }
+
+  function usuarioDaLista(id) {
+    for (var i = 0; i < usuarios.length; i += 1) {
+      if (usuarios[i].id === id) return usuarios[i];
+    }
+    return null;
+  }
+
+  // Tudo é montado com nós e texto (js/gestao-usuarios.js): nenhum innerHTML.
+  function substituir(el, nos) {
+    el.replaceChildren();
+    (Array.isArray(nos) ? nos : [nos]).forEach(function (n) { el.appendChild(n); });
+  }
+
+  // ── listagem ──
+  function filtrados() { return G.visao.ordenar(G.visao.filtrar(usuarios, view), view.sort); }
+
+  function render() {
+    var menus = G.render.menus(document, view);
+    substituir($('menuStatus'), menus.status);
+    substituir($('menuGroup'), menus.grupo);
+    $('lblStatus').textContent = menus.rotuloStatus;
+    $('lblGroup').textContent = menus.rotuloGrupo;
+    var lista = filtrados();
+    if (!lista.length) { substituir($('list'), G.render.vazio(document)); return; }
+    substituir($('list'), G.render.lista(document, G.visao.agrupar(lista, view.agrupar), view));
+  }
+
+  async function carregar() {
+    if (encerrada || !liberada) return;
+    carga += 1;
+    var numero = carga;
+    substituir($('list'), G.render.mensagem(document, G.TEXTOS.CARREGANDO));
+    var r = await G.acoes.carregarTodos({});
+    if (encerrada || numero !== carga) return;
+    if (!r.ok) {
+      if (tratarSessao(r)) return;
+      substituir($('list'), G.render.mensagem(document, G.TEXTOS.FALHA_LISTAGEM));
+      return;
+    }
+    usuarios = r.usuarios;
+    perfisGerenciaveis = r.perfisGerenciaveis || [];
+    perfisCadastraveis = r.perfisCadastraveis || [];
+    if (r.truncado) toast(G.TEXTOS.LISTA_INCOMPLETA);
+    render();
+  }
+
+  // ── ações da linha: Desabilitar/Reativar reais; as demais ainda só avisam ──
+  var alvoMenu = null;
+  var formCtx = null;
+
+  async function executarSituacao(u, reativar) {
+    if (enviando) return;
+    enviando = true;
+    var r = await (reativar ? U.acoes.reativar(u.id) : U.acoes.inativar(u.id));
+    enviando = false;
+    if (encerrada) return;
+    if (r.ok) {
+      fecharModal();
+      toast(reativar ? G.TEXTOS.REATIVADO_OK : G.TEXTOS.DESABILITADO_OK);
+      carregar();
+      return;
+    }
+    if (tratarSessao(r)) return;
+    fecharModal();
+    toast(G.situacao.erro(r));
+    if (r.status === 409 || r.status === 404) carregar();
+  }
+
+  function acaoDaLinha(acao, id) {
+    var u = id === null ? null : usuarioDaLista(id);
+    if (!u) { emIntegracao(); return; }
+    if (acao === 'desabilitar') {
+      substituir($('modal'), G.render.modalConfirmar(document, G.situacao.confirmacaoDesabilitar(u)));
+      mostrarModal(true);
+      $('btnConfirmar').addEventListener('click', function () { executarSituacao(u, false); });
+    } else if (acao === 'habilitar') {
+      executarSituacao(u, true);
+    } else if (acao === 'alterar') {
+      modalAlterarUsuario(u);
+    } else if (acao === 'senha') {
+      modalSenha(u);
+    } else if (acao === 'permissoes') {
+      modalPermissoes(u);
+    } else if (acao === 'copiar') {
+      modalCopiar(u);
+    } else if (acao === 'duplicar') {
+      modalNovoUsuario('duplicar', { alvoId: u.id, deModelo: u, modelo: u.nome });
+    } else {
+      emIntegracao();
+    }
+  }
+
+  function abrirMenuAcoes(botao, id) {
+    var u = usuarioDaLista(id);
+    if (!u) return;
+    alvoMenu = id;
+    document.querySelectorAll('.kebab.on').forEach(function (b) { b.classList.remove('on'); });
+    botao.classList.add('on');
+    substituir($('actionMenuInner'), G.render.menuAcoes(document, u));
+    var m = $('actionMenu');
+    m.classList.add('open');
+    var r = botao.getBoundingClientRect();
+    var w = m.offsetWidth || 0;
+    var h = m.offsetHeight || 0;
+    var alturaJanela = window.innerHeight || 0;
+    var larguraJanela = window.innerWidth || 0;
+    var top = r.bottom + 6;
+    if (alturaJanela && top + h > alturaJanela - 10) top = r.top - h - 6;
+    m.style.top = Math.max(10, top) + 'px';
+    m.style.left = Math.max(10, larguraJanela ? Math.min(r.right - w, larguraJanela - w - 10) : r.right - w) + 'px';
+  }
+
+  function fecharMenus() {
+    $('actionMenu').classList.remove('open');
+    document.querySelectorAll('.kebab.on').forEach(function (b) { b.classList.remove('on'); });
+    document.querySelectorAll('.dd.open').forEach(function (d) { d.classList.remove('open'); });
+  }
+
+  // ── modal (Guia rápido, Exportar e Novo → Usuário) ──
+  // O overlay é fixed e cobriria a janela inteira, centralizando o modal incluindo a barra lateral. Ele passa a começar onde a
+  // ÁREA DE CONTEÚDO começa (o left real de main.content: a largura da sidebar no desktop, 0 quando ela é drawer/recolhida).
+  function ajustarOverlay() {
+    var area = document.querySelector('main.content');
+    var r = area && typeof area.getBoundingClientRect === 'function' ? area.getBoundingClientRect() : null;
+    var esquerda = r && r.left > 0 ? r.left : 0;
+    $('overlay').style.left = esquerda + 'px';
+  }
+  window.addEventListener('resize', ajustarOverlay);
+
+  function mostrarModal(pequeno) {
+    ajustarOverlay();
+    var m = $('modal');
+    m.className = 'modal' + (pequeno ? ' sm' : '');
+    $('overlay').classList.add('open');
+    var f = m.querySelector('button.primary');
+    if (f && typeof f.focus === 'function') f.focus();
+  }
+  function fecharModal() {
+    $('overlay').classList.remove('open');
+    $('modal').replaceChildren();
+    permissoesAberta = null;
+    gruposAberto = false;
+    grupoEmEdicao = null;
+  }
+
+  function modalGuia() {
+    substituir($('modal'), G.render.modalGuia(document));
+    mostrarModal(true);
+  }
+
+  function modalExportar() {
+    var lista = filtrados();
+    substituir($('modal'), G.render.modalExportar(document, G.csv.gerar(lista), lista.length));
+    mostrarModal(true);
+    $('btnCopy').addEventListener('click', async function () {
+      var t = $('csv');
+      if (typeof t.select === 'function') t.select();
+      try {
+        await navigator.clipboard.writeText(t.value);
+        toast(G.TEXTOS.CSV_COPIADO);
+      } catch (e) {
+        try { document.execCommand('copy'); toast(G.TEXTOS.CSV_COPIADO); } catch (_) { toast(G.TEXTOS.CSV_MANUAL); }
+      }
+    });
+  }
+
+  // ── Novo → Usuário: cria o usuário administrativo pela rota real ──
+  // A senha provisória e a confirmação só existem nos campos do formulário,
+  // que é descartado ao fechar; nada vai para localStorage ou sessionStorage.
+  function mostrarErros(f, erros, mensagemGeral, hintId) {
+    var campos = Object.keys(erros || {});
+    f.querySelectorAll('[data-campo]').forEach(function (c) {
+      var nome = c.getAttribute('data-campo');
+      // "horario" destaca os dois controles do horário.
+      c.classList.toggle('bad', campos.indexOf(nome) !== -1 || (campos.indexOf('horario') !== -1 && nome.indexOf('horario') === 0));
+    });
+    var textos = campos.map(function (c) { return erros[c]; });
+    if (mensagemGeral) textos.unshift(mensagemGeral);
+    $(hintId || 'hintUser').textContent = textos.join(' ');
+  }
+
+  async function enviarNovoUsuario() {
+    var f = $('fUser');
+    if (!f || enviando) return;
+    var modo = f.getAttribute('data-modo') || 'novo';
+    var edicao = modo === 'editar' && formCtx;
+    var dados = G.formulario.lerCampos(f);
+    var v = G.formulario.validar(dados, modo);
+    mostrarErros(f, v.erros);
+    if (!v.ok) return;
+    enviando = true;
+    var botao = $('btnSalvarUser');
+    botao.disabled = true;
+    var corpoNovo = G.formulario.corpo(dados);
+    if (modo === 'duplicar' && formCtx) corpoNovo.usuarioModeloId = formCtx.alvoId;
+    var r = await (edicao
+      ? U.acoes.alterar(formCtx.alvoId, G.formulario.corpoAlteracao(dados, formCtx.original))
+      : U.acoes.criar(corpoNovo));
+    enviando = false;
+    dados = null;
+    if (encerrada || $('fUser') !== f) return;
+    if (r.ok) {
+      f.reset();
+      fecharModal();
+      formCtx = null;
+      toast(edicao ? G.TEXTOS.ALTERADO_OK : G.TEXTOS.NOVO_USUARIO_SUCESSO);
+      carregar();
+      return;
+    }
+    botao.disabled = false;
+    if (tratarSessao(r)) return;
+    var erro = G.formulario.erroDoServidor(r);
+    mostrarErros(f, erro.erros, erro.mensagem);
+  }
+
+  // ── Novo → Grupo (infraestrutura de grupos existente; o grupo nasce vazio e sem permissões) ──
+  var grupoEmEdicao = null;
+  var gruposAberto = false;
+
+  function modalNovoGrupo(grupo) {
+    grupoEmEdicao = grupo || null;
+    substituir($('modal'), G.render.modalNovoGrupo(document, { grupo: grupoEmEdicao }));
+    mostrarModal(false);
+    var f = $('fGrupo');
+    $('ng-nome').focus();
+    f.addEventListener('input', function (e) { if (e && e.target && e.target.classList) e.target.classList.remove('bad'); });
+    f.addEventListener('submit', function (e) { if (e && e.preventDefault) e.preventDefault(); enviarNovoGrupo(); });
+    $('btnSalvarGrupo').addEventListener('click', enviarNovoGrupo);
+  }
+
+  async function enviarNovoGrupo() {
+    var f = $('fGrupo');
+    if (!f || enviando) return;
+    var dados = G.formulario.lerCampos(f);
+    var v = G.grupoForm.validar(dados);
+    mostrarErros(f, v.erros, '', 'hintGrupo');
+    if (!v.ok) return;
+    var editando = grupoEmEdicao;
+    var campos = editando ? G.grupoForm.camposAlterados(editando, dados) : null;
+    if (editando && !Object.keys(campos).length) { await abrirGrupos(); return; }
+    enviando = true;
+    $('btnSalvarGrupo').disabled = true;
+    var r = await (editando ? EpiGrupos.acoes.alterar(editando.id, campos) : EpiGrupos.acoes.criar(G.grupoForm.corpo(dados)));
+    enviando = false;
+    if (encerrada || $('fGrupo') !== f) return;
+    if (r.ok) {
+      f.reset();
+      toast(editando ? G.TEXTOS.GRUPO_EDITADO_OK : G.TEXTOS.GRUPO_CRIADO_OK);
+      carregar();
+      if (gruposAberto) await abrirGrupos(); else fecharModal();
+      return;
+    }
+    $('btnSalvarGrupo').disabled = false;
+    if (tratarSessao(r)) return;
+    var erro = G.grupoForm.erroDoServidor(r);
+    mostrarErros(f, erro.erros, erro.mensagem, 'hintGrupo');
+  }
+
+  // ── Configurar permissões: catálogo e camadas vêm do servidor; cada controle grava de verdade e a linha é recalculada ──
+  var P = EpiPermissoesUsuario;
+  var permissoesAberta = null;
+
+  function avisoPermissoes(texto) { var h = $('hintPermissoes'); if (h) h.textContent = texto || ''; }
+
+  function mostrarPermissoes(dados) {
+    substituir($('modal'), P.render.modalAcessos(document, dados));
+    mostrarModal(false);
+  }
+
+  async function modalPermissoes(u) {
+    var r = await P.acoes.acessos(u.id);
+    if (encerrada) return;
+    if (!r.ok) {
+      if (tratarSessao(r)) return;
+      toast(P.modelo.erro(r));
+      return;
+    }
+    var dados = r.dados && r.dados.acessos;
+    if (!P.modelo.validoAcessos(dados)) { toast(P.TEXTOS.FALHA); return; }
+    permissoesAberta = { id: u.id };
+    mostrarPermissoes(dados);
+  }
+
+  // ── Grupos: lista, editar, inativar/reativar e permissões do grupo (infraestrutura de grupos existente) ──
+  async function abrirGrupos(mensagem) {
+    var r = await EpiGrupos.acoes.listar({});
+    if (encerrada) return;
+    if (!r.ok || !r.dados || !Array.isArray(r.dados.grupos)) {
+      if (tratarSessao(r)) return;
+      toast(G.TEXTOS.GRUPOS_LISTA_FALHA);
+      return;
+    }
+    grupoEmEdicao = null;
+    gruposAberto = true;
+    permissoesAberta = null;
+    substituir($('modal'), G.render.modalGrupos(document, r.dados.grupos));
+    mostrarModal(false);
+    if (mensagem) $('hintGrupos').textContent = mensagem;
+  }
+
+  async function modalPermissoesGrupo(grupoId) {
+    var r = await P.acoes.acessosDoGrupo(grupoId);
+    if (encerrada) return;
+    if (!r.ok) {
+      if (tratarSessao(r)) return;
+      toast(P.modelo.erro(r));
+      return;
+    }
+    var dados = r.dados && r.dados.acessos;
+    if (!P.modelo.validoAcessos(dados)) { toast(P.TEXTOS.FALHA); return; }
+    permissoesAberta = { id: grupoId, grupo: true };
+    mostrarPermissoes(dados);
+  }
+
+  async function situacaoDoGrupo(grupoId, ativar) {
+    if (enviando) return;
+    enviando = true;
+    var r = await (ativar ? EpiGrupos.acoes.reativar(grupoId) : EpiGrupos.acoes.inativar(grupoId));
+    enviando = false;
+    if (encerrada) return;
+    if (r.ok) { carregar(); await abrirGrupos(ativar ? G.TEXTOS.GRUPO_REATIVADO_OK : G.TEXTOS.GRUPO_INATIVADO_OK); return; }
+    if (tratarSessao(r)) return;
+    await abrirGrupos(G.grupoForm.erroDeSituacao(r));
+  }
+
+  async function acaoDoGrupo(acao, grupoId) {
+    if (acao === 'novo') { modalNovoGrupo(null); return; }
+    var r = await EpiGrupos.acoes.buscar(grupoId);
+    if (encerrada) return;
+    var grupo = r.ok && r.dados ? r.dados.grupo : null;
+    if (!grupo) {
+      if (tratarSessao(r)) return;
+      await abrirGrupos(G.grupoForm.erroDeSituacao(r));
+      return;
+    }
+    if (acao === 'editar') modalNovoGrupo(grupo);
+    else if (acao === 'permissoes') modalPermissoesGrupo(grupo.id);
+    else if (acao === 'reativar') situacaoDoGrupo(grupo.id, true);
+    else if (acao === 'inativar') {
+      gruposAberto = true;
+      substituir($('modal'), G.render.modalConfirmar(document, G.grupoForm.confirmacaoInativar(grupo)));
+      mostrarModal(true);
+      $('btnConfirmar').addEventListener('click', function () { situacaoDoGrupo(grupo.id, false); });
+    }
+  }
+
+  async function aplicarAcesso(controle) {
+    if (!permissoesAberta || enviando) return;
+    var id = permissoesAberta.id;
+    var doGrupo = permissoesAberta.grupo === true;
+    var ligado = controle.checked === true;
+    enviando = true;
+    controle.disabled = true;
+    var r = await (doGrupo
+      ? P.acoes.definirAcessoDoGrupo(id, controle.getAttribute('data-acesso'), ligado)
+      : P.acoes.definirAcesso(id, controle.getAttribute('data-acesso'), ligado));
+    enviando = false;
+    if (encerrada || !permissoesAberta || permissoesAberta.id !== id) return;
+    if (r.ok) {
+      // O interruptor mostra o resultado efetivo que o servidor devolveu, não o que foi pedido.
+      var linha = controle.closest('.prow');
+      var nova = P.render.linhaAcesso(document, r.dados.acesso, true);
+      linha.parentNode.insertBefore(nova, linha);
+      linha.parentNode.removeChild(linha);
+      avisoPermissoes(P.TEXTOS.ALTERADO);
+      return;
+    }
+    if (tratarSessao(r)) return;
+    // O estado pode ter mudado no servidor: relê tudo e mostra o texto da tela.
+    var novo = await (doGrupo ? P.acoes.acessosDoGrupo(id) : P.acoes.acessos(id));
+    if (encerrada || !permissoesAberta) return;
+    if (novo.ok && P.modelo.validoAcessos(novo.dados.acessos)) mostrarPermissoes(novo.dados.acessos);
+    avisoPermissoes(P.modelo.erro(r));
+  }
+
+  document.addEventListener('change', function (e) {
+    var t = e && e.target;
+    if (!t || typeof t.getAttribute !== 'function' || !permissoesAberta) return;
+    if (t.getAttribute('data-acesso')) aplicarAcesso(t);
+  });
+
+  // ── Copiar permissões: a configuração de acesso da origem vira a do destino (usuário já existente) ──
+  var copiaCtx = null;
+
+  async function modalCopiar(origem) {
+    if (P.modelo.perfilFixo(origem.perfil)) { toast(P.TEXTOS.COPIA_NAO_APLICA); return; }
+    var destinos = usuarios.filter(function (x) { return x.id !== origem.id; });
+    if (!destinos.length) { toast(P.TEXTOS.COPIA_SEM_USUARIOS); return; }
+    // O resumo da origem vem do detalhe autorizado; sem ele, só o grupo da própria linha.
+    var d = await P.acoes.detalhar(origem.id);
+    if (encerrada) return;
+    var resumo = d.ok && P.modelo.valido(d.dados.permissoes)
+      ? P.modelo.resumo(d.dados.permissoes)
+      : { grupo: origem.grupo, recursos: null, autorizacoes: null, bloqueios: null };
+    copiaCtx = { origem: origem, destinos: destinos, resumo: resumo };
+    substituir($('modal'), P.render.modalCopiar(document, origem, destinos));
+    mostrarModal(true);
+    $('cp-destino').addEventListener('change', function () {
+      var dest = usuarioDaLista(Number($('cp-destino').value));
+      var botao = $('btnCopiar');
+      $('hintCopia').textContent = '';
+      substituir($('cp-resumo'), dest ? P.render.resumoCopia(document, origem, dest, resumo) : []);
+      botao.disabled = !dest;
+    });
+    $('btnCopiar').addEventListener('click', confirmarCopia);
+  }
+
+  async function confirmarCopia() {
+    if (!copiaCtx || enviando) return;
+    var dest = usuarioDaLista(Number($('cp-destino').value));
+    if (!dest) return;
+    enviando = true;
+    $('btnCopiar').disabled = true;
+    var r = await P.acoes.copiar(dest.id, copiaCtx.origem.id);
+    enviando = false;
+    if (encerrada || !copiaCtx) return;
+    if (r.ok) {
+      var texto = P.modelo.mensagemCopia(r.dados && r.dados.copia);
+      copiaCtx = null;
+      fecharModal();
+      toast(texto);
+      carregar();
+      return;
+    }
+    $('btnCopiar').disabled = false;
+    if (tratarSessao(r)) return;
+    $('hintCopia').textContent = P.modelo.erroCopia(r);
+  }
+
+  // ── Alterar senha: nova SENHA PROVISÓRIA (o servidor revoga as sessões; nada é enviado por e-mail) ──
+  function modalSenha(u) {
+    substituir($('modal'), G.render.modalSenha(document, u.nome));
+    mostrarModal(true);
+    var f = $('fSenha');
+    f.querySelector('input').focus();
+    f.addEventListener('input', function (e) { if (e && e.target && e.target.classList) e.target.classList.remove('bad'); });
+    f.addEventListener('submit', function (e) { if (e && e.preventDefault) e.preventDefault(); enviarSenha(u); });
+    $('btnRedefinirSenha').addEventListener('click', function () { enviarSenha(u); });
+  }
+
+  async function enviarSenha(u) {
+    var f = $('fSenha');
+    if (!f || enviando) return;
+    var dados = G.formulario.lerCampos(f);
+    var v = G.senhaForm.validar(dados);
+    mostrarErros(f, v.erros, '', 'hintSenha');
+    if (!v.ok) return;
+    enviando = true;
+    $('btnRedefinirSenha').disabled = true;
+    var r = await U.acoes.redefinirSenha(u.id, dados.senhaProvisoria);
+    enviando = false;
+    dados = null;
+    if (encerrada || $('fSenha') !== f) return;
+    if (r.ok) {
+      f.reset();
+      fecharModal();
+      toast(G.senhaForm.TEXTOS.OK);
+      return;
+    }
+    $('btnRedefinirSenha').disabled = false;
+    if (tratarSessao(r)) return;
+    var erro = G.senhaForm.erroDoServidor(r);
+    mostrarErros(f, erro.erros, erro.mensagem, 'hintSenha');
+  }
+
+  // Alterar usuário: o MESMO modal do Novo, em modo edição, com o detalhe autorizado (CPF completo, só leitura).
+  async function modalAlterarUsuario(u) {
+    var d = await U.acoes.edicao(u.id);
+    if (encerrada) return;
+    if (!d.ok) {
+      if (tratarSessao(d)) return;
+      toast(G.situacao.erro(d));
+      return;
+    }
+    await modalNovoUsuario('editar', { valores: G.formulario.valoresDeEdicao(d.dados.usuario), original: d.dados.usuario, alvoId: u.id });
+  }
+
+  async function modalNovoUsuario(modo, ctx) {
+    formCtx = ctx || null;
+    var grupos = [];
+    var aviso = '';
+    var r = await EpiGrupos.acoes.listar({ ativo: true });
+    if (encerrada) return;
+    if (r.ok && r.dados && Array.isArray(r.dados.grupos)) grupos = r.dados.grupos;
+    else if (tratarSessao(r)) return;
+    else aviso = G.TEXTOS.GRUPOS_FALHA;
+    var valores = ctx && ctx.valores;
+    if (modo === 'duplicar' && ctx && ctx.deModelo) valores = G.formulario.valoresDeDuplicacao(ctx.deModelo, grupos, perfisCadastraveis);
+    // Master nunca é opção: só os perfis cadastráveis. Editar um usuário de perfil fixo mostra só o perfil atual, travado.
+    var perfis = perfisCadastraveis;
+    var fixo = false;
+    if (modo === 'editar' && ctx && ctx.original && perfisCadastraveis.indexOf(ctx.original.perfil) === -1) { perfis = [ctx.original.perfil]; fixo = true; }
+    substituir($('modal'), G.render.modalNovoUsuario(document, {
+      grupos: grupos, perfis: perfis, perfilFixo: fixo, modo: modo || 'novo', valores: valores, modelo: ctx && ctx.modelo,
+    }));
+    mostrarModal(false);
+    var f = $('fUser');
+    G.formulario.ajustarGrupo(document);
+    if (aviso) $('hintUser').textContent = aviso;
+    var primeiro = f.querySelector('input');
+    if (primeiro && typeof primeiro.focus === 'function') primeiro.focus();
+    f.addEventListener('input', function (e) {
+      var alvo = e && e.target;
+      if (!alvo || typeof alvo.getAttribute !== 'function') return;
+      if (alvo.getAttribute('name') === 'cpf') alvo.value = G.formulario.mascaraCpf(alvo.value);
+      if (alvo.classList) alvo.classList.remove('bad');
+    });
+    f.addEventListener('change', function (e) {
+      var alvo = e && e.target;
+      if (alvo && typeof alvo.getAttribute === 'function' && alvo.getAttribute('name') === 'tipoConta') G.formulario.ajustarGrupo(document);
+    });
+    f.addEventListener('submit', function (e) { if (e && e.preventDefault) e.preventDefault(); enviarNovoUsuario(); });
+    $('btnSalvarUser').addEventListener('click', enviarNovoUsuario);
+  }
+
+  // ── tema: aparência por identidade (a mesma das Configurações) ──
+  async function alternarTema() {
+    var escuro = document.documentElement.getAttribute('data-theme') !== 'dark';
+    var anterior = EpiTema.preferenciasAtuais();
+    var novo = escuro ? 'escuro' : 'claro';
+    EpiTema.aplicarPreferencias({ tema: novo, modoVisual: anterior.modoVisual });
+    var r = await G.acoes.salvarTema(novo);
+    if (r.ok) return;
+    EpiTema.aplicarPreferencias(anterior);
+    if (!tratarSessao(r)) toast(G.TEXTOS.TEMA_FALHA);
+  }
+
+  // ── eventos (a mesma delegação do HTML aprovado) ──
+  document.addEventListener('click', function (e) {
+    var t = e && e.target;
+    if (!t || typeof t.closest !== 'function') return;
+
+    var dd = t.closest('[data-dd]');
+    if (dd) {
+      var caixa = $(dd.getAttribute('data-dd'));
+      var aberta = caixa.classList.contains('open');
+      fecharMenus();
+      if (!aberta) caixa.classList.add('open');
+      return;
+    }
+
+    var k = t.closest('[data-menu]');
+    if (k) {
+      var ligado = k.classList.contains('on');
+      fecharMenus();
+      if (!ligado) abrirMenuAcoes(k, Number(k.getAttribute('data-menu')));
+      return;
+    }
+
+    var linhaAcao = t.closest('[data-acao]');
+    if (linhaAcao) { fecharMenus(); acaoDaLinha(linhaAcao.getAttribute('data-acao'), alvoMenu); return; }
+
+    var a = t.closest('[data-act]');
+    if (a) {
+      fecharMenus();
+      var act = a.getAttribute('data-act');
+      if (act === 'guia') modalGuia();
+      else if (act === 'exportar') modalExportar();
+      else if (act === 'novoUsuario') modalNovoUsuario('novo', null);
+      else if (act === 'novoGrupo') { gruposAberto = false; modalNovoGrupo(null); }
+      else if (act === 'grupos') abrirGrupos();
+      else if (act === 'foco') $('conteudoProtegido').classList.toggle('focus');
+      else if (act === 'tema') alternarTema();
+      else emIntegracao();
+      return;
+    }
+
+    var st = t.closest('[data-status]');
+    if (st) { view.status = st.getAttribute('data-status'); fecharMenus(); render(); return; }
+
+    var ag = t.closest('[data-agrupar]');
+    if (ag) {
+      var modo = ag.getAttribute('data-agrupar');
+      fecharMenus();
+      if (!G.visao.agrupamentoDisponivel(modo)) { emIntegracao(); return; }
+      view.agrupar = modo;
+      render();
+      return;
+    }
+
+    var vw = t.closest('[data-view]');
+    if (vw) {
+      view.modo = vw.getAttribute('data-view');
+      document.querySelectorAll('[data-view]').forEach(function (b) { b.classList.toggle('on', b === vw); });
+      render();
+      return;
+    }
+
+    var so = t.closest('th[data-sort]');
+    if (so) {
+      var c = so.getAttribute('data-sort');
+      view.sort = { col: c, dir: view.sort.col === c ? -view.sort.dir : 1 };
+      render();
+      return;
+    }
+
+    var ga = t.closest('[data-grupo-acao]');
+    if (ga) {
+      var idGrupo = Number(ga.getAttribute('data-grupo-id'));
+      acaoDoGrupo(ga.getAttribute('data-grupo-acao'), Number.isInteger(idGrupo) ? idGrupo : 0);
+      return;
+    }
+
+    if (t.closest('[data-close]') || t.id === 'overlay') { fecharModal(); return; }
+
+    if (!t.closest('.dd-menu')) fecharMenus();
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (!e || e.key !== 'Escape') return;
+    if ($('overlay').classList.contains('open')) fecharModal();
+    else fecharMenus();
+  });
+  $('q').addEventListener('input', function (e) { view.q = e.target.value; render(); });
+  window.addEventListener('scroll', function () { if ($('actionMenu').classList.contains('open')) fecharMenus(); }, true);
+  window.addEventListener('resize', fecharMenus);
+
+  function encerrarTela() {
+    encerrada = true;
+    carga += 1;
+    usuarios = [];
+    $('list').replaceChildren();
+    fecharModal();
+    fecharMenus();
+    $('conteudoProtegido').style.display = 'none';
+  }
+
+  // Sessão empresarial do Portal e permissões efetivas nesta empresa. Sem
+  // sessão ou sem acesso, nada é carregado; o servidor confere de novo.
+  EpiSessaoEmpresarial.montar({
+    elementos: {
+      tela: $('telaSessao'),
+      mensagem: $('telaSessaoMensagem'),
+      linkPortal: $('telaSessaoPortal'),
+      empresa: $('whoEmpresa'),
+      usuario: $('whoNome'),
+      conteudo: $('conteudoProtegido'),
+    },
+    aoEncerrar: encerrarTela,
+  }).then(function (contexto) {
+    if (!contexto) return undefined;
+    $('whoPerfil').textContent = G.rotuloPerfil(contexto.usuario.perfil);
+    return EpiPermissoes.prepararPagina({
+      pagina: 'gestaoUsuarios',
+      contexto: contexto,
+      links: document.querySelectorAll('.nav a[data-pagina]'),
+      aviso: estado,
+    }).then(function (resultado) {
+      if (!resultado) return undefined;
+      liberada = true;
+      estado('');
+      $('conteudoProtegido').style.display = '';
+      render();
+      return carregar();
+    });
+  });
+})();
+</script>
+</body>
+</html>
