@@ -30,12 +30,12 @@ const COM_MENU = fs.readdirSync(path.join(RAIZ, 'pages')).filter((f) => f.endsWi
 // ── servidor falso ─────────────────────────────────────────────────
 const NENHUMA = { visualizar: false, criar: false, editar: false, excluir: false };
 const area = (v) => ({ consultar: v, alterar: v });
-function permissoes({ perfil = 'MASTER', usuarios = true } = {}) {
+function permissoes({ perfil = 'MASTER', usuarios = true, sst = false } = {}) {
   return {
     status: 'ok', empresaId: 3, usuarioId: 1, perfil, recursos: { dashboard: { ...NENHUMA, visualizar: true } }, acoes: {},
     administracao: {
       gruposAcesso: area(false), permissoesGrupo: area(false), vinculosGrupo: area(false), usuarios: area(usuarios),
-      autorizacoesIndividuais: { consultar: false, concederDireta: false, delegar: false }, vinculosSst: area(false),
+      autorizacoesIndividuais: { consultar: false, concederDireta: false, delegar: false }, vinculosSst: area(sst),
     },
   };
 }
@@ -72,12 +72,12 @@ function listagem(lista) {
   };
 }
 
-function abrir({ perfil = 'MASTER', usuarios = true, lista = USUARIOS, conta = { status: 200, corpo: { status: 'ok' } }, rotas = {} } = {}) {
+function abrir({ perfil = 'MASTER', usuarios = true, sst = false, lista = USUARIOS, conta = { status: 200, corpo: { status: 'ok' } }, rotas = {} } = {}) {
   return abrirPagina(ARQUIVO, {
     rotas: {
       'GET /auth/me': { status: 200, corpo: contexto(perfil) },
       'GET /auth/global/me': { status: 200, corpo: { status: 'ok', empresas: [{ id: 3 }] } },
-      'GET /auth/permissoes': { status: 200, corpo: permissoes({ perfil, usuarios }) },
+      'GET /auth/permissoes': { status: 200, corpo: permissoes({ perfil, usuarios, sst }) },
       'GET /administracao/usuarios': listagem(lista),
       'PATCH /auth/global/conta': conta,
       ...rotas,
@@ -671,7 +671,7 @@ describe('Gestão de Usuários — Novo → Usuário: tela', () => {
   test('abre o formulário com os campos decididos, os grupos ATIVOS reais e os perfis que o servidor permite; sem Status, dois fatores, Permissões ou Empresas', async () => {
     const pg = await abrirNovo();
     assert.equal(pg.el('overlay').classList.contains('open'), true);
-    assert.deepEqual(nomesDosCampos(pg), ['nome', 'cpf', 'email', 'tipoConta', 'senhaProvisoria', 'confirmacao', 'ipsPermitidos', 'grupoAcessoId', 'setor', 'matricula', 'horarioInicio', 'horarioFim']);
+    assert.deepEqual(nomesDosCampos(pg), ['nome', 'cpf', 'email', 'tipoConta', 'senhaProvisoria', 'confirmacao', 'ipsPermitidos', 'grupoAcessoId', 'setor', 'matricula', 'horarioInicio', 'horarioFim', 'vinculoSst']);
     assert.equal(pg.consulta('#fUser .req').length, 8, 'Nome, CPF, E-mail, Perfil, Senha, Confirmar, Setor e Matrícula');
     assert.deepEqual(pg.consulta('#nu-grupoAcessoId option').map((o) => [o.getAttribute('value'), o.textContent]), [['', 'Sem grupo'], ['7', 'SST']], 'o grupo inativo não é oferecido');
     assert.deepEqual(pg.consulta('#nu-tipoConta option').map((o) => o.textContent), ['Selecione', 'Usuário'], 'perfisGerenciaveis da listagem real');
@@ -922,7 +922,7 @@ describe('Gestão de Usuários — Alterar usuário', () => {
     const modal = pg.texto('modal');
     assert.ok(modal.includes('Alterar usuário') && modal.includes('Salvar alterações'));
     assert.equal(/Senha provisória|Confirmar senha/.test(modal), false);
-    assert.deepEqual(pg.consulta('#fUser [data-campo]').map((c) => c.getAttribute('name')), ['nome', 'cpf', 'email', 'tipoConta', 'ipsPermitidos', 'grupoAcessoId', 'setor', 'matricula', 'horarioInicio', 'horarioFim']);
+    assert.deepEqual(pg.consulta('#fUser [data-campo]').map((c) => c.getAttribute('name')), ['nome', 'cpf', 'email', 'tipoConta', 'ipsPermitidos', 'grupoAcessoId', 'setor', 'matricula', 'horarioInicio', 'horarioFim', 'vinculoSst']);
     const v = (n) => pg.el(`nu-${n}`).value;
     assert.deepEqual([v('nome'), v('cpf'), v('email'), v('tipoConta'), v('matricula'), v('setor'), v('horarioInicio'), v('horarioFim'), v('ipsPermitidos'), v('grupoAcessoId')],
       ['Bruno Almoxarife', '529.982.247-25', 'bruno@validacao-epi.invalid', 'SUPERVISOR', 'ALM-004', 'Almoxarifado', '08:00', '18:00', '203.0.113.10, 2001:db8::1', '7']);
@@ -1183,6 +1183,128 @@ describe('Gestão de Usuários — Configurar permissões (ON/OFF)', () => {
 
 // ═══════════════════════════════════════════════════════════════════
 // ETAPA G — Copiar permissões (POST /administracao/usuarios/:id/permissoes/copiar)
+describe('Gestão de Usuários — vínculo SST (Vínculos operacionais) e permissões de decisão', () => {
+  const PU = require('../js/permissoes-usuario');
+  const DET = {
+    id: 4, nome: 'Bruno Almoxarife', email: 'bruno@validacao-epi.invalid', perfil: 'SUPERVISOR', ativo: true, cpf: '52998224725', matricula: 'ALM-004', setor: 'Almoxarifado',
+    horarioTrabalho: null, ipsPermitidos: [], grupoAcessoId: null, vinculoSst: false,
+  };
+  const novo = async ({ sst = true, rotas = {} } = {}) => {
+    const pg = await pronta({ sst, rotas: { 'GET /grupos-acesso': GRUPOS, 'POST /administracao/usuarios': criado, ...rotas } });
+    await clicar(pg, '[data-act="novoUsuario"]');
+    await pg.esperar();
+    return pg;
+  };
+  const edicao = async ({ sst = true, detalhe = DET, rotas = {} } = {}) => {
+    const pg = await pronta({ sst, rotas: { 'GET /grupos-acesso': GRUPOS, 'GET /administracao/usuarios/4/edicao': { status: 200, corpo: { status: 'ok', usuario: detalhe } }, 'PATCH /administracao/usuarios/4': { status: 200, corpo: { status: 'ok', alterado: true } }, ...rotas } });
+    await clicar(pg, '.kebab[data-menu="4"]');
+    await clicar(pg, '#actionMenuInner [data-acao="alterar"]');
+    await pg.esperar();
+    await pg.esperar();
+    return pg;
+  };
+  const salvarEdicao = async (pg) => { await clicar(pg, '#btnSalvarUser'); await pg.esperar(); await pg.esperar(); };
+  const interruptor = (pg) => pg.consulta('#nu-vinculoSst')[0];
+  const marcar = async (pg, ligado) => { const el = interruptor(pg); el.checked = ligado; await el.disparar('change'); };
+
+  test('Novo Usuário: seção "Vínculos operacionais" com "Segurança do Trabalho (SST)", desligada por padrão e sem inferir nada do perfil', async () => {
+    const pg = await novo();
+    assert.ok(pg.texto('modal').includes('Vínculos operacionais'));
+    assert.ok(pg.texto('modal').includes('Segurança do Trabalho (SST)'));
+    assert.equal(interruptor(pg).checked, false);
+    assert.equal(interruptor(pg).getAttribute('disabled'), null, 'o Master pode alterar');
+    for (const tipo of ['ADMINISTRADOR', 'SUPERVISOR', 'USUARIO']) {
+      pg.el('nu-tipoConta').value = tipo;
+      await pg.el('nu-tipoConta').disparar('change');
+      assert.equal(interruptor(pg).checked, false, `${tipo} não liga o SST`);
+    }
+  });
+
+  test('Novo Usuário com SST OFF não envia o campo; com SST ON envia vinculoSst: true', async () => {
+    const off = await novo();
+    preencher(off, VALIDO);
+    await salvar(off);
+    assert.equal('vinculoSst' in envios(off)[0].corpo, false, 'padrão desligado: nada enviado');
+    const on = await novo();
+    preencher(on, VALIDO);
+    await marcar(on, true);
+    await salvar(on);
+    assert.equal(envios(on)[0].corpo.vinculoSst, true);
+  });
+
+  test('quem não é o Master vê o vínculo travado, com o motivo, e o formulário nunca o envia', async () => {
+    const pg = await novo({ sst: false });
+    assert.notEqual(interruptor(pg).getAttribute('disabled'), null);
+    assert.ok(pg.texto('modal').includes('Somente o Master altera este vínculo.'));
+    preencher(pg, VALIDO);
+    await salvar(pg);
+    assert.equal('vinculoSst' in envios(pg)[0].corpo, false);
+  });
+
+  test('403 do vínculo mostra o texto próprio da tela (e o formulário continua aberto)', async () => {
+    const pg = await novo({ rotas: { 'POST /administracao/usuarios': () => erro(403, 'SEM_AUTORIDADE_VINCULO_SST') } });
+    preencher(pg, VALIDO);
+    await marcar(pg, true);
+    await salvar(pg);
+    assert.ok(pg.texto('hintUser').includes('Somente o Master altera o vínculo com a Segurança do Trabalho. Nada foi salvo.'));
+    assert.equal(pg.textoDoDom().includes('texto do servidor'), false);
+    assert.equal(pg.visivel('overlay'), true);
+  });
+
+  test('Alterar usuário: mostra o estado REAL; OFF → ON envia true; ON → OFF envia false; sem mudança não envia', async () => {
+    const off = await edicao();
+    assert.equal(interruptor(off).checked, false);
+    await salvarEdicao(off);
+    assert.equal('vinculoSst' in off.chamadas.find((c) => c.metodo === 'PATCH').corpo, false, 'sem mudança, sem campo');
+    const paraOn = await edicao();
+    await marcar(paraOn, true);
+    await salvarEdicao(paraOn);
+    assert.equal(paraOn.chamadas.find((c) => c.metodo === 'PATCH').corpo.vinculoSst, true);
+    const on = await edicao({ detalhe: { ...DET, vinculoSst: true } });
+    assert.equal(interruptor(on).checked, true, 'o estado atual vem do servidor');
+    await marcar(on, false);
+    await salvarEdicao(on);
+    assert.equal(on.chamadas.find((c) => c.metodo === 'PATCH').corpo.vinculoSst, false);
+  });
+
+  test('Duplicar não copia o vínculo SST (nasce desligado)', async () => {
+    const pg = await pronta({ sst: true, rotas: { 'GET /grupos-acesso': GRUPOS } });
+    await clicar(pg, '.kebab[data-menu="4"]');
+    await clicar(pg, '#actionMenuInner [data-acao="duplicar"]');
+    await pg.esperar();
+    await pg.esperar();
+    assert.equal(interruptor(pg).checked, false);
+  });
+
+  test('Configurar permissões: "Aprovar solicitações de EPI" e "Reprovar solicitações de EPI" são interruptores ON/OFF como os demais, com o aviso do vínculo', async () => {
+    const acessos = {
+      usuario: { id: 4, nome: 'Bruno Almoxarife', perfil: 'SUPERVISOR', ativo: true }, podeAlterar: true, motivoSomenteLeitura: null,
+      toggles: [
+        { id: 'aprovarSolicitacoes', rotulo: 'Aprovar solicitações de EPI', grupo: 'ADMINISTRACAO', ligado: true, fixo: false, exigeVinculoSst: true, vinculoSst: false },
+        { id: 'reprovarSolicitacoes', rotulo: 'Reprovar solicitações de EPI', grupo: 'ADMINISTRACAO', ligado: false, fixo: false, exigeVinculoSst: true, vinculoSst: true },
+      ],
+      pendencias: [],
+    };
+    const pg = await pronta({ rotas: { 'GET /administracao/usuarios/4/acessos': { status: 200, corpo: { status: 'ok', acessos } }, 'PUT /administracao/usuarios/4/acessos/reprovarSolicitacoes': { status: 200, corpo: { status: 'ok', acesso: { ...acessos.toggles[1], ligado: true } } } } });
+    await clicar(pg, '.kebab[data-menu="4"]');
+    await clicar(pg, '#actionMenuInner [data-acao="permissoes"]');
+    await pg.esperar();
+    await pg.esperar();
+    assert.equal(pg.consulta('#modal select').length, 0, 'sem Herdar/Permitir/Bloquear');
+    assert.deepEqual(pg.consulta('[data-acesso]').map((e) => [e.getAttribute('data-acesso'), e.checked]), [['aprovarSolicitacoes', true], ['reprovarSolicitacoes', false]]);
+    const avisos = pg.consulta('[data-aviso-sst]').map((e) => e.textContent);
+    assert.ok(avisos[0].includes(PU.TEXTOS.FALTA_SST), 'ligado sem vínculo: avisa que falta o vínculo');
+    assert.equal(avisos[1].includes(PU.TEXTOS.FALTA_SST), false);
+    const el = pg.consulta('[data-acesso="reprovarSolicitacoes"]')[0];
+    el.checked = true;
+    await el.disparar('change');
+    await pg.esperar();
+    await pg.esperar();
+    const put = pg.chamadas.find((c) => c.metodo === 'PUT');
+    assert.deepEqual([put.caminho, put.corpo], ['/administracao/usuarios/4/acessos/reprovarSolicitacoes', { ligado: true }]);
+  });
+});
+
 describe('Gestão de Usuários — Grupos: editar, inativar/reativar e permissões do grupo (ON/OFF)', () => {
   const PU = require('../js/permissoes-usuario');
   const G7 = { id: 7, nome: 'SST', descricao: 'Segurança do trabalho', ativo: true };

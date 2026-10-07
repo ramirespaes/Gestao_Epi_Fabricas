@@ -10,7 +10,7 @@ const { TOGGLES, PENDENCIAS } = require('../../src/rbac/toggles');
 
 /** Modelo binário de acessos: ON/OFF pelo resultado efetivo; camadas internas escolhidas pelo servidor. */
 const BASE = '/api/administracao/usuarios';
-const IDS_REAIS = ['dashboard', 'historicoFuncionarios', 'fichaEpi', 'gestaoGhe', 'analiseEstoque', 'operacoesEstoque', 'cadastrarProduto', 'entradaLote', 'registrarBaixa', 'importacaoFuncionarios', 'gestaoUsuarios'];
+const IDS_REAIS = ['dashboard', 'historicoFuncionarios', 'fichaEpi', 'entregasSolicitacao', 'gestaoGhe', 'analiseEstoque', 'operacoesEstoque', 'cadastrarProduto', 'entradaLote', 'registrarBaixa', 'importacaoFuncionarios', 'gestaoUsuarios', 'aprovarSolicitacoes', 'reprovarSolicitacoes'];
 
 describe('Gestão de Usuários — acessos ON/OFF (PostgreSQL real)', () => {
   let g;
@@ -41,7 +41,7 @@ describe('Gestão de Usuários — acessos ON/OFF (PostgreSQL real)', () => {
     assert.equal(r.status, 200, JSON.stringify(r.body));
     assert.deepEqual(r.body.acessos.toggles.map((t) => t.id), IDS_REAIS);
     assert.deepEqual(TOGGLES.map((t) => t.id), IDS_REAIS);
-    assert.equal(TOGGLES.length + PENDENCIAS.length, 19, 'os 19 acessos aprovados estão todos contabilizados');
+    assert.equal(TOGGLES.length + PENDENCIAS.length, 22, 'os 19 acessos aprovados, os dois da decisão da SST e Entregas por solicitação estão contabilizados');
     assert.deepEqual(r.body.acessos.pendencias.map((p) => p.id).sort(), PENDENCIAS.map((p) => p.id).sort());
     for (const id of ['relatorios', 'token']) {
       assert.equal((await ligar(master, u.id, id, true)).status, 404, `${id} sem enforcement real não é controlável`);

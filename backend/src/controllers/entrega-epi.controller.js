@@ -119,6 +119,16 @@ function criarEntregaEpiController({ pool: poolInjetado, relogio = () => new Dat
       res.status(200).json({ status: 'ok', ...resultado });
     },
 
+    async itensEntregues(req, res) {
+      const {
+        item, funcionario, de, ate, status, pagina, limite,
+      } = req.validado.query;
+      const resultado = await consultaService.listarItensEntregues(poolInjetado, {
+        empresaId: req.empresa.id, item: item ?? null, funcionario: funcionario ?? null, de: de ?? null, ate: ate ?? null, status: status ?? null, pagina, limite,
+      });
+      res.status(200).json({ status: 'ok', ...resultado });
+    },
+
     async buscarEntrega(req, res) {
       const resultado = await consultaService.buscarEntrega(poolInjetado, {
         empresaId: req.empresa.id, entregaId: req.validado.params.id,

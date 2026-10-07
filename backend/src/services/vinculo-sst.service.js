@@ -182,6 +182,38 @@ async function removerVinculo(pool, {
 }
 
 /**
+ * Liga ou desliga o vínculo SST de um usuário DENTRO da transação do chamador (Gestão de Usuários: Novo e Alterar),
+ * com a mesma autoridade (só o MASTER ativo), as mesmas recusas (alvo MASTER, alvo inativo) e a mesma auditoria dos
+ * endpoints. Idempotente: estado igual ao atual não grava nem audita. `ator` e `alvo` já vêm lidos e travados.
+ *
+ * @returns {Promise<{alterado: boolean, ligado: boolean}>}
+ */
+async function definirNaTransacao(client, {
+  empresaId, ator, alvo, ligado, ip = null, dispositivo = null,
+}) {
+  exigirAutoridade(ator);
+  const existente = await vinculoRepo.buscarPorUsuario(client, empresaId, alvo.id);
+  if (ligado === true) {
+    if (existente !== null) return { alterado: false, ligado: true };
+    if (alvo.perfil === PERFIL_MASTER) {
+      throw HttpError.conflict('VINCULO_SST_NAO_SE_APLICA_AO_MASTER', 'O perfil MASTER dispensa o vínculo com a Segurança do Trabalho');
+    }
+    if (alvo.ativo !== true) throw HttpError.conflict('USUARIO_INATIVO', 'Usuário inativo não recebe vínculo com a Segurança do Trabalho');
+    await vinculoRepo.inserir(client, { empresaId, usuarioId: alvo.id, concedidoPor: ator.id });
+    await auditoriaRepo.registrar(client, {
+      empresaId, usuarioId: ator.id, acao: ACAO_ADICIONADO, referencia: String(alvo.id), ip, dispositivo, contexto: { usuarioId: alvo.id, comMotivo: false }, dadosNovos: { usuarioId: alvo.id, concedidoPor: ator.id },
+    });
+    return { alterado: true, ligado: true };
+  }
+  if (existente === null) return { alterado: false, ligado: false };
+  await vinculoRepo.remover(client, empresaId, alvo.id);
+  await auditoriaRepo.registrar(client, {
+    empresaId, usuarioId: ator.id, acao: ACAO_REMOVIDO, referencia: String(alvo.id), ip, dispositivo, contexto: { usuarioId: alvo.id }, dadosAnteriores: { usuarioId: alvo.id, concedidoPor: existente.concedidoPor, concedidoEm: existente.concedidoEm },
+  });
+  return { alterado: true, ligado: false };
+}
+
+/**
  * Lista os vínculos SST da própria empresa, do mais novo ao mais antigo, com
  * nome, perfil e situação do usuário: o vínculo de usuário inativo e o legado
  * de MASTER aparecem, para quem administra poder removê-los. Só o MASTER ativo
@@ -209,5 +241,5 @@ async function listarVinculos(pool, {
 }
 
 module.exports = {
-  concederVinculo, removerVinculo, listarVinculos, temAutoridadeVinculoSst,
+  concederVinculo, removerVinculo, listarVinculos, temAutoridadeVinculoSst, definirNaTransacao,
 };

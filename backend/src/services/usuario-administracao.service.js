@@ -15,6 +15,8 @@ const sessaoRepo = require('../repositories/sessao.repository');
 const sessaoGlobalRepo = require('../repositories/sessao-global.repository');
 const { normalizarIp } = require('../utils/ip');
 const grupoAcessoRepo = require('../repositories/grupo-acesso.repository');
+const vinculoSstRepo = require('../repositories/vinculo-sst.repository');
+const vinculoSstService = require('./vinculo-sst.service');
 const password = require('../security/password');
 const passwordPolicy = require('../security/password-policy');
 const senhaProvisoriaUtil = require('../utils/senha-provisoria');
@@ -261,7 +263,7 @@ function exigirTextoObrigatorio(valor, nome) {
  */
 async function criar(pool, {
   empresaId, atorId, nome, email, perfil, senhaProvisoria, cpf, matricula, setor,
-  horarioTrabalho = null, ipsPermitidos = [], grupoAcessoId = null, usuarioModeloId = null, ip = null, dispositivo = null,
+  horarioTrabalho = null, ipsPermitidos = [], grupoAcessoId = null, usuarioModeloId = null, vinculoSst = false, ip = null, dispositivo = null,
 }) {
   exigirId(empresaId, 'empresa');
   exigirId(atorId, 'ator');
@@ -344,6 +346,13 @@ async function criar(pool, {
       throw erro;
     }
     const ipsGravados = ips.length === 0 ? [] : await usuarioIpRepo.inserir(client, { empresaId, usuarioId: criado.id, ips });
+    // Vínculo SST: só quando pedido (padrão desligado), pela autoridade e pelas regras do próprio vínculo (só o MASTER).
+    // Nunca é inferido do perfil.
+    if (vinculoSst === true) {
+      await vinculoSstService.definirNaTransacao(client, {
+        empresaId, ator, alvo: { id: criado.id, perfil, ativo: true }, ligado: true, ip, dispositivo,
+      });
+    }
     let copia = null;
     if (usuarioModeloId !== null) {
       // Só da empresa da sessão; de outra empresa é "não encontrado", como o inexistente.
@@ -363,7 +372,7 @@ async function criar(pool, {
       // A chave não pode conter o segmento "senha": o gatilho da 014 recusa a linha.
       depois: {
         nome, perfil, identidadeId: identidade.id, origem: ORIGEM_CRIACAO_DIRETA, acessoProvisorioExpiraEm: validade.expiraEm.toISOString(),
-        temCpf: true, matricula, setor, horarioTrabalho: horarioTrabalho !== null, grupoAcessoId, ipsPermitidos: ipsGravados.length,
+        temCpf: true, matricula, setor, horarioTrabalho: horarioTrabalho !== null, grupoAcessoId, ipsPermitidos: ipsGravados.length, vinculoSst: vinculoSst === true,
         ...(copia === null ? {} : {
           usuarioModeloId, copiaIndividual: copia.executado, copiaRecursos: copia.recursos, copiaBloqueios: copia.bloqueios, copiaAutorizacoes: copia.autorizacoes,
         }),
@@ -372,7 +381,7 @@ async function criar(pool, {
     return {
       usuario: apresentar(await repo.buscarPorId(client, empresaId, criado.id), ator),
       senhaProvisoriaExpiraEm: validade.expiraEm,
-      administrativo: { cpfMascarado: mascararCpf(cpf), matricula, setor, horarioTrabalho, ipsPermitidos: ipsGravados, grupoAcessoId },
+      administrativo: { cpfMascarado: mascararCpf(cpf), matricula, setor, horarioTrabalho, ipsPermitidos: ipsGravados, grupoAcessoId, vinculoSst: vinculoSst === true },
       copiaDeAcesso: copia === null ? null : {
         individual: copia.executado, motivo: copia.motivo, recursos: copia.recursos, bloqueios: copia.bloqueios, autorizacoes: copia.autorizacoes, ignoradas: copia.ignoradas,
       },
@@ -386,7 +395,7 @@ async function criar(pool, {
  * @returns {Promise<{usuario: object, alterado: boolean}>}
  */
 async function alterar(pool, {
-  empresaId, atorId, usuarioId, nome, email, perfil, matricula, setor, horarioTrabalho, ipsPermitidos, grupoAcessoId, ip = null, dispositivo = null,
+  empresaId, atorId, usuarioId, nome, email, perfil, matricula, setor, horarioTrabalho, ipsPermitidos, grupoAcessoId, vinculoSst, ip = null, dispositivo = null,
 }) {
   return escrever(pool, { empresaId, atorId, usuarioId }, async (client, ator, alvo) => {
     if (perfil !== undefined) {
@@ -505,8 +514,20 @@ async function alterar(pool, {
       await registrar(client, { ...base, acao: ACAO.EMAIL_ALTERADO, antes: null, depois: { emailAlterado: true, sessoesRevogadas } });
     }
 
+    // Vínculo SST: só age quando o pedido difere do estado real; quem não é o MASTER ativo recebe 403 do próprio vínculo.
+    let mudaVinculo = false;
+    if (vinculoSst !== undefined) {
+      const atual = (await vinculoSstRepo.buscarPorUsuario(client, empresaId, alvo.id)) !== null;
+      if (vinculoSst !== atual) {
+        const r = await vinculoSstService.definirNaTransacao(client, {
+          empresaId, ator, alvo: { id: alvo.id, perfil: perfilFinal, ativo: alvo.ativo }, ligado: vinculoSst, ip, dispositivo,
+        });
+        mudaVinculo = r.alterado;
+      }
+    }
+
     const usuario = await repo.buscarPorId(client, empresaId, alvo.id);
-    const alterado = mudaNome || mudaPerfil || mudaMatricula || mudaSetor || mudaHorario || mudaGrupo || mudaIps || mudaEmail;
+    const alterado = mudaNome || mudaPerfil || mudaMatricula || mudaSetor || mudaHorario || mudaGrupo || mudaIps || mudaEmail || mudaVinculo;
     return { usuario: apresentar(usuario, ator), alterado };
   });
 }
@@ -579,12 +600,13 @@ async function detalharEdicao(pool, {
     }
     exigirPerfilGerenciavel(ator, d.perfil);
     const ips = await usuarioIpRepo.listar(client, empresaId, usuarioId);
+    const vinculoSst = (await vinculoSstRepo.buscarPorUsuario(client, empresaId, usuarioId)) !== null;
     await registrar(client, {
       empresaId, atorId: ator.id, alvoId: usuarioId, ip, dispositivo, acao: ACAO.DADOS_CONSULTADOS, antes: null, depois: { finalidade: 'EDICAO' },
     });
     return {
       id: d.id, nome: d.nome, email: d.email, perfil: d.perfil, ativo: d.ativo, cpf: d.cpf, matricula: d.matricula, setor: d.setor,
-      horarioTrabalho: d.horarioTrabalho, ipsPermitidos: ips, grupoAcessoId: d.grupoAcessoId,
+      horarioTrabalho: d.horarioTrabalho, ipsPermitidos: ips, grupoAcessoId: d.grupoAcessoId, vinculoSst,
     };
   });
 }

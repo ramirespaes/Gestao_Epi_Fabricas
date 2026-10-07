@@ -7,10 +7,20 @@ const { TOGGLES, PENDENCIAS, GRUPOS, buscar } = require('../../src/rbac/toggles'
 const { RECURSOS_COM_EFEITO, ACOES_COM_EFEITO } = require('../../src/rbac/recursos');
 
 describe('catálogo binário de acessos', () => {
-  test('os 19 acessos aprovados estão contabilizados, sem repetição e sem CRUD automático', () => {
+  test('os 19 acessos aprovados mais Aprovar e Reprovar solicitações estão contabilizados, sem repetição e sem CRUD automático', () => {
     const ids = [...TOGGLES, ...PENDENCIAS].map((t) => t.id);
-    assert.equal(ids.length, 19);
-    assert.equal(new Set(ids).size, 19);
+    assert.equal(ids.length, 22);
+    assert.equal(new Set(ids).size, 22);
+  });
+
+  test('Entregas por solicitação reutiliza a ação REALIZAR_ENTREGA, sem bloqueio ao desligar e sem acoplar à SST', () => {
+    assert.deepEqual(buscar('entregasSolicitacao').regra, { tipo: 'ACAO', codigo: 'REALIZAR_ENTREGA', semBloqueio: true });
+    assert.equal(buscar('entregasSolicitacao').grupo, 'EPIS');
+  });
+
+  test('Aprovar e Reprovar solicitações mapeiam para as ações da SST como CONCESSÃO individual (o vínculo é outra dimensão)', () => {
+    assert.deepEqual(buscar('aprovarSolicitacoes').regra, { tipo: 'ACAO', codigo: 'APROVAR_SOLICITACAO', concessao: true });
+    assert.deepEqual(buscar('reprovarSolicitacoes').regra, { tipo: 'ACAO', codigo: 'REPROVAR_SOLICITACAO', concessao: true });
   });
 
   test('todo toggle aponta para recurso/operação ou ação que o servidor realmente aplica', () => {

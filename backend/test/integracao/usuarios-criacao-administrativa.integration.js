@@ -166,7 +166,7 @@ describe('Gestão de Usuários — Novo → Usuário administrativo (PostgreSQL 
     assert.deepEqual(Object.keys(r.body.usuario).sort(), CAMPOS_DO_USUARIO, 'o usuário da resposta é o mesmo da listagem: sem CPF');
     assert.deepEqual([r.body.usuario.nome, r.body.usuario.perfil, r.body.usuario.ativo, r.body.usuario.grupo], [corpo.nome, 'USUARIO', true, { nome: 'Recursos Humanos', ativo: true }]);
     assert.deepEqual(r.body.administrativo, {
-      cpfMascarado: '***.***.***-' + cpfFicticio(777).slice(9), matricula: 'ADM-777', setor: 'Recursos Humanos', horarioTrabalho: { inicio: '08:00', fim: '18:00' }, ipsPermitidos: [IP_A, IP6], grupoAcessoId: grupos.A,
+      cpfMascarado: '***.***.***-' + cpfFicticio(777).slice(9), matricula: 'ADM-777', setor: 'Recursos Humanos', horarioTrabalho: { inicio: '08:00', fim: '18:00' }, ipsPermitidos: [IP_A, IP6], grupoAcessoId: grupos.A, vinculoSst: false,
     });
     const texto = JSON.stringify(r.body) + JSON.stringify(r.headers);
     assert.equal(texto.includes(cpfFicticio(777)), false, 'o CPF nunca volta em claro');

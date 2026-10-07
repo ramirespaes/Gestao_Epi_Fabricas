@@ -53,6 +53,9 @@
     CRIAR_FALHA: 'Não foi possível criar o usuário agora. Verifique a conexão e tente novamente.',
     SEM_AUTORIDADE: 'Sem autoridade para criar usuários nesta empresa.',
     CAMPOS_INVALIDOS: 'Verifique os campos destacados.',
+    SST_ROTULO: 'Segurança do Trabalho (SST)',
+    SST_DICA: 'Esta pessoa atua na Segurança do Trabalho. Aprovar ou reprovar solicitações de EPI é uma permissão à parte, em Configurar permissões.',
+    SST_SO_MASTER: 'Somente o Master altera este vínculo.',
     GRUPO_CRIADO_OK: 'Grupo criado com sucesso.',
     GRUPO_EDITADO_OK: 'Grupo alterado com sucesso.',
     GRUPO_INATIVADO_OK: 'Grupo inativado. Ele deixa de valer para os integrantes até ser reativado.',
@@ -429,6 +432,9 @@
     IP_TRANCARIA_O_PROPRIO_ATOR: ['ipsPermitidos', 'A lista não inclui o endereço de onde você está acessando agora.'],
     EMAIL_IDENTIDADE_COMPARTILHADA: ['email', 'Esta pessoa tem acesso a outras empresas: o e-mail de login não pode ser alterado aqui.'],
     USUARIO_ULTIMO_MASTER: ['tipoConta', 'A empresa precisa continuar com pelo menos um Master ativo.'],
+    SEM_AUTORIDADE_VINCULO_SST: [null, 'Somente o Master altera o vínculo com a Segurança do Trabalho. Nada foi salvo.'],
+    VINCULO_SST_NAO_SE_APLICA_AO_MASTER: [null, 'O Master dispensa o vínculo com a Segurança do Trabalho.'],
+    USUARIO_INATIVO: [null, 'Usuário inativo não recebe vínculo com a Segurança do Trabalho.'],
   });
   var CAMPOS_DO_CORPO = Object.freeze({
     nome: 'nome', email: 'email', tipoConta: 'tipoConta', senhaProvisoria: 'senhaProvisoria', cpf: 'cpf', matricula: 'matricula', setor: 'setor',
@@ -609,7 +615,10 @@
       for (var i = 0; i < controles.length; i += 1) {
         var c = controles[i];
         var nome = c && (c.name || (typeof c.getAttribute === 'function' && c.getAttribute('name')));
-        if (nome) d[nome] = typeof c.value === 'string' ? c.value : '';
+        if (!nome) continue;
+        // Interruptor (checkbox): o estado marcado, não o texto do valor.
+        var ehInterruptor = typeof c.getAttribute === 'function' && c.getAttribute('type') === 'checkbox';
+        d[nome] = ehInterruptor ? (c.checked === true ? 'true' : 'false') : (typeof c.value === 'string' ? c.value : '');
       }
       return d;
     },
@@ -660,6 +669,7 @@
       var h = d.horarioTrabalho;
       return {
         nome: d.nome, cpf: formulario.mascaraCpf(d.cpf || ''), email: d.email, tipoConta: d.perfil, matricula: d.matricula || '', setor: d.setor || '',
+        vinculoSst: d.vinculoSst === true ? 'true' : 'false',
         horarioInicio: h ? h.inicio : '', horarioFim: h ? h.fim : '', ipsPermitidos: (d.ipsPermitidos || []).join(', '), grupoAcessoId: d.grupoAcessoId === null || d.grupoAcessoId === undefined ? '' : d.grupoAcessoId,
       };
     },
@@ -681,6 +691,8 @@
       corpo.ipsPermitidos = formulario.ipsDe(d.ipsPermitidos);
       var grupo = texto(d.grupoAcessoId);
       corpo.grupoAcessoId = formulario.grupoSeAplica(d.tipoConta) && /^[1-9][0-9]{0,9}$/.test(grupo) ? Number(grupo) : null;
+      // Vínculo SST: só vai quando MUDOU em relação ao estado real carregado (o servidor ainda confere a autoridade).
+      if (original && typeof original.vinculoSst === 'boolean' && (d.vinculoSst === 'true') !== original.vinculoSst) corpo.vinculoSst = d.vinculoSst === 'true';
       return corpo;
     },
     /** Corpo do POST (contrato do backend): CPF só dígitos; opcionais só quando informados; nunca a confirmação. */
@@ -697,6 +709,8 @@
       if (ips.length) corpo.ipsPermitidos = ips;
       var grupo = texto(d.grupoAcessoId);
       if (formulario.grupoSeAplica(d.tipoConta) && /^[1-9][0-9]{0,9}$/.test(grupo)) corpo.grupoAcessoId = Number(grupo);
+      // Padrão desligado: o vínculo SST só vai quando a pessoa o ligou (nunca inferido do perfil).
+      if (d.vinculoSst === 'true') corpo.vinculoSst = true;
       return corpo;
     },
     /**
@@ -829,6 +843,19 @@
 
   // Modos do mesmo modal: 'novo' | 'editar' (CPF completo e só leitura, sem senha) | 'duplicar' (dados pessoais vazios, "modelo de acesso").
   var TITULOS_MODO = Object.freeze({ novo: ['Novo usuário', 'Cadastrar usuário'], editar: ['Alterar usuário', 'Salvar alterações'], duplicar: ['Duplicar usuário', 'Duplicar usuário'] });
+  /** "Segurança do Trabalho (SST)" ON/OFF; travado (com o motivo) para quem não pode alterar o vínculo. */
+  render.interruptorSst = function (doc, o) {
+    var entradaSst = no(doc, 'input', {
+      type: 'checkbox', role: 'switch', id: 'nu-vinculoSst', name: 'vinculoSst', 'data-campo': 'vinculoSst', 'aria-label': TEXTOS.SST_ROTULO, disabled: o.editavel ? null : '',
+    });
+    entradaSst.checked = o.ligado === true;
+    if (o.ligado === true) entradaSst.setAttribute('checked', '');
+    return no(doc, 'div', { class: 'prow', 'data-secao': 'vinculos' }, [
+      no(doc, 'span', { class: 'lbl' }, [TEXTOS.SST_ROTULO, no(doc, 'small', {}, [TEXTOS.SST_DICA + (o.editavel ? '' : ' ' + TEXTOS.SST_SO_MASTER)])]),
+      no(doc, 'label', { class: 'switch' }, [entradaSst, no(doc, 'span', { class: 't' })]),
+    ]);
+  };
+
   render.modalNovoUsuario = function (doc, opcoes) {
     var o = opcoes || {};
     var modo = hasOwn(TITULOS_MODO, o.modo) ? o.modo : 'novo';
@@ -868,7 +895,9 @@
         campo(doc, 'matricula', 'Matrícula', com(entrada(doc, { maxlength: LIMITES_NOVO.matricula }), 'matricula'), true),
         campo(doc, 'horarioInicio', 'Horário de trabalho de', com(entrada(doc, { type: 'time' }), 'horarioInicio'), false),
         campo(doc, 'horarioFim', 'até', com(entrada(doc, { type: 'time' }), 'horarioFim'), false)
-      ])
+      ]),
+      no(doc, 'h3', {}, ['Vínculos operacionais']),
+      render.interruptorSst(doc, { ligado: v.vinculoSst === 'true', editavel: o.podeVinculoSst === true })
     );
     var form = no(doc, 'form', { class: 'mb', id: 'fUser', novalidate: '', autocomplete: 'off', 'data-modo': modo }, filhos);
     return [

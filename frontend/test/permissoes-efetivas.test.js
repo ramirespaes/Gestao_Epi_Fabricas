@@ -229,7 +229,7 @@ describe('decisões: só `true` explícito libera', () => {
     // A regra "qualquer uma" só onde foi decidida: a Ficha (10I) e, na 12G-1, o Pedido
     // de EPI (ver OU criar) e as Entregas por solicitação (entregar OU encerrar).
     // E a Gestão de Estoque (`materials`): abre com qualquer um dos três acessos independentes.
-    const comQualquer = ['epiFicha', 'request', 'stockRequests', 'materials'];
+    const comQualquer = ['epiFicha', 'request', 'stockRequests', 'materials', 'reports'];
     for (const pagina of Object.keys(P.PAGINAS)) assert.equal(P.PAGINAS[pagina].abrirComQualquer, comQualquer.includes(pagina) ? true : undefined, pagina);
   });
 });
@@ -307,7 +307,6 @@ describe('liberação visual controlada (temporária, 05/10/2026): o MASTER abre
   // 05/10/2026: Compras / Entradas (purchases.html) e Regras Função / Setor (eligibility-rules.html)
   // são MÓDULOS TEMPORARIAMENTE DESATIVADOS / ADIADOS: fora da inspeção, sem link mesmo para o MASTER.
   const LEGADAS = {
-    'Relatórios': 'reports.html', 'EPIs Entregues': 'delivered-items.html',
     'Autoatendimento (Totem)': 'self-service.html', 'Suporte': 'support.html', 'Gestão de E-mails': 'emails-gestao.html', 'Privacidade / LGPD': 'lgpd.html',
   };
   const DESATIVADAS = { 'Compras / Entradas': 'purchases.html', 'Regras Função / Setor': 'eligibility-rules.html' };
@@ -341,7 +340,7 @@ describe('liberação visual controlada (temporária, 05/10/2026): o MASTER abre
     }
   });
 
-  test('MASTER: os seis itens pendentes (6/6) ganham href com o marcador de inspeção, perdem aria-disabled e mantêm classe e etiqueta; rótulo desconhecido, "Configurações" e os dois módulos adiados não mudam', () => {
+  test('MASTER: os quatro itens pendentes (4/4) ganham href com o marcador de inspeção, perdem aria-disabled e mantêm classe e etiqueta; rótulo desconhecido, "Configurações" e os dois módulos adiados não mudam', () => {
     const rotulos = Object.keys(LEGADAS);
     const adiados = Object.keys(DESATIVADAS).map(pendente);
     const itens = rotulos.map(pendente).concat([pendente('Módulo Inexistente'), pendente('Configurações')], adiados);
@@ -380,13 +379,13 @@ describe('liberação visual controlada (temporária, 05/10/2026): o MASTER abre
   });
 
   test('não MASTER, perfil em outra caixa ou sem permissões: nada ganha link; o que tinha sido liberado volta a ficar sem link (revalidação com outro perfil)', () => {
-    const itens = [pendente('Relatórios')];
+    const itens = [pendente('Suporte')];
     P.liberarInspecao({ perfil: 'ADMINISTRADOR' }, raizCom(itens));
     assert.equal(itens[0].atributos.href, undefined);
     P.liberarInspecao({ perfil: 'master' }, raizCom(itens));
     assert.equal(itens[0].atributos.href, undefined, 'comparação exata do perfil');
     P.liberarInspecao({ perfil: 'MASTER' }, raizCom(itens));
-    assert.equal(itens[0].atributos.href, 'reports.html?inspecao=1');
+    assert.equal(itens[0].atributos.href, 'support.html?inspecao=1');
     P.liberarInspecao({ perfil: 'SUPERVISOR' }, raizCom(itens));
     assert.deepEqual([itens[0].atributos.href, itens[0].atributos['aria-disabled'], itens[0].atributos.title, itens[0].style.cursor], [undefined, 'true', 'Em integração', '']);
     P.liberarInspecao({ perfil: 'MASTER' }, raizCom(itens));
@@ -455,7 +454,7 @@ describe('páginas (inspeção estática)', () => {
     const html = ler('portal/inicio.html');
     const links = [...html.matchAll(/<a [^>]*data-pagina="([^"]+)"[^>]*>/g)];
     // E10: na ordem do menu (fechamento-e10.test.js confere a ordem); 12G-1: as três páginas da solicitação.
-    assert.deepEqual(links.map((m) => m[1]), ['dashboard', 'materials', 'stockValidity', 'availableItems', 'operations', 'employeeGroups', 'epiFicha', 'employeeHistory',
+    assert.deepEqual(links.map((m) => m[1]), ['dashboard', 'reports', 'materials', 'stockValidity', 'availableItems', 'operations', 'employeeGroups', 'deliveredItems', 'epiFicha', 'employeeHistory',
       'request', 'supervisorApproval', 'stockRequests',
       'grupos-acesso', 'grupo-permissoes', 'grupo-usuarios', 'autorizacoes-individuais', 'importEmployees', 'newUser', 'userAdmin', 'config']);
     for (const m of links) assert.match(m[0], /style="display:none"/);

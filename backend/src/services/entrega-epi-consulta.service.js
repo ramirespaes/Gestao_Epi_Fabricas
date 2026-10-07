@@ -9,6 +9,7 @@ const entregaRepo = require('../repositories/entrega-epi.repository');
 const itemRepo = require('../repositories/entrega-epi-item.repository');
 const confirmacaoRepo = require('../repositories/entrega-epi-confirmacao.repository');
 const contextoRepo = require('../repositories/entrega-epi-contexto.repository');
+const historicoRepo = require('../repositories/entrega-epi-historico.repository');
 const posicaoRepo = require('../repositories/posicao-estoque.repository');
 const { exigirDataOperacional } = require('../utils/data-operacional');
 const { entregaPublica, fichaPublica, funcionarioAtualPublico } = require('./entrega-epi-publica');
@@ -198,6 +199,52 @@ async function listarEntregasDaFicha(pool, {
   };
 }
 
+const DIAS_PROXIMO_VENCIMENTO = 30;
+const STATUS_VALIDADE = Object.freeze({ VALIDO: 'VALIDO', PROXIMO: 'PROXIMO', VENCIDO: 'VENCIDO' });
+
+/** Vencido: já passou (dias < 0). Próximo: faltam de 0 a 30 dias. Válido: faltam mais de 30. */
+const statusDaValidade = (diasRestantes) => {
+  if (diasRestantes < 0) return STATUS_VALIDADE.VENCIDO;
+  return diasRestantes <= DIAS_PROXIMO_VENCIMENTO ? STATUS_VALIDADE.PROXIMO : STATUS_VALIDADE.VALIDO;
+};
+
+/** Sem maiúsculas nem acentos e com os curingas do LIKE escapados; vira padrão de correspondência parcial. */
+function padraoParcial(texto) {
+  if (typeof texto !== 'string') return null;
+  const limpo = texto.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim();
+  if (limpo === '') return null;
+  return `%${limpo.replace(/[\\%_]/g, '\\$&')}%`;
+}
+
+/**
+ * Histórico de itens entregues da empresa (tela EPIs Entregues): todas as entregas, cada item com a própria validade,
+ * dias restantes e status. Só leitura, só snapshots congelados, empresa sempre da sessão.
+ */
+async function listarItensEntregues(pool, {
+  empresaId, item = null, funcionario = null, de = null, ate = null, status = null, pagina, limite,
+}) {
+  exigirId(empresaId, 'identificador de empresa');
+  const filtros = {
+    padraoItem: padraoParcial(item),
+    padraoFuncionario: padraoParcial(funcionario),
+    de,
+    ate,
+    status,
+    diasProximo: DIAS_PROXIMO_VENCIMENTO,
+  };
+  const [itens, total] = await Promise.all([
+    historicoRepo.listar(pool, empresaId, filtros, { pagina, limite }),
+    historicoRepo.contar(pool, empresaId, filtros),
+  ]);
+  return {
+    itens: itens.map((i) => ({ ...i, status: statusDaValidade(i.diasRestantes) })),
+    total,
+    pagina,
+    limite,
+    diasProximoVencimento: DIAS_PROXIMO_VENCIMENTO,
+  };
+}
+
 async function buscarEntrega(pool, { empresaId, entregaId }) {
   exigirId(empresaId, 'identificador de empresa');
   exigirId(entregaId, 'identificador de entrega');
@@ -218,5 +265,9 @@ module.exports = {
   consultarFichaPorCpf,
   detalharFicha,
   listarEntregasDaFicha,
+  listarItensEntregues,
+  statusDaValidade,
+  padraoParcial,
+  DIAS_PROXIMO_VENCIMENTO,
   buscarEntrega,
 };

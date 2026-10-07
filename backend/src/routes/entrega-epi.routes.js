@@ -27,6 +27,7 @@ const { pool } = require('../config/database');
  *   POST /api/fichas-epi/consulta-cpf   (CPF no corpo, nunca na URL)
  *   GET  /api/fichas-epi/:id
  *   GET  /api/fichas-epi/:id/entregas
+ *   GET  /api/entregas-epi/itens          (histórico de itens entregues da empresa; EPIs Entregues)
  */
 
 const ACAO_REALIZAR_ENTREGA = 'REALIZAR_ENTREGA';
@@ -75,6 +76,13 @@ function criarEntregaEpiRoutes({ controller, exigirSessao: exigirSessaoInjetado,
     exigirSessaoInjetado, exigirRealizarEntrega,
     validar({ params: schemas.contextoLotes.params }),
     controller.contextoLotes,
+  );
+  // Histórico de itens entregues da empresa (EPIs Entregues). Declarada ANTES de /entregas-epi/:id.
+  router.get(
+    '/entregas-epi/itens',
+    exigirSessaoInjetado, exigirVisualizarFicha,
+    validar({ query: schemas.itensEntregues.query }),
+    controller.itensEntregues,
   );
   router.get(
     '/entregas-epi/:id',

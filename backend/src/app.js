@@ -29,6 +29,7 @@ const { entregaEpiRoutes } = require('./routes/entrega-epi.routes');
 const { solicitacaoEpiRoutes } = require('./routes/solicitacao-epi.routes');
 const { vinculoSstRoutes } = require('./routes/vinculo-sst.routes');
 const { alertaEstoqueRoutes } = require('./routes/alerta-estoque.routes');
+const { relatorioRoutes } = require('./routes/relatorio.routes');
 const { recuperacaoSenhaPortalRoutes, recuperacaoSenhaPlataformaRoutes } = require('./routes/recuperacao-senha.routes');
 const { trocaSenhaGlobalRoutes, trocaSenhaPlataformaRoutes } = require('./routes/troca-senha.routes');
 // Configurações: telefone, aparência e e-mail de acesso da identidade da sessão global.
@@ -169,7 +170,7 @@ app.use(
 //
 // alertaEstoqueRoutes (Bloco 12, 12G-6): o "Gerar alerta" de falta de estoque
 // (POST, REALIZAR_ENTREGA), na mesma cadeia e com a mesma verificação de origem.
-app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeral, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, recuperacaoSenhaPortalRoutes, trocaSenhaGlobalRoutes, contaRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, estoqueRoutes, itensDisponiveisRoutes, grupoHomogeneoExposicaoRoutes, gheMaterialRoutes, funcionarioRoutes, dashboardRoutes, usuarioAdministracaoRoutes, conviteUsuarioRoutes, entregaEpiRoutes, solicitacaoEpiRoutes, vinculoSstRoutes, alertaEstoqueRoutes);
+app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeral, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, recuperacaoSenhaPortalRoutes, trocaSenhaGlobalRoutes, contaRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, estoqueRoutes, itensDisponiveisRoutes, grupoHomogeneoExposicaoRoutes, gheMaterialRoutes, funcionarioRoutes, dashboardRoutes, usuarioAdministracaoRoutes, conviteUsuarioRoutes, entregaEpiRoutes, solicitacaoEpiRoutes, vinculoSstRoutes, alertaEstoqueRoutes, relatorioRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

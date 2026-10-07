@@ -142,6 +142,19 @@
       abrirComQualquer: true,
       alterar: [{ acao: 'REALIZAR_ENTREGA' }],
     },
+    // 12K-C: EPIs Entregues, histórico de itens entregues da empresa (GET /entregas-epi/itens), só leitura. Enquanto o
+    // toggle próprio fica adiado, a autoridade é a mesma da Ficha de EPI (epiFicha.visualizar), que o servidor exige.
+    deliveredItems: {
+      abrir: [{ recurso: 'epiFicha', operacao: 'visualizar' }],
+      alterar: [],
+    },
+    // 12K-D: Relatórios (Estoque, Próximo do vencimento, Itens vencidos, EPIs entregues), só leitura. Cada aba segue a
+    // autoridade da própria fonte no servidor: Estoque = materials.visualizar; as três de entregas = epiFicha.visualizar.
+    reports: {
+      abrir: [{ recurso: 'materials', operacao: 'visualizar' }, { recurso: 'epiFicha', operacao: 'visualizar' }],
+      abrirComQualquer: true,
+      alterar: [],
+    },
     // 12G-1: as telas da solicitação de EPI. Cada escrita é decidida por
     // operação (EpiSolicitacoesEpi.capacidades), nunca por um "alterar" geral.
     // Pedido de EPI: quem vê as próprias OU quem cria.
@@ -374,8 +387,6 @@
   // (05/10/2026): saíram da inspeção, sem link mesmo para o MASTER; os
   // arquivos ficam preservados para retomada futura.
   var INSPECAO_PROTOTIPOS = {
-    'Relatórios': 'reports.html',
-    'EPIs Entregues': 'delivered-items.html',
     'Autoatendimento (Totem)': 'self-service.html',
     'Suporte': 'support.html',
     'Gestão de E-mails': 'emails-gestao.html',
