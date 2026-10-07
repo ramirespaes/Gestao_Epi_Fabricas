@@ -45,7 +45,8 @@ describe('12G-6 — Gerar alerta (falta de estoque de um pedido)', () => {
 
   const ROTA = '/api/alertas-estoque/falta';
   const alertar = (ator, solicitacaoId, extra = {}) => como(ator).post(ROTA, { solicitacaoId, ...extra });
-  const emailsDe = async (ids) => (await pool.query('SELECT email FROM usuarios WHERE id = ANY($1) ORDER BY email', [ids])).rows.map((l) => l.email);
+  // Mesma ordenação nos dois lados (JavaScript): a collation do PostgreSQL varia entre ambientes e não pode decidir o resultado.
+  const emailsDe = async (ids) => (await pool.query('SELECT email FROM usuarios WHERE id = ANY($1)', [ids])).rows.map((l) => l.email).sort();
   const auditorias = async (solicitacaoId) => (await pool.query(
     'SELECT usuario_id, referencia, descricao, contexto, dados_anteriores, dados_novos FROM logs_auditoria WHERE acao = $1 AND referencia = $2 ORDER BY id',
     [ACAO_AUDITORIA, String(solicitacaoId)],
