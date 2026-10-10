@@ -21,10 +21,15 @@ const acao = (codigo, concessao = false, semBloqueio = false) => Object.freeze({
 });
 
 const LEITURA_MATERIAIS = recurso('materials', ['visualizar']);
+const LEITURA_FUNCIONARIOS = recurso('employeeHistory', ['visualizar']);
 
 const TOGGLES = Object.freeze([
   { id: 'dashboard', rotulo: 'Dashboard', grupo: 'GERAL', regra: recurso('dashboard', ['visualizar']) },
   { id: 'historicoFuncionarios', rotulo: 'Histórico de Funcionários', grupo: 'COLABORADORES', regra: recurso('employeeHistory', ['visualizar']) },
+  // Gestão de Funcionários: as três operações que já existem em employeeHistory, sem permissão nova. Cadastrar e editar (edição, troca
+  // de GHE e situação) garantem a leitura ao serem ligados (mesmo campo `dependencias` da Gestão de Estoque); desligar mexe só na regra própria.
+  { id: 'cadastrarFuncionario', rotulo: 'Cadastrar Funcionário', grupo: 'COLABORADORES', regra: recurso('employeeHistory', ['criar']), dependencias: [LEITURA_FUNCIONARIOS] },
+  { id: 'editarFuncionario', rotulo: 'Editar Funcionário', grupo: 'COLABORADORES', regra: recurso('employeeHistory', ['editar']), dependencias: [LEITURA_FUNCIONARIOS] },
   { id: 'fichaEpi', rotulo: 'Ficha de EPI', grupo: 'EPIS', regra: recurso('epiFicha', ['visualizar']) },
   // Ação existente REALIZAR_ENTREGA (abre "Entregas por solicitação" e autoriza a entrega no servidor). Independente do
   // vínculo SST e de Aprovar/Reprovar: ligar um não liga o outro.
@@ -46,6 +51,11 @@ const TOGGLES = Object.freeze([
   // não a concede. O acesso efetivo exige os dois, e o servidor decide (AUTODECISAO_PROIBIDA continua valendo).
   { id: 'aprovarSolicitacoes', rotulo: 'Aprovar solicitações de EPI', grupo: 'ADMINISTRACAO', regra: acao('APROVAR_SOLICITACAO', true) },
   { id: 'reprovarSolicitacoes', rotulo: 'Reprovar solicitações de EPI', grupo: 'ADMINISTRACAO', regra: acao('REPROVAR_SOLICITACAO', true) },
+  // 12K-D5: permissão própria do Relatório — Auditoria (indicadores, solicitações com entrega pendente, itens reprovados, CAs vencidos e trilha).
+  // Independente de Ficha de EPI, Materiais e dos outros relatórios; a página Relatórios abre com ela.
+  { id: 'reportsAudit', rotulo: 'Relatório — Auditoria', grupo: 'GERAL', regra: recurso('reportsAudit', ['visualizar']) },
+  // 12K-D6: permissão própria do Relatório — Fiscalização (prévia, geração, histórico e download do pacote). Independente das demais.
+  { id: 'reportsFiscal', rotulo: 'Relatório — Fiscalização', grupo: 'GERAL', regra: recurso('reportsFiscal', ['visualizar']) },
 ].map((t) => Object.freeze(t)));
 
 // Sem enforcement real hoje: não viram controle até existir a rota (ou a decisão) que falta.
@@ -60,8 +70,31 @@ const PENDENCIAS = Object.freeze([
   { id: 'token', rotulo: 'Token', situacao: 'SEM_ENFORCEMENT', motivo: 'Página administrativa do Token ainda não existe.' },
 ].map((p) => Object.freeze(p)));
 
+// Atribuição DIRETA por operação (APIs antigas de usuário e de grupo): só Funcionários garante a leitura ao conceder criar ou editar,
+// pelas MESMAS dependências dos toggles (nenhum motor paralelo). Outros recursos seguem exatamente como estavam.
+const RECURSOS_COM_LEITURA_NA_ATRIBUICAO_DIRETA = Object.freeze(['employeeHistory']);
+
+/**
+ * Operações que a concessão direta de `operacoesConcedidas` (ex.: ['criar']) obriga a garantir no mesmo recurso. Vazia para
+ * qualquer recurso fora de Funcionários.
+ */
+function operacoesGarantidasNaAtribuicaoDireta(recursoId, operacoesConcedidas) {
+  if (!RECURSOS_COM_LEITURA_NA_ATRIBUICAO_DIRETA.includes(recursoId)) return [];
+  const garantidas = new Set();
+  for (const t of TOGGLES) {
+    if (t.regra.tipo !== 'RECURSO' || t.regra.recurso !== recursoId) continue;
+    if (!t.regra.operacoes.some((op) => operacoesConcedidas.includes(op))) continue;
+    for (const d of t.dependencias ?? []) {
+      if (d.tipo === 'RECURSO' && d.recurso === recursoId) d.operacoes.forEach((op) => garantidas.add(op));
+    }
+  }
+  return [...garantidas];
+}
+
 function buscar(id) {
   return TOGGLES.find((t) => t.id === id) ?? null;
 }
 
-module.exports = { GRUPOS, TOGGLES, PENDENCIAS, buscar };
+module.exports = {
+  GRUPOS, TOGGLES, PENDENCIAS, buscar, operacoesGarantidasNaAtribuicaoDireta,
+};

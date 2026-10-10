@@ -46,7 +46,7 @@ describe('SEC-008 — consulta de funcionário por CPF no corpo', () => {
 
   test('rota: POST /funcionarios/consulta-cpf com sessão, permissão de visualizar e o schema do corpo; GET continua para a busca livre', () => {
     const exigirSessao = (req, res, next) => next();
-    const controller = { criar() {}, importar() {}, listar() {}, buscar() {}, alterar() {}, inativar() {}, reativar() {}, consultarCpf() {} };
+    const controller = { criar() {}, importar() {}, listarGhesImportacao() {}, listar() {}, buscar() {}, alterar() {}, inativar() {}, reativar() {}, alterarSituacao() {}, revelarCpf() {}, listarGhes() {}, consultarCpf() {} };
     const router = criarFuncionarioRoutes({ controller, exigirSessao, pool: {} });
     const rotas = router.stack.filter((c) => c.route).map((c) => ({ caminho: c.route.path, metodos: Object.keys(c.route.methods), pilha: c.route.stack }));
 

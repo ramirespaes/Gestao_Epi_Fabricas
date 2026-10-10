@@ -22,6 +22,20 @@ describe('criar / alterar', () => {
     }
   });
 
+  test('codigo é campo reconhecido: só o tipo é checado aqui (a regra é do serviço); o nulo só passa no PATCH', () => {
+    assert.deepEqual(ghe.criar.body.parse({ nome: 'X', codigo: ' ghe-1 ' }), { nome: 'X', codigo: ' ghe-1 ' });
+    assert.equal(ghe.criar.body.safeParse({ nome: 'X' }).success, true, 'a ausência é decidida pelo serviço (GHE_CODIGO_OBRIGATORIO)');
+    assert.equal(ghe.criar.body.safeParse({ nome: 'X', codigo: null }).success, false);
+    assert.equal(ghe.alterar.body.safeParse({ codigo: null }).success, true);
+    for (const codigo of [123, {}, [], ['GHE-001'], true]) {
+      for (const schema of [ghe.criar.body, ghe.alterar.body]) {
+        const r = schema.safeParse({ nome: 'X', codigo });
+        assert.equal(r.success, false);
+        assert.equal(r.error.issues[0].code, 'invalid_type', JSON.stringify(codigo));
+      }
+    }
+  });
+
   test('conteúdo inválido em opcional nullable devolve o código do campo, não invalid_union', () => {
     const r = ghe.alterar.body.safeParse({ setor: 'x'.repeat(101) });
     assert.equal(r.success, false);

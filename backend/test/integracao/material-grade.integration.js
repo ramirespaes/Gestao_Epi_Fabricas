@@ -31,7 +31,8 @@ const { criarSolicitacaoEpiController } = require('../../src/controllers/solicit
  */
 
 const MATERIAIS = '/api/materiais';
-const CORPO_BASE = { nome: 'Botina de cadastro', tipo: 'Botina de Segurança', categoria: 'EPI', prazoUsoDias: 180, exigeTamanho: true, unidade: 'par' };
+// Classificação V2: grupo "Outros" com especificação, que não depende do catálogo da empresa (a grade é o assunto deste arquivo).
+const CORPO_BASE = { nome: 'Botina de cadastro', categoria: 'Outros', categoriaDescricao: 'Calçado', tipo: 'Outros', tipoDescricao: 'Botina de cadastro', prazoUsoDias: 180, exigeTamanho: true, unidade: 'par' };
 
 describe('12G-8 — grade de tamanhos do material', () => {
   let ctx;

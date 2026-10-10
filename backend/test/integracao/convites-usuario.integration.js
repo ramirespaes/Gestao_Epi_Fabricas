@@ -29,7 +29,7 @@ const { httpConfig } = require('../../src/config/http');
  * PostgreSQL real, schema temporário.
  */
 
-const TODAS_AS_MIGRATIONS = [...Array.from({ length: 48 }, (_, i) => String(i).padStart(3, '0')), '072', '074', '075', '076', '077'];
+const TODAS_AS_MIGRATIONS = [...Array.from({ length: 48 }, (_, i) => String(i).padStart(3, '0')), '072', '074', '075', '076', '077', '079'];
 const SENHA = 'senha-forte-dos-convites-2026';
 // Precisa passar na política real: "senha" no texto já a torna trivial.
 const SENHA_NOVA = 'Correnteza-Azul-Pedra-7319';

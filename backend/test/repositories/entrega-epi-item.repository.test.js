@@ -47,8 +47,9 @@ describe('criar — vínculo com o item da solicitação', () => {
     const { texto, valores } = executor.chamadas[0];
     assert.match(texto, /^INSERT INTO entregas_epi_itens\b/);
     assert.match(texto.split('VALUES')[0], /solicitacao_item_id/);
-    assert.equal(valores.length, 17);
+    assert.equal(valores.length, 18);
     assert.equal(valores[16], null);
+    assert.equal(valores[17], null, 'material_grupo_protecao (V2): nulo sem classificação, como parâmetro');
     assert.deepEqual(valores.slice(0, 7), [EMPRESA, 11, 30, 5, 2, 'ADMISSAO', null], 'os 16 valores de antes seguem nas mesmas posições');
   });
 

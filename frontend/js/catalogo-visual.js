@@ -15,25 +15,36 @@
   var SVG_NS = 'http://www.w3.org/2000/svg';
   var GENERICO = 'material';
 
-  // Textos das listas da tela de Materiais (js/materiais.js) → chave do desenho.
-  // 12G-8: os nomes oficiais que têm desenho adequado entram aqui; os demais
-  // (Creme, Mangote, Palmilha, Sapato, Viseira, Descartável, uniformes) caem na
-  // categoria. Os nomes anteriores ficam, pelo material já cadastrado.
+  // Nome do tipo → chave do desenho: os nomes do catálogo base da classificação
+  // V2 (08/10/2026) que têm desenho adequado, os nomes oficiais da 12G-8 e os
+  // anteriores, pelo material já cadastrado. Os demais caem no grupo.
   var TIPOS = [
     ['Sapatão / Botina', 'botina'],
     ['Botina de Segurança', 'botina'],
     ['Óculos de proteção', 'oculos'],
     ['Óculos de Proteção Incolor', 'oculos'],
     ['Óculos de Proteção Ampla Visão', 'oculos'],
+    ['Óculos de Proteção Fumê', 'oculos'],
+    ['Óculos de Proteção Sobrepor', 'oculos'],
     ['Luva', 'luva'],
+    ['Luva de Segurança', 'luva'],
+    ['Luva Isolante de Borracha', 'luva'],
+    ['Luva de Segurança Nitrila', 'luva'],
+    ['Luva para Proteção contra Agentes Térmicos', 'luva'],
     ['Protetor auricular', 'protetor-auricular'],
     ['Proteção Auricular Concha', 'protetor-auricular'],
+    ['Protetor Auricular Concha', 'protetor-auricular'],
+    ['Protetor Auricular Plug', 'protetor-auricular'],
     ['Capacete', 'capacete'],
+    ['Capacete de Segurança', 'capacete'],
     ['Respirador', 'respirador'],
     ['Respirador PFF2', 'respirador'],
   ];
+  // Grupo efetivo → chave. "Vestimenta" usa o desenho de vestimenta; "Uniforme"
+  // é só o nome legado do mesmo grupo.
   var CATEGORIAS = [
     ['EPI', 'epi'],
+    ['Vestimenta', 'uniforme'],
     ['Uniforme', 'uniforme'],
     ['Ferramenta', 'ferramenta'],
     ['Material de consumo', 'consumo'],
@@ -126,13 +137,23 @@
   var POR_TIPO = indice(TIPOS);
   var POR_CATEGORIA = indice(CATEGORIAS);
 
-  /** { chave, origem }: origem TIPO, CATEGORIA ou GENERICO. Só tipo e categoria contam. */
+  /**
+   * Grupo de exibição: o `grupo` que o servidor já resolveu (listas de estoque)
+   * ou, no material, a categoria — a especificação quando o grupo é "Outros",
+   * a mesma regra de grupoEfetivo (classificacao-material / js/materiais.js).
+   */
+  function grupoDe(m) {
+    if (typeof m.grupo === 'string' && m.grupo) return m.grupo;
+    return normalizar(m.categoria) === 'outros' && m.categoriaDescricao ? m.categoriaDescricao : m.categoria;
+  }
+
+  /** { chave, origem }: origem TIPO, CATEGORIA ou GENERICO. Só tipo e grupo contam. */
   function resolver(material) {
     var m = material || {};
     var tipo = normalizar(m.tipo);
     if (proprio(POR_TIPO, tipo)) return { chave: POR_TIPO[tipo], origem: 'TIPO' };
-    var categoria = normalizar(m.categoria);
-    if (proprio(POR_CATEGORIA, categoria)) return { chave: POR_CATEGORIA[categoria], origem: 'CATEGORIA' };
+    var grupo = normalizar(grupoDe(m));
+    if (proprio(POR_CATEGORIA, grupo)) return { chave: POR_CATEGORIA[grupo], origem: 'CATEGORIA' };
     return { chave: GENERICO, origem: 'GENERICO' };
   }
 

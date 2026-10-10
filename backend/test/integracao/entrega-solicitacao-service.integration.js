@@ -257,12 +257,12 @@ describe('entrega por solicitação — serviço transacional (PostgreSQL real)'
       const trabalhador = await d.novoTrabalhador(d.empresaA, { gheId: d.gheA });
       const solicitacao = await aprovada({ funcionarioId: trabalhador, itens: [{ materialId: m, quantidade: 2 }] });
       const loteId = await estoque(m, 5);
-      await q('UPDATE funcionarios SET ativo = false WHERE id = $1', [trabalhador]);
+      await q("UPDATE funcionarios SET situacao = 'INATIVO' WHERE id = $1", [trabalhador]);
       const antes = await retrato();
       await esperarHttpError(entregar(solicitacao, [[0, loteId, 1]]), 409, 'SOLICITACAO_NAO_ENTREGAVEL');
       assert.deepEqual(await retrato(), antes);
       assert.equal((await statusDe(solicitacao)).status, 'APROVADA');
-      await q('UPDATE funcionarios SET ativo = true WHERE id = $1', [trabalhador]);
+      await q("UPDATE funcionarios SET situacao = 'ATIVO' WHERE id = $1", [trabalhador]);
       assert.equal((await entregar(solicitacao, [[0, loteId, 1]])).solicitacao.status, 'APROVADA');
     });
 
@@ -521,7 +521,7 @@ describe('entrega por solicitação — serviço transacional (PostgreSQL real)'
       const loteId = await estoque(m, 5);
       const chaveIdempotencia = chaveNova();
       const original = await entregar(solicitacao, [[0, loteId, 1]], { chaveIdempotencia });
-      await q('UPDATE funcionarios SET ativo = false WHERE id = $1', [trabalhador]);
+      await q("UPDATE funcionarios SET situacao = 'INATIVO' WHERE id = $1", [trabalhador]);
       const repetida = await entregar(solicitacao, [[0, loteId, 1]], { chaveIdempotencia });
       assert.deepEqual([repetida.repetida, repetida.entrega.id], [true, original.entrega.id]);
     });

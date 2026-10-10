@@ -37,7 +37,7 @@ const { httpConfig } = require('../../src/config/http');
  * cancelado.
  */
 
-const TODAS_AS_MIGRATIONS = [...Array.from({ length: 48 }, (_, i) => String(i).padStart(3, '0')), '072', '074', '075', '076', '077'];
+const TODAS_AS_MIGRATIONS = [...Array.from({ length: 48 }, (_, i) => String(i).padStart(3, '0')), '072', '074', '075', '076', '077', '079'];
 const SENHA = 'senha-forte-dos-reenvios-2026';
 const SENHA_NOVA = 'Correnteza-Azul-Pedra-7319';
 const ADMIN = '/api/administracao/convites-usuario';

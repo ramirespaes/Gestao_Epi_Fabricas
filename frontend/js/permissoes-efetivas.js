@@ -103,6 +103,12 @@
       abrir: [{ recurso: 'employeeHistory', operacao: 'visualizar' }],
       alterar: [],
     },
+    // Gestão de Funcionários (página nova): abre com employeeHistory.visualizar; alterar (editar, troca de GHE, situação) exige
+    // employeeHistory.editar. Cadastrar (criar) a página consulta à parte, por operação. Sem permissão nova; o servidor decide.
+    funcionarios: {
+      abrir: [{ recurso: 'employeeHistory', operacao: 'visualizar' }],
+      alterar: [{ recurso: 'employeeHistory', operacao: 'editar' }],
+    },
     // Importação tem permissão PRÓPRIA (ação IMPORTAR_FUNCIONARIOS), independente de employeeHistory.criar.
     importEmployees: {
       abrir: [{ acao: 'IMPORTAR_FUNCIONARIOS' }],
@@ -150,8 +156,9 @@
     },
     // 12K-D: Relatórios (Estoque, Próximo do vencimento, Itens vencidos, EPIs entregues), só leitura. Cada aba segue a
     // autoridade da própria fonte no servidor: Estoque = materials.visualizar; as três de entregas = epiFicha.visualizar.
+    // 12K-D5/D6: a Auditoria (reportsAudit) e a Fiscalização (reportsFiscal) têm permissão própria e também abrem a página.
     reports: {
-      abrir: [{ recurso: 'materials', operacao: 'visualizar' }, { recurso: 'epiFicha', operacao: 'visualizar' }],
+      abrir: [{ recurso: 'materials', operacao: 'visualizar' }, { recurso: 'epiFicha', operacao: 'visualizar' }, { recurso: 'reportsAudit', operacao: 'visualizar' }, { recurso: 'reportsFiscal', operacao: 'visualizar' }],
       abrirComQualquer: true,
       alterar: [],
     },

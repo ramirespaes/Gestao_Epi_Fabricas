@@ -22,7 +22,7 @@ const { HttpError } = require('../../src/errors/HttpError');
  * Schema temporário exclusivo, removido em cascata ao final.
  */
 
-const MIGRATIONS = ['000', '001', '002', '003', '005', '009', '010', '011', '012', '013', '014', '016', '017', '018', '019', '020', '021', '023'];
+const MIGRATIONS = ['000', '001', '002', '003', '005', '009', '010', '011', '012', '013', '014', '016', '017', '018', '019', '020', '021', '023', '079'];
 
 const HASH = '$argon2id$v=19$m=65536,t=3,p=1$c2ludGV0aWNv$aGFzaGZha2VzaW50ZXRpY28';
 const RECURSO = 'materials';

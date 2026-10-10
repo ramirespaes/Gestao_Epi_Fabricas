@@ -54,8 +54,8 @@ function mundoValido(t, { existente = funcionario() } = {}) {
   return {
     buscarGhe,
     buscarGheSemLock,
-    // 12G-9: a importação resolve o GHE pelo nome exato (sem lock) e localiza o existente pelo CPF.
-    buscarGhePorNome: t.mock.method(gheRepo, 'buscarPorNome', async (_c, empresaId, nome) => (empresaId === EMPRESA ? (porNome[nome] ?? null) : null)),
+    // 12G-9/12K-E: a importação resolve o GHE pelo nome normalizado (sem lock; devolve até 2) e localiza o existente pelo CPF.
+    buscarGhePorNome: t.mock.method(gheRepo, 'buscarPorNomeNormalizado', async (_c, empresaId, nome) => (empresaId === EMPRESA ? Object.values(ghes).filter((g) => g.nome === nome) : [])),
     buscarPorCpf: t.mock.method(funcionarioRepo, 'buscarPorCpf', async () => null),
     criar: t.mock.method(funcionarioRepo, 'criar', async (_c, dados) => funcionario({ ...dados })),
     atualizar: t.mock.method(funcionarioRepo, 'atualizar', async (_c, _e, _id, campos) => funcionario({
@@ -182,11 +182,21 @@ describe('alterar', () => {
     assertSemDadosSensiveis(auditoria);
   });
 
-  test('desvincular (grupoHomogeneoId null) não consulta GHE; manter o mesmo GHE também não', async (t) => {
-    const escritas = mundoValido(t);
+  test('S4: GHE → null é recusado (400 FUNCIONARIO_GHE_OBRIGATORIO), sem consultar GHE, sem escrita e sem auditoria; null → null (legado) e manter o mesmo GHE passam sem consulta', async (t) => {
+    const comGhe = mundoValido(t);
+    await esperarHttpError(
+      servico.alterar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, funcionarioId: FUNC_ID, setor: 'Outro', setorInformado: true, grupoHomogeneoId: null, grupoHomogeneoIdInformado: true }),
+      400, 'FUNCIONARIO_GHE_OBRIGATORIO',
+    );
+    assert.equal(comGhe.atualizar.mock.calls.length, 0);
+    assert.equal(comGhe.registrar.mock.calls.length, 0);
+    assert.equal(comGhe.buscarGhe.mock.calls.length, 0);
+
+    const legado = mundoValido(t, { existente: funcionario({ grupoHomogeneoId: null }) });
     await servico.alterar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, funcionarioId: FUNC_ID, grupoHomogeneoId: null, grupoHomogeneoIdInformado: true });
+    assert.equal(legado.atualizar.mock.calls.length, 1);
     await servico.alterar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, funcionarioId: FUNC_ID, grupoHomogeneoId: GHE_ATIVO, grupoHomogeneoIdInformado: true });
-    assert.equal(escritas.buscarGhe.mock.calls.length, 0);
+    assert.equal(legado.buscarGhe.mock.calls.length, 1, 'null → GHE valida o GHE novo');
   });
 
   test('troca para GHE inativo: 409 FUNCIONARIO_GHE_INATIVO', async (t) => {
@@ -261,8 +271,9 @@ describe('inativar e reativar', () => {
     const escritas = mundoValido(t);
     const r = await servico.inativar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, funcionarioId: FUNC_ID });
     assert.equal(r.alterado, true);
-    assert.equal(escritas.registrar.mock.calls[0].arguments[1].acao, 'FUNCIONARIO_INATIVADO');
-    assertSemDadosSensiveis(escritas.registrar.mock.calls[0].arguments[1]);
+    // S2: toda mudança real grava FUNCIONARIO_SITUACAO_ALTERADA; o evento legado acompanha ATIVO → INATIVO.
+    assert.deepEqual(escritas.registrar.mock.calls.map((c) => c.arguments[1].acao), ['FUNCIONARIO_SITUACAO_ALTERADA', 'FUNCIONARIO_INATIVADO']);
+    for (const c of escritas.registrar.mock.calls) assertSemDadosSensiveis(c.arguments[1]);
 
     const repetido = mundoValido(t, { existente: funcionario({ ativo: false }) });
     const r2 = await servico.inativar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, funcionarioId: FUNC_ID });
@@ -271,7 +282,7 @@ describe('inativar e reativar', () => {
 
     const reativado = mundoValido(t, { existente: funcionario({ ativo: false }) });
     await servico.reativar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, funcionarioId: FUNC_ID });
-    assert.equal(reativado.registrar.mock.calls[0].arguments[1].acao, 'FUNCIONARIO_REATIVADO');
+    assert.deepEqual(reativado.registrar.mock.calls.map((c) => c.arguments[1].acao), ['FUNCIONARIO_SITUACAO_ALTERADA', 'FUNCIONARIO_REATIVADO']);
   });
 
   test('inexistente nesta empresa: 404 com ROLLBACK', async (t) => {
@@ -359,7 +370,7 @@ describe('C4 — declaração LGPD da importação (versão e hash do texto apre
 describe('C4 — importação em lote', () => {
   const IMPORTACAO = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
   const linhaImp = (linha, extra = {}) => ({
-    linha, nome: `Funcionário ${linha}`, cpf: '52998224725', matricula: `MAT-${linha}`, dataAdmissao: '2020-06-01',
+    linha, nome: `Funcionário ${linha}`, cpf: '52998224725', matricula: `MAT-${linha}`, situacao: 'Ativo', dataAdmissao: '2020-06-01',
     dataNascimento: '1990-03-15', setor: 'Produção', funcao: 'Operador', telefone: '47999990000', ghe: 'GHE Ativo', ...extra,
   });
   const pedido = (linhas, extra = {}) => ({
@@ -387,7 +398,7 @@ describe('C4 — importação em lote', () => {
       { linha: 2, situacao: 'CADASTRADO', funcionarioId: 1001 },
       { linha: 3, situacao: 'RECUSADO', codigo: 'FUNCIONARIO_CPF_INVALIDO', motivo: 'CPF inválido.', campos: ['cpf'] },
       { linha: 4, situacao: 'DUPLICADO', codigo: 'FUNCIONARIO_CPF_EM_USO', motivo: 'CPF já cadastrado nesta empresa.' },
-      { linha: 5, situacao: 'DUPLICADO', codigo: 'FUNCIONARIO_MATRICULA_EM_USO', motivo: 'Matrícula já cadastrada nesta empresa.' },
+      { linha: 5, situacao: 'DUPLICADO', codigo: 'FUNCIONARIO_MATRICULA_EM_USO', motivo: 'Matrícula já cadastrada para outro funcionário nesta empresa.' },
       { linha: 6, situacao: 'ERRO', codigo: 'ERRO_INTERNO', motivo: 'Erro ao processar esta linha. Ela não foi gravada.' },
       { linha: 7, situacao: 'RECUSADO', codigo: 'FUNCIONARIO_DATA_ADMISSAO_INVALIDA', motivo: 'Data de admissão inválida: deve ser a partir de 1900 e posterior ao nascimento.', campos: ['dataAdmissao'] },
       { linha: 8, situacao: 'CADASTRADO', funcionarioId: 1002 },
@@ -468,7 +479,8 @@ describe('C4 — importação em lote', () => {
 
   // ── 12G-9: GHE pelo nome e funcionário existente, sem sobrescrever ──
   const MOTIVO_GHE_NAO_INFORMADO = 'GHE não informado: preencha a coluna GHE com o nome exato de um GHE cadastrado nesta empresa.';
-  const MOTIVO_GHE_INEXISTENTE = 'GHE inexistente nesta empresa: informe o nome exato de um GHE já cadastrado (a importação nunca cria GHE).';
+  const MOTIVO_GHE_INVALIDO = 'GHE inválido: o nome tem caractere não permitido ou passa de 150 caracteres.';
+  const MOTIVO_GHE_INEXISTENTE = 'GHE não encontrado nesta empresa: informe o nome de um GHE já cadastrado ou escolha um na prévia (a importação nunca cria GHE).';
   const MOTIVO_GHE_INATIVO = 'GHE inativo não aceita novos vínculos: reative o GHE ou informe outro.';
   const MOTIVO_JA_CADASTRADO = 'Já cadastrado — sem alterações.';
   const MOTIVO_DIVERGENTE = 'Já cadastrado — dados divergentes. Nenhuma alteração realizada.';
@@ -491,7 +503,7 @@ describe('C4 — importação em lote', () => {
       { linha: 5, situacao: 'RECUSADO', codigo: 'FUNCIONARIO_GHE_INEXISTENTE', motivo: MOTIVO_GHE_INEXISTENTE, campos: ['ghe'] },
       { linha: 6, situacao: 'RECUSADO', codigo: 'FUNCIONARIO_GHE_INATIVO', motivo: MOTIVO_GHE_INATIVO, campos: ['ghe'] },
       { linha: 7, situacao: 'RECUSADO', codigo: 'FUNCIONARIO_GHE_INEXISTENTE', motivo: MOTIVO_GHE_INEXISTENTE, campos: ['ghe'] },
-      { linha: 8, situacao: 'RECUSADO', codigo: 'FUNCIONARIO_GHE_NAO_INFORMADO', motivo: MOTIVO_GHE_NAO_INFORMADO, campos: ['ghe'] },
+      { linha: 8, situacao: 'RECUSADO', codigo: 'FUNCIONARIO_GHE_INVALIDO', motivo: MOTIVO_GHE_INVALIDO, campos: ['ghe'] },
     ]);
     assert.deepEqual(escritas.criar.mock.calls.map((c) => c.arguments[1].grupoHomogeneoId), [GHE_ATIVO]);
     assert.equal(criarGhe.mock.calls.length, 0);

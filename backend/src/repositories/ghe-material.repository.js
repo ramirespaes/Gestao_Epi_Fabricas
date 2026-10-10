@@ -1,5 +1,7 @@
 'use strict';
 
+const sqlPrevisto = require('./sql/previsto-ghe');
+
 /**
  * Repositório da matriz GHE × EPI (ghe_materiais, migration 041). Bloco 9,
  * Etapa C, Parte C5.
@@ -73,7 +75,29 @@ async function inserir(executor, { empresaId, gheId, materialId }) {
   return { grupoHomogeneoId: rows[0].grupo_homogeneo_id, materialId: rows[0].material_id, criadoEm: rows[0].criado_em };
 }
 
-/** Ids dos materiais previstos no GHE, para decidir previsto_no_ghe na entrega. */
+/**
+ * Dos materiais informados, os ids PREVISTOS no GHE pela regra efetiva (vínculo direto OU vínculo do tipo do material),
+ * para decidir previsto_no_ghe ao criar a solicitação e ao registrar a entrega. A regra é a mesma dos contextos: vem do
+ * fragmento único de sql/previsto-ghe.js. Não filtra por material ativo (quem chama já validou os materiais).
+ */
+async function listarMaterialIdsPrevistos(executor, empresaId, gheId, materialIds) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirId(gheId, 'identificador de GHE');
+  if (!Array.isArray(materialIds) || !materialIds.every((id) => Number.isInteger(id) && id > 0)) {
+    throw new TypeError('materialIds inválido');
+  }
+  if (materialIds.length === 0) return [];
+
+  const { rows } = await executor.query(
+    `SELECT m.id FROM materiais m
+      WHERE m.empresa_id = $1 AND m.id = ANY($3::int[]) AND ${sqlPrevisto.previstoNoGhe({ material: 'm', ghe: '$2' })}
+      ORDER BY m.id`,
+    [empresaId, gheId, materialIds],
+  );
+  return rows.map((l) => l.id);
+}
+
+/** Ids dos materiais com vínculo DIRETO ao GHE (ghe_materiais). Não é a regra de previsto: veja listarMaterialIdsPrevistos. */
 async function listarMaterialIdsVinculados(executor, empresaId, gheId) {
   exigirId(empresaId, 'identificador de empresa');
   exigirId(gheId, 'identificador de GHE');
@@ -99,4 +123,4 @@ async function remover(executor, { empresaId, gheId, materialId }) {
   return rowCount === 1;
 }
 
-module.exports = { listarMatriz, listarMaterialIdsVinculados, inserir, remover };
+module.exports = { listarMatriz, listarMaterialIdsVinculados, listarMaterialIdsPrevistos, inserir, remover };

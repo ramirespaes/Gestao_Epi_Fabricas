@@ -96,9 +96,16 @@ async function criarGhe(executor, empresaId, nome) {
 async function criarFuncionario(executor, empresaId, {
   matricula, cpf, gheId = null, ativo = true, setor = null, funcao = null,
 }) {
-  const funcionario = await inserir(executor, 'funcionarios', {
-    empresa_id: empresaId, matricula, nome: `Trabalhador ${matricula}`, cpf, grupo_homogeneo_id: gheId, ativo, setor, funcao,
-  });
+  const campos = {
+    empresa_id: empresaId, matricula, nome: `Trabalhador ${matricula}`, cpf, grupo_homogeneo_id: gheId, setor, funcao,
+  };
+  // O estado padrão (ativo) vale em qualquer versão do schema. Para inativo, o helper também roda em schemas ANTERIORES à 084, onde `ativo`
+  // ainda é gravável; desde a 084 a coluna é gerada e o estado se grava em `situacao`.
+  if (ativo !== true) {
+    const { rows } = await executor.query("SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'funcionarios' AND column_name = 'situacao'");
+    if (rows.length > 0) campos.situacao = ativo ? 'ATIVO' : 'INATIVO'; else campos.ativo = ativo;
+  }
+  const funcionario = await inserir(executor, 'funcionarios', campos);
   return funcionario.id;
 }
 

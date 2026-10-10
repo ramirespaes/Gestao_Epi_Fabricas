@@ -1,6 +1,7 @@
 'use strict';
 
 const { HttpError } = require('../errors/HttpError');
+const { exigirPodeReceberEpi } = require('../utils/situacao-funcionario');
 const funcionarioRepo = require('../repositories/funcionario.repository');
 const materialRepo = require('../repositories/material.repository');
 const gheRepo = require('../repositories/grupo-homogeneo-exposicao.repository');
@@ -43,7 +44,7 @@ async function trabalhadorApto(pool, empresaId, funcionarioId) {
   exigirId(funcionarioId, 'identificador de funcionário');
   const funcionario = await funcionarioRepo.buscarPorId(pool, empresaId, funcionarioId);
   if (funcionario === null) throw HttpError.notFound('FUNCIONARIO_NAO_ENCONTRADO', 'Trabalhador não encontrado');
-  if (funcionario.ativo !== true) throw HttpError.conflict('FUNCIONARIO_INATIVO', 'Trabalhador inativo não recebe EPI');
+  exigirPodeReceberEpi(funcionario);
   return funcionario;
 }
 
@@ -67,7 +68,7 @@ async function localizarTrabalhadorPorCpf(pool, { empresaId, cpf }) {
   exigirId(empresaId, 'identificador de empresa');
   const funcionario = await funcionarioRepo.buscarPorCpf(pool, empresaId, cpf);
   if (funcionario === null) throw HttpError.notFound('FUNCIONARIO_NAO_ENCONTRADO', 'Trabalhador não encontrado');
-  if (funcionario.ativo !== true) throw HttpError.conflict('FUNCIONARIO_INATIVO', 'Trabalhador inativo não recebe EPI');
+  exigirPodeReceberEpi(funcionario);
   const { ativo, ...publico } = funcionarioAtualPublico(funcionario);
   return { funcionario: { ...publico, ghe: await gheAtual(pool, empresaId, funcionario) } };
 }

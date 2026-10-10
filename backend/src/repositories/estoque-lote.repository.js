@@ -3,6 +3,7 @@
 const { exigirDataOperacional } = require('../utils/data-operacional');
 const { escaparCoringasLike } = require('../utils/like');
 const sqlPosicao = require('./sql/posicao-estoque');
+const classificacao = require('../utils/classificacao-material');
 
 /**
  * Leitura do estoque por lote. Toda consulta filtra pela empresa e liga o
@@ -78,7 +79,10 @@ async function listarPorMaterial(executor, empresaId, materialId, referencia) {
 async function listarFiltrosDisponiveis(executor, empresaId) {
   exigirId(empresaId, 'empresa');
   const { rows } = await executor.query(
-    `SELECT array_agg(DISTINCT m.categoria ORDER BY m.categoria) FILTER (WHERE m.categoria IS NOT NULL) AS categorias,
+    `SELECT (SELECT array_agg(c ORDER BY c) FROM (
+              SELECT DISTINCT ${classificacao.SQL.grupoEfetivo('m')} AS c ${JUNCAO} WHERE l.empresa_id = $1 AND m.ativo AND m.categoria IS NOT NULL
+              UNION SELECT 'Outros' WHERE EXISTS (SELECT 1 ${JUNCAO} WHERE l.empresa_id = $1 AND m.ativo AND m.categoria = 'Outros')) x
+             WHERE c IS NOT NULL) AS categorias,
             array_agg(DISTINCT m.tipo ORDER BY m.tipo) FILTER (WHERE m.tipo IS NOT NULL) AS tipos,
             array_agg(DISTINCT l.tamanho ORDER BY l.tamanho) FILTER (WHERE l.tamanho IS NOT NULL) AS tamanhos
        ${JUNCAO}
@@ -115,7 +119,7 @@ async function resumirIndicadores(executor, empresaId, referencia) {
 const SITUACOES_LOTE = Object.freeze(['VENCIDO', 'VENCE_HOJE', 'A_VENCER', 'VENCIMENTO_PROXIMO', 'VALIDO', 'SEM_CA', 'NAO_EXIGE_CA']);
 
 const LOTES_VALIDADE = `validade AS (
-     SELECT l.id, l.material_id, m.nome, m.codigo_interno, m.categoria, m.tipo, m.ativo AS material_ativo, l.tamanho, l.ca_numero,
+     SELECT l.id, l.material_id, m.nome, m.codigo_interno, m.categoria, ${classificacao.SQL.grupoEfetivo('m')} AS grupo, m.tipo, m.ativo AS material_ativo, l.tamanho, l.ca_numero,
             l.ca_validade, l.saldo, ${BLOQUEADO} AS bloqueado, ${SITUACAO_CA} AS situacao
        ${JUNCAO}
       WHERE l.empresa_id = $1
@@ -151,7 +155,7 @@ async function listarValidade(executor, empresaId, { hoje, diasAlerta, pagina, l
   const f = filtrosValidade(filtros);
   const { rows } = await executor.query(
     `WITH ${LOTES_VALIDADE}
-     SELECT id, material_id, nome, codigo_interno, categoria, tipo, material_ativo, tamanho, ca_numero,
+     SELECT id, material_id, nome, codigo_interno, categoria, grupo, tipo, material_ativo, tamanho, ca_numero,
             to_char(ca_validade, 'YYYY-MM-DD') AS validade_ca, saldo, bloqueado, situacao
        FROM validade
        ${FILTRO_VALIDADE}
@@ -165,6 +169,7 @@ async function listarValidade(executor, empresaId, { hoje, diasAlerta, pagina, l
     material: l.nome,
     codigoInterno: l.codigo_interno,
     categoria: l.categoria,
+    grupo: l.grupo ?? null, // valor efetivo de exibição do Grupo (classificacao-material.SQL.grupoEfetivo)
     tipo: l.tipo,
     materialAtivo: l.material_ativo,
     tamanho: l.tamanho,

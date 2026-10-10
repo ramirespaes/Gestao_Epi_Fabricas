@@ -1,6 +1,7 @@
 'use strict';
 
 const { escaparCoringasLike } = require('../utils/like');
+const sqlPrevisto = require('./sql/previsto-ghe');
 
 /**
  * Materiais para quem pede escolher na nova solicitação de EPI (12G-0, L2):
@@ -16,8 +17,8 @@ const { escaparCoringasLike } = require('../utils/like');
 
 const LIMITE_MAXIMO = 100;
 
-const PREVISTO = `($2::int IS NOT NULL AND EXISTS (
-    SELECT 1 FROM ghe_materiais gm WHERE gm.empresa_id = m.empresa_id AND gm.grupo_homogeneo_id = $2::int AND gm.material_id = m.id))`;
+// Regra única de "previsto no GHE" (vínculo direto OU por tipo): sql/previsto-ghe.js. $2 = GHE do trabalhador.
+const PREVISTO = sqlPrevisto.previstoNoGhe({ material: 'm', ghe: '$2' });
 
 const FILTRO = `FROM materiais m
   WHERE m.empresa_id = $1 AND m.ativo

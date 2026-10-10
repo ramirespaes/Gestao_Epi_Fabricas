@@ -67,6 +67,13 @@ const mapeada = {
   exigeTamanho: null,
   oculosComGrau: null,
   tipoDescricao: null,
+  // Classificação V2 (082): a linha sem as colunas é LEGADO, sem nenhum nível novo.
+  modeloClassificacao: 'LEGADO',
+  categoriaDescricao: null,
+  grupoProtecao: null,
+  grupoProtecaoDescricao: null,
+  tipoMaterialId: null,
+  tipoMaterialAtivo: null,
   ativo: true,
   criadoEm: new Date('2026-09-23T12:00:00Z'),
   atualizadoEm: new Date('2026-09-23T12:00:00Z'),
@@ -83,7 +90,8 @@ describe('criar', () => {
     assert.match(texto, /returning/i);
     const colunas = texto.slice(texto.indexOf('('), texto.search(/\bvalues\b/i));
     assert.doesNotMatch(colunas, /\bativo\b/i, 'ativo nasce do DEFAULT, não é enviado');
-    assert.deepEqual(valores, [EMPRESA_A, 'Botina de segurança', null, null, null, 'unidade', 0, null, null, null, null, null, null]);
+    // Os cinco últimos são da classificação V2 (082): modelo ('LEGADO' quando o chamador não classifica), descrições, proteção e id do tipo.
+    assert.deepEqual(valores, [EMPRESA_A, 'Botina de segurança', null, null, null, 'unidade', 0, null, null, null, null, null, null, 'LEGADO', null, null, null, null]);
     assert.deepEqual(material, mapeada);
   });
 
@@ -102,7 +110,7 @@ describe('criar', () => {
 
     assert.deepEqual(executor.chamadas[0].valores, [
       EMPRESA_A, 'Botina de segurança', 'Sapatão / Botina', 'Bracol', 365, 'par', 5,
-      null, null, null, null, null, null,
+      null, null, null, null, null, null, 'LEGADO', null, null, null, null,
     ]);
   });
 
@@ -279,6 +287,9 @@ describe('atualizar', () => {
       null,
       false, null,
       false, null,
+      // Classificação V2 (082): modelo (null = manter) e os quatro pares informado/valor (descrição do grupo, proteção, descrição da proteção, id do tipo).
+      null,
+      false, null, false, null, false, null, false, null,
     ]);
   });
 
@@ -295,6 +306,8 @@ describe('atualizar', () => {
       null,
       false, null,
       false, null,
+      null,
+      false, null, false, null, false, null, false, null,
     ]);
   });
 
@@ -402,7 +415,7 @@ describe('exige_tamanho — migration 044', () => {
     await atualizar(executor, EMPRESA_A, 30, { exigeTamanho: true });
     const [ausente, informado] = executor.chamadas;
     assert.match(ausente.texto, /exige_tamanho\s*=\s*COALESCE\(\$19::boolean,\s*exige_tamanho\)/);
-    assert.deepEqual([ausente.valores.length, ausente.valores[18], informado.valores[18]], [23, null, true]);
+    assert.deepEqual([ausente.valores.length, ausente.valores[18], informado.valores[18]], [32, null, true]);
   });
 
   test('recusa valor que não é booleano antes de consultar', async () => {
@@ -429,8 +442,8 @@ describe('oculos_com_grau — migration 045', () => {
     await criar(executor, { empresaId: EMPRESA_A, nome: 'Luva', prazoUsoDias: 180, exigeTamanho: true });
     const [comValor, semValor] = executor.chamadas;
     assert.match(comValor.texto.slice(0, comValor.texto.search(/\bvalues\b/i)), /\boculos_com_grau\b/);
-    // oculos_com_grau é o 12º parâmetro; o 13º é tipo_descricao (071).
-    assert.deepEqual([comValor.valores.length, comValor.valores[11], semValor.valores[11], comValor.valores[12]], [13, true, null, null]);
+    // oculos_com_grau é o 12º parâmetro; o 13º é tipo_descricao (071); do 14º em diante, a classificação V2 (082).
+    assert.deepEqual([comValor.valores.length, comValor.valores[11], semValor.valores[11], comValor.valores[12]], [18, true, null, null]);
   });
 
   test('atualizar: não informado mantém o valor atual; informado grava true, false ou null', async () => {

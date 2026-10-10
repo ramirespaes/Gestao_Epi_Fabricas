@@ -39,8 +39,12 @@ const LIMITE_INTEGER_POSTGRES = 2147483647;
 // categoria, codigo_interno e descricao: migration 039 (Parte C2).
 // O material não tem CA (E10): ca_numero e ca_validade ficam no banco só
 // como histórico, fora da projeção, do INSERT e do UPDATE. O CA é do lote.
+// Classificação V2 (082): modelo, descrições de "Outros", grupo de proteção e o vínculo ao catálogo; `tipo_material_ativo`
+// é informativo (null sem vínculo) e vem do catálogo na mesma leitura.
 const PROJECAO = `id, empresa_id, nome, tipo, tipo_descricao, fabricante,
-  prazo_uso_dias, unidade, estoque_minimo, categoria, codigo_interno, descricao, exige_tamanho, oculos_com_grau, ativo, criado_em, atualizado_em`;
+  prazo_uso_dias, unidade, estoque_minimo, categoria, codigo_interno, descricao, exige_tamanho, oculos_com_grau, ativo, criado_em, atualizado_em,
+  modelo_classificacao, categoria_descricao, grupo_protecao, grupo_protecao_descricao, tipo_material_id,
+  (SELECT t.ativo FROM tipos_material t WHERE t.empresa_id = materiais.empresa_id AND t.id = materiais.tipo_material_id) AS tipo_material_ativo`;
 const TAMANHO_MAXIMO_CATEGORIA = 30;
 const TAMANHO_MAXIMO_CODIGO_INTERNO = 30;
 const TAMANHO_MAXIMO_DESCRICAO = 500;
@@ -97,6 +101,15 @@ function exigirOculosComGrauOpcional(valor) {
 }
 
 // estoque_minimo: CHECK (estoque_minimo >= 0), e teto do INTEGER do banco.
+const MODELOS_CLASSIFICACAO = ['LEGADO', 'V2'];
+function exigirClassificacaoV2({ modeloClassificacao, categoriaDescricao, grupoProtecao, grupoProtecaoDescricao, tipoMaterialId }) {
+  if (!MODELOS_CLASSIFICACAO.includes(modeloClassificacao)) throw new TypeError('modelo de classificação inválido');
+  exigirTextoOpcional(categoriaDescricao, 'descrição do grupo', TAMANHO_MAXIMO_TIPO_DESCRICAO);
+  exigirTextoOpcional(grupoProtecao, 'grupo de proteção', 60);
+  exigirTextoOpcional(grupoProtecaoDescricao, 'descrição do grupo de proteção', TAMANHO_MAXIMO_TIPO_DESCRICAO);
+  if (tipoMaterialId !== null) exigirId(tipoMaterialId, 'identificador de tipo de material');
+}
+
 function exigirEstoqueMinimo(valor) {
   if (!Number.isInteger(valor) || valor < 0 || valor > LIMITE_INTEGER_POSTGRES) {
     throw new TypeError('estoque mínimo deve ser inteiro não negativo dentro do teto do INTEGER');
@@ -127,6 +140,12 @@ const mapear = (linha) => (linha === undefined ? null : {
   ativo: linha.ativo,
   criadoEm: linha.criado_em,
   atualizadoEm: linha.atualizado_em,
+  modeloClassificacao: linha.modelo_classificacao ?? 'LEGADO',
+  categoriaDescricao: linha.categoria_descricao ?? null,
+  grupoProtecao: linha.grupo_protecao ?? null,
+  grupoProtecaoDescricao: linha.grupo_protecao_descricao ?? null,
+  tipoMaterialId: linha.tipo_material_id ?? null,
+  tipoMaterialAtivo: linha.tipo_material_ativo ?? null,
 });
 
 /**
@@ -142,9 +161,11 @@ async function criar(executor, {
   empresaId, nome, tipo = null, tipoDescricao = null, fabricante = null,
   prazoUsoDias = null, unidade = 'unidade', estoqueMinimo = 0,
   categoria = null, codigoInterno = null, descricao = null, exigeTamanho = null, oculosComGrau = null,
+  modeloClassificacao = 'LEGADO', categoriaDescricao = null, grupoProtecao = null, grupoProtecaoDescricao = null, tipoMaterialId = null,
 }) {
   exigirEmpresa(empresaId);
   exigirNome(nome);
+  exigirClassificacaoV2({ modeloClassificacao, categoriaDescricao, grupoProtecao, grupoProtecaoDescricao, tipoMaterialId });
   exigirTextoOpcional(tipo, 'tipo', TAMANHO_MAXIMO_TIPO);
   exigirTextoOpcional(tipoDescricao, 'descrição do tipo', TAMANHO_MAXIMO_TIPO_DESCRICAO);
   exigirTextoOpcional(fabricante, 'fabricante', TAMANHO_MAXIMO_FABRICANTE);
@@ -158,10 +179,12 @@ async function criar(executor, {
   exigirOculosComGrauOpcional(oculosComGrau);
 
   const { rows } = await executor.query(
-    `INSERT INTO materiais (empresa_id, nome, tipo, fabricante, prazo_uso_dias, unidade, estoque_minimo, categoria, codigo_interno, descricao, exige_tamanho, oculos_com_grau, tipo_descricao)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+    `INSERT INTO materiais (empresa_id, nome, tipo, fabricante, prazo_uso_dias, unidade, estoque_minimo, categoria, codigo_interno, descricao, exige_tamanho, oculos_com_grau, tipo_descricao,
+        modelo_classificacao, categoria_descricao, grupo_protecao, grupo_protecao_descricao, tipo_material_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
      RETURNING ${PROJECAO}`,
-    [empresaId, nome, tipo, fabricante, prazoUsoDias, unidade, estoqueMinimo, categoria, codigoInterno, descricao, exigeTamanho, oculosComGrau, tipoDescricao],
+    [empresaId, nome, tipo, fabricante, prazoUsoDias, unidade, estoqueMinimo, categoria, codigoInterno, descricao, exigeTamanho, oculosComGrau, tipoDescricao,
+      modeloClassificacao, categoriaDescricao, grupoProtecao, grupoProtecaoDescricao, tipoMaterialId],
   );
 
   return mapear(rows[0]);
@@ -336,9 +359,15 @@ async function atualizar(executor, empresaId, id, {
   exigeTamanho = null,
   oculosComGrau = null, oculosComGrauInformado = false,
   tipoDescricao = null, tipoDescricaoInformado = false,
+  modeloClassificacao = null,
+  categoriaDescricao = null, categoriaDescricaoInformado = false,
+  grupoProtecao = null, grupoProtecaoInformado = false,
+  grupoProtecaoDescricao = null, grupoProtecaoDescricaoInformado = false,
+  tipoMaterialId = null, tipoMaterialIdInformado = false,
 } = {}) {
   exigirEmpresa(empresaId);
   exigirId(id, 'identificador de material');
+  exigirClassificacaoV2({ modeloClassificacao: modeloClassificacao ?? 'LEGADO', categoriaDescricao, grupoProtecao, grupoProtecaoDescricao, tipoMaterialId });
   exigirExigeTamanhoOpcional(exigeTamanho);
   if (oculosComGrauInformado) {
     exigirOculosComGrauOpcional(oculosComGrau);
@@ -391,7 +420,12 @@ async function atualizar(executor, empresaId, id, {
             descricao = CASE WHEN $17::boolean THEN $18 ELSE descricao END,
             exige_tamanho = COALESCE($19::boolean, exige_tamanho),
             oculos_com_grau = CASE WHEN $20::boolean THEN $21::boolean ELSE oculos_com_grau END,
-            tipo_descricao = CASE WHEN $22::boolean THEN $23 ELSE tipo_descricao END
+            tipo_descricao = CASE WHEN $22::boolean THEN $23 ELSE tipo_descricao END,
+            modelo_classificacao = COALESCE($24, modelo_classificacao),
+            categoria_descricao = CASE WHEN $25::boolean THEN $26 ELSE categoria_descricao END,
+            grupo_protecao = CASE WHEN $27::boolean THEN $28 ELSE grupo_protecao END,
+            grupo_protecao_descricao = CASE WHEN $29::boolean THEN $30 ELSE grupo_protecao_descricao END,
+            tipo_material_id = CASE WHEN $31::boolean THEN $32::int ELSE tipo_material_id END
       WHERE empresa_id = $1 AND id = $2
       RETURNING ${PROJECAO}`,
     [
@@ -406,6 +440,11 @@ async function atualizar(executor, empresaId, id, {
       exigeTamanho,
       oculosComGrauInformado, oculosComGrau,
       tipoDescricaoInformado, tipoDescricao,
+      modeloClassificacao,
+      categoriaDescricaoInformado, categoriaDescricao,
+      grupoProtecaoInformado, grupoProtecao,
+      grupoProtecaoDescricaoInformado, grupoProtecaoDescricao,
+      tipoMaterialIdInformado, tipoMaterialId,
     ],
   );
 

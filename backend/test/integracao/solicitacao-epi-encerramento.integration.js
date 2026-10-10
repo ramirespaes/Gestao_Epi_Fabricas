@@ -201,13 +201,13 @@ describe('encerramento da solicitação de EPI — serviço (PostgreSQL real)', 
       await f.estoque(m, 5);
       const trabalhador = await d.novoTrabalhador(d.empresaA, { gheId: d.gheA });
       const alvo = await f.aprovada({ materialId: m, quantidade: 2, funcionarioId: trabalhador });
-      await q('UPDATE funcionarios SET ativo = false WHERE id = $1', [trabalhador]);
+      await q("UPDATE funcionarios SET situacao = 'INATIVO' WHERE id = $1", [trabalhador]);
       try {
         assert.deepEqual(f.numeros(await f.posicao(m)), [5, 0, 0, 5, 0], 'suspensa: a demanda já está fora');
         const visao = await encerrarA(alvo.id);
         assert.equal(visao.solicitacao.status, 'ENCERRADA');
       } finally {
-        await q('UPDATE funcionarios SET ativo = true WHERE id = $1', [trabalhador]);
+        await q("UPDATE funcionarios SET situacao = 'ATIVO' WHERE id = $1", [trabalhador]);
       }
       assert.deepEqual(f.numeros(await f.posicao(m)), [5, 0, 0, 5, 0], 'a encerrada não volta à demanda com a reativação');
     });

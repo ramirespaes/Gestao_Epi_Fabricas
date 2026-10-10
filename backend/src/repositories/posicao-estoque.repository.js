@@ -3,6 +3,10 @@
 const { exigirDataOperacional } = require('../utils/data-operacional');
 const { escaparCoringasLike } = require('../utils/like');
 const sqlPosicao = require('./sql/posicao-estoque');
+const classificacao = require('../utils/classificacao-material');
+
+// Grupo efetivo de exibição (082): a categoria, ou a descrição quando o grupo é "Outros" — regra única do catálogo.
+const GRUPO_EFETIVO = classificacao.SQL.grupoEfetivo('m');
 
 /**
  * A posição de estoque de TODOS os pares (empresa, material, tamanho) da
@@ -69,7 +73,7 @@ function posicaoDerivada({ comValidade, porMaterial = false }) {
             lp.ca_validade, COALESCE(lp.validade, 'sem-validade') AS validade` : '';
   const filtrosDeCadastro = comValidade
     ? `
-      WHERE ($4::text IS NULL OR m.categoria = $4::text)
+      WHERE ($4::text IS NULL OR ($4::text = 'Outros' AND m.categoria = 'Outros') OR ($4::text <> 'Outros' AND ${GRUPO_EFETIVO} = $4::text))
         AND ($5::text IS NULL OR m.tipo = $5::text)
         AND ($6::text IS NULL OR u.tamanho_chave = $6::text)
         AND ($7::text IS NULL OR lp.validade = $7::text)
@@ -115,7 +119,7 @@ function posicaoDerivada({ comValidade, porMaterial = false }) {
        SELECT m.id, '' FROM materiais m WHERE m.empresa_id = $1 AND m.ativo${noUniverso} AND m.exige_tamanho = false AND m.estoque_minimo > 0
      ),
      base AS (
-       SELECT u.material_id, u.tamanho_chave, m.nome, m.codigo_interno, m.categoria, m.tipo, m.unidade,
+       SELECT u.material_id, u.tamanho_chave, m.nome, m.codigo_interno, m.categoria, ${GRUPO_EFETIVO} AS grupo, m.tipo, m.unidade,
               COALESCE(lp.saldo, 0) AS saldo,
               COALESCE(lp.bloqueado, 0) AS bloqueado,
               COALESCE(lp.fisico_utilizavel, 0) AS fisico_utilizavel,
@@ -168,7 +172,7 @@ const SQL_LISTAR = `WITH ${posicaoDerivada({ comValidade: true })},
         ORDER BY lower(nome), material_id, tamanho_chave
         LIMIT $10 OFFSET $11
      )
-     SELECT total.total, pagina.material_id, pagina.nome, pagina.codigo_interno, pagina.categoria, pagina.tipo, pagina.unidade,
+     SELECT total.total, pagina.material_id, pagina.nome, pagina.codigo_interno, pagina.categoria, pagina.grupo, pagina.tipo, pagina.unidade,
             pagina.tamanho_chave, pagina.saldo, pagina.bloqueado, pagina.fisico_utilizavel, pagina.demanda_pendente,
             pagina.comprometido, pagina.saldo_livre, pagina.sem_cobertura, pagina.minimo_efetivo, pagina.minimo_origem,
             pagina.abaixo_do_minimo, pagina.deficit, pagina.necessidade,
@@ -230,6 +234,7 @@ const mapearItem = (l) => ({
   material: l.nome,
   codigoInterno: l.codigo_interno ?? null,
   categoria: l.categoria ?? null,
+  grupo: l.grupo ?? null,
   tipo: l.tipo ?? null,
   tamanho: l.tamanho_chave === '' ? null : l.tamanho_chave,
   unidade: l.unidade,

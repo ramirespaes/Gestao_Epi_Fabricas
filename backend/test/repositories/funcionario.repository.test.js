@@ -29,14 +29,14 @@ const executorFalso = (linhas = []) => {
 const linha = (extra = {}) => ({
   id: 70, empresa_id: EMPRESA_A, grupo_homogeneo_id: GHE, matricula: 'MAT-000171', nome: 'Tício de Tal',
   cpf: '52998224725', data_nascimento: '1990-03-15', setor: 'Manutenção', funcao: 'Mecânico',
-  cracha: 'CR-001284', telefone: null, ativo: true, data_admissao: '2020-06-01',
+  cracha: 'CR-001284', telefone: null, situacao: 'ATIVO', ativo: true, data_admissao: '2020-06-01',
   criado_em: new Date('2026-09-23T12:00:00Z'), atualizado_em: new Date('2026-09-23T12:00:00Z'), ...extra,
 });
 
 const mapeada = {
   id: 70, empresaId: EMPRESA_A, grupoHomogeneoId: GHE, matricula: 'MAT-000171', nome: 'Tício de Tal',
   cpf: '52998224725', dataNascimento: '1990-03-15', setor: 'Manutenção', funcao: 'Mecânico',
-  cracha: 'CR-001284', telefone: null, ativo: true, dataAdmissao: '2020-06-01',
+  cracha: 'CR-001284', telefone: null, situacao: 'ATIVO', ativo: true, dataAdmissao: '2020-06-01',
   criadoEm: new Date('2026-09-23T12:00:00Z'), atualizadoEm: new Date('2026-09-23T12:00:00Z'),
 };
 
@@ -135,14 +135,25 @@ describe('atualizar', () => {
     await atualizar(executor, EMPRESA_A, 70, { nome: 'Tício T.' });
     const { texto, valores } = executor.chamadas[0];
     const set = texto.slice(texto.search(/\bset\b/i), texto.search(/\bwhere\b/i));
-    for (const c of ['matricula', 'nome', 'grupo_homogeneo_id', 'data_nascimento', 'setor', 'funcao', 'cracha', 'telefone', 'ativo']) {
+    for (const c of ['matricula', 'nome', 'grupo_homogeneo_id', 'data_nascimento', 'setor', 'funcao', 'cracha', 'telefone', 'situacao']) {
       assert.match(set, new RegExp(`${c}\\s*=`, 'i'));
     }
     assert.doesNotMatch(set, /empresa_id\s*=/i);
     assert.doesNotMatch(set, /criado_em\s*=/i);
     assert.doesNotMatch(set, /\bid\s*=/i);
     assert.doesNotMatch(set, /\bcpf\s*=/i, 'CPF é imutável: o UPDATE não tem cláusula para a coluna (ela só aparece na projeção RETURNING)');
-    assert.deepEqual(valores, [EMPRESA_A, 70, null, 'Tício T.', false, null, false, null, false, null, false, null, false, null, false, null, null, false, null]);
+    assert.deepEqual(valores, [EMPRESA_A, 70, null, 'Tício T.', false, null, false, null, false, null, false, null, false, null, false, null, null, false, null, false]);
+  });
+
+  test('o pedido legado ativo true/false grava situacao ATIVO/INATIVO (ativo é coluna gerada desde a 084); sem ativo, a situação não é tocada', async () => {
+    for (const [pedido, esperado] of [[{ ativo: true }, 'ATIVO'], [{ ativo: false }, 'INATIVO'], [{ nome: 'X' }, null]]) {
+      const executor = executorFalso([linha()]);
+      await atualizar(executor, EMPRESA_A, 70, pedido);
+      const { texto, valores } = executor.chamadas[0];
+      assert.equal(valores[16], esperado, JSON.stringify(pedido));
+      assert.match(texto, /situacao\s*=\s*COALESCE\(\$17::text, situacao\)/i);
+      assert.doesNotMatch(texto.slice(texto.search(/\bset\b/i), texto.search(/\bwhere\b/i)), /\bativo\s*=/i, 'nunca escreve a coluna gerada');
+    }
   });
 
   test('CPF imutável: atualizar recusa a chave cpf com qualquer valor (válido, inválido ou null), sem consultar', async () => {
@@ -199,10 +210,10 @@ describe('C4 (25/09/2026) — datas como AAAA-MM-DD, admissão e CPF exato', () 
     await atualizar(executor, EMPRESA_A, 70, { dataAdmissao: '2021-02-03', dataAdmissaoInformado: true });
     const { texto, valores } = executor.chamadas[0];
     assert.match(texto, /data_admissao = CASE WHEN \$18::boolean THEN \$19 ELSE data_admissao END/);
-    assert.deepEqual(valores.slice(17), [true, '2021-02-03']);
+    assert.deepEqual(valores.slice(17, 19), [true, '2021-02-03']);
     const limpar = executorFalso([linha()]);
     await atualizar(limpar, EMPRESA_A, 70, { dataAdmissao: null, dataAdmissaoInformado: true });
-    assert.deepEqual(limpar.chamadas[0].valores.slice(17), [true, null]);
+    assert.deepEqual(limpar.chamadas[0].valores.slice(17, 19), [true, null]);
   });
 
   test('CPF exato: igualdade (nunca ILIKE, nunca parcial), só 11 dígitos, mesma cláusula em listar e contar', async () => {

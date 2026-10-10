@@ -67,6 +67,8 @@ describe('escopo do provisionamento do MASTER', () => {
         ['operations', ['visualizar']],
         ['epiFicha', ['visualizar']],
         ['request', ['visualizar', 'criar', 'editar']],
+        ['reportsAudit', ['visualizar']],
+        ['reportsFiscal', ['visualizar']],
       ],
     );
     assert.deepEqual([...escopo.acoes], ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS']);
@@ -78,7 +80,9 @@ describe('escopo do provisionamento do MASTER', () => {
   test('o escopo cobre os recursos/ações das rotas dos Blocos 9 e 10 e o Pedido de EPI do Bloco 12 (05/10/2026) e NADA além deles (não concede "tudo" ao MASTER)', () => {
     const solicitacaoRoutes = require('../../src/routes/solicitacao-epi.routes');
     const recursosDasRotas = new Set([materialRoutes.RECURSO, estoqueRoutes.RECURSO, estoqueRoutes.RECURSO_VALIDADE, estoqueRoutes.RECURSO_OPERACOES,
-      funcionarioRoutes.RECURSO, gheRoutes.RECURSO, itensDisponiveisRoutes.RECURSO, dashboardRoutes.RECURSO, entregaEpiRoutes.RECURSO_FICHA, solicitacaoRoutes.RECURSO_SOLICITACAO]);
+      funcionarioRoutes.RECURSO, gheRoutes.RECURSO, itensDisponiveisRoutes.RECURSO, dashboardRoutes.RECURSO, entregaEpiRoutes.RECURSO_FICHA, solicitacaoRoutes.RECURSO_SOLICITACAO,
+      'reportsAudit' /* 12K-D5: relatorio.routes.js (literal, como o teste de efeito real confere) */,
+      'reportsFiscal' /* 12K-D6: relatorio.routes.js (literal) */]);
     const recursosDoEscopo = new Set(recursos.ESCOPO_PROVISIONAMENTO_MASTER.recursos.map((r) => r.recurso));
     assert.deepEqual([...recursosDoEscopo].sort(), [...recursosDasRotas].sort());
     assert.deepEqual([...recursos.ESCOPO_PROVISIONAMENTO_MASTER.acoes], [estoqueRoutes.ACAO_ENTRADA_ESTOQUE, estoqueRoutes.ACAO_BAIXA_ESTOQUE, entregaEpiRoutes.ACAO_REALIZAR_ENTREGA, 'IMPORTAR_FUNCIONARIOS']);

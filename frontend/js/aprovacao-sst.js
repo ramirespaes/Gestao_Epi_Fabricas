@@ -249,7 +249,7 @@
             no('span', { class: 'request-meta' }, [
               no('strong', { texto: 'Pedido nº ' + s.numero }),
               no('span', { texto: dataHora(s.criadaEm) + (propria ? ' · Criado por você' : '') }),
-              no('span', { texto: s.funcionario.nome + ' (matrícula ' + s.funcionario.matricula + ')' }),
+              no('span', { texto: s.funcionario.nome + (s.funcionario.matricula ? ' (matrícula ' + s.funcionario.matricula + ')' : '') }),
               no('span', { texto: plural(s.quantidadeItens, 'item', 'itens') + ' · ' + plural(s.quantidades.solicitada, 'unidade', 'unidades') }),
             ]),
             no('span', { class: 'request-status', 'data-status': s.status, texto: S().ROTULOS_STATUS[s.status] || s.status }),
@@ -354,7 +354,7 @@
       par(dl, 'Criado em', dataHora(s.criadaEm));
       if (s.funcionario) {
         par(dl, 'Trabalhador', s.funcionario.nome + (s.funcionario.ativo === false ? ' (inativo)' : ''));
-        par(dl, 'Matrícula', s.funcionario.matricula);
+        par(dl, 'Matrícula', s.funcionario.matricula || '—');
         par(dl, 'Setor', s.funcionario.setor);
         par(dl, 'Função', s.funcionario.funcao);
       }

@@ -72,7 +72,7 @@ describe('solicitações encerráveis — HTTP (PostgreSQL real)', () => {
     });
     S.suspensa = await criar(A, d.solicitante, tSuspenso, m, 1);
     await aprovar(A, S.suspensa, d.sst1);
-    await pool.query('UPDATE funcionarios SET ativo = false WHERE id = $1', [tSuspenso]);
+    await pool.query("UPDATE funcionarios SET situacao = 'INATIVO' WHERE id = $1", [tSuspenso]);
 
     S.pendente = await criar(A, d.solicitante, d.trabalhador, m, 1);
     S.reprovada = await criar(A, d.solicitante, d.trabalhador, m, 1);

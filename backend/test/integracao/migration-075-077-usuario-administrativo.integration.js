@@ -150,11 +150,11 @@ describe('migrations 075–077 — CPF da identidade, dados administrativos do v
     assert.deepEqual(rows.map((r) => r.ip).sort(), ['2001:db8::10', '203.0.113.10'], 'dois endereços, na forma canônica');
   });
 
-  test('manifesto: 78 migrations, 000 a 077; nenhuma migration anterior foi editada', () => {
+  test('manifesto: 85 migrations, 000 a 084; nenhuma migration anterior foi editada', () => {
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO, 'checksums.json'), 'utf8'));
     const arquivos = fs.readdirSync(DIRETORIO).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
-    assert.equal(arquivos.length, 79);
-    assert.deepEqual(arquivos.slice(-4, -1), [ARQUIVOS['075'], ARQUIVOS['076'], ARQUIVOS['077']]);
+    assert.equal(arquivos.length, 85);
+    assert.deepEqual(arquivos.slice(-10, -7), [ARQUIVOS['075'], ARQUIVOS['076'], ARQUIVOS['077']]);
     assert.deepEqual(Object.keys(manifesto.migrations).sort(), arquivos);
     const crypto = require('node:crypto');
     const sha = (f) => crypto.createHash('sha256').update(fs.readFileSync(path.join(DIRETORIO, f))).digest('hex');

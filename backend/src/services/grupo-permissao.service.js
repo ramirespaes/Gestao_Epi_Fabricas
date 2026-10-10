@@ -7,6 +7,7 @@ const permissaoRepo = require('../repositories/permissao.repository');
 const usuarioRepo = require('../repositories/usuario.repository');
 const auditoriaRepo = require('../repositories/auditoria.repository');
 const recursos = require('../rbac/recursos');
+const { operacoesGarantidasNaAtribuicaoDireta } = require('../rbac/toggles');
 const autoridade = require('./autoridade-administrativa');
 
 /**
@@ -42,7 +43,10 @@ const autoridade = require('./autoridade-administrativa');
  * campo AUSENTE preserva o valor atual; campo informado como null passa a
  * herdar; true concede; false nega. Alterar "excluir" jamais reescreve
  * "visualizar", "criar" ou "editar" — e FALSE nunca é convertido em NULL,
- * nem TRUE é presumido em lugar nenhum.
+ * nem TRUE é presumido em lugar nenhum — com UMA exceção declarada, a dependência funcional de Funcionários
+ * (RBAC da Gestão de Funcionários): conceder podeCriar ou podeEditar de `employeeHistory` sem falar de podeVisualizar também grava
+ * podeVisualizar = TRUE (inclusive sobre uma negação anterior: a concessão nova é uma decisão nova), e pedir a concessão junto com
+ * podeVisualizar = FALSE ou NULL explícito no mesmo pedido é recusado (400 VALIDACAO); campo omitido aplica a dependência. Revogar nunca revoga a leitura por tabela; nenhum outro recurso muda.
  *
  * A composição parcial é resolvida AQUI, dentro da transação: o estado
  * atual é lido depois de travar o grupo, mesclado com o que foi informado,
@@ -278,9 +282,21 @@ async function configurarRecurso(pool, dados) {
 
     await travarGrupoDaEmpresa(client, empresaId, grupoId);
 
+    // Funcionários: conceder criar/editar e negar a leitura (false) ou limpá-la (null EXPLÍCITO) no MESMO pedido é contraditório. Recusa depois de a autoridade e a existência do
+    // grupo (da empresa) serem confirmadas e antes de ler ou escrever qualquer configuração: nada é gravado nem auditado.
+    const concedidas = [['podeCriar', 'criar'], ['podeEditar', 'editar']].filter(([flag]) => informadas[flag] === true).map(([, op]) => op);
+    const leituraGarantida = operacoesGarantidasNaAtribuicaoDireta(recurso, concedidas).includes('visualizar');
+    if (leituraGarantida && (informadas.podeVisualizar === false || informadas.podeVisualizar === null)) {
+      throw HttpError.validacao([{ campo: 'body.podeVisualizar', codigo: 'VALOR_NAO_PERMITIDO', mensagem: 'Conceder criar ou editar exige a leitura: não envie podeVisualizar=false nem podeVisualizar=null no mesmo pedido' }]);
+    }
+
     const atual = await grupoPermissaoRepo.buscarRecurso(client, empresaId, grupoId, recurso);
     const anterior = instantaneoRecurso(atual) ?? { ...ESTADO_RECURSO_VAZIO };
     const novo = { ...anterior, ...informadas };
+    // Funcionários: conceder criar ou editar ao grupo garante a leitura (mesmas dependências dos toggles). Quando o pedido não fala de
+    // visualizar e o grupo não a concede ainda (sem opinião ou com negação anterior: a concessão nova é uma decisão nova), a leitura passa a true.
+    const garantiaDeLeitura = leituraGarantida && informadas.podeVisualizar === undefined && anterior.podeVisualizar !== true;
+    if (garantiaDeLeitura) novo.podeVisualizar = true;
 
     if (atual !== null && mesmasOperacoes(anterior, novo)) {
       return { configuracao: atual, alterado: false };
@@ -297,7 +313,9 @@ async function configurarRecurso(pool, dados) {
       referencia: String(grupoId),
       ip,
       dispositivo,
-      contexto: { recurso, operacoesInformadas: Object.keys(informadas), criouConfiguracao: atual === null },
+      contexto: {
+        recurso, operacoesInformadas: Object.keys(informadas), criouConfiguracao: atual === null, ...(garantiaDeLeitura ? { garantiaDeLeitura: true } : {}),
+      },
       dadosAnteriores: instantaneoRecurso(atual),
       dadosNovos: instantaneoRecurso(configuracao),
     });

@@ -5,6 +5,7 @@ const entregaContextoRepo = require('../repositories/entrega-epi-contexto.reposi
 const contextoRepo = require('../repositories/solicitacao-epi-contexto.repository');
 const { trabalhadorDoContexto, materialDoContexto } = require('./solicitacao-epi-publica');
 const { HttpError } = require('../errors/HttpError');
+const { exigirPodeReceberEpi } = require('../utils/situacao-funcionario');
 
 /**
  * Contexto da nova solicitação de EPI (12G-0, L2), só leitura: o que quem pede
@@ -69,7 +70,7 @@ async function listarMateriais(pool, {
   return emLeitura(pool, async (client) => {
     const funcionario = await funcionarioRepo.buscarPorId(client, empresaId, funcionarioId);
     if (funcionario === null) throw HttpError.notFound('FUNCIONARIO_NAO_ENCONTRADO', 'Trabalhador não encontrado');
-    if (funcionario.ativo !== true) throw HttpError.conflict('FUNCIONARIO_INATIVO', 'Trabalhador inativo não recebe EPI');
+    exigirPodeReceberEpi(funcionario);
     const filtros = { gheId: funcionario.grupoHomogeneoId, busca, previstoNoGhe };
     const materiais = await contextoRepo.listarMateriais(client, empresaId, { ...filtros, pagina, limite });
     const total = await contextoRepo.contarMateriais(client, empresaId, filtros);

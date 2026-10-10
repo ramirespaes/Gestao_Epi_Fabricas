@@ -33,7 +33,7 @@ const { httpConfig } = require('../../src/config/http');
  * auditoria são separadas e cada link aponta para a origem do seu portal.
  */
 
-const TODAS_AS_MIGRATIONS = [...Array.from({ length: 56 }, (_, i) => String(i).padStart(3, '0')), '072', '074', '075', '076', '077'];
+const TODAS_AS_MIGRATIONS = [...Array.from({ length: 56 }, (_, i) => String(i).padStart(3, '0')), '072', '074', '075', '076', '077', '079'];
 const SENHA = 'senha-forte-do-isolamento-2026';
 const SENHA_ADMIN = 'planeta-nebulosa-ozonio-42';
 const { cookieNome: C_EMPRESA, cookieNomeGlobal: C_GLOBAL } = authConfig.sessao;

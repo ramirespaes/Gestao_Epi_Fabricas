@@ -10,6 +10,10 @@ const {
  * unicidade de nome e vínculos são do serviço. `strictObject` em todo
  * corpo; `ativo` nunca em corpo (inativar/reativar têm rotas próprias).
  * Opcionais com `.nullable()` (não `z.union`, ver correção da Etapa A).
+ *
+ * `codigo`: aqui só o tipo (string). Normalização, formato e obrigatoriedade são do serviço
+ * (utils/codigo-ghe.js), que responde com códigos de domínio. No PATCH o nulo passa de propósito:
+ * a tentativa de remover o código é recusada pelo serviço (GHE_CODIGO_INVALIDO).
  */
 
 const NOME_MAXIMO = 150;
@@ -19,6 +23,7 @@ const FUNCAO_MAXIMO = 100;
 const TEXTO_LONGO_MAXIMO = 2000;
 const BUSCA_MAXIMA = 100;
 
+const codigo = z.string();
 const nome = textoCurto(NOME_MAXIMO, 'NOME_INVALIDO', 'Nome do GHE inválido');
 const descricao = textoCurto(TEXTO_LONGO_MAXIMO, 'DESCRICAO_INVALIDA', 'Descrição inválida');
 const setor = textoCurto(SETOR_MAXIMO, 'SETOR_INVALIDO', 'Setor inválido');
@@ -31,6 +36,7 @@ const paramsComId = z.strictObject({ id: idParametro });
 const criar = {
   body: z.strictObject({
     nome,
+    codigo: codigo.optional(),
     descricao: descricao.nullable().optional(),
     setor: setor.nullable().optional(),
     funcao: funcao.nullable().optional(),
@@ -48,6 +54,7 @@ const alterar = {
   params: paramsComId,
   body: z.strictObject({
     nome: nome.optional(),
+    codigo: codigo.nullable().optional(),
     descricao: descricao.nullable().optional(),
     setor: setor.nullable().optional(),
     funcao: funcao.nullable().optional(),

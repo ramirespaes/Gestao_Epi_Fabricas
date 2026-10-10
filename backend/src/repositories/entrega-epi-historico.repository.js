@@ -39,7 +39,7 @@ const FILTRO = `
 const SELECIONAR = `
   SELECT i.id AS item_id, e.id AS entrega_id, f.id AS ficha_id, f.numero AS ficha_numero,
          e.trabalhador_nome, e.trabalhador_matricula, e.trabalhador_setor, e.origem, e.responsavel_nome,
-         i.material_id, i.material_nome, i.material_tipo, l.tamanho, i.quantidade, i.motivo, i.previsto_no_ghe,
+         i.material_id, i.material_nome, i.material_tipo, i.material_grupo_protecao, l.tamanho, i.quantidade, i.motivo, i.previsto_no_ghe,
          l.ca_numero, to_char(l.ca_validade, 'YYYY-MM-DD') AS ca_validade,
          to_char(e.data_operacional, 'YYYY-MM-DD') AS data_entrega, e.entregue_em,
          i.material_prazo_uso_dias,
@@ -53,7 +53,7 @@ const mapear = (r) => ({
   fichaNumero: r.ficha_numero,
   origem: r.origem,
   trabalhador: { nome: r.trabalhador_nome, matricula: r.trabalhador_matricula, setor: r.trabalhador_setor },
-  material: { id: r.material_id, nome: r.material_nome, tipo: r.material_tipo },
+  material: { id: r.material_id, nome: r.material_nome, tipo: r.material_tipo, grupoProtecao: r.material_grupo_protecao ?? null },
   tamanho: r.tamanho,
   quantidade: r.quantidade,
   motivo: r.motivo,

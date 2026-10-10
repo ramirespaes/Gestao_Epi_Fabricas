@@ -238,12 +238,12 @@ describe('posição e cobertura FIFO — PostgreSQL real', () => {
     await entrada(m, 1);
     assert.deepEqual((await coberturaDe(m)).map((i) => [i.solicitacaoId, i.coberta]), [[primeira.solicitacao.id, 1], [segunda.solicitacao.id, 0]]);
 
-    await pool().query('UPDATE funcionarios SET ativo = false WHERE id = $1', [trabalhadores[0]]);
+    await pool().query("UPDATE funcionarios SET situacao = 'INATIVO' WHERE id = $1", [trabalhadores[0]]);
     assert.deepEqual((await coberturaDe(m)).map((i) => [i.solicitacaoId, i.coberta]), [[segunda.solicitacao.id, 1]], 'a suspensa sai e a seguinte ganha a cobertura');
     assert.deepEqual(numeros(await posicao(m)), [1, 1, 1, 0, 0]);
     assert.equal((await pool().query('SELECT status FROM solicitacoes_epi WHERE id = $1', [primeira.solicitacao.id])).rows[0].status, 'APROVADA', 'o status persistido não muda');
 
-    await pool().query('UPDATE funcionarios SET ativo = true WHERE id = $1', [trabalhadores[0]]);
+    await pool().query("UPDATE funcionarios SET situacao = 'ATIVO' WHERE id = $1", [trabalhadores[0]]);
     assert.deepEqual((await coberturaDe(m)).map((i) => [i.solicitacaoId, i.coberta]), [[primeira.solicitacao.id, 1], [segunda.solicitacao.id, 0]], 'a mais antiga volta à frente');
 
     await pool().query('UPDATE materiais SET ativo = false WHERE id = $1', [m]);

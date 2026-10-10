@@ -2,7 +2,7 @@
 
 const { z } = require('zod');
 const {
-  idParametro, booleanoQuery, paginacaoQuery, textoCurto, LIMITES,
+  idParametro, idCorpo, booleanoQuery, paginacaoQuery, textoCurto, LIMITES,
 } = require('./campos.schema');
 const materialTamanhoRepo = require('../repositories/material-tamanho.repository');
 
@@ -51,7 +51,11 @@ const TIPO_DESCRICAO_MAXIMA = 100;
 
 const nome = textoCurto(NOME_MAXIMO, 'NOME_INVALIDO', 'Nome do material inválido');
 const tipo = textoCurto(TIPO_MAXIMO, 'TIPO_INVALIDO', 'Tipo inválido');
-const tipoDescricao = textoCurto(TIPO_DESCRICAO_MAXIMA, 'TIPO_DESCRICAO_INVALIDA', 'Descrição do tipo inválida');
+// Classificação V2 (082): as descrições de "Outros" e o grupo de proteção chegam ao serviço, que decide com o código
+// do campo (obrigatória, inválida ou não se aplica); aqui só o teto grosseiro. `tipoMaterialId` é id do catálogo.
+const tipoDescricao = z.string().max(TIPO_DESCRICAO_MAXIMA * 4);
+const descricaoOutros = z.string().max(TIPO_DESCRICAO_MAXIMA * 4);
+const grupoProtecao = z.string().max(240);
 const fabricante = textoCurto(FABRICANTE_MAXIMO, 'FABRICANTE_INVALIDO', 'Fabricante inválido');
 const unidade = textoCurto(UNIDADE_MAXIMA, 'UNIDADE_INVALIDA', 'Unidade inválida');
 const busca = textoCurto(BUSCA_MAXIMA, 'BUSCA_INVALIDA', 'Termo de busca inválido');
@@ -97,6 +101,10 @@ const criar = {
     descricao: descricao.nullable().optional(),
     tipo: tipo.nullable().optional(),
     tipoDescricao: tipoDescricao.nullable().optional(),
+    categoriaDescricao: descricaoOutros.nullable().optional(),
+    grupoProtecao: grupoProtecao.nullable().optional(),
+    grupoProtecaoDescricao: descricaoOutros.nullable().optional(),
+    tipoMaterialId: idCorpo.nullable().optional(),
     fabricante: fabricante.nullable().optional(),
     prazoUsoDias,
     exigeTamanho,
@@ -132,6 +140,10 @@ const alterar = {
     descricao: descricao.nullable().optional(),
     tipo: tipo.nullable().optional(),
     tipoDescricao: tipoDescricao.nullable().optional(),
+    categoriaDescricao: descricaoOutros.nullable().optional(),
+    grupoProtecao: grupoProtecao.nullable().optional(),
+    grupoProtecaoDescricao: descricaoOutros.nullable().optional(),
+    tipoMaterialId: idCorpo.nullable().optional(),
     fabricante: fabricante.nullable().optional(),
     prazoUsoDias: prazoUsoDias.optional(),
     exigeTamanho: exigeTamanho.optional(),

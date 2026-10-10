@@ -131,7 +131,7 @@ describe('rotas da entrega de EPI — 10E e 10F (PostgreSQL real)', () => {
     const funcionario = async (empresaId, valores) => (await inserir(pool, 'funcionarios', { empresa_id: empresaId, ...valores })).id;
     d.funcA1 = await funcionario(empresa.A, { matricula: 'A-001', nome: 'Ana Fictícia', cpf: CPF.a1, grupo_homogeneo_id: d.gheA, setor: 'Produção', funcao: 'Operadora' });
     d.funcA2 = await funcionario(empresa.A, { matricula: 'A-002', nome: 'Bruno Fictício', cpf: CPF.a2 });
-    d.funcInativo = await funcionario(empresa.A, { matricula: 'A-003', nome: 'Carla Inativa', cpf: CPF.inativo, ativo: false });
+    d.funcInativo = await funcionario(empresa.A, { matricula: 'A-003', nome: 'Carla Inativa', cpf: CPF.inativo, situacao: 'INATIVO' });
     d.funcB1 = await funcionario(empresa.B, { matricula: 'B-001', nome: 'Beatriz da Beta', cpf: CPF.b1 });
 
     d.botina = await criarMaterial(pool, empresa.A, 'Botina de segurança', { tipo: 'Calçado', codigoInterno: 'BOT-01', unidade: 'par' });
@@ -593,9 +593,9 @@ describe('rotas da entrega de EPI — 10E e 10F (PostgreSQL real)', () => {
       assert.deepEqual(await ids(`materialId=${d.uniforme}`), [fichaAna]);
       assert.deepEqual((await ids(`materialId=${d.botina}`)).sort((a, b) => a - b), [fichaAna, fichaBruno].sort((a, b) => a - b));
       assert.deepEqual(await ids('ativo=false'), []);
-      await q('UPDATE funcionarios SET ativo = false WHERE id = $1', [d.funcA2]);
+      await q("UPDATE funcionarios SET situacao = 'INATIVO' WHERE id = $1", [d.funcA2]);
       assert.deepEqual(await ids('ativo=false'), [fichaBruno]);
-      await q('UPDATE funcionarios SET ativo = true WHERE id = $1', [d.funcA2]);
+      await q("UPDATE funcionarios SET situacao = 'ATIVO' WHERE id = $1", [d.funcA2]);
       assert.deepEqual((await ids(`de=${HOJE}&ate=${HOJE}`)).length, 2);
       assert.deepEqual(await ids(`de=${somarDias(HOJE, 1)}`), []);
       assert.deepEqual(await ids(`ate=${ONTEM}`), []);

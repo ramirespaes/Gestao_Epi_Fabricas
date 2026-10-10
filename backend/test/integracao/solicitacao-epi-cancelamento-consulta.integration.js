@@ -265,12 +265,12 @@ describe('cancelamento e consulta da solicitação de EPI — serviço (PostgreS
       const trabalhador = await d.novoTrabalhador(d.empresaA, { gheId: d.gheA });
       const { solicitacao, itens } = await criar([item(m, { quantidade: 2 })], { funcionarioId: trabalhador });
       await decidir(solicitacao.id, [aprovar(itens[0])]);
-      await q('UPDATE funcionarios SET ativo = false WHERE id = $1', [trabalhador]);
+      await q("UPDATE funcionarios SET situacao = 'INATIVO' WHERE id = $1", [trabalhador]);
       let lida = await buscar(solicitacao.id);
       assert.equal(lida.solicitacao.status, 'APROVADA');
       assert.deepEqual([lida.itens[0].situacao, lida.itens[0].cobertura, lida.solicitacao.situacaoOperacional], ['SUSPENSA', null, 'SUSPENSA']);
       assert.equal(lida.itens[0].posicao.demandaPendente, 0, 'a demanda suspensa não entra no compromisso');
-      await q('UPDATE funcionarios SET ativo = true WHERE id = $1', [trabalhador]);
+      await q("UPDATE funcionarios SET situacao = 'ATIVO' WHERE id = $1", [trabalhador]);
       lida = await buscar(solicitacao.id);
       assert.equal(lida.solicitacao.situacaoOperacional, 'PRONTA_PARA_ENTREGA');
 
@@ -321,11 +321,11 @@ describe('cancelamento e consulta da solicitação de EPI — serviço (PostgreS
       const { solicitacao, itens } = await criar([item(m, { quantidade: 3 })], { funcionarioId: trabalhador });
       await decidir(solicitacao.id, [aprovar(itens[0])]);
       await entregarReal(solicitacao.id, [[itens[0].id, lote, 1]]);
-      await q('UPDATE funcionarios SET ativo = false WHERE id = $1', [trabalhador]);
+      await q("UPDATE funcionarios SET situacao = 'INATIVO' WHERE id = $1", [trabalhador]);
       const suspensa = await buscar(solicitacao.id);
       assert.equal(suspensa.solicitacao.status, 'APROVADA');
       assert.deepEqual([suspensa.itens[0].situacao, suspensa.itens[0].quantidadeEntregue, suspensa.itens[0].quantidadePendente, suspensa.itens[0].cobertura], ['SUSPENSA', 1, 2, null]);
-      await q('UPDATE funcionarios SET ativo = true WHERE id = $1', [trabalhador]);
+      await q("UPDATE funcionarios SET situacao = 'ATIVO' WHERE id = $1", [trabalhador]);
       assert.equal((await buscar(solicitacao.id)).itens[0].situacao, 'PARCIALMENTE_ENTREGUE');
     });
 

@@ -105,7 +105,7 @@ describe('12G-6 — Dashboard: aguardando SST, aguardando estoque e disponíveis
     await f.estoque(m6, 5);
     const trabalhadorSuspenso = await d.novoTrabalhador(d.empresaA, { gheId: d.gheA });
     await f.aprovada({ materialId: m6, quantidade: 1, funcionarioId: trabalhadorSuspenso });
-    await pool.query('UPDATE funcionarios SET ativo = false WHERE id = $1', [trabalhadorSuspenso]); // A6: toda suspensa, fora das duas
+    await pool.query("UPDATE funcionarios SET situacao = 'INATIVO' WHERE id = $1", [trabalhadorSuspenso]); // A6: toda suspensa, fora das duas
     const a7 = await decidida([{ materialId: await f.material(), quantidade: 2 }, { materialId: await f.material(), quantidade: 1, decisao: 'REPROVADO' }]); // A7: APROVADA_PARCIAL sem estoque
     assert.equal(a7.status, 'APROVADA_PARCIAL');
     const m8 = await f.material();

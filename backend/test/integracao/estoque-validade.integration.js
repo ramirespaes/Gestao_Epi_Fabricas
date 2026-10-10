@@ -159,7 +159,7 @@ describe('E7 — validade de estoque por lote (PostgreSQL real)', () => {
     assert.deepEqual(resumo(lote.semCa), ['SEM_CA', 8, 8, 0]);
     assert.deepEqual(resumo(lote.naoExige), ['NAO_EXIGE_CA', 6, 0, 6]);
     assert.deepEqual(l[lote.vencida], {
-      loteId: lote.vencida, materialId: m.botina, material: 'Botina de segurança', codigoInterno: 'COD-botina', categoria: 'EPI', tipo: 'Sapatão / Botina',
+      loteId: lote.vencida, materialId: m.botina, material: 'Botina de segurança', codigoInterno: 'COD-botina', categoria: 'EPI', grupo: 'EPI', tipo: 'Sapatão / Botina',
       materialAtivo: true, tamanho: '40', caNumero: 'CA-vencida', caValidade: somarDias(HOJE, -1), fisico: 5, bloqueado: 5, disponivel: 0, situacaoCa: 'VENCIDO',
     });
     assert.deepEqual([l[lote.naoExige].caNumero, l[lote.naoExige].caValidade], [null, null], 'nada de CA inventado');

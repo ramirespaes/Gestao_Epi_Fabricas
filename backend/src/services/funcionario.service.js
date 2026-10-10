@@ -4,7 +4,9 @@ const { HttpError } = require('../errors/HttpError');
 const funcionarioRepo = require('../repositories/funcionario.repository');
 const gheRepo = require('../repositories/grupo-homogeneo-exposicao.repository');
 const auditoriaRepo = require('../repositories/auditoria.repository');
-const { normalizarCpf, cpfTemDigitosVerificadoresValidos } = require('../utils/normalizacao');
+const { normalizarCpf, cpfTemDigitosVerificadoresValidos, normalizarNomeGhe } = require('../utils/normalizacao');
+const { TRANSICOES, situacaoDe } = require('../utils/situacao-funcionario');
+const { dataOperacional } = require('../utils/data-operacional');
 const { linhaImportacao, LINHAS_POR_LOTE } = require('../schemas/funcionario.schema');
 const declaracaoLgpd = require('./declaracao-lgpd');
 
@@ -66,6 +68,10 @@ const ACAO_AUDITORIA_CRIACAO = 'FUNCIONARIO_CRIADO';
 const ACAO_AUDITORIA_ALTERACAO = 'FUNCIONARIO_ALTERADO';
 const ACAO_AUDITORIA_INATIVACAO = 'FUNCIONARIO_INATIVADO';
 const ACAO_AUDITORIA_REATIVACAO = 'FUNCIONARIO_REATIVADO';
+const ACAO_AUDITORIA_SITUACAO = 'FUNCIONARIO_SITUACAO_ALTERADA';
+const ACAO_AUDITORIA_GHE = 'FUNCIONARIO_GHE_ALTERADO';
+const ACAO_AUDITORIA_CPF_CONSULTADO = 'FUNCIONARIO_CPF_CONSULTADO';
+const ORIGEM_AUDITORIA_SITUACAO = 'GESTAO_FUNCIONARIOS';
 
 const MSG_MATRICULA_INVALIDA = 'Matrícula inválida';
 const MSG_NOME_INVALIDO = 'Nome de funcionário inválido';
@@ -77,6 +83,7 @@ const MSG_NAO_ENCONTRADO = 'Funcionário não encontrado';
 const MSG_GHE_INVALIDO = 'GHE inexistente nesta empresa';
 const MSG_GHE_INATIVO = 'GHE inativo não aceita novos vínculos';
 const MSG_SEM_ALTERACAO = 'Nenhum campo para alterar';
+const MSG_GHE_OBRIGATORIO = 'O funcionário já tem GHE: informe outro GHE ativo para trocá-lo; o vínculo não pode ser removido';
 
 const CAMPOS_SENSIVEIS = ['cpf', 'dataNascimento', 'telefone'];
 
@@ -105,6 +112,25 @@ function datasValidas(dataNascimento, dataAdmissao) {
 function exigirDatasValidas(dataNascimento, dataAdmissao) {
   if (!datasValidas(dataNascimento, dataAdmissao)) {
     throw HttpError.badRequest('FUNCIONARIO_DATA_ADMISSAO_INVALIDA', MSG_DATA_ADMISSAO_INVALIDA);
+  }
+}
+
+// S4: regras de domínio das datas informadas, pela DATA CIVIL (`hoje` = dataOperacional do relógio injetado, em
+// America/Sao_Paulo; AAAA-MM-DD compara como calendário). O formato e a existência no calendário já foram do schema.
+// Só no cadastro individual e na edição: a importação em lote mantém o contrato congelado e não passa por aqui.
+const NASCIMENTO_MINIMO = '1900-01-01';
+const MSG_DATA_NASCIMENTO_INVALIDA = 'Data de nascimento inválida: deve ser a partir de 1900-01-01 e anterior a hoje';
+const MSG_DATA_ADMISSAO_FUTURA = 'Data de admissão inválida: não pode ser futura';
+
+function exigirNascimentoNoDominio(dataNascimento, hoje) {
+  if (dataNascimento !== null && dataNascimento !== undefined && (dataNascimento < NASCIMENTO_MINIMO || dataNascimento >= hoje)) {
+    throw HttpError.badRequest('FUNCIONARIO_DATA_NASCIMENTO_INVALIDA', MSG_DATA_NASCIMENTO_INVALIDA);
+  }
+}
+
+function exigirAdmissaoNaoFutura(dataAdmissao, hoje) {
+  if (dataAdmissao !== null && dataAdmissao !== undefined && dataAdmissao > hoje) {
+    throw HttpError.badRequest('FUNCIONARIO_DATA_ADMISSAO_INVALIDA', MSG_DATA_ADMISSAO_FUTURA);
   }
 }
 // Sensíveis que PODEM mudar por alterar(): cpf não está aqui de propósito.
@@ -164,6 +190,18 @@ async function emTransacao(pool, operacao) {
   } finally {
     client.release();
   }
+}
+
+/**
+ * GHE atual nas respostas (S3): `grupoHomogeneo: { id, codigo, descricao } | null`, ao lado do `grupoHomogeneoId`. Uma
+ * consulta só por chamada; o GHE inativado continua aparecendo (o vínculo existente não é apagado nem escondido).
+ */
+const resumoDoGhe = (resumos, gheId) => (gheId === null ? null : (resumos.get(gheId) ?? null));
+
+async function anexarGhe(executor, empresaId, funcionarios) {
+  const ids = [...new Set(funcionarios.map((f) => f.grupoHomogeneoId).filter((id) => id !== null))];
+  const resumos = await gheRepo.resumirPorIds(executor, empresaId, ids);
+  return funcionarios.map((f) => ({ ...f, grupoHomogeneo: resumoDoGhe(resumos, f.grupoHomogeneoId) }));
 }
 
 /** Instantâneo para auditoria — SEM cpf, dataNascimento e telefone (admissão é dado de vínculo, C4). */
@@ -237,7 +275,8 @@ function prepararCadastro({
   matricula, nome, cpf, grupoHomogeneoId = null, dataNascimento = null,
   setor = null, funcao = null, cracha = null, telefone = null, dataAdmissao = null,
 }) {
-  const matriculaNormalizada = normalizarTexto(matricula, funcionarioRepo.TAMANHO_MAXIMO_MATRICULA);
+  // Matrícula opcional: null/ausente = sem matrícula; informada, precisa ser válida (vazia nunca vira NULL).
+  const matriculaNormalizada = matricula === null || matricula === undefined ? null : normalizarTexto(matricula, funcionarioRepo.TAMANHO_MAXIMO_MATRICULA);
   const nomeNormalizado = normalizarTexto(nome, funcionarioRepo.TAMANHO_MAXIMO_NOME);
   const cpfNormalizado = normalizarCpfValido(cpf);
   const setorN = normalizarTextoOpcional(setor, funcionarioRepo.TAMANHO_MAXIMO_SETOR);
@@ -245,7 +284,7 @@ function prepararCadastro({
   const crachaN = normalizarTextoOpcional(cracha, funcionarioRepo.TAMANHO_MAXIMO_CRACHA);
   const telefoneN = normalizarTextoOpcional(telefone, funcionarioRepo.TAMANHO_MAXIMO_TELEFONE);
 
-  if (matriculaNormalizada === null) {
+  if (matriculaNormalizada === null && matricula !== null && matricula !== undefined) {
     throw HttpError.badRequest('FUNCIONARIO_MATRICULA_INVALIDA', MSG_MATRICULA_INVALIDA);
   }
   if (nomeNormalizado === null) {
@@ -288,14 +327,20 @@ async function gravarCadastro(client, { empresaId, atorId, ip, dispositivo, dado
 }
 
 async function criar(pool, {
-  empresaId, atorId, ip = null, dispositivo = null, ...campos
+  empresaId, atorId, ip = null, dispositivo = null, hoje = dataOperacional(), ...campos
 }) {
   exigirId(empresaId, 'identificador de empresa');
   exigirId(atorId, 'identificador de ator');
 
+  // Nascimento fora do domínio primeiro (precedência do S4); a relação com a admissão é de prepararCadastro.
+  exigirNascimentoNoDominio(campos.dataNascimento, hoje);
   const dados = prepararCadastro(campos);
+  exigirAdmissaoNaoFutura(dados.dataAdmissao, hoje);
 
-  return emTransacao(pool, (client) => gravarCadastro(client, { empresaId, atorId, ip, dispositivo, dados }));
+  return emTransacao(pool, async (client) => {
+    const criado = await gravarCadastro(client, { empresaId, atorId, ip, dispositivo, dados });
+    return (await anexarGhe(client, empresaId, [criado]))[0];
+  });
 }
 
 async function buscar(pool, { empresaId, funcionarioId }) {
@@ -306,7 +351,31 @@ async function buscar(pool, { empresaId, funcionarioId }) {
   if (funcionario === null) {
     throw HttpError.notFound('FUNCIONARIO_NAO_ENCONTRADO', MSG_NAO_ENCONTRADO);
   }
-  return funcionario;
+  return (await anexarGhe(pool, empresaId, [funcionario]))[0];
+}
+
+/**
+ * Revelação do CPF completo para a edição (única rota que o devolve). O funcionário é achado só pela empresa da sessão
+ * (outra empresa e inexistente são o mesmo 404) e a auditoria — só metadados, nunca o CPF — é gravada na MESMA transação:
+ * se ela falhar, nada é devolvido.
+ */
+async function revelarCpf(pool, {
+  empresaId, atorId, funcionarioId, ip = null, dispositivo = null,
+}) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirId(atorId, 'identificador de ator');
+  exigirId(funcionarioId, 'identificador de funcionário');
+  return emTransacao(pool, async (client) => {
+    const funcionario = await funcionarioRepo.buscarPorId(client, empresaId, funcionarioId);
+    if (funcionario === null) {
+      throw HttpError.notFound('FUNCIONARIO_NAO_ENCONTRADO', MSG_NAO_ENCONTRADO);
+    }
+    await auditoriaRepo.registrar(client, {
+      empresaId, usuarioId: atorId, acao: ACAO_AUDITORIA_CPF_CONSULTADO, referencia: String(funcionario.id), ip, dispositivo,
+      contexto: { finalidade: 'EDICAO' },
+    });
+    return { cpf: funcionario.cpf };
+  });
 }
 
 async function listar(pool, {
@@ -320,7 +389,7 @@ async function listar(pool, {
     funcionarioRepo.contarPorEmpresa(pool, empresaId, { ativo, busca, grupoHomogeneoId, cpf }),
   ]);
 
-  return { funcionarios, total, pagina, limite };
+  return { funcionarios: await anexarGhe(pool, empresaId, funcionarios), total, pagina, limite };
 }
 
 async function alterar(pool, dados) {
@@ -343,7 +412,7 @@ async function alterar(pool, dados) {
     setor, setorInformado = false, funcao, funcaoInformado = false,
     cracha, crachaInformado = false, telefone, telefoneInformado = false,
     dataAdmissao, dataAdmissaoInformado = false,
-    ip = null, dispositivo = null,
+    ip = null, dispositivo = null, hoje = dataOperacional(),
   } = dados;
   exigirId(empresaId, 'identificador de empresa');
   exigirId(atorId, 'identificador de ator');
@@ -351,7 +420,7 @@ async function alterar(pool, dados) {
 
   const alterarMatricula = matricula !== undefined;
   const alterarNome = nome !== undefined;
-  const matriculaN = alterarMatricula ? normalizarTexto(matricula, funcionarioRepo.TAMANHO_MAXIMO_MATRICULA) : null;
+  const matriculaN = alterarMatricula && matricula !== null ? normalizarTexto(matricula, funcionarioRepo.TAMANHO_MAXIMO_MATRICULA) : null;
   const nomeN = alterarNome ? normalizarTexto(nome, funcionarioRepo.TAMANHO_MAXIMO_NOME) : null;
   const setorN = setorInformado ? normalizarTextoOpcional(setor, funcionarioRepo.TAMANHO_MAXIMO_SETOR) : null;
   const funcaoN = funcaoInformado ? normalizarTextoOpcional(funcao, funcionarioRepo.TAMANHO_MAXIMO_FUNCAO) : null;
@@ -365,7 +434,7 @@ async function alterar(pool, dados) {
   if (nenhumCampo) {
     throw HttpError.badRequest('FUNCIONARIO_SEM_ALTERACAO', MSG_SEM_ALTERACAO);
   }
-  if (alterarMatricula && matriculaN === null) {
+  if (alterarMatricula && matricula !== null && matriculaN === null) {
     throw HttpError.badRequest('FUNCIONARIO_MATRICULA_INVALIDA', MSG_MATRICULA_INVALIDA);
   }
   if (alterarNome && nomeN === null) {
@@ -375,10 +444,18 @@ async function alterar(pool, dados) {
     throw HttpError.badRequest('FUNCIONARIO_DADOS_INVALIDOS', MSG_DADOS_INVALIDOS);
   }
 
+  // S4: as datas ENVIADAS passam pelo domínio (a relação entre elas e com as gravadas é checada adiante, sobre o estado final).
+  if (dataNascimentoInformado) exigirNascimentoNoDominio(dataNascimento, hoje);
+  if (dataAdmissaoInformado) exigirAdmissaoNaoFutura(dataAdmissao, hoje);
+
   return emTransacao(pool, async (client) => {
     const anterior = await funcionarioRepo.buscarPorIdParaAtualizacao(client, empresaId, funcionarioId);
     if (anterior === null) {
       throw HttpError.notFound('FUNCIONARIO_NAO_ENCONTRADO', MSG_NAO_ENCONTRADO);
+    }
+    // S4: quem já tem GHE não fica sem (o legado sem GHE continua válido: null → null passa). Nada foi escrito até aqui.
+    if (grupoHomogeneoIdInformado && gheN === null && anterior.grupoHomogeneoId !== null) {
+      throw HttpError.badRequest('FUNCIONARIO_GHE_OBRIGATORIO', MSG_GHE_OBRIGATORIO);
     }
     if (grupoHomogeneoIdInformado && gheN !== null && gheN !== anterior.grupoHomogeneoId) {
       await exigirGheVinculavel(client, empresaId, gheN);
@@ -394,7 +471,7 @@ async function alterar(pool, dados) {
     let atualizado;
     try {
       atualizado = await funcionarioRepo.atualizar(client, empresaId, funcionarioId, {
-        matricula: matriculaN, nome: nomeN,
+        matricula: matriculaN, matriculaInformada: alterarMatricula, nome: nomeN,
         grupoHomogeneoId: gheN, grupoHomogeneoIdInformado,
         dataNascimento: dataNascimentoInformado ? (dataNascimento ?? null) : null, dataNascimentoInformado,
         setor: setorN, setorInformado, funcao: funcaoN, funcaoInformado,
@@ -416,35 +493,85 @@ async function alterar(pool, dados) {
       dadosAnteriores: instantaneo(anterior), dadosNovos: instantaneo(atualizado),
     });
 
-    return atualizado;
+    // S3: troca REAL de GHE (inclui atribuir a quem não tinha e, no contrato atual, desvincular) tem evento próprio, na mesma
+    // transação. O mesmo GHE, ou um PATCH sem GHE, não gera nada. Só id, código e descrição do GHE: nunca dado pessoal.
+    const [comGhe] = await anexarGhe(client, empresaId, [atualizado]);
+    if (atualizado.grupoHomogeneoId !== anterior.grupoHomogeneoId) {
+      const resumos = await gheRepo.resumirPorIds(client, empresaId, [anterior.grupoHomogeneoId].filter((id) => id !== null));
+      await auditoriaRepo.registrar(client, {
+        empresaId, usuarioId: atorId, acao: ACAO_AUDITORIA_GHE, referencia: String(funcionarioId), ip, dispositivo,
+        contexto: { origem: ORIGEM_AUDITORIA_SITUACAO },
+        dadosAnteriores: { grupoHomogeneo: resumoDoGhe(resumos, anterior.grupoHomogeneoId) },
+        dadosNovos: { grupoHomogeneo: comGhe.grupoHomogeneo },
+      });
+    }
+
+    return comGhe;
   });
+}
+
+/**
+ * Muda a situação (ATIVO, AFASTADO, INATIVO) sobre a linha TRAVADA (FOR UPDATE): a transição é validada contra o estado
+ * já confirmado por quem veio antes, então duas mudanças concorrentes se ordenam e a cadeia anterior→nova da auditoria
+ * não quebra. A auditoria vai na mesma transação (falhou, desfaz a mudança).
+ *
+ * `tolerarIgual` é o contrato das rotas legadas (inativar/reativar CONVERGEM para um alvo e são idempotentes); a rota
+ * nova (S2) recusa a mesma situação (409 FUNCIONARIO_SITUACAO_IGUAL) e a transição proibida (409
+ * FUNCIONARIO_SITUACAO_TRANSICAO_INVALIDA, ex.: INATIVO → AFASTADO). Os eventos legados FUNCIONARIO_INATIVADO e
+ * FUNCIONARIO_REATIVADO só acompanham ATIVO → INATIVO e INATIVO → ATIVO; transição com AFASTADO grava só
+ * FUNCIONARIO_SITUACAO_ALTERADA. Nenhum dos eventos leva CPF, telefone nem nascimento.
+ */
+async function mudarSituacao(client, { empresaId, atorId, funcionarioId, situacao, tolerarIgual, ip, dispositivo }) {
+  const anterior = await funcionarioRepo.buscarPorIdParaAtualizacao(client, empresaId, funcionarioId);
+  if (anterior === null) {
+    throw HttpError.notFound('FUNCIONARIO_NAO_ENCONTRADO', MSG_NAO_ENCONTRADO);
+  }
+  const situacaoAnterior = situacaoDe(anterior);
+  if (situacaoAnterior === situacao) {
+    if (tolerarIgual) return { funcionario: anterior, situacaoAnterior, alterado: false };
+    throw HttpError.conflict('FUNCIONARIO_SITUACAO_IGUAL', `O funcionário já está na situação ${situacao}`);
+  }
+  if (!TRANSICOES[situacaoAnterior].includes(situacao)) {
+    throw HttpError.conflict('FUNCIONARIO_SITUACAO_TRANSICAO_INVALIDA', `Não é possível passar da situação ${situacaoAnterior} para ${situacao}`);
+  }
+
+  const atualizado = await funcionarioRepo.atualizar(client, empresaId, funcionarioId, { situacao });
+
+  await auditoriaRepo.registrar(client, {
+    empresaId, usuarioId: atorId, acao: ACAO_AUDITORIA_SITUACAO, referencia: String(funcionarioId), ip, dispositivo,
+    contexto: { origem: ORIGEM_AUDITORIA_SITUACAO },
+    dadosAnteriores: { situacao: situacaoAnterior }, dadosNovos: { situacao },
+  });
+  const legado = { ATIVO: { INATIVO: ACAO_AUDITORIA_INATIVACAO }, INATIVO: { ATIVO: ACAO_AUDITORIA_REATIVACAO } }[situacaoAnterior]?.[situacao];
+  if (legado !== undefined) {
+    await auditoriaRepo.registrar(client, {
+      empresaId, usuarioId: atorId, acao: legado, referencia: String(funcionarioId), ip, dispositivo,
+      contexto: { camposSensiveisOmitidos: CAMPOS_SENSIVEIS },
+      dadosAnteriores: instantaneo(anterior), dadosNovos: instantaneo(atualizado),
+    });
+  }
+
+  return { funcionario: atualizado, situacaoAnterior, alterado: true };
+}
+
+async function alterarSituacao(pool, {
+  empresaId, atorId, funcionarioId, situacao, ip = null, dispositivo = null,
+}) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirId(atorId, 'identificador de ator');
+  exigirId(funcionarioId, 'identificador de funcionário');
+  return emTransacao(pool, (client) => mudarSituacao(client, {
+    empresaId, atorId, funcionarioId, situacao, tolerarIgual: false, ip, dispositivo,
+  }));
 }
 
 async function alterarEstado(pool, { empresaId, atorId, funcionarioId, ativo, ip = null, dispositivo = null }) {
   exigirId(empresaId, 'identificador de empresa');
   exigirId(atorId, 'identificador de ator');
   exigirId(funcionarioId, 'identificador de funcionário');
-
-  return emTransacao(pool, async (client) => {
-    const anterior = await funcionarioRepo.buscarPorIdParaAtualizacao(client, empresaId, funcionarioId);
-    if (anterior === null) {
-      throw HttpError.notFound('FUNCIONARIO_NAO_ENCONTRADO', MSG_NAO_ENCONTRADO);
-    }
-    if (anterior.ativo === ativo) {
-      return { funcionario: anterior, alterado: false };
-    }
-
-    const atualizado = await funcionarioRepo.atualizar(client, empresaId, funcionarioId, { ativo });
-
-    await auditoriaRepo.registrar(client, {
-      empresaId, usuarioId: atorId, acao: ativo ? ACAO_AUDITORIA_REATIVACAO : ACAO_AUDITORIA_INATIVACAO,
-      referencia: String(funcionarioId), ip, dispositivo,
-      contexto: { camposSensiveisOmitidos: CAMPOS_SENSIVEIS },
-      dadosAnteriores: instantaneo(anterior), dadosNovos: instantaneo(atualizado),
-    });
-
-    return { funcionario: atualizado, alterado: true };
-  });
+  return emTransacao(pool, (client) => mudarSituacao(client, {
+    empresaId, atorId, funcionarioId, situacao: ativo ? 'ATIVO' : 'INATIVO', tolerarIgual: true, ip, dispositivo,
+  }));
 }
 
 async function inativar(pool, dados) {
@@ -468,10 +595,13 @@ const MOTIVOS = {
   FUNCIONARIO_DATA_NASCIMENTO_INVALIDA: 'Data de nascimento inválida.',
   FUNCIONARIO_DADOS_INVALIDOS: 'Dados inválidos.',
   FUNCIONARIO_CPF_EM_USO: 'CPF já cadastrado nesta empresa.',
-  FUNCIONARIO_MATRICULA_EM_USO: 'Matrícula já cadastrada nesta empresa.',
+  FUNCIONARIO_MATRICULA_EM_USO: 'Matrícula já cadastrada para outro funcionário nesta empresa.',
+  FUNCIONARIO_SITUACAO_NAO_INFORMADA: 'Situação não informada.',
+  FUNCIONARIO_SITUACAO_NAO_RECONHECIDA: 'Situação não reconhecida: a importação aceita somente Ativo.',
   FUNCIONARIO_GHE_NAO_INFORMADO: 'GHE não informado: preencha a coluna GHE com o nome exato de um GHE cadastrado nesta empresa.',
-  FUNCIONARIO_GHE_INEXISTENTE: 'GHE inexistente nesta empresa: informe o nome exato de um GHE já cadastrado (a importação nunca cria GHE).',
-  FUNCIONARIO_GHE_INVALIDO: 'GHE inexistente nesta empresa: informe o nome exato de um GHE já cadastrado (a importação nunca cria GHE).',
+  FUNCIONARIO_GHE_INEXISTENTE: 'GHE não encontrado nesta empresa: informe o nome de um GHE já cadastrado ou escolha um na prévia (a importação nunca cria GHE).',
+  FUNCIONARIO_GHE_AMBIGUO: 'GHE ambíguo: mais de um GHE desta empresa tem este nome; escolha o GHE na prévia.',
+  FUNCIONARIO_GHE_INVALIDO: 'GHE inválido: o nome tem caractere não permitido ou passa de 150 caracteres.',
   FUNCIONARIO_GHE_INATIVO: 'GHE inativo não aceita novos vínculos: reative o GHE ou informe outro.',
   FUNCIONARIO_JA_CADASTRADO: 'Já cadastrado — sem alterações.',
   FUNCIONARIO_JA_CADASTRADO_DIVERGENTE: 'Já cadastrado — dados divergentes. Nenhuma alteração realizada.',
@@ -484,6 +614,7 @@ const CODIGO_POR_CAMPO = {
   dataAdmissao: 'FUNCIONARIO_DATA_ADMISSAO_INVALIDA',
   dataNascimento: 'FUNCIONARIO_DATA_NASCIMENTO_INVALIDA',
   ghe: 'FUNCIONARIO_GHE_NAO_INFORMADO',
+  situacao: 'FUNCIONARIO_SITUACAO_NAO_INFORMADA',
 };
 const MOTIVO_POR_CAMPO = {
   setor: 'Setor obrigatório (até 100 caracteres).',
@@ -492,7 +623,7 @@ const MOTIVO_POR_CAMPO = {
 };
 const CAMPO_POR_CODIGO = {
   ...Object.fromEntries(Object.entries(CODIGO_POR_CAMPO).map(([campo, codigo]) => [codigo, campo])),
-  FUNCIONARIO_GHE_INEXISTENTE: 'ghe', FUNCIONARIO_GHE_INVALIDO: 'ghe', FUNCIONARIO_GHE_INATIVO: 'ghe',
+  FUNCIONARIO_GHE_INEXISTENTE: 'ghe', FUNCIONARIO_GHE_AMBIGUO: 'ghe', FUNCIONARIO_GHE_INVALIDO: 'ghe', FUNCIONARIO_GHE_INATIVO: 'ghe',
 };
 const CODIGOS_DUPLICIDADE = ['FUNCIONARIO_CPF_EM_USO', 'FUNCIONARIO_MATRICULA_EM_USO'];
 
@@ -502,7 +633,7 @@ const CODIGOS_DUPLICIDADE = ['FUNCIONARIO_CPF_EM_USO', 'FUNCIONARIO_MATRICULA_EM
 // valor atual — a mesma minimização do instantâneo de auditoria. Opcional
 // vazio na planilha não é divergência (a planilha não afirma nada sobre ele).
 const CAMPOS_COMPARADOS = ['matricula', 'nome', 'setor', 'funcao', 'dataAdmissao', 'dataNascimento', 'telefone'];
-const CAMPOS_OPCIONAIS_PLANILHA = ['dataNascimento', 'telefone'];
+const CAMPOS_OPCIONAIS_PLANILHA = ['matricula', 'dataNascimento', 'telefone'];
 
 function recusa(linha, codigo, campos) {
   return { linha, situacao: 'RECUSADO', codigo, motivo: MOTIVOS[codigo], campos };
@@ -523,7 +654,7 @@ async function compararComExistente(pool, empresaId, existente, dados, ghePlanil
   const gheId = existente.grupoHomogeneoId ?? null;
   const gheAtual = gheId === null ? null : await gheRepo.buscarPorId(pool, empresaId, gheId);
   const nomeAtual = gheAtual === null ? null : gheAtual.nome;
-  if (nomeAtual !== ghePlanilha) {
+  if (normalizarNomeGhe(nomeAtual) !== normalizarNomeGhe(ghePlanilha)) {
     divergencias.push({ campo: 'ghe', atual: nomeAtual });
   }
   return divergencias;
@@ -532,8 +663,10 @@ async function compararComExistente(pool, empresaId, existente, dados, ghePlanil
 /** Recusa por validação de conteúdo (schema da linha): campos e motivo, sem valores. */
 function recusaPorValidacao(linha, issues) {
   const campos = [...new Set(issues.map((i) => String(i.path[0])))];
-  const codigo = CODIGO_POR_CAMPO[campos[0]] ?? 'FUNCIONARIO_DADOS_INVALIDOS';
-  const motivo = campos.map((c) => (CODIGO_POR_CAMPO[c] ? MOTIVOS[CODIGO_POR_CAMPO[c]] : (MOTIVO_POR_CAMPO[c] ?? MOTIVOS.FUNCIONARIO_DADOS_INVALIDOS))).join(' ');
+  // GHE: "não informado" (vazio/whitespace) e "inválido" (controle proibido) têm códigos próprios, vindos do schema.
+  const codigoGhe = issues.find((i) => String(i.path[0]) === 'ghe')?.params?.codigo === 'GHE_INVALIDO' ? 'FUNCIONARIO_GHE_INVALIDO' : 'FUNCIONARIO_GHE_NAO_INFORMADO';
+  const codigo = campos[0] === 'ghe' ? codigoGhe : (CODIGO_POR_CAMPO[campos[0]] ?? 'FUNCIONARIO_DADOS_INVALIDOS');
+  const motivo = campos.map((c) => (c === 'ghe' ? MOTIVOS[codigoGhe] : (CODIGO_POR_CAMPO[c] ? MOTIVOS[CODIGO_POR_CAMPO[c]] : (MOTIVO_POR_CAMPO[c] ?? MOTIVOS.FUNCIONARIO_DADOS_INVALIDOS)))).join(' ');
   return { linha, situacao: 'RECUSADO', codigo, motivo, campos };
 }
 
@@ -545,26 +678,52 @@ async function importarLinha(pool, { empresaId, atorId, ip, dispositivo, importa
     return recusaPorValidacao(linha, validada.error.issues);
   }
   const v = validada.data;
+  // Sem nome e sem escolha explícita (gheId): GHE não informado.
+  if (v.ghe === undefined && v.gheId === undefined) {
+    return recusa(linha, 'FUNCIONARIO_GHE_NAO_INFORMADO', ['ghe']);
+  }
+  // Só "Ativo" (caixa e espaços externos ignorados) é aceito; nenhum outro valor é convertido.
+  const situacao = v.situacao.trim().toLowerCase();
+  if (situacao === '') {
+    return recusa(linha, 'FUNCIONARIO_SITUACAO_NAO_INFORMADA', ['situacao']);
+  }
+  if (situacao !== 'ativo') {
+    return recusa(linha, 'FUNCIONARIO_SITUACAO_NAO_RECONHECIDA', ['situacao']);
+  }
   try {
     const dados = prepararCadastro({
-      matricula: v.matricula, nome: v.nome, cpf: v.cpf, grupoHomogeneoId: null,
+      matricula: v.matricula ?? null, nome: v.nome, cpf: v.cpf, grupoHomogeneoId: null,
       dataNascimento: v.dataNascimento ?? null, dataAdmissao: v.dataAdmissao,
       setor: v.setor, funcao: v.funcao, cracha: null, telefone: v.telefone ?? null,
     });
     // Regra oficial de existência: CPF único por empresa (uq_funcionarios_empresa_cpf).
     const existente = await funcionarioRepo.buscarPorCpf(pool, empresaId, dados.cpf);
     if (existente !== null) {
-      const divergencias = await compararComExistente(pool, empresaId, existente, dados, v.ghe);
+      const ghePlanilha = v.gheId === undefined ? v.ghe : (await gheRepo.buscarPorId(pool, empresaId, v.gheId))?.nome ?? null;
+      const divergencias = await compararComExistente(pool, empresaId, existente, dados, ghePlanilha);
       const codigo = divergencias.length > 0 ? 'FUNCIONARIO_JA_CADASTRADO_DIVERGENTE' : 'FUNCIONARIO_JA_CADASTRADO';
       return {
         linha, situacao: 'JA_CADASTRADO', codigo, motivo: MOTIVOS[codigo], funcionarioId: existente.id, ativo: existente.ativo,
         ...(divergencias.length > 0 ? { divergencias } : {}),
       };
     }
-    // GHE pelo nome exato desta empresa: nunca criado, nunca aproximado, nunca padrão.
-    const ghe = await gheRepo.buscarPorNome(pool, empresaId, v.ghe);
-    if (ghe === null) {
-      return recusa(linha, 'FUNCIONARIO_GHE_INEXISTENTE', ['ghe']);
+    // GHE: a escolha explícita do SST (gheId) prevalece e é revalidada aqui (empresa da sessão, existência, ativo);
+    // sem ela, resolução pelo nome normalizado: 0 = não encontrado, 1 = usa, >1 = ambíguo (nunca escolhe).
+    let ghe;
+    if (v.gheId !== undefined) {
+      ghe = await gheRepo.buscarPorId(pool, empresaId, v.gheId);
+      if (ghe === null) {
+        return recusa(linha, 'FUNCIONARIO_GHE_INEXISTENTE', ['ghe']);
+      }
+    } else {
+      const candidatos = await gheRepo.buscarPorNomeNormalizado(pool, empresaId, normalizarNomeGhe(v.ghe));
+      if (candidatos.length === 0) {
+        return recusa(linha, 'FUNCIONARIO_GHE_INEXISTENTE', ['ghe']);
+      }
+      if (candidatos.length > 1) {
+        return recusa(linha, 'FUNCIONARIO_GHE_AMBIGUO', ['ghe']);
+      }
+      ghe = candidatos[0];
     }
     if (ghe.ativo !== true) {
       return recusa(linha, 'FUNCIONARIO_GHE_INATIVO', ['ghe']);
@@ -663,4 +822,19 @@ async function importar(pool, {
   return { importacaoId, lote: { numero: lote.numero, total: lote.total }, resumo, linhas: resultados };
 }
 
-module.exports = { criar, buscar, listar, alterar, inativar, reativar, importar };
+/** Seletor de GHE do formulário de funcionário (S3): GHEs ativos da empresa da sessão, só id, código e descrição. */
+async function listarGhesParaFormulario(pool, { empresaId }) {
+  exigirId(empresaId, 'identificador de empresa');
+  return gheRepo.listarAtivosParaFormulario(pool, empresaId);
+}
+
+/** Opções do seletor da prévia da importação (12K-E): GHEs ativos da empresa da sessão, só id e nome. */
+async function listarGhesParaImportacao(pool, { empresaId }) {
+  exigirId(empresaId, 'identificador de empresa');
+  return gheRepo.listarAtivosParaSeletor(pool, empresaId);
+}
+
+module.exports = {
+  criar, buscar, listar, alterar, inativar, reativar, alterarSituacao, revelarCpf, importar, listarGhesParaImportacao, listarGhesParaFormulario,
+  ACAO_AUDITORIA_CPF_CONSULTADO,
+};

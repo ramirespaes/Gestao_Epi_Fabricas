@@ -7,8 +7,13 @@
    * criar cadastra GHE; editar altera GHE e os vínculos):
    *   /grupos-homogeneos                         (listar, criar)
    *   /grupos-homogeneos/:id                     (alterar)
+   *
+   * Interface (Incremento 6A): tabela GHE (código) | Descrição (campo `nome` da API) | Situação | Ações. Setor, Função e o
+   * campo `descricao` legado saíram da TELA, não do banco: o corpo de criação e o de edição NUNCA os levam, para que a
+   * ausência na tela não apague o que já existe. O código vai como digitado (aparado); quem normaliza e valida é o backend.
    *   /grupos-homogeneos/:id/inativar|reativar
-   *   /grupos-homogeneos/:id/materiais[/:materialId]  (matriz)
+   *   /grupos-homogeneos/:id/materiais[/:materialId]  (vínculos diretos GHE × material: bloco secundário, exceções / legado)
+   *   /grupos-homogeneos/:id/tipos-material[/:tipoId] (6B: gestão principal GHE × tipo de material, com classificação)
    *
    *   acoes     — chamadas à API (envelope do EpiHttp).
    *   matriz    — diferença entre o estado persistido e o marcado na tela.
@@ -29,15 +34,14 @@
   }
   function texto(v) { return v === null || v === undefined ? '' : String(v); }
   function opcional(v) { var t = texto(v).trim(); return t ? t : null; }
-  function camposGrupo(d) {
+  // Corpo de criação e de edição: nome (a Descrição), riscos e, só quando preenchido, o código. Nunca setor, função nem
+  // descricao: não estão na tela, então não podem ser enviados (nem como null).
+  function corpoDoGrupo(d) {
     var dados = d || {};
-    return {
-      nome: texto(dados.nome).trim(),
-      setor: opcional(dados.setor),
-      funcao: opcional(dados.funcao),
-      descricao: opcional(dados.descricao),
-      riscos: opcional(dados.riscos),
-    };
+    var corpo = { nome: texto(dados.nome).trim(), riscos: opcional(dados.riscos) };
+    var codigo = texto(dados.codigo).trim();
+    if (codigo) corpo.codigo = codigo;
+    return corpo;
   }
   function caminhoGrupo(id) { return CAMINHO + '/' + encodeURIComponent(id); }
 
@@ -47,16 +51,26 @@
       return http().requisitar('GET', CAMINHO + '?pagina=1&limite=' + LIMITE_GRUPOS);
     },
     criarGrupo: function (dados) {
-      return http().requisitar('POST', CAMINHO, { corpo: camposGrupo(dados) });
+      return http().requisitar('POST', CAMINHO, { corpo: corpoDoGrupo(dados) });
     },
     alterarGrupo: function (id, dados) {
-      return http().requisitar('PATCH', caminhoGrupo(id), { corpo: camposGrupo(dados) });
+      return http().requisitar('PATCH', caminhoGrupo(id), { corpo: corpoDoGrupo(dados) });
     },
     inativarGrupo: function (id) {
       return http().requisitar('POST', caminhoGrupo(id) + '/inativar', { corpo: {} });
     },
     reativarGrupo: function (id) {
       return http().requisitar('POST', caminhoGrupo(id) + '/reativar', { corpo: {} });
+    },
+    // GHE × tipo de material (API do Incremento 3). O servidor decide quais tipos vêm; a tela não refaz essa seleção.
+    consultarTipos: function (id) {
+      return http().requisitar('GET', caminhoGrupo(id) + '/tipos-material');
+    },
+    definirTipo: function (id, tipoId, classificacao) {
+      return http().requisitar('PUT', caminhoGrupo(id) + '/tipos-material/' + encodeURIComponent(tipoId), { corpo: { classificacao: classificacao } });
+    },
+    desvincularTipo: function (id, tipoId) {
+      return http().requisitar('DELETE', caminhoGrupo(id) + '/tipos-material/' + encodeURIComponent(tipoId));
     },
     consultarMatriz: function (id) {
       return http().requisitar('GET', caminhoGrupo(id) + '/materiais');
@@ -126,8 +140,48 @@
       + '<span class="material-symbols-outlined">' + icone + '</span>' + rotulo + '</button>';
   }
 
+  var CLASSIFICACOES = [['OBRIGATORIO', 'Obrigatório'], ['NAO_OBRIGATORIO', 'Não obrigatório']];
+  function rotuloClassificacao(valor) {
+    for (var i = 0; i < CLASSIFICACOES.length; i += 1) if (CLASSIFICACOES[i][0] === valor) return CLASSIFICACOES[i][1];
+    return '—';
+  }
+  function seletorDeClassificacao(tipo) {
+    // Tipo ainda não vinculado: nada vem escolhido ("Selecione…"); a escolha é sempre da pessoa.
+    var opcoes = (tipo.vinculado ? '' : '<option value="" selected>Selecione…</option>')
+      + CLASSIFICACOES.map(function (c) {
+        return '<option value="' + c[0] + '"' + (tipo.vinculado && tipo.classificacao === c[0] ? ' selected' : '') + '>' + c[1] + '</option>';
+      }).join('');
+    return '<select class="input" data-tipo-id="' + escaparHtml(tipo.id) + '" aria-label="Classificação de ' + escaparHtml(tipo.nome) + ' no GHE">' + opcoes + '</select>';
+  }
+
   var render = {
     escaparHtml: escaparHtml,
+    rotuloClassificacao: rotuloClassificacao,
+    identificacaoDoGhe: function (grupo) {
+      var g = grupo || {};
+      return g.codigo ? texto(g.codigo) + ' · ' + texto(g.nome) : texto(g.nome);
+    },
+    /**
+     * Linhas do bloco principal (GHE × tipo): EPI / Tipo | Grupo | Grupo de Proteção | Situação | Classificação | Ação.
+     * `podeEditar` e `gheAtivo` só decidem o que se OFERECE; o backend segue a autoridade. Sem editar: texto, sem controles.
+     * GHE inativo: nenhum tipo novo pode ser vinculado, mas o vínculo existente continua corrigível e removível.
+     */
+    linhasTipos: function (tipos, opcoes) {
+      var o = opcoes || {};
+      return (tipos || []).map(function (t) {
+        var podeVincular = o.podeEditar === true && o.gheAtivo !== false && t.ativo === true && !t.vinculado;
+        var editavel = o.podeEditar === true && (t.vinculado || podeVincular);
+        var classificacao = editavel ? seletorDeClassificacao(t) : escaparHtml(t.vinculado ? rotuloClassificacao(t.classificacao) : '—');
+        var acoesHtml = '';
+        if (o.podeEditar === true && t.vinculado) {
+          acoesHtml = botao('alterar-tipo', t.id, 'Alterar', 'check') + botao('desvincular-tipo', t.id, 'Desvincular', 'link_off');
+        } else if (podeVincular) {
+          acoesHtml = botao('vincular-tipo', t.id, 'Vincular', 'add');
+        }
+        return '<tr data-tipo-id="' + escaparHtml(t.id) + '"><td>' + escaparHtml(t.nome) + '</td>' + celula(t.grupo) + celula(t.grupoProtecao)
+          + '<td>' + situacao(t.ativo) + '</td><td>' + classificacao + '</td><td><div class="inline-actions">' + acoesHtml + '</div></td></tr>';
+      }).join('');
+    },
     linhasGrupos: function (grupos, opcoes) {
       var o = opcoes || {};
       return (grupos || []).map(function (g) {
@@ -137,7 +191,7 @@
             + (g.ativo ? botao('inativar', g.id, 'Inativar', 'block') : botao('reativar', g.id, 'Reativar', 'restart_alt'));
         }
         return (g.id === o.selecionado ? '<tr class="selecionado">' : '<tr>')
-          + '<td>' + escaparHtml(g.nome) + '</td>' + celula(g.setor) + celula(g.funcao) + '<td>' + situacao(g.ativo) + '</td>'
+          + celula(g.codigo) + '<td>' + escaparHtml(g.nome) + '</td>' + '<td>' + situacao(g.ativo) + '</td>'
           + '<td><div class="inline-actions">' + acoesHtml + '</div></td></tr>';
       }).join('');
     },
@@ -166,23 +220,37 @@
     GHE_NAO_ENCONTRADO: 'GHE não encontrado nesta empresa. Recarregue a página.',
     MATERIAL_NAO_ENCONTRADO: 'EPI não encontrado nesta empresa. Recarregue a página.',
     GHE_MATERIAL_NAO_VINCULADO: 'Este EPI já não estava vinculado ao GHE.',
-    GHE_NOME_EM_USO: 'Já existe um GHE com este nome nesta empresa.',
+    GHE_CODIGO_OBRIGATORIO: 'Informe o código do GHE (por exemplo, GHE-001).',
+    GHE_CODIGO_INVALIDO: 'Código de GHE inválido. Use GHE- seguido de 3 a 6 dígitos (por exemplo, GHE-001).',
+    GHE_CODIGO_EM_USO: 'Já existe um GHE com este código nesta empresa.',
+    GHE_NOME_EM_USO: 'Já existe um GHE com esta descrição nesta empresa.',
     GHE_INATIVO: 'GHE inativo não aceita novos vínculos. Reative o GHE para vincular EPIs.',
+    TIPO_MATERIAL_NAO_ENCONTRADO: 'Tipo de EPI não encontrado nesta empresa. Recarregue a página.',
+    TIPO_MATERIAL_INATIVO: 'Tipo de EPI inativo não pode receber novo vínculo.',
+    GHE_TIPO_MATERIAL_NAO_VINCULADO: 'Este tipo de EPI já não estava vinculado ao GHE.',
+    CAMPO_NAO_PERMITIDO: 'Dados inválidos: a requisição contém um campo não permitido. Recarregue a página e tente novamente.',
     MATERIAL_INATIVO: 'EPI inativo não pode ser vinculado.',
     GHE_MATERIAL_JA_VINCULADO: 'Este EPI já está vinculado ao GHE.',
   };
   var mensagens = {
-    NOME_OBRIGATORIO: 'Informe o nome do GHE.',
+    NOME_OBRIGATORIO: 'Informe a descrição do GHE.',
+    CODIGO_OBRIGATORIO: POR_CODIGO.GHE_CODIGO_OBRIGATORIO,
+    EM_INTEGRACAO_IMPORTACAO: 'Importação de GHE / EPIs em integração.',
     SALVO_GRUPO: 'GHE salvo.',
     SALVO_MATRIZ: 'Vínculos salvos.',
+    SALVO_TIPO: 'Vínculo de EPI salvo.',
+    REMOVIDO_TIPO: 'Tipo de EPI desvinculado do GHE.',
+    ESCOLHA_CLASSIFICACAO: 'Escolha a classificação (Obrigatório ou Não obrigatório) antes de vincular.',
+    SEM_ALTERACAO_TIPO: 'Nenhuma alteração na classificação.',
+    vazioTipos: 'Nenhum tipo de EPI disponível para este GHE.',
     vazioGrupos: 'Nenhum GHE cadastrado nesta empresa.',
     vazioMateriais: 'Nenhum EPI ativo cadastrado nesta empresa.',
     erro: function (r) {
       if (!r || !r.status) return 'Falha de rede: não foi possível falar com o servidor. Verifique a conexão e tente novamente.';
       if (r.status === 401) return 'Sua sessão terminou. Entre novamente pelo Portal do Cliente.';
       if (r.status === 403) return 'Seu perfil não tem permissão para esta operação nesta empresa.';
+      if ((r.status === 400 || r.status === 404 || r.status === 409) && Object.prototype.hasOwnProperty.call(POR_CODIGO, r.codigo)) return POR_CODIGO[r.codigo];
       if (r.status === 400) return 'Dados inválidos: revise os campos e tente novamente.';
-      if ((r.status === 404 || r.status === 409) && Object.prototype.hasOwnProperty.call(POR_CODIGO, r.codigo)) return POR_CODIGO[r.codigo];
       if (r.status === 404) return 'Registro não encontrado nesta empresa. Recarregue a página.';
       if (r.status === 409) return 'A operação conflita com o estado atual. Recarregue a página.';
       return 'Não foi possível concluir a operação. Tente novamente.';

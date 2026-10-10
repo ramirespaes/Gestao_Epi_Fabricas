@@ -164,7 +164,7 @@ describe('C3 — GET /api/estoque/itens-disponiveis (PostgreSQL real)', () => {
     for (const i of r.body.itens) assert.equal(i.saldo, i.disponivel + i.bloqueado, 'saldo físico = disponível + bloqueado');
     const botina40 = r.body.itens[0];
     assert.deepEqual(botina40, {
-      materialId: m.botina, material: 'Botina de segurança', codigoInterno: 'EPI-001', categoria: 'EPI', tipo: 'Sapatão / Botina',
+      materialId: m.botina, material: 'Botina de segurança', codigoInterno: 'EPI-001', categoria: 'EPI', grupo: 'EPI', tipo: 'Sapatão / Botina',
       tamanho: '40', saldo: 12, bloqueado: 0, disponivel: 12, unidade: 'par', estoqueMinimo: 5, caValidade: somarDias(HOJE, 10), validade: 'expiring',
       // 12D-2: os campos da posição, aditivos (sem solicitação aprovada o livre é o próprio disponível)
       fisicoUtilizavel: 12, comprometido: 0, saldoLivre: 12, semCobertura: 0, minimoOrigem: 'PADRAO', abaixoDoMinimo: false, deficit: 0, necessidade: 0,

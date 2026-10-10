@@ -17,9 +17,9 @@ const informado = (corpo, campo, flag) => (Object.hasOwn(corpo, campo) ? { [camp
 function criarGrupoHomogeneoExposicaoController({ pool: poolInjetado }) {
   return {
     async criar(req, res) {
-      const { nome, descricao, setor, funcao, riscos } = req.validado.body;
+      const { nome, codigo, descricao, setor, funcao, riscos } = req.validado.body;
       const grupo = await gheService.criar(poolInjetado, {
-        ...comContexto(req), nome, descricao: descricao ?? null, setor: setor ?? null, funcao: funcao ?? null, riscos: riscos ?? null,
+        ...comContexto(req), nome, codigo, descricao: descricao ?? null, setor: setor ?? null, funcao: funcao ?? null, riscos: riscos ?? null,
       });
       res.status(201).json({ status: 'ok', grupo });
     },
@@ -41,6 +41,7 @@ function criarGrupoHomogeneoExposicaoController({ pool: poolInjetado }) {
         ...comContexto(req),
         gheId: req.validado.params.id,
         ...(Object.hasOwn(corpo, 'nome') ? { nome: corpo.nome } : {}),
+        ...(Object.hasOwn(corpo, 'codigo') ? { codigo: corpo.codigo } : {}),
         ...informado(corpo, 'descricao', 'descricaoInformado'),
         ...informado(corpo, 'setor', 'setorInformado'),
         ...informado(corpo, 'funcao', 'funcaoInformado'),

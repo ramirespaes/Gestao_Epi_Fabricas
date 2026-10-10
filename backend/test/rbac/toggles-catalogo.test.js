@@ -7,10 +7,10 @@ const { TOGGLES, PENDENCIAS, GRUPOS, buscar } = require('../../src/rbac/toggles'
 const { RECURSOS_COM_EFEITO, ACOES_COM_EFEITO } = require('../../src/rbac/recursos');
 
 describe('catálogo binário de acessos', () => {
-  test('os 19 acessos aprovados mais Aprovar e Reprovar solicitações estão contabilizados, sem repetição e sem CRUD automático', () => {
+  test('os 19 acessos aprovados, Aprovar e Reprovar solicitações o Relatório — Auditoria e o Relatório — Fiscalização estão contabilizados, sem repetição e sem CRUD automático', () => {
     const ids = [...TOGGLES, ...PENDENCIAS].map((t) => t.id);
-    assert.equal(ids.length, 22);
-    assert.equal(new Set(ids).size, 22);
+    assert.equal(ids.length, 26, 'os 24 anteriores mais Cadastrar e Editar Funcionário');
+    assert.equal(new Set(ids).size, 26);
   });
 
   test('Entregas por solicitação reutiliza a ação REALIZAR_ENTREGA, sem bloqueio ao desligar e sem acoplar à SST', () => {

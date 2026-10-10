@@ -4,6 +4,7 @@ const { describe, test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { abrirPoolTemporario, inserirEmpresa } = require('./helpers/schema-temporario');
+const { todasAsMigrations } = require('./helpers/entrega-epi');
 const funcionarioService = require('../../src/services/funcionario.service');
 const gheService = require('../../src/services/grupo-homogeneo-exposicao.service');
 const gheRepo = require('../../src/repositories/grupo-homogeneo-exposicao.repository');
@@ -39,11 +40,8 @@ const { HttpError } = require('../../src/errors/HttpError');
  *   G   — outra empresa não é bloqueada; isolamento preservado.
  */
 
-const MIGRATIONS = [
-  '000', '001', '002', '003', '004', '005', '006', '007', '008', '009', '010', '011',
-  '012', '013', '014', '015', '016', '017', '018', '019', '020', '021', '022', '023',
-  '040', // C4: funcionarios.data_admissao (lida pela projeção do repositório)
-];
+// A criação de GHE exige o código (083), que depende da 082 e de todo o catálogo de materiais: schema completo.
+const MIGRATIONS = todasAsMigrations();
 
 /** Espera até `condicao()` ser verdadeira (poll curto), ou falha. */
 async function aguardar(condicao, mensagem, { tentativas = 300, intervaloMs = 10 } = {}) {
@@ -133,8 +131,10 @@ describe('concorrência vínculo × inativação de GHE (PostgreSQL real)', () =
   };
   const matricula = () => { contadorMatricula += 1; return `MAT-${String(contadorMatricula).padStart(6, '0')}`; };
 
+  let sequenciaCodigoGhe = 0;
   async function criarGhe(empresaId, atorId, nome) {
-    return gheService.criar(pool, { empresaId, atorId, nome });
+    sequenciaCodigoGhe += 1;
+    return gheService.criar(pool, { empresaId, atorId, nome, codigo: `GHE-${String(sequenciaCodigoGhe).padStart(3, '0')}` });
   }
 
   async function funcionarioNoBanco(id) {

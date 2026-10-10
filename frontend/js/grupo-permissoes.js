@@ -98,6 +98,9 @@
     { id: 'dashboard', nome: 'Dashboard', operacoes: [V] },
     { id: 'operations', nome: 'Operações de estoque', operacoes: [V] },
     { id: 'reports', nome: 'Relatórios', operacoes: [], nota: SEM_EFEITO },
+    // 12K-D5: permissão própria do Relatório — Auditoria (as demais abas de Relatórios ganham a delas no D6).
+    { id: 'reportsAudit', nome: 'Relatório — Auditoria', operacoes: [V] },
+    { id: 'reportsFiscal', nome: 'Relatório — Fiscalização', operacoes: [V] },
     { id: 'materials', nome: 'Gestão de estoque', operacoes: [V, C, E] },
     { id: 'employeeGroups', nome: 'Gestão de GHE', operacoes: [V, C, E] },
     { id: 'eligibilityRules', nome: 'Regras Função / Setor', operacoes: [], nota: SEM_EFEITO },

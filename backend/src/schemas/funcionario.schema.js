@@ -1,6 +1,8 @@
 'use strict';
 
 const { z } = require('zod');
+const { normalizarNomeGhe } = require('../utils/normalizacao');
+const { SITUACOES } = require('../utils/situacao-funcionario');
 const {
   idParametro, idCorpo, booleanoQuery, paginacaoQuery, textoCurto, cpfComDigitosVerificadores, dataCalendario,
 } = require('./campos.schema');
@@ -37,6 +39,8 @@ const TELEFONE_MAXIMO = 20;
 const BUSCA_MAXIMA = 100;
 
 const matricula = textoCurto(MATRICULA_MAXIMA, 'MATRICULA_INVALIDA', 'Matrícula inválida');
+// Matrícula opcional (12K-E): ausente ou null = sem matrícula; string vazia continua inválida.
+const matriculaOpcional = matricula.nullable().optional();
 const nome = textoCurto(NOME_MAXIMO, 'NOME_INVALIDO', 'Nome do funcionário inválido');
 const setor = textoCurto(SETOR_MAXIMO, 'SETOR_INVALIDO', 'Setor inválido');
 const funcao = textoCurto(FUNCAO_MAXIMO, 'FUNCAO_INVALIDA', 'Função inválida');
@@ -46,28 +50,47 @@ const telefone = textoCurto(TELEFONE_MAXIMO, 'TELEFONE_INVALIDO', 'Telefone inv�
 // VARCHAR(150)); existência, empresa e estado ativo são do serviço.
 const GHE_NOME_MAXIMO = 150;
 const gheNome = textoCurto(GHE_NOME_MAXIMO, 'GHE_INVALIDO', 'GHE inválido');
+// Nome GHE da planilha (12K-E): a linha chega normalizada (quebras e espaços viram um espaço). Vazio ou só whitespace é
+// "não informado"; só os demais caracteres de controle (ou excesso de tamanho) são "inválido".
+const CONTROLE_SEM_QUEBRA = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/;
+const gheImportacao = z.string().transform((valor, ctx) => {
+  const texto = normalizarNomeGhe(valor);
+  if (texto.length === 0) {
+    ctx.addIssue({ code: 'custom', message: 'GHE não informado', params: { codigo: 'GHE_NAO_INFORMADO' } });
+    return z.NEVER;
+  }
+  if (Array.from(texto).length > GHE_NOME_MAXIMO || CONTROLE_SEM_QUEBRA.test(texto)) {
+    ctx.addIssue({ code: 'custom', message: 'GHE inválido', params: { codigo: 'GHE_INVALIDO' } });
+    return z.NEVER;
+  }
+  return texto;
+});
 const busca = textoCurto(BUSCA_MAXIMA, 'BUSCA_INVALIDA', 'Termo de busca inválido');
 const dataNascimento = dataCalendario('DATA_NASCIMENTO_INVALIDA', 'Data de nascimento inválida');
-// C4 (migration 040): mesma regra de calendário; a relação com o nascimento
-// e o limite de 1900 são do serviço (e dos CHECKs, segunda barreira).
+// C4 (migration 040): mesma regra de calendário; a relação com o nascimento, o limite de 1900 e "não no futuro"
+// (S4, pela data civil do relógio injetado) são do serviço (e dos CHECKs, segunda barreira).
 const dataAdmissao = dataCalendario('DATA_ADMISSAO_INVALIDA', 'Data de admissão inválida');
 // grupoHomogeneoId em query chega como string: mesma regra de idParametro.
 const grupoHomogeneoIdQuery = idParametro;
 
 const paramsComId = z.strictObject({ id: idParametro });
 
+// S4: cadastro individual. OBRIGATÓRIOS: nome, cpf, setor, funcao, grupoHomogeneoId (existência, empresa e estado ativo
+// são do serviço) e dataAdmissao; texto vazio ou só espaços não vale (textoCurto). OPCIONAIS: matricula, telefone,
+// dataNascimento e cracha. A situação nasce ATIVO no banco: `situacao` e `ativo` não existem aqui (strictObject). A
+// importação em lote tem o schema próprio (`linhaImportacao`) e não passa por este.
 const criar = {
   body: z.strictObject({
-    matricula,
+    matricula: matriculaOpcional,
     nome,
     cpf: cpfComDigitosVerificadores,
-    grupoHomogeneoId: idCorpo.nullable().optional(),
+    grupoHomogeneoId: idCorpo,
     dataNascimento: dataNascimento.nullable().optional(),
-    setor: setor.nullable().optional(),
-    funcao: funcao.nullable().optional(),
+    setor,
+    funcao,
     cracha: cracha.nullable().optional(),
     telefone: telefone.nullable().optional(),
-    dataAdmissao: dataAdmissao.nullable().optional(),
+    dataAdmissao,
   }),
 };
 
@@ -94,7 +117,7 @@ const buscar = { params: paramsComId };
 const alterar = {
   params: paramsComId,
   body: z.strictObject({
-    matricula: matricula.optional(),
+    matricula: matriculaOpcional,
     nome: nome.optional(),
     // sem `cpf`: imutável após o cadastro (ver cabeçalho)
     grupoHomogeneoId: idCorpo.nullable().optional(),
@@ -109,7 +132,12 @@ const alterar = {
 
 const semCorpo = z.strictObject({});
 const inativar = { params: paramsComId, body: semCorpo };
+// Revelação do CPF na edição: nada vem do cliente além do id da URL (empresa e ator são da sessão); corpo e query vazios, estritos.
+const revelarCpf = { params: paramsComId, query: semCorpo, body: semCorpo };
 const reativar = { params: paramsComId, body: semCorpo };
+// S2: a situação só muda por esta rota (o PATCH genérico não a declara). Valor fora do enum é 400 do schema; transição
+// proibida e situação igual à atual são 409 do serviço.
+const situacao = { params: paramsComId, body: z.strictObject({ situacao: z.enum(SITUACOES) }) };
 
 // ── Importação em lote (C4, decisões D1/D4 de 25/09/2026) ──────────────
 // DUAS camadas, de propósito:
@@ -135,14 +163,18 @@ const linhaImportacao = z.strictObject({
   linha: numeroLinha,
   nome,
   cpf: cpfComDigitosVerificadores,
-  matricula,
+  matricula: matriculaOpcional,
+  // Obrigatória: só "Ativo" (caixa e espaços externos ignorados) é aceito, decidido no serviço.
+  situacao: z.string().max(50),
   dataAdmissao,
   dataNascimento: dataNascimento.nullable().optional(),
   // Setor, função (cargo) e GHE são obrigatórios pela planilha de importação.
   setor,
   funcao,
   telefone: telefone.nullable().optional(),
-  ghe: gheNome,
+  // Nome da planilha OU escolha explícita do SST na prévia (gheId); o serviço exige um dos dois e revalida o id.
+  ghe: gheImportacao.optional(),
+  gheId: idCorpo.optional(),
 });
 
 const linhaEstrutura = z.strictObject({
@@ -150,13 +182,21 @@ const linhaEstrutura = z.strictObject({
   nome: textoEstrutura,
   cpf: textoEstrutura,
   matricula: textoEstrutura,
+  situacao: textoEstrutura,
   dataAdmissao: textoEstrutura,
   dataNascimento: textoEstrutura,
   setor: textoEstrutura,
   funcao: textoEstrutura,
   telefone: textoEstrutura,
   ghe: textoEstrutura,
+  gheId: z.union([z.number(), z.string()]).nullable().optional(),
 });
+
+// GET /funcionarios/importacao/ghes: opções do seletor da prévia; a empresa vem só da sessão, sem parâmetro algum.
+const importacaoGhes = { query: z.strictObject({}) };
+
+// GET /funcionarios/ghes (S3): seletor de GHE do formulário; também sem parâmetro algum.
+const ghesFormulario = { query: z.strictObject({}) };
 
 const importacao = {
   body: z.strictObject({
@@ -180,5 +220,5 @@ const importacao = {
 };
 
 module.exports = {
-  criar, listar, consultaCpf, buscar, alterar, inativar, reativar, importacao, linhaImportacao, LINHAS_POR_LOTE, LINHAS_POR_ARQUIVO,
+  criar, listar, consultaCpf, buscar, alterar, inativar, reativar, revelarCpf, situacao, importacao, importacaoGhes, ghesFormulario, linhaImportacao, LINHAS_POR_LOTE, LINHAS_POR_ARQUIVO,
 };

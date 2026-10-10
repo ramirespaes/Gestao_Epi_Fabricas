@@ -40,7 +40,7 @@ describe('contexto da nova solicitação de EPI — HTTP (PostgreSQL real)', () 
   const trabalhador = async (empresaId, nome, extra = {}) => {
     cpf += 1;
     return (await inserir(pool, 'funcionarios', {
-      empresa_id: empresaId, nome, matricula: extra.matricula ?? `CTX-${cpf}`, cpf: String(cpf), grupo_homogeneo_id: extra.gheId ?? null, ativo: extra.ativo ?? true, setor: extra.setor ?? null, funcao: extra.funcao ?? null,
+      empresa_id: empresaId, nome, matricula: extra.matricula ?? `CTX-${cpf}`, cpf: String(cpf), grupo_homogeneo_id: extra.gheId ?? null, situacao: (extra.ativo ?? true) ? 'ATIVO' : 'INATIVO', setor: extra.setor ?? null, funcao: extra.funcao ?? null,
     })).id;
   };
   const cpfsDoBanco = async () => (await pool.query('SELECT cpf FROM funcionarios')).rows.map((l) => l.cpf);

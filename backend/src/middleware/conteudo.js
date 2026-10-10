@@ -2,7 +2,7 @@
 
 const express = require('express');
 const { HttpError } = require('../errors/HttpError');
-const { JSON_LIMITE } = require('../config/http');
+const { JSON_LIMITE, JSON_LIMITE_IMPORTACAO_GHE } = require('../config/http');
 
 /**
  * Política de conteúdo do namespace /api.
@@ -23,6 +23,11 @@ const { JSON_LIMITE } = require('../config/http');
  * modo estrito e sem descompressão (inflate: false), para reduzir a
  * superfície de abuso por compressão. Erros do parser são traduzidos pelo
  * errorHandler.
+ *
+ * EXCEÇÕES DE TAMANHO (duas, e só estas): o preview e a confirmação da importação GHE/EPI aceitam até 512 KiB
+ * (parserJsonImportacaoGhe). Para isso o parserJson isenta EXATAMENTE `POST /api/grupos-homogeneos/importacao/preview` e
+ * `POST /api/grupos-homogeneos/importacao/confirmar` (comparação de igualdade, nunca prefixo; qualquer variação de caminho
+ * cai no limite de 32 KiB), e a PRÓPRIA ROTA aplica o parser de 512 KiB depois da sessão e da permissão. Assim um corpo grande nunca é lido antes de autenticar e autorizar. exigirJson (tipo e codificação) vale para todos.
  */
 
 const METODOS_COM_CORPO = new Set(['POST', 'PUT', 'PATCH']);
@@ -77,6 +82,23 @@ function exigirJson(req, res, next) {
   next();
 }
 
-const parserJson = express.json({ limit: JSON_LIMITE, strict: true, inflate: false });
+const parserJsonPadrao = express.json({ limit: JSON_LIMITE, strict: true, inflate: false });
+const parserJsonImportacaoGhe = express.json({ limit: JSON_LIMITE_IMPORTACAO_GHE, strict: true, inflate: false });
 
-module.exports = { exigirJson, parserJson };
+const ROTAS_COM_LIMITE_PROPRIO = Object.freeze([
+  Object.freeze({ metodo: 'POST', caminho: '/api/grupos-homogeneos/importacao/preview' }),
+  Object.freeze({ metodo: 'POST', caminho: '/api/grupos-homogeneos/importacao/confirmar' }),
+]);
+
+// baseUrl + path = caminho completo, esteja o parser montado em /api (app.js) ou na raiz (app de teste).
+const ehRotaComLimiteProprio = (req) => ROTAS_COM_LIMITE_PROPRIO.some((rota) => req.method === rota.metodo && `${req.baseUrl}${req.path}` === rota.caminho);
+
+function parserJson(req, res, next) {
+  if (ehRotaComLimiteProprio(req)) {
+    next();
+    return;
+  }
+  parserJsonPadrao(req, res, next);
+}
+
+module.exports = { exigirJson, parserJson, parserJsonImportacaoGhe, ROTAS_COM_LIMITE_PROPRIO };

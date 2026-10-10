@@ -29,16 +29,22 @@ const semComentarios = (s) => s.replace(/<!--[\s\S]*?-->/g, '').replace(/^\s*\/\
 const modulo = () => require('../js/itens-disponiveis'); // eslint-disable-line global-require
 const resposta = (status, corpo) => ({ status, ok: status >= 200 && status < 300, text: async () => (corpo === undefined ? '' : JSON.stringify(corpo)) });
 
-// As 21 chaves do item de GET /api/estoque/itens-disponiveis (contrato da 12D-2, igual ao teste de integração do backend).
+// As 22 chaves do item de GET /api/estoque/itens-disponiveis (contrato da 12D-2 + `grupo`, o valor efetivo de exibição da
+// classificação V2, igual ao teste de integração do backend).
 const CHAVES_DO_ITEM = [
   'abaixoDoMinimo', 'bloqueado', 'caValidade', 'categoria', 'codigoInterno', 'comprometido', 'deficit', 'disponivel', 'estoqueMinimo', 'fisicoUtilizavel',
-  'material', 'materialId', 'minimoOrigem', 'necessidade', 'saldo', 'saldoLivre', 'semCobertura', 'tamanho', 'tipo', 'unidade', 'validade',
+  'grupo', 'material', 'materialId', 'minimoOrigem', 'necessidade', 'saldo', 'saldoLivre', 'semCobertura', 'tamanho', 'tipo', 'unidade', 'validade',
 ];
-const item = (extra = {}) => ({
-  materialId: 1, material: 'Botina de segurança', codigoInterno: 'EPI-001', categoria: 'EPI', tipo: 'Sapatão / Botina', tamanho: '40',
-  saldo: 12, bloqueado: 0, disponivel: 12, fisicoUtilizavel: 12, comprometido: 0, saldoLivre: 12, semCobertura: 0,
-  estoqueMinimo: 5, minimoOrigem: 'PADRAO', abaixoDoMinimo: false, deficit: 0, necessidade: 0, unidade: 'par', caValidade: '2027-01-31', validade: 'ok', ...extra,
-});
+// `grupo` é o valor efetivo de exibição que o servidor mede: por padrão acompanha a categoria (só difere no grupo "Outros" da V2).
+const item = (extra = {}) => {
+  const i = {
+    materialId: 1, material: 'Botina de segurança', codigoInterno: 'EPI-001', categoria: 'EPI', tipo: 'Sapatão / Botina', tamanho: '40',
+    saldo: 12, bloqueado: 0, disponivel: 12, fisicoUtilizavel: 12, comprometido: 0, saldoLivre: 12, semCobertura: 0,
+    estoqueMinimo: 5, minimoOrigem: 'PADRAO', abaixoDoMinimo: false, deficit: 0, necessidade: 0, unidade: 'par', caValidade: '2027-01-31', validade: 'ok', ...extra,
+  };
+  if (!Object.hasOwn(extra, 'grupo')) i.grupo = i.categoria;
+  return i;
+};
 const pagina = (itens, extra = {}) => ({ status: 'ok', itens, total: itens.length, pagina: 1, limite: 50, filtros: { categorias: ['EPI'], tipos: ['Sapatão / Botina'], tamanhos: ['40'] }, ...extra });
 
 let chamadas;
@@ -338,11 +344,11 @@ describe('inspeção estática: pages/available-items.html integrada, interface 
 
   test('menu: estrutura preservada; Análise de estoque ativa; integrados por permissão; demais sem link', () => {
     const links = [...html.matchAll(/<a [^>]*data-pagina="([^"]+)"[^>]*>/g)];
-    assert.deepEqual(links.map((m) => m[1]).sort(), ['autorizacoes-individuais', 'availableItems', 'config', 'dashboard', 'deliveredItems', 'employeeGroups', 'employeeHistory', 'epiFicha', 'gestaoUsuarios', 'grupo-permissoes', 'grupo-usuarios', 'grupos-acesso', 'importEmployees', 'materials', 'newUser', 'operations', 'reports', 'request', 'stockRequests', 'stockValidity', 'supervisorApproval', 'userAdmin']);
+    assert.deepEqual(links.map((m) => m[1]).sort(), ['autorizacoes-individuais', 'availableItems', 'config', 'dashboard', 'deliveredItems', 'employeeGroups', 'employeeHistory', 'epiFicha', 'funcionarios', 'gestaoUsuarios', 'grupo-permissoes', 'grupo-usuarios', 'grupos-acesso', 'importEmployees', 'materials', 'newUser', 'operations', 'reports', 'request', 'stockRequests', 'stockValidity', 'supervisorApproval', 'userAdmin']);
     for (const m of links) assert.match(m[0], /style="display:none"/);
     assert.match(html, /<a class="active" href="javascript:void\(0\)" data-pagina="availableItems"/);
     const hrefs = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]).filter((h) => !h.startsWith('http') && !h.startsWith('../css/') && h !== 'javascript:void(0)');
-    const permitidos = new Set(['reports.html', 'materials.html', 'stock-validity.html', 'operations.html', 'dashboard.html', 'delivered-items.html', 'employee-groups.html', 'epi-ficha.html', 'employee-history.html', 'import-employees.html', 'request.html', 'supervisor-approval.html', 'stock-requests.html', 'grupos-acesso.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'autorizacoes-individuais.html', 'new-user.html', 'user-admin.html', 'gestao-usuarios.html', 'config.html', '../portal/index.html', '../portal/inicio.html']);
+    const permitidos = new Set(['reports.html', 'materials.html', 'stock-validity.html', 'operations.html', 'dashboard.html', 'delivered-items.html', 'employee-groups.html', 'epi-ficha.html', 'funcionarios.html', 'employee-history.html', 'import-employees.html', 'request.html', 'supervisor-approval.html', 'stock-requests.html', 'grupos-acesso.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'autorizacoes-individuais.html', 'new-user.html', 'user-admin.html', 'gestao-usuarios.html', 'config.html', '../portal/index.html', '../portal/inicio.html']);
     for (const h of hrefs) assert.ok(permitidos.has(h), h);
     // 20 na C3; a C4 integrou Histórico e Importar Funcionários (D9): restam 18; Configurações integrada: restam 8 pendentes.
     assert.ok([...html.matchAll(/<a class="nav-pendente"/g)].length >= 6); // 12K-D: Relatórios integrado; C6: Dashboard; E7: Validade; E8: Operações; F: Novo Usuário e Administração de Usuários; 10I: Ficha de EPI; 12G-1: as três da solicitação

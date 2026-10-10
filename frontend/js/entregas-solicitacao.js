@@ -250,7 +250,7 @@
       var botao = no('button', { type: 'button', class: 'request-item lista-linha', 'data-solicitacao-id': s.id, 'aria-current': s.id === det.id ? 'true' : null }, [
         no('span', { class: 'request-meta' }, [
           no('strong', { texto: 'Pedido nº ' + s.numero }),
-          no('span', { texto: s.funcionario.nome + ' · matrícula ' + s.funcionario.matricula }),
+          no('span', { texto: s.funcionario.nome + (s.funcionario.matricula ? ' · matrícula ' + s.funcionario.matricula : '') }),
           no('span', { texto: 'Criado em ' + dataHora(s.criadaEm) + (s.decididaEm ? ' · decidido em ' + dataHora(s.decididaEm) : '') }),
           no('span', { texto: 'Aprovadas ' + q.aprovada + ' · Entregues ' + q.entregue + ' · Restantes ' + q.restante }),
         ]),
@@ -383,7 +383,7 @@
       dl.textContent = '';
       if (s.funcionario) {
         par(dl, 'Trabalhador', s.funcionario.nome + (s.funcionario.ativo === false ? ' (inativo)' : ''));
-        par(dl, 'Matrícula', s.funcionario.matricula);
+        par(dl, 'Matrícula', s.funcionario.matricula || '—');
         par(dl, 'Setor', s.funcionario.setor);
         par(dl, 'Função', s.funcionario.funcao);
       }

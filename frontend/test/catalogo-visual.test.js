@@ -17,11 +17,12 @@ const path = require('node:path');
 const RAIZ = path.join(__dirname, '..');
 const ler = (rel) => fs.readFileSync(path.join(RAIZ, rel), 'utf8');
 const C = require('../js/catalogo-visual');
-const EpiMateriais = require('../js/materiais');
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const TIPOS_ATUAIS = EpiMateriais.formulario.TIPOS;
-const CATEGORIAS_ATUAIS = EpiMateriais.formulario.CATEGORIAS;
+// Cópia congelada das listas legadas da 12G-8 (Categoria → Tipo). A classificação V2 (08/10/2026) tirou essas listas do
+// módulo de Materiais (o tipo agora vem do catálogo da empresa); o catálogo visual continua reconhecendo os nomes
+// legados pelo material já gravado, e é isso que esta baseline segue provando. Os nomes V2 estão em catalogo-visual-v2.test.js.
+const CATEGORIAS_ATUAIS = ['EPI', 'Uniforme', 'Ferramenta', 'Material de consumo'];
 const CHAVES_DOS_TIPOS = ['botina', 'oculos', 'luva', 'protetor-auricular', 'capacete', 'respirador'];
 const CHAVES_DAS_CATEGORIAS = ['epi', 'uniforme', 'ferramenta', 'consumo'];
 const GENERICO = 'material';
@@ -33,6 +34,7 @@ const LISTA_EPI = [
   'Respirador PFF2', 'Sapato de Segurança', 'Viseira Película Ouro',
 ];
 const LISTA_UNIFORME = ['Calça', 'Calça de Forneiro', 'Calça Eletricista', 'Camisa', 'Camisa de Forneiro', 'Camisa Eletricista', 'Camiseta', 'Outros'];
+const TIPOS_ATUAIS = [...LISTA_EPI, ...LISTA_UNIFORME].filter((t) => t !== 'Outros');
 const TIPO_POR_CHAVE = {
   botina: 'Botina de Segurança', oculos: 'Óculos de Proteção Incolor', luva: 'Luva', 'protetor-auricular': 'Proteção Auricular Concha', capacete: 'Capacete', respirador: 'Respirador PFF2',
 };
@@ -97,10 +99,8 @@ const serializar = (el) => `<${el.tagName}${el.atributos.map(([k, v]) => ` ${k}=
   + `</${el.tagName}>`;
 
 describe('RED 1 — resolução: tipo, depois categoria, depois genérico', () => {
-  test('as listas atuais são as da tela de Materiais (12G-8); o catálogo continua com os onze desenhos da 12G-7', () => {
+  test('as listas legadas da 12G-8 (cópia congelada); o catálogo continua com os onze desenhos da 12G-7', () => {
     assert.deepEqual(TIPOS_ATUAIS, [...LISTA_EPI, ...LISTA_UNIFORME].filter((t) => t !== 'Outros'));
-    assert.deepEqual(EpiMateriais.formulario.TIPOS_POR_CATEGORIA.EPI, LISTA_EPI);
-    assert.deepEqual(EpiMateriais.formulario.TIPOS_POR_CATEGORIA.Uniforme, LISTA_UNIFORME);
     assert.deepEqual(CATEGORIAS_ATUAIS, ['EPI', 'Uniforme', 'Ferramenta', 'Material de consumo']);
     assert.deepEqual([...C.CHAVES], [...CHAVES_DOS_TIPOS, ...CHAVES_DAS_CATEGORIAS, GENERICO]);
   });

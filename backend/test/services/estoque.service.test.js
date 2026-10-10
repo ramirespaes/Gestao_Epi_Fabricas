@@ -58,7 +58,7 @@ async function esperarHttpError(promessa, status, codigo) {
 // ═══════════════════════════════════════════════════════════════════
 describe('listarDisponiveis — pela posição de todos os pares, com a data operacional (12D-2)', () => {
   const itemDaPosicao = (extra = {}) => ({
-    materialId: 1, material: 'Botina', codigoInterno: 'EPI-1', categoria: 'EPI', tipo: 'Botina', tamanho: '40', unidade: 'par',
+    materialId: 1, material: 'Botina', codigoInterno: 'EPI-1', categoria: 'EPI', grupo: 'EPI', tipo: 'Botina', tamanho: '40', unidade: 'par',
     saldo: 8, bloqueado: 3, fisicoUtilizavel: 5, demandaPendente: 2, comprometido: 2, saldoLivre: 3, semCobertura: 0,
     estoqueMinimo: 5, minimoOrigem: 'PROPRIO', abaixoDoMinimo: true, deficit: 2, necessidade: 2, caValidade: '2027-01-31', validade: 'ok', ...extra,
   });
@@ -90,6 +90,7 @@ describe('listarDisponiveis — pela posição de todos os pares, com a data ope
       material: 'Botina',
       codigoInterno: 'EPI-1',
       categoria: 'EPI',
+      grupo: 'EPI',
       tipo: 'Botina',
       tamanho: '40',
       saldo: 8,

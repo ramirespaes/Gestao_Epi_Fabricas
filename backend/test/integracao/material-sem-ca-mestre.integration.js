@@ -53,7 +53,8 @@ describe('E10 — material sem CA mestre na API (PostgreSQL real)', () => {
   const q = (sql, params) => pool.query(sql, params);
   const api = (metodo, rota) => request(app)[metodo](rota).set('Cookie', cookie);
   const colunasCa = async (id) => (await q("SELECT ca_numero, to_char(ca_validade, 'YYYY-MM-DD') AS ca_validade FROM materiais WHERE id = $1", [id])).rows[0];
-  const valido = (extra = {}) => ({ nome: 'Luva nitrílica', prazoUsoDias: 180, exigeTamanho: true, ...extra });
+  // Classificação V2: grupo "Outros" com especificação, que não depende do catálogo (o assunto aqui é o CA do cadastro).
+  const valido = (extra = {}) => ({ nome: 'Luva nitrílica', categoria: 'Outros', categoriaDescricao: 'Luva', tipo: 'Outros', tipoDescricao: 'Luva nitrílica', prazoUsoDias: 180, exigeTamanho: true, ...extra });
 
   before(async () => {
     contexto = await abrirPoolTemporario(TODAS_AS_MIGRATIONS);

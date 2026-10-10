@@ -24,12 +24,20 @@ const ler = (rel) => fs.readFileSync(path.join(RAIZ, rel), 'utf8');
 
 const resposta = (status, corpo) => ({ status, ok: status >= 200 && status < 300, text: async () => (corpo === undefined ? '' : JSON.stringify(corpo)) });
 let chamadas;
+let chamadasGhes;
+// GHEs ativos que a rota de opções do seletor devolve; null = lista indisponível (403), o que mantém a validação local dos testes antigos.
+let ghesDaEmpresa = null;
 function servidor(...respostas) {
   chamadas = [];
+  chamadasGhes = [];
   let i = 0;
   EpiHttp.configurar({
     baseUrl: BASE,
     fetch: async (url, opcoes) => {
+      if (new URL(url).pathname === '/api/funcionarios/importacao/ghes') {
+        chamadasGhes.push({ metodo: opcoes.method });
+        return ghesDaEmpresa === null ? resposta(403, { status: 'erro', codigo: 'SEM_PERMISSAO' }) : resposta(200, { status: 'ok', ghes: ghesDaEmpresa });
+      }
       chamadas.push({ metodo: opcoes.method, caminho: new URL(url).pathname + new URL(url).search, corpo: opcoes && opcoes.body ? JSON.parse(opcoes.body) : undefined });
       const r = typeof respostas[0] === 'function' ? respostas[0](chamadas[chamadas.length - 1]) : respostas[Math.min(i, respostas.length - 1)];
       i += 1;
@@ -38,7 +46,7 @@ function servidor(...respostas) {
     },
   });
 }
-beforeEach(() => servidor(resposta(200, { status: 'ok' })));
+beforeEach(() => { ghesDaEmpresa = null; servidor(resposta(200, { status: 'ok' })); });
 
 /** CPF válido a partir de um número (dígitos verificadores calculados). */
 function gerarCpf(n) {
@@ -95,8 +103,8 @@ function xlsx(abas) {
   return zip(arquivos);
 }
 // 12G-9: a coluna GHE (nome exato do GHE da empresa) é obrigatória.
-const CABECALHO = ['Nome', 'Setor', 'Telefone', 'CPF', 'Matrícula', 'Nascimento', 'Contratação', 'Cargo', 'GHE'];
-const CABECALHO_SEM_GHE = CABECALHO.slice(0, 8);
+const CABECALHO = ['Nome', 'Setor', 'Telefone', 'CPF', 'Matrícula', 'Nascimento', 'Contratação', 'Cargo', 'Situação', 'GHE'];
+const CABECALHO_SEM_GHE = CABECALHO.slice(0, 9);
 const GHE_PLANILHA = 'GHE Produção';
 /** Número serial do Excel para uma data AAAA-MM-DD (época 1900). */
 const serial = (iso) => (Date.UTC(...iso.split('-').map((x, i) => (i === 1 ? Number(x) - 1 : Number(x)))) / 86400000) + 25569;
@@ -160,15 +168,15 @@ describe('CSV: leitura robusta e codificação', () => {
 
 describe('planilha: cabeçalho, conversão e validação por linha (sem inventar dados)', () => {
   const linhaCsv = (extra = {}) => {
-    const v = { nome: 'João Pereira', setor: 'Produção', telefone: '(47) 99999-0001', cpf: '529.982.247-25', matricula: 'MAT-000001', nascimento: '15/03/1990', contratacao: '01/06/2020', cargo: 'Operador', ghe: GHE_PLANILHA, ...extra };
-    return [v.nome, v.setor, v.telefone, v.cpf, v.matricula, v.nascimento, v.contratacao, v.cargo, v.ghe];
+    const v = { nome: 'João Pereira', setor: 'Produção', telefone: '(47) 99999-0001', cpf: '529.982.247-25', matricula: 'MAT-000001', nascimento: '15/03/1990', contratacao: '01/06/2020', cargo: 'Operador', situacao: 'Ativo', ghe: GHE_PLANILHA, ...extra };
+    return [v.nome, v.setor, v.telefone, v.cpf, v.matricula, v.nascimento, v.contratacao, v.cargo, v.situacao, v.ghe];
   };
 
   test('cabeçalhos por sinônimos, sem diferença de caixa; colunas desconhecidas ignoradas; chaves perigosas nunca viram propriedade', () => {
-    const r = F.planilha.interpretar([['NOME', 'Departamento', 'Celular', 'cpf', 'Registro', 'Data de nascimento', 'Admissão', 'Função', 'Grupo Homogêneo', '__proto__', 'constructor'], linhaCsv().concat(['x', 'y'])]);
+    const r = F.planilha.interpretar([['NOME', 'Departamento', 'Celular', 'cpf', 'Registro', 'Data de nascimento', 'Admissão', 'Função', 'Situação', 'Grupo Homogêneo', '__proto__', 'constructor'], linhaCsv().concat(['x', 'y'])]);
     assert.equal(r.ok, true, JSON.stringify(r));
     const l = r.linhas[0];
-    assert.deepEqual(l.dados, { nome: 'João Pereira', setor: 'Produção', telefone: '(47) 99999-0001', cpf: '52998224725', matricula: 'MAT-000001', dataNascimento: '1990-03-15', dataAdmissao: '2020-06-01', funcao: 'Operador', ghe: GHE_PLANILHA });
+    assert.deepEqual(l.dados, { nome: 'João Pereira', setor: 'Produção', telefone: '(47) 99999-0001', cpf: '52998224725', matricula: 'MAT-000001', dataNascimento: '1990-03-15', dataAdmissao: '2020-06-01', funcao: 'Operador', ghe: GHE_PLANILHA, situacao: 'ativo' });
     assert.equal(l.exibicao.ghe, GHE_PLANILHA);
     assert.deepEqual([l.linha, l.erros, l.avisos], [2, [], []]);
     assert.equal(Object.getPrototypeOf(l.dados), Object.prototype, 'nenhuma poluição de protótipo');
@@ -179,11 +187,11 @@ describe('planilha: cabeçalho, conversão e validação por linha (sem inventar
   });
 
   test('coluna obrigatória ausente, sem dados ou acima de 1.000 linhas: erro do arquivo', () => {
-    assert.deepEqual(F.planilha.interpretar([['Nome', 'Setor', 'CPF', 'Matrícula', 'Cargo'], ['a', 'b', 'c', 'd', 'e']]), { ok: false, codigo: 'COLUNAS_AUSENTES', colunas: ['Contratação', 'GHE'] });
+    assert.deepEqual(F.planilha.interpretar([['Nome', 'Setor', 'CPF', 'Matrícula', 'Cargo'], ['a', 'b', 'c', 'd', 'e']]), { ok: false, codigo: 'COLUNAS_AUSENTES', colunas: ['Dt.Admissão', 'Situação', 'Nome GHE'] });
     // CASO A (12G-9): planilha sem a coluna GHE é erro estrutural — nenhuma linha é interpretada nem enviada.
-    assert.deepEqual(F.planilha.interpretar([CABECALHO_SEM_GHE, linhaCsv().slice(0, 8)]), { ok: false, codigo: 'COLUNAS_AUSENTES', colunas: ['GHE'] });
-    assert.match(F.mensagens.erroArquivo({ ok: false, codigo: 'COLUNAS_AUSENTES', colunas: ['GHE'] }), /GHE/);
-    assert.deepEqual(F.planilha.interpretar([CABECALHO, ['', '', '', '', '', '', '', '', '']]), { ok: false, codigo: 'SEM_DADOS' });
+    assert.deepEqual(F.planilha.interpretar([CABECALHO_SEM_GHE, linhaCsv().slice(0, 9)]), { ok: false, codigo: 'COLUNAS_AUSENTES', colunas: ['Nome GHE'] });
+    assert.match(F.mensagens.erroArquivo({ ok: false, codigo: 'COLUNAS_AUSENTES', colunas: ['Nome GHE'] }), /GHE/);
+    assert.deepEqual(F.planilha.interpretar([CABECALHO, ['', '', '', '', '', '', '', '', '', '']]), { ok: false, codigo: 'SEM_DADOS' });
     const mil1 = [CABECALHO].concat(Array.from({ length: 1001 }, (_, i) => linhaCsv({ cpf: gerarCpf(i), matricula: `M${i}` })));
     assert.deepEqual(F.planilha.interpretar(mil1), { ok: false, codigo: 'LINHAS_EXCEDIDAS', total: 1001 });
     const mil = [CABECALHO].concat(Array.from({ length: 1000 }, (_, i) => linhaCsv({ cpf: gerarCpf(i), matricula: `M${i}` })));
@@ -191,7 +199,7 @@ describe('planilha: cabeçalho, conversão e validação por linha (sem inventar
   });
 
   test('linha em branco é ignorada, mas a numeração continua a da planilha', () => {
-    const r = F.planilha.interpretar([CABECALHO, linhaCsv(), ['', '', '', '', '', '', '', '', ''], linhaCsv({ cpf: gerarCpf(9), matricula: 'M9' })]);
+    const r = F.planilha.interpretar([CABECALHO, linhaCsv(), ['', '', '', '', '', '', '', '', '', ''], linhaCsv({ cpf: gerarCpf(9), matricula: 'M9' })]);
     assert.deepEqual(r.linhas.map((l) => l.linha), [2, 4]);
   });
 
@@ -199,7 +207,7 @@ describe('planilha: cabeçalho, conversão e validação por linha (sem inventar
     const r = F.planilha.interpretar([CABECALHO, linhaCsv(), linhaCsv({ ghe: '', cpf: gerarCpf(2), matricula: 'M2' }), linhaCsv({ ghe: '   ', cpf: gerarCpf(3), matricula: 'M3' }),
       linhaCsv({ ghe: 'G'.repeat(151), cpf: gerarCpf(4), matricula: 'M4' }), linhaCsv({ ghe: 'GHE\u0007', cpf: gerarCpf(5), matricula: 'M5' }), linhaCsv({ ghe: '  GHE Produção ', cpf: gerarCpf(6), matricula: 'M6' })]);
     assert.deepEqual(r.linhas.map((l) => l.erros.map((e) => e.campo)), [[], ['ghe'], ['ghe'], ['ghe'], ['ghe'], []]);
-    assert.match(r.linhas[1].erros[0].mensagem, /GHE obrigatório/);
+    assert.match(r.linhas[1].erros[0].mensagem, /Nome GHE não informado/);
     assert.deepEqual([r.linhas[1].dados.ghe, r.linhas[5].dados.ghe], ['', 'GHE Produção'], 'aparado nas pontas; vazio continua vazio');
     assert.deepEqual([r.validas, r.comErro], [2, 4]);
     assert.equal(F.LIMITES.ghe, 150);
@@ -211,7 +219,8 @@ describe('planilha: cabeçalho, conversão e validação por linha (sem inventar
     assert.deepEqual(erros({ nome: '' }), ['nome']);
     assert.deepEqual(erros({ setor: '' }), ['setor']);
     assert.deepEqual(erros({ cargo: '' }), ['funcao']);
-    assert.deepEqual(erros({ matricula: '' }), ['matricula']);
+    assert.deepEqual(erros({ matricula: '' }), [], 'matrícula é opcional');
+    assert.deepEqual(erros({ matricula: 'M'.repeat(31) }), ['matricula']);
     assert.deepEqual(erros({ cpf: '529.982.247-26' }), ['cpf']);
     assert.deepEqual(erros({ cpf: '111.111.111-11' }), ['cpf']);
     assert.deepEqual(erros({ cpf: '5299822472' }), ['cpf'], 'texto com 10 dígitos: nunca completado');
@@ -241,8 +250,8 @@ describe('planilha: cabeçalho, conversão e validação por linha (sem inventar
     assert.doesNotMatch(html, /<img|<script/);
     assert.match(html, /&lt;img/);
     assert.match(html, /&lt;script&gt;alert\(2\)/);
-    assert.equal((html.match(/<td/g) || []).length, 11, '#, oito colunas da planilha, GHE e status');
-    assert.match(F.render.previa(F.planilha.interpretar([CABECALHO, linhaCsv()]).linhas), /<td>Operador<\/td><td>GHE Produção<\/td><td><span/, 'GHE depois do cargo, antes do status');
+    assert.equal((html.match(/<td/g) || []).length, 9, '#, nome, setor, CPF, admissão, cargo, GHE, situação e status');
+    assert.match(F.render.previa(F.planilha.interpretar([CABECALHO, linhaCsv()]).linhas), /<td>Operador<\/td><td>GHE Produção<\/td><td>Ativo<\/td><td><span/, 'GHE e situação depois do cargo, antes do status');
   });
 
   test('prévia mostra o CPF minimizado (***.***.***-XX); o valor enviado ao servidor continua completo', () => {
@@ -260,7 +269,7 @@ describe('planilha: cabeçalho, conversão e validação por linha (sem inventar
 describe('Excel (.xlsx) real pela cópia local da biblioteca', () => {
   test('lê a primeira aba; datas do Excel em UTC sem deslocamento; fórmula usa o valor salvo; aba extra ignorada', async () => {
     const r = await lerXlsx({
-      Funcionarios: [CABECALHO, ['João Pereira', 'Produção', '(47) 99999-0001', '529.982.247-25', 'MAT-1', { data: serial('1990-10-15') }, { data: serial('2026-10-15') }, { formula: 'CONCAT("Oper","ador")', valor: 'Operador' }, GHE_PLANILHA]],
+      Funcionarios: [CABECALHO, ['João Pereira', 'Produção', '(47) 99999-0001', '529.982.247-25', 'MAT-1', { data: serial('1990-10-15') }, { data: serial('2026-10-15') }, { formula: 'CONCAT("Oper","ador")', valor: 'Operador' }, 'Ativo', GHE_PLANILHA]],
       Outra: [['qualquer coisa']],
     });
     assert.equal(r.ok, true, JSON.stringify(r));
@@ -273,8 +282,8 @@ describe('Excel (.xlsx) real pela cópia local da biblioteca', () => {
     const comZeroInicial = '01234567890'; // CPF válido que começa com zero (DV 9 e 0)
     assert.equal(F.utilitarios.cpfValido(comZeroInicial), true);
     const r = await lerXlsx({ F: [CABECALHO,
-      ['A', 'S', null, Number(comZeroInicial), 'M1', null, { data: serial('2020-06-01') }, 'C', 'G'],
-      ['B', 'S', null, 1234567, 'M2', null, { data: serial('2020-06-01') }, 'C', 'G'],
+      ['A', 'S', null, Number(comZeroInicial), 'M1', null, { data: serial('2020-06-01') }, 'C', 'Ativo', 'G'],
+      ['B', 'S', null, 1234567, 'M2', null, { data: serial('2020-06-01') }, 'C', 'Ativo', 'G'],
     ] });
     const linhas = F.planilha.interpretar(r.linhas).linhas;
     assert.equal(linhas[0].dados.cpf, comZeroInicial);
@@ -285,17 +294,17 @@ describe('Excel (.xlsx) real pela cópia local da biblioteca', () => {
   });
 
   test('matrícula e telefone numéricos: lidos como estão, NUNCA completados com zeros; a prévia aponta a ambiguidade', async () => {
-    const r = await lerXlsx({ F: [CABECALHO, ['A', 'S', 4799990001, '529.982.247-25', 171, null, { data: serial('2020-06-01') }, 'C', 'G']] });
+    const r = await lerXlsx({ F: [CABECALHO, ['A', 'S', 4799990001, '529.982.247-25', 171, null, { data: serial('2020-06-01') }, 'C', 'Ativo', 'G']] });
     const l = F.planilha.interpretar(r.linhas).linhas[0];
     assert.deepEqual([l.dados.matricula, l.dados.telefone], ['171', '4799990001']);
     assert.deepEqual(l.avisos.map((a) => a.campo).sort(), ['matricula', 'telefone']);
     assert.deepEqual(l.erros, []);
-    const decimal = await lerXlsx({ F: [CABECALHO, ['A', 'S', null, '529.982.247-25', 171.5, null, { data: serial('2020-06-01') }, 'C', 'G']] });
+    const decimal = await lerXlsx({ F: [CABECALHO, ['A', 'S', null, '529.982.247-25', 171.5, null, { data: serial('2020-06-01') }, 'C', 'Ativo', 'G']] });
     assert.deepEqual(F.planilha.interpretar(decimal.linhas).linhas[0].erros.map((e) => e.campo), ['matricula']);
   });
 
   test('data digitada como número comum (sem formato de data): erro, sem adivinhar', async () => {
-    const r = await lerXlsx({ F: [CABECALHO, ['A', 'S', null, '529.982.247-25', 'M', null, 44000, 'C', 'G']] });
+    const r = await lerXlsx({ F: [CABECALHO, ['A', 'S', null, '529.982.247-25', 'M', null, 44000, 'C', 'Ativo', 'G']] });
     assert.deepEqual(F.planilha.interpretar(r.linhas).linhas[0].erros.map((e) => e.campo), ['dataAdmissao']);
   });
 
@@ -307,14 +316,14 @@ describe('Excel (.xlsx) real pela cópia local da biblioteca', () => {
 
 describe('lotes: até 100 linhas e dentro do limite real de bytes do corpo', () => {
   const meta = { importacaoId: '7c9e6679-7425-40de-944b-e07fc1f90ae7', arquivo: { nome: 'funcionarios.xlsx', formato: 'xlsx', totalLinhas: 0 } };
-  const valida = (i, extra = {}) => ({ linha: i + 2, dados: { nome: `F ${i}`, cpf: gerarCpf(i), matricula: `M${i}`, dataAdmissao: '2020-06-01', dataNascimento: null, setor: 'S', funcao: 'C', telefone: null, ghe: 'G', ...extra }, erros: [], avisos: [] });
+  const valida = (i, extra = {}) => ({ linha: i + 2, dados: { nome: `F ${i}`, cpf: gerarCpf(i), matricula: `M${i}`, situacao: 'ativo', dataAdmissao: '2020-06-01', dataNascimento: null, setor: 'S', funcao: 'C', telefone: null, ghe: 'G', ...extra }, erros: [], avisos: [] });
 
   test('250 linhas curtas: 3 lotes (100, 100, 50) numerados; declaração confirmada na versão vigente; só linhas válidas', () => {
     const lotes = F.lotes.montar(Array.from({ length: 250 }, (_, i) => valida(i)), meta);
     assert.deepEqual(lotes.map((l) => [l.lote.numero, l.lote.total, l.linhas.length]), [[1, 3, 100], [2, 3, 100], [3, 3, 50]]);
     assert.deepEqual(lotes[0].declaracaoLgpd, { versao: F.DECLARACAO.versao, confirmada: true });
     assert.deepEqual(Object.keys(lotes[0]).sort(), ['arquivo', 'declaracaoLgpd', 'importacaoId', 'linhas', 'lote']);
-    assert.deepEqual(lotes[0].linhas[0], { linha: 2, nome: 'F 0', cpf: gerarCpf(0), matricula: 'M0', dataAdmissao: '2020-06-01', dataNascimento: null, setor: 'S', funcao: 'C', telefone: null, ghe: 'G' });
+    assert.deepEqual(lotes[0].linhas[0], { linha: 2, nome: 'F 0', cpf: gerarCpf(0), matricula: 'M0', situacao: 'ativo', dataAdmissao: '2020-06-01', dataNascimento: null, setor: 'S', funcao: 'C', telefone: null, ghe: 'G' });
     assert.equal(lotes[0].arquivo.totalLinhas, 250);
   });
 
@@ -424,17 +433,17 @@ describe('fluxo de envio: sequencial, sem reenvio automático, com resultado por
     // Divergências: valor atual vindo do servidor e valor da PLANILHA preenchido pela própria tela, com rótulo e exibição (datas DD/MM/AAAA).
     assert.deepEqual(c.linhas[2].divergencias, [
       { campo: 'nome', rotulo: 'Nome', atual: '<i>Ana Souza</i>', planilha: '<b>Ana</b>', oculto: false },
-      { campo: 'dataAdmissao', rotulo: 'Contratação', atual: '31/01/2020', planilha: '01/06/2021', oculto: false },
+      { campo: 'dataAdmissao', rotulo: 'Admissão', atual: '31/01/2020', planilha: '01/06/2021', oculto: false },
       { campo: 'telefone', rotulo: 'Telefone', atual: null, planilha: '47999990000', oculto: true },
       { campo: 'dataNascimento', rotulo: 'Nascimento', atual: null, planilha: '15/03/1990', oculto: true },
       { campo: 'ghe', rotulo: 'GHE', atual: null, planilha: 'GHE TI', oculto: false },
     ]);
     assert.deepEqual(c.resumo, { total: 8, cadastrados: 1, jaCadastrados: 1, divergentes: 1, duplicados: 0, recusados: 4, erros: 1, naoConfirmados: 0, naoEnviados: 0, naoImportados: 5 });
-    assert.deepEqual(c.porMotivo, [['GHE inexistente', 1], ['GHE não informado', 1], ['CPF ausente', 1], ['GHE inativo', 1], ['Erro de processamento', 1]]);
+    assert.deepEqual(c.porMotivo, [['GHE não encontrado', 1], ['GHE não informado', 1], ['CPF ausente', 1], ['GHE inativo', 1], ['Erro de processamento', 1]]);
     assert.deepEqual(F.fluxo.rotulo(c.linhas[0]), 'Importado com sucesso');
     assert.deepEqual(F.fluxo.rotulo(c.linhas[1]), 'Já cadastrado — sem alterações');
     assert.deepEqual(F.fluxo.rotulo(c.linhas[2]), 'Já cadastrado — dados divergentes');
-    assert.deepEqual(F.fluxo.rotulo(c.linhas[3]), 'Não importado — GHE inexistente');
+    assert.deepEqual(F.fluxo.rotulo(c.linhas[3]), 'Não importado — GHE não encontrado');
     assert.deepEqual(F.fluxo.rotulo({ situacao: 'NAO_CONFIRMADO' }), 'Não confirmado');
     assert.deepEqual(F.fluxo.rotulo({ situacao: 'RECUSADO', origem: 'previa', motivo: 'Nome obrigatório.' }), 'Não importado — Outro erro de validação');
 
@@ -442,7 +451,7 @@ describe('fluxo de envio: sequencial, sem reenvio automático, com resultado por
     for (const rotulo of ['Total processado', 'Importados com sucesso', 'Já cadastrados sem alteração', 'Já cadastrados com divergência', 'Não importados']) assert.match(html, new RegExp(`<span>${rotulo}</span>`));
     assert.match(html, /Importados com sucesso<\/span><strong>1</);
     assert.match(html, /Não importados<\/span><strong>5</);
-    assert.match(html, /GHE inexistente: 1/);
+    assert.match(html, /GHE não encontrado: 1/);
     assert.match(html, /CPF ausente: 1/);
     assert.match(html, /Importado com sucesso/);
     assert.match(html, /Já cadastrado — sem alterações/);
@@ -450,12 +459,12 @@ describe('fluxo de envio: sequencial, sem reenvio automático, com resultado por
     assert.match(html, /Já cadastrado — dados divergentes/);
     assert.match(html, /<th>Campo<\/th><th>Sistema atual<\/th><th>Planilha<\/th>/);
     assert.match(html, /<td>Nome<\/td><td>&lt;i&gt;Ana Souza&lt;\/i&gt;<\/td><td>&lt;b&gt;Ana&lt;\/b&gt;<\/td>/);
-    assert.match(html, /<td>Contratação<\/td><td>31\/01\/2020<\/td><td>01\/06\/2021<\/td>/);
+    assert.match(html, /<td>Admissão<\/td><td>31\/01\/2020<\/td><td>01\/06\/2021<\/td>/);
     assert.match(html, /<td>Telefone<\/td><td><em>não exibido \(dado sensível\)<\/em><\/td><td>47999990000<\/td>/);
     assert.match(html, /<td>GHE<\/td><td>—<\/td><td>GHE TI<\/td>/);
     assert.match(html, /Nenhuma alteração realizada/);
     assert.doesNotMatch(html, /<b>|<i>|52998224725|\*\*\*\.\*\*\*|47900000000/, 'nada do servidor ou da planilha vira HTML; CPF nunca aparece; telefone atual nunca é exibido');
-    assert.match(html, /Não importado — GHE inexistente/);
+    assert.match(html, /Não importado — GHE não encontrado/);
     assert.match(html, /Não importado — GHE não informado/);
     assert.match(html, /Não importado — Erro de processamento/);
   });
@@ -532,7 +541,7 @@ describe('inspeção estática das duas páginas', () => {
     for (const id of ['importDropzone', 'botaoBaixarModelo', 'importPreviewCard', 'lgpdConsentImport', 'importSummary', 'importErrorsBox', 'importPreviewBody', 'importConfirmBtn', 'botaoNovoArquivo', 'importResultCard', 'importResultSummary', 'botaoNovaImportacao', 'telaSessao', 'aviso']) {
       assert.match(imp, new RegExp(`id="${id}"`), `falta #${id}`);
     }
-    for (const coluna of ['Nome', 'Setor', 'Telefone', 'CPF', 'Matrícula', 'Nascimento', 'Contratação', 'Cargo', 'Status']) assert.match(imp, new RegExp(`<th>${coluna}</th>`));
+    for (const coluna of ['Nome', 'Setor', 'CPF', 'Admissão', 'Cargo', 'Nome GHE', 'Situação', 'Status']) assert.match(imp, new RegExp(`<th>${coluna}</th>`));
     assert.match(codigo, /pagina: 'importEmployees'/);
     assert.equal(/Administração de Usuários e Histórico/.test(imp), false, 'texto incorreto do protótipo removido');
   });
@@ -600,7 +609,7 @@ function montarPagina(arquivoHtml, { acesso = { permissoes: {}, podeAlterar: tru
 }
 
 const arquivoCsv = (texto, nome = 'funcionarios.csv') => Object.assign(new Blob([Buffer.from(texto, 'utf8')]), { name: nome });
-const CSV_OK = `Nome;Setor;Telefone;CPF;Matrícula;Nascimento;Contratação;Cargo;GHE\r\nJoão;Produção;;${gerarCpf(1)};M1;15/03/1990;01/06/2020;Operador;${GHE_PLANILHA}\r\nAna;TI;;${gerarCpf(2)};M2;;01/06/2021;Analista;GHE TI\r\nErro;TI;;529.982.247-26;M3;;01/06/2021;Analista;GHE TI\r\n`;
+const CSV_OK = `Nome;Setor;Telefone;CPF;Matrícula;Nascimento;Contratação;Cargo;Situação;GHE\r\nJoão;Produção;;${gerarCpf(1)};M1;15/03/1990;01/06/2020;Operador;Ativo;${GHE_PLANILHA}\r\nAna;TI;;${gerarCpf(2)};M2;;01/06/2021;Analista;Ativo;GHE TI\r\nErro;TI;;529.982.247-26;M3;;01/06/2021;Analista;Ativo;GHE TI\r\n`;
 
 describe('página Importar Funcionários (DOM simulado)', () => {
   const lotesOk = (chamada) => resposta(200, { status: 'ok', linhas: chamada.corpo.linhas.map((l) => ({ linha: l.linha, situacao: 'CADASTRADO', funcionarioId: l.linha })), resumo: {} });
@@ -640,13 +649,13 @@ describe('página Importar Funcionários (DOM simulado)', () => {
     servidor(lotesOk);
     const pg = montarPagina('pages/import-employees.html');
     await pg.esperar();
-    await comArquivo(pg, arquivoCsv(`Nome;Setor;Telefone;CPF;Matrícula;Nascimento;Contratação;Cargo\r\nJoão;Produção;;${gerarCpf(1)};M1;;01/06/2020;Operador\r\n`));
+    await comArquivo(pg, arquivoCsv(`Nome;Setor;Telefone;CPF;Matrícula;Nascimento;Contratação;Cargo;Situação\r\nJoão;Produção;;${gerarCpf(1)};M1;;01/06/2020;Operador;Ativo\r\n`));
     assert.match(pg.el('aviso').innerHTML, /Faltam colunas obrigatórias.*GHE/);
     assert.notEqual(pg.el('importPreviewCard').style.display, 'block');
     assert.equal(chamadas.length, 0);
-    await comArquivo(pg, arquivoCsv(`Nome;Setor;Telefone;CPF;Matrícula;Nascimento;Contratação;Cargo;GHE\r\nJoão;Produção;;${gerarCpf(1)};M1;;01/06/2020;Operador;\r\nAna;TI;;${gerarCpf(2)};M2;;01/06/2021;Analista;GHE TI\r\n`));
+    await comArquivo(pg, arquivoCsv(`Nome;Setor;Telefone;CPF;Matrícula;Nascimento;Contratação;Cargo;Situação;GHE\r\nJoão;Produção;;${gerarCpf(1)};M1;;01/06/2020;Operador;Ativo;\r\nAna;TI;;${gerarCpf(2)};M2;;01/06/2021;Analista;Ativo;GHE TI\r\n`));
     assert.equal(pg.el('importPreviewCard').style.display, 'block');
-    assert.match(pg.el('importErrorsBox').innerHTML, /Linha 2: GHE obrigatório/);
+    assert.match(pg.el('importErrorsBox').innerHTML, /Linha 2: Nome GHE não informado/);
     pg.el('lgpdConsentImport').checked = true;
     await pg.disparar('importConfirmBtn');
     assert.deepEqual(chamadas[0].corpo.linhas.map((l) => [l.linha, l.ghe]), [[3, 'GHE TI']]);
@@ -686,7 +695,7 @@ describe('página Importar Funcionários (DOM simulado)', () => {
     servidor(lotesOk);
     const pg = montarPagina('pages/import-employees.html');
     await pg.esperar();
-    const planilhaXlsx = Object.assign(new Blob([xlsx({ F: [CABECALHO, ['João', 'Produção', null, gerarCpf(1), 'M1', null, { data: serial('2020-06-01') }, 'Operador', GHE_PLANILHA]] })]), { name: 'funcionarios.xlsx' });
+    const planilhaXlsx = Object.assign(new Blob([xlsx({ F: [CABECALHO, ['João', 'Produção', null, gerarCpf(1), 'M1', null, { data: serial('2020-06-01') }, 'Operador', 'Ativo', GHE_PLANILHA]] })]), { name: 'funcionarios.xlsx' });
     await comArquivo(pg, planilhaXlsx);
     pg.el('lgpdConsentImport').checked = true;
     await pg.disparar('importConfirmBtn');
@@ -758,13 +767,13 @@ describe('página Importar Funcionários (DOM simulado)', () => {
     // Bytes, não .text(): o TextDecoder de .text() descarta o BOM, que precisa estar no arquivo para o Excel.
     const bytesModelo = Buffer.from(await blob.arrayBuffer());
     assert.deepEqual([...bytesModelo.subarray(0, 3)], [0xef, 0xbb, 0xbf], 'BOM UTF-8 para o Excel');
-    assert.equal(bytesModelo.subarray(3).toString('utf8'), 'Nome;Setor;Telefone;CPF;Matrícula;Nascimento;Contratação;Cargo;GHE\r\n');
+    assert.equal(bytesModelo.subarray(3).toString('utf8'), 'Nome;Setor;Cargo;Dt.Admissão;CPF;Matrícula;Situação;Nome GHE\r\n');
     assert.equal(pg.downloads.find((d) => d.nome).nome, 'modelo_funcionarios.csv');
   });
 
   test('12G-9 página: cabeçalho da prévia tem a coluna GHE entre Cargo e Status; o texto do modelo cita o GHE', () => {
     const imp = ler('pages/import-employees.html');
-    assert.match(imp, /<th>Cargo<\/th>\s*<th>GHE<\/th>\s*<th>Status<\/th>/);
+    assert.match(imp, /<th>Cargo<\/th>\s*<th>Nome GHE<\/th>\s*<th>Situação<\/th>\s*<th>Status<\/th>/);
     assert.match(imp, /GHE/);
   });
 });
@@ -909,7 +918,7 @@ describe('ajuste 1 — valores ambíguos exigem conferência expressa, distinta 
     servidor((c) => resposta(200, { status: 'ok', linhas: c.corpo.linhas.map((l) => ({ linha: l.linha, situacao: 'CADASTRADO', funcionarioId: l.linha })), resumo: {} }));
     const pg = montarPagina('pages/import-employees.html');
     await pg.esperar();
-    const planilhaXlsx = Object.assign(new Blob([xlsx({ F: [CABECALHO, ['João', 'Produção', null, gerarCpf(1), 171, null, { data: serial('2020-06-01') }, 'Operador', GHE_PLANILHA]] })]), { name: 'funcionarios.xlsx' });
+    const planilhaXlsx = Object.assign(new Blob([xlsx({ F: [CABECALHO, ['João', 'Produção', null, gerarCpf(1), 171, null, { data: serial('2020-06-01') }, 'Operador', 'Ativo', GHE_PLANILHA]] })]), { name: 'funcionarios.xlsx' });
     pg.el('importFileInput').files = [planilhaXlsx];
     await pg.disparar('importFileInput', 'change');
     assert.equal(pg.el('blocoConfirmacaoAmbiguos').style.display, 'block');
@@ -991,8 +1000,8 @@ describe('ajuste 3 — logout durante a importação: nenhum lote novo; lote já
     servidor((c) => (c.corpo.lote.numero === 1 ? pendente : ok(c.corpo.linhas.map((l) => l.linha))));
     const pg = montarPagina('pages/import-employees.html');
     await pg.esperar();
-    const linhasCsv = ['Nome;Setor;Telefone;CPF;Matrícula;Nascimento;Contratação;Cargo;GHE'];
-    for (let i = 0; i < 150; i += 1) linhasCsv.push(`F ${i};S;;${gerarCpf(i + 10)};M${i};;01/06/2020;C;G`);
+    const linhasCsv = ['Nome;Setor;Telefone;CPF;Matrícula;Nascimento;Contratação;Cargo;Situação;GHE'];
+    for (let i = 0; i < 150; i += 1) linhasCsv.push(`F ${i};S;;${gerarCpf(i + 10)};M${i};;01/06/2020;C;Ativo;G`);
     pg.el('importFileInput').files = [arquivoCsv(`${linhasCsv.join('\r\n')}\r\n`)];
     await pg.disparar('importFileInput', 'change');
     pg.el('lgpdConsentImport').checked = true;
@@ -1004,5 +1013,87 @@ describe('ajuste 3 — logout durante a importação: nenhum lote novo; lote já
     await envio;
     await pg.esperar();
     assert.equal(chamadas.length, 1, 'nenhum lote novo depois do encerramento da sessão');
+  });
+});
+
+// 12K-E — GHE na prévia: resolução automática, seleção explícita pelo SST e envio por id.
+describe('página Importar Funcionários — GHE na prévia (12K-E)', () => {
+  // A rota do seletor devolve só os ATIVOS, com id e nome.
+  const GHES_EMPRESA = [
+    { id: 11, nome: 'LAMINAÇÃO\r\n(SPINNER BLOCK)' },
+    { id: 12, nome: 'ALMOXARIFADO - INFLAMAVEL' },
+  ];
+  const importacaoOk = (c) => resposta(200, { status: 'ok', linhas: c.corpo.linhas.map((l) => ({ linha: l.linha, situacao: 'CADASTRADO', funcionarioId: l.linha })), resumo: {} });
+  const CSV = (linhas) => `Nome;Setor;Cargo;Dt.Admissão;CPF;Situação;Nome GHE\r\n${linhas.join('\r\n')}\r\n`;
+  const linha = (n, ghe) => `Pessoa ${n};Produção;Operador;01/06/2020;${gerarCpf(n)};Ativo;${ghe}`;
+  const selecao = (numeroLinha, valor) => ({ target: { value: String(valor), className: 'import-ghe-select', getAttribute: (nome) => (nome === 'data-linha' ? String(numeroLinha) : null) } });
+  const arquivo = (t) => Object.assign(new Blob([Buffer.from(t, 'utf8')]), { name: 'funcionarios.csv' });
+
+  async function previa(linhas) {
+    ghesDaEmpresa = GHES_EMPRESA;
+    servidor(importacaoOk);
+    const pg = montarPagina('pages/import-employees.html');
+    await pg.esperar();
+    pg.el('importFileInput').files = [arquivo(CSV(linhas))];
+    await pg.disparar('importFileInput', 'change');
+    return pg;
+  }
+  const contagem = (pg) => ({
+    validos: Number(/Válidos<\/span><strong>(\d+)/.exec(pg.el('importSummary').innerHTML)[1]),
+    erros: Number(/Com erro<\/span><strong>(\d+)/.exec(pg.el('importSummary').innerHTML)[1]),
+  });
+
+  test('a prévia consulta os GHEs da empresa; correspondência única com quebra de linha resolve sozinha, sem erro', async () => {
+    const pg = await previa([linha(1, '"LAMINAÇÃO\r\n(SPINNER BLOCK)"'), linha(2, 'ALMOXARIFADO  -   INFLAMAVEL')]);
+    assert.equal(chamadasGhes.length, 1, 'consulta a rota de opções da importação (GHEs ativos da empresa atual)');
+    assert.deepEqual(contagem(pg), { validos: 2, erros: 0 });
+    assert.equal(pg.el('importErrorsBox').style.display, 'none');
+    assert.equal((pg.el('importPreviewBody').innerHTML.match(/<select/g) || []).length, 0);
+  });
+
+  test('vazio, não encontrado e ambíguo: erro apontado e "Selecionar GHE" na linha, sem nenhum GHE pré-selecionado', async () => {
+    const pg = await previa([linha(1, 'ALMOXARIFADO - INFLAMAVEL'), linha(2, ''), linha(3, 'NAO EXISTE')]);
+    assert.deepEqual(contagem(pg), { validos: 1, erros: 2 });
+    const html = pg.el('importPreviewBody').innerHTML;
+    assert.equal((html.match(/<select/g) || []).length, 2);
+    assert.match(html, /Selecionar GHE/);
+    assert.doesNotMatch(html, /selected/);
+    assert.match(pg.el('importErrorsBox').innerHTML, /Linha 3: Nome GHE não informado/);
+    assert.match(pg.el('importErrorsBox').innerHTML, /Linha 4: GHE não encontrado/);
+    assert.equal((html.match(/<option value="\d+"/g) || []).length, 2 * GHES_EMPRESA.length, 'só os GHEs ativos da lista são opção');
+  });
+
+  test('a escolha explícita resolve só o GHE: contadores sobem, o erro some e o envio leva o gheId; sem escolha a pessoa não é importada', async () => {
+    const pg = await previa([linha(1, 'ALMOXARIFADO - INFLAMAVEL'), linha(2, ''), linha(3, 'NAO EXISTE')]);
+    await pg.disparar('importPreviewBody', 'change', selecao(3, 12));
+    assert.deepEqual(contagem(pg), { validos: 2, erros: 1 });
+    assert.doesNotMatch(pg.el('importErrorsBox').innerHTML, /Linha 3:/);
+    assert.match(pg.el('importErrorsBox').innerHTML, /Linha 4:/);
+    pg.el('lgpdConsentImport').checked = true;
+    await pg.disparar('importConfirmBtn');
+    const enviadas = chamadas.filter((c) => c.metodo === 'POST').flatMap((c) => c.corpo.linhas);
+    assert.deepEqual(enviadas.map((l) => [l.linha, l.gheId]), [[2, 12], [3, 12]], 'a linha 4 (sem escolha) não é enviada');
+  });
+
+  test('escolha de GHE que não está na lista da empresa é ignorada; escolher "Selecionar GHE" de novo mantém a linha inválida', async () => {
+    const pg = await previa([linha(1, 'NAO EXISTE')]);
+    await pg.disparar('importPreviewBody', 'change', selecao(2, 999));
+    assert.deepEqual(contagem(pg), { validos: 0, erros: 1 });
+    await pg.disparar('importPreviewBody', 'change', selecao(2, 11));
+    assert.deepEqual(contagem(pg), { validos: 1, erros: 0 });
+    await pg.disparar('importPreviewBody', 'change', selecao(2, ''));
+    assert.deepEqual(contagem(pg), { validos: 0, erros: 1 });
+  });
+
+  test('sem permissão ou falha para listar os GHEs: a validação local continua e a página avisa, sem seletor', async () => {
+    ghesDaEmpresa = null;
+    servidor(importacaoOk);
+    const pg = montarPagina('pages/import-employees.html');
+    await pg.esperar();
+    pg.el('importFileInput').files = [arquivo(CSV([linha(1, 'QUALQUER'), linha(2, '')]))];
+    await pg.disparar('importFileInput', 'change');
+    assert.equal((pg.el('importPreviewBody').innerHTML.match(/<select/g) || []).length, 0);
+    assert.deepEqual(contagem(pg), { validos: 1, erros: 1 });
+    assert.match(pg.el('aviso').innerHTML, /GHE/);
   });
 });

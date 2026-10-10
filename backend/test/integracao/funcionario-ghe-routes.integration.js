@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 
 const { abrirPoolTemporario, inserirEmpresa } = require('./helpers/schema-temporario');
+const { todasAsMigrations } = require('./helpers/entrega-epi');
 const { criarAppTeste } = require('../helpers/app-teste');
 const { criarAuthController } = require('../../src/controllers/auth.controller');
 const { criarAuthRoutes } = require('../../src/routes/auth.routes');
@@ -26,13 +27,8 @@ const { gerarHashSenha } = require('../../src/security/password');
  * no planejamento, seção 10.1). Nada é executado no banco principal.
  */
 
-const MIGRATIONS = [
-  '000', '001', '002', '003', '004', '005', '025', '006', '007', '008', '009', '010', '011',
-  '012', '013', '014', '015', '016', '017', '018', '019', '020', '021', '022', '023',
-  '040', // C4: funcionarios.data_admissao (lida pela projeção do repositório)
-  '074', // Gestão de Usuários: identidades.senha_provisoria (lida pela sessão empresarial)
-  '075', '076', '077', // Novo → Usuário: CPF da identidade, dados do vínculo e IPs permitidos (lidos pela sessão empresarial)
-];
+// A criação de GHE exige o código (083), que depende da 082 e de todo o catálogo de materiais: schema completo.
+const MIGRATIONS = todasAsMigrations();
 
 const SENHA = 'senha-correta-do-teste-bloco9-etapa-b-2026';
 let HASH_SENHA;
@@ -154,7 +150,10 @@ describe('API HTTP de GHE e funcionários com PostgreSQL real', () => {
   after(async () => { if (contexto) await contexto.encerrar(); });
 
   let gheId;
+  let gheBId;
   let funcionarioId;
+  // S4: o cadastro individual exige setor, função, GHE e admissão; os POSTs que miram outra regra levam os obrigatórios válidos.
+  const obrigatoriosA = () => ({ setor: 'Manutenção', funcao: 'Mecânico', dataAdmissao: '2020-06-01', grupoHomogeneoId: gheId });
 
   describe('Cenário 1 — sessão e permissão', () => {
     test('sem cookie: 401 nas duas famílias de rota', async () => {
@@ -182,7 +181,7 @@ describe('API HTTP de GHE e funcionários com PostgreSQL real', () => {
   describe('Cenário 2 — GHE: cadastro completo', () => {
     test('cria, audita GHE_CRIADO', async () => {
       const r = await request(app).post('/api/grupos-homogeneos').set('Cookie', cookieMasterA)
-        .send({ nome: 'Manutenção — Mecânicos', setor: 'Manutenção', funcao: 'Mecânico', riscos: 'Esmagamento; cortes' });
+        .send({ nome: 'Manutenção — Mecânicos', codigo: 'GHE-001', setor: 'Manutenção', funcao: 'Mecânico', riscos: 'Esmagamento; cortes' });
       assert.equal(r.status, 201);
       gheId = r.body.grupo.id;
       assert.equal(r.body.grupo.ativo, true);
@@ -190,10 +189,11 @@ describe('API HTTP de GHE e funcionários com PostgreSQL real', () => {
     });
 
     test('nome duplicado na mesma empresa: 409 GHE_NOME_EM_USO; mesmo nome em outra empresa: 201', async () => {
-      const dup = await request(app).post('/api/grupos-homogeneos').set('Cookie', cookieMasterA).send({ nome: 'Manutenção — Mecânicos' });
+      const dup = await request(app).post('/api/grupos-homogeneos').set('Cookie', cookieMasterA).send({ nome: 'Manutenção — Mecânicos', codigo: 'GHE-002' });
       assert.equal(dup.status, 409);
       assert.equal(dup.body.codigo, 'GHE_NOME_EM_USO');
-      const outra = await request(app).post('/api/grupos-homogeneos').set('Cookie', cookieMasterB).send({ nome: 'Manutenção — Mecânicos' });
+      const outra = await request(app).post('/api/grupos-homogeneos').set('Cookie', cookieMasterB).send({ nome: 'Manutenção — Mecânicos', codigo: 'GHE-001' });
+      gheBId = outra.body.grupo?.id;
       assert.equal(outra.status, 201);
     });
 
@@ -213,7 +213,7 @@ describe('API HTTP de GHE e funcionários com PostgreSQL real', () => {
     test('cria com GHE ativo: CPF normalizado, audita FUNCIONARIO_CRIADO SEM cpf/telefone no registro', async () => {
       const r = await request(app).post('/api/funcionarios').set('Cookie', cookieMasterA).send({
         matricula: 'MAT-000171', nome: 'Tício de Tal', cpf: CPF_A, grupoHomogeneoId: gheId,
-        dataNascimento: '1990-03-15', setor: 'Manutenção', funcao: 'Mecânico', cracha: 'CR-001284', telefone: '47999990000',
+        dataNascimento: '1990-03-15', setor: 'Manutenção', funcao: 'Mecânico', cracha: 'CR-001284', telefone: '47999990000', dataAdmissao: '2020-06-01',
       });
       assert.equal(r.status, 201);
       funcionarioId = r.body.funcionario.id;
@@ -243,21 +243,21 @@ describe('API HTTP de GHE e funcionários com PostgreSQL real', () => {
     });
 
     test('matrícula duplicada: 409 FUNCIONARIO_MATRICULA_EM_USO; CPF duplicado: 409 FUNCIONARIO_CPF_EM_USO', async () => {
-      const mat = await request(app).post('/api/funcionarios').set('Cookie', cookieMasterA).send({ matricula: 'MAT-000171', nome: 'Outro', cpf: CPF_B });
+      const mat = await request(app).post('/api/funcionarios').set('Cookie', cookieMasterA).send({ matricula: 'MAT-000171', nome: 'Outro', cpf: CPF_B, ...obrigatoriosA() });
       assert.equal(mat.status, 409);
       assert.equal(mat.body.codigo, 'FUNCIONARIO_MATRICULA_EM_USO');
-      const cpf = await request(app).post('/api/funcionarios').set('Cookie', cookieMasterA).send({ matricula: 'MAT-000999', nome: 'Outro', cpf: CPF_A });
+      const cpf = await request(app).post('/api/funcionarios').set('Cookie', cookieMasterA).send({ matricula: 'MAT-000999', nome: 'Outro', cpf: CPF_A, ...obrigatoriosA() });
       assert.equal(cpf.status, 409);
       assert.equal(cpf.body.codigo, 'FUNCIONARIO_CPF_EM_USO');
     });
 
     test('GHE inexistente: 400 FUNCIONARIO_GHE_INVALIDO; GHE inativo: 409 FUNCIONARIO_GHE_INATIVO; vínculo existente preservado', async () => {
-      const inexistente = await request(app).post('/api/funcionarios').set('Cookie', cookieMasterA).send({ matricula: 'M3', nome: 'X', cpf: CPF_B, grupoHomogeneoId: 999999 });
+      const inexistente = await request(app).post('/api/funcionarios').set('Cookie', cookieMasterA).send({ matricula: 'M3', nome: 'X', cpf: CPF_B, ...obrigatoriosA(), grupoHomogeneoId: 999999 });
       assert.equal(inexistente.status, 400);
       assert.equal(inexistente.body.codigo, 'FUNCIONARIO_GHE_INVALIDO');
 
       assert.equal((await request(app).post(`/api/grupos-homogeneos/${gheId}/inativar`).set('Cookie', cookieMasterA).send({})).status, 200);
-      const inativo = await request(app).post('/api/funcionarios').set('Cookie', cookieMasterA).send({ matricula: 'M3', nome: 'X', cpf: CPF_B, grupoHomogeneoId: gheId });
+      const inativo = await request(app).post('/api/funcionarios').set('Cookie', cookieMasterA).send({ matricula: 'M3', nome: 'X', cpf: CPF_B, ...obrigatoriosA() });
       assert.equal(inativo.status, 409);
       assert.equal(inativo.body.codigo, 'FUNCIONARIO_GHE_INATIVO');
 
@@ -269,7 +269,7 @@ describe('API HTTP de GHE e funcionários com PostgreSQL real', () => {
       assert.equal(await contarAuditoria(pool, empresaA, 'GHE_REATIVADO'), 1);
     });
 
-    test('listar filtra por GHE e por busca de matrícula; PATCH desvincula (null) e audita só "campo sensível alterado" para telefone', async () => {
+    test('listar filtra por GHE e por busca de matrícula; PATCH com GHE nulo é recusado (S4) e o PATCH de telefone audita só "campo sensível alterado"', async () => {
       const porGhe = await request(app).get(`/api/funcionarios?grupoHomogeneoId=${gheId}`).set('Cookie', cookieMasterA);
       assert.deepEqual(porGhe.body.funcionarios.map((x) => x.id), [funcionarioId]);
       const porMatricula = await request(app).get('/api/funcionarios?busca=MAT-0001').set('Cookie', cookieMasterA);
@@ -283,9 +283,13 @@ describe('API HTTP de GHE e funcionários com PostgreSQL real', () => {
         assert.ok(!JSON.stringify(lista.body).includes(CPF_A_NORMALIZADO), 'a listagem nunca devolve o CPF completo');
       }
 
-      const patch = await request(app).patch(`/api/funcionarios/${funcionarioId}`).set('Cookie', cookieMasterA).send({ grupoHomogeneoId: null, telefone: TELEFONE_NOVO });
+      // S4 (antes: "PATCH desvincula (null)"): quem já tem GHE não fica sem; a recusa é total (o telefone enviado junto também não grava).
+      const desvincular = await request(app).patch(`/api/funcionarios/${funcionarioId}`).set('Cookie', cookieMasterA).send({ grupoHomogeneoId: null, telefone: TELEFONE_NOVO });
+      assert.deepEqual([desvincular.status, desvincular.body.codigo], [400, 'FUNCIONARIO_GHE_OBRIGATORIO']);
+      assert.equal(await contarAuditoria(pool, empresaA, 'FUNCIONARIO_ALTERADO'), 0, 'a recusa não audita nada');
+      const patch = await request(app).patch(`/api/funcionarios/${funcionarioId}`).set('Cookie', cookieMasterA).send({ telefone: TELEFONE_NOVO });
       assert.equal(patch.status, 200);
-      assert.equal(patch.body.funcionario.grupoHomogeneoId, null);
+      assert.equal(patch.body.funcionario.grupoHomogeneoId, gheId, 'o vínculo com o GHE continua');
       assert.equal(patch.body.funcionario.telefone, TELEFONE_NOVO);
       assert.equal(patch.body.funcionario.cpf, undefined);
       assert.equal(await cpfGravado(pool, funcionarioId), CPF_A_NORMALIZADO, 'CPF intocado');
@@ -315,14 +319,14 @@ describe('API HTTP de GHE e funcionários com PostgreSQL real', () => {
       assert.equal((await request(app).get(`/api/grupos-homogeneos/${gheId}`).set('Cookie', cookieMasterB)).status, 404);
       assert.equal((await request(app).get(`/api/funcionarios/${funcionarioId}`).set('Cookie', cookieMasterB)).status, 404);
       assert.equal((await request(app).patch(`/api/funcionarios/${funcionarioId}`).set('Cookie', cookieMasterB).send({ nome: 'Sequestro' })).status, 404);
-      const cruzado = await request(app).post('/api/funcionarios').set('Cookie', cookieMasterB).send({ matricula: 'B1', nome: 'B', cpf: CPF_A, grupoHomogeneoId: gheId });
+      const cruzado = await request(app).post('/api/funcionarios').set('Cookie', cookieMasterB).send({ matricula: 'B1', nome: 'B', cpf: CPF_A, ...obrigatoriosA() });
       assert.equal(cruzado.status, 400);
       assert.equal(cruzado.body.codigo, 'FUNCIONARIO_GHE_INVALIDO');
       assert.equal(await contar(pool, 'funcionarios', empresaB), 0);
     });
 
     test('mesmo CPF e mesma matrícula são permitidos em empresas diferentes (unicidade é por empresa)', async () => {
-      const r = await request(app).post('/api/funcionarios').set('Cookie', cookieMasterB).send({ matricula: 'MAT-000171', nome: 'Homônimo', cpf: CPF_B });
+      const r = await request(app).post('/api/funcionarios').set('Cookie', cookieMasterB).send({ matricula: 'MAT-000171', nome: 'Homônimo', cpf: CPF_B, setor: 'Manutenção', funcao: 'Mecânico', dataAdmissao: '2020-06-01', grupoHomogeneoId: gheBId });
       assert.equal(r.status, 201);
     });
   });
@@ -384,18 +388,21 @@ describe('API HTTP de GHE e funcionários com PostgreSQL real', () => {
       assert.equal(inativar.body.funcionario.cpf, undefined);
 
       const depois = await fotografar();
-      const { ativo: ativoAntes, atualizado_em: _a, ...restoAntes } = antes.linha;
-      const { ativo: ativoDepois, atualizado_em: _d, ...restoDepois } = depois.linha;
+      const { ativo: ativoAntes, situacao: situacaoAntes, atualizado_em: _a, ...restoAntes } = antes.linha;
+      const { ativo: ativoDepois, situacao: situacaoDepois, atualizado_em: _d, ...restoDepois } = depois.linha;
       assert.equal(ativoAntes, true);
       assert.equal(ativoDepois, false);
-      assert.deepEqual(restoDepois, restoAntes, 'inativar só muda ativo (e atualizado_em): CPF, matrícula, nome, GHE e demais campos preservados');
-      assert.equal(depois.auditorias, antes.auditorias + 1, 'a inativação ACRESCENTA uma linha de auditoria e não altera nenhuma anterior');
+      assert.equal(situacaoAntes, 'ATIVO');
+      assert.equal(situacaoDepois, 'INATIVO');
+      assert.deepEqual(restoDepois, restoAntes, 'inativar só muda o estado (situacao e ativo derivado) e atualizado_em: CPF, matrícula, nome, GHE e demais campos preservados');
+      // S2: a mudança real grava FUNCIONARIO_SITUACAO_ALTERADA e o evento legado FUNCIONARIO_INATIVADO (ATIVO → INATIVO).
+      assert.equal(depois.auditorias, antes.auditorias + 2, 'a inativação ACRESCENTA as linhas de auditoria (situação alterada e inativado) e não altera nenhuma anterior');
       const consulta = await request(app).get(`/api/funcionarios/${funcionarioId}`).set('Cookie', cookieMasterA);
       assert.equal(consulta.status, 200, 'o cadastro inativo continua consultável');
       assert.deepEqual([consulta.body.funcionario.cpf, consulta.body.funcionario.cpfMascarado], [undefined, MASCARA_A]);
 
       // Novo cadastro com o CPF correto: independente, sem transferência de nada.
-      const novo = await request(app).post('/api/funcionarios').set('Cookie', cookieMasterA).send({ matricula: 'MAT-000172', nome: 'Tício de Tal', cpf: CPF_B });
+      const novo = await request(app).post('/api/funcionarios').set('Cookie', cookieMasterA).send({ matricula: 'MAT-000172', nome: 'Tício de Tal', cpf: CPF_B, ...obrigatoriosA() });
       assert.equal(novo.status, 201);
       assert.notEqual(novo.body.funcionario.id, funcionarioId);
       assert.equal(novo.body.funcionario.cpf, undefined);
@@ -403,7 +410,7 @@ describe('API HTTP de GHE e funcionários com PostgreSQL real', () => {
       assert.equal(await cpfGravado(pool, novo.body.funcionario.id), CPF_B_NORMALIZADO);
 
       // Unicidade por empresa preservada, inclusive para o inativo.
-      const repetido = await request(app).post('/api/funcionarios').set('Cookie', cookieMasterA).send({ matricula: 'MAT-000173', nome: 'Outro', cpf: CPF_A });
+      const repetido = await request(app).post('/api/funcionarios').set('Cookie', cookieMasterA).send({ matricula: 'MAT-000173', nome: 'Outro', cpf: CPF_A, ...obrigatoriosA() });
       assert.equal(repetido.status, 409);
       assert.equal(repetido.body.codigo, 'FUNCIONARIO_CPF_EM_USO');
 

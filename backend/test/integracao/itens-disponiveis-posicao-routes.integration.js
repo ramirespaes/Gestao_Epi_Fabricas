@@ -19,7 +19,7 @@ const { dataOperacional } = require('../../src/utils/data-operacional');
 const HOJE = dataOperacional();
 const CHAVES_DO_ITEM = [
   'abaixoDoMinimo', 'bloqueado', 'caValidade', 'categoria', 'codigoInterno', 'comprometido', 'deficit', 'disponivel', 'estoqueMinimo', 'fisicoUtilizavel',
-  'material', 'materialId', 'minimoOrigem', 'necessidade', 'saldo', 'saldoLivre', 'semCobertura', 'tamanho', 'tipo', 'unidade', 'validade',
+  'grupo', 'material', 'materialId', 'minimoOrigem', 'necessidade', 'saldo', 'saldoLivre', 'semCobertura', 'tamanho', 'tipo', 'unidade', 'validade',
 ];
 
 describe('itens disponíveis pela posição — HTTP (PostgreSQL real)', () => {
@@ -67,6 +67,7 @@ describe('itens disponíveis pela posição — HTTP (PostgreSQL real)', () => {
           material: `${marca} botina`,
           codigoInterno: null,
           categoria: null,
+          grupo: null,
           tipo: null,
           tamanho: '40',
           saldo: 8,

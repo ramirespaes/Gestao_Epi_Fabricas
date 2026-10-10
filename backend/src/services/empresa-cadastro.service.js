@@ -4,6 +4,7 @@ const { HttpError } = require('../errors/HttpError');
 const empresaRepo = require('../repositories/empresa.repository');
 const auditoriaPlataformaRepo = require('../repositories/auditoria-plataforma.repository');
 const provisionamento = require('./provisionamento-permissoes.service');
+const tipoMaterialService = require('./tipo-material.service');
 const { normalizarCnpj, cnpjTemDigitosVerificadoresValidos, normalizarEmail } = require('../utils/normalizacao');
 
 /**
@@ -224,6 +225,8 @@ async function criar(pool, { administradorId, razaoSocial, cnpj, ip = null, disp
       empresaId: empresa.id, atorId: null, ip, dispositivo,
     });
     const prontaParaMaster = provisionamento.prontaParaMaster(resultado.plano);
+    // Catálogo base de tipos de material (classificação V2), na mesma transação: a empresa nasce pronta.
+    await tipoMaterialService.semearCatalogoBase(client, empresa.id);
 
     await auditoriaPlataformaRepo.registrar(client, {
       administradorId, empresaAfetadaId: empresa.id, acao: ACAO.CRIADA, referencia: String(empresa.id), ip, dispositivo,

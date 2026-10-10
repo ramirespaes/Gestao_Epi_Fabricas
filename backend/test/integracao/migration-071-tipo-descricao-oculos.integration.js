@@ -48,7 +48,7 @@ describe('migration 071 — descrição de "Outros" e tipos de óculos de prote�
 
   before(async () => {
     assert.equal(migrationExiste('071'), true, 'migration 071 ainda não implementada');
-    ctx = await abrirSchemaTemporario(todasAsMigrations().filter((p) => p !== '071'));
+    ctx = await abrirSchemaTemporario(todasAsMigrations().filter((p) => p < '071'));
     empresa = (await q("INSERT INTO empresas (nome, cnpj) VALUES ('Empresa 071', '11222333000181') RETURNING id")).rows[0].id;
     // Linhas como o sistema as gravava antes da 071.
     legado.oculos = (await q(
@@ -130,18 +130,24 @@ describe('migration 071 — descrição de "Outros" e tipos de óculos de prote�
     assert.deepEqual((await linha(legado.oculos)).oculos_com_grau, true);
   });
 
-  test('manifesto: 78 migrations, 000 a 077; a 045 e a 058 continuam idênticas ao manifesto; a 071 só acrescenta a sua entrada', () => {
+  test('manifesto: 85 migrations, 000 a 084; a 045 e a 058 continuam idênticas ao manifesto; a 071 só acrescenta a sua entrada', () => {
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO, 'checksums.json'), 'utf8'));
     const arquivos = fs.readdirSync(DIRETORIO).filter((n) => /^\d{3}_.*\.sql$/.test(n)).sort();
-    assert.equal(arquivos.length, 79);
-    assert.equal(arquivos[arquivos.length - 8], ARQUIVO_071);
-    assert.equal(arquivos[arquivos.length - 7], '072_alter_identidades_add_telefone_tema_modo_visual.sql');
-    assert.equal(arquivos[arquivos.length - 6], '073_alter_usuarios_add_funcionario_id.sql');
-    assert.equal(arquivos[arquivos.length - 5], '074_alter_identidades_add_senha_provisoria.sql');
-    assert.equal(arquivos[arquivos.length - 4], '075_alter_identidades_add_cpf.sql');
-    assert.equal(arquivos[arquivos.length - 3], '076_alter_usuarios_add_matricula_setor_horario.sql');
-    assert.equal(arquivos[arquivos.length - 2], '077_create_usuario_ips_permitidos.sql');
-    assert.equal(arquivos[arquivos.length - 1], '078_insert_acoes_estoque_entrada_baixa.sql');
+    assert.equal(arquivos.length, 85);
+    assert.equal(arquivos[arquivos.length - 14], ARQUIVO_071);
+    assert.equal(arquivos[arquivos.length - 13], '072_alter_identidades_add_telefone_tema_modo_visual.sql');
+    assert.equal(arquivos[arquivos.length - 12], '073_alter_usuarios_add_funcionario_id.sql');
+    assert.equal(arquivos[arquivos.length - 11], '074_alter_identidades_add_senha_provisoria.sql');
+    assert.equal(arquivos[arquivos.length - 10], '075_alter_identidades_add_cpf.sql');
+    assert.equal(arquivos[arquivos.length - 9], '076_alter_usuarios_add_matricula_setor_horario.sql');
+    assert.equal(arquivos[arquivos.length - 8], '077_create_usuario_ips_permitidos.sql');
+    assert.equal(arquivos[arquivos.length - 7], '078_insert_acoes_estoque_entrada_baixa.sql');
+    assert.equal(arquivos[arquivos.length - 6], '079_alter_logs_auditoria_add_perfil_ator.sql');
+    assert.equal(arquivos[arquivos.length - 5], '080_create_fiscalizacao_pacotes.sql');
+    assert.equal(arquivos[arquivos.length - 4], '081_alter_matricula_opcional.sql');
+    assert.equal(arquivos[arquivos.length - 3], '082_create_tipos_material_classificacao_v2.sql');
+    assert.equal(arquivos[arquivos.length - 2], '083_alter_ghe_add_codigo_create_ghe_tipos_material.sql');
+    assert.equal(arquivos[arquivos.length - 1], '084_alter_funcionarios_add_situacao.sql');
     assert.deepEqual(Object.keys(manifesto.migrations).sort(), arquivos);
     for (const nome of arquivos) {
       const sha = crypto.createHash('sha256').update(fs.readFileSync(path.join(DIRETORIO, nome))).digest('hex');

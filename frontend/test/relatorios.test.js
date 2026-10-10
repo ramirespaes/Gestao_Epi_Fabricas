@@ -114,7 +114,11 @@ describe('módulo: consulta, ordenação, exportação e textos', () => {
   test('CSV não leva CPF, matrícula, IP, hash nem dado técnico: só as colunas da tela', () => {
     for (const aba of Object.keys(R.ABAS)) {
       const cab = R.modelo.cabecalhoCsv(aba).join('|').toLowerCase();
-      for (const proibido of ['cpf', 'matrícula', 'ip', 'hash', 'token', 'senha']) assert.equal(new RegExp(`(^|[^a-zà-ú])${proibido}([^a-zà-ú]|$)`).test(cab), false, `${aba}: ${proibido}`);
+      // A trilha mostra IP e dispositivo POR DESIGN (permissão própria reportsAudit); nenhum outro relatório os leva.
+      for (const proibido of ['cpf', 'matrícula', 'ip', 'hash', 'token', 'senha']) {
+        if (proibido === 'ip' && aba === 'auditoriaLog') continue;
+        assert.equal(new RegExp(`(^|[^a-zà-ú])${proibido}([^a-zà-ú]|$)`).test(cab), false, `${aba}: ${proibido}`);
+      }
     }
     const csv = R.modelo.csv('estoque', [linhaEstoque()]);
     assert.equal(/cpf|hash|token|senha/i.test(csv), false);
@@ -196,7 +200,7 @@ async function pronta(opcoes) {
 const consultas = (pg, rota) => pg.chamadas.filter((c) => c.chave === `GET /relatorios/${rota}`);
 const celulas = (tr) => tr.children.map((td) => td.textContent.trim());
 const abrirAba = async (pg, aba) => {
-  await pg.consulta(`.report-tab[data-aba="${aba}"]`)[0].disparar('click');
+  await pg.consulta(`.report-tab[data-carregar="${aba}"]`)[0].disparar('click');
   await pg.esperar();
   await pg.esperar();
 };
@@ -225,7 +229,7 @@ describe('Relatórios — página (DOM simulado, sessão e permissões reais)', 
 
   test('só as abas da autoridade de cada fonte aparecem: sem materials, o Estoque some e a primeira aba de entregas abre', async () => {
     const pg = await pronta({ materiais: false, ficha: true });
-    const visiveis = pg.consulta('.report-tab[data-aba]').filter((b) => pg.visivelNo(b)).map((b) => b.getAttribute('data-aba'));
+    const visiveis = pg.consulta('.report-tab[data-recurso]').filter((b) => pg.visivelNo(b) && b.getAttribute('data-recurso') !== 'reportsAudit').map((b) => b.getAttribute('data-carregar'));
     assert.deepEqual(visiveis, ['proximoVencimento', 'vencidos', 'episEntregues']);
     assert.equal(consultas(pg, 'estoque').length, 0);
     assert.equal(consultas(pg, 'proximo-vencimento').length, 1);
@@ -253,7 +257,7 @@ describe('Relatórios — página (DOM simulado, sessão e permissões reais)', 
     assert.deepEqual(pg.consulta('#cabecalho-vencidos th').map((th) => th.textContent.replace(/[ ▲▼]/g, '')),
       ['Funcionário', 'Setor', 'EPI', 'CA', 'Datadaentrega', 'Validadedeuso', 'Diasvencidos', 'Status']);
     assert.deepEqual([celulas(v[0])[6], celulas(v[0])[7]], ['4', 'Troca urgente']);
-    assert.equal(pg.consulta('.report-tab[data-aba="vencidos"]')[0].textContent.trim(), 'Itens vencidos');
+    assert.equal(pg.consulta('.report-tab[data-carregar="vencidos"]')[0].textContent.trim(), 'Itens vencidos');
     await abrirAba(pg, 'episEntregues');
     const e = pg.consulta('#corpo-episEntregues tr');
     assert.equal(e.length, 2);
@@ -318,15 +322,15 @@ describe('Relatórios — página (DOM simulado, sessão e permissões reais)', 
     assert.equal(quebrado.consulta('#corpo-estoque tr')[0].textContent.trim(), R.TEXTOS.FALHA);
   });
 
-  test('Auditoria e Fiscalização seguem não integradas: só o aviso, sem dados, fichas, ZIP, PDF ou trilha de demonstração', async () => {
+  test('Fiscalização integrada (12K-D6): sem aviso de "em integração", sem dado fixo nem pacote de demonstração; a Auditoria não tem dado fixo', async () => {
     const html = semComentariosHtml(ler(ARQUIVO));
     const [, auditoria] = /id="reportAudit"([\s\S]*?)<section id="reportFiscal"/.exec(html);
     const [, fiscal] = /id="reportFiscal"([\s\S]*)$/.exec(html);
-    for (const bloco of [auditoria, fiscal]) {
-      assert.match(bloco, /Em integração/);
-      assert.equal(/<table|FIC-\d|PED-\d|Fulano|Sicrano|Beltrana|\d{2}\/04\/2026|<button/.test(bloco), false);
-    }
+    assert.equal(/Em integração|data-nao-integrada/.test(fiscal), false, 'a Fiscalização deixou de ser um aviso');
+    assert.match(fiscal, /NR-01 — Acesso à Inspeção do Trabalho/);
+    assert.equal(/FIC-\d|PED-\d|Fulano|Sicrano|Beltrana|\d{2}\/04\/2026/.test(fiscal), false, 'nenhum dado fixo ou de demonstração na Fiscalização');
     assert.equal(/Pacote para fiscalização|Fichas de EPI assinadas|Trilha de auditoria completa/.test(html), false);
+    assert.equal(/Fulano|Sicrano|Beltrana|FIC-\d|PED-\d|\d{2}\/04\/2026|>3<|>148</.test(auditoria), false, 'nenhum número ou nome fixo na Auditoria');
   });
 
   test('a página é só leitura e segura: sem protótipo, sem biblioteca remota, sem innerHTML nem armazenamento do navegador', () => {
@@ -349,7 +353,7 @@ describe('Relatórios — página (DOM simulado, sessão e permissões reais)', 
     for (const a of ['pages/reports.html', 'js/relatorios.js']) assert.equal(arquivos.filter((x) => x === a).length, 1, a);
     assert.deepEqual(arquivos, [...arquivos].sort());
     const P = require('../js/permissoes-efetivas'); // eslint-disable-line global-require
-    assert.deepEqual(P.PAGINAS.reports, { abrir: [{ recurso: 'materials', operacao: 'visualizar' }, { recurso: 'epiFicha', operacao: 'visualizar' }], abrirComQualquer: true, alterar: [] });
+    assert.deepEqual(P.PAGINAS.reports, { abrir: [{ recurso: 'materials', operacao: 'visualizar' }, { recurso: 'epiFicha', operacao: 'visualizar' }, { recurso: 'reportsAudit', operacao: 'visualizar' }, { recurso: 'reportsFiscal', operacao: 'visualizar' }], abrirComQualquer: true, alterar: [] });
     assert.equal('Relatórios' in P.INSPECAO_PROTOTIPOS, false);
   });
 });

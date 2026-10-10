@@ -7,7 +7,10 @@ const f = require('../../src/schemas/funcionario.schema');
 
 /** Schema de funcionários (Bloco 9, Etapa B). Nenhum campo de usuário do sistema. */
 
-const base = { matricula: 'MAT-000171', nome: 'Tício de Tal', cpf: '529.982.247-25' };
+// S4: o cadastro individual exige também setor, função, GHE e admissão.
+const base = {
+  matricula: 'MAT-000171', nome: 'Tício de Tal', cpf: '529.982.247-25', setor: 'Manutenção', funcao: 'Mecânico', grupoHomogeneoId: 50, dataAdmissao: '2020-06-01',
+};
 
 describe('criar', () => {
   test('CPF com máscara sai normalizado (11 dígitos) e com DV conferido', () => {
@@ -35,12 +38,28 @@ describe('criar', () => {
     }
   });
 
-  test('grupoHomogeneoId aceita inteiro positivo ou null; recusa 0, negativo e string', () => {
+  test('grupoHomogeneoId é obrigatório no cadastro (S4): aceita inteiro positivo; recusa ausente, null, 0, negativo e string', () => {
     assert.equal(f.criar.body.safeParse({ ...base, grupoHomogeneoId: 50 }).success, true);
-    assert.equal(f.criar.body.safeParse({ ...base, grupoHomogeneoId: null }).success, true);
+    const { grupoHomogeneoId: _g, ...semGhe } = base;
+    assert.equal(f.criar.body.safeParse(semGhe).success, false, 'ausente');
+    assert.equal(f.criar.body.safeParse({ ...base, grupoHomogeneoId: null }).success, false, 'null');
     for (const ruim of [0, -1, '50']) {
       assert.equal(f.criar.body.safeParse({ ...base, grupoHomogeneoId: ruim }).success, false, String(ruim));
     }
+  });
+
+  test('S4: nome, cpf, setor, funcao, grupoHomogeneoId e dataAdmissao são obrigatórios; texto vazio ou só espaços não vale; os demais são opcionais', () => {
+    for (const campo of ['nome', 'cpf', 'setor', 'funcao', 'grupoHomogeneoId', 'dataAdmissao']) {
+      const { [campo]: _removido, ...sem } = base;
+      const r = f.criar.body.safeParse(sem);
+      assert.equal(r.success, false, campo);
+      assert.deepEqual(r.error.issues[0].path, [campo]);
+    }
+    for (const campo of ['nome', 'setor', 'funcao']) {
+      for (const vazio of ['', '   ', null]) assert.equal(f.criar.body.safeParse({ ...base, [campo]: vazio }).success, false, `${campo}: ${JSON.stringify(vazio)}`);
+    }
+    const { matricula: _m, ...soObrigatorios } = base;
+    assert.equal(f.criar.body.safeParse(soObrigatorios).success, true, 'matrícula, telefone, crachá e nascimento são opcionais');
   });
 
   test('campos de usuário do sistema e campos internos são recusados', () => {
@@ -92,7 +111,7 @@ describe('alterar / listar', () => {
 
 describe('C4 (25/09/2026) — admissão, CPF exato na busca e importação em lote', () => {
   const linhaValida = (extra = {}) => ({
-    linha: 2, nome: 'João Pereira', cpf: '52998224725', matricula: 'MAT-000001', dataAdmissao: '2020-06-01',
+    linha: 2, nome: 'João Pereira', cpf: '52998224725', matricula: 'MAT-000001', situacao: 'Ativo', dataAdmissao: '2020-06-01',
     dataNascimento: '1990-03-15', setor: 'Produção', funcao: 'Operador', telefone: null, ghe: 'GHE Produção', ...extra,
   });
   const loteValido = (extra = {}) => ({
@@ -104,10 +123,11 @@ describe('C4 (25/09/2026) — admissão, CPF exato na busca e importação em lo
     ...extra,
   });
 
-  test('dataAdmissao: calendário estrito, opcional e nulável no cadastro e na edição; código próprio', () => {
+  test('dataAdmissao: calendário estrito; obrigatória e não nula no cadastro (S4), opcional e nulável na edição; código próprio', () => {
     assert.equal(f.criar.body.safeParse({ ...base, dataAdmissao: '2020-06-01' }).success, true);
-    assert.equal(f.criar.body.safeParse({ ...base, dataAdmissao: null }).success, true);
-    assert.equal(f.criar.body.safeParse(base).success, true, 'retrocompatível: sem o campo');
+    assert.equal(f.criar.body.safeParse({ ...base, dataAdmissao: null }).success, false, 'null no cadastro');
+    const { dataAdmissao: _a, ...semAdmissao } = base;
+    assert.equal(f.criar.body.safeParse(semAdmissao).success, false, 'sem o campo no cadastro');
     assert.equal(f.alterar.body.safeParse({ dataAdmissao: null }).success, true);
     for (const data of ['2023-02-29', '01/06/2020', '2020-6-1']) {
       for (const schema of [f.criar.body, f.alterar.body]) {
@@ -184,7 +204,7 @@ describe('C4 (25/09/2026) — admissão, CPF exato na busca e importação em lo
       [{ matricula: '' }, 'matricula'], [{ dataAdmissao: null }, 'dataAdmissao'], [{ dataAdmissao: '31/02/2020' }, 'dataAdmissao'],
       [{ dataNascimento: '1990-02-30' }, 'dataNascimento'], [{ setor: null }, 'setor'], [{ funcao: null }, 'funcao'],
       [{ telefone: 'x'.repeat(21) }, 'telefone'],
-      [{ ghe: undefined }, 'ghe'], [{ ghe: null }, 'ghe'], [{ ghe: '' }, 'ghe'], [{ ghe: '   ' }, 'ghe'], [{ ghe: 'x'.repeat(151) }, 'ghe'], [{ ghe: 'GHE\u0007' }, 'ghe'], [{ ghe: 7 }, 'ghe'],
+      [{ situacao: undefined }, 'situacao'], [{ situacao: 7 }, 'situacao'], [{ ghe: null }, 'ghe'], [{ ghe: '' }, 'ghe'], [{ ghe: '   ' }, 'ghe'], [{ ghe: 'x'.repeat(151) }, 'ghe'], [{ ghe: 'GHE\u0007' }, 'ghe'], [{ ghe: 7 }, 'ghe'],
     ];
     for (const [extra, campo] of casos) {
       const r = f.linhaImportacao.safeParse(linhaValida(extra));
@@ -192,6 +212,14 @@ describe('C4 (25/09/2026) — admissão, CPF exato na busca e importação em lo
       assert.deepEqual(r.error.issues.map((i) => i.path[0]), [campo], JSON.stringify(extra));
     }
     assert.equal(f.linhaImportacao.safeParse(linhaValida({ dataNascimento: null, telefone: null })).success, true);
+    // 12K-E: sem nome (ghe) o schema aceita; o serviço decide (gheId explícito ou "não informado"). Nome com quebra de linha é válido.
+    assert.equal(f.linhaImportacao.safeParse(linhaValida({ ghe: undefined })).success, true);
+    assert.equal(f.linhaImportacao.safeParse(linhaValida({ ghe: undefined, gheId: 12 })).success, true);
+    assert.equal(f.linhaImportacao.safeParse(linhaValida({ ghe: 'LAMINAÇÃO\r\n(SPINNER BLOCK)' })).data.ghe, 'LAMINAÇÃO (SPINNER BLOCK)');
+    for (const ruim of [0, -1, 1.5, '12', null]) assert.equal(f.linhaImportacao.safeParse(linhaValida({ ghe: undefined, gheId: ruim })).success, false, JSON.stringify(ruim));
+    const codigoGhe = (ghe) => f.linhaImportacao.safeParse(linhaValida({ ghe })).error.issues[0].params.codigo;
+    assert.deepEqual(['', '   \r\n\t ', ' '].map(codigoGhe), ['GHE_NAO_INFORMADO', 'GHE_NAO_INFORMADO', 'GHE_NAO_INFORMADO']);
+    assert.deepEqual(['GHE\u0007', 'GHE\u0001X', 'x'.repeat(151)].map(codigoGhe), ['GHE_INVALIDO', 'GHE_INVALIDO', 'GHE_INVALIDO']);
   });
 });
 

@@ -87,6 +87,7 @@
         <div class="nav-section">Entregas</div>
         <a href="delivered-items.html" data-pagina="deliveredItems" style="display:none"><div class="nav-icon green">inventory</div>EPIs Entregues</a>
         <a href="epi-ficha.html" data-pagina="epiFicha" style="display:none"><div class="nav-icon brown">description</div>Ficha de EPI</a>
+        <a href="funcionarios.html" data-pagina="funcionarios" style="display:none"><div class="nav-icon teal">people</div>Cadastro de Colaboradores</a>
         <a href="employee-history.html" data-pagina="employeeHistory" style="display:none"><div class="nav-icon blue">history</div>Histórico de Funcionários</a>
         <div class="nav-section">Solicitações</div>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">badge</div>Autoatendimento (Totem)<span class="nav-etiqueta">Em integração</span></a>
@@ -146,7 +147,7 @@
           <div class="notice" style="margin-top:14px;background:rgba(0,122,255,0.06);color:var(--on-surface-variant);border-color:rgba(0,122,255,0.15);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
             <div>
               <strong style="color:var(--on-surface);display:block;margin-bottom:2px">Baixar modelo de planilha</strong>
-              Planilha com todas as colunas obrigatórias já formatadas e prontas para preencher. A coluna GHE recebe o nome exato de um GHE já cadastrado nesta empresa; a importação nunca cria GHE nem altera funcionário já cadastrado.
+              Planilha com as colunas obrigatórias (Nome, Setor, Cargo, Dt.Admissão, CPF, Situação e Nome GHE) prontas para preencher; a Matrícula é opcional (célula vazia é válida) e a situação aceita somente Ativo. A coluna Nome GHE recebe o nome exato de um GHE já cadastrado nesta empresa; a importação nunca cria GHE nem altera funcionário já cadastrado.
             </div>
             <button class="tonal-btn" id="botaoBaixarModelo" type="button">
               <span class="material-symbols-outlined" style="font-size:18px">download</span>Baixar modelo
@@ -201,13 +202,11 @@
                   <th>#</th>
                   <th>Nome</th>
                   <th>Setor</th>
-                  <th>Telefone</th>
                   <th>CPF</th>
-                  <th>Matrícula</th>
-                  <th>Nascimento</th>
-                  <th>Contratação</th>
+                  <th>Admissão</th>
                   <th>Cargo</th>
-                  <th>GHE</th>
+                  <th>Nome GHE</th>
+                  <th>Situação</th>
                   <th>Status</th>
                 </tr>
               </thead>
@@ -263,7 +262,7 @@
   var encerrada = false;    // sessão encerrada: nada mais é aplicado
   var leituraAtual = 0;     // leitura de arquivo mais recente (as antigas são descartadas)
   var enviando = false;
-  var atual = null;         // { interpretado, nome, formato }
+  var atual = null;         // { base, interpretado, ghes, escolhas, nome, formato }
 
   function mostrarAviso(texto, tipo) {
     var caixa = $('aviso');
@@ -324,27 +323,59 @@
     if (encerrada || minha !== leituraAtual) return; // leitura antiga: descartada
     if (!lido.ok) { mostrarAviso(F.mensagens.erroArquivo(lido), 'erro'); $('importFileInput').value = ''; return; }
 
-    var r = F.planilha.interpretar(lido.linhas);
+    // GHEs ATIVOS da empresa (id e nome), com a autoridade da própria importação: resolvem o Nome GHE na prévia e alimentam o seletor.
+    var ghes = null;
+    var respostaGhes = await F.acoes.listarGhesImportacao();
+    if (encerrada || minha !== leituraAtual) return;
+    if (respostaGhes && respostaGhes.status === 401) { EpiSessaoEmpresarial.sessaoEncerrada(); return; }
+    if (respostaGhes && respostaGhes.ok && respostaGhes.dados && Array.isArray(respostaGhes.dados.ghes)) ghes = respostaGhes.dados.ghes;
+
+    var r = F.planilha.interpretar(lido.linhas, { ghes: ghes });
     if (!r.ok) { mostrarAviso(F.mensagens.erroArquivo(r), 'erro'); $('importFileInput').value = ''; return; }
 
-    atual = { interpretado: r, nome: arquivo.name, formato: v.formato };
-    $('importPreviewTitle').textContent = 'Prévia — ' + arquivo.name;
+    atual = { base: r, interpretado: r, ghes: ghes, escolhas: {}, nome: arquivo.name, formato: v.formato };
+    $('lgpdConsentImport').checked = false;
+    $('confirmacaoAmbiguos').checked = false;
+    desenharPrevia();
+    var avisos = [];
+    if (!ghes) avisos.push('Não foi possível carregar os GHEs da empresa: o GHE de cada linha será conferido só no envio e a seleção de GHE na prévia não está disponível.');
+    if (codificacao === 'windows-1252') avisos.push('O arquivo CSV foi lido na codificação Windows-1252 (padrão do Excel em português). Confira os acentos na prévia antes de confirmar.');
+    if (avisos.length) mostrarAviso(avisos.join(' '), 'atencao');
+    mostrarEtapa('previa');
+  }
+
+  // Redesenha título, contadores, erros e tabela a partir do resultado atual (base + escolhas de GHE do SST).
+  function desenharPrevia() {
+    var r = atual.interpretado;
+    $('importPreviewTitle').textContent = 'Prévia — ' + atual.nome;
     $('importPreviewSub').textContent = r.linhas.length + ' funcionário(s) encontrado(s). '
       + (r.comErro ? r.comErro + ' linha(s) com erro não serão importadas. ' : '')
       + (r.comAviso ? r.comAviso + ' linha(s) com valores a conferir. ' : '')
       + 'Verifique os dados antes de confirmar.';
-    $('importSummary').innerHTML = F.render.resumoPrevia(r.linhas.length, r.validas, r.comErro, r.comAviso, arquivo.name);
+    $('importSummary').innerHTML = F.render.resumoPrevia(r.linhas.length, r.validas, r.comErro, r.comAviso, atual.nome);
     var problemas = F.render.problemas(r.linhas);
     $('importErrorsBox').innerHTML = problemas;
     $('importErrorsBox').style.display = problemas ? 'block' : 'none';
-    $('importPreviewBody').innerHTML = F.render.previa(r.linhas);
-    $('lgpdConsentImport').checked = false;
-    // Conferência expressa dos valores ambíguos: nova para cada arquivo.
-    $('confirmacaoAmbiguos').checked = false;
+    $('importPreviewBody').innerHTML = F.render.previa(r.linhas, atual.ghes);
     $('blocoConfirmacaoAmbiguos').style.display = r.comAviso ? 'block' : 'none';
     $('importConfirmBtn').disabled = r.validas === 0;
-    if (codificacao === 'windows-1252') mostrarAviso('O arquivo CSV foi lido na codificação Windows-1252 (padrão do Excel em português). Confira os acentos na prévia antes de confirmar.', 'atencao');
-    mostrarEtapa('previa');
+  }
+
+  // Escolha explícita do GHE pelo SST: só entre os GHEs ativos da lista; "Selecionar GHE" (vazio) desfaz a escolha.
+  function escolherGhe(evento) {
+    var alvo = evento && evento.target;
+    if (!alvo || !atual || !atual.ghes || enviando || typeof alvo.getAttribute !== 'function') return;
+    var linha = Number(alvo.getAttribute('data-linha'));
+    if (!Number.isInteger(linha)) return;
+    var valor = String(alvo.value === undefined || alvo.value === null ? '' : alvo.value);
+    if (valor === '') delete atual.escolhas[linha];
+    else {
+      var escolhido = atual.ghes.filter(function (g) { return String(g.id) === valor; })[0];
+      if (!escolhido) { desenharPrevia(); return; }
+      atual.escolhas[linha] = escolhido;
+    }
+    atual.interpretado = F.ghe.aplicar(atual.base, atual.escolhas);
+    desenharPrevia();
   }
 
   async function confirmar() {
@@ -411,6 +442,7 @@
     var arquivos = $('importFileInput').files;
     return processarArquivo(arquivos && arquivos[0]);
   });
+  $('importPreviewBody').addEventListener('change', escolherGhe);
   $('botaoBaixarModelo').addEventListener('click', baixarModelo);
   $('botaoNovoArquivo').addEventListener('click', function () { if (!enviando) { reiniciar(); mostrarAviso('', null); } });
   $('botaoNovaImportacao').addEventListener('click', function () { reiniciar(); mostrarAviso('', null); });

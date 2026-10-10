@@ -42,7 +42,10 @@ const RECURSOS_LEGADOS = Object.freeze([
 
 const RECURSOS_BLOCO_9 = Object.freeze(['employeeGroups']);
 
-const RECURSOS_CONHECIDOS = Object.freeze([...RECURSOS_LEGADOS, ...RECURSOS_BLOCO_9]);
+// 12K-D5: permissão própria de cada relatório (a Auditoria é a primeira; as demais entram com o D6).
+const RECURSOS_RELATORIOS = Object.freeze(['reportsAudit', 'reportsFiscal']);
+
+const RECURSOS_CONHECIDOS = Object.freeze([...RECURSOS_LEGADOS, ...RECURSOS_BLOCO_9, ...RECURSOS_RELATORIOS]);
 
 // Operações que as rotas de produção exigem, por recurso:
 //   materials       -> material.routes.js (visualizar/criar/editar) e
@@ -74,6 +77,11 @@ const ESCOPO_PROVISIONAMENTO_MASTER = Object.freeze({
     // (APROVAR/REPROVAR/ENCERRAR_SOLICITACAO) continuam fora: exigem vínculo SST,
     // que não se aplica ao MASTER, e a autodecisão segue proibida.
     Object.freeze({ recurso: 'request', operacoes: Object.freeze(['visualizar', 'criar', 'editar']) }),
+    // 12K-D5: Relatório — Auditoria (relatorio-auditoria.routes: indicadores, solicitações não
+    // atendidas e trilha de ações) é consulta — só visualizar. Independente de materials, epiFicha e dos demais relatórios.
+    Object.freeze({ recurso: 'reportsAudit', operacoes: Object.freeze(['visualizar']) }),
+    // 12K-D6: Relatório — Fiscalização. Uma única operação cobre ver, pré-visualizar, gerar, listar e baixar o pacote.
+    Object.freeze({ recurso: 'reportsFiscal', operacoes: Object.freeze(['visualizar']) }),
   ]),
   // estoque.routes.js: entradas e baixas por lote; entrega-epi.routes.js: entrega e seu contexto (migrations 003/017)
   acoes: Object.freeze(['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS']),
@@ -114,6 +122,8 @@ const ROTULOS_RECURSOS = Object.freeze({
   operations: 'Operações de estoque',
   epiFicha: 'Ficha de EPI',
   request: 'Pedido de EPI',
+  reportsAudit: 'Relatório — Auditoria',
+  reportsFiscal: 'Relatório — Fiscalização',
 });
 for (const { recurso } of ESCOPO_PROVISIONAMENTO_MASTER.recursos) {
   if (typeof ROTULOS_RECURSOS[recurso] !== 'string') {

@@ -18,6 +18,14 @@
     .filters-grid .filters-actions{grid-column:1 / -1;justify-content:flex-end}
     .paginacao-entregas{display:flex;align-items:center;justify-content:flex-end;gap:10px;padding-top:12px;font-size:12px;color:var(--on-surface-variant)}
     @media (max-width: 560px){.paginacao-entregas{justify-content:center;flex-wrap:wrap}}
+    /* 12K-D5: card clicável (CA vencidos) e modal informativo */
+    .stat.clicavel{cursor:pointer;transition:background .15s,box-shadow .15s}
+    .stat.clicavel:hover,.stat.clicavel:focus-visible{background:var(--primary-container);box-shadow:0 0 0 2px var(--primary);outline:none}
+    .modal-ca{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px}
+    .modal-ca-caixa{background:var(--surface);color:var(--on-surface);border-radius:20px;width:100%;max-width:980px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+    .modal-ca-corpo{padding:0 20px;overflow:auto;flex:1}
+    .modal-ca-topo,.modal-ca-rodape{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px 20px;flex-wrap:wrap}
+    .modal-ca-rodape{justify-content:flex-end}
   </style>
 </head>
 <!--
@@ -25,7 +33,7 @@
   /api/relatorios/*. Só leitura, sempre da empresa da sessão. Estoque usa o saldo utilizável da regra oficial (CA ausente
   ou vencido bloqueia) e o estoque mínimo por material; as três abas de entregas usam os snapshots congelados e a validade
   de uso (data da entrega + prazo congelado) calculada no servidor. Exportação em CSV (UTF-8, separador ";") de todas as
-  linhas do filtro. Auditoria e Fiscalização seguem não integradas (sem dados de demonstração). Sessão empresarial do
+  linhas do filtro. Auditoria e Fiscalização têm permissão própria (sem dados de demonstração). Sessão empresarial do
   Portal e permissões do servidor; sem js/db-api.js, sem js/main.js e sem biblioteca remota. Nenhum CPF.
 -->
 <body>
@@ -85,6 +93,7 @@
         <div class="nav-section">Entregas</div>
         <a href="delivered-items.html" data-pagina="deliveredItems" style="display:none"><div class="nav-icon green">inventory</div>EPIs Entregues</a>
         <a href="epi-ficha.html" data-pagina="epiFicha" style="display:none"><div class="nav-icon brown">description</div>Ficha de EPI</a>
+        <a href="funcionarios.html" data-pagina="funcionarios" style="display:none"><div class="nav-icon teal">people</div>Cadastro de Colaboradores</a>
         <a href="employee-history.html" data-pagina="employeeHistory" style="display:none"><div class="nav-icon blue">history</div>Histórico de Funcionários</a>
         <div class="nav-section">Solicitações</div>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">badge</div>Autoatendimento (Totem)<span class="nav-etiqueta">Em integração</span></a>
@@ -121,12 +130,12 @@
         <div id="aviso" role="status" aria-live="polite" style="display:none;margin:12px 0"></div>
 
         <div class="report-tabs">
-          <button class="report-tab active" type="button" data-aba="estoque" data-secao="reportStock" style="display:none">Estoque</button>
-          <button class="report-tab" type="button" data-aba="proximoVencimento" data-secao="reportUpcoming" style="display:none">Próximo do vencimento</button>
-          <button class="report-tab" type="button" data-aba="vencidos" data-secao="reportExpired" style="display:none">Itens vencidos</button>
-          <button class="report-tab" type="button" data-aba="episEntregues" data-secao="reportDelivered" style="display:none">EPIs entregues</button>
-          <button class="report-tab" type="button" data-secao="reportAudit">Auditoria</button>
-          <button class="report-tab" type="button" data-secao="reportFiscal" style="background:rgba(255,59,48,0.08);color:#FF3B30;border-color:rgba(255,59,48,0.2)"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle;margin-right:4px">account_balance</span>Fiscalização</button>
+          <button class="report-tab active" type="button" data-recurso="materials" data-carregar="estoque" data-secao="reportStock" style="display:none">Estoque</button>
+          <button class="report-tab" type="button" data-recurso="epiFicha" data-carregar="proximoVencimento" data-secao="reportUpcoming" style="display:none">Próximo do vencimento</button>
+          <button class="report-tab" type="button" data-recurso="epiFicha" data-carregar="vencidos" data-secao="reportExpired" style="display:none">Itens vencidos</button>
+          <button class="report-tab" type="button" data-recurso="epiFicha" data-carregar="episEntregues" data-secao="reportDelivered" style="display:none">EPIs entregues</button>
+          <button class="report-tab" type="button" data-recurso="reportsAudit" data-carregar="auditoriaSolicitacoes auditoriaReprovadas auditoriaLog" data-indicadores-auditoria data-secao="reportAudit" style="display:none">Auditoria</button>
+          <button class="report-tab" type="button" data-recurso="reportsFiscal" data-carregar="fiscalPacotes" data-secao="reportFiscal" style="display:none;background:rgba(255,59,48,0.08);color:#FF3B30;border-color:rgba(255,59,48,0.2)"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle;margin-right:4px">account_balance</span>Fiscalização</button>
         </div>
 
         <section id="reportStock" class="report-subview active">
@@ -269,18 +278,88 @@
         </section>
 
         <section id="reportAudit" class="report-subview">
+          <!-- Indicadores: todos derivados no servidor (GET /relatorios/auditoria/indicadores) -->
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:12px;margin-bottom:4px">
+            <div class="stat"><span>Entregas pendentes</span><strong id="auditPendentes" style="color:#FF9500">—</strong><span style="font-size:11px;font-weight:400;display:block;margin-top:2px">Itens aprovados ainda a entregar.</span></div>
+            <div class="stat clicavel" id="cartaoCa" role="button" tabindex="0" aria-haspopup="dialog" title="Ver os lotes com CA vencido"><span>CA vencidos em estoque</span><strong id="auditCa" style="color:#FF3B30">—</strong><span style="font-size:11px;font-weight:400;display:block;margin-top:2px">Clique para ver os lotes.</span></div>
+            <div class="stat"><span>Logs registrados (30d)</span><strong id="auditLogs" style="color:#007AFF">—</strong></div>
+            <div class="stat"><span>Itens reprovados</span><strong id="auditReprovados" style="color:#FF3B30">—</strong><span style="font-size:11px;font-weight:400;display:block;margin-top:2px">Itens reprovados pela Segurança do Trabalho.</span></div>
+          </div>
           <section class="card">
             <div class="card-header">
               <div class="card-title">
-                <div class="card-icon">history</div>
+                <div class="card-icon" style="background:rgba(255,149,0,0.10);color:#FF9500">pending_actions</div>
                 <div>
-                  <h2>Auditoria</h2>
-                  <p>Fichas sem assinatura, solicitações aprovadas não atendidas e trilha de auditoria.</p>
+                  <h2>Solicitações aprovadas pelo SST com entrega pendente</h2>
+                  <p>Pedidos aprovados pela Segurança do Trabalho que ainda têm quantidade a entregar.</p>
                 </div>
               </div>
+              <button class="filled-btn" id="exportar-auditoriaSolicitacoes" type="button"><span class="material-symbols-outlined">download</span>Exportar</button>
             </div>
-            <div class="notice" data-nao-integrada>Em integração. Este relatório será disponibilizado em uma etapa seguinte, sem dados de demonstração.</div>
+            <div class="filters-grid" id="filtros-auditoriaSolicitacoes" role="search" aria-label="Filtrar Solicitações aprovadas pelo SST com entrega pendente"></div>
+            <div class="table-wrap"><table><thead id="cabecalho-auditoriaSolicitacoes"></thead><tbody id="corpo-auditoriaSolicitacoes"></tbody></table></div>
+            <div class="paginacao-entregas">
+              <button id="anterior-auditoriaSolicitacoes" class="outlined-btn" type="button" disabled>Anterior</button>
+              <span id="paginacao-auditoriaSolicitacoes" aria-live="polite"></span>
+              <button id="proxima-auditoriaSolicitacoes" class="outlined-btn" type="button" disabled>Próxima</button>
+            </div>
           </section>
+          <section class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <div class="card-icon" style="background:rgba(255,59,48,0.10);color:#FF3B30">block</div>
+                <div>
+                  <h2>Solicitações reprovadas pelo SST</h2>
+                  <p>Itens solicitados que a Segurança do Trabalho reprovou, com o motivo registrado.</p>
+                </div>
+              </div>
+              <button class="filled-btn" id="exportar-auditoriaReprovadas" type="button"><span class="material-symbols-outlined">download</span>Exportar</button>
+            </div>
+            <div class="filters-grid" id="filtros-auditoriaReprovadas" role="search" aria-label="Filtrar Solicitações reprovadas pelo SST"></div>
+            <div class="table-wrap"><table><thead id="cabecalho-auditoriaReprovadas"></thead><tbody id="corpo-auditoriaReprovadas"></tbody></table></div>
+            <div class="paginacao-entregas">
+              <button id="anterior-auditoriaReprovadas" class="outlined-btn" type="button" disabled>Anterior</button>
+              <span id="paginacao-auditoriaReprovadas" aria-live="polite"></span>
+              <button id="proxima-auditoriaReprovadas" class="outlined-btn" type="button" disabled>Próxima</button>
+            </div>
+          </section>
+          <section class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <div class="card-icon" style="background:rgba(0,122,255,0.10);color:#007AFF">history</div>
+                <div>
+                  <h2>Log de ações — trilha de auditoria</h2>
+                  <p>Rastreabilidade: quem fez o quê, quando e de onde (NR-01). Padrão: últimos 30 dias; máximo de 92 dias por consulta.</p>
+                </div>
+              </div>
+              <button class="filled-btn" id="exportar-auditoriaLog" type="button"><span class="material-symbols-outlined">download</span>Exportar log</button>
+            </div>
+            <div class="filters-grid" id="filtros-auditoriaLog" role="search" aria-label="Filtrar Log de ações — trilha de auditoria"></div>
+            <div class="table-wrap"><table><thead id="cabecalho-auditoriaLog"></thead><tbody id="corpo-auditoriaLog"></tbody></table></div>
+            <div class="paginacao-entregas">
+              <button id="anterior-auditoriaLog" class="outlined-btn" type="button" disabled>Anterior</button>
+              <span id="paginacao-auditoriaLog" aria-live="polite"></span>
+              <button id="proxima-auditoriaLog" class="outlined-btn" type="button" disabled>Próxima</button>
+            </div>
+          </section>
+          <div id="modalCa" class="modal-ca" role="dialog" aria-modal="true" aria-labelledby="modalCaTitulo" style="display:none">
+            <div class="modal-ca-caixa">
+              <div class="modal-ca-topo">
+                <div>
+                  <h2 id="modalCaTitulo" style="font-size:18px;font-weight:600;margin:0">CAs vencidos em estoque</h2>
+                  <p style="font-size:12px;color:var(--on-surface-variant);margin:4px 0 0">Resumo dos lotes com CA vencido e saldo. A investigação e a tratativa são feitas em Validade de Estoque; nenhuma baixa é feita por aqui.</p>
+                </div>
+              </div>
+              <div class="modal-ca-corpo">
+                <div class="table-wrap"><table><thead id="cabecalho-auditoriaCaVencidos"></thead><tbody id="corpo-auditoriaCaVencidos"></tbody></table></div>
+                <p id="modalCaResumo" role="status" aria-live="polite" style="font-size:12px;color:var(--on-surface-variant);margin:10px 0 14px"></p>
+              </div>
+              <div class="modal-ca-rodape">
+                <a class="filled-btn" id="verTodosValidade" href="stock-validity.html?situacao=VENCIDO" style="display:none"><span class="material-symbols-outlined">open_in_new</span>Ver todos em Validade de Estoque</a>
+                <button class="outlined-btn" id="fecharModalCa" type="button">Fechar</button>
+              </div>
+            </div>
+          </div>
         </section>
 
         <section id="reportFiscal" class="report-subview">
@@ -288,10 +367,43 @@
             <div class="card-header">
               <div class="card-title">
                 <div class="card-icon" style="background:rgba(255,59,48,0.10);color:#FF3B30">account_balance</div>
-                <div><h2>Fiscalização</h2><p>Pacote de documentação para a Inspeção do Trabalho (NR-01 / NR-06).</p></div>
+                <div><h2>Fiscalização</h2><p>Pacote de documentação digital para fiscalização e auditoria externa.</p></div>
               </div>
             </div>
-            <div class="notice" data-nao-integrada>Em integração. Este recurso será disponibilizado em uma etapa seguinte; nenhum documento é gerado por enquanto.</div>
+            <div class="notice" id="fiscBanner">
+              <strong>NR-01 — Acesso à Inspeção do Trabalho</strong>
+              <div>Área destinada à preparação de documentação digital para fiscalização e auditoria externa. O pacote é gerado a partir dos registros do sistema, fica guardado sem alterações e pode ser baixado depois.</div>
+            </div>
+            <div class="filters-grid" id="fiscFormulario">
+              <div class="field"><label for="fiscInicio">Período — início</label><input class="input" id="fiscInicio" type="date"><div class="field-erro" id="fiscErro-periodoInicio" role="alert" style="color:var(--error);font-size:12px"></div></div>
+              <div class="field"><label for="fiscFim">Período — fim</label><input class="input" id="fiscFim" type="date"><div class="field-erro" id="fiscErro-periodoFim" role="alert" style="color:var(--error);font-size:12px"></div></div>
+              <div class="field"><label for="fiscFinalidade">Finalidade</label><select class="select" id="fiscFinalidade"></select><div class="field-erro" id="fiscErro-finalidade" role="alert" style="color:var(--error);font-size:12px"></div></div>
+              <div class="field"><label for="fiscObservacao">Observação</label><textarea class="input" id="fiscObservacao" rows="2" maxlength="500"></textarea><div class="field-erro" id="fiscErro-observacao" role="alert" style="color:var(--error);font-size:12px"></div></div>
+            </div>
+            <fieldset class="field" style="border:0;padding:0;margin:12px 0">
+              <legend style="font-weight:600;margin-bottom:6px">Módulos do pacote</legend>
+              <div id="fiscEscopos"></div>
+              <div class="field-erro" id="fiscErro-escopos" role="alert" style="color:var(--error);font-size:12px"></div>
+            </fieldset>
+            <div class="footer-actions filters-actions">
+              <button class="outlined-btn" id="fiscPrevia" type="button">Pré-visualizar</button>
+              <button class="filled-btn" id="fiscGerar" type="button" disabled>Gerar pacote</button>
+            </div>
+            <div id="fiscPreviaResultado" role="status" aria-live="polite" style="margin-top:12px"></div>
+          </section>
+          <section class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <div class="card-icon" style="background:rgba(0,122,255,0.10);color:#007AFF">history</div>
+                <div><h2>Histórico de pacotes</h2><p>Pacotes já gerados: o conteúdo de cada um não muda depois de concluído.</p></div>
+              </div>
+            </div>
+            <div class="table-wrap"><table><thead id="cabecalho-fiscalPacotes"></thead><tbody id="corpo-fiscalPacotes"></tbody></table></div>
+            <div class="paginacao-entregas">
+              <button id="anterior-fiscalPacotes" class="outlined-btn" type="button" disabled>Anterior</button>
+              <span id="paginacao-fiscalPacotes" aria-live="polite"></span>
+              <button id="proxima-fiscalPacotes" class="outlined-btn" type="button" disabled>Próxima</button>
+            </div>
           </section>
         </section>
       </section>
@@ -307,14 +419,14 @@
 <script>
 /*
   Ligação com o DOM — fina. Números, faixas e status vêm do servidor; consulta, textos, linhas (nós e texto, nunca HTML)
-  e CSV ficam em js/relatorios.js. Esta tela só lê; Auditoria e Fiscalização seguem não integradas.
+  e CSV ficam em js/relatorios.js. Esta tela só lê, exceto a geração do pacote de Fiscalização, feita pelo servidor.
 */
 (function () {
   'use strict';
 
   var $ = function (id) { return document.getElementById(id); };
   var R = EpiRelatorios;
-  var IDS = ['estoque', 'proximoVencimento', 'vencidos', 'episEntregues'];
+  var IDS = ['estoque', 'proximoVencimento', 'vencidos', 'episEntregues', 'auditoriaSolicitacoes', 'auditoriaReprovadas', 'auditoriaLog', 'fiscalPacotes'];
 
   var estado = {};
   IDS.forEach(function (id) {
@@ -323,6 +435,7 @@
   var permissoes = null;
   var encerrada = false;
   var avisoTimer = null;
+  var indicadoresCarregados = false;
 
   EpiHttp.configurar({ baseUrl: window.SAFEWORK_PORTAL_API_BASE_URL });
 
@@ -439,6 +552,61 @@
     return carregar(id);
   }
 
+  // Entrega o CSV (UTF-8 com BOM, ";", CRLF) das linhas recebidas; o chamador decide quais linhas são.
+  function baixarCsv(id, linhas) {
+    var blob = new Blob([R.modelo.csv(id, linhas)], { type: 'text/csv;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = R.modelo.nomeArquivo(id, new Date().toISOString().slice(0, 10));
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    mostrarAviso(R.TEXTOS.EXPORTADO, true);
+    clearTimeout(avisoTimer);
+    avisoTimer = setTimeout(function () { mostrarAviso(''); }, 3000);
+  }
+
+  // Modal-resumo de CAs vencidos: só as primeiras linhas; "Ver todos em Validade de Estoque" leva à tela operacional já
+  // filtrada (a regra e a tratativa são dela). Só leitura: nenhuma baixa é feita aqui.
+  var modalCa = { consulta: 0, foco: null };
+  function modalCaAberto() { return $('modalCa').style.display !== 'none'; }
+  function podeVerValidade() { return !!permissoes && EpiPermissoes.podeAbrir(permissoes, 'stockValidity'); }
+  async function abrirModalCa() {
+    if (modalCaAberto() || encerrada) return;
+    modalCa.foco = document.activeElement || null;
+    $('modalCa').style.display = 'flex';
+    $('fecharModalCa').focus();
+    modalCa.consulta += 1;
+    var numero = modalCa.consulta;
+    var id = 'auditoriaCaVencidos';
+    $('verTodosValidade').style.display = 'none';
+    $('modalCaResumo').textContent = '';
+    $('cabecalho-' + id).replaceChildren(R.render.cabecalho(document, id, null));
+    pintarCorpo(id, [R.render.mensagem(document, id, R.TEXTOS.CARREGANDO)]);
+    var r = await R.acoes.consultar(id, {}, null, 1, R.LIMITE_PREVIA_CA);
+    if (encerrada || numero !== modalCa.consulta) return;
+    if (!r.ok) {
+      if (r.status === 401) { EpiSessaoEmpresarial.sessaoEncerrada(); return; }
+      pintarCorpo(id, [R.render.mensagem(document, id, R.modelo.erro(r))]);
+      return;
+    }
+    var d = r.dados || {};
+    var itens = Array.isArray(d.itens) ? d.itens : [];
+    var total = typeof d.total === 'number' ? d.total : itens.length;
+    if (!itens.length) { pintarCorpo(id, [R.render.mensagem(document, id, R.ABAS[id].vazio)]); return; }
+    pintarCorpo(id, itens.map(function (l) { return R.render.linha(document, id, l); }));
+    $('modalCaResumo').textContent = R.modelo.resumoCaVencidos(itens.length, total);
+    $('verTodosValidade').style.display = podeVerValidade() ? '' : 'none';
+  }
+  function fecharModalCa() {
+    if (!modalCaAberto()) return;
+    modalCa.consulta += 1;
+    $('modalCa').style.display = 'none';
+    if (modalCa.foco && typeof modalCa.foco.focus === 'function') modalCa.foco.focus();
+  }
+
   async function exportar(id) {
     var e = estado[id];
     if (e.exportando || encerrada) return;
@@ -455,18 +623,7 @@
       }
       if (!r.linhas.length) { mostrarAviso(R.TEXTOS.EXPORTACAO_SEM_LINHAS); return; }
       if (!r.completa) { mostrarAviso(R.TEXTOS.EXPORTACAO_INCOMPLETA); return; }
-      var blob = new Blob([R.modelo.csv(id, r.linhas)], { type: 'text/csv;charset=utf-8' });
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = url;
-      a.download = R.modelo.nomeArquivo(id, new Date().toISOString().slice(0, 10));
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      mostrarAviso(R.TEXTOS.EXPORTADO, true);
-      clearTimeout(avisoTimer);
-      avisoTimer = setTimeout(function () { mostrarAviso(''); }, 3000);
+      baixarCsv(id, r.linhas);
     } catch (erro) {
       mostrarAviso(R.TEXTOS.EXPORTACAO_FALHOU);
     } finally {
@@ -475,15 +632,36 @@
     }
   }
 
+  async function carregarIndicadoresAuditoria() {
+    var r = await R.acoes.indicadoresAuditoria();
+    if (encerrada) return;
+    if (!r.ok) {
+      if (r.status === 401) { EpiSessaoEmpresarial.sessaoEncerrada(); return; }
+      mostrarAviso(R.modelo.erro(r));
+      return;
+    }
+    var i = R.modelo.indicadoresAuditoria(r.dados);
+    $('auditPendentes').textContent = i.entregasPendentes;
+    $('auditCa').textContent = i.caVencidosEmEstoque;
+    $('auditLogs').textContent = i.logs30Dias;
+    $('auditReprovados').textContent = i.itensReprovados;
+  }
+
   function mostrarSecao(botao) {
     Array.prototype.forEach.call(document.querySelectorAll('.report-tab'), function (b) { b.classList.toggle('active', b === botao); });
     Array.prototype.forEach.call(document.querySelectorAll('.report-subview'), function (s) { s.classList.toggle('active', s.id === botao.getAttribute('data-secao')); });
-    var id = botao.getAttribute('data-aba');
-    if (id && !estado[id].carregada) carregar(id);
+    (botao.getAttribute('data-carregar') || '').split(' ').filter(Boolean).forEach(function (id) {
+      if (!estado[id].carregada) carregar(id);
+    });
+    if (botao.hasAttribute('data-indicadores-auditoria') && !indicadoresCarregados) {
+      indicadoresCarregados = true;
+      carregarIndicadoresAuditoria();
+    }
   }
 
   function encerrarTela() {
     encerrada = true;
+    fecharModalCa();
     IDS.forEach(function (id) {
       estado[id].consulta += 1;
       pintarPaginacao(id, null);
@@ -494,8 +672,9 @@
 
   // ── montagem dos filtros e eventos ──
   IDS.forEach(function (id) {
-    var area = $('filtros-' + id);
-    R.render.filtros(document, id).forEach(function (n) { area.appendChild(n); });
+    // O histórico da Fiscalização não tem filtros: o contêiner solto só absorve os ouvintes abaixo.
+    var area = $('filtros-' + id) || document.createElement('div');
+    if (R.ABAS[id].filtros.length) R.render.filtros(document, id).forEach(function (n) { area.appendChild(n); });
     pintarCabecalho(id);
     area.addEventListener('click', function (ev) {
       var alvo = ev.target && ev.target.closest ? ev.target.closest('[data-acao-relatorio]') : null;
@@ -514,9 +693,175 @@
     });
     $('anterior-' + id).addEventListener('click', function () { if (estado[id].pagina > 1) { estado[id].pagina -= 1; carregar(id); } });
     $('proxima-' + id).addEventListener('click', function () { estado[id].pagina += 1; carregar(id); });
-    $('exportar-' + id).addEventListener('click', function () { exportar(id); });
+    if ($('exportar-' + id)) $('exportar-' + id).addEventListener('click', function () { exportar(id); });
   });
   Array.prototype.forEach.call(document.querySelectorAll('.report-tab'), function (b) { b.addEventListener('click', function () { mostrarSecao(b); }); });
+  $('cartaoCa').addEventListener('click', abrirModalCa);
+  $('cartaoCa').addEventListener('keydown', function (ev) { if (ev && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); abrirModalCa(); } });
+  $('fecharModalCa').addEventListener('click', fecharModalCa);
+  $('modalCa').addEventListener('click', function (ev) { if (ev.target === $('modalCa')) fecharModalCa(); });
+  document.addEventListener('keydown', function (ev) { if (ev && ev.key === 'Escape') fecharModalCa(); });
+
+  // ── Fiscalização (12K-D6): configurar → pré-visualizar → gerar → histórico → baixar. O servidor decide limites, contagens e o pacote. ──
+  var fisc = { previaValida: false, gerando: false, chave: null, consulta: 0, baixando: false };
+  var CAMPOS_FISC = ['periodoInicio', 'periodoFim', 'finalidade', 'observacao', 'escopos'];
+
+  function lerFormularioFiscal() {
+    return {
+      periodoInicio: $('fiscInicio').value,
+      periodoFim: $('fiscFim').value,
+      finalidade: $('fiscFinalidade').value,
+      observacao: $('fiscObservacao').value,
+      escopos: R.fiscal.ESCOPOS.filter(function (e) { return $('fiscEscopo-' + e.valor).checked; }).map(function (e) { return e.valor; }),
+    };
+  }
+  function pintarErrosFiscais(erros) {
+    CAMPOS_FISC.forEach(function (c) { $('fiscErro-' + c).textContent = erros && erros[c] ? erros[c] : ''; });
+  }
+  function invalidarPrevia() {
+    fisc.consulta += 1;
+    fisc.previaValida = false;
+    $('fiscGerar').disabled = true;
+    $('fiscPreviaResultado').replaceChildren();
+  }
+  function no(tag, atributos, filhos) {
+    var el = document.createElement(tag);
+    Object.keys(atributos || {}).forEach(function (k) { el.setAttribute(k, atributos[k]); });
+    (filhos || []).forEach(function (f) { el.appendChild(typeof f === 'string' ? document.createTextNode(f) : f); });
+    return el;
+  }
+  function pintarPrevia(previa) {
+    var caixa = $('fiscPreviaResultado');
+    caixa.replaceChildren();
+    var escopos = previa && Array.isArray(previa.escopos) ? previa.escopos : [];
+    escopos.forEach(function (e) {
+      var linhas = typeof e.linhas === 'number' ? e.linhas : 0;
+      var detalhe = e.excedeLimite ? linhas.toLocaleString('pt-BR') + ' linhas — acima do limite por módulo' : (e.vazio ? 'sem registros no período' : linhas.toLocaleString('pt-BR') + (linhas === 1 ? ' linha' : ' linhas'));
+      caixa.appendChild(no('div', { class: 'switch-row', 'data-escopo': String(e.escopo) }, [
+        no('div', { class: 'switch-text' }, [no('strong', {}, [R.fiscal.rotuloEscopo(e.escopo)]), no('span', {}, [detalhe])]),
+        no('span', { class: 'badge', style: e.excedeLimite ? 'background:rgba(255,59,48,0.12);color:#FF3B30' : (e.vazio ? 'background:rgba(255,149,0,0.12);color:#FF9500' : 'background:rgba(52,199,89,0.12);color:#1A7A35') }, [e.excedeLimite ? 'Acima do limite' : (e.vazio ? 'Vazio' : 'Pronto')]),
+      ]));
+    });
+    if (previa && previa.podeGerar === false) {
+      caixa.appendChild(no('div', { class: 'notice', style: 'margin-top:8px' }, ['Reduza o período para que cada módulo fique dentro do limite de linhas por pacote.']));
+    }
+  }
+  async function previaFiscal() {
+    if (encerrada) return;
+    var form = lerFormularioFiscal();
+    var v = R.fiscal.validar(form);
+    pintarErrosFiscais(v.erros);
+    mostrarAviso('');
+    if (!v.ok) { invalidarPrevia(); return; }
+    invalidarPrevia();
+    var numero = fisc.consulta;
+    var r = await R.acoes.fiscalPrevia(R.fiscal.corpo(form));
+    if (encerrada || numero !== fisc.consulta) return;
+    if (!r.ok) {
+      if (r.status === 401) { EpiSessaoEmpresarial.sessaoEncerrada(); return; }
+      mostrarAviso(r.status === 403 ? R.TEXTOS.SEM_AUTORIDADE : R.fiscal.mensagemDeErro(r.codigo));
+      return;
+    }
+    var previa = r.dados && r.dados.previa ? r.dados.previa : null;
+    pintarPrevia(previa);
+    fisc.previaValida = !!previa && previa.podeGerar === true;
+    $('fiscGerar').disabled = !fisc.previaValida;
+  }
+  async function gerarPacote() {
+    // Guarda própria contra o segundo clique, além do botão desabilitado.
+    if (fisc.gerando || !fisc.previaValida || encerrada) return;
+    fisc.gerando = true;
+    $('fiscGerar').disabled = true;
+    mostrarAviso('');
+    try {
+      var form = lerFormularioFiscal();
+      if (!R.fiscal.validar(form).ok) { invalidarPrevia(); return; }
+      if (!fisc.chave) fisc.chave = R.fiscal.novaChave();
+      var r = await R.acoes.fiscalGerar(R.fiscal.corpo(form), fisc.chave);
+      if (encerrada) return;
+      if (r.ok) {
+        var pacote = r.dados && r.dados.pacote ? r.dados.pacote : {};
+        fisc.chave = null;
+        invalidarPrevia();
+        mostrarAviso(pacote.status === 'FALHA' ? 'A tentativa anterior falhou. Faça uma nova tentativa.'
+          : (pacote.status === 'GERANDO' ? 'A geração está em andamento. Acompanhe pelo histórico.' : 'Pacote ' + R.fiscal.identificador(pacote.id) + ' gerado com sucesso.'), pacote.status === 'CONCLUIDO');
+        estado.fiscalPacotes.pagina = 1;
+        await carregar('fiscalPacotes');
+        return;
+      }
+      if (r.status === 401) { EpiSessaoEmpresarial.sessaoEncerrada(); return; }
+      if (r.status === 0) {
+        // Resposta incerta: a MESMA chave é reutilizada na próxima tentativa (o servidor devolve a tentativa já feita).
+        mostrarAviso('Sem resposta do servidor. Verifique o histórico antes de tentar de novo.');
+        $('fiscGerar').disabled = false;
+        return;
+      }
+      fisc.chave = null;
+      mostrarAviso(r.status === 403 ? R.TEXTOS.SEM_AUTORIDADE : R.fiscal.mensagemDeErro(r.codigo));
+      estado.fiscalPacotes.pagina = 1;
+      await carregar('fiscalPacotes');
+      $('fiscGerar').disabled = !fisc.previaValida;
+    } finally {
+      fisc.gerando = false;
+    }
+  }
+  async function baixarPacote(id) {
+    if (fisc.baixando || encerrada) return;
+    fisc.baixando = true;
+    try {
+      var resposta = await fetch(EpiHttp.configurar({}).baseUrl + R.fiscal.caminhoDownload(id), { credentials: 'include' });
+      if (resposta.status === 401) { EpiSessaoEmpresarial.sessaoEncerrada(); return; }
+      if (!resposta.ok) {
+        var codigo = null;
+        try { var corpo = await resposta.json(); codigo = corpo && corpo.codigo; } catch (e) { codigo = null; }
+        mostrarAviso(resposta.status === 403 ? R.TEXTOS.SEM_AUTORIDADE : R.fiscal.mensagemDeErro(codigo));
+        return;
+      }
+      var blob = await resposta.blob();
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'fiscalizacao-pacote-' + id + '.zip';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (erro) {
+      mostrarAviso(R.fiscal.mensagemDeErro(null));
+    } finally {
+      fisc.baixando = false;
+    }
+  }
+  (function montarFiscalizacao() {
+    var finalidade = $('fiscFinalidade');
+    finalidade.appendChild(no('option', { value: '' }, ['Selecione…']));
+    R.fiscal.FINALIDADES.forEach(function (f) { finalidade.appendChild(no('option', { value: f.valor }, [f.rotulo])); });
+    var caixa = $('fiscEscopos');
+    R.fiscal.ESCOPOS.forEach(function (e) {
+      caixa.appendChild(no('label', { class: 'switch-row', for: 'fiscEscopo-' + e.valor }, [
+        no('input', { type: 'checkbox', id: 'fiscEscopo-' + e.valor, value: e.valor }),
+        no('span', { style: 'margin-left:8px' }, [e.rotulo]),
+      ]));
+    });
+    // Editar um campo limpa só a mensagem dele (a validação completa continua no clique de Pré-visualizar) e invalida a prévia.
+    function aoEditar(campo) {
+      return function () {
+        $('fiscErro-' + campo).textContent = '';
+        invalidarPrevia();
+      };
+    }
+    [['fiscInicio', 'periodoInicio'], ['fiscFim', 'periodoFim'], ['fiscFinalidade', 'finalidade'], ['fiscObservacao', 'observacao']].forEach(function (par) {
+      $(par[0]).addEventListener('input', aoEditar(par[1]));
+      $(par[0]).addEventListener('change', aoEditar(par[1]));
+    });
+    R.fiscal.ESCOPOS.forEach(function (e) { $('fiscEscopo-' + e.valor).addEventListener('change', aoEditar('escopos')); });
+    $('fiscPrevia').addEventListener('click', previaFiscal);
+    $('fiscGerar').addEventListener('click', gerarPacote);
+    $('corpo-fiscalPacotes').addEventListener('click', function (ev) {
+      var alvo = ev.target && ev.target.closest ? ev.target.closest('[data-baixar]') : null;
+      if (alvo) baixarPacote(Number(alvo.getAttribute('data-baixar')));
+    });
+  }());
 
   // Sessão empresarial do Portal e permissões efetivas nesta empresa. Cada aba só aparece com a autoridade da própria
   // fonte (Estoque: materials.visualizar; as de entregas: epiFicha.visualizar); o servidor confere de novo.
@@ -534,8 +879,8 @@
       if (!acesso) return undefined;
       permissoes = acesso.permissoes;
       var primeira = null;
-      Array.prototype.forEach.call(document.querySelectorAll('.report-tab[data-aba]'), function (b) {
-        var pode = EpiPermissoes.recurso(permissoes, R.ABAS[b.getAttribute('data-aba')].recurso, 'visualizar');
+      Array.prototype.forEach.call(document.querySelectorAll('.report-tab[data-recurso]'), function (b) {
+        var pode = EpiPermissoes.recurso(permissoes, b.getAttribute('data-recurso'), 'visualizar');
         b.style.display = pode ? '' : 'none';
         if (pode && !primeira) primeira = b;
       });

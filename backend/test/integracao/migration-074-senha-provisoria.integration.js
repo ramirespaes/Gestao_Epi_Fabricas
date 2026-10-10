@@ -87,10 +87,10 @@ describe('migration 074 — senha provisória da identidade (troca obrigatória 
     assert.ok(depois >= antes.atualizado_em, 'gatilho set_atualizado_em continua ativo');
   });
 
-  test('manifesto: 78 migrations, 000 a 077; a 025 e a 072 continuam idênticas ao manifesto', () => {
+  test('manifesto: 85 migrations, 000 a 084; a 025 e a 072 continuam idênticas ao manifesto', () => {
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO, 'checksums.json'), 'utf8'));
     const arquivos = fs.readdirSync(DIRETORIO).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
-    assert.equal(arquivos.length, 79);
+    assert.equal(arquivos.length, 85);
     assert.equal(arquivos[74], ARQUIVO_074);
     assert.deepEqual(Object.keys(manifesto.migrations).sort(), arquivos);
     const sha = (f) => crypto.createHash('sha256').update(fs.readFileSync(path.join(DIRETORIO, f))).digest('hex');

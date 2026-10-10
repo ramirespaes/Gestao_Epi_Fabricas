@@ -213,7 +213,7 @@ describe('decisão da SST — serviço (PostgreSQL real)', () => {
     const b = await materialNoGhe();
     const trabalhador = await d.novoTrabalhador(d.empresaA, { gheId: d.gheA });
     const doInativo = await criar([item(a)], { funcionarioId: trabalhador });
-    await q('UPDATE funcionarios SET ativo = false WHERE id = $1', [trabalhador]);
+    await q("UPDATE funcionarios SET situacao = 'INATIVO' WHERE id = $1", [trabalhador]);
     await esperarHttpError(decidir(doInativo.solicitacao.id, [aprovar(doInativo.itens[0])]), 409, 'FUNCIONARIO_INATIVO');
     assert.equal((await decidir(doInativo.solicitacao.id, [reprovar(doInativo.itens[0], 'Trabalhador desligado')])).solicitacao.status, 'REPROVADA');
 

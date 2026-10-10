@@ -79,8 +79,8 @@ async function material(pool, empresaId, { nome, minimo = 0, exigeCa = true, ati
 
 async function funcionario(pool, empresaId, matricula, cpf, ativo) {
   await pool.query(
-    'INSERT INTO funcionarios (empresa_id, matricula, nome, cpf, ativo) VALUES ($1, $2, $3, $4, $5)',
-    [empresaId, matricula, `Funcionário ${matricula}`, cpf, ativo],
+    'INSERT INTO funcionarios (empresa_id, matricula, nome, cpf, situacao) VALUES ($1, $2, $3, $4, $5)',
+    [empresaId, matricula, `Funcionário ${matricula}`, cpf, ativo ? 'ATIVO' : 'INATIVO'],
   );
 }
 

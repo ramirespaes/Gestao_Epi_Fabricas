@@ -50,7 +50,7 @@ const { assertSemSensiveis } = require('../helpers/sensiveis');
 // liberação do MFA; 054: a sessão administrativa grava o registro do MFA;
 // 049, 052 e 055: a sessão só vale ligada a um desafio de MFA concluído.
 // 041, 042 e 057: a FK composta da 073 referencia uq_funcionarios_empresa_id (057), que também exige estoque_lotes (042) e uq_materiais_empresa_id (041).
-const TODAS_AS_MIGRATIONS = [...Array.from({ length: 40 }, (_, i) => String(i).padStart(3, '0')), '041', '042', '057', '048', '049', '052', '053', '054', '055', '072', '073', '074', '075', '076', '077'];
+const TODAS_AS_MIGRATIONS = [...Array.from({ length: 40 }, (_, i) => String(i).padStart(3, '0')), '041', '042', '057', '048', '049', '052', '053', '054', '055', '072', '073', '074', '075', '076', '077', '079'];
 const SENHA = 'senha-forte-do-portal-2026';
 const SENHA_ERRADA = 'senha-errada-do-portal-2026';
 const SENHA_ADMIN = 'planeta-nebulosa-ozonio-42';
