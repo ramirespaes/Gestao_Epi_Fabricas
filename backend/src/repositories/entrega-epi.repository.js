@@ -147,7 +147,7 @@ async function criar(executor, {
   exigirTextoOpcional(empresa.cidade, 'cidade da empresa', 100);
   exigirTextoOpcional(empresa.uf, 'UF da empresa', 2);
   exigirTexto(trabalhador.nome, 'nome do trabalhador', 150);
-  exigirTexto(trabalhador.matricula, 'matrícula do trabalhador', 30);
+  exigirTextoOpcional(trabalhador.matricula ?? null, 'matrícula do trabalhador', 30);
   exigirTextoOpcional(trabalhador.funcao, 'função do trabalhador', 100);
   exigirTextoOpcional(trabalhador.setor, 'setor do trabalhador', 100);
   if ((gheId === null) !== (gheNome === null)) throw new TypeError('GHE e nome do GHE andam juntos');

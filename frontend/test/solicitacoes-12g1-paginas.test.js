@@ -43,7 +43,7 @@ const EXEMPLOS = /Tício|Ticio|João Pereira|Carlos Mendes|Ana Souza|Fulano|CR-0
 
 // As 11 integradas antes da 12G-1 e as três desta subetapa.
 // Configurações (05/10/2026) passou a página integrada depois da 12G-1.
-const INTEGRADAS_ANTES = ['available-items.html', 'config.html', 'dashboard.html', 'employee-groups.html', 'employee-history.html', 'epi-ficha.html', 'import-employees.html', 'materials.html', 'operations.html', 'stock-validity.html', 'gestao-usuarios.html'];
+const INTEGRADAS_ANTES = ['available-items.html', 'config.html', 'dashboard.html', 'delivered-items.html', 'employee-groups.html', 'employee-history.html', 'epi-ficha.html', 'funcionarios.html', 'import-employees.html', 'materials.html', 'operations.html', 'reports.html', 'stock-validity.html', 'gestao-usuarios.html'];
 const INTEGRADAS = [...INTEGRADAS_ANTES, ...Object.keys(NOVAS)].sort();
 const ADMINISTRATIVAS = ['autorizacoes-individuais.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'grupos-acesso.html', 'new-user.html', 'user-admin.html'];
 const COM_MENU_COMPLETO = fs.readdirSync(path.join(RAIZ, 'pages')).filter((f) => f.endsWith('.html') && !ADMINISTRATIVAS.includes(f)).sort();
@@ -257,8 +257,8 @@ describe('ajuste visual final: nada em integração parece funcionar, e nada de 
 
 // ─────────────────────────────────────────────────────────────────────
 describe('menu, Portal e Permissões do Grupo', () => {
-  test('nas 16 páginas integradas com menu completo, Solicitações liga as três páginas por permissão; o Totem segue "Em integração"', () => {
-    assert.equal(INTEGRADAS.length, 14);
+  test('nas 17 páginas integradas com menu completo, Solicitações liga as três páginas por permissão; o Totem segue "Em integração"', () => {
+    assert.equal(INTEGRADAS.length, 17);
     const destino = { 'Pedido de EPI': ['request.html', 'request'], 'Aprovação da Segurança do Trabalho': ['supervisor-approval.html', 'supervisorApproval'], 'Entregas por solicitação': ['stock-requests.html', 'stockRequests'] };
     for (const arquivo of INTEGRADAS) {
       const itens = secao(ler(`pages/${arquivo}`), 'Solicitações').itens;
@@ -275,7 +275,7 @@ describe('menu, Portal e Permissões do Grupo', () => {
   });
 
   test('nenhuma das 24 páginas de menu completo usa os nomes antigos; os protótipos mantêm a navegação deles com os nomes novos', () => {
-    assert.equal(COM_MENU_COMPLETO.length, 22);
+    assert.equal(COM_MENU_COMPLETO.length, 23);
     for (const arquivo of COM_MENU_COMPLETO) {
       const rotulos = secao(ler(`pages/${arquivo}`), 'Solicitações').itens.map((i) => i.rotulo);
       assert.deepEqual(rotulos, ['Autoatendimento (Totem)', 'Pedido de EPI', 'Aprovação da Segurança do Trabalho', 'Entregas por solicitação'], arquivo);
@@ -290,7 +290,7 @@ describe('menu, Portal e Permissões do Grupo', () => {
   test('Portal: as três páginas entram nos módulos, na ordem do menu, ocultas até a permissão; "Solicitações e aprovações" sai de "Em integração"', () => {
     const inicio = ler('portal/inicio.html');
     const paginas = [...inicio.matchAll(/<a href="\.\.\/pages\/[^"]+" data-pagina="([^"]+)" style="display:none">/g)].map((m) => m[1]);
-    assert.deepEqual(paginas, ['dashboard', 'materials', 'stockValidity', 'availableItems', 'operations', 'employeeGroups', 'epiFicha', 'employeeHistory',
+    assert.deepEqual(paginas, ['dashboard', 'reports', 'materials', 'stockValidity', 'availableItems', 'operations', 'employeeGroups', 'deliveredItems', 'epiFicha', 'funcionarios', 'employeeHistory',
       'request', 'supervisorApproval', 'stockRequests',
       'grupos-acesso', 'grupo-permissoes', 'grupo-usuarios', 'autorizacoes-individuais', 'importEmployees', 'newUser', 'userAdmin', 'config']);
     assert.match(inicio, /<a href="\.\.\/pages\/request\.html" data-pagina="request" style="display:none">Pedido de EPI<\/a>/);

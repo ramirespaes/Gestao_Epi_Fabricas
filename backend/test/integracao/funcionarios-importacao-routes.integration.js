@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const request = require('supertest');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { todasAsMigrations } = require('./helpers/entrega-epi');
 const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { criarAppTeste } = require('../helpers/app-teste');
 const { criarAuthGlobalController } = require('../../src/controllers/auth-global.controller');
@@ -25,7 +26,8 @@ const declaracao = require('../../src/services/declaracao-lgpd');
  * com TODAS as migrations (000–040).
  */
 
-const TODAS_AS_MIGRATIONS = [...Array.from({ length: 41 }, (_, i) => String(i).padStart(3, '0')), '072', '074', '075', '076', '077'];
+// Schema atual do sistema (inclui a 083, que a leitura de GHE projeta).
+const TODAS_AS_MIGRATIONS = todasAsMigrations();
 const SENHA = 'senha-forte-da-parte-c4-2026';
 const EMAILS = {
   masterA: 'master.a.c4@exemplo-cliente.com.br',
@@ -61,7 +63,7 @@ function cookiesDe(resposta) {
 // 12G-9: a coluna GHE é obrigatória e traz o NOME exato de um GHE da empresa.
 const GHE = { ativoA: 'GHE Produção', inativoA: 'GHE Antigo', ativoB: 'GHE Beta' };
 const linhaImp = (linha, cpf, extra = {}) => ({
-  linha, nome: `Funcionário C4 ${linha}`, cpf, matricula: `C4-${linha}`, dataAdmissao: '2020-06-01',
+  linha, nome: `Funcionário C4 ${linha}`, cpf, matricula: `C4-${linha}`, situacao: 'Ativo', dataAdmissao: '2020-06-01',
   dataNascimento: '1990-03-15', setor: 'Produção', funcao: 'Operador', telefone: '(47) 99999-0001', ghe: GHE.ativoA, ...extra,
 });
 const lote = (linhas, extra = {}) => ({
@@ -112,7 +114,7 @@ describe('C4 — funcionários: importação em lote, CPF exato e admissão (Pos
     await vinculo('masterB', empresa.B, EMAILS.masterB, 'MASTER');
     await q("INSERT INTO permissoes_recurso (empresa_id, perfil, recurso, pode_visualizar, pode_criar) VALUES ($1, 'SUPERVISOR', 'employeeHistory', true, false)", [empresa.A]);
     // Funcionário já existente e INATIVO na empresa A: a importação nunca o altera nem reativa.
-    await q("INSERT INTO funcionarios (empresa_id, matricula, nome, cpf, ativo) VALUES ($1, 'EXISTENTE-1', 'Existente Inativo', $2, false)", [empresa.A, gerarCpf(900)]);
+    await q("INSERT INTO funcionarios (empresa_id, matricula, nome, cpf, situacao) VALUES ($1, 'EXISTENTE-1', 'Existente Inativo', $2, 'INATIVO')", [empresa.A, gerarCpf(900)]);
     // GHEs (12G-9): um ativo e um inativo em A; um ativo em B, cujo nome não vale em A.
     const criarGhe = async (empresaId, nome, ativo) => (await q('INSERT INTO grupos_homogeneos_exposicao (empresa_id, nome, ativo) VALUES ($1, $2, $3) RETURNING id', [empresaId, nome, ativo])).rows[0].id;
     ghe.ativoA = await criarGhe(empresa.A, GHE.ativoA, true);
@@ -344,33 +346,36 @@ describe('C4 — funcionários: importação em lote, CPF exato e admissão (Pos
   test('datas AAAA-MM-DD sem fuso: POST/GET/PATCH em São Paulo, UTC, Tóquio e Berlim; PATCH omitido preserva, informado atualiza, null limpa; admissão ≤ nascimento → 400', async () => {
     const original = process.env.TZ;
     try {
+      // S4: o cadastro individual exige setor, função e GHE; e a admissão não pode ser futura (as datas daqui ficaram no passado).
+      const obrigatorios = { setor: 'Qualidade', funcao: 'Inspetor', grupoHomogeneoId: ghe.ativoA };
       const post = await request(app).post('/api/funcionarios').set('Cookie', cookie.masterA)
-        .send({ matricula: 'C4-DATAS', nome: 'Datas C4', cpf: gerarCpf(50), dataNascimento: '1990-10-15', dataAdmissao: '2026-10-15' });
+        .send({ matricula: 'C4-DATAS', nome: 'Datas C4', cpf: gerarCpf(50), dataNascimento: '1990-10-15', dataAdmissao: '2020-10-15', ...obrigatorios });
       assert.equal(post.status, 201, JSON.stringify(post.body));
       const id = post.body.funcionario.id;
       for (const fuso of ['America/Sao_Paulo', 'UTC', 'Asia/Tokyo', 'Europe/Berlin']) {
         process.env.TZ = fuso;
         const g = await request(app).get(`/api/funcionarios/${id}`).set('Cookie', cookie.masterA);
-        assert.deepEqual([g.body.funcionario.dataNascimento, g.body.funcionario.dataAdmissao], ['1990-10-15', '2026-10-15'], fuso);
+        assert.deepEqual([g.body.funcionario.dataNascimento, g.body.funcionario.dataAdmissao], ['1990-10-15', '2020-10-15'], fuso);
       }
       process.env.TZ = 'Asia/Tokyo';
       const omitido = await request(app).patch(`/api/funcionarios/${id}`).set('Cookie', cookie.masterA).send({ setor: 'Qualidade' });
-      assert.deepEqual([omitido.status, omitido.body.funcionario.dataAdmissao], [200, '2026-10-15'], 'omitido: preservado');
-      const informado = await request(app).patch(`/api/funcionarios/${id}`).set('Cookie', cookie.masterA).send({ dataAdmissao: '2027-01-05' });
-      assert.equal(informado.body.funcionario.dataAdmissao, '2027-01-05');
+      assert.deepEqual([omitido.status, omitido.body.funcionario.dataAdmissao], [200, '2020-10-15'], 'omitido: preservado');
+      const informado = await request(app).patch(`/api/funcionarios/${id}`).set('Cookie', cookie.masterA).send({ dataAdmissao: '2021-01-05' });
+      assert.equal(informado.body.funcionario.dataAdmissao, '2021-01-05');
       const limpo = await request(app).patch(`/api/funcionarios/${id}`).set('Cookie', cookie.masterA).send({ dataAdmissao: null });
       assert.equal(limpo.body.funcionario.dataAdmissao, null);
       const invalido = await request(app).patch(`/api/funcionarios/${id}`).set('Cookie', cookie.masterA).send({ dataAdmissao: '1990-10-15' });
       assert.deepEqual([invalido.status, invalido.body.codigo], [400, 'FUNCIONARIO_DATA_ADMISSAO_INVALIDA']);
       const antes1900 = await request(app).post('/api/funcionarios').set('Cookie', cookie.masterA)
-        .send({ matricula: 'C4-1899', nome: 'Antigo', cpf: gerarCpf(51), dataAdmissao: '1899-12-31' });
+        .send({ matricula: 'C4-1899', nome: 'Antigo', cpf: gerarCpf(51), dataAdmissao: '1899-12-31', ...obrigatorios });
       assert.deepEqual([antes1900.status, antes1900.body.codigo], [400, 'FUNCIONARIO_DATA_ADMISSAO_INVALIDA']);
       const futura = await request(app).post('/api/funcionarios').set('Cookie', cookie.masterA)
-        .send({ matricula: 'C4-FUTURA', nome: 'Futura', cpf: gerarCpf(52), dataAdmissao: '2099-01-01' });
-      assert.equal(futura.status, 201, 'admissão futura é permitida');
+        .send({ matricula: 'C4-FUTURA', nome: 'Futura', cpf: gerarCpf(52), dataAdmissao: '2099-01-01', ...obrigatorios });
+      assert.deepEqual([futura.status, futura.body.codigo], [400, 'FUNCIONARIO_DATA_ADMISSAO_INVALIDA'], 'S4: admissão futura é recusada (antes era permitida)');
       const semData = await request(app).post('/api/funcionarios').set('Cookie', cookie.masterA)
-        .send({ matricula: 'C4-SEM', nome: 'Sem data', cpf: gerarCpf(53) });
-      assert.deepEqual([semData.status, semData.body.funcionario.dataAdmissao], [201, null], 'retrocompatível: sem o campo');
+        .send({ matricula: 'C4-SEM', nome: 'Sem data', cpf: gerarCpf(53), ...obrigatorios });
+      assert.equal(semData.status, 400, 'S4: a admissão passou a ser obrigatória no cadastro individual (antes: retrocompatível, sem o campo)');
+      assert.ok(semData.body.detalhes.some((d) => d.campo === 'body.dataAdmissao'));
     } finally {
       if (original === undefined) delete process.env.TZ; else process.env.TZ = original;
     }

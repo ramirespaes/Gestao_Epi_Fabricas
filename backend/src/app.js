@@ -17,10 +17,13 @@ const { usuarioConsultaRoutes } = require('./routes/usuario-consulta.routes');
 const { autorizacaoConsultaRoutes } = require('./routes/autorizacao-consulta.routes');
 const { delegacaoDestinatariosRoutes } = require('./routes/delegacao-destinatarios.routes');
 const { materialRoutes } = require('./routes/material.routes');
+const { tipoMaterialRoutes } = require('./routes/tipo-material.routes');
 const { estoqueRoutes } = require('./routes/estoque.routes');
 const { itensDisponiveisRoutes } = require('./routes/itens-disponiveis.routes');
 const { grupoHomogeneoExposicaoRoutes } = require('./routes/grupo-homogeneo-exposicao.routes');
 const { gheMaterialRoutes } = require('./routes/ghe-material.routes');
+const { gheTipoMaterialRoutes } = require('./routes/ghe-tipo-material.routes');
+const { gheImportacaoRoutes } = require('./routes/ghe-importacao.routes');
 const { dashboardRoutes } = require('./routes/dashboard.routes');
 const { funcionarioRoutes } = require('./routes/funcionario.routes');
 const { usuarioAdministracaoRoutes } = require('./routes/usuario-administracao.routes');
@@ -29,6 +32,7 @@ const { entregaEpiRoutes } = require('./routes/entrega-epi.routes');
 const { solicitacaoEpiRoutes } = require('./routes/solicitacao-epi.routes');
 const { vinculoSstRoutes } = require('./routes/vinculo-sst.routes');
 const { alertaEstoqueRoutes } = require('./routes/alerta-estoque.routes');
+const { relatorioRoutes } = require('./routes/relatorio.routes');
 const { recuperacaoSenhaPortalRoutes, recuperacaoSenhaPlataformaRoutes } = require('./routes/recuperacao-senha.routes');
 const { trocaSenhaGlobalRoutes, trocaSenhaPlataformaRoutes } = require('./routes/troca-senha.routes');
 // Configurações: telefone, aparência e e-mail de acesso da identidade da sessão global.
@@ -135,6 +139,10 @@ app.use(
 // mesmo mecanismo da Etapa A, recursos 'employeeGroups' e 'employeeHistory'.
 // gheMaterialRoutes (Bloco 9, Etapa C, Parte C5): matriz GHE × EPI sob
 // /grupos-homogeneos/:id/materiais, mesmo recurso 'employeeGroups'.
+// gheTipoMaterialRoutes (evolução GHE / importação GHE-EPI, Incremento 3): vínculo GHE × tipo de material sob
+// /grupos-homogeneos/:id/tipos-material, mesmo recurso 'employeeGroups'.
+// gheImportacaoRoutes (Incremento 5B): preview read-only da importação GHE/EPI, único POST com corpo de até 512 KiB
+// (a rota lê o corpo só depois da sessão e da permissão; ver middleware/conteudo.js).
 // dashboardRoutes (Bloco 9, Etapa C, Parte C6): GET /dashboard/indicadores,
 // recurso 'dashboard' (visualizar); cada indicador exige a permissão da fonte.
 //
@@ -169,7 +177,7 @@ app.use(
 //
 // alertaEstoqueRoutes (Bloco 12, 12G-6): o "Gerar alerta" de falta de estoque
 // (POST, REALIZAR_ENTREGA), na mesma cadeia e com a mesma verificação de origem.
-app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeral, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, recuperacaoSenhaPortalRoutes, trocaSenhaGlobalRoutes, contaRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, estoqueRoutes, itensDisponiveisRoutes, grupoHomogeneoExposicaoRoutes, gheMaterialRoutes, funcionarioRoutes, dashboardRoutes, usuarioAdministracaoRoutes, conviteUsuarioRoutes, entregaEpiRoutes, solicitacaoEpiRoutes, vinculoSstRoutes, alertaEstoqueRoutes);
+app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeral, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, recuperacaoSenhaPortalRoutes, trocaSenhaGlobalRoutes, contaRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, tipoMaterialRoutes, estoqueRoutes, itensDisponiveisRoutes, grupoHomogeneoExposicaoRoutes, gheMaterialRoutes, gheTipoMaterialRoutes, gheImportacaoRoutes, funcionarioRoutes, dashboardRoutes, usuarioAdministracaoRoutes, conviteUsuarioRoutes, entregaEpiRoutes, solicitacaoEpiRoutes, vinculoSstRoutes, alertaEstoqueRoutes, relatorioRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

@@ -165,8 +165,18 @@ function normalizarEmail(valor) {
   return email;
 }
 
+/**
+ * Nome de GHE para comparação (12K-E): sequências de espaço, tabulação, CR e LF viram um único espaço e as pontas
+ * (só espaço comum) são aparadas. Maiúsculas, acentos e pontuação não mudam. É a MESMA regra da consulta SQL
+ * (btrim(regexp_replace(nome, E'[ \t\r\n]+', ' ', 'g'), ' ')) e da prévia do frontend.
+ */
+function normalizarNomeGhe(texto) {
+  return typeof texto === 'string' ? texto.replace(/[ \t\r\n]+/g, ' ').replace(/^ | $/g, '') : '';
+}
+
 module.exports = {
   CNPJ_TAMANHO,
+  normalizarNomeGhe,
   CPF_TAMANHO,
   EMAIL_TAMANHO_MAXIMO,
   normalizarCnpj,

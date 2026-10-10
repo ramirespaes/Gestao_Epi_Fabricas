@@ -6,6 +6,7 @@ const loteRepo = require('../repositories/estoque-lote.repository');
 const minimoRepo = require('../repositories/estoque-minimo.repository');
 const tamanhoRepo = require('../repositories/material-tamanho.repository');
 const auditoriaRepo = require('../repositories/auditoria.repository');
+const tipoMaterialRepo = require('../repositories/tipo-material.repository');
 const classificacao = require('../utils/classificacao-material');
 
 /**
@@ -73,8 +74,7 @@ const MSG_CODIGO_INTERNO_DUPLICADO = 'Já existe um material com este código in
 // gravado, nunca pelo nome do material (classificacao-material.js, CHECKs da 071).
 const MSG_OCULOS_OBRIGATORIO = 'Informe se os óculos de proteção são com grau';
 const MSG_OCULOS_NAO_SE_APLICA = 'Óculos com grau só se aplica aos tipos de óculos de proteção';
-// 12G-8 (migration 071): Categoria → Tipo e "Outros" com descrição própria.
-const MSG_TIPO_FORA_DA_CATEGORIA = 'Este tipo não pertence à categoria do material';
+// 12G-8 (migration 071): "Outros" com descrição própria.
 const MSG_TIPO_DESCRICAO_OBRIGATORIA = 'Descreva o tipo quando ele é "Outros"';
 const MSG_TIPO_DESCRICAO_NAO_SE_APLICA = 'A descrição do tipo só se aplica ao tipo "Outros"';
 
@@ -86,25 +86,105 @@ function recusarClassificacao(campo, codigo, mensagem) {
   return HttpError.validacao([{ campo, codigo, mensagem }]);
 }
 
+// Classificação V2 (migration 082): Grupo → Grupo de Proteção → Tipo do catálogo ou "Outros" com descrição, decidida
+// aqui com o campo do problema no 400. Campo que não se aplica ao estado escolhido é recusado: nada escondido chega ao
+// banco. "Outros" nunca cria linha do catálogo; o texto pertence ao material.
+const MSG_V2 = Object.freeze({
+  GRUPO_OBRIGATORIO: 'Informe o grupo do material',
+  GRUPO_INVALIDO: 'Grupo inválido: use EPI, Vestimenta ou Outros',
+  CATEGORIA_DESCRICAO_OBRIGATORIA: 'Especifique o grupo quando ele é "Outros"',
+  CATEGORIA_DESCRICAO_INVALIDA: 'Descrição do grupo inválida (até 100 caracteres, sem caracteres de controle)',
+  CATEGORIA_DESCRICAO_NAO_SE_APLICA: 'A descrição do grupo só se aplica ao grupo "Outros"',
+  GRUPO_PROTECAO_OBRIGATORIO: 'Informe o grupo de proteção',
+  GRUPO_PROTECAO_INVALIDO: 'Grupo de proteção inválido',
+  GRUPO_PROTECAO_NAO_SE_APLICA: 'Grupo de proteção não se aplica ao grupo "Outros"',
+  GRUPO_PROTECAO_DESCRICAO_OBRIGATORIA: 'Especifique o grupo de proteção quando ele é "Outros"',
+  GRUPO_PROTECAO_DESCRICAO_INVALIDA: 'Descrição do grupo de proteção inválida (até 100 caracteres, sem caracteres de controle)',
+  GRUPO_PROTECAO_DESCRICAO_NAO_SE_APLICA: 'A descrição do grupo de proteção só se aplica a "Outros"',
+  TIPO_OBRIGATORIO: 'Escolha o tipo no catálogo ou "Outros"',
+  TIPO_NAO_SE_APLICA: 'O nome do tipo vem do catálogo: não informe outro',
+  TIPO_MATERIAL_NAO_SE_APLICA: 'Tipo do catálogo não se aplica quando o grupo ou o grupo de proteção é "Outros"',
+  TIPO_DESCRICAO_INVALIDA: 'Descrição do tipo inválida (até 100 caracteres, sem caracteres de controle)',
+  TIPO_MATERIAL_NAO_ENCONTRADO: 'Tipo de material não encontrado',
+  TIPO_MATERIAL_INCOMPATIVEL: 'O tipo escolhido não pertence a este grupo e grupo de proteção',
+  TIPO_MATERIAL_INATIVO: 'O tipo escolhido está inativo: escolha um tipo ativo',
+});
+const CAMPO_V2 = Object.freeze({
+  categoria: 'body.categoria', categoriaDescricao: 'body.categoriaDescricao', grupoProtecao: 'body.grupoProtecao',
+  grupoProtecaoDescricao: 'body.grupoProtecaoDescricao', tipoMaterialId: 'body.tipoMaterialId', tipo: 'body.tipo', tipoDescricao: 'body.tipoDescricao',
+});
+const recusarV2 = (campo, codigo) => recusarClassificacao(CAMPO_V2[campo], codigo, MSG_V2[codigo]);
+const CAMPOS_CLASSIFICACAO = Object.freeze(['categoria', 'categoriaDescricao', 'grupoProtecao', 'grupoProtecaoDescricao', 'tipoMaterialId', 'tipo', 'tipoDescricao']);
+
+/** Descrição de "Outros": aparada; vazia → null; acima do teto ou com caractere de controle → undefined (inválida). */
+function normalizarDescricao(valor, tamanhoMaximo) {
+  const n = normalizarTextoOpcional(valor, tamanhoMaximo);
+  return typeof n === 'string' && CARACTERE_CONTROLE.test(n) ? undefined : n;
+}
+
 /**
- * Tipo e descrição coerentes com a categoria final. A lista só é conferida
- * quando tipo ou categoria vêm na requisição: o legado fora das listas segue
- * editável nos demais campos. Devolve a descrição a gravar: {informado, valor}.
+ * Valida o bloco completo (valores já normalizados: null = ausente/vazio, undefined = inválido) e devolve o que gravar,
+ * com o tipo do catálogo lido na empresa da sessão (nome copiado dele) ou "Outros" com descrição.
  */
-function classificar({ categoriaFinal, tipoFinal, conferirLista, descricao, descricaoInformada, descricaoAnterior }) {
-  if (conferirLista && tipoFinal !== null && !classificacao.tipoPermitido(categoriaFinal, tipoFinal)) {
-    throw recusarClassificacao('body.tipo', 'TIPO_FORA_DA_CATEGORIA', MSG_TIPO_FORA_DA_CATEGORIA);
+async function classificarV2(executor, empresaId, c) {
+  const { OUTROS } = classificacao;
+  if (c.categoria === null) throw recusarV2('categoria', 'GRUPO_OBRIGATORIO');
+  if (!classificacao.GRUPOS.includes(c.categoria)) throw recusarV2('categoria', 'GRUPO_INVALIDO');
+  const grupoOutros = c.categoria === OUTROS;
+  if (grupoOutros) {
+    if (c.categoriaDescricao === undefined) throw recusarV2('categoriaDescricao', 'CATEGORIA_DESCRICAO_INVALIDA');
+    if (c.categoriaDescricao === null) throw recusarV2('categoriaDescricao', 'CATEGORIA_DESCRICAO_OBRIGATORIA');
+    if (c.grupoProtecao !== null) throw recusarV2('grupoProtecao', 'GRUPO_PROTECAO_NAO_SE_APLICA');
+    if (c.grupoProtecaoDescricao !== null) throw recusarV2('grupoProtecaoDescricao', 'GRUPO_PROTECAO_DESCRICAO_NAO_SE_APLICA');
+  } else {
+    if (c.categoriaDescricao !== null) throw recusarV2('categoriaDescricao', 'CATEGORIA_DESCRICAO_NAO_SE_APLICA');
+    if (c.grupoProtecao === null) throw recusarV2('grupoProtecao', 'GRUPO_PROTECAO_OBRIGATORIO');
+    if (c.grupoProtecao !== OUTROS && !classificacao.GRUPOS_PROTECAO.includes(c.grupoProtecao)) throw recusarV2('grupoProtecao', 'GRUPO_PROTECAO_INVALIDO');
+    if (c.grupoProtecao === OUTROS) {
+      if (c.grupoProtecaoDescricao === undefined) throw recusarV2('grupoProtecaoDescricao', 'GRUPO_PROTECAO_DESCRICAO_INVALIDA');
+      if (c.grupoProtecaoDescricao === null) throw recusarV2('grupoProtecaoDescricao', 'GRUPO_PROTECAO_DESCRICAO_OBRIGATORIA');
+    } else if (c.grupoProtecaoDescricao !== null) {
+      throw recusarV2('grupoProtecaoDescricao', 'GRUPO_PROTECAO_DESCRICAO_NAO_SE_APLICA');
+    }
   }
-  const descricaoFinal = descricaoInformada ? descricao : descricaoAnterior;
-  if (tipoFinal === classificacao.OUTROS) {
-    if (descricaoFinal === null) throw recusarClassificacao('body.tipoDescricao', 'TIPO_DESCRICAO_OBRIGATORIA', MSG_TIPO_DESCRICAO_OBRIGATORIA);
-    return { informado: descricaoInformada, valor: descricaoFinal };
+  const protecaoOutros = !grupoOutros && c.grupoProtecao === OUTROS;
+  const base = {
+    categoria: c.categoria,
+    categoriaDescricao: grupoOutros ? c.categoriaDescricao : null,
+    grupoProtecao: grupoOutros ? null : c.grupoProtecao,
+    grupoProtecaoDescricao: protecaoOutros ? c.grupoProtecaoDescricao : null,
+  };
+  const forcaOutros = grupoOutros || protecaoOutros;
+  if (forcaOutros || c.tipoMaterialId === null) {
+    if (c.tipoMaterialId !== null) throw recusarV2('tipoMaterialId', 'TIPO_MATERIAL_NAO_SE_APLICA');
+    if (c.tipo !== null && c.tipo !== OUTROS) throw recusarV2(forcaOutros ? 'tipo' : 'tipoMaterialId', forcaOutros ? 'TIPO_NAO_SE_APLICA' : 'TIPO_OBRIGATORIO');
+    if (c.tipo === null && !forcaOutros) throw recusarV2('tipoMaterialId', 'TIPO_OBRIGATORIO');
+    if (c.tipoDescricao === undefined) throw recusarV2('tipoDescricao', 'TIPO_DESCRICAO_INVALIDA');
+    if (c.tipoDescricao === null) throw recusarClassificacao('body.tipoDescricao', 'TIPO_DESCRICAO_OBRIGATORIA', MSG_TIPO_DESCRICAO_OBRIGATORIA);
+    return { ...base, tipoMaterialId: null, tipo: OUTROS, tipoDescricao: c.tipoDescricao };
   }
-  if (descricaoInformada && descricao !== null) {
-    throw recusarClassificacao('body.tipoDescricao', 'TIPO_DESCRICAO_NAO_SE_APLICA', MSG_TIPO_DESCRICAO_NAO_SE_APLICA);
+  if (c.tipoDescricao !== null) throw recusarClassificacao('body.tipoDescricao', 'TIPO_DESCRICAO_NAO_SE_APLICA', MSG_TIPO_DESCRICAO_NAO_SE_APLICA);
+  const t = await tipoMaterialRepo.buscarPorId(executor, empresaId, c.tipoMaterialId);
+  if (t === null) throw recusarV2('tipoMaterialId', 'TIPO_MATERIAL_NAO_ENCONTRADO');
+  if (t.grupo !== c.categoria || t.grupoProtecao !== c.grupoProtecao) throw recusarV2('tipoMaterialId', 'TIPO_MATERIAL_INCOMPATIVEL');
+  if (t.ativo !== true) throw recusarV2('tipoMaterialId', 'TIPO_MATERIAL_INATIVO');
+  if (c.tipo !== null && c.tipo !== t.nome) throw recusarV2('tipo', 'TIPO_NAO_SE_APLICA');
+  return { ...base, tipoMaterialId: t.id, tipo: t.nome, tipoDescricao: null };
+}
+
+/** Óculos com grau pela classificação V2 (EPI + Proteção ocular, qualquer tipo): obrigatório lá, proibido fora. */
+function oculosV2(cls, informado, valor, anterior) {
+  const exige = classificacao.exigeOculosComGrau({ modeloClassificacao: classificacao.MODELOS.V2, ...cls });
+  if (exige) {
+    if (informado || !anterior) {
+      if (typeof valor !== 'boolean') throw recusarOculos('OCULOS_COM_GRAU_OBRIGATORIO', MSG_OCULOS_OBRIGATORIO);
+      return { informado: true, valor };
+    }
+    if (typeof anterior.oculosComGrau !== 'boolean') throw recusarOculos('OCULOS_COM_GRAU_OBRIGATORIO', MSG_OCULOS_OBRIGATORIO);
+    return { informado: false, valor: null };
   }
-  // Quem deixa de ser "Outros" não guarda descrição escondida.
-  return { informado: descricaoAnterior !== null, valor: null };
+  if (informado && valor !== undefined && valor !== null) throw recusarOculos('OCULOS_COM_GRAU_NAO_SE_APLICA', MSG_OCULOS_NAO_SE_APLICA);
+  return { informado: !!anterior && anterior.oculosComGrau !== null && anterior.oculosComGrau !== undefined, valor: null };
 }
 
 function oculosComGrauValido(valor) {
@@ -281,6 +361,11 @@ const instantaneo = (material) => ({
   codigoInterno: material.codigoInterno,
   descricao: material.descricao,
   ativo: material.ativo,
+  modeloClassificacao: material.modeloClassificacao ?? 'LEGADO',
+  categoriaDescricao: material.categoriaDescricao ?? null,
+  grupoProtecao: material.grupoProtecao ?? null,
+  grupoProtecaoDescricao: material.grupoProtecaoDescricao ?? null,
+  tipoMaterialId: material.tipoMaterialId ?? null,
   ...(material.tamanhos !== undefined ? { tamanhos: material.tamanhos } : {}),
 });
 
@@ -298,6 +383,7 @@ async function criar(pool, {
   empresaId, atorId, nome, tipo = null, tipoDescricao = null, fabricante = null,
   prazoUsoDias = null, exigeTamanho = null, oculosComGrau, unidade, estoqueMinimo = 0,
   categoria = null, codigoInterno = null, descricao = null, tamanhos = [],
+  categoriaDescricao = null, grupoProtecao = null, grupoProtecaoDescricao = null, tipoMaterialId = null,
   ip = null, dispositivo = null,
 }) {
   exigirId(empresaId, 'identificador de empresa');
@@ -308,14 +394,13 @@ async function criar(pool, {
   const codigoInternoNormalizado = normalizarTextoOpcional(codigoInterno, materialRepo.TAMANHO_MAXIMO_CODIGO_INTERNO);
   const descricaoNormalizada = normalizarTextoOpcional(descricao, materialRepo.TAMANHO_MAXIMO_DESCRICAO);
   const tipoNormalizado = normalizarTextoOpcional(tipo, materialRepo.TAMANHO_MAXIMO_TIPO);
-  const tipoDescricaoNormalizada = normalizarTextoOpcional(tipoDescricao, materialRepo.TAMANHO_MAXIMO_TIPO_DESCRICAO);
   const fabricanteNormalizado = normalizarTextoOpcional(fabricante, materialRepo.TAMANHO_MAXIMO_FABRICANTE);
   const unidadeNormalizada = normalizarUnidade(unidade);
 
   if (nomeNormalizado === null) {
     throw HttpError.badRequest('MATERIAL_NOME_INVALIDO', MSG_NOME_INVALIDO);
   }
-  if (tipoNormalizado === undefined || tipoDescricaoNormalizada === undefined || fabricanteNormalizado === undefined
+  if (tipoNormalizado === undefined || fabricanteNormalizado === undefined
     || categoriaNormalizada === undefined || codigoInternoNormalizado === undefined || descricaoNormalizada === undefined) {
     throw HttpError.badRequest('MATERIAL_DADOS_INVALIDOS', MSG_DADOS_INVALIDOS);
   }
@@ -323,11 +408,13 @@ async function criar(pool, {
     || unidadeNormalizada === null || !estoqueMinimoValido(estoqueMinimo) || !oculosComGrauValido(oculosComGrau)) {
     throw HttpError.badRequest('MATERIAL_DADOS_INVALIDOS', MSG_DADOS_INVALIDOS);
   }
-  const descricaoTipo = classificar({
-    categoriaFinal: categoriaNormalizada, tipoFinal: tipoNormalizado, conferirLista: true,
-    descricao: tipoDescricaoNormalizada, descricaoInformada: true, descricaoAnterior: null,
+  // Cadastro novo é sempre V2: classificação completa, decidida antes de abrir a transação.
+  const cls = await classificarV2(pool, empresaId, {
+    categoria: categoriaNormalizada, categoriaDescricao: normalizarDescricao(categoriaDescricao, materialRepo.TAMANHO_MAXIMO_TIPO_DESCRICAO),
+    grupoProtecao: normalizarTextoOpcional(grupoProtecao, 60), grupoProtecaoDescricao: normalizarDescricao(grupoProtecaoDescricao, materialRepo.TAMANHO_MAXIMO_TIPO_DESCRICAO),
+    tipoMaterialId: tipoMaterialId ?? null, tipo: tipoNormalizado, tipoDescricao: normalizarDescricao(tipoDescricao, materialRepo.TAMANHO_MAXIMO_TIPO_DESCRICAO),
   });
-  const oculosNormalizado = oculosNoCadastro(tipoNormalizado, oculosComGrau);
+  const oculosNormalizado = oculosV2(cls, true, oculosComGrau, null).valor;
   const grade = normalizarGrade(tamanhos);
   if (grade.length > 0 && exigeTamanho !== true) {
     throw recusarGrade('body.tamanhos', 'GRADE_NAO_SE_APLICA', MSG_GRADE_NAO_SE_APLICA);
@@ -339,8 +426,13 @@ async function criar(pool, {
       material = await materialRepo.criar(client, {
         empresaId,
         nome: nomeNormalizado,
-        tipo: tipoNormalizado,
-        tipoDescricao: descricaoTipo.valor,
+        tipo: cls.tipo,
+        tipoDescricao: cls.tipoDescricao,
+        modeloClassificacao: classificacao.MODELOS.V2,
+        categoriaDescricao: cls.categoriaDescricao,
+        grupoProtecao: cls.grupoProtecao,
+        grupoProtecaoDescricao: cls.grupoProtecaoDescricao,
+        tipoMaterialId: cls.tipoMaterialId,
         fabricante: fabricanteNormalizado,
         prazoUsoDias: prazoUsoDias ?? null,
         exigeTamanho,
@@ -439,6 +531,10 @@ async function alterar(pool, {
   codigoInterno, codigoInternoInformado = false,
   descricao, descricaoInformado = false,
   tamanhos, tamanhosInformado = false,
+  categoriaDescricao, categoriaDescricaoInformado = false,
+  grupoProtecao, grupoProtecaoInformado = false,
+  grupoProtecaoDescricao, grupoProtecaoDescricaoInformado = false,
+  tipoMaterialId, tipoMaterialIdInformado = false,
   ip = null, dispositivo = null,
 }) {
   exigirId(empresaId, 'identificador de empresa');
@@ -446,7 +542,11 @@ async function alterar(pool, {
   exigirId(materialId, 'identificador de material');
 
   const grade = tamanhosInformado ? normalizarGrade(tamanhos) : null;
-  const tipoDescricaoNormalizada = tipoDescricaoInformado ? normalizarTextoOpcional(tipoDescricao, materialRepo.TAMANHO_MAXIMO_TIPO_DESCRICAO) : null;
+  const tipoDescricaoNormalizada = tipoDescricaoInformado ? normalizarDescricao(tipoDescricao, materialRepo.TAMANHO_MAXIMO_TIPO_DESCRICAO) : null;
+  const categoriaDescricaoNormalizada = categoriaDescricaoInformado ? normalizarDescricao(categoriaDescricao, materialRepo.TAMANHO_MAXIMO_TIPO_DESCRICAO) : null;
+  const grupoProtecaoNormalizado = grupoProtecaoInformado ? normalizarTextoOpcional(grupoProtecao, 60) : null;
+  const grupoProtecaoDescricaoNormalizada = grupoProtecaoDescricaoInformado ? normalizarDescricao(grupoProtecaoDescricao, materialRepo.TAMANHO_MAXIMO_TIPO_DESCRICAO) : null;
+  const tipoMaterialIdNormalizado = tipoMaterialIdInformado ? (tipoMaterialId ?? null) : null;
   const categoriaNormalizada = categoriaInformado ? normalizarTextoOpcional(categoria, materialRepo.TAMANHO_MAXIMO_CATEGORIA) : null;
   const codigoInternoNormalizado = codigoInternoInformado
     ? normalizarTextoOpcional(codigoInterno, materialRepo.TAMANHO_MAXIMO_CODIGO_INTERNO) : null;
@@ -468,7 +568,8 @@ async function alterar(pool, {
 
   const nenhumCampo = !alterarNome && !tipoInformado && !tipoDescricaoInformado && !fabricanteInformado
     && !prazoUsoDiasInformado && exigeTamanho === undefined && estoqueMinimo === undefined
-    && !categoriaInformado && !codigoInternoInformado && !descricaoInformado && !oculosComGrauInformado && !tamanhosInformado;
+    && !categoriaInformado && !codigoInternoInformado && !descricaoInformado && !oculosComGrauInformado && !tamanhosInformado
+    && !categoriaDescricaoInformado && !grupoProtecaoInformado && !grupoProtecaoDescricaoInformado && !tipoMaterialIdInformado;
 
   return emTransacao(pool, async (client) => {
     if (nenhumCampo) {
@@ -478,7 +579,6 @@ async function alterar(pool, {
       throw HttpError.badRequest('MATERIAL_NOME_INVALIDO', MSG_NOME_INVALIDO);
     }
     if ((tipoInformado && tipoNormalizado === undefined)
-      || (tipoDescricaoInformado && tipoDescricaoNormalizada === undefined)
       || (fabricanteInformado && fabricanteNormalizado === undefined)
       || (prazoUsoDiasInformado && !prazoUsoDiasValido(prazoUsoDias))
       || (exigeTamanho !== undefined && typeof exigeTamanho !== 'boolean')
@@ -519,29 +619,59 @@ async function alterar(pool, {
     if (grade !== null) {
       await conferirGradeEmUso(client, empresaId, materialId, grade);
     }
-    // Categoria → Tipo (12G-8): a lista vale para o estado final; o legado intocado não é reconferido.
-    const tipoFinal = tipoInformado ? tipoNormalizado : anterior.tipo;
-    const descricaoTipo = classificar({
-      categoriaFinal: categoriaInformado ? categoriaNormalizada : anterior.categoria,
-      tipoFinal,
-      conferirLista: tipoInformado || categoriaInformado,
-      descricao: tipoDescricaoNormalizada,
-      descricaoInformada: tipoDescricaoInformado,
-      descricaoAnterior: anterior.tipoDescricao ?? null,
-    });
-    const oculos = oculosNaEdicao(anterior, tipoFinal, oculosComGrauInformado, oculosComGrau);
+    // Classificação: só muda quando algum campo informado difere do gravado; aí o bloco completo é exigido e o
+    // material passa a V2. Mudar um nível descarta os níveis abaixo (como na tela), para nada ficar escondido.
+    // O legado intocado — ou reenviado igual — segue como está, editável nos demais campos, sem conversão.
+    const informados = {
+      categoria: [categoriaInformado, categoriaNormalizada], categoriaDescricao: [categoriaDescricaoInformado, categoriaDescricaoNormalizada],
+      grupoProtecao: [grupoProtecaoInformado, grupoProtecaoNormalizado], grupoProtecaoDescricao: [grupoProtecaoDescricaoInformado, grupoProtecaoDescricaoNormalizada],
+      tipoMaterialId: [tipoMaterialIdInformado, tipoMaterialIdNormalizado], tipo: [tipoInformado, tipoNormalizado], tipoDescricao: [tipoDescricaoInformado, tipoDescricaoNormalizada],
+    };
+    const mudouEm = (campo) => informados[campo][0] && informados[campo][1] !== (anterior[campo] ?? null);
+    const mudou = CAMPOS_CLASSIFICACAO.some(mudouEm);
+    let gravar;
+    let oculos;
+    if (mudou) {
+      const mudouL1 = mudouEm('categoria') || mudouEm('categoriaDescricao');
+      const mudouL2 = mudouL1 || mudouEm('grupoProtecao') || mudouEm('grupoProtecaoDescricao');
+      const valor = (campo, carregar) => (informados[campo][0] ? informados[campo][1] : (carregar ? (anterior[campo] ?? null) : null));
+      const tipoCarregado = !mudouL2 && !tipoMaterialIdInformado && anterior.tipo === classificacao.OUTROS;
+      const cls = await classificarV2(client, empresaId, {
+        categoria: valor('categoria', true), categoriaDescricao: valor('categoriaDescricao', !mudouL1),
+        grupoProtecao: valor('grupoProtecao', !mudouL1), grupoProtecaoDescricao: valor('grupoProtecaoDescricao', !mudouL2),
+        tipoMaterialId: valor('tipoMaterialId', !mudouL2),
+        tipo: tipoInformado ? tipoNormalizado : (tipoCarregado ? classificacao.OUTROS : null),
+        tipoDescricao: valor('tipoDescricao', tipoCarregado || (!mudouL2 && tipoInformado && tipoNormalizado === classificacao.OUTROS)),
+      });
+      oculos = oculosV2(cls, oculosComGrauInformado, oculosComGrau, anterior);
+      gravar = { ...cls, classificacaoInformada: true, modeloClassificacao: classificacao.MODELOS.V2, tipoInformado: true, tipoDescricaoInformado: true, categoriaInformado: true };
+    } else {
+      oculos = anterior.modeloClassificacao === classificacao.MODELOS.V2
+        ? oculosV2(anterior, oculosComGrauInformado, oculosComGrau, anterior)
+        : oculosNaEdicao(anterior, anterior.tipo, oculosComGrauInformado, oculosComGrau);
+      gravar = {
+        classificacaoInformada: false, modeloClassificacao: null, categoria: categoriaNormalizada, categoriaInformado,
+        tipo: tipoNormalizado, tipoInformado, tipoDescricao: tipoDescricaoNormalizada, tipoDescricaoInformado,
+        categoriaDescricao: null, grupoProtecao: null, grupoProtecaoDescricao: null, tipoMaterialId: null,
+      };
+    }
 
     let atualizado;
     try {
       atualizado = await materialRepo.atualizar(client, empresaId, materialId, {
         nome: nomeNormalizado,
-        tipo: tipoNormalizado, tipoInformado,
-        tipoDescricao: descricaoTipo.valor, tipoDescricaoInformado: descricaoTipo.informado,
+        tipo: gravar.tipo, tipoInformado: gravar.tipoInformado,
+        tipoDescricao: gravar.tipoDescricao, tipoDescricaoInformado: gravar.tipoDescricaoInformado,
+        modeloClassificacao: gravar.modeloClassificacao,
+        categoriaDescricao: gravar.categoriaDescricao, categoriaDescricaoInformado: gravar.classificacaoInformada,
+        grupoProtecao: gravar.grupoProtecao, grupoProtecaoInformado: gravar.classificacaoInformada,
+        grupoProtecaoDescricao: gravar.grupoProtecaoDescricao, grupoProtecaoDescricaoInformado: gravar.classificacaoInformada,
+        tipoMaterialId: gravar.tipoMaterialId, tipoMaterialIdInformado: gravar.classificacaoInformada,
         fabricante: fabricanteNormalizado, fabricanteInformado,
         prazoUsoDias: prazoUsoDiasInformado ? prazoUsoDias : null, prazoUsoDiasInformado,
         unidade: null, // null = manter a unidade atual (nunca alterada pela edição)
         estoqueMinimo: estoqueMinimo ?? null,
-        categoria: categoriaNormalizada, categoriaInformado,
+        categoria: gravar.categoria, categoriaInformado: gravar.categoriaInformado,
         codigoInterno: codigoInternoNormalizado, codigoInternoInformado,
         descricao: descricaoNormalizada, descricaoInformado,
         exigeTamanho: exigeTamanho ?? null, // null = manter a classificação atual

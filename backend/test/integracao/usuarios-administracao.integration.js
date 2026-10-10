@@ -27,7 +27,7 @@ const { authConfig } = require('../../src/config/auth');
  * auditoria sem segredos. PostgreSQL real, schema temporário.
  */
 
-const TODAS_AS_MIGRATIONS = [...Array.from({ length: 48 }, (_, i) => String(i).padStart(3, '0')), '072', '074', '075', '076', '077'];
+const TODAS_AS_MIGRATIONS = [...Array.from({ length: 48 }, (_, i) => String(i).padStart(3, '0')), '072', '074', '075', '076', '077', '079'];
 const SENHA = 'senha-forte-da-parte-f-2026';
 const BASE = '/api/administracao/usuarios';
 const { cookieNome: C_EMPRESA, cookieNomeGlobal: C_GLOBAL } = authConfig.sessao;

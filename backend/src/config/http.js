@@ -22,6 +22,10 @@ const { inteiroDeAmbiente, validarAmbiente, congelarProfundo } = require('./ambi
  * JSON_LIMITE é contrato da API (não variável): 32 KiB cobre três senhas de
  * 1024 unidades UTF-16 mesmo com escapes Unicode no JSON.
  *
+ * JSON_LIMITE_IMPORTACAO_GHE (512 KiB) é a ÚNICA exceção: o preview da importação GHE/EPI (até 1000 linhas, planilha
+ * analisada inteira). Vale só para essa rota, aplicado depois da sessão e da permissão (middleware/conteudo.js); o
+ * limite global continua 32 KiB para todo o resto.
+ *
  * NAMESPACE DA PLATAFORMA (Autenticação Global — Pacote 2): PLATAFORMA_CORS_ORIGIN
  * é uma allowlist SEPARADA de CORS_ORIGIN, exclusiva das rotas /api/plataforma —
  * nunca compartilhada com a allowlist do cliente, mesma disciplina de
@@ -41,6 +45,7 @@ const { inteiroDeAmbiente, validarAmbiente, congelarProfundo } = require('./ambi
  */
 
 const JSON_LIMITE = '32kb';
+const JSON_LIMITE_IMPORTACAO_GHE = '512kb';
 const ORIGEM_PADRAO_DEV = 'http://localhost:5500';
 const ORIGEM_PADRAO_DEV_PLATAFORMA = 'http://localhost:5501';
 const HOSTNAME_FORMATO = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
@@ -251,4 +256,5 @@ module.exports = {
   httpConfig: carregarConfigHttp(),
   carregarConfigHttp,
   JSON_LIMITE,
+  JSON_LIMITE_IMPORTACAO_GHE,
 };

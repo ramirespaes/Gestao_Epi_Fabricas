@@ -16,7 +16,7 @@ const ATOR_ID = 7;
 const GHE_ID = 50;
 
 const ghe = (extra = {}) => ({
-  id: GHE_ID, empresaId: EMPRESA, nome: 'Manutenção — Mecânicos', descricao: null, setor: 'Manutenção',
+  id: GHE_ID, empresaId: EMPRESA, nome: 'Manutenção — Mecânicos', codigo: 'GHE-050', descricao: null, setor: 'Manutenção',
   funcao: 'Mecânico', riscos: null, ativo: true, criadoEm: new Date('2026-09-23T12:00:00Z'), atualizadoEm: new Date('2026-09-23T12:00:00Z'), ...extra,
 });
 
@@ -36,7 +36,7 @@ function mundoValido(t, { existente = ghe() } = {}) {
   return {
     criar: t.mock.method(gheRepo, 'criar', async (_c, dados) => ghe({ ...dados })),
     atualizar: t.mock.method(gheRepo, 'atualizar', async (_c, _e, _id, campos) => ghe({
-      nome: campos.nome ?? existente.nome, setor: campos.setorInformado ? campos.setor : existente.setor, ativo: campos.ativo ?? existente.ativo,
+      nome: campos.nome ?? existente.nome, codigo: campos.codigo ?? existente.codigo, setor: campos.setorInformado ? campos.setor : existente.setor, ativo: campos.ativo ?? existente.ativo,
     })),
     registrar: t.mock.method(auditoriaRepo, 'registrar', async () => ({ id: '1', criadoEm: new Date() })),
   };
@@ -56,11 +56,13 @@ describe('criar', () => {
     const escritas = mundoValido(t);
     const cliente = criarClienteFalso();
 
-    const resultado = await servico.criar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, nome: '  Manutenção — Mecânicos  ', riscos: '   ' });
+    const resultado = await servico.criar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, nome: '  Manutenção — Mecânicos  ', codigo: ' ghe-051 ', riscos: '   ' });
 
     assert.equal(resultado.id, GHE_ID);
     assert.equal(escritas.criar.mock.calls[0].arguments[1].nome, 'Manutenção — Mecânicos');
     assert.equal(escritas.criar.mock.calls[0].arguments[1].riscos, null);
+    assert.equal(escritas.criar.mock.calls[0].arguments[1].codigo, 'GHE-051');
+    assert.equal(escritas.registrar.mock.calls[0].arguments[1].dadosNovos.codigo, 'GHE-051');
     assert.equal(escritas.registrar.mock.calls[0].arguments[1].acao, 'GHE_CRIADO');
     assert.equal(contar(cliente.chamadas, /^COMMIT$/), 1);
   });
@@ -68,17 +70,47 @@ describe('criar', () => {
   test('nome vazio: 400 GHE_NOME_INVALIDO antes de abrir transação', async (t) => {
     const escritas = mundoValido(t);
     const cliente = criarClienteFalso();
-    await esperarHttpError(servico.criar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, nome: '  ' }), 400, 'GHE_NOME_INVALIDO');
+    await esperarHttpError(servico.criar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, nome: '  ', codigo: 'GHE-051' }), 400, 'GHE_NOME_INVALIDO');
     assert.equal(cliente.chamadas.length, 0);
     assert.equal(escritas.registrar.mock.calls.length, 0);
   });
 
   test('nome já usado nesta empresa (UNIQUE): 409 GHE_NOME_EM_USO, ROLLBACK, sem auditoria', async (t) => {
     const escritas = mundoValido(t);
-    escritas.criar.mock.mockImplementation(async () => { throw Object.assign(new Error('dup'), { code: '23505' }); });
+    escritas.criar.mock.mockImplementation(async () => { throw Object.assign(new Error('dup'), { code: '23505', constraint: 'uq_ghe_empresa_nome' }); });
     const cliente = criarClienteFalso();
-    await esperarHttpError(servico.criar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'X' }), 409, 'GHE_NOME_EM_USO');
+    await esperarHttpError(servico.criar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'X', codigo: 'GHE-051' }), 409, 'GHE_NOME_EM_USO');
     assert.equal(contar(cliente.chamadas, /^ROLLBACK$/), 1);
+    assert.equal(escritas.registrar.mock.calls.length, 0);
+  });
+
+  test('código ausente: 400 GHE_CODIGO_OBRIGATORIO; inválido: 400 GHE_CODIGO_INVALIDO; ambos antes de abrir transação', async (t) => {
+    const escritas = mundoValido(t);
+    const cliente = criarClienteFalso();
+    const pool = criarPoolFalso(cliente);
+    await esperarHttpError(servico.criar(pool, { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'X' }), 400, 'GHE_CODIGO_OBRIGATORIO');
+    for (const codigo of ['GHE-01', 'GHE-1234567', '', '   ', null, 12, 'GHE-00１']) {
+      await esperarHttpError(servico.criar(pool, { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'X', codigo }), 400, 'GHE_CODIGO_INVALIDO');
+    }
+    assert.equal(cliente.chamadas.length, 0);
+    assert.equal(escritas.criar.mock.calls.length, 0);
+  });
+
+  test('23505 é traduzido pela constraint: código → 409 GHE_CODIGO_EM_USO; constraint desconhecida ou ausente é relançada, nunca mascarada', async (t) => {
+    const escritas = mundoValido(t);
+    const falhar = (extra) => escritas.criar.mock.mockImplementation(async () => { throw Object.assign(new Error('dup'), { code: '23505', ...extra }); });
+    const tentar = () => servico.criar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'X', codigo: 'GHE-051' });
+
+    falhar({ constraint: 'uq_ghe_empresa_codigo' });
+    await esperarHttpError(tentar(), 409, 'GHE_CODIGO_EM_USO');
+    for (const extra of [{ constraint: 'grupos_homogeneos_exposicao_pkey' }, {}]) {
+      falhar(extra);
+      await assert.rejects(tentar(), (erro) => {
+        assert.equal(HttpError.ehHttpError(erro), false, 'violação desconhecida não pode virar erro de domínio');
+        assert.equal(erro.code, '23505');
+        return true;
+      });
+    }
     assert.equal(escritas.registrar.mock.calls.length, 0);
   });
 });
@@ -106,6 +138,32 @@ describe('alterar, inativar e reativar', () => {
     assert.equal(auditoria.acao, 'GHE_ALTERADO');
     assert.equal(auditoria.dadosAnteriores.setor, 'Manutenção');
     assert.equal(auditoria.dadosNovos.setor, null);
+  });
+
+  test('código: o mesmo código sozinho não escreve nem audita; com outra alteração real, escreve e audita', async (t) => {
+    const escritas = mundoValido(t);
+    const pool = criarPoolFalso(criarClienteFalso());
+    const semEfeito = await servico.alterar(pool, { empresaId: EMPRESA, atorId: ATOR_ID, gheId: GHE_ID, codigo: ' ghe-050 ' });
+    assert.equal(semEfeito.codigo, 'GHE-050');
+    assert.equal(escritas.atualizar.mock.calls.length, 0);
+    assert.equal(escritas.registrar.mock.calls.length, 0);
+
+    await servico.alterar(pool, { empresaId: EMPRESA, atorId: ATOR_ID, gheId: GHE_ID, codigo: 'GHE-050', setor: null, setorInformado: true });
+    assert.equal(escritas.atualizar.mock.calls[0].arguments[3].codigo, null, 'o código igual não é regravado');
+    const auditoria = escritas.registrar.mock.calls[0].arguments[1];
+    assert.deepEqual([auditoria.dadosAnteriores.codigo, auditoria.dadosNovos.codigo], ['GHE-050', 'GHE-050']);
+  });
+
+  test('código novo: normaliza, grava e audita anterior/novo; nulo, vazio ou inválido: 400 GHE_CODIGO_INVALIDO', async (t) => {
+    const escritas = mundoValido(t);
+    const pool = criarPoolFalso(criarClienteFalso());
+    await servico.alterar(pool, { empresaId: EMPRESA, atorId: ATOR_ID, gheId: GHE_ID, codigo: ' ghe-060 ' });
+    assert.equal(escritas.atualizar.mock.calls[0].arguments[3].codigo, 'GHE-060');
+    const auditoria = escritas.registrar.mock.calls[0].arguments[1];
+    assert.deepEqual([auditoria.dadosAnteriores.codigo, auditoria.dadosNovos.codigo], ['GHE-050', 'GHE-060']);
+    for (const codigo of [null, '', '   ', 'GHE-1', 7]) {
+      await esperarHttpError(servico.alterar(pool, { empresaId: EMPRESA, atorId: ATOR_ID, gheId: GHE_ID, codigo }), 400, 'GHE_CODIGO_INVALIDO');
+    }
   });
 
   test('nenhum campo: 400 GHE_SEM_ALTERACAO', async (t) => {

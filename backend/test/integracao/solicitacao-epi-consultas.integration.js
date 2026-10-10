@@ -279,12 +279,12 @@ describe('listagens da solicitação de EPI — minhas solicitações (PostgreSQ
     await f.decidir(solicitacao.id, [f.aprovar(itens[0])]);
     await f.estoque(m, 2);
     try {
-      await f.q('UPDATE funcionarios SET ativo = false WHERE id = $1', [trabalhador]);
+      await f.q("UPDATE funcionarios SET situacao = 'INATIVO' WHERE id = $1", [trabalhador]);
       const suspensa = (await minhas(usuario)).solicitacoes[0];
       assert.deepEqual([suspensa.status, suspensa.situacaoOperacional, suspensa.funcionario.ativo], ['APROVADA', 'SUSPENSA', false]);
       assert.deepEqual(suspensa.quantidades, { solicitada: 2, aprovada: 2, entregue: 0, restante: 2 });
     } finally {
-      await f.q('UPDATE funcionarios SET ativo = true WHERE id = $1', [trabalhador]);
+      await f.q("UPDATE funcionarios SET situacao = 'ATIVO' WHERE id = $1", [trabalhador]);
     }
     assert.equal((await minhas(usuario)).solicitacoes[0].situacaoOperacional, 'PRONTA_PARA_ENTREGA');
   });
@@ -460,7 +460,7 @@ describe('listagens da solicitação de EPI — entregáveis (PostgreSQL real)',
     R.reprovada = await f.criar(solicitante, t1, [f.item(await f.materialNoGhe())]);
     await f.decidir(R.reprovada.solicitacao.id, [f.reprovar(R.reprovada.itens[0])]);
     R.suspensa = await aprovada(tInativo, await f.materialNoGhe(), 2, { estoqueInicial: 2 });
-    await f.q('UPDATE funcionarios SET ativo = false WHERE id = $1', [tInativo]);
+    await f.q("UPDATE funcionarios SET situacao = 'INATIVO' WHERE id = $1", [tInativo]);
 
     const daB = await servico().criarSolicitacao(pool, {
       empresaId: d.empresaB,

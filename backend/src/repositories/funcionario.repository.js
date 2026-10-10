@@ -1,6 +1,7 @@
 'use strict';
 
 const { escaparCoringasLike } = require('../utils/like');
+const { SITUACOES } = require('../utils/situacao-funcionario');
 
 /**
  * Repositório de funcionários (funcionarios, migration 006). Bloco 9, Etapa B.
@@ -46,7 +47,7 @@ const CPF_FORMATO = /^[0-9]{11}$/;
 // padrão da validade do CA em material.repository.js).
 const PROJECAO = `id, empresa_id, grupo_homogeneo_id, matricula, nome, cpf,
   to_char(data_nascimento, 'YYYY-MM-DD') AS data_nascimento, to_char(data_admissao, 'YYYY-MM-DD') AS data_admissao,
-  setor, funcao, cracha, telefone, ativo, criado_em, atualizado_em`;
+  setor, funcao, cracha, telefone, situacao, ativo, criado_em, atualizado_em`;
 
 function exigirEmpresa(empresaId) {
   if (!Number.isInteger(empresaId) || empresaId <= 0) {
@@ -110,18 +111,19 @@ const mapear = (linha) => (linha === undefined ? null : {
   funcao: linha.funcao,
   cracha: linha.cracha,
   telefone: linha.telefone,
+  situacao: linha.situacao,
   ativo: linha.ativo,
   criadoEm: linha.criado_em,
   atualizadoEm: linha.atualizado_em,
 });
 
-/** Cria um funcionário. `ativo` nasce true pelo DEFAULT da migration 006 e não é parâmetro. */
+/** Cria um funcionário. A situação nasce ATIVO pelo DEFAULT da migration 084 (`ativo` é derivada) e não é parâmetro. */
 async function criar(executor, {
   empresaId, matricula, nome, cpf, grupoHomogeneoId = null, dataNascimento = null,
   setor = null, funcao = null, cracha = null, telefone = null, dataAdmissao = null,
 }) {
   exigirEmpresa(empresaId);
-  exigirTexto(matricula, 'matrícula', TAMANHO_MAXIMO_MATRICULA);
+  exigirTextoOpcional(matricula ?? null, 'matrícula', TAMANHO_MAXIMO_MATRICULA);
   exigirTexto(nome, 'nome de funcionário', TAMANHO_MAXIMO_NOME);
   exigirCpf(cpf);
   exigirIdOpcional(grupoHomogeneoId, 'identificador de GHE');
@@ -137,7 +139,7 @@ async function criar(executor, {
        (empresa_id, grupo_homogeneo_id, matricula, nome, cpf, data_nascimento, setor, funcao, cracha, telefone, data_admissao)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING ${PROJECAO}`,
-    [empresaId, grupoHomogeneoId, matricula, nome, cpf, dataNascimento, setor, funcao, cracha, telefone, dataAdmissao],
+    [empresaId, grupoHomogeneoId, matricula ?? null, nome, cpf, dataNascimento, setor, funcao, cracha, telefone, dataAdmissao],
   );
 
   return mapear(rows[0]);
@@ -275,8 +277,10 @@ async function contarPorEmpresa(executor, empresaId, {
 }
 
 /**
- * Atualiza o cadastro de um funcionário da empresa informada. `ativo` só
- * muda pelas funções de estado do serviço. Para os campos opcionais
+ * Atualiza o cadastro de um funcionário da empresa informada. O estado só muda pelas funções de estado do serviço.
+ * Desde a migration 084 `situacao` é a fonte da verdade e `ativo` é coluna GERADA (não aceita escrita): o pedido legado
+ * `ativo` true/false grava `situacao` ATIVO/INATIVO; o S2 passa `situacao` (ATIVO, AFASTADO ou INATIVO) direto — as duas
+ * chaves juntas são TypeError. Transições e auditoria são do serviço. Para os campos opcionais
  * (grupoHomogeneoId, dataNascimento, setor, funcao, cracha, telefone) a
  * flag `*Informado` distingue "não mexer" de "limpar para null" —
  * desvincular do GHE é `grupoHomogeneoId: null, grupoHomogeneoIdInformado: true`.
@@ -292,14 +296,14 @@ async function atualizar(executor, empresaId, id, campos = {}) {
     throw new TypeError('cpf não pode ser alterado após o cadastro');
   }
   const {
-    matricula = null, nome = null,
+    matricula = null, matriculaInformada = false, nome = null,
     grupoHomogeneoId = null, grupoHomogeneoIdInformado = false,
     dataNascimento = null, dataNascimentoInformado = false,
     setor = null, setorInformado = false,
     funcao = null, funcaoInformado = false,
     cracha = null, crachaInformado = false,
     telefone = null, telefoneInformado = false,
-    ativo = null,
+    ativo = null, situacao = null,
     dataAdmissao = null, dataAdmissaoInformado = false,
   } = campos;
   exigirEmpresa(empresaId);
@@ -331,13 +335,19 @@ async function atualizar(executor, empresaId, id, campos = {}) {
   if (ativo !== null && typeof ativo !== 'boolean') {
     throw new TypeError('ativo deve ser booleano ou null');
   }
+  if (situacao !== null && !SITUACOES.includes(situacao)) {
+    throw new TypeError('situação inválida');
+  }
+  if (ativo !== null && situacao !== null) {
+    throw new TypeError('informe ativo ou situacao, não os dois');
+  }
   if (dataAdmissaoInformado) {
     exigirDataOpcional(dataAdmissao, 'data de admissão');
   }
 
   const { rows } = await executor.query(
     `UPDATE funcionarios
-        SET matricula = COALESCE($3, matricula),
+        SET matricula = CASE WHEN $20::boolean OR $3::text IS NOT NULL THEN $3::text ELSE matricula END,
             nome = COALESCE($4, nome),
             grupo_homogeneo_id = CASE WHEN $5::boolean THEN $6 ELSE grupo_homogeneo_id END,
             data_nascimento = CASE WHEN $7::boolean THEN $8 ELSE data_nascimento END,
@@ -345,7 +355,7 @@ async function atualizar(executor, empresaId, id, campos = {}) {
             funcao = CASE WHEN $11::boolean THEN $12 ELSE funcao END,
             cracha = CASE WHEN $13::boolean THEN $14 ELSE cracha END,
             telefone = CASE WHEN $15::boolean THEN $16 ELSE telefone END,
-            ativo = COALESCE($17, ativo),
+            situacao = COALESCE($17::text, situacao),
             data_admissao = CASE WHEN $18::boolean THEN $19 ELSE data_admissao END
       WHERE empresa_id = $1 AND id = $2
       RETURNING ${PROJECAO}`,
@@ -357,8 +367,9 @@ async function atualizar(executor, empresaId, id, campos = {}) {
       funcaoInformado, funcao,
       crachaInformado, cracha,
       telefoneInformado, telefone,
-      ativo,
+      situacao ?? (ativo === null ? null : (ativo ? 'ATIVO' : 'INATIVO')),
       dataAdmissaoInformado, dataAdmissao,
+      matriculaInformada,
     ],
   );
 

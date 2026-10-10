@@ -19,7 +19,9 @@ const fichaRepo = require('../repositories/ficha-epi.repository');
 const LIMITE_ITENS = 20;
 const LIMITE_INTEGER_POSTGRES = 2147483647;
 // Óculos: os dois tipos oficiais e o nome histórico (12G-8); a constante segue exportada pelo legado.
-const { ehOculos, TIPO_OCULOS_LEGADO: TIPO_OCULOS } = require('../utils/classificacao-material');
+const classificacao = require('../utils/classificacao-material');
+
+const { ehOculos, TIPO_OCULOS_LEGADO: TIPO_OCULOS } = classificacao;
 const { MODOS, DECLARACAO_VERSAO_FORMATO, DECLARACAO_TEXTO_MAXIMO } = confirmacaoRepo;
 
 // Traços: lista de traços, cada um lista de pontos [x, y] inteiros já
@@ -158,6 +160,8 @@ function calcularHashConteudo({ entrega, ficha, itens, confirmacao }) {
       material: {
         nome: i.material.nome, tipo: i.material.tipo ?? null, codigoInterno: i.material.codigoInterno ?? null, unidade: i.material.unidade,
         prazoUsoDias: i.material.prazoUsoDias, oculosComGrau: i.material.oculosComGrau ?? null, exigeCa: i.material.exigeCa,
+        // Grupo de proteção (082) entra SÓ quando existe: o hash das entregas anteriores não muda.
+        ...(i.material.grupoProtecao === null || i.material.grupoProtecao === undefined ? {} : { grupoProtecao: i.material.grupoProtecao }),
       },
       ...(i.solicitacaoItemId === null || i.solicitacaoItemId === undefined ? {} : { solicitacaoItemId: i.solicitacaoItemId }),
     })),
@@ -211,7 +215,7 @@ async function repetirSeJaRegistrada(client, empresaId, chave, requisicaoHash) {
 
 const copiaDoMaterial = (m) => ({
   nome: m.nome.trim(), tipo: aparar(m.tipo), codigoInterno: aparar(m.codigoInterno), unidade: m.unidade.trim(),
-  prazoUsoDias: m.prazoUsoDias, oculosComGrau: m.oculosComGrau, exigeCa: m.exigeCa,
+  prazoUsoDias: m.prazoUsoDias, oculosComGrau: m.oculosComGrau, exigeCa: m.exigeCa, grupoProtecao: aparar(m.grupoProtecao),
 });
 
 /** O material precisa estar classificado quanto ao prazo, ao tamanho e (óculos) ao grau antes de ser entregue. */
@@ -222,7 +226,8 @@ function exigirClassificacaoDoMaterial(material) {
   if (material.exigeTamanho === null) {
     throw HttpError.conflict('MATERIAL_TAMANHO_NAO_CLASSIFICADO', 'Defina no cadastro se o material exige tamanho antes de entregá-lo');
   }
-  if (ehOculos(material.tipo) && material.oculosComGrau === null) {
+  // V2: pela classificação (EPI + Proteção ocular, qualquer tipo); LEGADO: pelos nomes históricos.
+  if (classificacao.exigeOculosComGrau(material) && material.oculosComGrau === null) {
     throw HttpError.conflict('MATERIAL_OCULOS_NAO_CLASSIFICADO', 'Defina no cadastro se os óculos são com ou sem grau antes de entregá-los');
   }
 }

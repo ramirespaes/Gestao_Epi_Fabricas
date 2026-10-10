@@ -44,6 +44,26 @@
   };
   var ADMISSAO_MINIMA = '1900-01-01';
   var CONTROLE = /[\u0000-\u001f\u007f]/;
+  // Nome GHE (12K-E): quebra de linha e tabulação são legítimas no nome; só os demais controles são inválidos.
+  var CONTROLE_GHE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
+  // Mesma regra do servidor (utils/normalizacao.normalizarNomeGhe) e da consulta SQL: sequências de espaço, tab, CR e LF
+  // viram um espaço e as pontas (só espaço comum) são aparadas. Maiúsculas, acentos e pontuação não mudam.
+  function normalizarNomeGhe(valor) { return String(valor === null || valor === undefined ? '' : valor).replace(/[ \t\r\n]+/g, ' ').replace(/^ | $/g, ''); }
+  var ESTADOS_GHE_SELECIONAVEIS = ['NAO_INFORMADO', 'INEXISTENTE', 'AMBIGUO', 'INATIVO'];
+
+  /** Classifica o Nome GHE da planilha contra os GHEs da empresa (ghes pode ser null: lista indisponível). */
+  function resolverGhe(valor, ghes) {
+    var nome = normalizarNomeGhe(valor);
+    if (!nome) return { estado: 'NAO_INFORMADO', nome: '' };
+    var excedeu = Array.from(nome).length > LIMITES.ghe;
+    if (excedeu || CONTROLE_GHE.test(nome)) return { estado: 'INVALIDO', nome: nome, excedeu: excedeu };
+    if (!Array.isArray(ghes)) return { estado: 'SEM_LISTA', nome: nome };
+    var achados = ghes.filter(function (g) { return normalizarNomeGhe(g.nome) === nome; });
+    if (achados.length === 0) return { estado: 'INEXISTENTE', nome: nome };
+    if (achados.length > 1) return { estado: 'AMBIGUO', nome: nome };
+    if (achados[0].ativo === false) return { estado: 'INATIVO', nome: nome };
+    return { estado: 'ENCONTRADO', nome: nome, ghe: achados[0] };
+  }
 
   function http() {
     var cliente = global.EpiHttp;
@@ -87,7 +107,7 @@
     return /^\d{11}$/.test(d) ? '***.***.***-' + d.slice(9) : '***.***.***-**';
   }
 
-  var utilitarios = { cpfValido: cpfValido, dataDeCalendario: dataDeCalendario, mascararCpf: mascararCpf };
+  var utilitarios = { cpfValido: cpfValido, dataDeCalendario: dataDeCalendario, mascararCpf: mascararCpf, normalizarNomeGhe: normalizarNomeGhe };
 
   // ───────────────────────────────────────────────────────────────────
   // Ações
@@ -115,6 +135,10 @@
     },
     importarLote: function (corpo) {
       return http().requisitar('POST', CAMINHO + '/importacao', { corpo: corpo });
+    },
+    // Opções do seletor da prévia: GHEs ativos da empresa (id e nome), com a autoridade da própria importação.
+    listarGhesImportacao: function () {
+      return http().requisitar('GET', CAMINHO + '/importacao/ghes');
     },
   };
 
@@ -223,13 +247,17 @@
     ['cpf', ['cpf']],
     ['matricula', ['matrícula', 'matricula', 'mat', 'registro']],
     ['nascimento', ['nascimento', 'data de nascimento', 'dt nascimento']],
-    ['contratacao', ['contratação', 'contratacao', 'admissão', 'admissao', 'data de contratação', 'data contratação', 'data de admissão', 'data de admissao', 'data admissão']],
+    ['contratacao', ['contratação', 'contratacao', 'admissão', 'admissao', 'data de contratação', 'data contratação', 'data de admissão', 'data de admissao', 'data admissão',
+      'dt.admissão', 'dt. admissão', 'dt admissão', 'dt.admissao', 'dt. admissao', 'dt admissao']],
+    ['situacao', ['situação', 'situacao']],
     ['telefone', ['telefone', 'tel', 'celular', 'fone', 'whatsapp', 'contato', 'número', 'numero']],
     ['cargo', ['cargo', 'função', 'funcao', 'função/cargo', 'posição']],
     // 12G-9: nome exato do GHE da empresa (resolvido e validado no servidor; nunca criado nem aproximado).
-    ['ghe', ['ghe', 'g.h.e.', 'g.h.e', 'grupo homogêneo', 'grupo homogeneo', 'grupo homogêneo de exposição', 'grupo homogeneo de exposicao', 'grupo homogêneo de exposicao', 'grupo homogeneo de exposição']],
+    ['ghe', ['nome ghe', 'ghe', 'g.h.e.', 'g.h.e', 'grupo homogêneo', 'grupo homogeneo', 'grupo homogêneo de exposição', 'grupo homogeneo de exposicao', 'grupo homogêneo de exposicao', 'grupo homogeneo de exposição']],
   ].forEach(function (par) { par[1].forEach(function (s) { CABECALHOS[s] = par[0]; }); });
-  var OBRIGATORIAS = [['nome', 'Nome'], ['setor', 'Setor'], ['cpf', 'CPF'], ['matricula', 'Matrícula'], ['contratacao', 'Contratação'], ['cargo', 'Cargo'], ['ghe', 'GHE']];
+  // Modelo oficial: sete campos obrigatórios. Matrícula, telefone e nascimento são opcionais.
+  var OBRIGATORIAS = [['nome', 'Nome'], ['setor', 'Setor'], ['cargo', 'Cargo'], ['contratacao', 'Dt.Admissão'], ['cpf', 'CPF'], ['situacao', 'Situação'], ['ghe', 'Nome GHE']];
+  var CABECALHO_MAXIMO_LINHAS = 10;
 
   function normalizarCabecalho(v) { return texto(v).toLowerCase().replace(/\s+/g, ' '); }
 
@@ -267,13 +295,13 @@
   }
 
   /** Converte e valida UMA linha; nunca completa dado perdido sem prova (DV do CPF). */
-  function interpretarLinha(numero, celula) {
+  function interpretarLinha(numero, celula, ghes) {
     var erros = []; var avisos = [];
     var erro = function (campo, mensagem) { erros.push({ campo: campo, mensagem: mensagem }); };
     var aviso = function (campo, mensagem) { avisos.push({ campo: campo, mensagem: mensagem }); };
     var textoObrigatorio = function (campo, bruto, limite, rotulo) {
       var t = textoDaCelula(bruto);
-      if (!t) erro(campo, rotulo + ' obrigatório.');
+      if (!t) erro(campo, rotulo + ' não informado.');
       else if (t.length > limite) erro(campo, rotulo + ' com mais de ' + limite + ' caracteres.');
       else if (CONTROLE.test(t)) erro(campo, rotulo + ' com caractere inválido.');
       return t;
@@ -282,7 +310,18 @@
     var nome = textoObrigatorio('nome', celula('nome'), LIMITES.nome, 'Nome');
     var setor = textoObrigatorio('setor', celula('setor'), LIMITES.setor, 'Setor');
     var funcao = textoObrigatorio('funcao', celula('cargo'), LIMITES.funcao, 'Cargo');
-    var ghe = textoObrigatorio('ghe', celula('ghe'), LIMITES.ghe, 'GHE');
+    var resolucao = resolverGhe(textoDaCelula(celula('ghe')), ghes);
+    var ghe = resolucao.nome;
+    var gheId = null;
+    if (resolucao.estado === 'NAO_INFORMADO') erro('ghe', 'Nome GHE não informado.');
+    else if (resolucao.estado === 'INVALIDO') erro('ghe', resolucao.excedeu ? 'Nome GHE com mais de ' + LIMITES.ghe + ' caracteres.' : 'Nome GHE com caractere inválido.');
+    else if (resolucao.estado === 'INEXISTENTE') erro('ghe', 'GHE não encontrado.');
+    else if (resolucao.estado === 'AMBIGUO') erro('ghe', 'GHE ambíguo.');
+    else if (resolucao.estado === 'INATIVO') erro('ghe', 'GHE inativo.');
+    else if (resolucao.estado === 'ENCONTRADO') { ghe = normalizarNomeGhe(resolucao.ghe.nome); gheId = resolucao.ghe.id; }
+    var situacaoTexto = textoDaCelula(celula('situacao'));
+    if (!situacaoTexto) erro('situacao', 'Situação não informada.');
+    else if (situacaoTexto.trim().toLowerCase() !== 'ativo') erro('situacao', 'Situação não reconhecida (somente Ativo é aceito).');
 
     // Matrícula: número do Excel é lido como está — zeros à esquerda perdidos NÃO são recriados.
     var matriculaBruta = celula('matricula');
@@ -291,7 +330,9 @@
       matricula = String(matriculaBruta);
       erro('matricula', 'Matrícula numérica com casas decimais: formate a coluna como texto.');
     } else {
-      matricula = textoObrigatorio('matricula', matriculaBruta, LIMITES.matricula, 'Matrícula');
+      matricula = textoDaCelula(matriculaBruta);
+      if (matricula.length > LIMITES.matricula) erro('matricula', 'Matrícula com mais de ' + LIMITES.matricula + ' caracteres.');
+      else if (CONTROLE.test(matricula)) erro('matricula', 'Matrícula com caractere inválido.');
       if (typeof matriculaBruta === 'number') aviso('matricula', 'Matrícula lida como número: se havia zeros à esquerda, o Excel os removeu. Confira ou formate a coluna como texto.');
     }
 
@@ -320,7 +361,7 @@
       }
     } else {
       var t = textoDaCelula(cpfBruto);
-      if (!t) erro('cpf', 'CPF obrigatório.');
+      if (!t) erro('cpf', 'CPF não informado.');
       else if (!/^[\d.\-\s]+$/.test(t) || !cpfValido(t.replace(/[.\-\s]/g, ''))) erro('cpf', 'CPF inválido.');
       cpf = t.replace(/[.\-\s]/g, '');
     }
@@ -328,31 +369,48 @@
     var nasc = dataDaCelula(celula('nascimento'));
     if (nasc.erro) erro('dataNascimento', nasc.erro === 'NUMERICA' ? 'Data de nascimento em formato numérico: formate a coluna como data (DD/MM/AAAA).' : 'Data de nascimento inválida (use DD/MM/AAAA).');
     var adm = dataDaCelula(celula('contratacao'));
-    if (adm.erro) erro('dataAdmissao', adm.erro === 'NUMERICA' ? 'Data de contratação em formato numérico: formate a coluna como data (DD/MM/AAAA).' : 'Data de contratação inválida (use DD/MM/AAAA).');
-    else if (!adm.valor) erro('dataAdmissao', 'Data de contratação obrigatória.');
-    else if (adm.valor < ADMISSAO_MINIMA) erro('dataAdmissao', 'Data de contratação anterior a 1900.');
-    else if (nasc.valor && adm.valor <= nasc.valor) erro('dataAdmissao', 'Data de contratação deve ser posterior ao nascimento.');
+    if (adm.erro) erro('dataAdmissao', adm.erro === 'NUMERICA' ? 'Data de admissão em formato numérico: formate a coluna como data (DD/MM/AAAA).' : 'Data de admissão inválida (use DD/MM/AAAA).');
+    else if (!adm.valor) erro('dataAdmissao', 'Data de admissão não informada.');
+    else if (adm.valor < ADMISSAO_MINIMA) erro('dataAdmissao', 'Data de admissão anterior a 1900.');
+    else if (nasc.valor && adm.valor <= nasc.valor) erro('dataAdmissao', 'Data de admissão deve ser posterior ao nascimento.');
 
-    return {
+    var resultado = {
       linha: numero,
       dados: {
-        nome: nome, setor: setor, telefone: telefone || null, cpf: cpf, matricula: matricula,
+        nome: nome, setor: setor, telefone: telefone || null, cpf: cpf, matricula: matricula, situacao: 'ativo',
         dataNascimento: nasc.valor || null, dataAdmissao: adm.valor || null, funcao: funcao, ghe: ghe,
       },
       exibicao: {
         nome: nome, setor: setor, telefone: telefone, cpf: mascararCpf(cpf), matricula: matricula,
-        nascimento: exibirData(nasc.valor, celula('nascimento')), contratacao: exibirData(adm.valor, celula('contratacao')), cargo: funcao, ghe: ghe,
+        nascimento: exibirData(nasc.valor, celula('nascimento')), contratacao: exibirData(adm.valor, celula('contratacao')), cargo: funcao, ghe: ghe, situacao: situacaoTexto,
       },
       erros: erros,
       avisos: avisos,
     };
+    if (gheId !== null) resultado.dados.gheId = gheId;
+    // Só com a lista de GHEs da empresa; o SST pode escolher o GHE nos estados selecionáveis (nunca em caractere inválido).
+    if (Array.isArray(ghes)) resultado.gheResolucao = { estado: resolucao.estado, selecionavel: ESTADOS_GHE_SELECIONAVEIS.indexOf(resolucao.estado) >= 0 };
+    return resultado;
   }
 
-  /** Linhas da planilha (a primeira é o cabeçalho) → linhas interpretadas, ou erro do arquivo. */
-  function interpretar(linhas) {
+  /** Índice do cabeçalho: a primeira das primeiras linhas com ao menos 3 colunas reconhecidas; senão a primeira. */
+  function localizarCabecalho(linhas) {
+    var limite = Math.min(linhas.length, CABECALHO_MAXIMO_LINHAS);
+    for (var i = 0; i < limite; i += 1) {
+      var chaves = Object.create(null);
+      (Array.isArray(linhas[i]) ? linhas[i] : []).forEach(function (h) { var c = CABECALHOS[normalizarCabecalho(h)]; if (c) chaves[c] = true; });
+      if (Object.keys(chaves).length >= 3) return i;
+    }
+    return 0;
+  }
+
+  /** Linhas da planilha (o cabeçalho pode vir depois de título e linhas vazias) → linhas interpretadas, ou erro do arquivo. */
+  function interpretar(linhas, opcoes) {
+    var ghes = opcoes && Array.isArray(opcoes.ghes) ? opcoes.ghes : null;
     if (!Array.isArray(linhas) || linhas.length === 0) return { ok: false, codigo: 'SEM_DADOS' };
     var indice = Object.create(null);
-    (linhas[0] || []).forEach(function (h, i) {
+    var inicio = localizarCabecalho(linhas);
+    (linhas[inicio] || []).forEach(function (h, i) {
       var chave = CABECALHOS[normalizarCabecalho(h)];
       if (chave && !(chave in indice)) indice[chave] = i;
     });
@@ -360,7 +418,7 @@
     if (ausentes.length) return { ok: false, codigo: 'COLUNAS_AUSENTES', colunas: ausentes };
 
     var comDados = [];
-    for (var i = 1; i < linhas.length; i += 1) {
+    for (var i = inicio + 1; i < linhas.length; i += 1) {
       var bruta = Array.isArray(linhas[i]) ? linhas[i] : [];
       if (!bruta.every(vazia)) comDados.push({ numero: i + 1, bruta: bruta });
     }
@@ -368,7 +426,7 @@
     if (comDados.length > LIMITES.linhasArquivo) return { ok: false, codigo: 'LINHAS_EXCEDIDAS', total: comDados.length };
 
     var resultado = comDados.map(function (l) {
-      return interpretarLinha(l.numero, function (chave) { return chave in indice ? l.bruta[indice[chave]] : null; });
+      return interpretarLinha(l.numero, function (chave) { return chave in indice ? l.bruta[indice[chave]] : null; }, ghes);
     });
 
     // Repetidos DENTRO da planilha: a segunda ocorrência aponta a primeira.
@@ -386,21 +444,45 @@
       }
     });
 
+    return Object.assign({ ok: true, linhas: resultado }, contarLinhas(resultado));
+  }
+
+  function contarLinhas(resultado) {
     return {
-      ok: true,
-      linhas: resultado,
       validas: resultado.filter(function (l) { return l.erros.length === 0; }).length,
       comErro: resultado.filter(function (l) { return l.erros.length > 0; }).length,
       comAviso: resultado.filter(function (l) { return l.erros.length === 0 && l.avisos.length > 0; }).length,
     };
   }
 
+  /** Escolha EXPLÍCITA do GHE pelo SST: devolve uma cópia da linha, sem o erro do GHE e com o GHE real; nada é mutado. */
+  function selecionarGhe(linha, ghe) {
+    if (!linha || !linha.gheResolucao || !linha.gheResolucao.selecionavel) throw new TypeError('a linha não admite seleção de GHE');
+    if (!ghe || ghe.ativo === false || !Number.isInteger(ghe.id)) throw new TypeError('GHE inválido para seleção');
+    var nome = normalizarNomeGhe(ghe.nome);
+    var copia = Object.assign({}, linha);
+    copia.dados = Object.assign({}, linha.dados, { ghe: nome, gheId: ghe.id });
+    copia.exibicao = Object.assign({}, linha.exibicao, { ghe: nome });
+    copia.erros = linha.erros.filter(function (x) { return x.campo !== 'ghe'; });
+    copia.avisos = linha.avisos.slice();
+    copia.gheSelecionado = true;
+    copia.gheResolucao = { estado: 'SELECIONADO', selecionavel: true };
+    return copia;
+  }
+
+  /** Interpretação-base + escolhas { numeroDaLinha: GHE } → resultado com as escolhas aplicadas e os contadores refeitos. */
+  function aplicarEscolhasGhe(base, escolhas) {
+    var linhas = base.linhas.map(function (l) { var g = escolhas && escolhas[l.linha]; return g ? selecionarGhe(l, g) : l; });
+    return Object.assign({}, base, { linhas: linhas }, contarLinhas(linhas));
+  }
+
   /** Modelo para download: só o cabeçalho (nenhum funcionário fictício), ';' e BOM para o Excel. */
   function modeloCsv() {
-    return '﻿Nome;Setor;Telefone;CPF;Matrícula;Nascimento;Contratação;Cargo;GHE\r\n';
+    return '﻿Nome;Setor;Cargo;Dt.Admissão;CPF;Matrícula;Situação;Nome GHE\r\n';
   }
 
   var planilha = { interpretar: interpretar, modeloCsv: modeloCsv, OBRIGATORIAS: OBRIGATORIAS };
+  var gheModulo = { normalizar: normalizarNomeGhe, resolver: resolverGhe, selecionar: selecionarGhe, aplicar: aplicarEscolhasGhe };
 
   // ───────────────────────────────────────────────────────────────────
   // Lotes
@@ -436,9 +518,10 @@
     validas.forEach(function (l) {
       var d = l.dados;
       var item = {
-        linha: l.linha, nome: d.nome, cpf: d.cpf, matricula: d.matricula, dataAdmissao: d.dataAdmissao,
+        linha: l.linha, nome: d.nome, cpf: d.cpf, matricula: d.matricula || undefined, situacao: d.situacao, dataAdmissao: d.dataAdmissao,
         dataNascimento: d.dataNascimento, setor: d.setor, funcao: d.funcao, telefone: d.telefone, ghe: d.ghe,
       };
+      if (d.gheId !== undefined) { delete item.ghe; item.gheId = d.gheId; }
       var tentativa = atual.concat([item]);
       // Números do lote no pior caso de dígitos, para a conta de bytes ser conservadora.
       if (atual.length > 0 && (tentativa.length > LIMITES.linhasLote || bytes(corpo(tentativa, LIMITES.linhasArquivo, LIMITES.linhasArquivo)) > LIMITES.bytesLote)) {
@@ -468,10 +551,10 @@
     OUTRO: 'Outro erro de validação',
   };
   var MOTIVO_POR_CODIGO = {
-    FUNCIONARIO_GHE_NAO_INFORMADO: 'GHE não informado', FUNCIONARIO_GHE_INEXISTENTE: 'GHE inexistente', FUNCIONARIO_GHE_INVALIDO: 'GHE inexistente', FUNCIONARIO_GHE_INATIVO: 'GHE inativo',
+    FUNCIONARIO_GHE_NAO_INFORMADO: 'GHE não informado', FUNCIONARIO_GHE_INEXISTENTE: 'GHE não encontrado', FUNCIONARIO_GHE_AMBIGUO: 'GHE ambíguo', FUNCIONARIO_GHE_INVALIDO: 'GHE inválido', FUNCIONARIO_GHE_INATIVO: 'GHE inativo',
     FUNCIONARIO_CPF_INVALIDO: 'CPF inválido', FUNCIONARIO_CPF_EM_USO: 'CPF já em uso', FUNCIONARIO_MATRICULA_EM_USO: 'Matrícula já em uso', ERRO_INTERNO: 'Erro de processamento',
   };
-  var ROTULOS_CAMPO = { nome: 'Nome', matricula: 'Matrícula', setor: 'Setor', funcao: 'Cargo', dataAdmissao: 'Contratação', dataNascimento: 'Nascimento', telefone: 'Telefone', ghe: 'GHE' };
+  var ROTULOS_CAMPO = { nome: 'Nome', matricula: 'Matrícula', setor: 'Setor', funcao: 'Cargo', dataAdmissao: 'Admissão', dataNascimento: 'Nascimento', telefone: 'Telefone', ghe: 'GHE' };
   var EXIBICAO_POR_CAMPO = { funcao: 'cargo', dataAdmissao: 'contratacao', dataNascimento: 'nascimento' };
   // O valor atual destes campos nunca é exibido; o servidor só sinaliza a divergência.
   var CAMPOS_SENSIVEIS = ['cpf', 'dataNascimento', 'telefone'];
@@ -588,9 +671,17 @@
     if (l.situacao === 'NAO_CONFIRMADO' || l.situacao === 'NAO_ENVIADO') return SITUACOES[l.situacao];
     if (l.situacao === 'ERRO') return MOTIVO_POR_CODIGO.ERRO_INTERNO;
     if (l.origem === 'previa') {
-      var obrigatorio = /obrigat/i.test(l.motivo || '');
-      if (l.campo === 'ghe') return obrigatorio ? MOTIVO_POR_CODIGO.FUNCIONARIO_GHE_NAO_INFORMADO : 'GHE inválido';
+      var obrigatorio = /obrigat|não informad/i.test(l.motivo || '');
+      if (l.campo === 'ghe') {
+        var m = l.motivo || '';
+        if (obrigatorio) return MOTIVO_POR_CODIGO.FUNCIONARIO_GHE_NAO_INFORMADO;
+        if (/não encontrado/i.test(m)) return MOTIVO_POR_CODIGO.FUNCIONARIO_GHE_INEXISTENTE;
+        if (/ambíguo/i.test(m)) return MOTIVO_POR_CODIGO.FUNCIONARIO_GHE_AMBIGUO;
+        if (/inativo/i.test(m)) return MOTIVO_POR_CODIGO.FUNCIONARIO_GHE_INATIVO;
+        return MOTIVO_POR_CODIGO.FUNCIONARIO_GHE_INVALIDO;
+      }
       if (l.campo === 'cpf') return obrigatorio ? 'CPF ausente' : MOTIVO_POR_CODIGO.FUNCIONARIO_CPF_INVALIDO;
+      if (l.campo === 'situacao') return obrigatorio ? 'Situação não informada' : 'Situação não reconhecida';
       return ROTULOS.OUTRO;
     }
     return MOTIVO_POR_CODIGO[l.codigo] || ROTULOS.OUTRO;
@@ -687,14 +778,29 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
-  function previa(linhas) {
+  /** Célula do GHE: texto, ou o seletor "Selecionar GHE" (só ativos, sem pré-seleção) quando a linha admite escolha. */
+  function celulaGhe(l, ghesAtivos) {
+    var e = l.exibicao || {};
+    if (!l.gheResolucao || !l.gheResolucao.selecionavel || !Array.isArray(ghesAtivos)) return '<td>' + (escaparHtml(e.ghe) || '—') + '</td>';
+    var escolhido = l.dados && l.dados.gheId;
+    var opcoes = ghesAtivos.map(function (g) {
+      return '<option value="' + escaparHtml(String(g.id)) + '"' + (g.id === escolhido ? ' selected' : '') + '>' + escaparHtml(normalizarNomeGhe(g.nome)) + '</option>';
+    }).join('');
+    var citado = l.gheSelecionado ? '' : (e.ghe ? '<div class="import-ghe-planilha">Planilha: ' + escaparHtml(e.ghe) + '</div>' : '');
+    return '<td>' + citado + '<select class="import-ghe-select" data-linha="' + escaparHtml(String(l.linha)) + '" aria-label="Selecionar GHE da linha ' + escaparHtml(String(l.linha)) + '">'
+      + '<option value="">Selecionar GHE</option>' + opcoes + '</select></td>';
+  }
+
+  function previa(linhas, ghesAtivos) {
     return (linhas || []).map(function (l) {
       var e = l.exibicao || {};
       // 'warn' (classe já existente em main.css): valor ambíguo a conferir, linha importável.
       var status = l.erros.length ? 'err' : (l.avisos.length ? 'warn' : 'ok');
       var rotulo = l.erros.length ? 'Erro' : (l.avisos.length ? 'Atenção' : 'Válido');
       return '<tr class="import-row-' + status + '"><td>' + l.linha + '</td><td><strong>' + (escaparHtml(e.nome) || '—') + '</strong></td>'
-        + ['setor', 'telefone', 'cpf', 'matricula', 'nascimento', 'contratacao', 'cargo', 'ghe'].map(function (k) { return '<td>' + (escaparHtml(e[k]) || '—') + '</td>'; }).join('')
+        + ['setor', 'cpf', 'contratacao', 'cargo'].map(function (k) { return '<td>' + (escaparHtml(e[k]) || '—') + '</td>'; }).join('')
+        + celulaGhe(l, ghesAtivos)
+        + '<td>' + (escaparHtml(e.situacao) || '—') + '</td>'
         + '<td><span class="import-row-badge ' + status + '">' + rotulo + '</span></td></tr>';
     }).join('');
   }
@@ -772,6 +878,7 @@
     acoes: acoes,
     arquivo: arquivo,
     planilha: planilha,
+    ghe: gheModulo,
     lotes: lotes,
     mensagens: mensagens,
     fluxo: fluxo,

@@ -1,6 +1,7 @@
 'use strict';
 
 const { HttpError } = require('../errors/HttpError');
+const { exigirPodeReceberEpi } = require('../utils/situacao-funcionario');
 const funcionarioRepo = require('../repositories/funcionario.repository');
 const materialRepo = require('../repositories/material.repository');
 const gheRepo = require('../repositories/grupo-homogeneo-exposicao.repository');
@@ -166,6 +167,8 @@ async function registrarEntregaPorSolicitacao(pool, {
 
     const funcionario = await funcionarioRepo.buscarPorIdParaEntrega(client, empresaId, solicitacao.funcionarioId);
     if (funcionario === null || funcionario.ativo !== true) {
+      // AFASTADO tem código próprio; inativo (ou ausente) segue SOLICITACAO_NAO_ENTREGAVEL.
+      if (funcionario !== null && funcionario.situacao === 'AFASTADO') exigirPodeReceberEpi(funcionario);
       throw HttpError.conflict('SOLICITACAO_NAO_ENTREGAVEL', 'O trabalhador da solicitação está inativo');
     }
     const fichaExistente = await fichaRepo.buscarPorFuncionario(client, empresaId, funcionario.id);
@@ -228,7 +231,7 @@ async function registrarEntregaPorSolicitacao(pool, {
       empresa: {
         nome: empresa.razaoSocial.trim(), cnpj: empresa.cnpj, endereco: enderecoDaEmpresa(empresa), cidade: aparar(empresa.cidade), uf: aparar(empresa.uf)?.toUpperCase() ?? null,
       },
-      trabalhador: { nome: funcionario.nome.trim(), matricula: funcionario.matricula.trim(), funcao: aparar(funcionario.funcao), setor: aparar(funcionario.setor) },
+      trabalhador: { nome: funcionario.nome.trim(), matricula: aparar(funcionario.matricula), funcao: aparar(funcionario.funcao), setor: aparar(funcionario.setor) },
       gheNome: ghe === null ? null : ghe.nome.trim(),
       responsavelNome: responsavel.nome.trim(),
     });

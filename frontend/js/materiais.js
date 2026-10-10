@@ -29,7 +29,7 @@
   var CAMINHO = '/materiais';
 
   // Tetos dos contratos (schemas do backend e migrations).
-  var LIMITES = { nome: 150, tipo: 100, tipoDescricao: 100, fabricante: 100, caNumero: 20, unidade: 20, categoria: 30, codigoInterno: 30, descricao: 500, tamanho: 20, justificativa: 500 };
+  var LIMITES = { nome: 150, tipo: 100, tipoDescricao: 100, descricaoOutros: 100, fabricante: 100, caNumero: 20, unidade: 20, categoria: 30, codigoInterno: 30, descricao: 500, tamanho: 20, justificativa: 500 };
   // Teto das colunas INTEGER (int4) do PostgreSQL, o mesmo do backend:
   // prazo em dias, estoque mínimo e quantidade.
   var INTEGER_MAXIMO = 2147483647;
@@ -49,33 +49,33 @@
   var TAMANHOS_LUVA = ['PP', 'P', 'M', 'G', 'GG'];
   var TAMANHO_UNICO = 'Único';
 
-  // Opções dos selects do formulário (materials.html), na mesma ordem.
-  // Usadas para reabrir um material sem trocar valores em silêncio.
-  var CATEGORIAS = ['EPI', 'Uniforme', 'Ferramenta', 'Material de consumo'];
-  // 12G-8 — Categoria → Tipo: as mesmas listas do backend
-  // (utils/classificacao-material.js), conferidas por teste. "Outros" vale em
-  // toda categoria e leva a descrição em campo próprio; categoria sem lista
-  // própria (Ferramenta, sem categoria) só oferece "Outros".
+  // Classificação V2 (08/10/2026): Grupo (campo `categoria`) → Grupo de Proteção
+  // → Tipo. Cadastro novo só com EPI, Vestimenta ou "Outros"; EPI e Vestimenta
+  // levam o grupo de proteção e um tipo do catálogo da empresa
+  // (GET /tipos-material, só ativos). "Outros" é opção da interface em qualquer
+  // nível, nunca linha do catálogo, e leva a especificação em campo próprio.
+  // Vocabulário igual ao de backend/src/utils/classificacao-material.js,
+  // conferido por teste. O material gravado antes (modeloClassificacao LEGADO)
+  // continua editável nos demais campos sem reclassificar.
   var OUTROS = 'Outros';
-  var TIPOS_EPI = [
-    'Botina de Segurança', 'Capacete', 'Creme de Proteção', 'Luva', 'Mangote', 'Óculos de Proteção Ampla Visão',
-    'Óculos de Proteção Incolor', OUTROS, 'Palmilha', 'Proteção Auricular Concha', 'Proteção Auricular Descartável',
-    'Respirador PFF2', 'Sapato de Segurança', 'Viseira Película Ouro',
+  var GRUPOS_CATALOGO = ['EPI', 'Vestimenta'];
+  var GRUPOS = GRUPOS_CATALOGO.concat([OUTROS]);
+  var GRUPOS_PROTECAO = [
+    'Proteção auditiva', 'Proteção contra quedas', 'Proteção da cabeça', 'Proteção das mãos', 'Proteção das pernas', 'Proteção dos braços',
+    'Proteção dos pés', 'Proteção facial', 'Proteção ocular', 'Proteção da pele (membros superiores)', 'Proteção respiratória', 'Proteção do tronco',
   ];
-  var TIPOS_UNIFORME = ['Calça', 'Calça de Forneiro', 'Calça Eletricista', 'Camisa', 'Camisa de Forneiro', 'Camisa Eletricista', 'Camiseta', OUTROS];
-  var TIPOS_POR_CATEGORIA = { EPI: TIPOS_EPI, Uniforme: TIPOS_UNIFORME, Ferramenta: [OUTROS], 'Material de consumo': [OUTROS] };
-  // Tipos oficiais com nome próprio (sem "Outros"): o catálogo visual parte daqui.
-  var TIPOS = TIPOS_EPI.concat(TIPOS_UNIFORME).filter(function (t) { return t !== OUTROS; });
-  // Óculos de proteção são reconhecidos pelo tipo gravado, nunca pelo nome: os
-  // dois tipos oficiais e o nome histórico, que só vale para o legado.
+  var PROTECAO_OCULAR = 'Proteção ocular';
+  var MODELO_V2 = 'V2';
+  var CONTROLE = /[\u0000-\u001f\u007f]/;
+  // Campos da classificação na tela; a edição compara-os com o registro carregado.
+  var CAMPOS_CLASSIFICACAO = ['categoria', 'categoriaCustom', 'grupoProtecao', 'grupoProtecaoCustom', 'tipo', 'tipoCustom'];
+  // Legado: óculos de proteção reconhecidos pelo tipo gravado, nunca pelo nome
+  // (os dois tipos oficiais da 12G-8 e o nome histórico). Na V2 a regra é a
+  // classificação (EPI + Proteção ocular), para qualquer tipo.
   var TIPOS_OCULOS = ['Óculos de Proteção Incolor', 'Óculos de Proteção Ampla Visão'];
   var TIPO_OCULOS_LEGADO = 'Óculos de proteção';
   var TIPO_OCULOS = TIPO_OCULOS_LEGADO;
   var CALCADOS = ['Sapatão / Botina', 'Botina de Segurança', 'Sapato de Segurança'];
-  function tiposDe(categoria) {
-    var c = texto(categoria);
-    return hasOwn(TIPOS_POR_CATEGORIA, c) ? TIPOS_POR_CATEGORIA[c].slice() : [OUTROS];
-  }
   var UNIDADES = ['Par', 'Unidade', 'Caixa', 'Pacote', 'Kit'];
 
   // Controle de tamanho escolhido na tela → exigeTamanho do backend.
@@ -84,7 +84,8 @@
   // Campos que a edição pode enviar ao PATCH. A unidade de controle fica de
   // fora (mudaria o sentido do saldo), e o CA do cadastro também: o CA que
   // vale é o de cada lote.
-  var CAMPOS_EDITAVEIS = ['nome', 'categoria', 'tipo', 'tipoDescricao', 'fabricante', 'codigoInterno', 'descricao', 'prazoUsoDias', 'exigeTamanho', 'oculosComGrau', 'estoqueMinimo'];
+  // A classificação não entra aqui: quando muda, vai como bloco completo (montarEdicao).
+  var CAMPOS_EDITAVEIS = ['nome', 'fabricante', 'codigoInterno', 'descricao', 'prazoUsoDias', 'exigeTamanho', 'oculosComGrau', 'estoqueMinimo'];
 
   var MOTIVOS_BAIXA = [
     { codigo: 'CA_VENCIDO', rotulo: 'CA vencido' },
@@ -176,6 +177,26 @@
     lotes: function (id) {
       return http().requisitar('GET', CAMINHO + '/' + encodeURIComponent(id) + '/estoque/lotes');
     },
+    /**
+     * Tipos ATIVOS do catálogo da empresa para um grupo e um grupo de proteção
+     * (todas as páginas), para o seletor de tipo do material. Mesma regra de
+     * listarTodos: página que falha devolve a falha, nunca lista parcial.
+     */
+    listarTipos: async function (filtro) {
+      var f = filtro || {};
+      var tipos = [];
+      var total = 0;
+      for (var pagina = 1; pagina <= PAGINAS_MAXIMAS; pagina += 1) {
+        var q = ['grupo=' + encodeURIComponent(texto(f.grupo)), 'grupoProtecao=' + encodeURIComponent(texto(f.grupoProtecao)), 'ativo=true', 'pagina=' + pagina, 'limite=' + LIMITE_LISTA];
+        var r = await http().requisitar('GET', '/tipos-material?' + q.join('&'));
+        if (!r.ok) return r;
+        var lote = r.dados && Array.isArray(r.dados.tipos) ? r.dados.tipos : [];
+        total = r.dados && typeof r.dados.total === 'number' ? r.dados.total : tipos.length + lote.length;
+        tipos = tipos.concat(lote);
+        if (lote.length === 0 || tipos.length >= total) break;
+      }
+      return { ok: true, status: 200, dados: { tipos: tipos, total: total }, codigo: null, mensagem: null, detalhes: null };
+    },
     entrada: function (id, corpo) {
       return http().requisitar('POST', CAMINHO + '/' + encodeURIComponent(id) + '/estoque/entradas', { corpo: corpo });
     },
@@ -255,16 +276,149 @@
 
   function dataIso(s) { return /^\d{4}-\d{2}-\d{2}$/.test(s); }
 
-  /** O tipo, aparado, é exatamente um dos tipos de óculos de proteção (oficiais ou o histórico). */
+  /** Legado: o tipo, aparado, é exatamente um dos tipos de óculos de proteção (oficiais ou o histórico). */
   function ehOculos(tipo) {
     var t = texto(tipo);
     return TIPOS_OCULOS.indexOf(t) !== -1 || t === TIPO_OCULOS_LEGADO;
   }
 
+  /** O material gravado pede "óculos com grau": V2 pela classificação (EPI + Proteção ocular); legado pelo tipo. */
+  function oculosDoMaterial(material) {
+    var m = material || {};
+    if (m.modeloClassificacao === MODELO_V2) return texto(m.categoria) === 'EPI' && texto(m.grupoProtecao) === PROTECAO_OCULAR;
+    return ehOculos(m.tipo);
+  }
+
   /** Óculos gravados antes da informação existir: nem com grau, nem sem grau. */
   function oculosSemClassificacao(material) {
     var m = material || {};
-    return ehOculos(m.tipo) && m.oculosComGrau !== true && m.oculosComGrau !== false;
+    return oculosDoMaterial(m) && m.oculosComGrau !== true && m.oculosComGrau !== false;
+  }
+
+  // ── classificação V2 ──
+
+  /** Tipos ATIVOS do catálogo carregado para o grupo e o grupo de proteção, em ordem de nome; "Outros" em qualquer nível não tem tipos. */
+  function tiposDoCatalogo(catalogo, grupo, grupoProtecao) {
+    var g = texto(grupo);
+    var p = texto(grupoProtecao);
+    if (!Array.isArray(catalogo) || GRUPOS_CATALOGO.indexOf(g) === -1 || GRUPOS_PROTECAO.indexOf(p) === -1) return [];
+    return catalogo.filter(function (t) { return !!t && t.ativo !== false && t.grupo === g && t.grupoProtecao === p; })
+      .sort(function (a, b) { return String(a.nome).localeCompare(String(b.nome), 'pt-BR'); });
+  }
+
+  /**
+   * O que a tela mostra para a combinação atual: proteção só em EPI/Vestimenta;
+   * cada "Especifique…" só com o seu "Outros"; tipo travado em "Outros" quando
+   * o grupo ou a proteção são "Outros"; óculos com grau só em EPI + Proteção
+   * ocular, para qualquer tipo.
+   */
+  function estadoClassificacao(campos) {
+    var c = campos || {};
+    var grupo = texto(c.categoria);
+    var protecao = texto(c.grupoProtecao);
+    var grupoOutros = grupo === OUTROS;
+    var noCatalogo = GRUPOS_CATALOGO.indexOf(grupo) !== -1;
+    var protecaoOutros = noCatalogo && protecao === OUTROS;
+    var forcado = grupoOutros || protecaoOutros;
+    return {
+      mostrarProtecao: noCatalogo,
+      mostrarCategoriaCustom: grupoOutros,
+      mostrarProtecaoCustom: protecaoOutros,
+      mostrarTipoCustom: forcado || texto(c.tipo) === OUTROS,
+      tipoForcadoOutros: forcado,
+      mostrarOculos: grupo === 'EPI' && protecao === PROTECAO_OCULAR,
+    };
+  }
+
+  /** Os campos da classificação na tela são os mesmos do registro carregado (nada a reclassificar). */
+  function classificacaoIntocada(campos, original) {
+    var c = campos || {};
+    var baseline = camposDoMaterial(original).campos;
+    return CAMPOS_CLASSIFICACAO.every(function (k) { return texto(c[k]) === texto(baseline[k]); });
+  }
+
+  /** A caixa "Óculos com grau" vale: pela classificação da tela ou, com a classificação intocada, pela do registro carregado. */
+  function oculosAplicavel(campos, original) {
+    var c = campos || {};
+    if (original && classificacaoIntocada(c, original)) return oculosDoMaterial(original);
+    return estadoClassificacao(c).mostrarOculos;
+  }
+
+  /**
+   * Bloco da classificação V2, nível a nível (para no primeiro nível incompleto):
+   * {erros, corpo} só com o que se aplica. Campo escondido nunca entra no corpo,
+   * mesmo que tenha texto esquecido. O servidor confere tudo de novo.
+   */
+  function classificar(campos) {
+    var c = campos || {};
+    var erros = [];
+    var corpo = {};
+    var erro = function (campo, mensagem) { erros.push({ campo: campo, mensagem: mensagem }); };
+    var especificar = function (campo, valor, rotulo) {
+      var d = texto(valor);
+      if (!d) erro(campo, 'Especifique ' + rotulo + ' em texto.');
+      else if (d.length > LIMITES.descricaoOutros) erro(campo, 'Especificação de ' + rotulo + ' com mais de ' + LIMITES.descricaoOutros + ' caracteres.');
+      else if (CONTROLE.test(d)) erro(campo, 'Especificação de ' + rotulo + ' com caractere inválido.');
+      else return d;
+      return null;
+    };
+    var tipoOutros = function () {
+      var d = especificar('tipoDescricao', c.tipoCustom, 'o tipo');
+      if (d === null) return;
+      corpo.tipo = OUTROS;
+      corpo.tipoDescricao = d;
+    };
+    var resultado = function () { return { erros: erros, corpo: corpo }; };
+
+    var grupo = texto(c.categoria);
+    if (!grupo) { erro('categoria', 'Selecione o grupo do material.'); return resultado(); }
+    if (GRUPOS.indexOf(grupo) === -1) { erro('categoria', 'O grupo "' + grupo + '" é do cadastro antigo: para reclassificar, escolha EPI, Vestimenta ou Outros.'); return resultado(); }
+    corpo.categoria = grupo;
+    if (grupo === OUTROS) {
+      var grupoDescricao = especificar('categoriaDescricao', c.categoriaCustom, 'o grupo');
+      if (grupoDescricao === null) return resultado();
+      corpo.categoriaDescricao = grupoDescricao;
+      tipoOutros();
+      return resultado();
+    }
+    var protecao = texto(c.grupoProtecao);
+    if (!protecao) { erro('grupoProtecao', 'Selecione o grupo de proteção.'); return resultado(); }
+    if (protecao !== OUTROS && GRUPOS_PROTECAO.indexOf(protecao) === -1) { erro('grupoProtecao', 'Grupo de proteção inválido.'); return resultado(); }
+    corpo.grupoProtecao = protecao;
+    if (protecao === OUTROS) {
+      var protecaoDescricao = especificar('grupoProtecaoDescricao', c.grupoProtecaoCustom, 'o grupo de proteção');
+      if (protecaoDescricao === null) return resultado();
+      corpo.grupoProtecaoDescricao = protecaoDescricao;
+      tipoOutros();
+      return resultado();
+    }
+    var tipo = texto(c.tipo);
+    if (!tipo) { erro('tipo', 'Selecione o tipo.'); return resultado(); }
+    if (tipo === OUTROS) { tipoOutros(); return resultado(); }
+    var escolhido = null;
+    tiposDoCatalogo(c.catalogo, grupo, protecao).forEach(function (t) { if (String(t.id) === tipo) escolhido = t; });
+    if (!escolhido) { erro('tipo', 'Escolha um tipo ativo do catálogo deste grupo de proteção, ou "Outros".'); return resultado(); }
+    corpo.tipoMaterialId = escolhido.id;
+    return resultado();
+  }
+
+  function presente(v) { return v !== null && v !== undefined && texto(v) !== ''; }
+  // A MESMA regra de classificacao-material.js (grupoEfetivo etc.), conferida por teste.
+  function efetivo(valor, descricao) {
+    if (!presente(valor)) return null;
+    return valor === OUTROS && presente(descricao) ? descricao : valor;
+  }
+  /** Valor de exibição do grupo: a categoria, ou a especificação quando o grupo é "Outros". */
+  function grupoEfetivo(material) { var m = material || {}; return efetivo(m.categoria, m.categoriaDescricao); }
+  function grupoProtecaoEfetivo(material) { var m = material || {}; return efetivo(m.grupoProtecao, m.grupoProtecaoDescricao); }
+  function tipoEfetivo(material) { var m = material || {}; return efetivo(m.tipo, m.tipoDescricao); }
+
+  /** 'LEGADO' (cadastro antigo, sem reclassificar), 'TIPO_INATIVO' (V2 ligado a tipo inativado) ou ''. */
+  function rotuloClassificacao(material) {
+    var m = material || {};
+    if (m.modeloClassificacao !== MODELO_V2) return 'LEGADO';
+    if (m.tipoMaterialAtivo === false) return 'TIPO_INATIVO';
+    return '';
   }
 
   /**
@@ -306,8 +460,11 @@
   var CAMPO_DA_ENTRADA_INICIAL = { tamanho: 'tamanhoEntrada', quantidade: 'quantidadeComprada', caNumero: 'caEntrada', caValidade: 'caValidadeEntrada' };
 
   // Monta o corpo e junta os erros; montarCorpo e montarEdicao decidem o que fazer com eles.
-  function montarCadastro(campos) {
+  // opcoes.semClassificacao pula o bloco da classificação (edição sem reclassificar);
+  // opcoes.oculos diz se a caixa do grau vale (senão, decide a classificação montada).
+  function montarCadastro(campos, opcoes) {
     var c = campos || {};
+    var o = opcoes || {};
     var erros = [];
     var corpo = {};
     var erro = function (campo, mensagem) { erros.push({ campo: campo, mensagem: mensagem }); };
@@ -323,25 +480,14 @@
     else if (nome.length > LIMITES.nome) erro('nome', 'Nome com mais de ' + LIMITES.nome + ' caracteres.');
     else corpo.nome = nome;
 
-    // Categoria → Tipo (12G-8): só tipo da lista da categoria; na edição, o
-    // tipo histórico de óculos do próprio registro (c.tipoLegado) continua valendo.
-    var tipo = texto(c.tipo);
-    var tipoLegado = texto(c.tipoLegado);
-    if (!tipo) erro('tipo', 'Selecione o tipo.');
-    else if (tiposDe(c.categoria).indexOf(tipo) === -1 && !(tipoLegado && tipo === tipoLegado)) erro('tipo', 'Este tipo não pertence à categoria escolhida.');
-    else corpo.tipo = tipo;
-    // "Outros" leva a descrição em campo próprio; tipo normal nunca a envia.
-    if (tipo === OUTROS) {
-      var descricaoTipo = texto(c.tipoCustom);
-      if (!descricaoTipo) erro('tipoDescricao', 'Descreva o tipo em "Descrição do tipo".');
-      else if (descricaoTipo.length > LIMITES.tipoDescricao) erro('tipoDescricao', 'Descrição do tipo com mais de ' + LIMITES.tipoDescricao + ' caracteres.');
-      else corpo.tipoDescricao = descricaoTipo;
-    }
-    // Óculos de proteção sempre dizem se são com grau; outro tipo não leva a
-    // informação, e o servidor grava NULL.
-    if (ehOculos(corpo.tipo)) corpo.oculosComGrau = c.oculosComGrau === true;
+    var cls = o.semClassificacao ? { erros: [], corpo: {} } : classificar(c);
+    cls.erros.forEach(function (e) { erro(e.campo, e.mensagem); });
+    Object.keys(cls.corpo).forEach(function (k) { corpo[k] = cls.corpo[k]; });
+    // Óculos com grau só onde a classificação pede; fora disso a informação não
+    // vai, e o servidor grava NULL.
+    var oculos = typeof o.oculos === 'boolean' ? o.oculos : estadoClassificacao(cls.corpo).mostrarOculos;
+    if (oculos) corpo.oculosComGrau = c.oculosComGrau === true;
 
-    opcional('categoria', c.categoria, LIMITES.categoria, 'Categoria');
     opcional('fabricante', c.fabricante, LIMITES.fabricante, 'Fabricante');
     opcional('codigoInterno', c.codigoInterno, LIMITES.codigoInterno, 'Código interno');
     opcional('descricao', c.descricao, LIMITES.descricao, 'Descrição');
@@ -428,28 +574,31 @@
 
   /**
    * Material da API → campos do formulário (mesmo formato de montarCorpo).
-   * Valor fora das opções do HTML volta em `opcoesExtras` para a página
-   * acrescentar uma opção temporária: nada é trocado em silêncio.
+   * V2: grupo, proteção e o id do tipo (ou "Outros" com a especificação).
+   * Legado: o grupo e o tipo gravados como estão; fora das opções do HTML, voltam
+   * em `opcoesExtras` como opção temporária "(legado)" — nada é trocado em
+   * silêncio. Tipo V2 inativado volta como opção "(inativo)". `legado` diz o modelo.
    */
   function camposDoMaterial(material) {
     var m = material || {};
+    var v2 = m.modeloClassificacao === MODELO_V2;
     var tipo = texto(m.tipo);
     var categoria = texto(m.categoria);
-    var categoriaLista = categoria ? naLista(CATEGORIAS, categoria) : null;
-    // Tipo da lista da categoria vem como está; "Outros" traz a descrição; o
-    // legado fora da lista vira "Outros" + descrição (convertido só ao salvar);
-    // o óculos histórico fica como opção temporária, com a regra do grau.
-    var tipoNaLista = tiposDe(categoriaLista || categoria).indexOf(tipo) !== -1;
-    var oculosLegado = tipo === TIPO_OCULOS_LEGADO;
+    var protecao = v2 ? texto(m.grupoProtecao) : '';
+    var temId = v2 && m.tipoMaterialId !== null && m.tipoMaterialId !== undefined;
     var unidade = texto(m.unidade);
     var unidadeLista = naLista(UNIDADES, unidade);
     var prazo = prazoParaCampos(m.prazoUsoDias);
     return {
+      legado: !v2,
       campos: {
         nome: texto(m.nome),
-        categoria: categoriaLista || categoria,
-        tipo: tipoNaLista || oculosLegado ? tipo : (tipo ? OUTROS : ''),
-        tipoCustom: tipo === OUTROS ? texto(m.tipoDescricao) : (tipoNaLista || oculosLegado ? '' : tipo),
+        categoria: categoria,
+        categoriaCustom: v2 && categoria === OUTROS ? texto(m.categoriaDescricao) : '',
+        grupoProtecao: protecao,
+        grupoProtecaoCustom: protecao === OUTROS ? texto(m.grupoProtecaoDescricao) : '',
+        tipo: temId ? String(m.tipoMaterialId) : (tipo === OUTROS ? OUTROS : (v2 ? '' : tipo)),
+        tipoCustom: tipo === OUTROS ? texto(m.tipoDescricao) : '',
         fabricante: texto(m.fabricante),
         codigoInterno: texto(m.codigoInterno),
         unidade: unidadeLista || unidade,
@@ -468,8 +617,9 @@
         caValidadeEntrada: '',
       },
       opcoesExtras: {
-        categoria: !categoria ? { valor: '', rotulo: 'Sem categoria' } : (categoriaLista ? null : { valor: categoria, rotulo: categoria }),
-        tipo: oculosLegado ? { valor: TIPO_OCULOS_LEGADO, rotulo: TIPO_OCULOS_LEGADO + ' (legado)' } : null,
+        categoria: !v2 && categoria && GRUPOS.indexOf(categoria) === -1 ? { valor: categoria, rotulo: categoria + ' (legado)' } : null,
+        tipo: temId && m.tipoMaterialAtivo === false ? { valor: String(m.tipoMaterialId), rotulo: tipo + ' (inativo)' }
+          : (!v2 && tipo && tipo !== OUTROS ? { valor: tipo, rotulo: tipo + ' (legado)' } : null),
         unidade: unidadeLista || !unidade ? null : { valor: unidade, rotulo: unidade },
       },
     };
@@ -493,17 +643,17 @@
     var base = {};
     Object.keys(campos || {}).forEach(function (k) { base[k] = campos[k]; });
     base.registrarEntrada = 'nao';
-    // Óculos legado: o tipo histórico do próprio registro continua aceito enquanto não muda.
-    if (texto(o.tipo) === TIPO_OCULOS_LEGADO) base.tipoLegado = TIPO_OCULOS_LEGADO;
-    var montado = montarCadastro(base);
-    // Legado sem classificação continua sem classificação até a pessoa mexer na caixa.
-    if (ehOculos(montado.corpo.tipo) && oculosSemClassificacao(o) && base.oculosComGrauTocado !== true) delete montado.corpo.oculosComGrau;
-    // Material legado sem prazo ou sem classificação continua editável sem
+    // Classificação intocada (inclusive o legado): nada dela vai, e a caixa do grau
+    // segue a regra do registro. Tocada: o bloco V2 completo é exigido e vai inteiro.
+    var intocada = classificacaoIntocada(base, o);
+    var montado = montarCadastro(base, { semClassificacao: intocada, oculos: intocada ? oculosDoMaterial(o) : undefined });
+    // Óculos sem a informação (antes dela existir) continuam sem até a pessoa mexer na caixa.
+    if (hasOwn(montado.corpo, 'oculosComGrau') && oculosSemClassificacao(o) && base.oculosComGrauTocado !== true) delete montado.corpo.oculosComGrau;
+    // Material legado sem prazo ou sem controle de tamanho continua editável sem
     // preencher esses campos; o que já existe nunca pode ser apagado.
     var erros = montado.erros.filter(function (e) {
       if (e.campo === 'prazo' && !texto(base.prazo) && valorOriginal('prazoUsoDias', o.prazoUsoDias) === null) return false;
       if (e.campo === 'controleTamanho' && !texto(base.controleTamanho) && valorOriginal('exigeTamanho', o.exigeTamanho) === null) return false;
-      if (e.campo === 'tipo' && !texto(base.tipo) && valorOriginal('tipo', o.tipo) === null) return false;
       return true;
     });
     if (!texto(base.estoqueMinimo) && !erros.some(function (e) { return e.campo === 'estoqueMinimo'; })) {
@@ -515,6 +665,11 @@
       var novo = hasOwn(montado.corpo, campo) ? montado.corpo[campo] : null;
       if (novo !== valorOriginal(campo, o[campo])) corpo[campo] = novo;
     });
+    if (!intocada) {
+      ['categoria', 'categoriaDescricao', 'grupoProtecao', 'grupoProtecaoDescricao', 'tipoMaterialId', 'tipo', 'tipoDescricao'].forEach(function (campo) {
+        if (hasOwn(montado.corpo, campo)) corpo[campo] = montado.corpo[campo];
+      });
+    }
     // Grade (12G-8): vai só quando muda; [] apaga, inclusive ao passar a tamanho único.
     var gradeNova = montado.corpo.tamanhos || [];
     var gradeOriginal = Array.isArray(o.tamanhos) ? o.tamanhos : [];
@@ -560,14 +715,23 @@
     INTEGER_MAXIMO: INTEGER_MAXIMO,
     FATORES_PRAZO: FATORES_PRAZO,
     TAMANHOS_GRADE: TAMANHOS_GRADE,
-    CATEGORIAS: CATEGORIAS,
-    TIPOS: TIPOS,
+    GRUPOS: GRUPOS,
+    GRUPOS_CATALOGO: GRUPOS_CATALOGO,
+    GRUPOS_PROTECAO: GRUPOS_PROTECAO,
+    PROTECAO_OCULAR: PROTECAO_OCULAR,
     TIPO_OCULOS: TIPO_OCULOS,
     OUTROS: OUTROS,
-    TIPOS_POR_CATEGORIA: TIPOS_POR_CATEGORIA,
     TIPOS_OCULOS: TIPOS_OCULOS,
     TIPO_OCULOS_LEGADO: TIPO_OCULOS_LEGADO,
-    tiposDe: tiposDe,
+    tiposDoCatalogo: tiposDoCatalogo,
+    estadoClassificacao: estadoClassificacao,
+    classificacaoIntocada: classificacaoIntocada,
+    oculosAplicavel: oculosAplicavel,
+    oculosDoMaterial: oculosDoMaterial,
+    rotuloClassificacao: rotuloClassificacao,
+    grupoEfetivo: grupoEfetivo,
+    grupoProtecaoEfetivo: grupoProtecaoEfetivo,
+    tipoEfetivo: tipoEfetivo,
     UNIDADES: UNIDADES,
     CONTROLES_TAMANHO: CONTROLES_TAMANHO,
     MOTIVOS_BAIXA: MOTIVOS_BAIXA,
@@ -714,10 +878,27 @@
     SEM_VISUALIZAR: 'Seu perfil não pode consultar o estoque nesta empresa.',
     NAO_ENCONTRADO: 'Material não encontrado nesta empresa.',
     CODIGO_DUPLICADO: 'Já existe um material com este código interno nesta empresa. Use outro código ou deixe em branco.',
-    TIPO_FORA_DA_CATEGORIA: 'O tipo escolhido não pertence à categoria do material. Escolha um tipo da lista da categoria.',
-    TIPO_DESCRICAO_OBRIGATORIA: 'Com o tipo "Outros", descreva o tipo em "Descrição do tipo".',
-    TIPO_DESCRICAO_NAO_SE_APLICA: 'A descrição do tipo só vale para o tipo "Outros".',
-    TIPO_DESCRICAO_INVALIDA: 'Descrição do tipo inválida: até 100 caracteres, sem caracteres de controle.',
+    // Classificação V2 (mesmos códigos do servidor, em body.<campo>).
+    GRUPO_OBRIGATORIO: 'Selecione o grupo do material.',
+    GRUPO_INVALIDO: 'Grupo inválido: use EPI, Vestimenta ou Outros.',
+    CATEGORIA_DESCRICAO_OBRIGATORIA: 'Com o grupo "Outros", especifique o grupo.',
+    CATEGORIA_DESCRICAO_INVALIDA: 'Especificação do grupo inválida: até 100 caracteres, sem caracteres de controle.',
+    CATEGORIA_DESCRICAO_NAO_SE_APLICA: 'A especificação do grupo só vale para o grupo "Outros".',
+    GRUPO_PROTECAO_OBRIGATORIO: 'Selecione o grupo de proteção.',
+    GRUPO_PROTECAO_INVALIDO: 'Grupo de proteção inválido.',
+    GRUPO_PROTECAO_NAO_SE_APLICA: 'O grupo de proteção não se aplica ao grupo "Outros".',
+    GRUPO_PROTECAO_DESCRICAO_OBRIGATORIA: 'Com o grupo de proteção "Outros", especifique o grupo de proteção.',
+    GRUPO_PROTECAO_DESCRICAO_INVALIDA: 'Especificação do grupo de proteção inválida: até 100 caracteres, sem caracteres de controle.',
+    GRUPO_PROTECAO_DESCRICAO_NAO_SE_APLICA: 'A especificação do grupo de proteção só vale para "Outros".',
+    TIPO_OBRIGATORIO: 'Selecione o tipo no catálogo ou "Outros".',
+    TIPO_NAO_SE_APLICA: 'O nome do tipo vem do catálogo: escolha o tipo na lista.',
+    TIPO_MATERIAL_NAO_SE_APLICA: 'Com grupo ou grupo de proteção "Outros", o tipo é "Outros" com a especificação.',
+    TIPO_MATERIAL_NAO_ENCONTRADO: 'Tipo não encontrado no catálogo desta empresa. Escolha a proteção de novo para atualizar a lista.',
+    TIPO_MATERIAL_INCOMPATIVEL: 'O tipo escolhido não pertence a este grupo e grupo de proteção.',
+    TIPO_MATERIAL_INATIVO: 'O tipo escolhido está inativo no catálogo: escolha um tipo ativo.',
+    TIPO_DESCRICAO_OBRIGATORIA: 'Com o tipo "Outros", especifique o tipo.',
+    TIPO_DESCRICAO_NAO_SE_APLICA: 'A especificação do tipo só vale para o tipo "Outros".',
+    TIPO_DESCRICAO_INVALIDA: 'Especificação do tipo inválida: até 100 caracteres, sem caracteres de controle.',
     CADASTRO_GENERICO: 'Não foi possível cadastrar o material. Tente novamente.',
     ENTRADA_GENERICO: 'não foi possível registrar a entrada de estoque.',
     BAIXA_GENERICO: 'não foi possível registrar a baixa de estoque.',
@@ -789,12 +970,17 @@
     return null;
   }
 
-  /** Recusa de Categoria → Tipo ou da descrição de "Outros" (12G-8); null quando não é o caso. */
+  var CODIGOS_CLASSIFICACAO = [
+    'GRUPO_OBRIGATORIO', 'GRUPO_INVALIDO', 'CATEGORIA_DESCRICAO_OBRIGATORIA', 'CATEGORIA_DESCRICAO_INVALIDA', 'CATEGORIA_DESCRICAO_NAO_SE_APLICA',
+    'GRUPO_PROTECAO_OBRIGATORIO', 'GRUPO_PROTECAO_INVALIDO', 'GRUPO_PROTECAO_NAO_SE_APLICA', 'GRUPO_PROTECAO_DESCRICAO_OBRIGATORIA',
+    'GRUPO_PROTECAO_DESCRICAO_INVALIDA', 'GRUPO_PROTECAO_DESCRICAO_NAO_SE_APLICA', 'TIPO_OBRIGATORIO', 'TIPO_NAO_SE_APLICA', 'TIPO_MATERIAL_NAO_SE_APLICA',
+    'TIPO_MATERIAL_NAO_ENCONTRADO', 'TIPO_MATERIAL_INCOMPATIVEL', 'TIPO_MATERIAL_INATIVO', 'TIPO_DESCRICAO_OBRIGATORIA', 'TIPO_DESCRICAO_NAO_SE_APLICA',
+    'TIPO_DESCRICAO_INVALIDA',
+  ];
+
+  /** Recusa da classificação (grupo, grupo de proteção, tipo ou especificação de "Outros"), no cadastro ou na edição; null quando não é o caso. */
   function erroClassificacao(r) {
-    if (temDetalhe(r, 'TIPO_FORA_DA_CATEGORIA')) return MSG.TIPO_FORA_DA_CATEGORIA;
-    if (temDetalhe(r, 'TIPO_DESCRICAO_OBRIGATORIA')) return MSG.TIPO_DESCRICAO_OBRIGATORIA;
-    if (temDetalhe(r, 'TIPO_DESCRICAO_NAO_SE_APLICA')) return MSG.TIPO_DESCRICAO_NAO_SE_APLICA;
-    if (temDetalhe(r, 'TIPO_DESCRICAO_INVALIDA')) return MSG.TIPO_DESCRICAO_INVALIDA;
+    for (var i = 0; i < CODIGOS_CLASSIFICACAO.length; i += 1) if (temDetalhe(r, CODIGOS_CLASSIFICACAO[i])) return MSG[CODIGOS_CLASSIFICACAO[i]];
     return null;
   }
 
@@ -867,8 +1053,17 @@
     if (r.codigo === 'MATERIAL_TAMANHO_GRADE_INCOMPATIVEL') return MSG.GRADE_INCOMPATIVEL;
     if (erroGrade(r)) return erroGrade(r);
     if (erroOculos(r)) return erroOculos(r);
+    if (erroClassificacao(r)) return erroClassificacao(r);
     if (r.status === 400) return 'Dados recusados pelo servidor.' + camposDe(r);
     return MSG.EDICAO_GENERICO;
+  }
+
+  /** GET /tipos-material para o seletor de tipo do material; o cadastro continua possível com "Outros". */
+  function erroCatalogo(r) {
+    if (ehRede(r)) return 'Falha de rede ao consultar o catálogo de tipos. Verifique a conexão e escolha o grupo de proteção de novo.';
+    if (r.status === 401) return MSG.SESSAO;
+    if (r.status === 403) return 'Seu perfil não pode consultar o catálogo de tipos nesta empresa.';
+    return 'Não foi possível consultar o catálogo de tipos. Escolha o grupo de proteção de novo para tentar outra vez.';
   }
 
   /** GET /materiais/:id ao entrar no modo edição. */
@@ -934,7 +1129,7 @@
   var mensagens = {
     avisoMotivoBaixa: avisoMotivoBaixa,
     exigeNovoLogin: exigeNovoLogin, confirmado: confirmado, erroCadastro: erroCadastro, erroEntrada: erroEntrada, erroBaixa: erroBaixa,
-    erroEstoque: erroEstoque, erroEdicao: erroEdicao, erroCarregarEdicao: erroCarregarEdicao, resultado: resultado,
+    erroEstoque: erroEstoque, erroEdicao: erroEdicao, erroCarregarEdicao: erroCarregarEdicao, erroCatalogo: erroCatalogo, resultado: resultado,
     resultadoEntrada: resultadoEntrada, resultadoBaixa: resultadoBaixa, MSG: MSG,
   };
 
@@ -955,16 +1150,28 @@
       + (lista || []).map(function (t) { return '<option value="' + escaparHtml(t) + '">' + escaparHtml(t) + '</option>'; }).join('');
   }
 
-  /** Opções do seletor de tipo: placeholder, a lista da categoria e, se houver, a opção legada do registro aberto. Tudo escapado. */
-  function opcoesTipos(categoria, extra) {
-    var html = '<option value="">Selecione</option>' + tiposDe(categoria).map(function (t) {
-      return '<option value="' + escaparHtml(t) + '">' + escaparHtml(t) + '</option>';
+  /** Opções do grupo de proteção: placeholder, os doze grupos e "Outros". Nada é escolhido sozinho. */
+  function opcoesProtecao() {
+    return '<option value="">Selecione</option>' + GRUPOS_PROTECAO.concat([OUTROS]).map(function (p) {
+      return '<option value="' + escaparHtml(p) + '">' + escaparHtml(p) + '</option>';
     }).join('');
+  }
+
+  /**
+   * Opções do tipo: placeholder, os tipos ATIVOS recebidos (valor = id do
+   * catálogo), "Outros" e, se houver, a opção temporária do registro aberto
+   * (tipo legado ou tipo inativado). `tipos` null = ainda sem grupo de proteção:
+   * só o placeholder (nem "Outros"). Tudo escapado.
+   */
+  function opcoesTipos(tipos, extra) {
+    var html = '<option value="">Selecione</option>' + (tipos === null ? '' : (tipos || []).map(function (t) {
+      return '<option value="' + escaparHtml(t.id) + '">' + escaparHtml(t.nome) + '</option>';
+    }).join('') + '<option value="' + escaparHtml(OUTROS) + '">' + escaparHtml(OUTROS) + '</option>');
     if (extra && extra.valor) html += '<option value="' + escaparHtml(extra.valor) + '">' + escaparHtml(extra.rotulo) + '</option>';
     return html;
   }
 
-  var render = { escaparHtml: escaparHtml, opcoesMateriais: opcoesMateriais, opcoesTamanhos: opcoesTamanhos, opcoesTipos: opcoesTipos };
+  var render = { escaparHtml: escaparHtml, opcoesMateriais: opcoesMateriais, opcoesTamanhos: opcoesTamanhos, opcoesProtecao: opcoesProtecao, opcoesTipos: opcoesTipos };
 
   // ───────────────────────────────────────────────────────────────────
   // Fluxo

@@ -32,7 +32,7 @@ const { HttpError } = require('../../src/errors/HttpError');
 // administrativas no catálogo. 004/006 entram por causa de `funcionarios`
 // (FK de grupos_acesso não depende disso, mas a 020 exige 005/006 na
 // ordem histórica); 022 pelas exceções individuais de recurso.
-const MIGRATIONS = ['000', '001', '002', '003', '004', '005', '006', '009', '010', '011', '012', '013', '014', '016', '017', '018', '019', '020', '021', '022', '023', '024'];
+const MIGRATIONS = ['000', '001', '002', '003', '004', '005', '006', '009', '010', '011', '012', '013', '014', '016', '017', '018', '019', '020', '021', '022', '023', '024', '079'];
 
 const HASH = '$argon2id$v=19$m=65536,t=3,p=1$c2ludGV0aWNv$aGFzaGZha2VzaW50ZXRpY28';
 

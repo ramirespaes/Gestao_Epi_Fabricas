@@ -52,8 +52,8 @@ const COM_MENU_COMPLETO = fs.readdirSync(path.join(RAIZ, 'pages')).filter((f) =>
 // Parte F: Novo Usuário e Administração de Usuários deixaram de ser protótipo.
 // Bloco 10 (10G): a Ficha de EPI passou a ser integrada.
 // Bloco 12 (12G-1): Pedido de EPI, Aprovação da Segurança do Trabalho e Entregas por solicitação.
-const INTEGRADAS = ['available-items.html', 'config.html', 'dashboard.html', 'employee-groups.html', 'employee-history.html', 'epi-ficha.html', 'gestao-usuarios.html', 'import-employees.html', 'materials.html', 'operations.html',
-  'request.html', 'stock-requests.html', 'stock-validity.html', 'supervisor-approval.html'];
+const INTEGRADAS = ['available-items.html', 'config.html', 'dashboard.html', 'delivered-items.html', 'employee-groups.html', 'employee-history.html', 'epi-ficha.html', 'funcionarios.html', 'gestao-usuarios.html', 'import-employees.html', 'materials.html', 'operations.html',
+  'reports.html', 'request.html', 'stock-requests.html', 'stock-validity.html', 'supervisor-approval.html'];
 
 /** Seções do menu lateral: [{ nome, itens: [{ rotulo, html }] }]. */
 function secoesDoMenu(html) {
@@ -70,7 +70,7 @@ const secao = (html, nome) => secoesDoMenu(html).find((s) => s.nome === nome);
 
 describe('menu: Operações de estoque em ESTOQUE, na mesma ordem em todas as páginas', () => {
   test('as 24 páginas com menu completo: Visão geral só com Dashboard e Relatórios; Estoque na ordem aprovada', () => {
-    assert.equal(COM_MENU_COMPLETO.length, 22);
+    assert.equal(COM_MENU_COMPLETO.length, 23);
     for (const arquivo of COM_MENU_COMPLETO) {
       const html = ler(`pages/${arquivo}`);
       assert.deepEqual(secao(html, 'Visão geral').itens.map((i) => i.rotulo), VISAO_GERAL, arquivo);
@@ -109,7 +109,7 @@ describe('menu: Operações de estoque em ESTOQUE, na mesma ordem em todas as p�
   test('Portal: os módulos integrados na ordem do menu', () => {
     const inicio = ler('portal/inicio.html');
     const paginas = [...inicio.matchAll(/<a href="\.\.\/pages\/[^"]+" data-pagina="([^"]+)" style="display:none">/g)].map((m) => m[1]);
-    assert.deepEqual(paginas, ['dashboard', 'materials', 'stockValidity', 'availableItems', 'operations', 'employeeGroups', 'epiFicha', 'employeeHistory',
+    assert.deepEqual(paginas, ['dashboard', 'reports', 'materials', 'stockValidity', 'availableItems', 'operations', 'employeeGroups', 'deliveredItems', 'epiFicha', 'funcionarios', 'employeeHistory',
       'request', 'supervisorApproval', 'stockRequests',
       'grupos-acesso', 'grupo-permissoes', 'grupo-usuarios', 'autorizacoes-individuais', 'importEmployees', 'newUser', 'userAdmin', 'config']);
     assert.match(inicio, /<a href="\.\.\/pages\/epi-ficha\.html" data-pagina="epiFicha" style="display:none">Ficha de EPI<\/a>/);
@@ -179,8 +179,8 @@ describe('tema claro e escuro automático', () => {
     assert.equal((codigo.match(/(setItem|getItem|removeItem)\(CHAVE_CACHE/g) || []).length, 3);
   });
 
-  test('as 14 páginas integradas carregam o tema no <head>, logo depois do CSS, antes de pintar', () => {
-    assert.equal(PAGINAS_INTEGRADAS.length, 14);
+  test('as 17 páginas integradas carregam o tema no <head>, logo depois do CSS, antes de pintar', () => {
+    assert.equal(PAGINAS_INTEGRADAS.length, 17);
     for (const arquivo of PAGINAS_INTEGRADAS) {
       const head = ler(`pages/${arquivo}`).split('</head>')[0];
       assert.match(head, /<link rel="stylesheet" href="\.\.\/css\/main\.css">\s*<script src="\.\.\/js\/tema\.js"><\/script>/, arquivo);

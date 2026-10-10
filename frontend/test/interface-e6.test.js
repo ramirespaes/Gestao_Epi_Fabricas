@@ -41,7 +41,7 @@ describe('nomes: Gestão de estoque e Análise de estoque', () => {
       assert.ok(estoque.length >= 1 && estoque.every((r) => r === 'Gestão de estoque'), `${arquivo}: ${JSON.stringify(estoque)}`);
       assert.ok(analise.length >= 1 && analise.every((r) => r === 'Análise de estoque'), `${arquivo}: ${JSON.stringify(analise)}`);
     }
-    assert.equal(PAGINAS.length - MENU_ADMINISTRATIVO.length, 22);
+    assert.equal(PAGINAS.length - MENU_ADMINISTRATIVO.length, 23);
   });
 
   test('título e cabeçalho das duas páginas', () => {
@@ -144,8 +144,12 @@ describe('segurança: innerHTML só com texto fixo ou HTML escapado', () => {
     /^''$/,
     /^'<div class="notice" style="' \+ cor \+ '">' \+ render\.escaparHtml\(texto\) \+ '<\/div>'$/,
     /^render\.opcoesTamanhos\(lista\)$/,
-    // 12G-8: tipos da categoria, pelo render escapado de js/materiais.js.
-    /^render\.opcoesTipos\(categoria, extra\)$/,
+    // Classificação V2: tipos do catálogo e grupos de proteção, pelo render escapado de js/materiais.js.
+    /^render\.opcoesTipos\(tipos, extra\)$/,
+    /^render\.opcoesProtecao\(\)$/,
+    // Catálogo de tipos (js/tipos-material.js): linhas e opções pelo render escapado do módulo.
+    /^Tipos\.render\.linhas\(tipos, podeEditarTipos\)$/,
+    /^Tipos\.render\.opcoes\(Tipos\.VOCABULARIO\.gruposProtecao, '(Todos|Selecione)'\)$/,
     /^'<span class="material-symbols-outlined">save<\/span>' \+ t\.salvar$/,
     /^\$\(id\)\.innerHTML \+ '<option value="' \+ render\.escaparHtml\(extra\.valor\) \+ '">' \+ render\.escaparHtml\(extra\.rotulo\) \+ '<\/option>'$/,
     /^OPCOES_ORIGINAIS\[id\]$/,

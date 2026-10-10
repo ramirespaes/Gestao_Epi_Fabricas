@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cadastro de Colaboradores — Gestão de EPIs</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+  <link rel="stylesheet" href="../css/main.css">
+  <script src="../js/tema.js"></script>
+  <style>
+    /* Itens do menu ainda não integrados ao backend (sem link) */
+    .nav a.nav-pendente{cursor:default;opacity:.55}
+    .nav a.nav-pendente:hover{background:transparent}
+
+    /* Visual do protótipo aprovado (funcionarios.html), restrito ao contêiner .fn para não vazar para a moldura (css/main.css):
+       os tokens ficam no contêiner (nunca em :root) e o tema segue o data-theme que js/tema.js liga no <html>. */
+    .fn{
+      --primary:#007AFF; --brand:#1a3a6b;
+      --bg:#f2f2f7; --surface:#ffffff; --surface-2:#f7f7fa;
+      --on:#1c1c1e; --on-var:#6d6d72; --outline:#d1d1d6;
+      --error:#ff3b30; --success:#34c759;
+      --on-surface-variant:#6d6d72;
+      font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Arial,sans-serif;
+      color:var(--on);max-width:1100px;margin:0 auto;
+    }
+    html[data-theme="dark"] .fn{
+      --bg:#000; --surface:#1c1c1e; --surface-2:#2c2c2e; --on:#fff; --on-var:#aeaeb2; --outline:#38383a;
+      --on-surface-variant:#aeaeb2;
+    }
+    .fn *{box-sizing:border-box;margin:0;padding:0}
+    .fn .material-symbols-outlined{font-family:'Material Symbols Outlined';font-weight:normal;font-style:normal;
+         font-size:20px;line-height:1;display:inline-block;vertical-align:middle;user-select:none}
+
+    .fn #estadoPagina{margin-bottom:18px;padding:14px 16px;border-radius:14px;background:var(--surface);border:.5px solid var(--outline);font-size:13px}
+    .fn .page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+    .fn .page-head h1{font-size:24px;font-weight:600;letter-spacing:-.4px}
+    .fn .page-head p{font-size:13px;color:var(--on-var);margin-top:4px}
+
+    .fn .card{background:var(--surface);border:.5px solid var(--outline);border-radius:20px;padding:18px}
+    .fn .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+    .fn .search{position:relative;flex:1;min-width:220px}
+    .fn .search .material-symbols-outlined{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--on-var)}
+    .fn .search input{padding-left:40px}
+    .fn .toolbar select{width:auto;min-width:160px;max-width:100%}
+    .fn .cpf-campo{position:relative}
+    .fn .cpf-campo .input{padding-right:44px}
+    .fn .cpf-olho{position:absolute;right:6px;top:50%;transform:translateY(-50%);display:flex;align-items:center;justify-content:center;
+         width:32px;height:32px;background:none;border:none;border-radius:8px;color:var(--on-var);cursor:pointer}
+    .fn .cpf-olho:hover{background:var(--surface-2)}
+    .fn .cpf-olho:focus-visible{outline:2px solid var(--primary);outline-offset:1px}
+
+    .fn .input,.fn select{width:100%;height:44px;padding:0 12px;border:1px solid var(--outline);border-radius:12px;
+         background:var(--surface);color:var(--on);font:inherit;font-size:14px;outline:none;transition:.15s}
+    .fn .input:focus,.fn select:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(0,122,255,.18)}
+    .fn .input.invalid{border-color:var(--error);box-shadow:0 0 0 3px rgba(255,59,48,.15)}
+    .fn .input:disabled{opacity:.7;cursor:not-allowed;background:var(--surface);color:var(--on)}
+
+    .fn .btn{display:inline-flex;align-items:center;gap:6px;height:44px;padding:0 16px;border-radius:12px;
+         font:inherit;font-size:14px;font-weight:500;cursor:pointer;border:1px solid transparent;transition:.15s;white-space:nowrap;text-decoration:none}
+    .fn .btn-filled{background:var(--primary);color:#fff}
+    .fn .btn-filled:hover{background:#0062cc}
+    .fn .btn-outlined{background:transparent;color:var(--on);border-color:var(--outline)}
+    .fn .btn-outlined:hover{background:var(--surface-2)}
+    .fn .btn-sm{height:34px;padding:0 12px;font-size:13px;border-radius:10px}
+    .fn .btn:disabled{opacity:.6;cursor:not-allowed;filter:grayscale(1)}
+    .fn .acoes{display:flex;gap:6px;flex-wrap:wrap}
+
+    /* Responsividade: a tabela cabe na coluna e quebra linha; sem largura mínima de desktop. Só no celular ela pode passar do
+       cartão (min-width abaixo), e aí a rolagem horizontal é a do .table-wrap, nunca a do documento. */
+    .fn .table-wrap{overflow-x:auto;max-width:100%;border:.5px solid var(--outline);border-radius:14px;background:none}
+    .fn table{width:100%;border-collapse:collapse;font-size:13px;min-width:0} /* anula o table{min-width:720px} do main.css */
+    .fn thead th{background:var(--brand);color:#fff;text-align:left;font-weight:600;font-size:12px;padding:11px 12px;white-space:normal;
+         text-transform:none;letter-spacing:normal}
+    .fn tbody td{padding:11px 12px;border-top:.5px solid var(--outline);vertical-align:middle;font-size:inherit;overflow-wrap:break-word}
+    .fn tbody tr:nth-child(even){background:var(--surface-2)}
+    .fn tbody tr:hover{background:rgba(0,122,255,.06)}
+    .fn td.name{font-weight:600}
+    .fn .badge{display:inline-flex;align-items:center;gap:0;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:600;
+         background:rgba(0,122,255,.12);color:var(--primary);white-space:normal}
+    .fn .badge.situacao-ATIVO{background:rgba(52,199,89,.15);color:#1a7a35}
+    .fn .badge.situacao-AFASTADO{background:rgba(255,149,0,.16);color:#b86a00}
+    .fn .badge.situacao-INATIVO{background:rgba(142,142,147,.2);color:var(--on-var)}
+    html[data-theme="dark"] .fn .badge.situacao-ATIVO{color:var(--success)}
+    html[data-theme="dark"] .fn .badge.situacao-AFASTADO{color:#ffb340}
+    .fn .empty{padding:36px 12px;text-align:center;color:var(--on-var);font-size:13px}
+    .fn .count{font-size:12px;color:var(--on-var);margin-top:10px}
+
+    /* Modais */
+    .fn .overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);backdrop-filter:blur(3px);display:none;
+         align-items:center;justify-content:center;padding:16px;z-index:100}
+    .fn .overlay.open{display:flex}
+    .fn .modal{background:var(--surface);border-radius:24px;width:100%;max-width:640px;max-height:92vh;
+         display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+    .fn .modal.pequeno{max-width:440px}
+    .fn .modal-head{display:flex;align-items:center;gap:12px;padding:18px 20px;border-bottom:.5px solid var(--outline)}
+    .fn .modal-ico{width:40px;height:40px;border-radius:12px;background:rgba(0,122,255,.12);color:var(--primary);
+         display:flex;align-items:center;justify-content:center;flex-shrink:0}
+    .fn .modal-head h2{font-size:17px;font-weight:600}
+    .fn .modal-head p{font-size:12px;color:var(--on-var);margin-top:2px}
+    .fn .modal-close{margin-left:auto;background:none;border:none;color:var(--on-var);cursor:pointer;padding:4px;border-radius:8px;
+         width:auto;height:auto;font:inherit}
+    .fn .modal-close:hover{background:var(--surface-2)}
+    .fn .modal-body{padding:18px 20px;overflow-y:auto}
+    .fn .modal-body p.texto{font-size:14px;line-height:1.5}
+    .fn .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .fn .field{display:flex;flex-direction:column;gap:5px}
+    .fn .field.full{grid-column:1/-1}
+    .fn .field label{font-size:12px;font-weight:500;color:var(--on-var);letter-spacing:normal}
+    .fn .field label b{color:var(--error)}
+    .fn .err{font-size:11px;color:var(--error)}
+    .fn .modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:14px 20px;border-top:.5px solid var(--outline);flex-wrap:wrap}
+
+    /* Toast */
+    .fn #toasts{position:fixed;bottom:20px;right:20px;display:flex;flex-direction:column;gap:8px;z-index:200}
+    .fn .toast{display:flex;align-items:center;gap:8px;padding:12px 16px;border-radius:14px;color:#fff;font-size:13px;
+         box-shadow:0 8px 24px rgba(0,0,0,.25);animation:up .25s ease}
+    .fn .toast.ok{background:#1f9d4a} .fn .toast.err{background:#d92d20} .fn .toast.info{background:var(--primary)}
+    @keyframes up{from{transform:translateY(14px);opacity:0}to{transform:none;opacity:1}}
+
+    /* Com a barra lateral fixa (desktop), o fundo dos modais começa ao lado dela. */
+    @media (min-width:1025px){
+      .fn .overlay{left:260px}
+    }
+    /* Janela dividida (640–900 px): a tabela inteira, com a coluna Ação visível, sem rolagem — só padding das células e dos
+       botões diminui; fonte, colunas e botões empilhados ficam. O piso de largura existe só no celular (≤600), onde a
+       rolagem dentro do .table-wrap é aceita. */
+    @media (max-width:900px){
+      .fn thead th,.fn tbody td{padding:10px 8px}
+      .fn .btn-sm{padding:0 10px}
+    }
+    @media (max-width:720px){
+      .fn thead th,.fn tbody td{padding:8px 5px}
+      .fn .btn-sm{padding:0 8px}
+      .fn .badge{padding:2px 6px}
+    }
+    @media (max-width:600px){
+      .fn table{min-width:560px}
+      .fn .grid{grid-template-columns:1fr}
+      .fn .page-head h1{font-size:20px}
+      .fn .modal{border-radius:20px}
+      .fn .toolbar select{width:100%}
+    }
+  </style>
+</head>
+<!--
+  Gestão de Funcionários (frontend operacional). Página ORIGINAL ligada à sessão empresarial real e às permissões efetivas
+  (employeeHistory.visualizar abre; criar libera "Novo colaborador"; editar libera edição, troca de GHE e situação), com os estados
+  padrão. Nome visual do módulo: "Cadastro de Colaboradores" (arquivo, chave `funcionarios` e recurso employeeHistory não mudam),
+  padrão de js/estado-pagina.js. Visual do protótipo aprovado; a tela vive em js/gestao-funcionarios.js sobre as rotas /funcionarios.
+  Dentro da moldura padrão (barra lateral e topbar do celular de css/main.css); o miolo aprovado vive sob o contêiner .fn.
+  Nada vai para armazenamento do navegador.
+-->
+<body>
+
+<!-- Verificação da sessão: usa a sessão empresarial criada pelo Portal do Cliente, confirmada no servidor por js/sessao-empresarial.js. -->
+<div id="telaSessao" style="position:fixed;inset:0;z-index:10000;background:var(--surface);
+     display:flex;align-items:center;justify-content:center;padding:20px">
+  <div style="width:100%;max-width:400px;text-align:center">
+    <div style="width:64px;height:64px;border-radius:20px;background:#1a3a6b;
+                display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
+      <span class="material-symbols-outlined" style="font-size:32px;color:#fff">safety_check</span>
+    </div>
+    <h1 style="font-size:20px;font-weight:700;margin:0">Gestão de EPIs</h1>
+    <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">SafeWork Engenharia</p>
+    <p id="telaSessaoMensagem" role="status" aria-live="polite" style="font-size:13px;color:var(--on-surface-variant);margin-top:8px">Verificando sua sessão…</p>
+    <a id="telaSessaoPortal" href="../portal/index.html" class="filled-btn" style="display:none;margin-top:16px">
+      <span class="material-symbols-outlined">login</span>Ir para o Portal do Cliente
+    </a>
+  </div>
+</div>
+
+<div class="mobile-overlay" id="menuFundo"></div>
+<div class="mobile-topbar">
+    <div class="mobile-topbar-icon">safety_check</div>
+    <span class="mobile-topbar-title">Gestão de EPIs</span>
+  </div>
+  <button class="mobile-global-menu" id="menuCelular" type="button" aria-label="Abrir menu">
+    <svg width="20" height="14" viewBox="0 0 20 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <line x1="0" y1="1"  x2="20" y2="1"  stroke="#1C1C1E" stroke-width="1.8" stroke-linecap="round"/>
+      <line x1="0" y1="7"  x2="20" y2="7"  stroke="#1C1C1E" stroke-width="1.8" stroke-linecap="round"/>
+      <line x1="0" y1="13" x2="20" y2="13" stroke="#1C1C1E" stroke-width="1.8" stroke-linecap="round"/>
+    </svg>
+  </button>
+  <div class="layout">
+<aside class="sidebar">
+      <div class="brand">
+        <div class="brand-left">
+          <div class="brand-badge">security</div>
+          <div>
+            <div class="brand-title">Gestão de EPIs</div>
+            <div class="brand-sub" style="font-size:11px;color:var(--on-surface-variant);margin-top:2px;">v1.0</div>
+          </div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <div class="nav-section">Visão geral</div>
+        <a href="dashboard.html" data-pagina="dashboard" style="display:none"><div class="nav-icon blue">dashboard</div>Dashboard</a>
+        <a href="reports.html" data-pagina="reports" style="display:none"><div class="nav-icon indigo">analytics</div>Relatórios</a>
+        <div class="nav-section">Estoque</div>
+        <a href="materials.html" data-pagina="materials" style="display:none"><div class="nav-icon teal">inventory_2</div>Gestão de estoque</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon orange">shopping_cart</div>Compras / Entradas<span class="nav-etiqueta">Em integração</span></a>
+        <a href="stock-validity.html" data-pagina="stockValidity" style="display:none"><div class="nav-icon red">event_busy</div>Validade de estoque</a>
+        <a href="available-items.html" data-pagina="availableItems" style="display:none"><div class="nav-icon green">checklist</div>Análise de estoque</a>
+        <a href="operations.html" data-pagina="operations" style="display:none"><div class="nav-icon gray">receipt_long</div>Operações de estoque</a>
+        <a href="employee-groups.html" data-pagina="employeeGroups" style="display:none"><div class="nav-icon purple">group_work</div>Gestão de GHE</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor<span class="nav-etiqueta">Em integração</span></a>
+        <div class="nav-section">Entregas</div>
+        <a href="delivered-items.html" data-pagina="deliveredItems" style="display:none"><div class="nav-icon green">inventory</div>EPIs Entregues</a>
+        <a href="epi-ficha.html" data-pagina="epiFicha" style="display:none"><div class="nav-icon brown">description</div>Ficha de EPI</a>
+        <a class="active" href="javascript:void(0)" data-pagina="funcionarios" style="display:none"><div class="nav-icon teal">people</div>Cadastro de Colaboradores</a>
+        <a href="employee-history.html" data-pagina="employeeHistory" style="display:none"><div class="nav-icon blue">history</div>Histórico de Funcionários</a>
+        <div class="nav-section">Solicitações</div>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">badge</div>Autoatendimento (Totem)<span class="nav-etiqueta">Em integração</span></a>
+        <a href="request.html" data-pagina="request" style="display:none"><div class="nav-icon blue">assignment</div>Pedido de EPI</a>
+        <a href="supervisor-approval.html" data-pagina="supervisorApproval" style="display:none"><div class="nav-icon orange">fact_check</div>Aprovação da Segurança do Trabalho</a>
+        <a href="stock-requests.html" data-pagina="stockRequests" style="display:none"><div class="nav-icon red">playlist_add_check_circle</div>Entregas por solicitação</a>
+        <div class="nav-section">Administração</div>
+        <a href="grupos-acesso.html" data-pagina="grupos-acesso" style="display:none"><div class="nav-icon indigo">groups</div>Grupos de Acesso</a>
+        <a href="grupo-permissoes.html" data-pagina="grupo-permissoes" style="display:none"><div class="nav-icon indigo">lock_person</div>Permissões do Grupo</a>
+        <a href="grupo-usuarios.html" data-pagina="grupo-usuarios" style="display:none"><div class="nav-icon indigo">group_add</div>Integrantes do Grupo</a>
+        <a href="autorizacoes-individuais.html" data-pagina="autorizacoes-individuais" style="display:none"><div class="nav-icon indigo">verified_user</div>Autorizações Individuais</a>
+        <a href="import-employees.html" data-pagina="importEmployees" style="display:none"><div class="nav-icon green">upload_file</div>Importar Funcionários</a>
+        <a href="new-user.html" data-pagina="newUser" style="display:none"><div class="nav-icon green">person_add</div>Novo Usuário</a>
+        <a href="user-admin.html" data-pagina="userAdmin" style="display:none"><div class="nav-icon indigo">group</div>Administração de Usuários</a>
+        <a href="gestao-usuarios.html" data-pagina="gestaoUsuarios" style="display:none"><div class="nav-icon indigo">manage_accounts</div>Gestão de Usuários</a>
+        <a href="config.html" data-pagina="config" style="display:none"><div class="nav-icon gray">settings</div>Configurações</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon teal">support_agent</div>Suporte<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">mark_email_read</div>Gestão de E-mails<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon indigo">privacy_tip</div>Privacidade / LGPD<span class="nav-etiqueta">Em integração</span></a>
+        <a href="../portal/inicio.html"><div class="nav-icon blue">home</div>Início</a>
+      </nav>
+    </aside>
+
+    <main class="content">
+<div class="fn">
+  <div id="estadoPagina" style="display:none"></div>
+
+  <div id="conteudoProtegido" style="display:none">
+    <div class="page-head">
+      <div>
+        <h1>Cadastro de Colaboradores</h1>
+        <p>Consulte e edite os dados cadastrais dos colaboradores.</p>
+      </div>
+      <button class="btn btn-filled" id="btnNovo" type="button">
+        <span class="material-symbols-outlined">person_add</span>Novo colaborador
+      </button>
+    </div>
+
+    <div class="card">
+      <div class="toolbar">
+        <div class="search">
+          <span class="material-symbols-outlined">search</span>
+          <input id="q" class="input" type="search" placeholder="Buscar por nome, matrícula, setor, cargo ou GHE">
+        </div>
+        <select id="fSituacaoFiltro" aria-label="Filtrar por situação">
+          <option value="">Todos</option>
+          <option value="ATIVO">Ativo</option>
+          <option value="AFASTADO">Afastado</option>
+          <option value="INATIVO">Inativo</option>
+        </select>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Nome</th><th>Matrícula</th><th>Setor</th><th>Cargo</th><th>GHE</th><th>Situação</th><th style="width:1%">Ação</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <div class="count" id="count"></div>
+    </div>
+
+    <!-- Modal de cadastro e edição -->
+    <div class="overlay" id="overlay">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+        <div class="modal-head">
+          <div class="modal-ico"><span class="material-symbols-outlined">badge</span></div>
+          <div>
+            <h2 id="mTitle">Novo colaborador</h2>
+            <p id="mSub">Preencha os dados e clique em Salvar.</p>
+          </div>
+          <button class="modal-close" id="btnFechar" type="button" aria-label="Fechar"><span class="material-symbols-outlined">close</span></button>
+        </div>
+
+        <div class="modal-body">
+          <div class="grid">
+            <div class="field full">
+              <label for="fNome">Nome <b>*</b></label>
+              <input id="fNome" class="input" type="text" placeholder="Nome completo" autocomplete="off">
+              <div class="err" id="eNome"></div>
+            </div>
+            <div class="field">
+              <label for="fCpf">CPF <b>*</b></label>
+              <div class="cpf-campo">
+                <input id="fCpf" class="input" type="text" inputmode="numeric" placeholder="000.000.000-00" maxlength="14" autocomplete="off">
+                <button id="btnCpfOlho" class="cpf-olho" type="button" aria-label="Mostrar CPF" aria-pressed="false" style="display:none"><span class="material-symbols-outlined">visibility</span></button>
+              </div>
+              <div class="err" id="eCpf"></div>
+            </div>
+            <div class="field">
+              <label for="fMatricula">Matrícula</label>
+              <input id="fMatricula" class="input" type="text" placeholder="Ex.: MAT-000171" autocomplete="off">
+              <div class="err" id="eMatricula"></div>
+            </div>
+            <div class="field">
+              <label for="fSetor">Setor <b>*</b></label>
+              <input id="fSetor" class="input" type="text" placeholder="Ex.: Manutenção" list="dlSetor" autocomplete="off">
+              <datalist id="dlSetor"></datalist>
+              <div class="err" id="eSetor"></div>
+            </div>
+            <div class="field">
+              <label for="fCargo">Cargo <b>*</b></label>
+              <input id="fCargo" class="input" type="text" placeholder="Ex.: Mecânico" list="dlCargo" autocomplete="off">
+              <datalist id="dlCargo"></datalist>
+              <div class="err" id="eCargo"></div>
+            </div>
+            <div class="field">
+              <label for="fGhe">GHE <b>*</b></label>
+              <select id="fGhe" class="input"><option value="">Selecione o GHE</option></select>
+              <div class="err" id="eGhe"></div>
+            </div>
+            <div class="field">
+              <label for="fTelefone">Telefone</label>
+              <input id="fTelefone" class="input" type="text" inputmode="tel" placeholder="(47) 99999-9999" maxlength="15" autocomplete="off">
+              <div class="err" id="eTelefone"></div>
+            </div>
+            <div class="field">
+              <label for="fNascimento">Data de nascimento</label>
+              <input id="fNascimento" class="input" type="date">
+              <div class="err" id="eNascimento"></div>
+            </div>
+            <div class="field">
+              <label for="fContratacao">Data de contratação <b>*</b></label>
+              <input id="fContratacao" class="input" type="date">
+              <div class="err" id="eContratacao"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-foot">
+          <button class="btn btn-outlined" id="btnCancelar" type="button">Cancelar</button>
+          <button class="btn btn-filled" id="btnSalvar" type="button">
+            <span class="material-symbols-outlined">save</span>Salvar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Confirmação de mudança de situação -->
+    <div class="overlay" id="confirmacaoSituacao">
+      <div class="modal pequeno" role="alertdialog" aria-modal="true" aria-labelledby="cTitulo" aria-describedby="cTexto">
+        <div class="modal-head">
+          <div class="modal-ico"><span class="material-symbols-outlined">help</span></div>
+          <div><h2 id="cTitulo">Confirmar</h2></div>
+        </div>
+        <div class="modal-body"><p class="texto" id="cTexto"></p></div>
+        <div class="modal-foot">
+          <button class="btn btn-outlined" id="cCancelar" type="button">Cancelar</button>
+          <button class="btn btn-filled" id="cConfirmar" type="button">Confirmar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="toasts"></div>
+</div>
+    </main>
+  </div>
+
+<script src="../js/api-http.js"></script>
+<script src="../portal/config.js"></script>
+<script src="../js/sessao-empresarial.js"></script>
+<script src="../js/permissoes-efetivas.js"></script>
+<script src="../js/pagina-base.js"></script>
+<script src="../js/estado-pagina.js"></script>
+<script src="../js/gestao-funcionarios.js"></script>
+<script>
+/*
+  Ligação com o DOM — deliberadamente fina. Sessão e permissões reais (js/estado-pagina.js); a tela, os contratos e as mensagens
+  vivem em js/gestao-funcionarios.js (testado sem navegador).
+*/
+(function () {
+  'use strict';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var tela = null;
+
+  // Menu lateral no celular (sem manipulador inline).
+  $('menuCelular').addEventListener('click', function () { EpiPaginaBase.toggleSidebar(); });
+  $('menuFundo').addEventListener('click', function () { EpiPaginaBase.closeMobileMenu(); });
+
+  // Mesmo endereço do Portal do Cliente (portal/config.js).
+  EpiHttp.configurar({ baseUrl: window.SAFEWORK_PORTAL_API_BASE_URL });
+
+  EpiEstadoPagina.montarPaginaProtegida({
+    pagina: 'funcionarios',
+    elementos: {
+      tela: $('telaSessao'),
+      mensagem: $('telaSessaoMensagem'),
+      linkPortal: $('telaSessaoPortal'),
+      conteudo: $('conteudoProtegido'),
+      estado: $('estadoPagina'),
+      links: document.querySelectorAll('.nav a[data-pagina]'),
+    },
+    aoEncerrar: function () { if (tela) tela.encerrar(); },
+  }).then(function (acesso) {
+    if (!acesso) return undefined;
+    tela = EpiGestaoFuncionarios.criarTela({
+      capacidades: EpiGestaoFuncionarios.capacidades(acesso.permissoes),
+      aoSessaoEncerrada: function () {
+        if (tela) tela.encerrar();
+        EpiEstadoPagina.sessaoEncerrada({ conteudo: $('conteudoProtegido'), estado: $('estadoPagina') });
+      },
+    });
+    return tela.iniciar();
+  });
+})();
+</script>
+</body>
+</html>

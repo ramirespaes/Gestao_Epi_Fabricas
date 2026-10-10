@@ -130,13 +130,13 @@ describe('migration 066 — estrutura logo após a sua aplicação', () => {
     assert.deepEqual(nomes.map((r) => r.table_name), ['solicitacoes_epi', 'solicitacoes_epi_itens', 'solicitacoes_epi_numeracao']);
   });
 
-  test('manifesto: entrada da 066 coerente com o arquivo; uma entrada por arquivo; 78 migrations', () => {
+  test('manifesto: entrada da 066 coerente com o arquivo; uma entrada por arquivo; 85 migrations', () => {
     exigirMigration066();
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO, 'checksums.json'), 'utf8'));
     const sha = crypto.createHash('sha256').update(fs.readFileSync(path.join(DIRETORIO, ARQUIVO_066))).digest('hex');
     assert.equal(manifesto.migrations[ARQUIVO_066], sha);
     const arquivos = fs.readdirSync(DIRETORIO).filter((n) => /^\d{3}_.*\.sql$/.test(n)).sort();
-    assert.equal(arquivos.length, 79);
+    assert.equal(arquivos.length, 85);
     assert.deepEqual(Object.keys(manifesto.migrations).sort(), arquivos);
   });
 });

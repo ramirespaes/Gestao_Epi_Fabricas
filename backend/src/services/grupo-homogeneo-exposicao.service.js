@@ -3,6 +3,7 @@
 const { HttpError } = require('../errors/HttpError');
 const gheRepo = require('../repositories/grupo-homogeneo-exposicao.repository');
 const auditoriaRepo = require('../repositories/auditoria.repository');
+const { normalizarCodigoGhe } = require('../utils/codigo-ghe');
 
 /**
  * Serviço de grupos homogêneos de exposição — GHE (Bloco 9, Etapa B).
@@ -27,9 +28,16 @@ const auditoriaRepo = require('../repositories/auditoria.repository');
  * texto exato — "Manutenção" e "manutenção" são nomes distintos para o
  * banco. Este serviço não acrescenta unicidade sem diferenciar maiúsculas
  * (exigiria índice funcional, isto é, migration nova — fora do escopo).
+ *
+ * Código do GHE (migration 083): obrigatório em GHE NOVO, opcional no legado (NULL), nunca removível depois
+ * de atribuído, mas corrigível; formato e normalização em utils/codigo-ghe.js. A unicidade por empresa é do
+ * índice uq_ghe_empresa_codigo, que também serializa as corridas; a violação é traduzida pelo NOME da
+ * constraint, e qualquer outro 23505 é relançado (nunca mascarado como conflito de nome ou de código).
  */
 
 const VIOLACAO_UNIQUE = '23505';
+const CONSTRAINT_NOME = 'uq_ghe_empresa_nome';
+const CONSTRAINT_CODIGO = 'uq_ghe_empresa_codigo';
 
 const ACAO_AUDITORIA_CRIACAO = 'GHE_CRIADO';
 const ACAO_AUDITORIA_ALTERACAO = 'GHE_ALTERADO';
@@ -38,6 +46,9 @@ const ACAO_AUDITORIA_REATIVACAO = 'GHE_REATIVADO';
 
 const MSG_NOME_INVALIDO = 'Nome de GHE inválido';
 const MSG_NOME_EM_USO = 'Já existe um GHE com este nome nesta empresa';
+const MSG_CODIGO_OBRIGATORIO = 'Informe o código do GHE';
+const MSG_CODIGO_INVALIDO = 'Código de GHE inválido. Use GHE- seguido de 3 a 6 dígitos';
+const MSG_CODIGO_EM_USO = 'Já existe um GHE com este código nesta empresa';
 const MSG_NAO_ENCONTRADO = 'GHE não encontrado';
 const MSG_SEM_ALTERACAO = 'Nenhum campo para alterar';
 const MSG_DADOS_INVALIDOS = 'Dados de GHE inválidos';
@@ -71,6 +82,25 @@ function normalizarTextoOpcional(valor, tamanhoMaximo = Infinity) {
   return aparado.length === 0 ? null : aparado;
 }
 
+/** Traduz a violação de unicidade pela constraint; qualquer outra é relançada como veio. */
+function traduzirViolacao(erro) {
+  if (erro.code === VIOLACAO_UNIQUE && erro.constraint === CONSTRAINT_CODIGO) {
+    return HttpError.conflict('GHE_CODIGO_EM_USO', MSG_CODIGO_EM_USO);
+  }
+  if (erro.code === VIOLACAO_UNIQUE && erro.constraint === CONSTRAINT_NOME) {
+    return HttpError.conflict('GHE_NOME_EM_USO', MSG_NOME_EM_USO);
+  }
+  return erro;
+}
+
+function exigirCodigoValido(codigo) {
+  const canonico = normalizarCodigoGhe(codigo);
+  if (canonico === null) {
+    throw HttpError.badRequest('GHE_CODIGO_INVALIDO', MSG_CODIGO_INVALIDO);
+  }
+  return canonico;
+}
+
 async function emTransacao(pool, operacao) {
   const client = await pool.connect();
   try {
@@ -89,11 +119,11 @@ async function emTransacao(pool, operacao) {
 }
 
 const instantaneo = (ghe) => ({
-  nome: ghe.nome, descricao: ghe.descricao, setor: ghe.setor, funcao: ghe.funcao, riscos: ghe.riscos, ativo: ghe.ativo,
+  nome: ghe.nome, codigo: ghe.codigo, descricao: ghe.descricao, setor: ghe.setor, funcao: ghe.funcao, riscos: ghe.riscos, ativo: ghe.ativo,
 });
 
 async function criar(pool, {
-  empresaId, atorId, nome, descricao = null, setor = null, funcao = null, riscos = null, ip = null, dispositivo = null,
+  empresaId, atorId, nome, codigo, descricao = null, setor = null, funcao = null, riscos = null, ip = null, dispositivo = null,
 }) {
   exigirId(empresaId, 'identificador de empresa');
   exigirId(atorId, 'identificador de ator');
@@ -107,6 +137,10 @@ async function criar(pool, {
   if (nomeNormalizado === null) {
     throw HttpError.badRequest('GHE_NOME_INVALIDO', MSG_NOME_INVALIDO);
   }
+  if (codigo === undefined) {
+    throw HttpError.badRequest('GHE_CODIGO_OBRIGATORIO', MSG_CODIGO_OBRIGATORIO);
+  }
+  const codigoNormalizado = exigirCodigoValido(codigo);
   if ([descricaoNormalizada, setorNormalizado, funcaoNormalizada, riscosNormalizados].includes(undefined)) {
     throw HttpError.badRequest('GHE_DADOS_INVALIDOS', MSG_DADOS_INVALIDOS);
   }
@@ -115,13 +149,10 @@ async function criar(pool, {
     let ghe;
     try {
       ghe = await gheRepo.criar(client, {
-        empresaId, nome: nomeNormalizado, descricao: descricaoNormalizada, setor: setorNormalizado, funcao: funcaoNormalizada, riscos: riscosNormalizados,
+        empresaId, nome: nomeNormalizado, codigo: codigoNormalizado, descricao: descricaoNormalizada, setor: setorNormalizado, funcao: funcaoNormalizada, riscos: riscosNormalizados,
       });
     } catch (erro) {
-      if (erro.code === VIOLACAO_UNIQUE) {
-        throw HttpError.conflict('GHE_NOME_EM_USO', MSG_NOME_EM_USO);
-      }
-      throw erro;
+      throw traduzirViolacao(erro);
     }
 
     await auditoriaRepo.registrar(client, {
@@ -157,7 +188,7 @@ async function listar(pool, { empresaId, ativo = null, busca = null, pagina = 1,
 
 async function alterar(pool, {
   empresaId, atorId, gheId,
-  nome, descricao, descricaoInformado = false, setor, setorInformado = false,
+  nome, codigo, descricao, descricaoInformado = false, setor, setorInformado = false,
   funcao, funcaoInformado = false, riscos, riscosInformado = false,
   ip = null, dispositivo = null,
 }) {
@@ -167,17 +198,20 @@ async function alterar(pool, {
 
   const alterarNome = nome !== undefined;
   const nomeNormalizado = alterarNome ? normalizarNome(nome) : null;
+  const alterarCodigo = codigo !== undefined;
   const descricaoNormalizada = descricaoInformado ? normalizarTextoOpcional(descricao) : null;
   const setorNormalizado = setorInformado ? normalizarTextoOpcional(setor, gheRepo.TAMANHO_MAXIMO_SETOR) : null;
   const funcaoNormalizada = funcaoInformado ? normalizarTextoOpcional(funcao, gheRepo.TAMANHO_MAXIMO_FUNCAO) : null;
   const riscosNormalizados = riscosInformado ? normalizarTextoOpcional(riscos) : null;
 
-  if (!alterarNome && !descricaoInformado && !setorInformado && !funcaoInformado && !riscosInformado) {
+  if (!alterarNome && !alterarCodigo && !descricaoInformado && !setorInformado && !funcaoInformado && !riscosInformado) {
     throw HttpError.badRequest('GHE_SEM_ALTERACAO', MSG_SEM_ALTERACAO);
   }
   if (alterarNome && nomeNormalizado === null) {
     throw HttpError.badRequest('GHE_NOME_INVALIDO', MSG_NOME_INVALIDO);
   }
+  // Código informado: sempre exige forma válida; nulo, vazio ou só espaços nunca passam (o código não se remove).
+  const codigoNormalizado = alterarCodigo ? exigirCodigoValido(codigo) : null;
   if ([descricaoNormalizada, setorNormalizado, funcaoNormalizada, riscosNormalizados].includes(undefined)) {
     throw HttpError.badRequest('GHE_DADOS_INVALIDOS', MSG_DADOS_INVALIDOS);
   }
@@ -188,20 +222,24 @@ async function alterar(pool, {
       throw HttpError.notFound('GHE_NAO_ENCONTRADO', MSG_NAO_ENCONTRADO);
     }
 
+    // Estado já travado (FOR UPDATE): o mesmo código, sozinho, não escreve nem audita.
+    const mesmoCodigo = alterarCodigo && codigoNormalizado === anterior.codigo;
+    if (mesmoCodigo && !alterarNome && !descricaoInformado && !setorInformado && !funcaoInformado && !riscosInformado) {
+      return anterior;
+    }
+
     let atualizado;
     try {
       atualizado = await gheRepo.atualizar(client, empresaId, gheId, {
         nome: nomeNormalizado,
+        codigo: mesmoCodigo ? null : codigoNormalizado,
         descricao: descricaoNormalizada, descricaoInformado,
         setor: setorNormalizado, setorInformado,
         funcao: funcaoNormalizada, funcaoInformado,
         riscos: riscosNormalizados, riscosInformado,
       });
     } catch (erro) {
-      if (erro.code === VIOLACAO_UNIQUE) {
-        throw HttpError.conflict('GHE_NOME_EM_USO', MSG_NOME_EM_USO);
-      }
-      throw erro;
+      throw traduzirViolacao(erro);
     }
 
     await auditoriaRepo.registrar(client, {
@@ -248,4 +286,5 @@ async function reativar(pool, dados) {
   return alterarEstado(pool, { ...dados, ativo: true });
 }
 
-module.exports = { criar, buscar, listar, alterar, inativar, reativar };
+// `instantaneo` também é usado pela confirmação da importação GHE/EPI: mesmo retrato do GHE na auditoria.
+module.exports = { criar, buscar, listar, alterar, inativar, reativar, instantaneo };

@@ -28,7 +28,7 @@ const EpiMinimos = require('../../../frontend/js/estoque-minimos');
  */
 
 const CHAVES_DO_ITEM = ['abaixoDoMinimo', 'bloqueado', 'caValidade', 'categoria', 'codigoInterno', 'comprometido', 'deficit', 'disponivel', 'estoqueMinimo', 'fisicoUtilizavel',
-  'material', 'materialId', 'minimoOrigem', 'necessidade', 'saldo', 'saldoLivre', 'semCobertura', 'tamanho', 'tipo', 'unidade', 'validade'];
+  'grupo', 'material', 'materialId', 'minimoOrigem', 'necessidade', 'saldo', 'saldoLivre', 'semCobertura', 'tamanho', 'tipo', 'unidade', 'validade'];
 // As oito fontes de recurso da 12D; a 12G-6 acrescentou três contagens de solicitações, liberadas por ação.
 const CHAVES_DAS_FONTES = ['caVencido', 'comprometido', 'estoqueAbaixoMinimo', 'funcionariosAtivos', 'itensDisponiveis', 'necessidadeReposicao', 'saldoLivre', 'semCobertura'];
 const CHAVES_DO_DASHBOARD = [...CHAVES_DAS_FONTES, 'disponiveisParaEntrega', 'solicitacoesAguardandoEstoque', 'solicitacoesAguardandoSst'].sort();
@@ -74,7 +74,7 @@ describe('12D-3 — módulos reais do frontend contra servidor e PostgreSQL reai
   };
 
   describe('Itens Disponíveis', () => {
-    test('o item do servidor tem exatamente as 21 chaves que a tela lê; a posição e a situação saem do servidor, nunca recalculadas', async () => {
+    test('o item do servidor tem exatamente as 22 chaves que a tela lê; a posição e a situação saem do servidor, nunca recalculadas', async () => {
       comoUsuario(amb.d.master);
       const id = await amb.f.material();
       await q('UPDATE materiais SET estoque_minimo = 5 WHERE id = $1', [id]);

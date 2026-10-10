@@ -144,7 +144,7 @@ describe('entrega DIRETA e saldo livre — PostgreSQL real', () => {
       await f.aprovada({ materialId: m, quantidade: 4, funcionarioId: trabalhador });
       const loteId = await f.estoque(m, 5);
       await esperarHttpError(f.direta([[m, loteId, 5]]), 409, 'SALDO_LIVRE_INSUFICIENTE');
-      await pool.query('UPDATE funcionarios SET ativo = false WHERE id = $1', [trabalhador]);
+      await pool.query("UPDATE funcionarios SET situacao = 'INATIVO' WHERE id = $1", [trabalhador]);
       assert.deepEqual(f.numeros(await f.posicao(m)), [5, 0, 0, 5, 0]);
       assert.equal((await f.direta([[m, loteId, 5]])).itens[0].quantidade, 5);
     });

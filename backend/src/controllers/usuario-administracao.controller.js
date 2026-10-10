@@ -29,10 +29,10 @@ function criarUsuarioAdministracaoController({ pool: poolInjetado }) {
 
     async criar(req, res) {
       const {
-        nome, email, tipoConta, senhaProvisoria, cpf, matricula, setor, horarioTrabalho = null, ipsPermitidos = [], grupoAcessoId = null, usuarioModeloId = null,
+        nome, email, tipoConta, senhaProvisoria, cpf, matricula, setor, horarioTrabalho = null, ipsPermitidos = [], grupoAcessoId = null, usuarioModeloId = null, vinculoSst = false,
       } = req.validado.body;
       const resultado = await usuarioAdministracaoService.criar(poolInjetado, {
-        ...daSessao(req), ...doDispositivo(req), nome, email, perfil: tipoConta, senhaProvisoria, cpf, matricula, setor, horarioTrabalho, ipsPermitidos, grupoAcessoId, usuarioModeloId,
+        ...daSessao(req), ...doDispositivo(req), nome, email, perfil: tipoConta, senhaProvisoria, cpf, matricula, setor, horarioTrabalho, ipsPermitidos, grupoAcessoId, usuarioModeloId, vinculoSst,
       });
       // A senha provisória não volta: só o usuário criado, até quando ela vale e
       // os dados administrativos gravados (CPF só mascarado).

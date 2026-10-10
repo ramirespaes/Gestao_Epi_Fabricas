@@ -35,6 +35,8 @@
     INDISPONIVEL: 'Esta função não está disponível no servidor atual. Verifique se o servidor foi atualizado.',
     MASTER_FIXO: 'O Master tem autoridade própria: os acessos dele não são configuráveis.',
     SOMENTE_MASTER: 'Somente o Master altera os acessos individuais.',
+    EXIGE_SST: 'Exige o vínculo com a Segurança do Trabalho (em Alterar usuário).',
+    FALTA_SST: 'Falta o vínculo: sem ele a pessoa não acessa a Aprovação.',
     GRUPO_PROPRIO: 'Você não pode alterar as permissões do seu próprio grupo.',
     GRUPO_NAO_ENCONTRADO: 'Grupo não encontrado. A lista foi atualizada.',
     GRUPO_DICA: 'Vale para todos os integrantes do grupo enquanto ele estiver ativo. Ligado: o grupo concede o acesso. Desligado: o grupo não concede (o perfil e as exceções individuais continuam valendo).',
@@ -168,7 +170,8 @@
       entrada.checked = t.ligado === true;
       if (t.ligado === true) entrada.setAttribute('checked', '');
       return no(doc, 'div', { class: 'prow', 'data-linha-acesso': t.id }, [
-        no(doc, 'span', { class: 'lbl' }, [t.rotulo]),
+        no(doc, 'span', { class: 'lbl' }, [t.rotulo, t.exigeVinculoSst === true ? no(doc, 'small', { 'data-aviso-sst': '' }, [
+          TEXTOS.EXIGE_SST + (t.ligado === true && t.vinculoSst !== true ? ' ' + TEXTOS.FALTA_SST : '')]) : null]),
         no(doc, 'label', { class: 'switch' }, [entrada, no(doc, 'span', { class: 't' })]),
       ]);
     },

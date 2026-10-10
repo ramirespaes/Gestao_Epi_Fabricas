@@ -512,7 +512,7 @@
       return '<tr>'
         + '<td>' + e(f.numero) + '</td>'
         + '<td>' + e(fa.nome) + '</td>'
-        + '<td>' + e(fa.matricula) + '</td>'
+        + '<td>' + e(ou(fa.matricula, '—')) + '</td>'
         + '<td>' + (fa.ativo ? badge('Ativo', COR.ok) : badge('Inativo', COR.neutra)) + '</td>'
         + '<td style="text-align:right">' + e(ou(r.totalEntregas, 0)) + '</td>'
         + '<td style="text-align:right">' + e(ou(r.totalItens, 0)) + '</td>'
@@ -573,7 +573,7 @@
   function linhasTrabalhadores(lista) {
     return (lista || []).map(function (f) {
       return '<tr>'
-        + '<td>' + e(f.nome) + '</td><td>' + e(f.matricula) + '</td><td>' + e(f.cpfMascarado) + '</td>'
+        + '<td>' + e(f.nome) + '</td><td>' + e(ou(f.matricula, '—')) + '</td><td>' + e(f.cpfMascarado) + '</td>'
         + '<td>' + e(ou(f.setor, '—')) + ' · ' + e(ou(f.funcao, '—')) + '</td>'
         + '<td>' + e(f.ghe && f.ghe.nome ? f.ghe.nome : '—') + '</td>'
         + '<td><button type="button" class="filled-btn" style="padding:4px 10px;font-size:12px" data-funcionario="' + e(f.id) + '">Selecionar</button></td>'

@@ -23,8 +23,10 @@ const { escaparCoringasLike } = require('../utils/like');
 const TAMANHO_MAXIMO_NOME = 150;
 const TAMANHO_MAXIMO_SETOR = 100;
 const TAMANHO_MAXIMO_FUNCAO = 100;
+// codigo VARCHAR(30) (migration 083); a regra de formato é do serviço (utils/codigo-ghe.js).
+const TAMANHO_MAXIMO_CODIGO = 30;
 
-const PROJECAO = 'id, empresa_id, nome, descricao, setor, funcao, riscos, ativo, criado_em, atualizado_em';
+const PROJECAO = 'id, empresa_id, nome, codigo, descricao, setor, funcao, riscos, ativo, criado_em, atualizado_em';
 
 function exigirEmpresa(empresaId) {
   if (!Number.isInteger(empresaId) || empresaId <= 0) {
@@ -54,6 +56,7 @@ const mapear = (linha) => (linha === undefined ? null : {
   id: linha.id,
   empresaId: linha.empresa_id,
   nome: linha.nome,
+  codigo: linha.codigo,
   descricao: linha.descricao,
   setor: linha.setor,
   funcao: linha.funcao,
@@ -65,20 +68,21 @@ const mapear = (linha) => (linha === undefined ? null : {
 
 /** Cria um GHE. `ativo` nasce true pelo DEFAULT da migration 004 e não é parâmetro. */
 async function criar(executor, {
-  empresaId, nome, descricao = null, setor = null, funcao = null, riscos = null,
+  empresaId, nome, codigo = null, descricao = null, setor = null, funcao = null, riscos = null,
 }) {
   exigirEmpresa(empresaId);
   exigirNome(nome);
+  exigirTextoOpcional(codigo, 'código', TAMANHO_MAXIMO_CODIGO);
   exigirTextoOpcional(descricao, 'descrição');
   exigirTextoOpcional(setor, 'setor', TAMANHO_MAXIMO_SETOR);
   exigirTextoOpcional(funcao, 'função', TAMANHO_MAXIMO_FUNCAO);
   exigirTextoOpcional(riscos, 'riscos');
 
   const { rows } = await executor.query(
-    `INSERT INTO grupos_homogeneos_exposicao (empresa_id, nome, descricao, setor, funcao, riscos)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO grupos_homogeneos_exposicao (empresa_id, nome, codigo, descricao, setor, funcao, riscos)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING ${PROJECAO}`,
-    [empresaId, nome, descricao, setor, funcao, riscos],
+    [empresaId, nome, codigo, descricao, setor, funcao, riscos],
   );
 
   return mapear(rows[0]);
@@ -164,6 +168,74 @@ async function buscarPorNome(executor, empresaId, nome) {
 }
 
 /**
+ * Resolução tolerante da importação (12K-E): GHEs da empresa cujo nome, normalizado, é igual ao nome normalizado
+ * informado. Normalização idêntica à de utils/normalizacao.normalizarNomeGhe. Devolve até 2 (basta para distinguir
+ * inexistente, único e ambíguo). Leitura sem lock; maiúsculas e acentos continuam diferenciando.
+ */
+async function buscarPorNomeNormalizado(executor, empresaId, nomeNormalizado) {
+  exigirEmpresa(empresaId);
+  exigirNome(nomeNormalizado);
+
+  const { rows } = await executor.query(
+    `SELECT ${PROJECAO} FROM grupos_homogeneos_exposicao
+      WHERE empresa_id = $1 AND btrim(regexp_replace(nome, E'[ \\t\\r\\n]+', ' ', 'g'), ' ') = $2
+      ORDER BY id LIMIT 2`,
+    [empresaId, nomeNormalizado],
+  );
+
+  return rows.map(mapear);
+}
+
+/**
+ * Opções do seletor da importação (12K-E): só id e nome dos GHEs ATIVOS da empresa, por nome. Nada além disso.
+ */
+async function listarAtivosParaSeletor(executor, empresaId) {
+  exigirEmpresa(empresaId);
+
+  const { rows } = await executor.query(
+    'SELECT id, nome FROM grupos_homogeneos_exposicao WHERE empresa_id = $1 AND ativo ORDER BY nome, id LIMIT 1000',
+    [empresaId],
+  );
+
+  return rows.map((l) => ({ id: l.id, nome: l.nome }));
+}
+
+/**
+ * Seletor de GHE do formulário de funcionário (S3): só id, código e descrição (= `nome`, a descrição operacional; a
+ * coluna `descricao` é legada e não sai) dos GHEs ATIVOS da empresa, por código (sem código por último), nome e id.
+ */
+async function listarAtivosParaFormulario(executor, empresaId) {
+  exigirEmpresa(empresaId);
+
+  const { rows } = await executor.query(
+    `SELECT id, codigo, nome AS descricao FROM grupos_homogeneos_exposicao
+      WHERE empresa_id = $1 AND ativo ORDER BY codigo ASC NULLS LAST, nome ASC, id ASC LIMIT 1000`,
+    [empresaId],
+  );
+
+  return rows.map((l) => ({ id: l.id, codigo: l.codigo, descricao: l.descricao }));
+}
+
+/**
+ * Dados operacionais (id, código, descrição = `nome`) dos GHEs pedidos, ATIVOS OU NÃO: o GHE atual do funcionário
+ * continua visível mesmo depois de inativado. Sempre dentro da empresa; devolve Map por id. Sem trava.
+ */
+async function resumirPorIds(executor, empresaId, ids) {
+  exigirEmpresa(empresaId);
+  if (!Array.isArray(ids) || ids.some((id) => !Number.isInteger(id) || id <= 0)) {
+    throw new TypeError('identificadores de GHE inválidos');
+  }
+  if (ids.length === 0) return new Map();
+
+  const { rows } = await executor.query(
+    'SELECT id, codigo, nome FROM grupos_homogeneos_exposicao WHERE empresa_id = $1 AND id = ANY($2::int[])',
+    [empresaId, ids],
+  );
+
+  return new Map(rows.map((l) => [l.id, { id: l.id, codigo: l.codigo, descricao: l.nome }]));
+}
+
+/**
  * Lista os GHE de uma empresa, paginados e ordenados por nome (sem
  * diferenciar maiúsculas). `busca` filtra por nome, como texto literal.
  */
@@ -233,6 +305,7 @@ async function contarPorEmpresa(executor, empresaId, { ativo = null, busca = nul
  */
 async function atualizar(executor, empresaId, id, {
   nome = null,
+  codigo = null,
   descricao = null, descricaoInformado = false,
   setor = null, setorInformado = false,
   funcao = null, funcaoInformado = false,
@@ -243,6 +316,9 @@ async function atualizar(executor, empresaId, id, {
   exigirId(id, 'identificador de GHE');
   if (nome !== null) {
     exigirNome(nome);
+  }
+  if (codigo !== null) {
+    exigirTextoOpcional(codigo, 'código', TAMANHO_MAXIMO_CODIGO);
   }
   if (descricaoInformado) {
     exigirTextoOpcional(descricao, 'descrição');
@@ -263,6 +339,7 @@ async function atualizar(executor, empresaId, id, {
   const { rows } = await executor.query(
     `UPDATE grupos_homogeneos_exposicao
         SET nome = COALESCE($3, nome),
+            codigo = COALESCE($13, codigo),
             descricao = CASE WHEN $4::boolean THEN $5 ELSE descricao END,
             setor = CASE WHEN $6::boolean THEN $7 ELSE setor END,
             funcao = CASE WHEN $8::boolean THEN $9 ELSE funcao END,
@@ -277,6 +354,7 @@ async function atualizar(executor, empresaId, id, {
       funcaoInformado, funcao,
       riscosInformado, riscos,
       ativo,
+      codigo,
     ],
   );
 
@@ -289,10 +367,15 @@ module.exports = {
   buscarPorIdParaAtualizacao,
   buscarPorIdParaVinculo,
   buscarPorNome,
+  buscarPorNomeNormalizado,
+  listarAtivosParaSeletor,
+  listarAtivosParaFormulario,
+  resumirPorIds,
   listarPorEmpresa,
   contarPorEmpresa,
   atualizar,
   TAMANHO_MAXIMO_NOME,
   TAMANHO_MAXIMO_SETOR,
   TAMANHO_MAXIMO_FUNCAO,
+  TAMANHO_MAXIMO_CODIGO,
 };

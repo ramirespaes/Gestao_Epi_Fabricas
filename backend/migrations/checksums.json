@@ -79,6 +79,12 @@
     "075_alter_identidades_add_cpf.sql": "0d9c32a5e97879e190c0bbf06b37d6c00da509f1e368d0155df1380f5a5e218b",
     "076_alter_usuarios_add_matricula_setor_horario.sql": "a5487bd69af729fb56002e4394aba8363ff6df119c9f4b545600e734a2d0c5d0",
     "077_create_usuario_ips_permitidos.sql": "30e7ada8aa7f7b7b77e605b3362e71e040751ab4c9519950e586c0b2c015b96d",
-    "078_insert_acoes_estoque_entrada_baixa.sql": "1d3f4b8eb2ceb8389ebc7e5dcb75e39efe8dfb5da177becb496e19e4777efa81"
+    "078_insert_acoes_estoque_entrada_baixa.sql": "1d3f4b8eb2ceb8389ebc7e5dcb75e39efe8dfb5da177becb496e19e4777efa81",
+    "079_alter_logs_auditoria_add_perfil_ator.sql": "a519dd14275ce578a01138ae58e3448f808749eea6442a06fdde82ce6cfd3793",
+    "080_create_fiscalizacao_pacotes.sql": "cd07e27b599ff2454ab709ef44861c8f257e64a76a94d59bcead11d4c58eb178",
+    "081_alter_matricula_opcional.sql": "9e5813ef3db1f364abde69041d3a00bbe80b4528764eedb8e447914059001731",
+    "082_create_tipos_material_classificacao_v2.sql": "1dfae4782685deded16614cf38a6e283df7a2803297129660451a8d235e46b9f",
+    "083_alter_ghe_add_codigo_create_ghe_tipos_material.sql": "b963527cbeeb6b620e499fbbf19a4193bba8f72aac7b62168936c9a8ac3afeda",
+    "084_alter_funcionarios_add_situacao.sql": "b2342b00d606dbfc7e6938b3615e9a6a1d4c450bb13c2a08cd977b0a68a2e1f2"
   }
 }

@@ -75,7 +75,7 @@
       <nav class="nav">
         <div class="nav-section">Visão geral</div>
         <a href="dashboard.html" data-pagina="dashboard" style="display:none"><div class="nav-icon blue">dashboard</div>Dashboard</a>
-        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon indigo">analytics</div>Relatórios<span class="nav-etiqueta">Em integração</span></a>
+        <a href="reports.html" data-pagina="reports" style="display:none"><div class="nav-icon indigo">analytics</div>Relatórios</a>
         <div class="nav-section">Estoque</div>
         <a class="active" href="javascript:void(0)" data-pagina="materials" style="display:none"><div class="nav-icon teal">inventory_2</div>Gestão de estoque</a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon orange">shopping_cart</div>Compras / Entradas<span class="nav-etiqueta">Em integração</span></a>
@@ -85,8 +85,9 @@
         <a href="employee-groups.html" data-pagina="employeeGroups" style="display:none"><div class="nav-icon purple">group_work</div>Gestão de GHE</a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor<span class="nav-etiqueta">Em integração</span></a>
         <div class="nav-section">Entregas</div>
-        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon green">inventory</div>EPIs Entregues<span class="nav-etiqueta">Em integração</span></a>
+        <a href="delivered-items.html" data-pagina="deliveredItems" style="display:none"><div class="nav-icon green">inventory</div>EPIs Entregues</a>
         <a href="epi-ficha.html" data-pagina="epiFicha" style="display:none"><div class="nav-icon brown">description</div>Ficha de EPI</a>
+        <a href="funcionarios.html" data-pagina="funcionarios" style="display:none"><div class="nav-icon teal">people</div>Cadastro de Colaboradores</a>
         <a href="employee-history.html" data-pagina="employeeHistory" style="display:none"><div class="nav-icon blue">history</div>Histórico de Funcionários</a>
         <div class="nav-section">Solicitações</div>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">badge</div>Autoatendimento (Totem)<span class="nav-etiqueta">Em integração</span></a>
@@ -142,26 +143,43 @@
                   <input id="materialNome" class="input" type="text" placeholder="Ex.: Botina de segurança com biqueira" />
                 </div>
                 <div class="field">
-                  <label for="materialCategoria">Categoria</label>
+                  <label for="materialCategoria">Grupo</label>
+                  <!-- Classificação V2: Grupo → Grupo de Proteção → Tipo do catálogo da empresa (js/materiais.js). Nada é escolhido sozinho. -->
                   <select id="materialCategoria" class="select">
-                    <option>EPI</option>
-                    <option>Uniforme</option>
-                    <option>Ferramenta</option>
-                    <option>Material de consumo</option>
+                    <option value="" label="Selecione"></option>
+                    <option value="EPI">EPI</option>
+                    <option value="Vestimenta">Vestimenta</option>
+                    <option value="Outros">Outros</option>
                   </select>
+                </div>
+                <div class="field" id="campoCategoriaCustom" style="display:none">
+                  <label for="materialCategoriaCustom">Especifique o grupo</label>
+                  <input id="materialCategoriaCustom" class="input" type="text" maxlength="100" placeholder="Ex.: Ferramenta" />
+                  <div class="helper">Obrigatório com o grupo "Outros": o texto fica no material e aparece como grupo.</div>
+                </div>
+                <div class="field" id="campoGrupoProtecao" style="display:none">
+                  <label for="materialGrupoProtecao">Grupo de Proteção</label>
+                  <select id="materialGrupoProtecao" class="select">
+                    <option value="">Selecione</option>
+                  </select>
+                </div>
+                <div class="field" id="campoGrupoProtecaoCustom" style="display:none">
+                  <label for="materialGrupoProtecaoCustom">Especifique o grupo de proteção</label>
+                  <input id="materialGrupoProtecaoCustom" class="input" type="text" maxlength="100" placeholder="Ex.: Proteção contra arco elétrico" />
                 </div>
                 <div class="field">
                   <label for="materialTipo">Tipo</label>
-                  <!-- Os tipos são os da categoria escolhida (js/materiais.js, 12G-8); a lista é montada pela página. -->
+                  <!-- Tipos ATIVOS do catálogo da empresa para o grupo de proteção escolhido (GET /api/tipos-material) e "Outros"; a lista é montada pela página. -->
                   <select id="materialTipo" class="select">
                     <option value="">Selecione</option>
                   </select>
                 </div>
                 <div class="field" id="customMaterialTypeField" style="display:none">
-                  <label for="materialTipoCustom">Descrição do tipo</label>
+                  <label for="materialTipoCustom">Especifique o tipo</label>
                   <input id="materialTipoCustom" class="input" type="text" maxlength="100" placeholder="Ex.: Fita isolante" />
-                  <div class="helper">Obrigatória quando o tipo é "Outros": descreva o item em texto. Não substitui um tipo da lista.</div>
+                  <div class="helper">Obrigatório quando o tipo é "Outros": o texto fica no material e não vira tipo do catálogo.</div>
                 </div>
+                <div id="materialClassificacaoAviso" class="notice field full" style="display:none"></div>
                 <div class="field" id="campoOculosComGrau" style="display:none">
                   <label for="materialOculosComGrau" style="display:flex;align-items:center;gap:8px;cursor:pointer">
                     <input id="materialOculosComGrau" type="checkbox" />
@@ -455,6 +473,90 @@
               </div>
               <div id="minimosStatus" role="status" aria-live="polite" style="margin-top:10px;font-size:12px"></div>
             </section>
+
+            <!-- Catálogo de tipos de EPI / Vestimenta da empresa (classificação V2): consulta com materials.visualizar,
+                 cadastro manual com materials.criar, inativar/reativar com materials.editar. "Outros" não é linha do catálogo. -->
+            <section class="card" id="cardCatalogoTipos">
+              <div class="card-header">
+                <div class="card-title">
+                  <div class="card-icon">category</div>
+                  <div>
+                    <h2>Tipos de EPI / Vestimenta</h2>
+                    <p>Catálogo de tipos desta empresa, por grupo e grupo de proteção, usado no cadastro do material.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-grid">
+                <div class="field">
+                  <label for="catalogoGrupo">Grupo</label>
+                  <select id="catalogoGrupo" class="select">
+                    <option value="">Todos</option>
+                    <option value="EPI">EPI</option>
+                    <option value="Vestimenta">Vestimenta</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="catalogoProtecao">Grupo de Proteção</label>
+                  <select id="catalogoProtecao" class="select"><option value="">Todos</option></select>
+                </div>
+                <div class="field">
+                  <label for="catalogoSituacao">Situação</label>
+                  <select id="catalogoSituacao" class="select">
+                    <option value="ativos" selected>Ativos</option>
+                    <option value="inativos">Inativos</option>
+                    <option value="todos">Todos</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="catalogoBusca">Buscar</label>
+                  <input id="catalogoBusca" class="input" type="search" maxlength="100" placeholder="Nome do tipo" />
+                </div>
+              </div>
+              <div class="helper" id="catalogoStatus" style="margin:6px 0 8px">Carregando o catálogo…</div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Grupo</th>
+                      <th>Grupo de Proteção</th>
+                      <th>Tipo</th>
+                      <th>Situação</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="catalogoCorpo"></tbody>
+                </table>
+              </div>
+
+              <!-- Novo tipo (só com materials.criar) -->
+              <div id="blocoNovoTipo" style="display:none;margin-top:16px;padding-top:14px;border-top:0.5px solid rgba(0,0,0,0.08)">
+                <div style="font-size:13px;font-weight:600;margin-bottom:10px">Novo tipo</div>
+                <div class="form-grid">
+                  <div class="field">
+                    <label for="novoTipoGrupo">Grupo *</label>
+                    <select id="novoTipoGrupo" class="select">
+                      <option value="">Selecione</option>
+                      <option value="EPI">EPI</option>
+                      <option value="Vestimenta">Vestimenta</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="novoTipoProtecao">Grupo de Proteção *</label>
+                    <select id="novoTipoProtecao" class="select"><option value="">Selecione</option></select>
+                  </div>
+                  <div class="field full">
+                    <label for="novoTipoNome">Nome do tipo *</label>
+                    <input id="novoTipoNome" class="input" type="text" maxlength="100" placeholder="Ex.: Luva de Segurança em Vaqueta" />
+                  </div>
+                </div>
+                <div class="helper">O nome é único por empresa (maiúsculas e espaços repetidos não diferenciam). "Outros" é reservado: é opção do cadastro do material.</div>
+                <div class="footer-actions">
+                  <button id="botaoNovoTipo" class="filled-btn" type="button" disabled><span class="material-symbols-outlined">add</span>Cadastrar tipo</button>
+                </div>
+              </div>
+              <div id="catalogoMensagem" role="status" aria-live="polite" style="margin-top:10px;font-size:12px"></div>
+            </section>
           </div>
         </section>
       </section>
@@ -469,6 +571,7 @@
 <script src="../js/materiais.js"></script>
 <script src="../js/estoque-minimos.js"></script>
 <script src="../js/catalogo-visual.js"></script>
+<script src="../js/tipos-material.js"></script>
 <script>
 /*
   Ligação com o DOM — deliberadamente fina. Toda a lógica (corpo do POST,
@@ -512,10 +615,16 @@
   // resposta inconclusiva não duplica o registro no servidor.
   var operacaoEntrada = EpiMateriais.idempotencia.criar();
   var operacaoBaixa = EpiMateriais.idempotencia.criar();
-  // Óculos com grau: `oculosAtivo` diz se o tipo atual é o canônico dos óculos;
+  // Óculos com grau: `oculosAtivo` diz se a classificação atual pede a caixa;
   // `oculosTocado` separa o NULL do legado de um "sem grau" escolhido.
   var oculosAtivo = false;
   var oculosTocado = false;
+  // Classificação V2: tipos do catálogo carregados para o grupo e o grupo de
+  // proteção atuais do formulário (`seq` descarta resposta antiga), a opção
+  // temporária do registro em edição e se os campos estão liberados.
+  var catalogoAtual = { grupo: '', grupoProtecao: '', tipos: [], seq: 0 };
+  var extraTipoEdicao = null;
+  var camposLiberados = false;
   var CAMPO_ENTRADA_POR_ERRO = { tamanho: 'entradaTamanho', quantidade: 'entradaQuantidade', caNumero: 'entradaCa', caValidade: 'entradaCaValidade' };
   var CAMPO_BAIXA_POR_ERRO = { lote: 'baixaLote', quantidade: 'baixaQuantidade', motivo: 'baixaMotivo', justificativa: 'baixaJustificativa' };
 
@@ -523,10 +632,12 @@
   // a própria origem + /api em produção (portal/config.js).
   EpiHttp.configurar({ baseUrl: window.SAFEWORK_PORTAL_API_BASE_URL });
 
-  var CAMPOS = ['materialNome', 'materialCategoria', 'materialTipo', 'materialTipoCustom', 'materialOculosComGrau', 'materialFabricante', 'materialCodigo', 'materialControleTamanho',
+  var CAMPOS = ['materialNome', 'materialCategoria', 'materialCategoriaCustom', 'materialGrupoProtecao', 'materialGrupoProtecaoCustom', 'materialTipo', 'materialTipoCustom',
+    'materialOculosComGrau', 'materialFabricante', 'materialCodigo', 'materialControleTamanho',
     'materialGrade', 'materialQuantidadeComprada', 'materialTamanhoEntrada', 'materialEntradaCa', 'materialEntradaCaValidade', 'materialUnidade', 'materialEstoqueMinimo',
     'materialValidadeTipo', 'materialPrazo', 'materialDesc', 'materialRegistrarEntrada'];
-  var CAMPO_POR_ERRO = { nome: 'materialNome', categoria: 'materialCategoria', tipo: 'materialTipo', tipoDescricao: 'materialTipoCustom', fabricante: 'materialFabricante', codigoInterno: 'materialCodigo',
+  var CAMPO_POR_ERRO = { nome: 'materialNome', categoria: 'materialCategoria', categoriaDescricao: 'materialCategoriaCustom', grupoProtecao: 'materialGrupoProtecao',
+    grupoProtecaoDescricao: 'materialGrupoProtecaoCustom', tipo: 'materialTipo', tipoDescricao: 'materialTipoCustom', fabricante: 'materialFabricante', codigoInterno: 'materialCodigo',
     controleTamanho: 'materialControleTamanho', grade: 'materialGrade', quantidadeComprada: 'materialQuantidadeComprada', tamanhoEntrada: 'materialTamanhoEntrada', caEntrada: 'materialEntradaCa',
     caValidadeEntrada: 'materialEntradaCaValidade', unidade: 'materialUnidade', estoqueMinimo: 'materialEstoqueMinimo', prazo: 'materialPrazo', descricao: 'materialDesc',
     oculosComGrau: 'materialOculosComGrau' };
@@ -548,6 +659,10 @@
     semClassificacao: 'Defina no cadastro do material o controle de tamanho (tamanho único ou possui tamanhos) para registrar entradas.',
   };
   var AVISO_SEM_CLASSIFICACAO = 'Este material ainda não tem controle de tamanho. Escolha "Tamanho único" ou "Possui tamanhos" para liberar as entradas de estoque.';
+  var TEXTOS_CLASSIFICACAO = {
+    legado: 'Classificação do cadastro antigo (legado). Os demais campos podem ser alterados sem reclassificar; para reclassificar, escolha grupo, grupo de proteção e tipo completos.',
+    tipoInativo: 'O tipo deste material está inativo no catálogo. O material continua válido; para trocar, escolha um tipo ativo.',
+  };
 
   function mostrarAviso(texto, tipo) {
     var caixa = $('aviso');
@@ -588,40 +703,121 @@
     ids.forEach(function (id) { $(id).removeAttribute('aria-invalid'); $(id).style.borderColor = ''; });
   }
 
-  // ── formulário do material ──
-  function toggleCustomMaterialType() {
-    var outros = $('materialTipo').value === formulario.OUTROS;
-    $('customMaterialTypeField').style.display = outros ? '' : 'none';
-    if (!outros) $('materialTipoCustom').value = '';
-    preencherTamanhosEntrada();
-    tipoMudou();
+  // ── formulário do material: classificação V2 (Grupo → Grupo de Proteção → Tipo) ──
+
+  /** Os campos da classificação como estão na tela; o catálogo carregado vai junto para validar o tipo. */
+  function classificacaoDaTela() {
+    return {
+      categoria: $('materialCategoria').value, categoriaCustom: $('materialCategoriaCustom').value, grupoProtecao: $('materialGrupoProtecao').value,
+      grupoProtecaoCustom: $('materialGrupoProtecaoCustom').value, tipo: $('materialTipo').value, tipoCustom: $('materialTipoCustom').value, catalogo: catalogoAtual.tipos,
+    };
   }
 
-  /** Opções de tipo da categoria atual (12G-8). O valor só fica se pertencer à lista nova ou for a opção legada do registro aberto. */
+  /** Nome do tipo atual, só para sugerir tamanhos: o do catálogo pelo id, o legado como está; "Outros" e vazio não sugerem. */
+  function nomeDoTipoAtual() {
+    var valor = $('materialTipo').value;
+    if (!valor || valor === formulario.OUTROS) return '';
+    var nome = valor;
+    catalogoAtual.tipos.forEach(function (t) { if (String(t.id) === valor) nome = t.nome; });
+    return nome;
+  }
+
+  /** Opções de tipo do catálogo carregado. O valor só fica se for um tipo ativo listado, "Outros" ou a opção temporária do registro aberto. */
   function preencherTipos(valor, extra) {
     var select = $('materialTipo');
-    var categoria = $('materialCategoria').value;
-    select.innerHTML = render.opcoesTipos(categoria, extra);
-    var validos = formulario.tiposDe(categoria).concat(extra && extra.valor ? [extra.valor] : []);
+    var grupo = $('materialCategoria').value;
+    var protecao = $('materialGrupoProtecao').value;
+    var lista = formulario.tiposDoCatalogo(catalogoAtual.tipos, grupo, protecao);
+    // Sem grupo, ou EPI/Vestimenta ainda sem proteção: nem "Outros" é oferecido.
+    var tipos = !grupo || (formulario.GRUPOS_CATALOGO.indexOf(grupo) !== -1 && !protecao) ? null : lista;
+    select.innerHTML = render.opcoesTipos(tipos, extra);
+    var validos = (tipos || []).map(function (t) { return String(t.id); }).concat(tipos === null ? [] : [formulario.OUTROS], extra && extra.valor ? [extra.valor] : []);
     select.value = validos.indexOf(valor) !== -1 ? valor : '';
   }
 
-  /** Trocar a categoria recarrega os tipos e SEMPRE limpa tipo e descrição, mesmo "Outros": a pessoa escolhe de novo. */
+  /**
+   * Consulta os tipos ATIVOS do grupo e do grupo de proteção atuais (só quando
+   * os dois são do catálogo; "Outros" e legado não consultam) e remonta o
+   * seletor, mantendo `valor` se continuar válido. Resposta antiga é descartada.
+   */
+  async function carregarTiposDoFormulario(valor, extra) {
+    var grupo = $('materialCategoria').value;
+    var protecao = $('materialGrupoProtecao').value;
+    var minha = ++catalogoAtual.seq;
+    var tipos = [];
+    if (formulario.GRUPOS_CATALOGO.indexOf(grupo) !== -1 && formulario.GRUPOS_PROTECAO.indexOf(protecao) !== -1) {
+      var r = await EpiMateriais.acoes.listarTipos({ grupo: grupo, grupoProtecao: protecao });
+      if (telaEncerrada || minha !== catalogoAtual.seq) return false;
+      if (!r.ok) {
+        if (tratarSessao(r)) return false;
+        mostrarAviso(mensagens.erroCatalogo(r), 'atencao');
+      } else {
+        tipos = r.dados.tipos;
+      }
+    }
+    catalogoAtual = { grupo: grupo, grupoProtecao: protecao, tipos: tipos, seq: minha };
+    preencherTipos(valor, extra);
+    return true;
+  }
+
+  /**
+   * Mostra e esconde os campos da classificação conforme a combinação atual.
+   * Campo escondido é limpo na hora: o texto de um "Outros" abandonado nunca
+   * vai no envio. Tipo travado em "Outros" quando o grupo ou a proteção são "Outros".
+   */
+  function atualizarClassificacao() {
+    var e = formulario.estadoClassificacao(classificacaoDaTela());
+    $('campoGrupoProtecao').style.display = e.mostrarProtecao ? '' : 'none';
+    $('campoCategoriaCustom').style.display = e.mostrarCategoriaCustom ? '' : 'none';
+    $('campoGrupoProtecaoCustom').style.display = e.mostrarProtecaoCustom ? '' : 'none';
+    $('customMaterialTypeField').style.display = e.mostrarTipoCustom ? '' : 'none';
+    if (!e.mostrarCategoriaCustom) $('materialCategoriaCustom').value = '';
+    if (!e.mostrarProtecaoCustom) $('materialGrupoProtecaoCustom').value = '';
+    if (!e.mostrarTipoCustom) $('materialTipoCustom').value = '';
+    if (e.tipoForcadoOutros) $('materialTipo').value = formulario.OUTROS;
+    $('materialTipo').disabled = !camposLiberados || e.tipoForcadoOutros;
+    tipoMudou();
+    preencherTamanhosEntrada();
+  }
+
+  /** Trocar o grupo SEMPRE recomeça proteção, tipo e especificações: a pessoa escolhe de novo, sem consulta até escolher a proteção. */
   function categoriaMudou() {
-    preencherTipos('', null);
-    toggleCustomMaterialType();
+    $('materialGrupoProtecao').innerHTML = render.opcoesProtecao();
+    $('materialGrupoProtecao').value = '';
+    catalogoAtual = { grupo: '', grupoProtecao: '', tipos: [], seq: catalogoAtual.seq + 1 };
+    preencherTipos('', extraTipoEdicao);
+    atualizarClassificacao();
+  }
+
+  /** Trocar o grupo de proteção recomeça o tipo e consulta o catálogo (só EPI/Vestimenta com proteção conhecida). */
+  async function protecaoMudou() {
+    $('materialTipo').value = '';
+    await carregarTiposDoFormulario('', extraTipoEdicao);
+    atualizarClassificacao();
   }
 
   function tipoCustomMudou() {
     preencherTamanhosEntrada();
-    tipoMudou();
+  }
+
+  /** Aviso sobre o registro em edição: cadastro antigo (legado) ou tipo inativado no catálogo. */
+  function mostrarAvisoClassificacao(material) {
+    var rotulo = material ? formulario.rotuloClassificacao(material) : '';
+    var aviso = rotulo === 'LEGADO' ? TEXTOS_CLASSIFICACAO.legado : (rotulo === 'TIPO_INATIVO' ? TEXTOS_CLASSIFICACAO.tipoInativo : '');
+    $('materialClassificacaoAviso').textContent = aviso;
+    $('materialClassificacaoAviso').style.display = aviso ? '' : 'none';
   }
 
   // ── óculos com grau ──
 
-  /** A caixa segue o tipo canônico; o aviso do legado some quando a pessoa mexe nela. */
+  /** A caixa segue a classificação (EPI + Proteção ocular; no registro intocado, a dele, inclusive o tipo do legado). */
+  function oculosNaTela() {
+    return formulario.oculosAplicavel(classificacaoDaTela(), edicao ? edicao.original : null);
+  }
+
+  /** O aviso do legado some quando a pessoa mexe na caixa. */
   function atualizarOculos() {
-    var oculos = formulario.ehOculos(tipoAtual());
+    var oculos = oculosNaTela();
     $('campoOculosComGrau').style.display = oculos ? '' : 'none';
     var legado = oculos && !oculosTocado && !!edicao && formulario.oculosSemClassificacao(edicao.original);
     $('materialOculosComGrauLegado').style.display = legado ? '' : 'none';
@@ -629,19 +825,19 @@
 
   /**
    * Recomeça a caixa: desmarcada, ou com o valor gravado quando a edição está
-   * no tipo original dos óculos. Nenhuma marcação feita antes de uma troca de
-   * tipo continua valendo.
+   * na classificação original dos óculos. Nenhuma marcação feita antes de uma
+   * troca continua valendo.
    */
   function reiniciarOculos() {
-    oculosAtivo = formulario.ehOculos(tipoAtual());
+    oculosAtivo = oculosNaTela();
     oculosTocado = false;
     var original = edicao ? edicao.original : null;
-    $('materialOculosComGrau').checked = oculosAtivo && !!original && formulario.ehOculos(original.tipo) && original.oculosComGrau === true;
+    $('materialOculosComGrau').checked = oculosAtivo && !!original && formulario.oculosDoMaterial(original) && original.oculosComGrau === true;
     atualizarOculos();
   }
 
   function tipoMudou() {
-    if (formulario.ehOculos(tipoAtual()) !== oculosAtivo) reiniciarOculos();
+    if (oculosNaTela() !== oculosAtivo) reiniciarOculos();
   }
 
   function updatePrazoLabel() {
@@ -659,11 +855,6 @@
     $('materialPrazoPreviewText').textContent = texto || '—';
   }
 
-  /** O tipo escolhido; a descrição de "Outros" é texto e nunca age como tipo (12G-8). */
-  function tipoAtual() {
-    return $('materialTipo').value;
-  }
-
   /** O campo da grade só existe com "Possui tamanhos" (12G-8). */
   function toggleGrade() {
     $('campoGradeTamanhos').style.display = $('materialControleTamanho').value === 'grade' ? '' : 'none';
@@ -675,7 +866,7 @@
     var select = $('materialTamanhoEntrada');
     var atual = select.value;
     var grade = $('materialControleTamanho').value === 'grade' ? formulario.lerGrade($('materialGrade').value).tamanhos : [];
-    var lista = formulario.tamanhosDaEntrada([], tipoAtual(), grade);
+    var lista = formulario.tamanhosDaEntrada([], nomeDoTipoAtual(), grade);
     select.innerHTML = render.opcoesTamanhos(lista);
     select.value = lista.indexOf(atual) !== -1 ? atual : '';
   }
@@ -709,8 +900,9 @@
     $('materialValidadeTipo').value = 'meses';
     $('materialRegistrarEntrada').value = 'nao';
     limparErros();
-    preencherTipos('', null);
-    toggleCustomMaterialType();
+    $('materialCategoria').value = '';
+    categoriaMudou(); // proteção, tipo e especificações recomeçam vazios, sem consulta
+    mostrarAvisoClassificacao(null);
     reiniciarOculos();
     updatePrazoLabel();
     toggleGrade();
@@ -725,14 +917,17 @@
   }
 
   function camposDoFormulario() {
-    return {
-      nome: $('materialNome').value, categoria: $('materialCategoria').value, tipo: $('materialTipo').value, tipoCustom: $('materialTipoCustom').value,
+    var c = classificacaoDaTela();
+    var demais = {
+      nome: $('materialNome').value,
       fabricante: $('materialFabricante').value, codigoInterno: $('materialCodigo').value, controleTamanho: $('materialControleTamanho').value,
       grade: $('materialGrade').value, quantidadeComprada: $('materialQuantidadeComprada').value, tamanhoEntrada: $('materialTamanhoEntrada').value, caEntrada: $('materialEntradaCa').value,
       caValidadeEntrada: $('materialEntradaCaValidade').value, unidade: $('materialUnidade').value, estoqueMinimo: $('materialEstoqueMinimo').value,
       prazoUnidade: $('materialValidadeTipo').value, prazo: $('materialPrazo').value, descricao: $('materialDesc').value, registrarEntrada: $('materialRegistrarEntrada').value,
       oculosComGrau: $('materialOculosComGrau').checked === true, oculosComGrauTocado: oculosTocado,
     };
+    Object.keys(demais).forEach(function (k) { c[k] = demais[k]; });
+    return c;
   }
 
   async function salvar() {
@@ -785,7 +980,10 @@
   function atualizarCampos() {
     var emEdicao = !!edicao;
     var liberado = emEdicao || acessoAtual.podeAlterar;
+    camposLiberados = liberado;
     CAMPOS.forEach(function (id) { $(id).disabled = !liberado; });
+    // O tipo continua travado em "Outros" quando o grupo ou a proteção são "Outros".
+    $('materialTipo').disabled = !liberado || formulario.estadoClassificacao(classificacaoDaTela()).tipoForcadoOutros;
     var entradaPossivel = liberado && !emEdicao && acessoAtual.podeEntrada;
     CAMPOS_ENTRADA_INICIAL.forEach(function (id) { $(id).disabled = !entradaPossivel; });
     if (!entradaPossivel && $('materialRegistrarEntrada').value !== 'nao') {
@@ -854,11 +1052,11 @@
       mostrarAviso(mensagens.erroCarregarEdicao(r), 'erro');
       return;
     }
-    entrarModoEdicao(r.dados && r.dados.material);
+    await entrarModoEdicao(r.dados && r.dados.material);
   }
 
   /** Preenche o formulário com o registro real; não cria outro formulário. */
-  function entrarModoEdicao(material) {
+  async function entrarModoEdicao(material) {
     if (!material) { mostrarAviso(mensagens.MSG.CARREGAR_GENERICO, 'erro'); return; }
     var preparado = formulario.camposDoMaterial(material);
     var c = preparado.campos;
@@ -866,21 +1064,34 @@
     acrescentarOpcao('materialCategoria', preparado.opcoesExtras.categoria);
     acrescentarOpcao('materialUnidade', preparado.opcoesExtras.unidade);
     edicao = { id: material.id, original: material };
+    extraTipoEdicao = preparado.opcoesExtras.tipo;
     limparErros();
     var valores = {
-      materialNome: c.nome, materialCategoria: c.categoria, materialTipoCustom: c.tipoCustom, materialFabricante: c.fabricante, materialCodigo: c.codigoInterno,
+      materialNome: c.nome, materialCategoria: c.categoria, materialCategoriaCustom: c.categoriaCustom, materialGrupoProtecaoCustom: c.grupoProtecaoCustom,
+      materialTipoCustom: c.tipoCustom, materialFabricante: c.fabricante, materialCodigo: c.codigoInterno,
       materialControleTamanho: c.controleTamanho, materialUnidade: c.unidade, materialEstoqueMinimo: c.estoqueMinimo, materialValidadeTipo: c.prazoUnidade,
       materialPrazo: c.prazo, materialDesc: c.descricao, materialRegistrarEntrada: 'nao', materialGrade: c.grade,
     };
     Object.keys(valores).forEach(function (id) { $(id).value = valores[id]; });
-    // Tipos da categoria do registro; o óculos legado entra como opção temporária, nunca trocado em silêncio.
-    preencherTipos(c.tipo, preparado.opcoesExtras.tipo);
-    toggleCustomMaterialType();
+    $('materialGrupoProtecao').innerHTML = render.opcoesProtecao();
+    $('materialGrupoProtecao').value = c.grupoProtecao;
+    // Tipos do catálogo do grupo e da proteção do registro. O tipo do próprio
+    // registro fica como opção temporária se não vier na lista (legado, inativado
+    // ou catálogo indisponível): nada é trocado em silêncio.
+    var carga = edicao;
+    var carregou = await carregarTiposDoFormulario(c.tipo, extraTipoEdicao);
+    if (!carregou || edicao !== carga) return;
+    if (c.tipo && $('materialTipo').value !== c.tipo) {
+      extraTipoEdicao = { valor: c.tipo, rotulo: String(material.tipo || c.tipo) };
+      preencherTipos(c.tipo, extraTipoEdicao);
+    }
+    atualizarClassificacao();
     reiniciarOculos();
     updatePrazoLabel();
     toggleGrade();
     toggleEntradaInicial();
     aplicarModo();
+    mostrarAvisoClassificacao(material);
     mostrarAviso(c.controleTamanho ? '' : AVISO_SEM_CLASSIFICACAO, c.controleTamanho ? null : 'atencao');
     $('materialNome').focus();
   }
@@ -888,6 +1099,7 @@
   /** Volta ao modo cadastro: formulário limpo, opções originais, cargas pendentes invalidadas. */
   function sairModoEdicao() {
     edicao = null;
+    extraTipoEdicao = null;
     cargaEdicao += 1;
     carregandoEdicao = false;
     restaurarOpcoes();
@@ -1293,6 +1505,114 @@
     return undefined;
   }
 
+  // ── catálogo de tipos de EPI / Vestimenta (classificação V2) ──
+  // js/tipos-material.js é carregado pela página; sem ele, o cartão fica inerte.
+  var Tipos = window.EpiTiposMaterial || null;
+  var catalogoSeq = 0;
+  var catalogoOcupado = false;
+  var CAMPOS_NOVO_TIPO = ['novoTipoGrupo', 'novoTipoProtecao', 'novoTipoNome'];
+  var CAMPO_TIPO_POR_ERRO = { grupo: 'novoTipoGrupo', grupoProtecao: 'novoTipoProtecao', nome: 'novoTipoNome' };
+
+  function catalogoMensagem(mensagem, erro) {
+    $('catalogoMensagem').textContent = mensagem || '';
+    $('catalogoMensagem').style.color = erro ? 'var(--error)' : '';
+  }
+
+  function filtroDoCatalogo() {
+    var situacao = $('catalogoSituacao').value;
+    var filtro = { grupo: $('catalogoGrupo').value, grupoProtecao: $('catalogoProtecao').value, busca: $('catalogoBusca').value, pagina: 1, limite: 100 };
+    if (situacao !== 'todos') filtro.ativo = situacao !== 'inativos';
+    return filtro;
+  }
+
+  /** Lista do catálogo com os filtros da tela; resposta antiga é descartada. Botões de situação só com materials.editar. */
+  async function carregarCatalogo() {
+    if (!Tipos || telaEncerrada) return;
+    var minha = ++catalogoSeq;
+    var r = await Tipos.acoes.listar(filtroDoCatalogo());
+    if (telaEncerrada || minha !== catalogoSeq) return;
+    if (!r.ok) {
+      if (tratarSessao(r)) return;
+      $('catalogoCorpo').innerHTML = '';
+      $('catalogoStatus').textContent = Tipos.mensagens.erro(r);
+      return;
+    }
+    var d = r.dados || {};
+    var tipos = Array.isArray(d.tipos) ? d.tipos : [];
+    var podeEditarTipos = acessoAtual.podeEditar && !telaEncerrada;
+    $('catalogoCorpo').innerHTML = Tipos.render.linhas(tipos, podeEditarTipos);
+    $('catalogoStatus').textContent = !tipos.length ? 'Nenhum tipo com estes filtros.'
+      : (typeof d.total === 'number' && d.total > tipos.length
+        ? 'Mostrando ' + tipos.length + ' de ' + d.total + ' tipos: restrinja os filtros para ver os demais.'
+        : tipos.length + (tipos.length === 1 ? ' tipo' : ' tipos'));
+  }
+
+  /** O seletor de tipo do material acompanha o catálogo (tipo novo, inativado ou reativado), sem perder a escolha atual. */
+  function recarregarTiposDoFormulario() {
+    return carregarTiposDoFormulario($('materialTipo').value, extraTipoEdicao).then(function (carregou) { if (carregou) atualizarClassificacao(); });
+  }
+
+  async function cadastrarTipo() {
+    if (!Tipos || !acessoAtual.podeAlterar || telaEncerrada || catalogoOcupado) return;
+    desmarcarCampos(CAMPOS_NOVO_TIPO);
+    var montado = Tipos.formulario.montarTipo({ grupo: $('novoTipoGrupo').value, grupoProtecao: $('novoTipoProtecao').value, nome: $('novoTipoNome').value });
+    if (!montado.ok) {
+      marcarCampos(CAMPO_TIPO_POR_ERRO, montado.erros);
+      catalogoMensagem(montado.erros.map(function (e) { return e.mensagem; }).join(' '), true);
+      return;
+    }
+    catalogoOcupado = true;
+    $('botaoNovoTipo').disabled = true;
+    try {
+      var r = await Tipos.acoes.criar(montado.corpo);
+      if (telaEncerrada) return;
+      if (!r.ok) {
+        if (tratarSessao(r)) return;
+        if (r.status === 409) marcarCampos(CAMPO_TIPO_POR_ERRO, [{ campo: 'nome' }]);
+        catalogoMensagem(Tipos.mensagens.erro(r), true);
+        return;
+      }
+      $('novoTipoNome').value = '';
+      catalogoMensagem('Tipo "' + montado.corpo.nome + '" cadastrado em ' + montado.corpo.grupo + ' · ' + montado.corpo.grupoProtecao + '.', false);
+      showToast('Tipo cadastrado', 'success');
+      await carregarCatalogo();
+      await recarregarTiposDoFormulario();
+    } finally {
+      catalogoOcupado = false;
+      $('botaoNovoTipo').disabled = !acessoAtual.podeAlterar || telaEncerrada;
+    }
+  }
+
+  /** Inativar ou reativar um tipo (materials.editar). Nada é apagado; o material já ligado ao tipo continua válido. */
+  async function alternarTipo(acao, id) {
+    if (!Tipos || !acessoAtual.podeEditar || telaEncerrada || catalogoOcupado) return;
+    catalogoOcupado = true;
+    try {
+      var r = await (acao === 'reativar' ? Tipos.acoes.reativar(id) : Tipos.acoes.inativar(id));
+      if (telaEncerrada) return;
+      if (!r.ok) {
+        if (tratarSessao(r)) return;
+        catalogoMensagem(Tipos.mensagens.erro(r), true);
+        return;
+      }
+      var t = r.dados && r.dados.tipo ? r.dados.tipo : null;
+      catalogoMensagem(t ? 'Tipo "' + t.nome + '" ' + (t.ativo ? 'reativado' : 'inativado') + '.' : 'Situação do tipo atualizada.', false);
+      showToast(t && t.ativo ? 'Tipo reativado' : 'Tipo inativado', 'success');
+      await carregarCatalogo();
+      await recarregarTiposDoFormulario();
+    } finally {
+      catalogoOcupado = false;
+    }
+  }
+
+  function acaoDaLinhaDoCatalogo(ev) {
+    var alvo = ev && ev.target && typeof ev.target.closest === 'function' ? ev.target.closest('[data-acao]') : null;
+    if (!alvo || alvo.disabled) return undefined;
+    var acao = alvo.getAttribute('data-acao');
+    if (acao !== 'inativar' && acao !== 'reativar') return undefined;
+    return alternarTipo(acao, alvo.getAttribute('data-id'));
+  }
+
   // ── acesso e sessão ──
   function aplicarAcesso(acesso) {
     acessoAtual = {
@@ -1312,11 +1632,15 @@
     atualizarBotaoEditar();
     atualizarEstoqueAcoes();
     renderizarMinimos();
+    // Novo tipo do catálogo só com materials.criar; a lista é de quem consulta.
+    $('blocoNovoTipo').style.display = acesso.podeAlterar ? '' : 'none';
+    $('botaoNovoTipo').disabled = !acesso.podeAlterar;
   }
 
   async function iniciarSessao() {
     await carregarSeletorGrade(null, null);
     mostrarEstoque(null);
+    await carregarCatalogo();
   }
 
   function encerrarTela() {
@@ -1332,12 +1656,17 @@
     limparMinimos();
     mostrarEstoque(null);
     $('gradeMaterial').innerHTML = '';
+    catalogoSeq += 1;
+    $('catalogoCorpo').innerHTML = '';
+    $('catalogoStatus').textContent = '';
+    catalogoMensagem('', false);
     mostrarAviso('', null);
   }
 
   // ── eventos ──
   $('materialCategoria').addEventListener('change', categoriaMudou);
-  $('materialTipo').addEventListener('change', toggleCustomMaterialType);
+  $('materialGrupoProtecao').addEventListener('change', protecaoMudou);
+  $('materialTipo').addEventListener('change', atualizarClassificacao);
   $('materialTipoCustom').addEventListener('input', tipoCustomMudou);
   $('materialOculosComGrau').addEventListener('change', function () { oculosTocado = true; atualizarOculos(); });
   $('materialValidadeTipo').addEventListener('change', updatePrazoLabel);
@@ -1367,12 +1696,21 @@
   $('botaoRegistrarBaixa').addEventListener('click', registrarBaixa);
   $('botaoEditarMaterial').addEventListener('click', iniciarEdicao);
   $('botaoCancelarEdicao').addEventListener('click', cancelarEdicao);
+  $('materialGrupoProtecao').innerHTML = render.opcoesProtecao();
   preencherTipos('', null);
-  preencherTamanhosEntrada();
+  atualizarClassificacao();
+  mostrarAvisoClassificacao(null);
   updatePrazoLabel();
   $('materialRegistrarEntrada').value = 'nao';
   toggleEntradaInicial();
   reiniciarOculos();
+  if (Tipos) {
+    $('catalogoProtecao').innerHTML = Tipos.render.opcoes(Tipos.VOCABULARIO.gruposProtecao, 'Todos');
+    $('novoTipoProtecao').innerHTML = Tipos.render.opcoes(Tipos.VOCABULARIO.gruposProtecao, 'Selecione');
+    ['catalogoGrupo', 'catalogoProtecao', 'catalogoSituacao', 'catalogoBusca'].forEach(function (id) { $(id).addEventListener('change', carregarCatalogo); });
+    $('botaoNovoTipo').addEventListener('click', cadastrarTipo);
+    $('catalogoCorpo').addEventListener('click', acaoDaLinhaDoCatalogo);
+  }
 
   // Sessão empresarial do Portal do Cliente, confirmada no servidor por
   // js/sessao-empresarial.js. Sem sessão, a pessoa é levada ao Portal;

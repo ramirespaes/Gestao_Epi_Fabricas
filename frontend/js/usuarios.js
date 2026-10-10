@@ -99,6 +99,7 @@
       if (Array.isArray(d.ipsPermitidos)) corpo.ipsPermitidos = d.ipsPermitidos.map(texto);
       if (d.grupoAcessoId === null) corpo.grupoAcessoId = null;
       else if (inteiroPositivo(d.grupoAcessoId)) corpo.grupoAcessoId = d.grupoAcessoId;
+      if (typeof d.vinculoSst === 'boolean') corpo.vinculoSst = d.vinculoSst;
       return http().requisitar('PATCH', CAMINHO + '/' + exigirId(id), { corpo: corpo });
     },
     /** Contingência administrativa: NOVA SENHA PROVISÓRIA (a confirmação fica na tela; a senha viaja uma vez, no corpo). */
@@ -125,6 +126,7 @@
       if (Array.isArray(d.ipsPermitidos) && d.ipsPermitidos.length) corpo.ipsPermitidos = d.ipsPermitidos.map(texto);
       if (inteiroPositivo(d.grupoAcessoId)) corpo.grupoAcessoId = d.grupoAcessoId;
       if (inteiroPositivo(d.usuarioModeloId)) corpo.usuarioModeloId = d.usuarioModeloId;
+      if (d.vinculoSst === true) corpo.vinculoSst = true;
       return http().requisitar('POST', CAMINHO, { corpo: corpo });
     },
     inativar: function (id) {

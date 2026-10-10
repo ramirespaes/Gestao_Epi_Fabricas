@@ -29,12 +29,14 @@ const { httpConfig } = require('../config/http');
  * um store compartilhado.
  */
 
-function criarLimitador({ limite, janelaSegundos }) {
+function criarLimitador({ limite, janelaSegundos, chave }) {
   return rateLimit({
     windowMs: janelaSegundos * 1000,
     limit: limite,
     standardHeaders: 'draft-8',
     legacyHeaders: false,
+    // `chave` (opcional) substitui o IP como identidade do contador; sem ela, o comportamento é o de sempre.
+    ...(typeof chave === 'function' ? { keyGenerator: chave } : {}),
     handler: (req, res, next) => {
       next(HttpError.tooManyRequests('LIMITE_REQUISICOES_EXCEDIDO', 'Muitas requisições. Tente novamente mais tarde'));
     },
@@ -86,6 +88,14 @@ const limitadorTrocaSenha = criarLimitador(httpConfig.rateLimit.autenticacao);
 const limitadorTrocaEmail = criarLimitador(httpConfig.rateLimit.autenticacao);
 const limitadorPlataformaTrocaSenha = criarLimitador(httpConfig.rateLimit.autenticacao);
 
+// Revelação do CPF na edição de funcionários: 10 por minuto por USUÁRIO + EMPRESA da sessão (nunca só por IP: a empresa
+// inteira pode estar atrás do mesmo NAT). Roda depois da sessão e da autorização, então só conta quem já pode revelar.
+// Cada app/rota que precisar de contador próprio cria a sua instância; as rotas reais compartilham `limitadorRevelacaoCpf`.
+const LIMITE_REVELACAO_CPF = Object.freeze({ limite: 10, janelaSegundos: 60 });
+const chaveRevelacaoCpf = (req) => `${req.empresa?.id}:${req.usuario?.id}`;
+const criarLimitadorRevelacaoCpf = () => criarLimitador({ ...LIMITE_REVELACAO_CPF, chave: chaveRevelacaoCpf });
+const limitadorRevelacaoCpf = criarLimitadorRevelacaoCpf();
+
 module.exports = {
   criarLimitador,
   limitadorGeral,
@@ -104,4 +114,7 @@ module.exports = {
   limitadorTrocaSenha,
   limitadorTrocaEmail,
   limitadorPlataformaTrocaSenha,
+  LIMITE_REVELACAO_CPF,
+  criarLimitadorRevelacaoCpf,
+  limitadorRevelacaoCpf,
 };

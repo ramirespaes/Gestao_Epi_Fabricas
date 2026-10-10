@@ -38,6 +38,7 @@ const linhaDoBanco = (extra = {}) => ({
   nome: 'Luva de raspa',
   codigo_interno: 'EPI-030',
   categoria: 'EPI',
+  grupo: 'EPI',
   tipo: 'Luva',
   unidade: 'par',
   tamanho_chave: 'P',
@@ -132,7 +133,8 @@ describe('listarPosicoes — filtros em parâmetros, nunca concatenados', () => 
     assert.deepEqual(valores, [EMPRESA, HOJE, 60, 'CAT-UNICA', 'TIPO-UNICO', 'TAM-UNICO', 'expired', '50\\%\\_x', 'ABAIXO_MINIMO', 10, 0, false]);
     // As constantes de validade e de situação aparecem no SQL como comparação fixa; os valores de texto livre só vão em parâmetro.
     assert.doesNotMatch(texto, /CAT-UNICA|TIPO-UNICO|TAM-UNICO|50%/, 'nenhum valor de filtro no texto do SQL');
-    assert.match(texto, /m\.categoria = \$4::text/);
+    // Grupo efetivo (V2): "Outros" é o grupo estrutural; os demais comparam o valor efetivo de exibição.
+    assert.match(texto, /\$4::text <> 'Outros' AND COALESCE\(CASE WHEN m\.categoria = 'Outros' THEN m\.categoria_descricao ELSE m\.categoria END, m\.categoria\) = \$4::text/);
     assert.match(texto, /m\.tipo = \$5::text/);
     assert.match(texto, /tamanho_chave = \$6::text/);
     assert.match(texto, /validade = \$7::text/);
@@ -196,6 +198,7 @@ describe('listarPosicoes — mapeamento e paginação', () => {
       material: 'Luva de raspa',
       codigoInterno: 'EPI-030',
       categoria: 'EPI',
+      grupo: 'EPI',
       tipo: 'Luva',
       tamanho: 'P',
       unidade: 'par',

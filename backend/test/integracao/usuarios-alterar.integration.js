@@ -37,7 +37,7 @@ describe('Gestão de Usuários — Alterar usuário (PostgreSQL real)', () => {
     assert.equal(r.status, 200, JSON.stringify(r.body));
     assert.deepEqual(r.body.usuario, {
       id: u.id, nome: u.corpo.nome, email: u.email, perfil: 'USUARIO', ativo: true, cpf: u.corpo.cpf, matricula: u.corpo.matricula, setor: 'Administrativo',
-      horarioTrabalho: { inicio: '08:00', fim: '17:00' }, ipsPermitidos: ['203.0.113.10'], grupoAcessoId: grupoA,
+      horarioTrabalho: { inicio: '08:00', fim: '17:00' }, ipsPermitidos: ['203.0.113.10'], grupoAcessoId: grupoA, vinculoSst: false,
     });
     const lista = await g.request(g.app).get(`${BASE}?limite=100`).set('Cookie', g.cookie(master));
     assert.equal(JSON.stringify(lista.body).includes(u.corpo.cpf), false);

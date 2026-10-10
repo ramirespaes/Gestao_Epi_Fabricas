@@ -76,7 +76,8 @@ function criarNavegador(origem) {
 }
 
 const FORMULARIO = {
-  nome: 'Botina edição C2', categoria: 'EPI', tipo: 'Botina de Segurança', tipoCustom: '', controleTamanho: 'grade',
+  // Classificação V2: EPI + Proteção dos pés + "Outros" com especificação (não depende do catálogo da empresa).
+  nome: 'Botina edição C2', categoria: 'EPI', grupoProtecao: 'Proteção dos pés', tipo: 'Outros', tipoCustom: 'Botina de Segurança', controleTamanho: 'grade',
   fabricante: 'Bracol', codigoInterno: 'ED-001', quantidadeComprada: '30', tamanhoEntrada: '42', caEntrada: '38271', caValidadeEntrada: '2030-12-31',
   unidade: 'Par', estoqueMinimo: '5', prazoUnidade: 'meses', prazo: '6', descricao: 'Material da melhoria C2', registrarEntrada: 'sim',
 };
@@ -276,11 +277,11 @@ describe('Melhoria C2 — edição de material e entrada inicial (PostgreSQL rea
     assert.equal((await pool.query('SELECT count(*)::int AS n FROM logs_auditoria WHERE empresa_id = $1', [empresa.A])).rows[0].n, auditoriaAntes, 'nada auditado');
   });
 
-  test('trocar categoria e tipo não mexe nos lotes: o lote 42 continua com saldo, a lista de tamanhos segue o novo tipo, e Itens Disponíveis mostra o novo tipo', async () => {
+  test('reclassificar (grupo, proteção e tipo) não mexe nos lotes: o lote 42 continua com saldo, a lista de tamanhos segue o novo tipo, e Itens Disponíveis mostra o novo grupo e tipo', async () => {
     await entrar(EMAILS.master, empresa.A);
     const antes = await lotes(idBotina);
-    // 12G-8: o tipo tem de ser da nova categoria (Luva é de EPI); Camisa é de Uniforme.
-    const { resposta } = await editar(idBotina, { categoria: 'Uniforme', tipo: 'Camisa' });
+    // Classificação V2: a reclassificação leva o bloco completo (Vestimenta + Proteção do tronco + "Outros" com especificação).
+    const { resposta } = await editar(idBotina, { categoria: 'Vestimenta', grupoProtecao: 'Proteção do tronco', tipo: 'Outros', tipoCustom: 'Camisa' });
     assert.equal(resposta.ok, true, JSON.stringify(resposta));
     assert.deepEqual(await lotes(idBotina), antes, 'lotes intactos');
 
@@ -293,7 +294,7 @@ describe('Melhoria C2 — edição de material e entrada inicial (PostgreSQL rea
     const c3 = await EpiHttp.requisitar('GET', '/estoque/itens-disponiveis?limite=100');
     assert.equal(c3.ok, true, JSON.stringify(c3));
     const linhas = c3.dados.itens.filter((i) => i.materialId === idBotina);
-    assert.deepEqual(linhas.map((i) => [i.tamanho, i.saldo, i.tipo, i.categoria]), [['42', 30, 'Camisa', 'Uniforme']]);
+    assert.deepEqual(linhas.map((i) => [i.tamanho, i.saldo, i.tipo, i.categoria, i.grupo]), [['42', 30, 'Outros', 'Vestimenta', 'Vestimenta']]);
   });
 
   test('entrada inicial "Não": material criado sem lote e sem movimentação, mesmo com quantidade no formulário', async () => {
@@ -338,10 +339,9 @@ describe('Melhoria C2 — edição de material e entrada inicial (PostgreSQL rea
   });
 
   describe('óculos de proteção com ou sem grau', () => {
-    // OCULOS é o nome histórico (só legado gravado por SQL); INCOLOR é um dos dois tipos oficiais (12G-8).
+    // OCULOS é o nome histórico (só legado gravado por SQL). Na V2, óculos com grau é a classificação EPI + Proteção ocular, qualquer tipo.
     const OCULOS = 'Óculos de proteção';
-    const INCOLOR = 'Óculos de Proteção Incolor';
-    const OCULOS_FORM = { ...FORMULARIO, tipo: INCOLOR, controleTamanho: 'unico', codigoInterno: '', registrarEntrada: 'nao', unidade: 'Unidade' };
+    const OCULOS_FORM = { ...FORMULARIO, grupoProtecao: 'Proteção ocular', tipoCustom: 'Óculos incolor', controleTamanho: 'unico', codigoInterno: '', registrarEntrada: 'nao', unidade: 'Unidade' };
     const noBanco = async (id) => (await pool.query('SELECT tipo, oculos_com_grau FROM materiais WHERE id = $1', [id])).rows[0];
     const cadastrar = async (campos) => {
       const m = EpiMateriais.formulario.montarCorpo(campos);
@@ -357,12 +357,12 @@ describe('Melhoria C2 — edição de material e entrada inicial (PostgreSQL rea
         const { corpo, material } = await cadastrar({ ...OCULOS_FORM, nome: `Óculos ${oculosComGrau}`, oculosComGrau });
         assert.equal(corpo.oculosComGrau, oculosComGrau);
         assert.equal(material.oculosComGrau, oculosComGrau);
-        assert.deepEqual(await noBanco(material.id), { tipo: INCOLOR, oculos_com_grau: oculosComGrau });
+        assert.deepEqual(await noBanco(material.id), { tipo: 'Outros', oculos_com_grau: oculosComGrau });
       }
-      const { corpo, material } = await cadastrar({ ...OCULOS_FORM, nome: 'Luva com caixa escondida', tipo: 'Luva', oculosComGrau: true });
+      const { corpo, material } = await cadastrar({ ...OCULOS_FORM, nome: 'Luva com caixa escondida', grupoProtecao: 'Proteção das mãos', tipoCustom: 'Luva', oculosComGrau: true });
       assert.equal(Object.hasOwn(corpo, 'oculosComGrau'), false);
       assert.equal(material.oculosComGrau, null);
-      assert.deepEqual(await noBanco(material.id), { tipo: 'Luva', oculos_com_grau: null });
+      assert.deepEqual(await noBanco(material.id), { tipo: 'Outros', oculos_com_grau: null });
     });
 
     test('legado NULL: abrir e editar outro campo não classifica; a classificação só vai quando a pessoa mexe na caixa', async () => {
@@ -388,18 +388,18 @@ describe('Melhoria C2 — edição de material e entrada inicial (PostgreSQL rea
       assert.deepEqual([EpiMateriais.formulario.camposDoMaterial(recarga.dados.material).campos.oculosComGrau, EpiMateriais.formulario.oculosSemClassificacao(recarga.dados.material)], [false, false]);
     });
 
-    test('troca de tipo pela página: óculos para Luva limpa a informação; Luva para óculos envia a classificação escolhida', async () => {
+    test('reclassificação pela página: de Proteção ocular para outra proteção limpa a informação; de volta a Proteção ocular envia a escolha', async () => {
       await entrar(EMAILS.master, empresa.A);
       const { material: oculos } = await cadastrar({ ...OCULOS_FORM, nome: 'Óculos que vira luva', oculosComGrau: true });
-      const paraLuva = await editar(oculos.id, { tipo: 'Luva' });
-      assert.deepEqual(paraLuva.montado.corpo, { tipo: 'Luva', oculosComGrau: null });
+      const paraLuva = await editar(oculos.id, { grupoProtecao: 'Proteção das mãos', tipoCustom: 'Luva' });
+      assert.deepEqual(paraLuva.montado.corpo, { categoria: 'EPI', grupoProtecao: 'Proteção das mãos', tipo: 'Outros', tipoDescricao: 'Luva', oculosComGrau: null });
       assert.equal(paraLuva.resposta.ok, true, JSON.stringify(paraLuva.resposta));
-      assert.deepEqual(await noBanco(oculos.id), { tipo: 'Luva', oculos_com_grau: null });
+      assert.deepEqual(await noBanco(oculos.id), { tipo: 'Outros', oculos_com_grau: null });
 
-      const paraOculos = await editar(oculos.id, { tipo: INCOLOR, oculosComGrau: true, oculosComGrauTocado: true });
-      assert.deepEqual(paraOculos.montado.corpo, { tipo: INCOLOR, oculosComGrau: true });
+      const paraOculos = await editar(oculos.id, { grupoProtecao: 'Proteção ocular', tipoCustom: 'Óculos incolor', oculosComGrau: true, oculosComGrauTocado: true });
+      assert.deepEqual(paraOculos.montado.corpo, { categoria: 'EPI', grupoProtecao: 'Proteção ocular', tipo: 'Outros', tipoDescricao: 'Óculos incolor', oculosComGrau: true });
       assert.equal(paraOculos.resposta.ok, true, JSON.stringify(paraOculos.resposta));
-      assert.deepEqual(await noBanco(oculos.id), { tipo: INCOLOR, oculos_com_grau: true });
+      assert.deepEqual(await noBanco(oculos.id), { tipo: 'Outros', oculos_com_grau: true });
     });
   });
 

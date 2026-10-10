@@ -14,7 +14,7 @@ const JUSTIFICATIVA_MAXIMA = 500;
 const COLUNAS = Object.freeze([
   'id', 'empresa_id', 'entrega_id', 'material_id', 'lote_id', 'quantidade', 'motivo', 'justificativa',
   'previsto_no_ghe', 'justificativa_fora_ghe', 'material_nome', 'material_tipo', 'material_codigo_interno', 'material_unidade',
-  'material_prazo_uso_dias', 'material_oculos_com_grau', 'material_exige_ca', 'solicitacao_item_id',
+  'material_prazo_uso_dias', 'material_oculos_com_grau', 'material_exige_ca', 'solicitacao_item_id', 'material_grupo_protecao',
 ]);
 const COLUNAS_ITEM = COLUNAS.join(', ');
 // Do lote só o que é imutável (tamanho, CA, validade); o saldo muda e não é histórico.
@@ -44,6 +44,8 @@ const mapearMaterial = (l) => ({
   prazoUsoDias: l.material_prazo_uso_dias,
   oculosComGrau: l.material_oculos_com_grau,
   exigeCa: l.material_exige_ca,
+  // Cópia da classificação V2: só existe nas entregas feitas depois dela; o formato antigo não ganha a chave.
+  ...(l.material_grupo_protecao === null || l.material_grupo_protecao === undefined ? {} : { grupoProtecao: l.material_grupo_protecao }),
 });
 
 const mapearItem = (l) => ({
@@ -96,12 +98,12 @@ async function criar(executor, {
     `INSERT INTO entregas_epi_itens
        (empresa_id, entrega_id, material_id, lote_id, quantidade, motivo, justificativa, previsto_no_ghe, justificativa_fora_ghe,
         material_nome, material_tipo, material_codigo_interno, material_unidade, material_prazo_uso_dias, material_oculos_com_grau, material_exige_ca,
-        solicitacao_item_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        solicitacao_item_id, material_grupo_protecao)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
      RETURNING ${COLUNAS_ITEM}`,
     [empresaId, entregaId, materialId, loteId, quantidade, motivo, justificativa, previstoNoGhe, justificativaForaGhe,
       material.nome, material.tipo, material.codigoInterno, material.unidade, material.prazoUsoDias, material.oculosComGrau, material.exigeCa,
-      solicitacaoItemId],
+      solicitacaoItemId, material.grupoProtecao ?? null],
   );
   return mapearItem(rows[0]);
 }

@@ -289,7 +289,7 @@ describe('12G-4 — Entregas por solicitação do frontend contra servidor e Pos
     const m = await f.material();
     const lote = await f.estoque(m, 2);
     const { id, item } = await f.aprovada({ materialId: m, quantidade: 1, funcionarioId: d.trabalhador3 });
-    await pool.query('UPDATE funcionarios SET ativo = false WHERE id = $1', [d.trabalhador3]);
+    await pool.query("UPDATE funcionarios SET situacao = 'INATIVO' WHERE id = $1", [d.trabalhador3]);
     try {
       comoUsuario(u.entregador);
       const it = (await S.acoes.detalhe(id)).dados.itens.find((i) => i.id === item);
@@ -300,7 +300,7 @@ describe('12G-4 — Entregas por solicitação do frontend contra servidor e Pos
       const entrega = await cru(id, [{ solicitacaoItemId: item, loteId: lote, quantidade: 1 }]);
       assert.deepEqual([entrega.status, entrega.codigo], [409, 'SOLICITACAO_NAO_ENTREGAVEL']);
     } finally {
-      await pool.query('UPDATE funcionarios SET ativo = true WHERE id = $1', [d.trabalhador3]);
+      await pool.query("UPDATE funcionarios SET situacao = 'ATIVO' WHERE id = $1", [d.trabalhador3]);
     }
   });
 });

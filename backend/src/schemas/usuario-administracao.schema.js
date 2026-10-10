@@ -84,6 +84,8 @@ const criar = {
     grupoAcessoId: idCorpo.optional(),
     // Duplicar usuário: outro usuário DA EMPRESA como modelo de acesso (camadas individuais; nunca dados pessoais).
     usuarioModeloId: idCorpo.optional(),
+    // Vínculo operacional com a Segurança do Trabalho (padrão desligado; nunca inferido do perfil; só o MASTER concede).
+    vinculoSst: z.boolean().optional(),
   }),
 };
 
@@ -110,7 +112,7 @@ const redefinirSenha = { params: paramsComId, body: z.strictObject({ senhaProvis
 // Alterar usuário (Gestão de Usuários): só o que o fluxo normal pode mudar. NÃO existe `cpf` aqui (imutável: strictObject
 // recusa), nem senha (ação própria). `horarioTrabalho: null` limpa, `ipsPermitidos: []` limpa (substitui a lista),
 // `grupoAcessoId: null` retira o grupo. O e-mail é o login real da identidade.
-const CAMPOS_ALTERAVEIS = ['nome', 'email', 'tipoConta', 'matricula', 'setor', 'horarioTrabalho', 'ipsPermitidos', 'grupoAcessoId'];
+const CAMPOS_ALTERAVEIS = ['nome', 'email', 'tipoConta', 'matricula', 'setor', 'horarioTrabalho', 'ipsPermitidos', 'grupoAcessoId', 'vinculoSst'];
 const alterar = {
   params: paramsComId,
   body: z.strictObject({
@@ -122,6 +124,7 @@ const alterar = {
     horarioTrabalho: z.strictObject({ inicio: hora, fim: hora }).nullable().optional(),
     ipsPermitidos: z.array(ipPermitido).max(IPS_MAXIMO).optional(),
     grupoAcessoId: idCorpo.nullable().optional(),
+    vinculoSst: z.boolean().optional(),
   }).refine((corpo) => CAMPOS_ALTERAVEIS.some((c) => corpo[c] !== undefined), {
     message: 'Informe ao menos um campo para alterar',
     params: { codigo: 'ALTERACAO_VAZIA' },

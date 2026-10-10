@@ -20,7 +20,8 @@
     "db:criar-administrador-plataforma": "node --require dotenv/config scripts/criar-administrador-plataforma.js",
     "db:mfa:liberar-cadastro": "node --require dotenv/config scripts/mfa-liberar-cadastro.js",
     "db:mfa:redefinir": "node --require dotenv/config scripts/mfa-redefinir.js",
-    "alertas:processar": "node --require dotenv/config scripts/processar-alertas-estoque.js"
+    "alertas:processar": "node --require dotenv/config scripts/processar-alertas-estoque.js",
+    "fiscalizacao:recuperar": "node --require dotenv/config scripts/fiscalizacao-recuperar-abandonados.js"
   },
   "keywords": [],
   "author": "",
@@ -40,6 +41,7 @@
     "nodemailer": "10.0.13",
     "otpauth": "9.5.2",
     "pg": "^8.23.0",
+    "yazl": "3.3.1",
     "zod": "^4.5.4"
   },
   "devDependencies": {

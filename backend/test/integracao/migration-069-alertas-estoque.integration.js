@@ -149,20 +149,26 @@ describe('migration 069 — agendamento (scheduler/outbox) do aviso de disponibi
     await q('DELETE FROM alertas_estoque_agendamentos WHERE id = $1', [a.id]);
   });
 
-  test('a 069 não edita nenhuma migration antiga e só acrescenta a sua entrada ao manifesto: 78 migrations, 000 a 077 (a 070 e a 071 são da 12G-8; a 072 e a 073 são das Configurações; a 074 é da Gestão de Usuários)', () => {
+  test('a 069 não edita nenhuma migration antiga e só acrescenta a sua entrada ao manifesto: 85 migrations, 000 a 084 (a 070 e a 071 são da 12G-8; a 072 e a 073 são das Configurações; a 074 é da Gestão de Usuários; a 075 a 077 são do usuário administrativo; a 078 e a 079 são das permissões e da auditoria; a 080 é da Fiscalização)', () => {
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO, 'checksums.json'), 'utf8'));
     const arquivos = fs.readdirSync(DIRETORIO).filter((n) => /^\d{3}_.*\.sql$/.test(n)).sort();
-    assert.equal(arquivos.length, 79);
-    assert.equal(arquivos[arquivos.length - 10].slice(0, 3), '069');
-    assert.equal(arquivos[arquivos.length - 9].slice(0, 3), '070');
-    assert.equal(arquivos[arquivos.length - 8].slice(0, 3), '071');
-    assert.equal(arquivos[arquivos.length - 7].slice(0, 3), '072');
-    assert.equal(arquivos[arquivos.length - 6].slice(0, 3), '073');
-    assert.equal(arquivos[arquivos.length - 5].slice(0, 3), '074');
-    assert.equal(arquivos[arquivos.length - 4].slice(0, 3), '075');
-    assert.equal(arquivos[arquivos.length - 3].slice(0, 3), '076');
-    assert.equal(arquivos[arquivos.length - 2].slice(0, 3), '077');
-    assert.equal(arquivos[arquivos.length - 1].slice(0, 3), '078');
+    assert.equal(arquivos.length, 85);
+    assert.equal(arquivos[arquivos.length - 16].slice(0, 3), '069');
+    assert.equal(arquivos[arquivos.length - 15].slice(0, 3), '070');
+    assert.equal(arquivos[arquivos.length - 14].slice(0, 3), '071');
+    assert.equal(arquivos[arquivos.length - 13].slice(0, 3), '072');
+    assert.equal(arquivos[arquivos.length - 12].slice(0, 3), '073');
+    assert.equal(arquivos[arquivos.length - 11].slice(0, 3), '074');
+    assert.equal(arquivos[arquivos.length - 10].slice(0, 3), '075');
+    assert.equal(arquivos[arquivos.length - 9].slice(0, 3), '076');
+    assert.equal(arquivos[arquivos.length - 8].slice(0, 3), '077');
+    assert.equal(arquivos[arquivos.length - 7].slice(0, 3), '078');
+    assert.equal(arquivos[arquivos.length - 6].slice(0, 3), '079');
+    assert.equal(arquivos[arquivos.length - 5].slice(0, 3), '080');
+    assert.equal(arquivos[arquivos.length - 4].slice(0, 3), '081');
+    assert.equal(arquivos[arquivos.length - 3].slice(0, 3), '082');
+    assert.equal(arquivos[arquivos.length - 2].slice(0, 3), '083');
+    assert.equal(arquivos[arquivos.length - 1].slice(0, 3), '084');
     assert.deepEqual(Object.keys(manifesto.migrations).sort(), arquivos);
     for (const nome of arquivos) {
       const sha = crypto.createHash('sha256').update(fs.readFileSync(path.join(DIRETORIO, nome))).digest('hex');

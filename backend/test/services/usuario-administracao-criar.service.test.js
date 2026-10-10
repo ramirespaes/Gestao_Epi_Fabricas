@@ -79,7 +79,7 @@ describe('criação do usuário administrativo — uma transação só', () => {
     assert.equal(/52998224725|203\.0\.113|2001:db8|cometa|argon2/.test(texto), false, 'auditoria sem CPF, IP ou senha');
     assert.equal(auditoria.dadosNovos.ipsPermitidos, 2);
     assert.equal(auditoria.dadosNovos.temCpf, true);
-    assert.deepEqual(r.administrativo, { cpfMascarado: '***.***.***-25', matricula: 'ADM-001', setor: 'Recursos Humanos', horarioTrabalho: { inicio: '08:00', fim: '18:00' }, ipsPermitidos: ['203.0.113.10', '2001:db8::10'], grupoAcessoId: 4 });
+    assert.deepEqual(r.administrativo, { cpfMascarado: '***.***.***-25', matricula: 'ADM-001', setor: 'Recursos Humanos', horarioTrabalho: { inicio: '08:00', fim: '18:00' }, ipsPermitidos: ['203.0.113.10', '2001:db8::10'], grupoAcessoId: 4, vinculoSst: false });
     assert.equal(JSON.stringify(r).includes(ENTRADA.cpf), false, 'o CPF nunca volta em claro');
   });
 

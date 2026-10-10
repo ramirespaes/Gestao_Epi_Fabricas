@@ -49,8 +49,8 @@ describe('acoes: somente endpoints reais; empresa e ator nunca saem do navegador
   test('GHE: listar, criar, alterar, inativar e reativar', async () => {
     const { acoes } = modulo();
     await acoes.listarGrupos();
-    await acoes.criarGrupo({ nome: '  Soldadores ', setor: 'Caldeiraria', funcao: '', descricao: ' ', riscos: 'Fumos' });
-    await acoes.alterarGrupo(5, { nome: 'Soldadores II', setor: '', funcao: 'Soldador', descricao: 'Turno A', riscos: '' });
+    await acoes.criarGrupo({ codigo: ' GHE-001 ', nome: '  Soldadores ', riscos: 'Fumos' });
+    await acoes.alterarGrupo(5, { codigo: 'GHE-002', nome: 'Soldadores II', riscos: '' });
     await acoes.inativarGrupo(5);
     await acoes.reativarGrupo(5);
     assert.deepEqual(chamadas.map((c) => `${c.metodo} ${c.caminho}`), [
@@ -60,8 +60,8 @@ describe('acoes: somente endpoints reais; empresa e ator nunca saem do navegador
       'POST /api/grupos-homogeneos/5/inativar',
       'POST /api/grupos-homogeneos/5/reativar',
     ]);
-    assert.deepEqual(chamadas[1].corpo, { nome: 'Soldadores', setor: 'Caldeiraria', funcao: null, descricao: null, riscos: 'Fumos' });
-    assert.deepEqual(chamadas[2].corpo, { nome: 'Soldadores II', setor: null, funcao: 'Soldador', descricao: 'Turno A', riscos: null });
+    assert.deepEqual(chamadas[1].corpo, { nome: 'Soldadores', codigo: 'GHE-001', riscos: 'Fumos' }, 'sem setor, função nem descrição legada');
+    assert.deepEqual(chamadas[2].corpo, { nome: 'Soldadores II', codigo: 'GHE-002', riscos: null }, 'o PATCH não apaga setor, função nem descrição legada');
     assert.deepEqual([chamadas[3].corpo, chamadas[4].corpo], [{}, {}]);
   });
 
@@ -148,7 +148,7 @@ describe('mensagens: padrão de erros da API', () => {
     assert.match(mensagens.erro({ ok: false, status: 403 }), /perfil/i);
     assert.match(mensagens.erro({ ok: false, status: 404, codigo: 'GHE_NAO_ENCONTRADO' }), /GHE não encontrado/);
     assert.match(mensagens.erro({ ok: false, status: 404, codigo: 'MATERIAL_NAO_ENCONTRADO' }), /EPI não encontrado/);
-    assert.match(mensagens.erro({ ok: false, status: 409, codigo: 'GHE_NOME_EM_USO' }), /Já existe um GHE com este nome/);
+    assert.match(mensagens.erro({ ok: false, status: 409, codigo: 'GHE_NOME_EM_USO' }), /Já existe um GHE com esta descrição/);
     assert.match(mensagens.erro({ ok: false, status: 409, codigo: 'GHE_INATIVO' }), /GHE inativo/);
     assert.match(mensagens.erro({ ok: false, status: 409, codigo: 'MATERIAL_INATIVO' }), /EPI inativo/);
     assert.match(mensagens.erro({ ok: false, status: 409, codigo: 'GHE_MATERIAL_JA_VINCULADO' }), /já está vinculado/);
@@ -178,15 +178,15 @@ describe('inspeção estática: pages/employee-groups.html e menus', () => {
       assert.equal(proibido.test(codigo), false, `employee-groups.html contém ${proibido}`);
     }
     const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
-    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/grupos-homogeneos.js']);
+    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../vendor/read-excel-file-9.3.10.min.js', '../js/importacao-ghe.js', '../js/grupos-homogeneos.js']);
     assert.match(codigo, /EpiSessaoEmpresarial\.montar\(/);
     assert.match(codigo, /EpiPermissoes\.prepararPagina\(\{\s*pagina: 'employeeGroups'/);
     for (const id of ['telaSessao', 'telaSessaoMensagem', 'telaSessaoPortal', 'aviso',
-      'gruposCorpo', 'botaoNovoGrupo', 'formGrupo', 'gheNome', 'gheSetor', 'gheFuncao', 'gheDescricao', 'gheRiscos', 'botaoSalvarGrupo', 'botaoCancelarGrupo',
+      'gruposCorpo', 'botaoNovoGrupo', 'botaoImportarGhe', 'formGrupo', 'gheCodigo', 'gheNome', 'gheRiscos', 'botaoSalvarGrupo', 'botaoCancelarGrupo',
       'matrizTitulo', 'matrizCorpo', 'botaoSalvarMatriz', 'botaoDescartarMatriz', 'matrizResumo']) {
       assert.ok(ids.includes(id), `falta #${id}`);
     }
-    assert.match(html, /EPIs vinculados ao GHE/);
+    assert.match(html, /Vínculos diretos de materiais/, 'o bloco de materiais diretos passou a ser o secundário (exceções / legado)');
   });
 
   test('menus das páginas integradas e início do Portal oferecem a página (oculta até a permissão)', () => {
@@ -218,7 +218,7 @@ function montarPagina(responder, { acesso = ACESSO_EDITAR } = {}) {
   const sandbox = {
     document: { getElementById: el, querySelectorAll: () => [] },
     window: { SAFEWORK_PORTAL_API_BASE_URL: BASE, confirm: () => true },
-    EpiHttp, EpiGruposHomogeneos: modulo(),
+    EpiHttp, EpiGruposHomogeneos: modulo(), EpiImportacaoGhe: require('../js/importacao-ghe'), // eslint-disable-line global-require
     EpiPermissoes: { prepararPagina: async () => acesso },
     EpiSessaoEmpresarial: { montar: async (o) => { sandbox.opcoesMontar = o; return CONTEXTO; }, sessaoEncerrada() { sandbox.encerrada = true; } },
     console, setTimeout, Promise, String, Number, Array, Object, JSON,
@@ -340,6 +340,7 @@ describe('página (DOM simulado)', () => {
     const pg = montarPagina((u, o) => (o.method === 'POST' ? resposta(400, { status: 'erro', codigo: 'VALIDACAO', mensagem: 'x' }) : resposta(200, listaGrupos([grupo()]))));
     await pg.esperar();
     await pg.clicar('botaoNovoGrupo');
+    Object.assign(pg.el('gheCodigo'), { value: 'GHE-010' });
     Object.assign(pg.el('gheNome'), { value: 'Pintores' });
     await pg.clicar('botaoSalvarGrupo');
     assert.match(pg.el('aviso').innerHTML, /dados/i);
@@ -349,20 +350,22 @@ describe('página (DOM simulado)', () => {
     const ok = montarPagina(srv.responder);
     await ok.esperar();
     await ok.clicar('botaoNovoGrupo');
+    Object.assign(ok.el('gheCodigo'), { value: 'GHE-010' });
     Object.assign(ok.el('gheNome'), { value: 'Pintores' });
     await ok.clicar('botaoSalvarGrupo');
     assert.equal(srv.estado.grupos.length, 2);
     assert.match(ok.el('gruposCorpo').innerHTML, /Pintores/);
   });
 
-  test('nome vazio não chega à API', async () => {
+  test('descrição vazia não chega à API', async () => {
     const pg = montarPagina(resposta(200, listaGrupos([])));
     await pg.esperar();
     await pg.clicar('botaoNovoGrupo');
+    Object.assign(pg.el('gheCodigo'), { value: 'GHE-010' });
     const antes = chamadas.length;
     await pg.clicar('botaoSalvarGrupo');
     assert.equal(chamadas.length, antes);
-    assert.match(pg.el('aviso').innerHTML, /nome/i);
+    assert.match(pg.el('aviso').innerHTML, /descri/i);
   });
 
   test('somente leitura: sem novo GHE nem salvar; caixas desabilitadas', async () => {

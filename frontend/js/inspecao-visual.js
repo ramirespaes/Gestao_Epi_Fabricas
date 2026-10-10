@@ -25,7 +25,7 @@
   var TEXTO = 'Em integração — tela aberta só para inspeção visual. Protótipo sem ligação com o sistema: nenhum dado é gravado.';
   var RECUSA = 'Protótipo em inspeção visual: nenhuma ação grava dados.';
   // Mesmos arquivos de INSPECAO_PROTOTIPOS (permissoes-efetivas.js); conferido por teste.
-  var PROTOTIPOS = ['delivered-items.html', 'emails-gestao.html', 'lgpd.html', 'reports.html', 'self-service.html', 'support.html'];
+  var PROTOTIPOS = ['emails-gestao.html', 'lgpd.html', 'self-service.html', 'support.html'];
   // MÓDULOS TEMPORARIAMENTE DESATIVADOS / ADIADOS (05/10/2026): Compras / Entradas e
   // Regras Função / Setor saem da inspeção — o link nunca recebe o marcador, o clique
   // é recusado com aviso e a própria página não ativa a inspeção nem com ?inspecao=1

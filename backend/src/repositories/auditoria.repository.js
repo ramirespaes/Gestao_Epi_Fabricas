@@ -88,10 +88,13 @@ async function registrar(executor, {
   const ipGravado = ipParaGravar(ip);
   const dispositivoGravado = dispositivoParaGravar(dispositivo);
 
+  // perfil_ator (079): o perfil que o ator tem AGORA, lido na mesma instrução. Fica gravado como o perfil de então.
+  // Sem usuário (evento automático) ou usuário de outra empresa, fica nulo.
   const { rows } = await executor.query(
     `INSERT INTO logs_auditoria
-       (empresa_id, usuario_id, acao, referencia, descricao, ip, dispositivo, contexto, dados_anteriores, dados_novos)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       (empresa_id, usuario_id, acao, referencia, descricao, ip, dispositivo, contexto, dados_anteriores, dados_novos, perfil_ator)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+             (SELECT u.perfil FROM usuarios u WHERE u.empresa_id = $1 AND u.id = $2))
      RETURNING id, criado_em`,
     [empresaId, usuarioId, acao, referencia, descricao, ipGravado, dispositivoGravado, contexto, dadosAnteriores, dadosNovos],
   );

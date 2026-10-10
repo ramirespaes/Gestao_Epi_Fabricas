@@ -73,7 +73,7 @@
       <nav class="nav">
         <div class="nav-section">Visão geral</div>
         <a href="dashboard.html" data-pagina="dashboard" style="display:none"><div class="nav-icon blue">dashboard</div>Dashboard</a>
-        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon indigo">analytics</div>Relatórios<span class="nav-etiqueta">Em integração</span></a>
+        <a href="reports.html" data-pagina="reports" style="display:none"><div class="nav-icon indigo">analytics</div>Relatórios</a>
         <div class="nav-section">Estoque</div>
         <a href="materials.html" data-pagina="materials" style="display:none"><div class="nav-icon teal">inventory_2</div>Gestão de estoque</a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon orange">shopping_cart</div>Compras / Entradas<span class="nav-etiqueta">Em integração</span></a>
@@ -83,8 +83,9 @@
         <a class="active" href="javascript:void(0)" data-pagina="employeeGroups" style="display:none"><div class="nav-icon purple">group_work</div>Gestão de GHE</a>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor<span class="nav-etiqueta">Em integração</span></a>
         <div class="nav-section">Entregas</div>
-        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon green">inventory</div>EPIs Entregues<span class="nav-etiqueta">Em integração</span></a>
+        <a href="delivered-items.html" data-pagina="deliveredItems" style="display:none"><div class="nav-icon green">inventory</div>EPIs Entregues</a>
         <a href="epi-ficha.html" data-pagina="epiFicha" style="display:none"><div class="nav-icon brown">description</div>Ficha de EPI</a>
+        <a href="funcionarios.html" data-pagina="funcionarios" style="display:none"><div class="nav-icon teal">people</div>Cadastro de Colaboradores</a>
         <a href="employee-history.html" data-pagina="employeeHistory" style="display:none"><div class="nav-icon blue">history</div>Histórico de Funcionários</a>
         <div class="nav-section">Solicitações</div>
         <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">badge</div>Autoatendimento (Totem)<span class="nav-etiqueta">Em integração</span></a>
@@ -128,27 +129,51 @@
                 <p>Cadastre, edite, inative ou reative os GHEs. Escolha um GHE para ver os EPIs vinculados.</p>
               </div>
             </div>
-            <button id="botaoNovoGrupo" class="filled-btn" type="button" hidden><span class="material-symbols-outlined">add</span>Novo GHE</button>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button id="botaoImportarGhe" class="outlined-btn" type="button" hidden><span class="material-symbols-outlined">upload_file</span>Importar GHE / EPIs</button>
+              <button id="botaoNovoGrupo" class="filled-btn" type="button" hidden><span class="material-symbols-outlined">add</span>Novo GHE</button>
+              <input type="file" id="arquivoImportacaoGhe" accept=".xlsx" hidden aria-label="Escolher planilha .xlsx de GHE e EPIs">
+            </div>
           </div>
+
+          <section id="painelImportacaoGhe" hidden style="margin-bottom:18px">
+            <h3 style="font-size:15px;font-weight:600;margin:0 0 8px">Importação de GHE / EPIs</h3>
+            <p id="importacaoArquivo" style="font-size:13px;color:var(--on-surface-variant);margin:0 0 8px"></p>
+            <div id="importacaoAviso" role="status" aria-live="polite" style="display:none;margin-bottom:12px"></div>
+            <div id="importacaoResumo" style="margin-bottom:12px"></div>
+            <div style="margin-bottom:8px"><button id="botaoMostrarExistentes" class="outlined-btn" type="button" hidden>Mostrar itens já existentes</button></div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Linha</th>
+                    <th>GHE</th>
+                    <th>Descrição</th>
+                    <th>EPI</th>
+                    <th>Classificação</th>
+                    <th>Resultado</th>
+                    <th>Observação</th>
+                  </tr>
+                </thead>
+                <tbody id="importacaoCorpo"></tbody>
+              </table>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:12px;flex-wrap:wrap">
+              <button id="botaoCancelarImportacao" class="outlined-btn" type="button">Cancelar</button>
+              <button id="botaoConfirmarImportacao" class="filled-btn" type="button" disabled><span class="material-symbols-outlined">task_alt</span>Confirmar importação</button>
+            </div>
+          </section>
 
           <form id="formGrupo" hidden novalidate style="margin-bottom:18px">
             <h3 id="formGrupoTitulo" style="font-size:15px;font-weight:600;margin:0 0 12px">Novo GHE</h3>
             <div class="filters-grid">
               <div class="field">
-                <label for="gheNome">Nome *</label>
+                <label for="gheCodigo">Código GHE *</label>
+                <input id="gheCodigo" class="input" type="text" maxlength="30" autocomplete="off" placeholder="GHE-001">
+              </div>
+              <div class="field">
+                <label for="gheNome">Descrição *</label>
                 <input id="gheNome" class="input" type="text" maxlength="150" required>
-              </div>
-              <div class="field">
-                <label for="gheSetor">Setor</label>
-                <input id="gheSetor" class="input" type="text" maxlength="100">
-              </div>
-              <div class="field">
-                <label for="gheFuncao">Função</label>
-                <input id="gheFuncao" class="input" type="text" maxlength="100">
-              </div>
-              <div class="field">
-                <label for="gheDescricao">Descrição</label>
-                <textarea id="gheDescricao" class="input" rows="2" maxlength="2000"></textarea>
               </div>
               <div class="field">
                 <label for="gheRiscos">Riscos</label>
@@ -166,8 +191,7 @@
               <thead>
                 <tr>
                   <th>GHE</th>
-                  <th>Setor</th>
-                  <th>Função</th>
+                  <th>Descrição</th>
                   <th>Situação</th>
                   <th>Ações</th>
                 </tr>
@@ -177,13 +201,42 @@
           </div>
         </section>
 
+        <section id="painelEpisGhe" class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <div class="card-icon">rule</div>
+              <div>
+                <h2 id="tiposTitulo">EPIs do GHE</h2>
+                <p id="tiposGhe" style="font-weight:600;color:var(--on-surface)">Escolha um GHE para ver os EPIs.</p>
+                <p>EPIs / Tipos previstos para o GHE: escolha a classificação de cada tipo e vincule. Tipos inativos só aparecem quando já estão vinculados.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>EPI / Tipo</th>
+                  <th>Grupo</th>
+                  <th>Grupo de Proteção</th>
+                  <th>Situação</th>
+                  <th>Classificação</th>
+                  <th>Ação</th>
+                </tr>
+              </thead>
+              <tbody id="tiposCorpo"></tbody>
+            </table>
+          </div>
+        </section>
+
         <section class="card">
           <div class="card-header">
             <div class="card-title">
               <div class="card-icon">checklist</div>
               <div>
-                <h2 id="matrizTitulo">EPIs vinculados ao GHE</h2>
-                <p>Marque os EPIs do GHE selecionado e salve. O prazo de troca vem do cadastro do material.</p>
+                <h2 id="matrizTitulo">Vínculos diretos de materiais — exceções / legado</h2>
+                <p>Exceções / legado: materiais ligados diretamente ao GHE, independentes dos tipos acima. Marque os materiais e salve. O prazo de troca vem do cadastro do material.</p>
               </div>
             </div>
           </div>
@@ -218,6 +271,8 @@
 <script src="../js/sessao-empresarial.js"></script>
 <script src="../js/permissoes-efetivas.js"></script>
 <script src="../js/pagina-base.js"></script>
+<script src="../vendor/read-excel-file-9.3.10.min.js"></script>
+<script src="../js/importacao-ghe.js"></script>
 <script src="../js/grupos-homogeneos.js"></script>
 <script>
 /*
@@ -231,6 +286,7 @@
 
   var $ = function (id) { return document.getElementById(id); };
   var G = EpiGruposHomogeneos;
+  var I = EpiImportacaoGhe;
 
   // Mesmo endereço do Portal do Cliente (portal/config.js).
   EpiHttp.configurar({ baseUrl: window.SAFEWORK_PORTAL_API_BASE_URL });
@@ -240,23 +296,39 @@
   var grupos = [];
   var selecionado = null;
   var editando = null;      // id do GHE em edição; null = novo
+  var editandoComCodigo = false; // o GHE em edição já tem código: o campo não pode ficar vazio (a API não remove código)
   var persistidos = [];     // vínculos devolvidos pela API
   var marcados = [];        // seleção pendente na tela
   // Proteção contra respostas fora de ordem e contra respostas que chegam
   // depois do encerramento da sessão.
   var consultaGrupos = 0;
   var consultaMatriz = 0;
+  var consultaTipos = 0;
+  var tiposDoServidor = []; // última lista devolvida pela API: a única fonte do que se desenha
+  var gheDosTiposAtivo = true;
+  var escolhas = {};        // classificação escolhida por tipo, ainda não enviada
+  var gravandoTipo = false;
   var encerrada = false;
+  // Importação (6C): as linhas ORIGINAIS da planilha são a única coisa enviada na confirmação; o preview só mostra.
+  var linhasOriginais = [];
+  var previaPronta = false;
+  var lendoArquivo = false;
+  var confirmandoImportacao = false;
+  var dadosPrevia = null;          // última resposta do preview (o que o servidor mediu); a tabela é só uma visão dela
+  var mostrarExistentes = false;   // os itens sem alteração só aparecem quando pedidos
 
-  $('gruposCorpo').innerHTML = G.render.estado('Carregando…', 5);
+  $('gruposCorpo').innerHTML = G.render.estado('Carregando…', 4);
   $('matrizCorpo').innerHTML = G.render.estado('Escolha um GHE para ver os EPIs.', 6);
+  $('tiposCorpo').innerHTML = G.render.estado('Escolha um GHE para ver os EPIs.', 6);
 
   function mostrarAviso(texto, tipo) {
     var caixa = $('aviso');
     if (!texto) { caixa.style.display = 'none'; caixa.innerHTML = ''; return; }
     var cor = tipo === 'erro'
       ? 'background:var(--error-container);color:var(--error);border-color:rgba(255,59,48,0.2)'
-      : 'background:rgba(52,199,89,0.08);color:#1E7B34;border-color:rgba(52,199,89,0.25)';
+      : tipo === 'info'
+        ? 'background:rgba(0,122,255,0.06);color:var(--on-surface-variant);border-color:var(--outline)'
+        : 'background:rgba(52,199,89,0.08);color:#1E7B34;border-color:rgba(52,199,89,0.25)';
     caixa.innerHTML = '<div class="notice" style="' + cor + '">' + G.render.escaparHtml(texto) + '</div>';
     caixa.style.display = 'block';
   }
@@ -269,19 +341,19 @@
   function desenharGrupos() {
     $('gruposCorpo').innerHTML = grupos.length
       ? G.render.linhasGrupos(grupos, { podeEditar: podeEditar, selecionado: selecionado })
-      : G.render.estado(G.mensagens.vazioGrupos, 5);
+      : G.render.estado(G.mensagens.vazioGrupos, 4);
   }
 
   async function carregarGrupos() {
     if (encerrada) return;
     var minha = ++consultaGrupos;
-    $('gruposCorpo').innerHTML = G.render.estado('Carregando…', 5);
+    $('gruposCorpo').innerHTML = G.render.estado('Carregando…', 4);
     var r = await G.acoes.listarGrupos();
     if (encerrada || minha !== consultaGrupos) return;
     if (!r.ok) {
       if (falhou(r)) return;
       grupos = [];
-      $('gruposCorpo').innerHTML = G.render.estado(G.mensagens.erro(r), 5);
+      $('gruposCorpo').innerHTML = G.render.estado(G.mensagens.erro(r), 4);
       return;
     }
     grupos = r.dados.grupos || [];
@@ -313,35 +385,126 @@
     var d = r.dados;
     persistidos = G.matriz.vinculados(d.materiais);
     marcados = persistidos.slice();
-    $('matrizTitulo').textContent = 'EPIs vinculados ao GHE: ' + d.grupo.nome + (d.grupo.ativo ? '' : ' (inativo)');
+    $('matrizTitulo').textContent = 'Vínculos diretos de materiais — exceções / legado: ' + d.grupo.nome + (d.grupo.ativo ? '' : ' (inativo)');
     $('matrizCorpo').innerHTML = d.materiais.length
       ? G.render.linhasMatriz(d.materiais, marcados, { podeEditar: podeEditar })
       : G.render.estado(G.mensagens.vazioMateriais, 6);
     atualizarResumo();
   }
 
-  function abrirFormulario(grupo) {
+  // ─── Bloco principal: GHE × tipo de material ─────────────────────────
+  function mostrarIdentificacao(grupoDaApi) {
+    var g = grupos.find(function (x) { return x.id === selecionado; }) || grupoDaApi;
+    $('tiposTitulo').textContent = 'EPIs do GHE';
+    $('tiposGhe').textContent = g ? G.render.identificacaoDoGhe(g) : 'Escolha um GHE para ver os EPIs.';
+  }
+
+  function desenharTipos() {
+    $('tiposCorpo').innerHTML = tiposDoServidor.length
+      ? G.render.linhasTipos(tiposDoServidor, { podeEditar: podeEditar, gheAtivo: gheDosTiposAtivo })
+      : G.render.estado(G.mensagens.vazioTipos, 6);
+  }
+
+  // O que está na tela é sempre o que o servidor devolveu na última leitura. Falha de leitura aparece dentro do bloco,
+  // nunca no aviso compartilhado da página.
+  async function carregarTipos() {
+    if (encerrada || selecionado === null) return;
+    var minha = ++consultaTipos;
+    escolhas = {};
+    mostrarIdentificacao(null);
+    $('tiposCorpo').innerHTML = G.render.estado('Carregando…', 6);
+    var r = await G.acoes.consultarTipos(selecionado);
+    if (encerrada || minha !== consultaTipos) return;
+    tiposDoServidor = [];
+    if (!r.ok) {
+      if (falhou(r)) return;
+      $('tiposCorpo').innerHTML = G.render.estado(G.mensagens.erro(r), 6);
+      return true;
+    }
+    tiposDoServidor = r.dados.tipos || [];
+    gheDosTiposAtivo = !r.dados.grupo || r.dados.grupo.ativo !== false;
+    mostrarIdentificacao(r.dados.grupo);
+    desenharTipos();
+    return true; // true = o bloco foi desenhado (resposta atual, sucesso ou erro de leitura); sessão encerrada e resposta velha não desenham
+  }
+
+  function tipoDoServidor(id) {
+    return tiposDoServidor.find(function (t) { return t.id === id; }) || null;
+  }
+
+  // Grava e SEMPRE relê: sucesso ou falha, a tela volta a mostrar o estado persistido (sem atualização otimista).
+  async function gravarTipo(operacao, sucesso) {
+    var gheId = selecionado;
+    gravandoTipo = true;
+    try {
+      var r = await operacao();
+      if (encerrada || gheId !== selecionado) return;
+      if (!r.ok) {
+        if (falhou(r)) return;
+        mostrarAviso(G.mensagens.erro(r), 'erro');
+      } else {
+        mostrarAviso(sucesso, 'ok');
+      }
+      await carregarTipos();
+    } finally {
+      gravandoTipo = false;
+    }
+  }
+
+  function acaoDeTipo(acao, id) {
+    var t = tipoDoServidor(id);
+    if (!podeEditar || selecionado === null || gravandoTipo || t === null) return undefined;
+    var escolha = escolhas[id] || '';
+    if (acao === 'vincular-tipo') {
+      if (t.vinculado || !gheDosTiposAtivo || t.ativo !== true) return undefined;
+      if (!escolha) { mostrarAviso(G.mensagens.ESCOLHA_CLASSIFICACAO, 'erro'); return undefined; }
+      return gravarTipo(function () { return G.acoes.definirTipo(selecionado, id, escolha); }, G.mensagens.SALVO_TIPO);
+    }
+    if (!t.vinculado) return undefined;
+    if (acao === 'alterar-tipo') {
+      if (!escolha || escolha === t.classificacao) { mostrarAviso(G.mensagens.SEM_ALTERACAO_TIPO, 'info'); return undefined; }
+      return gravarTipo(function () { return G.acoes.definirTipo(selecionado, id, escolha); }, G.mensagens.SALVO_TIPO);
+    }
+    if (acao === 'desvincular-tipo') {
+      if (!window.confirm('Desvincular o tipo "' + t.nome + '" do GHE? Os vínculos diretos de materiais não são alterados.')) return undefined;
+      return gravarTipo(function () { return G.acoes.desvincularTipo(selecionado, id); }, G.mensagens.REMOVIDO_TIPO);
+    }
+    return undefined;
+  }
+
+  // Rola até o início do elemento; sem scrollIntoView (outro ambiente, teste) simplesmente não rola.
+  function rolarAte(id) {
+    var alvo = $(id);
+    if (alvo && typeof alvo.scrollIntoView === 'function') alvo.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // opcoes.rolar: só o Editar rola até o formulário (o Novo GHE abre logo abaixo do botão).
+  function abrirFormulario(grupo, opcoes) {
+    var rolar = !!(opcoes && opcoes.rolar);
     editando = grupo ? grupo.id : null;
+    editandoComCodigo = !!(grupo && grupo.codigo);
     $('formGrupoTitulo').textContent = grupo ? 'Editar GHE' : 'Novo GHE';
+    // Setor, Função e a descrição legada não estão na tela: ficam no banco e nunca são enviados.
+    $('gheCodigo').value = grupo ? grupo.codigo || '' : '';
     $('gheNome').value = grupo ? grupo.nome || '' : '';
-    $('gheSetor').value = grupo ? grupo.setor || '' : '';
-    $('gheFuncao').value = grupo ? grupo.funcao || '' : '';
-    $('gheDescricao').value = grupo ? grupo.descricao || '' : '';
     $('gheRiscos').value = grupo ? grupo.riscos || '' : '';
     $('formGrupo').hidden = false;
-    $('gheNome').focus();
+    if (rolar) rolarAte('formGrupo');
+    // preventScroll: o foco instantâneo interromperia a rolagem suave.
+    (grupo ? $('gheNome') : $('gheCodigo')).focus(rolar ? { preventScroll: true } : undefined);
   }
 
   function fecharFormulario() {
     editando = null;
+    editandoComCodigo = false;
     $('formGrupo').hidden = true;
   }
 
   async function salvarGrupo() {
-    var dados = {
-      nome: $('gheNome').value, setor: $('gheSetor').value, funcao: $('gheFuncao').value,
-      descricao: $('gheDescricao').value, riscos: $('gheRiscos').value,
-    };
+    var dados = { codigo: $('gheCodigo').value, nome: $('gheNome').value, riscos: $('gheRiscos').value };
+    // Código: obrigatório em GHE novo e em GHE que já tem código; o legado sem código edita normalmente sem ele.
+    // Só a presença é checada aqui; formato e unicidade são do backend.
+    if (!String(dados.codigo).trim() && (editando === null || editandoComCodigo)) { mostrarAviso(G.mensagens.CODIGO_OBRIGATORIO, 'erro'); return; }
     if (!String(dados.nome).trim()) { mostrarAviso(G.mensagens.NOME_OBRIGATORIO, 'erro'); return; }
     var botao = $('botaoSalvarGrupo');
     botao.disabled = true;
@@ -356,7 +519,7 @@
       fecharFormulario();
       mostrarAviso(G.mensagens.SALVO_GRUPO, 'ok');
       await carregarGrupos();
-      if (selecionado !== null) await carregarMatriz();
+      if (selecionado !== null) { await carregarTipos(); await carregarMatriz(); }
     } finally {
       botao.disabled = false;
     }
@@ -377,7 +540,7 @@
     }
     mostrarAviso(acao === 'inativar' ? 'GHE inativado.' : 'GHE reativado.', 'ok');
     await carregarGrupos();
-    if (selecionado === id) await carregarMatriz();
+    if (selecionado === id) { await carregarTipos(); await carregarMatriz(); }
   }
 
   async function salvarMatriz() {
@@ -406,12 +569,29 @@
       selecionado = id;
       mostrarAviso('', null);
       desenharGrupos();
-      return carregarMatriz();
+      // Os dois blocos são independentes: a falha de um não impede o outro. A rolagem é uma só, quando o bloco principal já está na tela.
+      return carregarTipos().then(function (desenhou) {
+        if (desenhou) rolarAte('painelEpisGhe');
+        return carregarMatriz();
+      });
     }
     if (!podeEditar) return undefined;
-    if (acao === 'editar') { abrirFormulario(grupos.find(function (g) { return g.id === id; }) || null); return undefined; }
+    if (acao === 'editar') { abrirFormulario(grupos.find(function (g) { return g.id === id; }) || null, { rolar: true }); return undefined; }
     if (acao === 'inativar' || acao === 'reativar') return mudarEstado(acao, id);
     return undefined;
+  });
+
+  $('tiposCorpo').addEventListener('click', function (evento) {
+    var alvo = evento.target && evento.target.closest ? evento.target.closest('[data-acao]') : null;
+    if (!alvo) return undefined;
+    return acaoDeTipo(alvo.getAttribute('data-acao'), Number(alvo.getAttribute('data-id')));
+  });
+
+  $('tiposCorpo').addEventListener('change', function (evento) {
+    var alvo = evento.target;
+    var id = alvo && alvo.getAttribute ? Number(alvo.getAttribute('data-tipo-id')) : NaN;
+    if (!podeEditar || !id) return;
+    escolhas[id] = String(alvo.value || '');
   });
 
   $('matrizCorpo').addEventListener('change', function (evento) {
@@ -423,7 +603,146 @@
     atualizarResumo();
   });
 
+  // ─── Importação de GHE / EPIs (6C) ───────────────────────────────────
+  function avisoImportacao(texto, tipo) {
+    var caixa = $('importacaoAviso');
+    if (!texto) { caixa.style.display = 'none'; caixa.innerHTML = ''; return; }
+    var cor = tipo === 'erro'
+      ? 'background:var(--error-container);color:var(--error);border-color:rgba(255,59,48,0.2)'
+      : 'background:rgba(0,122,255,0.06);color:var(--on-surface-variant);border-color:var(--outline)';
+    caixa.innerHTML = '<div class="notice" style="' + cor + '">' + G.render.escaparHtml(texto) + '</div>';
+    caixa.style.display = 'block';
+  }
+
+  function limparImportacao() {
+    linhasOriginais = [];
+    previaPronta = false;
+    dadosPrevia = null;
+    mostrarExistentes = false;
+    $('botaoMostrarExistentes').hidden = true;
+    $('arquivoImportacaoGhe').value = '';
+    $('painelImportacaoGhe').hidden = true;
+    $('importacaoArquivo').textContent = '';
+    $('importacaoResumo').innerHTML = '';
+    $('importacaoCorpo').innerHTML = '';
+    $('botaoConfirmarImportacao').disabled = true;
+    avisoImportacao('', null);
+  }
+
+  // Preview por diferenças: a tabela principal mostra o que grava ou tem problema; o que já está em dia fica atrás do botão.
+  // Só há o que confirmar quando o servidor aponta alteração (linha aplicável ou operação sobre o GHE, como atribuir código).
+  function desenharPrevia() {
+    var d = I.diferencas.resumir(dadosPrevia);
+    var botao = $('botaoMostrarExistentes');
+    previaPronta = d.haAlteracao;
+    $('importacaoResumo').innerHTML = I.render.resumoPrevia(dadosPrevia.resumo, dadosPrevia.ghes);
+    $('importacaoCorpo').innerHTML = I.render.linhasPrevia(I.diferencas.linhasVisiveis(dadosPrevia, { mostrarExistentes: mostrarExistentes }));
+    avisoImportacao(I.mensagens.semAlteracao(d), 'info');
+    $('botaoConfirmarImportacao').disabled = !d.haAlteracao;
+    botao.hidden = d.semAlteracao === 0;
+    botao.textContent = mostrarExistentes ? 'Ocultar itens já existentes' : 'Mostrar itens já existentes';
+  }
+
+  // Falha antes da API (arquivo, colunas, limite): mensagem no painel, sem preview e sem nada para confirmar.
+  function recusarArquivo(resultado) {
+    limparImportacao();
+    $('painelImportacaoGhe').hidden = false;
+    avisoImportacao(I.mensagens.arquivo(resultado), 'erro');
+  }
+
+  async function bytesIniciais(arquivo) {
+    try { return new Uint8Array(await arquivo.slice(0, 4).arrayBuffer()); } catch (e) { return new Uint8Array(); }
+  }
+
+  async function escolherArquivo() {
+    var seletor = $('arquivoImportacaoGhe');
+    var arquivo = seletor.files && seletor.files[0];
+    if (!arquivo || encerrada || lendoArquivo || confirmandoImportacao) return;
+    lendoArquivo = true;
+    try {
+      limparImportacao();
+      var inicio = await bytesIniciais(arquivo);
+      var conferido = I.arquivo.verificar({ nome: arquivo.name, tamanho: arquivo.size, inicio: inicio });
+      if (!conferido.ok) { recusarArquivo(conferido); return; }
+      var lido = await I.arquivo.lerXlsx(arquivo, function (a) { return window.readXlsxFile(a); });
+      if (!lido.ok) { recusarArquivo(lido); return; }
+      var montado = I.planilha.montarLinhas(lido.linhas);
+      if (!montado.ok) { recusarArquivo(montado); return; }
+
+      var r = await I.acoes.previa(montado.linhas);
+      if (encerrada) return;
+      $('painelImportacaoGhe').hidden = false;
+      $('importacaoArquivo').textContent = arquivo.name + ' — ' + montado.linhas.length + ' linha(s) de dados';
+      if (!r.ok) {
+        if (falhou(r)) return;
+        avisoImportacao(I.mensagens.erro(r), 'erro');
+        return;
+      }
+      linhasOriginais = montado.linhas; // a confirmação reenvia estas linhas inteiras: o servidor recalcula e só grava as diferenças
+      dadosPrevia = r.dados;
+      mostrarExistentes = false;
+      desenharPrevia();
+    } finally {
+      lendoArquivo = false;
+      if (!encerrada) $('arquivoImportacaoGhe').value = ''; // permite escolher o mesmo arquivo de novo
+    }
+  }
+
+  // O GHE selecionado não é mais confiável depois de uma importação: fecha a área de EPIs e deixa nova escolha.
+  function fecharAreaDoGhe() {
+    consultaMatriz += 1;
+    consultaTipos += 1;
+    selecionado = null;
+    tiposDoServidor = [];
+    escolhas = {};
+    persistidos = [];
+    marcados = [];
+    $('tiposTitulo').textContent = 'EPIs do GHE';
+    $('tiposGhe').textContent = 'Escolha um GHE para ver os EPIs.';
+    $('tiposCorpo').innerHTML = G.render.estado('Escolha um GHE para ver os EPIs.', 6);
+    $('matrizTitulo').textContent = 'Vínculos diretos de materiais — exceções / legado';
+    $('matrizCorpo').innerHTML = G.render.estado('Escolha um GHE para ver os EPIs.', 6);
+    atualizarResumo();
+  }
+
+  async function confirmarImportacao() {
+    if (!previaPronta || confirmandoImportacao || lendoArquivo || encerrada) return;
+    if (!window.confirm(I.mensagens.PERGUNTA_CONFIRMAR)) return;
+    confirmandoImportacao = true;
+    $('botaoConfirmarImportacao').disabled = true;
+    avisoImportacao('', null);
+    try {
+      var r = await I.acoes.confirmar(linhasOriginais);
+      if (encerrada) return;
+      if (!r.ok) {
+        if (falhou(r)) return;
+        avisoImportacao(I.mensagens.erro(r), 'erro');
+        $('botaoConfirmarImportacao').disabled = false; // o preview continua; dá para tentar de novo
+        return;
+      }
+      previaPronta = false;
+      linhasOriginais = [];
+      dadosPrevia = null;
+      $('botaoMostrarExistentes').hidden = true;
+      fecharAreaDoGhe();
+      $('importacaoResumo').innerHTML = I.render.resumoResultado(r.dados);
+      $('importacaoCorpo').innerHTML = I.render.linhasResultado(r.dados.linhas);
+      await carregarGrupos();
+    } finally {
+      confirmandoImportacao = false;
+    }
+  }
+
   $('botaoNovoGrupo').addEventListener('click', function () { abrirFormulario(null); });
+  $('botaoImportarGhe').addEventListener('click', function () { $('arquivoImportacaoGhe').click(); });
+  $('arquivoImportacaoGhe').addEventListener('change', escolherArquivo);
+  $('botaoConfirmarImportacao').addEventListener('click', confirmarImportacao);
+  $('botaoCancelarImportacao').addEventListener('click', limparImportacao);
+  $('botaoMostrarExistentes').addEventListener('click', function () {
+    if (dadosPrevia === null) return;
+    mostrarExistentes = !mostrarExistentes;
+    desenharPrevia();
+  });
   $('botaoCancelarGrupo').addEventListener('click', fecharFormulario);
   $('botaoSalvarGrupo').addEventListener('click', salvarGrupo);
   $('botaoSalvarMatriz').addEventListener('click', salvarMatriz);
@@ -433,17 +752,24 @@
     encerrada = true;
     consultaGrupos += 1;
     consultaMatriz += 1;
+    consultaTipos += 1;
+    tiposDoServidor = [];
+    escolhas = {};
     grupos = [];
     selecionado = null;
     persistidos = [];
     marcados = [];
     fecharFormulario();
+    limparImportacao();
     $('gruposCorpo').innerHTML = '';
     $('matrizCorpo').innerHTML = '';
-    $('matrizTitulo').textContent = 'EPIs vinculados ao GHE';
+    $('tiposCorpo').innerHTML = '';
+    $('tiposGhe').textContent = '';
+    $('matrizTitulo').textContent = 'Vínculos diretos de materiais — exceções / legado';
     $('matrizResumo').textContent = '—';
     $('botaoSalvarMatriz').disabled = true;
     $('botaoDescartarMatriz').disabled = true;
+    $('botaoImportarGhe').hidden = true;
     mostrarAviso('', null);
   }
 
@@ -469,6 +795,7 @@
       podeEditar = acesso.podeAlterar === true;
       podeCriar = !!(recursos && recursos.criar === true);
       $('botaoNovoGrupo').hidden = !podeCriar;
+      $('botaoImportarGhe').hidden = !(podeCriar && podeEditar); // a API de importação exige criar E editar
       $('botaoSalvarMatriz').hidden = !podeEditar;
       $('botaoDescartarMatriz').hidden = !podeEditar;
       return carregarGrupos();

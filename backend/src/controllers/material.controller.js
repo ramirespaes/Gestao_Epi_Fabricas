@@ -28,7 +28,7 @@ function criarMaterialController({ pool: poolInjetado }) {
     async criar(req, res) {
       const {
         nome, tipo, tipoDescricao, fabricante, prazoUsoDias, exigeTamanho, oculosComGrau, unidade, estoqueMinimo,
-        categoria, codigoInterno, descricao, tamanhos,
+        categoria, codigoInterno, descricao, tamanhos, categoriaDescricao, grupoProtecao, grupoProtecaoDescricao, tipoMaterialId,
       } = req.validado.body;
 
       const material = await materialService.criar(poolInjetado, {
@@ -47,6 +47,10 @@ function criarMaterialController({ pool: poolInjetado }) {
         codigoInterno: codigoInterno ?? null,
         descricao: descricao ?? null,
         tamanhos: tamanhos ?? [],
+        categoriaDescricao: categoriaDescricao ?? null,
+        grupoProtecao: grupoProtecao ?? null,
+        grupoProtecaoDescricao: grupoProtecaoDescricao ?? null,
+        tipoMaterialId: tipoMaterialId ?? null,
         ip: req.ip,
         dispositivo: req.headers['user-agent'],
       });
@@ -105,6 +109,10 @@ function criarMaterialController({ pool: poolInjetado }) {
         ...(Object.hasOwn(corpo, 'codigoInterno') ? { codigoInterno: corpo.codigoInterno, codigoInternoInformado: true } : {}),
         ...(Object.hasOwn(corpo, 'descricao') ? { descricao: corpo.descricao, descricaoInformado: true } : {}),
         ...(Object.hasOwn(corpo, 'tamanhos') ? { tamanhos: corpo.tamanhos, tamanhosInformado: true } : {}),
+        ...(Object.hasOwn(corpo, 'categoriaDescricao') ? { categoriaDescricao: corpo.categoriaDescricao, categoriaDescricaoInformado: true } : {}),
+        ...(Object.hasOwn(corpo, 'grupoProtecao') ? { grupoProtecao: corpo.grupoProtecao, grupoProtecaoInformado: true } : {}),
+        ...(Object.hasOwn(corpo, 'grupoProtecaoDescricao') ? { grupoProtecaoDescricao: corpo.grupoProtecaoDescricao, grupoProtecaoDescricaoInformado: true } : {}),
+        ...(Object.hasOwn(corpo, 'tipoMaterialId') ? { tipoMaterialId: corpo.tipoMaterialId, tipoMaterialIdInformado: true } : {}),
         ip: req.ip,
         dispositivo: req.headers['user-agent'],
       });

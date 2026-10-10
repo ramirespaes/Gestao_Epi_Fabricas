@@ -1,6 +1,7 @@
 'use strict';
 
 const { HttpError } = require('../errors/HttpError');
+const { exigirPodeReceberEpi, exigirNaoInativo } = require('../utils/situacao-funcionario');
 const funcionarioRepo = require('../repositories/funcionario.repository');
 const materialRepo = require('../repositories/material.repository');
 const materialTamanhoRepo = require('../repositories/material-tamanho.repository');
@@ -372,7 +373,7 @@ async function criarSolicitacao(pool, {
     await exigirAtorAtivo(client, empresaId, atorId);
     const funcionario = await funcionarioRepo.buscarPorIdParaEntrega(client, empresaId, funcionarioId);
     if (funcionario === null) throw HttpError.notFound('FUNCIONARIO_NAO_ENCONTRADO', 'Trabalhador não encontrado');
-    if (funcionario.ativo !== true) throw HttpError.conflict('FUNCIONARIO_INATIVO', 'Trabalhador inativo não recebe EPI');
+    exigirPodeReceberEpi(funcionario);
 
     const materialIds = [...new Set(itensN.map((i) => i.materialId))].sort((a, b) => a - b);
     const materiais = validarMateriaisDaSolicitacao(await materialRepo.listarPorIdsParaVinculo(client, empresaId, materialIds), materialIds);
@@ -381,7 +382,7 @@ async function criarSolicitacao(pool, {
     validarGrade(itensN, await materialTamanhoRepo.listarPorMateriais(client, empresaId, materialIds));
 
     const ghe = funcionario.grupoHomogeneoId === null ? null : await gheRepo.buscarPorId(client, empresaId, funcionario.grupoHomogeneoId);
-    const previstos = new Set(ghe === null ? [] : await gheMaterialRepo.listarMaterialIdsVinculados(client, empresaId, ghe.id));
+    const previstos = new Set(ghe === null ? [] : await gheMaterialRepo.listarMaterialIdsPrevistos(client, empresaId, ghe.id, materialIds));
 
     const solicitacao = await solicitacaoRepo.criar(client, {
       empresaId,
@@ -508,7 +509,8 @@ async function decidirSolicitacao(pool, {
     if (aprovados.length > 0) {
       const funcionario = await funcionarioRepo.buscarPorIdParaEntrega(client, empresaId, solicitacao.funcionarioId);
       if (funcionario === null) throw HttpError.notFound('FUNCIONARIO_NAO_ENCONTRADO', 'Trabalhador não encontrado');
-      if (funcionario.ativo !== true) throw HttpError.conflict('FUNCIONARIO_INATIVO', 'Trabalhador inativo não recebe EPI');
+      // Decidir é ato administrativo sobre um pedido que já existe: o afastado não o impede; só o inativo (a entrega, sim).
+      exigirNaoInativo(funcionario);
       const materialIds = [...new Set(aprovados.map((f) => f.item.materialId))].sort((a, b) => a - b);
       const materiais = await materialRepo.listarPorIdsParaVinculo(client, empresaId, materialIds);
       const materiaisPorId = new Map(materiais.map((m) => [m.id, m]));

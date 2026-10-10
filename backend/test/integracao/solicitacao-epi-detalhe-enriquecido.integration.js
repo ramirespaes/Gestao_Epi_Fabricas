@@ -58,7 +58,7 @@ describe('detalhe enriquecido da solicitação de EPI — HTTP (PostgreSQL real)
     await renomear(d.sst1, 'Elisa Decisora');
 
     trabalhador = (await inserir(pool, 'funcionarios', {
-      empresa_id: A, nome: 'Fabio Trabalhador', matricula: 'DET-001', cpf: '52998224725', grupo_homogeneo_id: d.gheA, setor: 'Laminação', funcao: 'Operador de ponte', ativo: true,
+      empresa_id: A, nome: 'Fabio Trabalhador', matricula: 'DET-001', cpf: '52998224725', grupo_homogeneo_id: d.gheA, setor: 'Laminação', funcao: 'Operador de ponte', situacao: 'ATIVO',
     })).id;
     material = await criarMaterial(pool, A, 'Protetor facial Detalhe', { exigeTamanho: false, unidade: 'unidade' });
 
@@ -147,12 +147,12 @@ describe('detalhe enriquecido da solicitação de EPI — HTTP (PostgreSQL real)
 
   test('os dados de apresentação são os do cadastro atual: trabalhador inativado aparece como inativo, material renomeado com o nome novo', async () => {
     const outroTrabalhador = (await inserir(pool, 'funcionarios', {
-      empresa_id: d.empresaA, nome: 'Gilda Inativada', matricula: 'DET-002', cpf: '11144477735', setor: null, funcao: null, ativo: true,
+      empresa_id: d.empresaA, nome: 'Gilda Inativada', matricula: 'DET-002', cpf: '11144477735', setor: null, funcao: null, situacao: 'ATIVO',
     })).id;
     const s = await solicitacaoSvc.criarSolicitacao(pool, {
       empresaId: d.empresaA, atorId: u.solicitante, funcionarioId: outroTrabalhador, itens: [{ materialId: material, tamanho: null, quantidade: 1, motivo: 'ADMISSAO' }], chaveIdempotencia: chaveNova(),
     });
-    await q('UPDATE funcionarios SET ativo = false WHERE id = $1', [outroTrabalhador]);
+    await q("UPDATE funcionarios SET situacao = 'INATIVO' WHERE id = $1", [outroTrabalhador]);
     await q("UPDATE materiais SET nome = 'Protetor facial Renomeado' WHERE id = $1", [material]);
     try {
       const r = await como(u.sst).get(detalhe(s.solicitacao.id));

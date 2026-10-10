@@ -153,6 +153,8 @@
   function celula(v, classe) {
     return '<td' + (classe ? ' class="' + classe + '"' : '') + '>' + (texto(v) ? escaparHtml(v) : '—') + '</td>';
   }
+  /** Grupo de exibição medido pelo servidor (a especificação quando "Outros"); a categoria gravada só como reserva. */
+  function grupoDe(i) { return texto(i.grupo) ? i.grupo : i.categoria; }
   function celulaNumero(v, classe) {
     return '<td' + (classe ? ' class="' + classe + '"' : '') + '>' + escaparHtml(v) + '</td>';
   }
@@ -166,7 +168,7 @@
         var origem = origemDoMinimo(i);
         var minimo = escaparHtml(i.estoqueMinimo) + (origem ? ' <small style="color:var(--on-surface-variant)">' + escaparHtml(origem) + '</small>' : '');
         var status = situacoesDe(i).map(function (s) { return '<span class="badge ' + s.classe + '">' + s.texto + '</span>'; }).join(' ');
-        return '<tr>' + celula(i.categoria, 'col-sec') + celula(i.tipo, 'col-sec') + '<td>' + material + '</td>'
+        return '<tr>' + celula(grupoDe(i), 'col-sec') + celula(i.tipo, 'col-sec') + '<td>' + material + '</td>'
           + celula(i.tamanho)
           + celulaNumero(fisicoDe(i)) + celulaNumero(i.comprometido) + celulaNumero(i.saldoLivre) + celulaNumero(i.semCobertura)
           + '<td>' + minimo + '</td>' + celulaNumero(i.deficit, 'col-sec') + celulaNumero(i.necessidade)
@@ -235,7 +237,7 @@
         var material = texto(i.material) + (i.codigoInterno ? ' (' + i.codigoInterno + ')' : '');
         var situacao = situacoesDe(i).map(function (s) { return s.texto; }).join(' · ');
         linhas.push([
-          i.categoria || '—', i.tipo || '—', material, i.tamanho, fisicoDe(i), i.comprometido, i.saldoLivre, i.semCobertura,
+          grupoDe(i) || '—', i.tipo || '—', material, i.tamanho, fisicoDe(i), i.comprometido, i.saldoLivre, i.semCobertura,
           i.estoqueMinimo, origemDoMinimo(i), i.deficit, i.necessidade, unidadeExibida(i.unidade), situacao,
         ].map(campoCsv).join(';'));
       });

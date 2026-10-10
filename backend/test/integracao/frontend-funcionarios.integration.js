@@ -6,6 +6,7 @@ const express = require('express');
 const http = require('node:http');
 
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
+const { todasAsMigrations } = require('./helpers/entrega-epi');
 const { turnstileDeTeste, TOKEN_TURNSTILE_TESTE } = require('./helpers/turnstile-teste');
 const { criarAuthGlobalController } = require('../../src/controllers/auth-global.controller');
 const { criarAuthGlobalRoutes } = require('../../src/routes/auth-global.routes');
@@ -38,7 +39,8 @@ const EpiFuncionarios = require('../../../frontend/js/funcionarios');
  */
 
 // 041, 042 e 057: a FK composta da 073 referencia uq_funcionarios_empresa_id (057), que também exige estoque_lotes (042) e uq_materiais_empresa_id (041).
-const TODAS_AS_MIGRATIONS = [...Array.from({ length: 41 }, (_, i) => String(i).padStart(3, '0')), '041', '042', '057', '072', '073', '074', '075', '076', '077'];
+// Schema atual do sistema (inclui a 083, que a leitura de GHE projeta).
+const TODAS_AS_MIGRATIONS = todasAsMigrations();
 const SENHA = 'senha-forte-da-parte-c4-ponta-a-ponta';
 const EMAILS = { master: 'master.c4e2e@exemplo-cliente.com.br', leitor: 'leitor.c4e2e@exemplo-cliente.com.br' };
 
@@ -125,12 +127,12 @@ describe('C4 — importação e histórico pelo módulo real das páginas (Postg
 
   test('CSV com 250 funcionários (acentos longos) e 2 linhas com erro: lotes dentro dos 32 KB reais, 250 cadastrados, erros não enviados, relatório sem CPF', async () => {
     await entrar(EMAILS.master);
-    const linhas = ['Nome;Setor;Telefone;CPF;Matrícula;Nascimento;Contratação;Cargo;GHE'];
+    const linhas = ['Nome;Setor;Telefone;CPF;Matrícula;Nascimento;Contratação;Cargo;Situação;GHE'];
     for (let i = 0; i < 250; i += 1) {
-      linhas.push(`Funcionária ${'Ç'.repeat(100)} ${i};Produção ${'Á'.repeat(60)};(47) 9999-${String(i).padStart(4, '0')};${gerarCpf(i + 1)};E2E-${i};15/03/1990;01/06/2020;Operação ${'É'.repeat(60)};GHE e2e`);
+      linhas.push(`Funcionária ${'Ç'.repeat(100)} ${i};Produção ${'Á'.repeat(60)};(47) 9999-${String(i).padStart(4, '0')};${gerarCpf(i + 1)};E2E-${i};15/03/1990;01/06/2020;Operação ${'É'.repeat(60)};Ativo;GHE e2e`);
     }
-    linhas.push('Erro CPF;TI;;529.982.247-26;E2E-X1;;01/06/2020;Analista;GHE e2e');
-    linhas.push(`Repetido;TI;;${gerarCpf(1)};E2E-X2;;01/06/2020;Analista;GHE e2e`);
+    linhas.push('Erro CPF;TI;;529.982.247-26;E2E-X1;;01/06/2020;Analista;Ativo;GHE e2e');
+    linhas.push(`Repetido;TI;;${gerarCpf(1)};E2E-X2;;01/06/2020;Analista;Ativo;GHE e2e`);
     const bytes = new TextEncoder().encode(`﻿${linhas.join('\r\n')}\r\n`);
     const { texto } = EpiFuncionarios.arquivo.decodificarCsv(bytes);
     const interpretado = EpiFuncionarios.planilha.interpretar(EpiFuncionarios.arquivo.lerCsv(texto));
@@ -154,7 +156,7 @@ describe('C4 — importação e histórico pelo módulo real das páginas (Postg
 
   test('reimportar um CPF já cadastrado com outros dados: nada em dobro — volta como já cadastrado com divergências (campo e valor atual) e nada é alterado', async () => {
     await entrar(EMAILS.master);
-    const csv = `Nome;Setor;Telefone;CPF;Matrícula;Nascimento;Contratação;Cargo;GHE\r\nA;S;;${gerarCpf(1)};E2E-0;;01/06/2020;C;GHE e2e\r\n`;
+    const csv = `Nome;Setor;Telefone;CPF;Matrícula;Nascimento;Contratação;Cargo;Situação;GHE\r\nA;S;;${gerarCpf(1)};E2E-0;;01/06/2020;C;Ativo;GHE e2e\r\n`;
     const interpretado = EpiFuncionarios.planilha.interpretar(EpiFuncionarios.arquivo.lerCsv(csv));
     const corpos = EpiFuncionarios.lotes.montar(interpretado.linhas, { importacaoId: '6f1c1b1e-8d5a-4c7e-9b2a-1d3e5f7a9c0c', arquivo: { nome: 'a.csv', formato: 'csv', totalLinhas: 1 } });
     const r = await EpiFuncionarios.fluxo.importar(corpos);
@@ -169,7 +171,7 @@ describe('C4 — importação e histórico pelo módulo real das páginas (Postg
 
   test('perfil só com visualizar: a importação é recusada (403) e a página mostra o motivo; o histórico funciona', async () => {
     await entrar(EMAILS.leitor);
-    const csv = `Nome;Setor;Telefone;CPF;Matrícula;Nascimento;Contratação;Cargo;GHE\r\nB;S;;${gerarCpf(900)};E2E-L;;01/06/2020;C;GHE e2e\r\n`;
+    const csv = `Nome;Setor;Telefone;CPF;Matrícula;Nascimento;Contratação;Cargo;Situação;GHE\r\nB;S;;${gerarCpf(900)};E2E-L;;01/06/2020;C;Ativo;GHE e2e\r\n`;
     const interpretado = EpiFuncionarios.planilha.interpretar(EpiFuncionarios.arquivo.lerCsv(csv));
     const corpos = EpiFuncionarios.lotes.montar(interpretado.linhas, { importacaoId: '6f1c1b1e-8d5a-4c7e-9b2a-1d3e5f7a9c0d', arquivo: { nome: 'b.csv', formato: 'csv', totalLinhas: 1 } });
     const r = await EpiFuncionarios.fluxo.importar(corpos);

@@ -3,6 +3,7 @@
 const funcionarioService = require('../services/funcionario.service');
 const { mascararCpf } = require('../utils/normalizacao');
 const { pool } = require('../config/database');
+const { dataOperacional } = require('../utils/data-operacional');
 
 /**
  * Controller de funcionários (Bloco 9, Etapa B). Mesmo desenho de
@@ -28,12 +29,13 @@ function paraResposta(funcionario) {
   return { ...resto, cpfMascarado: mascararCpf(cpf) };
 }
 
-function criarFuncionarioController({ pool: poolInjetado }) {
+// S4: "hoje" das regras de data é a data civil (America/Sao_Paulo) do relógio injetado; o padrão é o relógio real.
+function criarFuncionarioController({ pool: poolInjetado, relogio = () => new Date() }) {
   return {
     async criar(req, res) {
       const c = req.validado.body;
       const funcionario = await funcionarioService.criar(poolInjetado, {
-        ...comContexto(req),
+        ...comContexto(req), hoje: dataOperacional(relogio()),
         matricula: c.matricula, nome: c.nome, cpf: c.cpf,
         grupoHomogeneoId: c.grupoHomogeneoId ?? null, dataNascimento: c.dataNascimento ?? null,
         setor: c.setor ?? null, funcao: c.funcao ?? null, cracha: c.cracha ?? null, telefone: c.telefone ?? null,
@@ -61,6 +63,13 @@ function criarFuncionarioController({ pool: poolInjetado }) {
       res.status(200).json({ status: 'ok', ...resultado, funcionarios: resultado.funcionarios.map(paraResposta) });
     },
 
+    // Única resposta com o CPF completo: dedicada, POST, no-store, empresa e ator só da sessão (corpo e query são vazios e estritos).
+    async revelarCpf(req, res) {
+      const { cpf } = await funcionarioService.revelarCpf(poolInjetado, { ...comContexto(req), funcionarioId: req.validado.params.id });
+      res.set('Cache-Control', 'no-store');
+      res.status(200).json({ status: 'ok', cpf });
+    },
+
     async buscar(req, res) {
       const funcionario = await funcionarioService.buscar(poolInjetado, { empresaId: req.empresa.id, funcionarioId: req.validado.params.id });
       res.status(200).json({ status: 'ok', funcionario: paraResposta(funcionario) });
@@ -69,7 +78,7 @@ function criarFuncionarioController({ pool: poolInjetado }) {
     async alterar(req, res) {
       const c = req.validado.body;
       const funcionario = await funcionarioService.alterar(poolInjetado, {
-        ...comContexto(req),
+        ...comContexto(req), hoje: dataOperacional(relogio()),
         funcionarioId: req.validado.params.id,
         ...(Object.hasOwn(c, 'matricula') ? { matricula: c.matricula } : {}),
         ...(Object.hasOwn(c, 'nome') ? { nome: c.nome } : {}),
@@ -89,6 +98,17 @@ function criarFuncionarioController({ pool: poolInjetado }) {
      * validado nunca carrega empresaId. Resposta 200 com um resultado por
      * linha — recusas e duplicidades de linha não são erro HTTP do lote.
      */
+    async listarGhesImportacao(req, res) {
+      const ghes = await funcionarioService.listarGhesParaImportacao(poolInjetado, { empresaId: req.empresa.id });
+      res.status(200).json({ status: 'ok', ghes });
+    },
+
+    // S3: seletor de GHE do formulário (employeeHistory.visualizar); a empresa vem só da sessão.
+    async listarGhes(req, res) {
+      const ghes = await funcionarioService.listarGhesParaFormulario(poolInjetado, { empresaId: req.empresa.id });
+      res.status(200).json({ status: 'ok', ghes });
+    },
+
     async importar(req, res) {
       const c = req.validado.body;
       const resultado = await funcionarioService.importar(poolInjetado, {
@@ -101,6 +121,13 @@ function criarFuncionarioController({ pool: poolInjetado }) {
     async inativar(req, res) {
       const { funcionario, alterado } = await funcionarioService.inativar(poolInjetado, { ...comContexto(req), funcionarioId: req.validado.params.id });
       res.status(200).json({ status: 'ok', funcionario: paraResposta(funcionario), alterado });
+    },
+
+    async alterarSituacao(req, res) {
+      const { funcionario, situacaoAnterior } = await funcionarioService.alterarSituacao(poolInjetado, {
+        ...comContexto(req), funcionarioId: req.validado.params.id, situacao: req.validado.body.situacao,
+      });
+      res.status(200).json({ status: 'ok', funcionario: paraResposta(funcionario), situacaoAnterior });
     },
 
     async reativar(req, res) {

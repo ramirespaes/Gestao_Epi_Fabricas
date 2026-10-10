@@ -80,7 +80,7 @@ describe('consultas HTTP da solicitação de EPI (PostgreSQL real)', () => {
     });
     R.suspensa = await criar(u.eu, tInativo, await f.material(), 1);
     await aprovar(R.suspensa);
-    await pool.query('UPDATE funcionarios SET ativo = false WHERE id = $1', [tInativo]);
+    await pool.query("UPDATE funcionarios SET situacao = 'INATIVO' WHERE id = $1", [tInativo]);
     R.reprovada = await criar(u.eu, d.trabalhador2, await f.material(), 1);
     await solicitacaoSvc.decidirSolicitacao(pool, {
       empresaId: A, atorId: d.sst1, solicitacaoId: R.reprovada.solicitacao.id, decisoes: [{ itemId: R.reprovada.itens[0].id, decisao: 'REPROVADO', justificativa: 'Sem necessidade comprovada' }], hoje: f.HOJE,

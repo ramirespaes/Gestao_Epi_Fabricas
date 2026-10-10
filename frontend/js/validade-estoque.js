@@ -124,7 +124,7 @@
     return '<tr>'
       + '<td>' + catalogo().marcacao(l) + escaparHtml(l.material)
         + (l.materialAtivo === false ? ' <span class="tag-inativo">Material inativo</span>' : '') + detalhe(l.codigoInterno) + '</td>'
-      + '<td>' + escaparHtml(texto(l.tipo) || TRACO) + detalhe(l.categoria) + '</td>'
+      + '<td>' + escaparHtml(texto(l.tipo) || TRACO) + detalhe(texto(l.grupo) ? l.grupo : l.categoria) + '</td>'
       + '<td>' + escaparHtml(textoDe.tamanho(l.tamanho)) + '</td>'
       + '<td>' + escaparHtml(textoDe.ca(l)) + '</td>'
       + '<td>' + escaparHtml(textoDe.validade(l)) + '</td>'

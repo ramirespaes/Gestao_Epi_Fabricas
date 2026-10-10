@@ -25,6 +25,8 @@ const EMPRESA = 42;
 const EMPRESA_OUTRA = 99;
 const ATOR_ID = 7;
 const MATERIAL_ID = 30;
+// Cadastro novo exige a classificação V2 completa; estes testes não tratam dela e usam o grupo "Outros" com especificação, que não consulta o catálogo.
+const CLS = { categoria: 'Outros', categoriaDescricao: 'Item de teste', tipo: 'Outros', tipoDescricao: 'Item de teste' };
 
 const material = (extra = {}) => ({
   id: MATERIAL_ID,
@@ -97,7 +99,7 @@ describe('criar — caminho válido', () => {
     const cliente = criarClienteFalso();
 
     const resultado = await servico.criar(criarPoolFalso(cliente), {
-      empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Botina de segurança', prazoUsoDias: 180, exigeTamanho: true,
+      empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Botina de segurança', prazoUsoDias: 180, exigeTamanho: true, ...CLS,
     });
 
     assert.equal(resultado.id, MATERIAL_ID);
@@ -116,23 +118,23 @@ describe('criar — caminho válido', () => {
   test('nome é aparado nas pontas, sem mexer em maiúsculas/minúsculas nem acentos', async (t) => {
     const escritas = mundoValido(t);
 
-    await servico.criar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, nome: '   Botina de segurança   ', prazoUsoDias: 180, exigeTamanho: true });
+    await servico.criar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, nome: '   Botina de segurança   ', prazoUsoDias: 180, exigeTamanho: true, ...CLS });
 
     assert.equal(escritas.criar.mock.calls[0].arguments[1].nome, 'Botina de segurança');
   });
 
   test('campos de texto opcionais ausentes, nulos ou só espaços viram null', async (t) => {
-    for (const tipo of [undefined, null, '   ']) {
+    for (const fabricante of [undefined, null, '   ']) {
       const escritas = mundoValido(t);
-      await servico.criar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Botina', prazoUsoDias: 180, exigeTamanho: true, tipo });
-      assert.equal(escritas.criar.mock.calls[0].arguments[1].tipo, null);
+      await servico.criar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Botina', prazoUsoDias: 180, exigeTamanho: true, ...CLS, fabricante });
+      assert.equal(escritas.criar.mock.calls[0].arguments[1].fabricante, null);
     }
   });
 
   test('unidade ausente assume "unidade"; estoqueMinimo ausente assume 0', async (t) => {
     const escritas = mundoValido(t);
 
-    await servico.criar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Botina', prazoUsoDias: 180, exigeTamanho: true });
+    await servico.criar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Botina', prazoUsoDias: 180, exigeTamanho: true, ...CLS });
 
     assert.equal(escritas.criar.mock.calls[0].arguments[1].unidade, 'unidade');
     assert.equal(escritas.criar.mock.calls[0].arguments[1].estoqueMinimo, 0);
@@ -232,11 +234,11 @@ describe('alterar', () => {
     const escritas = mundoValido(t);
 
     await servico.alterar(criarPoolFalso(criarClienteFalso()), {
-      empresaId: EMPRESA, atorId: ATOR_ID, materialId: MATERIAL_ID, tipo: null, tipoInformado: true,
+      empresaId: EMPRESA, atorId: ATOR_ID, materialId: MATERIAL_ID, fabricante: null, fabricanteInformado: true,
     });
 
-    assert.equal(escritas.atualizar.mock.calls[0].arguments[3].tipoInformado, true);
-    assert.equal(escritas.atualizar.mock.calls[0].arguments[3].tipo, null);
+    assert.equal(escritas.atualizar.mock.calls[0].arguments[3].fabricanteInformado, true);
+    assert.equal(escritas.atualizar.mock.calls[0].arguments[3].fabricante, null);
   });
 
   test('nenhum campo informado: 400 MATERIAL_SEM_ALTERACAO, sem consultar o material', async (t) => {
@@ -314,7 +316,7 @@ describe('categoria, código interno e descrição — Parte C2', () => {
   test('criar normaliza os três (apara; vazio -> null), grava e audita os três', async (t) => {
     const escritas = mundoValido(t);
     const cliente = criarClienteFalso();
-    const r = await servico.criar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Luva', prazoUsoDias: 180, exigeTamanho: true, categoria: ' EPI ', codigoInterno: ' EPI-000245 ', descricao: '   ' });
+    const r = await servico.criar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Luva', prazoUsoDias: 180, exigeTamanho: true, categoria: ' EPI ', grupoProtecao: 'Proteção das mãos', tipo: 'Outros', tipoDescricao: 'Luva', codigoInterno: ' EPI-000245 ', descricao: '   ' });
     const dados = escritas.criar.mock.calls[0].arguments[1];
     assert.deepEqual([dados.categoria, dados.codigoInterno, dados.descricao], ['EPI', 'EPI-000245', null]);
     assert.deepEqual([r.categoria, r.codigoInterno], ['EPI', 'EPI-000245']);
@@ -327,7 +329,7 @@ describe('categoria, código interno e descrição — Parte C2', () => {
     const violacao = () => { const e = new Error('duplicate key'); e.code = '23505'; e.constraint = 'uq_materiais_empresa_codigo_interno'; throw e; };
     escritas.criar.mock.mockImplementation(async () => violacao());
     const cliente = criarClienteFalso();
-    await esperarHttpError(servico.criar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Luva', prazoUsoDias: 180, exigeTamanho: true, codigoInterno: 'EPI-1' }), 409, 'MATERIAL_CODIGO_INTERNO_DUPLICADO');
+    await esperarHttpError(servico.criar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Luva', prazoUsoDias: 180, exigeTamanho: true, ...CLS, codigoInterno: 'EPI-1' }), 409, 'MATERIAL_CODIGO_INTERNO_DUPLICADO');
     assertRecusaSemRastro(cliente, escritas);
 
     escritas.atualizar.mock.mockImplementation(async () => violacao());
@@ -383,7 +385,7 @@ describe('prazo de uso obrigatório', () => {
 
   test('criar com prazo positivo grava o prazo informado', async (t) => {
     const escritas = mundoValido(t);
-    await servico.criar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Botina', prazoUsoDias: 180, exigeTamanho: true });
+    await servico.criar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Botina', prazoUsoDias: 180, exigeTamanho: true, ...CLS });
     assert.equal(escritas.criar.mock.calls[0].arguments[1].prazoUsoDias, 180);
   });
 
@@ -423,7 +425,7 @@ describe('prazo de uso obrigatório', () => {
 });
 
 describe('exige tamanho', () => {
-  const novo = (extra) => ({ empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Botina', prazoUsoDias: 180, ...extra });
+  const novo = (extra) => ({ empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Botina', prazoUsoDias: 180, ...CLS, ...extra });
   const alteracao = (extra) => ({ empresaId: EMPRESA, atorId: ATOR_ID, materialId: MATERIAL_ID, ...extra });
   const saldoIncompativel = (t, resposta) => t.mock.method(loteRepo, 'possuiSaldoIncompativel', async () => resposta);
   // Carregado na hora do uso: sem o repository (RED), o teste diz que ele não existe, em vez de quebrar o arquivo inteiro.
@@ -568,8 +570,13 @@ describe('óculos com grau (migration 045)', () => {
   // OCULOS é o nome histórico (só legado gravado); INCOLOR é um dos dois tipos oficiais (12G-8).
   const OCULOS = 'Óculos de proteção';
   const INCOLOR = 'Óculos de Proteção Incolor';
-  const novo = (extra) => ({ empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Óculos', categoria: 'EPI', prazoUsoDias: 180, exigeTamanho: false, ...extra });
+  // Classificação V2: óculos com grau vale para EPI + Proteção ocular, qualquer tipo (aqui "Outros" com especificação, que não consulta o catálogo).
+  const OCULAR = { categoria: 'EPI', grupoProtecao: 'Proteção ocular', tipo: 'Outros', tipoDescricao: 'Óculos de proteção' };
+  const MAOS = { categoria: 'EPI', grupoProtecao: 'Proteção das mãos', tipo: 'Outros', tipoDescricao: 'Luva' };
+  const novo = (extra) => ({ empresaId: EMPRESA, atorId: ATOR_ID, nome: 'Óculos', prazoUsoDias: 180, exigeTamanho: false, ...OCULAR, ...extra });
   const alteracao = (extra) => ({ empresaId: EMPRESA, atorId: ATOR_ID, materialId: MATERIAL_ID, ...extra });
+  // Bloco de classificação da edição: cada campo vai com a sua marca *Informado.
+  const informar = (cls) => Object.fromEntries(Object.entries(cls).flatMap(([k, v]) => [[k, v], [`${k}Informado`, true]]));
   const oculos = (oculosComGrau) => material({ categoria: 'EPI', tipo: OCULOS, oculosComGrau, exigeTamanho: false });
 
   async function esperarRecusa(promessa, codigo) {
@@ -584,7 +591,7 @@ describe('óculos com grau (migration 045)', () => {
   test('cadastro de óculos com true ou false: grava e audita o valor escolhido', async (t) => {
     for (const oculosComGrau of [true, false]) {
       const escritas = mundoValido(t);
-      await servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipo: INCOLOR, oculosComGrau }));
+      await servico.criar(criarPoolFalso(criarClienteFalso()), novo({ oculosComGrau }));
       assert.equal(escritas.criar.mock.calls[0].arguments[1].oculosComGrau, oculosComGrau);
       assert.equal(escritas.registrar.mock.calls[0].arguments[1].dadosNovos.oculosComGrau, oculosComGrau);
     }
@@ -594,38 +601,32 @@ describe('óculos com grau (migration 045)', () => {
     for (const extra of [{}, { oculosComGrau: null }]) {
       const escritas = mundoValido(t);
       const cliente = criarClienteFalso();
-      await esperarRecusa(servico.criar(criarPoolFalso(cliente), novo({ tipo: INCOLOR, ...extra })), 'OCULOS_COM_GRAU_OBRIGATORIO');
+      await esperarRecusa(servico.criar(criarPoolFalso(cliente), novo({ ...extra })), 'OCULOS_COM_GRAU_OBRIGATORIO');
       assert.deepEqual([cliente.chamadas.length, escritas.criar.mock.calls.length], [0, 0], JSON.stringify(extra));
     }
   });
 
-  test('o tipo é comparado exatamente: aparado vale; nome com "óculos" em outro tipo não é óculos; grafia fora da lista nem chega à regra (TIPO_FORA_DA_CATEGORIA)', async (t) => {
-    const aparado = mundoValido(t);
-    await servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipo: `  ${INCOLOR}  `, oculosComGrau: true }));
-    assert.equal(aparado.criar.mock.calls[0].arguments[1].oculosComGrau, true);
+  test('a classificação decide, não o nome: qualquer tipo de EPI + Proteção ocular é óculos; nome com "óculos" em outra proteção, ou em Vestimenta, não é', async (t) => {
+    const ocular = mundoValido(t);
+    await servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipoDescricao: 'Lupa de proteção', oculosComGrau: true }));
+    assert.equal(ocular.criar.mock.calls[0].arguments[1].oculosComGrau, true);
     const escritas = mundoValido(t);
-    await esperarRecusa(servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipo: 'Luva', nome: 'Óculos de proteção incolor', oculosComGrau: true })), 'OCULOS_COM_GRAU_NAO_SE_APLICA');
+    await esperarRecusa(servico.criar(criarPoolFalso(criarClienteFalso()), novo({ ...MAOS, nome: 'Óculos de proteção incolor', oculosComGrau: true })), 'OCULOS_COM_GRAU_NAO_SE_APLICA');
+    await esperarRecusa(servico.criar(criarPoolFalso(criarClienteFalso()), novo({ categoria: 'Vestimenta', oculosComGrau: true })), 'OCULOS_COM_GRAU_NAO_SE_APLICA');
     assert.equal(escritas.criar.mock.calls.length, 0);
-    for (const tipo of ['óculos de proteção incolor', 'Óculos', OCULOS]) {
-      const fora = mundoValido(t);
-      await assert.rejects(servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipo, oculosComGrau: true })), (erro) => {
-        assert.deepEqual(erro.detalhes.map((d) => [d.campo, d.codigo]), [['body.tipo', 'TIPO_FORA_DA_CATEGORIA']]);
-        return true;
-      });
-      assert.equal(fora.criar.mock.calls.length, 0, tipo);
-    }
   });
 
-  test('cadastro de outro tipo ou sem tipo: true ou false é 400 OCULOS_COM_GRAU_NAO_SE_APLICA; ausente ou null grava null', async (t) => {
-    for (const tipo of ['Luva', null]) {
+  test('cadastro fora de Proteção ocular: true ou false é 400 OCULOS_COM_GRAU_NAO_SE_APLICA; ausente ou null grava null', async (t) => {
+    const fora = [MAOS, { categoria: 'Outros', categoriaDescricao: 'Ferramenta', grupoProtecao: null, tipo: 'Outros', tipoDescricao: 'Chave' }];
+    for (const classificacaoFora of fora) {
       for (const oculosComGrau of [true, false]) {
         const escritas = mundoValido(t);
-        await esperarRecusa(servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipo, oculosComGrau })), 'OCULOS_COM_GRAU_NAO_SE_APLICA');
+        await esperarRecusa(servico.criar(criarPoolFalso(criarClienteFalso()), novo({ ...classificacaoFora, oculosComGrau })), 'OCULOS_COM_GRAU_NAO_SE_APLICA');
         assert.equal(escritas.criar.mock.calls.length, 0);
       }
       for (const extra of [{}, { oculosComGrau: null }]) {
         const escritas = mundoValido(t);
-        await servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipo, ...extra }));
+        await servico.criar(criarPoolFalso(criarClienteFalso()), novo({ ...classificacaoFora, ...extra }));
         assert.equal(escritas.criar.mock.calls[0].arguments[1].oculosComGrau, null);
       }
     }
@@ -633,7 +634,7 @@ describe('óculos com grau (migration 045)', () => {
 
   test('valor que não é booleano nem null: 400 MATERIAL_DADOS_INVALIDOS, no cadastro e na edição', async (t) => {
     const escritas = mundoValido(t, { existente: oculos(true) });
-    await esperarHttpError(servico.criar(criarPoolFalso(criarClienteFalso()), novo({ tipo: INCOLOR, oculosComGrau: 'sim' })), 400, 'MATERIAL_DADOS_INVALIDOS');
+    await esperarHttpError(servico.criar(criarPoolFalso(criarClienteFalso()), novo({ oculosComGrau: 'sim' })), 400, 'MATERIAL_DADOS_INVALIDOS');
     await esperarHttpError(servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ oculosComGrau: 1, oculosComGrauInformado: true })), 400, 'MATERIAL_DADOS_INVALIDOS');
     assert.deepEqual([escritas.criar.mock.calls.length, escritas.atualizar.mock.calls.length], [0, 0]);
   });
@@ -663,9 +664,9 @@ describe('óculos com grau (migration 045)', () => {
     assertRecusaSemRastro(cliente, escritas);
   });
 
-  test('óculos que passam a outro tipo: a informação é limpa para NULL; mandar true ou false junto é 400', async (t) => {
+  test('óculos (legado) reclassificados para outra proteção: a informação é limpa para NULL; mandar true ou false junto é 400', async (t) => {
     const escritas = mundoValido(t, { existente: oculos(true) });
-    await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ tipo: 'Luva', tipoInformado: true }));
+    await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao(informar(MAOS)));
     const campos = escritas.atualizar.mock.calls[0].arguments[3];
     assert.deepEqual([campos.oculosComGrauInformado, campos.oculosComGrau], [true, null]);
 
@@ -673,7 +674,7 @@ describe('óculos com grau (migration 045)', () => {
       const recusa = mundoValido(t, { existente: oculos(true) });
       const cliente = criarClienteFalso();
       await esperarRecusa(
-        servico.alterar(criarPoolFalso(cliente), alteracao({ tipo: 'Luva', tipoInformado: true, oculosComGrau, oculosComGrauInformado: true })),
+        servico.alterar(criarPoolFalso(cliente), alteracao({ ...informar(MAOS), oculosComGrau, oculosComGrauInformado: true })),
         'OCULOS_COM_GRAU_NAO_SE_APLICA',
       );
       assert.equal(recusa.atualizar.mock.calls.length, 0);
@@ -681,18 +682,18 @@ describe('óculos com grau (migration 045)', () => {
     }
   });
 
-  test('outro tipo que passa a óculos: sem a informação é 400 OCULOS_COM_GRAU_OBRIGATORIO; com true ou false grava', async (t) => {
+  test('outra proteção que passa a Proteção ocular: sem a informação é 400 OCULOS_COM_GRAU_OBRIGATORIO; com true ou false grava', async (t) => {
     const luva = () => material({ categoria: 'EPI', tipo: 'Luva', oculosComGrau: null });
     const recusa = mundoValido(t, { existente: luva() });
     const cliente = criarClienteFalso();
-    await esperarRecusa(servico.alterar(criarPoolFalso(cliente), alteracao({ tipo: INCOLOR, tipoInformado: true })), 'OCULOS_COM_GRAU_OBRIGATORIO');
+    await esperarRecusa(servico.alterar(criarPoolFalso(cliente), alteracao(informar(OCULAR))), 'OCULOS_COM_GRAU_OBRIGATORIO');
     assertRecusaSemRastro(cliente, recusa);
 
     for (const oculosComGrau of [true, false]) {
       const escritas = mundoValido(t, { existente: luva() });
-      await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ tipo: INCOLOR, tipoInformado: true, oculosComGrau, oculosComGrauInformado: true }));
+      await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ ...informar(OCULAR), oculosComGrau, oculosComGrauInformado: true }));
       const campos = escritas.atualizar.mock.calls[0].arguments[3];
-      assert.deepEqual([campos.tipo, campos.oculosComGrauInformado, campos.oculosComGrau], [INCOLOR, true, oculosComGrau]);
+      assert.deepEqual([campos.grupoProtecao, campos.oculosComGrauInformado, campos.oculosComGrau], ['Proteção ocular', true, oculosComGrau]);
     }
   });
 
@@ -704,18 +705,13 @@ describe('óculos com grau (migration 045)', () => {
     }
   });
 
-  test('12G-8: Incolor e Ampla Visão seguem a regra dos óculos no cadastro; o legado que vira Incolor mantém o grau sem informar de novo', async (t) => {
-    for (const tipo of ['Óculos de Proteção Incolor', 'Óculos de Proteção Ampla Visão']) {
-      const recusa = mundoValido(t);
-      await esperarRecusa(servico.criar(criarPoolFalso(criarClienteFalso()), novo({ categoria: 'EPI', tipo })), 'OCULOS_COM_GRAU_OBRIGATORIO');
-      assert.equal(recusa.criar.mock.calls.length, 0, tipo);
-      const escritas = mundoValido(t);
-      await servico.criar(criarPoolFalso(criarClienteFalso()), novo({ categoria: 'EPI', tipo, oculosComGrau: true }));
-      assert.deepEqual([escritas.criar.mock.calls[0].arguments[1].tipo, escritas.criar.mock.calls[0].arguments[1].oculosComGrau], [tipo, true]);
-    }
+  test('V2: o legado de óculos reclassificado para EPI + Proteção ocular mantém o grau já gravado, sem informar de novo; cadastro novo exige a informação', async (t) => {
+    const recusa = mundoValido(t);
+    await esperarRecusa(servico.criar(criarPoolFalso(criarClienteFalso()), novo({ ...OCULAR })), 'OCULOS_COM_GRAU_OBRIGATORIO');
+    assert.equal(recusa.criar.mock.calls.length, 0);
     const legado = mundoValido(t, { existente: material({ categoria: 'EPI', tipo: OCULOS, oculosComGrau: false }) });
-    await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao({ tipo: 'Óculos de Proteção Incolor', tipoInformado: true }));
+    await servico.alterar(criarPoolFalso(criarClienteFalso()), alteracao(informar(OCULAR)));
     const campos = legado.atualizar.mock.calls[0].arguments[3];
-    assert.deepEqual([campos.tipo, campos.oculosComGrauInformado], ['Óculos de Proteção Incolor', false]);
+    assert.deepEqual([campos.grupoProtecao, campos.oculosComGrauInformado], ['Proteção ocular', false]);
   });
 });

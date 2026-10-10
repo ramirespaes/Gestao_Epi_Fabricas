@@ -101,10 +101,10 @@ describe('migration 073 — vínculo explícito usuário ↔ funcionário (usuar
     assert.equal(await codigo(q('DELETE FROM funcionarios WHERE id = $1', [d.fA2])), VIOLACAO_FK, 'funcionário vinculado não é apagado (RESTRICT)');
   });
 
-  test('manifesto: 78 migrations, 000 a 077; a 057 continua idêntica ao manifesto', () => {
+  test('manifesto: 85 migrations, 000 a 084; a 057 continua idêntica ao manifesto', () => {
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO, 'checksums.json'), 'utf8'));
     const arquivos = fs.readdirSync(DIRETORIO).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
-    assert.equal(arquivos.length, 79);
+    assert.equal(arquivos.length, 85);
     assert.equal(arquivos[73], ARQUIVO_073);
     assert.deepEqual(Object.keys(manifesto.migrations).sort(), arquivos);
     const sha = (f) => crypto.createHash('sha256').update(fs.readFileSync(path.join(DIRETORIO, f))).digest('hex');

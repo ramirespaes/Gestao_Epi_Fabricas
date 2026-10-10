@@ -124,6 +124,18 @@ const consultaCpf = { body: z.strictObject({ cpf: cpfComDigitosVerificadores }) 
 
 const porId = { params: z.strictObject({ id: idParametro }) };
 
+// Histórico de itens entregues (EPIs Entregues): busca livre do item/tipo e do funcionário (nome ou matrícula, nunca CPF).
+const itensEntregues = {
+  query: z.strictObject({
+    item: textoCurto(BUSCA_MAXIMA, 'BUSCA_INVALIDA', 'Termo de busca inválido').optional(),
+    funcionario: textoCurto(BUSCA_MAXIMA, 'BUSCA_INVALIDA', 'Termo de busca inválido').optional(),
+    status: z.enum(['VALIDO', 'PROXIMO', 'VENCIDO']).optional(),
+    de: dataCalendario('DATA_INVALIDA', 'Data inicial inválida').optional(),
+    ate: dataCalendario('DATA_INVALIDA', 'Data final inválida').optional(),
+    ...paginacaoQuery,
+  }).superRefine(periodo),
+};
+
 const fichaEntregas = {
   params: porId.params,
   query: z.strictObject({
@@ -135,6 +147,6 @@ const fichaEntregas = {
 
 // confirmacao e chaveIdempotencia: os mesmos da entrega por solicitação (12F-2), sem segunda versão.
 module.exports = {
-  registrar, contextoFuncionarios, contextoConsultaCpf, contexto, contextoMateriais, contextoLotes, fichas, consultaCpf, porId, fichaEntregas, BUSCA_MAXIMA,
+  registrar, contextoFuncionarios, contextoConsultaCpf, contexto, contextoMateriais, contextoLotes, fichas, consultaCpf, porId, fichaEntregas, itensEntregues, BUSCA_MAXIMA,
   confirmacao, chaveIdempotencia,
 };

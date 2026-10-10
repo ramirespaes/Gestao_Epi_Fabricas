@@ -86,6 +86,7 @@ function itemDaPosicao(p) {
     material: p.material,
     codigoInterno: p.codigoInterno,
     categoria: p.categoria,
+    grupo: p.grupo ?? null, // valor efetivo de exibição do Grupo (classificacao-material.SQL.grupoEfetivo)
     tipo: p.tipo,
     tamanho: p.tamanho,
     saldo: p.saldo,

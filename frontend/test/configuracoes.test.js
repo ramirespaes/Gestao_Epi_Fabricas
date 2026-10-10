@@ -499,12 +499,12 @@ describe('página Configurações como no navegador: itens "Em integração" e a
   });
   const etiqueta = (a) => a.querySelectorAll('.nav-etiqueta').map((e) => e.textContent.trim());
 
-  test('MASTER em Configurações: os seis itens "Em integração" abrem o protótipo com ?inspecao=1 (Relatórios = reports.html?inspecao=1), sem aria-disabled e com a etiqueta; os dois adiados ficam sem link; Configurações segue integrada, sem marcador', async () => {
+  test('MASTER em Configurações: os quatro itens "Em integração" abrem o protótipo com ?inspecao=1, sem aria-disabled e com a etiqueta; os dois adiados ficam sem link; Configurações segue integrada, sem marcador', async () => {
     const pg = abrirPagina('pages/config.html', { rotas: rotas('MASTER') });
     await pg.esperar();
     assert.equal(pg.visivel('conteudoProtegido'), true);
     const todosPendentes = pg.consulta('.nav a.nav-pendente');
-    assert.equal(todosPendentes.length, 8);
+    assert.equal(todosPendentes.length, 6);
     // 05/10/2026: Compras / Entradas e Regras Função / Setor são módulos adiados — seguem sem link, mesmo para o MASTER.
     const adiados = todosPendentes.filter((a) => /Compras \/ Entradas|Regras Função \/ Setor/.test(a.textContent));
     assert.equal(adiados.length, 2);
@@ -513,10 +513,8 @@ describe('página Configurações como no navegador: itens "Em integração" e a
       assert.equal(a.getAttribute('aria-disabled'), 'true', a.textContent.trim());
     }
     const pendentes = todosPendentes.filter((a) => !adiados.includes(a));
-    assert.equal(pendentes.length, 6);
+    assert.equal(pendentes.length, 4);
     assert.deepEqual(pendentes.map((a) => a.getAttribute('href')).sort(), Object.values(P.INSPECAO_PROTOTIPOS).map((f) => `${f}?inspecao=1`).sort());
-    const relatorios = pendentes.find((a) => a.textContent.includes('Relatórios'));
-    assert.equal(relatorios.getAttribute('href'), 'reports.html?inspecao=1');
     for (const a of pendentes) {
       assert.equal(a.getAttribute('aria-disabled'), null, a.textContent.trim());
       assert.equal((a.getAttribute('href').match(/inspecao=1/g) || []).length, 1, 'marcador uma vez só');
@@ -536,7 +534,7 @@ describe('página Configurações como no navegador: itens "Em integração" e a
       await pg.esperar();
       assert.equal(pg.visivel('conteudoProtegido'), true, perfil);
       const pendentes = pg.consulta('.nav a.nav-pendente');
-      assert.equal(pendentes.length, 8, perfil);
+      assert.equal(pendentes.length, 6, perfil);
       for (const a of pendentes) {
         assert.equal(a.getAttribute('href'), null, `${perfil}: ${a.textContent.trim()}`);
         assert.equal(a.getAttribute('aria-disabled'), 'true', perfil);

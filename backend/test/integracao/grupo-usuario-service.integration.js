@@ -27,7 +27,7 @@ const { HttpError } = require('../../src/errors/HttpError');
 // PROVAR que vincular alguém ao grupo chamado "Funcionários" não cria
 // cadastro de funcionário — e isso só é demonstrável com a tabela
 // realmente presente no schema.
-const MIGRATIONS = ['000', '001', '002', '003', '004', '005', '006', '009', '010', '011', '012', '013', '014', '016', '017', '018', '019', '020', '021', '022', '023'];
+const MIGRATIONS = ['000', '001', '002', '003', '004', '005', '006', '009', '010', '011', '012', '013', '014', '016', '017', '018', '019', '020', '021', '022', '023', '079'];
 
 const HASH = '$argon2id$v=19$m=65536,t=3,p=1$c2ludGV0aWNv$aGFzaGZha2VzaW50ZXRpY28';
 const RECURSO = 'materials';

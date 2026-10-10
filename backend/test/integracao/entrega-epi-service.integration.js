@@ -614,7 +614,7 @@ describe('entrega de EPI — concorrência (PostgreSQL real, conexões simultân
       const { liberar, chegada } = portao(t, itemRepo, 'criar');
       const promessaEntrega = registrar({ funcionarioId: funcionario });
       await chegada;
-      const promessaInativacao = outra.query('UPDATE funcionarios SET ativo = false WHERE id = $1', [funcionario]).then(() => 'inativado');
+      const promessaInativacao = outra.query("UPDATE funcionarios SET situacao = 'INATIVO' WHERE id = $1", [funcionario]).then(() => 'inativado');
       const esperou = await aguardarAlguemEsperandoLock(admin);
       assert.ok(['transactionid', 'tuple'].includes(esperou), esperou);
       liberar();

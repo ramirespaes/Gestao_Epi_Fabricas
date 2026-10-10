@@ -242,9 +242,23 @@ async function configurarRecurso(pool, {
         throw HttpError.badRequest(...ERRO.OPERACAO);
       }
     }
+    // Funcionários: conceder criar ou editar garante a leitura na atribuição (mesmas dependências dos toggles). O pedido que concede e
+    // nega a leitura (false) ou manda limpá-la (null EXPLÍCITO) ao mesmo tempo é contraditório e é recusado antes de qualquer escrita;
+    // campo OMITIDO é outra coisa: aplica a dependência. Quando o pedido não fala de visualizar e a
+    // leitura efetiva ainda é negada (inclusive por uma negação anterior: a concessão nova é uma decisão nova), a leitura passa a true.
+    const concedidas = ['criar', 'editar'].filter((op) => flags[op] === true);
+    const garantidas = toggles.operacoesGarantidasNaAtribuicaoDireta(recurso, concedidas);
+    if (garantidas.includes('visualizar') && (flags.visualizar === false || flags.visualizar === null)) {
+      throw HttpError.validacao([{ campo: 'body.visualizar', codigo: 'VALOR_NAO_PERMITIDO', mensagem: 'Conceder criar ou editar exige a leitura: não envie visualizar=false nem visualizar=null no mesmo pedido' }]);
+    }
     const antes = (await permissaoIndividualRepo.listarRecursos(client, empresaId, alvo.id)).find((r) => r.recurso === recurso) ?? null;
+    const flagsFinais = { ...flags };
+    if (garantidas.includes('visualizar') && flags.visualizar === undefined) {
+      const efetivo = await autorizacao.avaliarPermissaoRecurso(client, { empresaId, usuarioId: alvo.id, perfil: alvo.perfil }, recurso);
+      if (efetivo.visualizar !== true) flagsFinais.visualizar = true;
+    }
     const depois = await permissaoIndividualRepo.definirRecurso(client, {
-      empresaId, usuarioId: alvo.id, recurso, flags, concedidoPor: ator.id,
+      empresaId, usuarioId: alvo.id, recurso, flags: flagsFinais, concedidoPor: ator.id,
     });
     await auditar(client, {
       empresaId, atorId: ator.id, alvoId: alvo.id, acao: ACAO_AUDITORIA.RECURSO, ip, dispositivo,
@@ -315,6 +329,9 @@ async function aplicarAcao(client, {
 const ERRO_TOGGLE = ['TOGGLE_NAO_ENCONTRADO', 'Acesso não encontrado'];
 
 const efetivoDoToggle = (completo, regra) => {
+  // Toggle de CONCESSÃO (decisão da SST): ligado = há concessão individual direta, com ou sem vínculo SST; o efeito final
+  // continua exigindo o vínculo e é decidido pelo servidor.
+  if (regra.tipo === 'ACAO' && regra.concessao === true) return completo.acoes.find((a) => a.codigo === regra.codigo)?.estado === 'CONCEDIDA';
   if (regra.tipo === 'ACAO') return completo.acoes.find((a) => a.codigo === regra.codigo)?.efetivo === true;
   const celula = completo.recursos.find((r) => r.recurso === regra.recurso);
   return celula !== undefined && regra.operacoes.every((op) => celula.operacoes[op]?.efetivo === true);
@@ -327,9 +344,15 @@ function resumirToggles(completo) {
     usuario: completo.usuario,
     podeAlterar: completo.podeAlterar,
     motivoSomenteLeitura: completo.motivoSomenteLeitura,
-    toggles: toggles.TOGGLES.map((t) => ({
-      id: t.id, rotulo: t.rotulo, grupo: t.grupo, ligado: efetivoDoToggle(completo, t.regra), fixo,
-    })),
+    toggles: toggles.TOGGLES.map((t) => {
+      const base = {
+        id: t.id, rotulo: t.rotulo, grupo: t.grupo, ligado: efetivoDoToggle(completo, t.regra), fixo,
+      };
+      if (t.regra.concessao !== true || completo.acoes.find((a) => a.codigo === t.regra.codigo)?.exigeSst !== true) return base;
+      // O vínculo SST do alvo vem junto, para a tela avisar que a permissão sozinha não basta.
+      const celula = completo.acoes.find((a) => a.codigo === t.regra.codigo);
+      return { ...base, exigeVinculoSst: true, vinculoSst: celula?.vinculoSst === true };
+    }),
     pendencias: toggles.PENDENCIAS,
   };
 }
@@ -342,6 +365,19 @@ async function detalharToggles(pool, dados) {
 async function ajustarRegra(client, {
   empresaId, ator, alvo, ip, dispositivo,
 }, regra, ligado) {
+  if (regra.tipo === 'ACAO' && regra.concessao === true) {
+    await aplicarAcao(client, {
+      empresaId, ator, alvo, acaoCodigo: regra.codigo, estado: ligado ? 'CONCEDIDA' : 'PADRAO', ip, dispositivo,
+    });
+    return;
+  }
+  if (regra.tipo === 'ACAO' && regra.semBloqueio === true && ligado === false) {
+    // Só remove a concessão individual (e um bloqueio antigo): a autoridade que vem de outra camada continua valendo.
+    await aplicarAcao(client, {
+      empresaId, ator, alvo, acaoCodigo: regra.codigo, estado: 'PADRAO', ip, dispositivo,
+    });
+    return;
+  }
   if (regra.tipo === 'ACAO') {
     await aplicarAcao(client, {
       empresaId, ator, alvo, acaoCodigo: regra.codigo, estado: 'PADRAO', ip, dispositivo,

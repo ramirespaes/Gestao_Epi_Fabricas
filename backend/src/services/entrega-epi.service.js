@@ -1,6 +1,7 @@
 'use strict';
 
 const { HttpError } = require('../errors/HttpError');
+const { exigirPodeReceberEpi } = require('../utils/situacao-funcionario');
 const funcionarioRepo = require('../repositories/funcionario.repository');
 const materialRepo = require('../repositories/material.repository');
 const gheRepo = require('../repositories/grupo-homogeneo-exposicao.repository');
@@ -208,7 +209,7 @@ async function entregarNaTransacao(pool, {
     const hoje = await entregaRepo.dataOperacionalDaTransacao(client);
     const funcionario = await funcionarioRepo.buscarPorIdParaEntrega(client, empresaId, funcionarioId);
     if (funcionario === null) throw HttpError.notFound('FUNCIONARIO_NAO_ENCONTRADO', 'Trabalhador não encontrado');
-    if (funcionario.ativo !== true) throw HttpError.conflict('FUNCIONARIO_INATIVO', 'Trabalhador inativo não recebe EPI');
+    exigirPodeReceberEpi(funcionario);
     // Lida depois da trava do trabalhador: uma primeira entrega simultânea já terá criado a ficha.
     const fichaExistente = await fichaRepo.buscarPorFuncionario(client, empresaId, funcionarioId);
 
@@ -225,7 +226,7 @@ async function entregarNaTransacao(pool, {
     await exigirSaldoLivre(client, empresaId, itensN, lotes, hoje);
 
     const ghe = funcionario.grupoHomogeneoId === null ? null : await gheRepo.buscarPorId(client, empresaId, funcionario.grupoHomogeneoId);
-    const previstos = new Set(ghe === null ? [] : await gheMaterialRepo.listarMaterialIdsVinculados(client, empresaId, ghe.id));
+    const previstos = new Set(ghe === null ? [] : await gheMaterialRepo.listarMaterialIdsPrevistos(client, empresaId, ghe.id, materialIds));
     const decisoes = itensN.map((item) => ({ ...item, previstoNoGhe: decidirGhe(item, previstos) }));
 
     const empresa = await empresaRepo.buscarDetalhesPorId(client, empresaId);
@@ -246,7 +247,7 @@ async function entregarNaTransacao(pool, {
       empresa: {
         nome: empresa.razaoSocial.trim(), cnpj: empresa.cnpj, endereco: enderecoDaEmpresa(empresa), cidade: aparar(empresa.cidade), uf: aparar(empresa.uf)?.toUpperCase() ?? null,
       },
-      trabalhador: { nome: funcionario.nome.trim(), matricula: funcionario.matricula.trim(), funcao: aparar(funcionario.funcao), setor: aparar(funcionario.setor) },
+      trabalhador: { nome: funcionario.nome.trim(), matricula: aparar(funcionario.matricula), funcao: aparar(funcionario.funcao), setor: aparar(funcionario.setor) },
       gheNome: ghe === null ? null : ghe.nome.trim(),
       responsavelNome: responsavel.nome.trim(),
     });

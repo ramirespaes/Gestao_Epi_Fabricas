@@ -163,7 +163,7 @@
     // ── trabalhador ──────────────────────────────────────────────────
 
     function resumoTrabalhador(f) {
-      return ['Matrícula ' + f.matricula, f.setor, f.funcao].filter(function (x) { return typeof x === 'string' && x !== ''; }).join(' · ');
+      return [f.matricula ? 'Matrícula ' + f.matricula : null, f.setor, f.funcao].filter(function (x) { return typeof x === 'string' && x !== ''; }).join(' · ');
     }
 
     function buscar(evento) {
@@ -570,7 +570,7 @@
         caixa.textContent = '';
         var ul = no('ul', { class: 'pedido-linhas', 'aria-label': 'Meus pedidos' });
         r.dados.solicitacoes.forEach(function (s) {
-          var trabalhador = s.funcionario ? s.funcionario.nome + ' (matrícula ' + s.funcionario.matricula + ')' : '';
+          var trabalhador = s.funcionario ? s.funcionario.nome + (s.funcionario.matricula ? ' (matrícula ' + s.funcionario.matricula + ')' : '') : '';
           var botao = no('button', { type: 'button', class: 'request-item pedido-linha', 'data-solicitacao-id': s.id }, [
             no('span', { class: 'request-meta' }, [
               no('strong', { texto: 'Pedido nº ' + s.numero }),
@@ -626,7 +626,7 @@
       par(dl, 'Criado em', dataHora(s.criadaEm));
       if (s.funcionario) {
         par(dl, 'Trabalhador', s.funcionario.nome + (s.funcionario.ativo === false ? ' (inativo)' : ''));
-        par(dl, 'Matrícula', s.funcionario.matricula);
+        par(dl, 'Matrícula', s.funcionario.matricula || '—');
         par(dl, 'Setor', s.funcionario.setor);
         par(dl, 'Função', s.funcionario.funcao);
       }

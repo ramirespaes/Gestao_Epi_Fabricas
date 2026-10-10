@@ -20,7 +20,8 @@ const ler = (rel) => fs.readFileSync(path.join(RAIZ, rel), 'utf8');
 // Configurações (config.html) deixou de ser protótipo: é página integrada.
 // 05/10/2026: Compras / Entradas e Regras Função / Setor são MÓDULOS TEMPORARIAMENTE DESATIVADOS / ADIADOS —
 // fora da inspeção, arquivos preservados; ainda carregam o script, que recusa ativar neles.
-const PROTOTIPOS = ['delivered-items.html', 'emails-gestao.html', 'lgpd.html', 'reports.html', 'self-service.html', 'support.html'];
+// 12K-C: EPIs Entregues (delivered-items.html) e, na 12K-D, Relatórios (reports.html) viraram páginas integradas e saíram da inspeção.
+const PROTOTIPOS = ['emails-gestao.html', 'lgpd.html', 'self-service.html', 'support.html'];
 const DESATIVADOS = ['purchases.html', 'eligibility-rules.html'];
 
 function elemento(tag) {
@@ -66,7 +67,7 @@ function montar(search, ancoras = []) {
 }
 
 describe('inspecao-visual: a navegação entre protótipos mantém a inspeção (o login simulado fica inacessível)', () => {
-  const INTEGRADAS = ['dashboard.html', 'config.html', 'materials.html', 'import-employees.html', '../portal/inicio.html'];
+  const INTEGRADAS = ['dashboard.html', 'reports.html', 'config.html', 'materials.html', 'import-employees.html', '../portal/inicio.html'];
 
   test('a lista dos seis protótipos é a mesma do menu das páginas integradas (permissoes-efetivas.js), sem Configurações; os dois módulos adiados ficam fora das duas listas, com os arquivos preservados', () => {
     const P = require('../js/permissoes-efetivas'); // eslint-disable-line global-require
@@ -82,7 +83,7 @@ describe('inspecao-visual: a navegação entre protótipos mantém a inspeção 
       assert.equal(sandbox.EpiInspecaoVisual.desativado(`${arquivo}?_s=abc#x`), true, arquivo);
       assert.ok(fs.existsSync(path.join(RAIZ, 'pages', arquivo)), `${arquivo} preservado`);
     }
-    assert.equal(sandbox.EpiInspecaoVisual.desativado('reports.html'), false);
+    assert.equal(sandbox.EpiInspecaoVisual.desativado('lgpd.html'), false);
     assert.equal(sandbox.EpiInspecaoVisual.desativado('https://example.invalid/purchases.html'), false, 'só caminhos relativos do próprio frontend');
   });
 
@@ -97,7 +98,7 @@ describe('inspecao-visual: a navegação entre protótipos mantém a inspeção 
       assert.equal((m.ouvintes.click || []).length, 0, `${arquivo}: sem ouvinte de clique`);
     }
     const normal = montar('?inspecao=1');
-    normal.sandbox.location.pathname = '/pages/reports.html';
+    normal.sandbox.location.pathname = '/pages/lgpd.html';
     normal.carregar();
     assert.equal(normal.body.filhos.length, 1, 'protótipo em inspeção continua ativando');
   });
@@ -113,20 +114,20 @@ describe('inspecao-visual: a navegação entre protótipos mantém a inspeção 
       assert.equal(comMarcador(`./${arquivo}`), `./${arquivo}?inspecao=1`);
       assert.equal((comMarcador(comMarcador(arquivo)).match(/inspecao=1/g) || []).length, 1);
     }
-    for (const outro of [...INTEGRADAS, ...DESATIVADOS, 'purchases.html?_s=abc', 'javascript:void(0)', '#topo', 'https://example.invalid/reports.html', 'mailto:x@example.invalid', '', null, undefined]) {
+    for (const outro of [...INTEGRADAS, ...DESATIVADOS, 'purchases.html?_s=abc', 'javascript:void(0)', '#topo', 'https://example.invalid/lgpd.html', 'mailto:x@example.invalid', '', null, undefined]) {
       assert.equal(comMarcador(outro), outro, String(outro));
     }
   });
 
   test('ativo: os links já presentes são marcados na carga e o clique (fase de captura) marca o link na hora, mesmo depois de o legado reescrever o href; links de páginas integradas não mudam', () => {
-    const reports = ancora('reports.html');
+    const reports = ancora('lgpd.html');
     const suporte = ancora('support.html?_s=abc');
     const dashboard = ancora('dashboard.html');
     const config = ancora('config.html');
     const vazio = ancora('javascript:void(0)');
     const m = montar('?inspecao=1', [reports, suporte, dashboard, config, vazio]);
     m.carregar();
-    assert.deepEqual([reports, suporte, dashboard, config, vazio].map((a) => a.atributos.href), ['reports.html?inspecao=1', 'support.html?_s=abc&inspecao=1', 'dashboard.html', 'config.html', 'javascript:void(0)']);
+    assert.deepEqual([reports, suporte, dashboard, config, vazio].map((a) => a.atributos.href), ['lgpd.html?inspecao=1', 'support.html?_s=abc&inspecao=1', 'dashboard.html', 'config.html', 'javascript:void(0)']);
 
     const clique = (m.ouvintes.click || [])[0];
     assert.ok(clique && clique.captura, 'clique interceptado na fase de captura');
@@ -142,10 +143,10 @@ describe('inspecao-visual: a navegação entre protótipos mantém a inspeção 
   test('módulo adiado dentro da inspeção: o link nunca ganha o marcador, fica aria-disabled com o aviso, e o clique é recusado com toast (fase de captura), mesmo depois de o legado reescrever o href', () => {
     const compras = ancora('purchases.html');
     const regras = ancora('eligibility-rules.html?_s=abc');
-    const reports = ancora('reports.html');
+    const reports = ancora('lgpd.html');
     const m = montar('?inspecao=1', [compras, regras, reports]);
     m.carregar();
-    assert.deepEqual([compras, regras, reports].map((a) => a.atributos.href), ['purchases.html', 'eligibility-rules.html?_s=abc', 'reports.html?inspecao=1']);
+    assert.deepEqual([compras, regras, reports].map((a) => a.atributos.href), ['purchases.html', 'eligibility-rules.html?_s=abc', 'lgpd.html?inspecao=1']);
     for (const a of [compras, regras]) {
       assert.equal(a.atributos['aria-disabled'], 'true');
       assert.match(a.atributos.title, /desativado/i);
@@ -162,10 +163,10 @@ describe('inspecao-visual: a navegação entre protótipos mantém a inspeção 
   });
 
   test('inativo (sem o marcador): nenhum link é tocado e não há ouvinte de clique', () => {
-    const reports = ancora('reports.html');
+    const reports = ancora('lgpd.html');
     const m = montar('', [reports]);
     m.carregar();
-    assert.equal(reports.atributos.href, 'reports.html');
+    assert.equal(reports.atributos.href, 'lgpd.html');
     assert.equal((m.ouvintes.click || []).length, 0);
   });
 
@@ -253,7 +254,7 @@ describe('inspecao-visual: onde entra e onde nunca entra', () => {
         assert.doesNotMatch(html, /inspecao-visual/, arquivo);
       }
     }
-    assert.equal(PROTOTIPOS.length, 6);
+    assert.equal(PROTOTIPOS.length, 4);
     assert.equal(DESATIVADOS.length, 2);
   });
 

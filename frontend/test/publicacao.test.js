@@ -57,7 +57,7 @@ describe('publicação do frontend do cliente por allowlist explícita', () => {
     const legadas = fs.readdirSync(path.join(RAIZ, 'pages'))
       .filter((f) => f.endsWith('.html'))
       .filter((f) => /<script[^>]+src=["']https?:/i.test(fs.readFileSync(path.join(RAIZ, 'pages', f), 'utf8')));
-    assert.equal(legadas.length, 8, 'as 8 páginas legadas continuam no repositório (a E7 integrou a Validade de estoque, a E8 as Operações de estoque, a parte F as duas páginas de usuários, a 10G a Ficha de EPI, a 12G-1 as três da solicitação e Configurações virou página integrada)');
+    assert.equal(legadas.length, 6, 'as 6 páginas legadas continuam no repositório (a 12K-D integrou Relatórios; a 12K-C integrou EPIs Entregues; a E7 integrou a Validade de estoque, a E8 as Operações de estoque, a parte F as duas páginas de usuários, a 10G a Ficha de EPI, a 12G-1 as três da solicitação e Configurações virou página integrada)');
     for (const integrada of ['pages/config.html', 'js/configuracoes.js']) assert.ok(publicados.includes(integrada), `${integrada} precisa estar no pacote`);
     for (const pagina of legadas) assert.ok(!publicados.includes(`pages/${pagina}`), `${pagina} não pode ser publicada`);
     // 10J: a Ficha de EPI é publicada com o módulo que ela carrega.
@@ -78,7 +78,7 @@ describe('publicação do frontend do cliente por allowlist explícita', () => {
     const saida = path.join(base, 'pacote');
     const allowlist = lerAllowlist();
 
-    recusa(() => empacotar({ saida, arquivos: [...allowlist, 'pages/delivered-items.html'] }), 'SCRIPT_EXTERNO');
+    recusa(() => empacotar({ saida, arquivos: [...allowlist, 'pages/support.html'] }), 'SCRIPT_EXTERNO');
     recusa(() => empacotar({ saida, arquivos: [...allowlist, 'js/main.js'] }), 'NUNCA_PUBLICAR');
     recusa(() => empacotar({ saida, arquivos: [...allowlist, 'js/db-api.js'] }), 'NUNCA_PUBLICAR');
     recusa(() => empacotar({ saida, arquivos: [...allowlist, 'painel-privado/index.html'] }), 'NUNCA_PUBLICAR');
@@ -121,9 +121,9 @@ describe('publicação do frontend do cliente por allowlist explícita', () => {
     empacotar({ saida });
     assert.doesNotThrow(() => verificarPacote(saida));
 
-    fs.writeFileSync(path.join(saida, 'pages', 'delivered-items.html'), '<p>legada</p>');
+    fs.writeFileSync(path.join(saida, 'pages', 'support.html'), '<p>legada</p>');
     recusa(() => verificarPacote(saida), 'PACOTE_DIVERGENTE');
-    fs.rmSync(path.join(saida, 'pages', 'delivered-items.html'));
+    fs.rmSync(path.join(saida, 'pages', 'support.html'));
 
     fs.rmSync(path.join(saida, 'js', 'dashboard.js'));
     recusa(() => verificarPacote(saida), 'PACOTE_DIVERGENTE');
