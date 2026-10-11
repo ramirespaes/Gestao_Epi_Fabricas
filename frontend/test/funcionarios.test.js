@@ -551,10 +551,15 @@ describe('inspeção estática das duas páginas', () => {
     for (const proibido of [/Tício de Tal/, /CR-001284/, /MAT-000171/, /Botina de segurança/, /12\/04\/2026/, /Luva nitrílica/, />18</, /db-api\.js/, /main\.js/, /xlsx/, /loginScreen/, /kiosk/i, /onclick="openHistoryModal/, /localStorage/]) {
       assert.equal(proibido.test(codigo), false, `employee-history.html contém ${proibido}`);
     }
-    for (const id of ['historyEmployeeName', 'historyEmployeeBadge', 'historyEmployeeMatricula', 'historySector']) {
+    // Histórico A+B (adaptação autorizada #4): a identificação são os seis campos do detalhe, somente leitura; o crachá saiu.
+    for (const id of ['historyEmployeeName', 'historyEmployeeMatricula', 'historySector', 'historyEmployeeFuncao', 'historyEmployeeGhe', 'historyEmployeeSituacao']) {
       assert.match(hist, new RegExp(`id="${id}" class="input" type="text" value="" readonly`), id);
     }
-    for (const opcao of ['nome', 'matricula', 'cpf']) assert.match(hist, new RegExp(`<option value="${opcao}">`));
+    assert.equal(/id="historyEmployeeBadge"/.test(hist), false, 'sem campo de crachá na identificação');
+    // Busca única: o seletor de tipo (nome/matrícula/CPF) saiu; um campo só, com o tipo reconhecido pelo valor.
+    assert.equal(/id="historyFilterType"/.test(hist), false, 'sem o seletor "Filtrar por"');
+    assert.match(hist, /<label for="historySearchValue">Buscar colaborador<\/label>/);
+    assert.match(hist, /id="historySearchValue"[^>]*placeholder="Nome, CPF ou matrícula"/);
     for (const id of ['hkpiTotal', 'hkpiEpis', 'hkpiUltima', 'hkpiAtivos']) assert.match(hist, new RegExp(`<strong id="${id}">—</strong>`));
     assert.match(codigo, /pagina: 'employeeHistory'/);
   });
@@ -778,99 +783,146 @@ describe('página Importar Funcionários (DOM simulado)', () => {
   });
 });
 
+// Histórico A+B: a página passou a carregar js/historico-funcionarios.js, que o sandbox do script inline (montarPagina) não
+// conhece. Estes testes migraram para o harness de página real (dom-pagina: scripts reais da página, API simulada), com os
+// mesmos nomes e as mesmas garantias; os três marcados "(adaptação autorizada #N)" mudaram de expectativa por contrato.
 describe('página Histórico de Funcionários (DOM simulado)', () => {
-  const funcionario = (extra = {}) => ({ id: 11, nome: 'Ana Souza', matricula: 'M-11', setor: 'Qualidade', funcao: 'Analista', cracha: 'CR-11', ativo: true, ...extra });
-  const lista = (itens, total = itens.length) => resposta(200, { status: 'ok', funcionarios: itens, total, pagina: 1, limite: 20 });
+  const { abrirPagina } = require('./helpers/dom-pagina'); // eslint-disable-line global-require
+  const funcionario = (extra = {}) => ({ id: 11, nome: 'Ana Souza', matricula: 'M-11', setor: 'Qualidade', funcao: 'Analista', cracha: 'CR-11', situacao: 'ATIVO', ativo: true, grupoHomogeneoId: null, grupoHomogeneo: null, ...extra });
+  const lista = (itens, total = itens.length) => ({ status: 200, corpo: { status: 'ok', funcionarios: itens, total, pagina: 1, limite: 20 } });
+  const detalhe = (f) => ({ status: 200, corpo: { status: 'ok', funcionario: f } });
+  const NENHUMA = { visualizar: false, criar: false, editar: false, excluir: false };
+  const area = (v) => ({ consultar: v, alterar: v });
+  const PERMISSOES = {
+    status: 'ok', empresaId: 3, usuarioId: 7, perfil: 'MASTER', recursos: { employeeHistory: { ...NENHUMA, visualizar: true } }, acoes: {},
+    administracao: { gruposAcesso: area(false), permissoesGrupo: area(false), vinculosGrupo: area(false), usuarios: area(false), autorizacoesIndividuais: { consultar: false, concederDireta: false, delegar: false }, vinculosSst: area(false) },
+  };
+  const SESSAO = { status: 'ok', usuario: { id: 7, nome: 'Pessoa', email: 'p@validacao-epi.invalid', perfil: 'MASTER' }, empresa: { id: 3, nome: 'Empresa Demonstração SafeWork', cnpj: '11222333000181' }, preferencias: { tema: 'claro', modoVisual: 'padrao' } };
 
-  async function consultar(pg, tipo, valor) {
-    pg.el('historyFilterType').value = tipo;
-    pg.el('historySearchValue').value = valor;
-    await pg.disparar('botaoConsultar');
-  }
-
-  test('um resultado: dados reais preenchidos; indicadores "—" e ausência de entregas; nenhuma entrega inventada', async () => {
-    servidor(lista([funcionario()]));
-    const pg = montarPagina('pages/employee-history.html');
+  async function abrirHistorico(rotas = {}, estado = { sessao: 'ok' }) {
+    const pg = abrirPagina('pages/employee-history.html', {
+      rotas: {
+        'GET /auth/me': () => (estado.sessao === 'ok' ? { status: 200, corpo: SESSAO } : { status: 401, corpo: { status: 'error', codigo: 'SESSAO_INVALIDA' } }),
+        'GET /auth/global/me': { status: 200, corpo: { status: 'ok', empresas: [{ id: 3 }] } },
+        'GET /auth/permissoes': { status: 200, corpo: PERMISSOES },
+        ...rotas,
+      },
+    });
     await pg.esperar();
+    await pg.esperar();
+    return pg;
+  }
+  // Busca única: `tipo` só registra a intenção do teste; a página reconhece nome, matrícula ou CPF pelo valor.
+  async function consultar(pg, tipo, valor) {
+    pg.el('historySearchValue').value = valor;
+    await pg.el('botaoConsultar').disparar('click');
+    await pg.esperar();
+  }
+  const daApi = (pg) => pg.chamadas.filter((c) => !c.caminho.startsWith('/auth/'));
+  const aviso = (pg) => pg.texto('aviso').replace(/\s+/g, ' ').trim();
+  const campos = (pg, ids) => ids.map((id) => pg.el(id).value);
+  const SEIS = ['historyEmployeeName', 'historyEmployeeMatricula', 'historySector', 'historyEmployeeFuncao', 'historyEmployeeGhe', 'historyEmployeeSituacao'];
+
+  test('um resultado: ficha real do detalhe GET /funcionarios/:id; indicadores "—"; nenhuma entrega inventada (adaptação autorizada #1)', async () => {
+    const pg = await abrirHistorico({
+      'GET /funcionarios': lista([funcionario({ setor: 'Setor do resumo' })]),
+      'GET /funcionarios/11': detalhe(funcionario({ grupoHomogeneoId: 10, grupoHomogeneo: { id: 10, codigo: 'GHE-010', descricao: 'Caldeiraria' } })),
+    });
     await consultar(pg, 'nome', 'Ana');
-    assert.equal(chamadas[0].caminho, '/api/funcionarios?busca=Ana&pagina=1&limite=20');
-    assert.deepEqual(['historyEmployeeName', 'historyEmployeeBadge', 'historyEmployeeMatricula', 'historySector'].map((id) => pg.el(id).value), ['Ana Souza', 'CR-11', 'M-11', 'Qualidade']);
-    assert.deepEqual(['hkpiTotal', 'hkpiEpis', 'hkpiUltima', 'hkpiAtivos'].map((id) => pg.el(id).textContent), ['—', '—', '—', '—']);
-    assert.match(pg.el('historyTimeline').innerHTML, /Nenhuma entrega registrada/);
+    // Pacotes E, F e G: a seleção também consulta os históricos de GHE, de situação e cadastral (employeeHistory.visualizar); sem epiFicha, nada da ficha de EPI.
+    assert.deepEqual(daApi(pg).map((c) => [c.metodo, c.url.replace(/^.*\/api/, '')]), [['GET', '/funcionarios?busca=Ana&pagina=1&limite=20'], ['GET', '/funcionarios/11'], ['GET', '/funcionarios/11/eventos?tipo=GHE&pagina=1&limite=20'], ['GET', '/funcionarios/11/eventos?tipo=SITUACAO&pagina=1&limite=20'], ['GET', '/funcionarios/11/eventos?tipo=CADASTRAL&pagina=1&limite=20']]);
+    assert.deepEqual(campos(pg, SEIS), ['Ana Souza', 'M-11', 'Qualidade', 'Analista', 'GHE-010 — Caldeiraria', 'Ativo']);
+    assert.equal(pg.textoDoDom().includes('CR-11'), false, 'sem crachá');
+    assert.deepEqual(['hkpiTotal', 'hkpiEpis', 'hkpiUltima', 'hkpiAtivos'].map((id) => pg.texto(id)), ['—', '—', '—', '—']);
+    // Sem epiFicha.visualizar nesta fixture: a área de EPIs diz que não há permissão; nenhuma entrega é inventada nem consultada.
+    assert.equal(pg.texto('historyTimeline').trim(), 'Sem permissão para ver o histórico de EPIs.');
   });
 
-  test('vários resultados: lista para seleção; escolher preenche o colaborador sem nova consulta', async () => {
-    servidor(lista([funcionario(), funcionario({ id: 12, nome: 'Ana Lima', matricula: 'M-12', ativo: false })], 35));
-    const pg = montarPagina('pages/employee-history.html');
-    await pg.esperar();
+  test('vários resultados: lista para seleção; escolher consulta o detalhe pelo id real (adaptação autorizada #2)', async () => {
+    const pg = await abrirHistorico({
+      'GET /funcionarios': lista([funcionario(), funcionario({ id: 12, nome: 'Ana Lima', matricula: 'M-12', situacao: 'INATIVO', ativo: false })], 35),
+      'GET /funcionarios/12': detalhe(funcionario({ id: 12, nome: 'Ana Lima', matricula: 'M-12', situacao: 'INATIVO', ativo: false })),
+    });
     await consultar(pg, 'nome', 'Ana');
     assert.equal(pg.el('historyResultados').style.display, 'block');
-    assert.match(pg.el('historyResultados').innerHTML, /Mostrando 2 de 35/);
-    assert.match(pg.el('historyResultados').innerHTML, /Inativo/);
+    assert.match(pg.texto('historyResultados'), /Mostrando 2 de 35/);
+    assert.match(pg.texto('historyResultados'), /Inativo/);
     assert.equal(pg.el('historyEmployeeName').value, '');
-    const antes = chamadas.length;
-    await pg.disparar('historyResultados', 'click', { target: { closest: () => ({ getAttribute: () => '12' }) } });
+    const antes = daApi(pg).length;
+    await pg.consulta('#historyResultados [data-id="12"]')[0].disparar('click');
+    await pg.esperar();
     assert.equal(pg.el('historyEmployeeName').value, 'Ana Lima');
-    assert.equal(chamadas.length, antes);
+    // Pacotes E, F e G: depois do detalhe, os históricos de GHE, de situação e cadastral do MESMO id (e só dele).
+    assert.deepEqual(daApi(pg).slice(antes).map((c) => [c.metodo, c.caminho]), [['GET', '/funcionarios/12'], ['GET', '/funcionarios/12/eventos'], ['GET', '/funcionarios/12/eventos'], ['GET', '/funcionarios/12/eventos']], 'uma consulta ao detalhe pelo id escolhido');
+    assert.match(daApi(pg).at(-3).url, /\/funcionarios\/12\/eventos\?tipo=GHE&pagina=1&limite=20$/);
+    assert.match(daApi(pg).at(-2).url, /\/funcionarios\/12\/eventos\?tipo=SITUACAO&pagina=1&limite=20$/);
+    assert.match(daApi(pg).at(-1).url, /\/funcionarios\/12\/eventos\?tipo=CADASTRAL&pagina=1&limite=20$/);
   });
 
   test('CPF: parcial é recusado sem requisição; completo vai como cpf exato (nunca na busca livre)', async () => {
-    servidor(lista([funcionario()]));
-    const pg = montarPagina('pages/employee-history.html');
-    await pg.esperar();
+    const pg = await abrirHistorico({ 'POST /funcionarios/consulta-cpf': lista([funcionario()]), 'GET /funcionarios/11': detalhe(funcionario()) });
     await consultar(pg, 'cpf', '529.982');
-    assert.equal(chamadas.length, 0);
-    assert.match(pg.el('aviso').innerHTML, /CPF completo/);
+    assert.equal(daApi(pg).length, 0);
+    assert.match(aviso(pg), /CPF incompleto/);
     await consultar(pg, 'cpf', '529.982.247-25');
-    assert.deepEqual([chamadas[0].metodo, chamadas[0].caminho, chamadas[0].corpo], ['POST', '/api/funcionarios/consulta-cpf', { cpf: '52998224725' }]);
+    const primeira = daApi(pg)[0];
+    assert.deepEqual([primeira.metodo, primeira.caminho, primeira.corpo], ['POST', '/funcionarios/consulta-cpf', { cpf: '52998224725' }]);
   });
 
   test('nenhum resultado e falhas: mensagem clara, colaborador vazio; 401 devolve ao Portal', async () => {
-    servidor(lista([]));
-    const pg = montarPagina('pages/employee-history.html');
-    await pg.esperar();
+    const respostas = { atual: lista([]) };
+    const pg = await abrirHistorico({ 'GET /funcionarios': () => respostas.atual });
     await consultar(pg, 'matricula', 'X');
-    assert.match(pg.el('aviso').innerHTML, /Nenhum funcionário encontrado/);
-    servidor(resposta(403, { status: 'erro', codigo: 'SEM_PERMISSAO' }));
+    assert.match(aviso(pg), /Nenhum funcionário encontrado/);
+    respostas.atual = { status: 403, corpo: { status: 'erro', codigo: 'SEM_PERMISSAO' } };
     await consultar(pg, 'nome', 'Ana');
-    assert.match(pg.el('aviso').innerHTML, /não pode consultar funcionários/);
-    servidor(resposta(401, { status: 'erro' }));
+    assert.match(aviso(pg), /não pode consultar funcionários/);
+    assert.deepEqual(campos(pg, SEIS), ['', '', '', '', '', '']);
+    respostas.atual = { status: 401, corpo: { status: 'erro' } };
     await consultar(pg, 'nome', 'Ana');
-    assert.equal(pg.sandbox.encerrada, true);
+    assert.ok(pg.navegacoes.some((d) => /portal\/index\.html/.test(d)), String(pg.navegacoes));
   });
 
   test('resposta antiga descartada: a consulta mais recente é a que fica na tela', async () => {
     let liberar;
     const lenta = new Promise((r) => { liberar = r; });
-    servidor((c) => (c.caminho.includes('busca=Primeira') ? lenta : lista([funcionario({ nome: 'Segunda' })])));
-    const pg = montarPagina('pages/employee-history.html');
-    await pg.esperar();
-    pg.el('historyFilterType').value = 'nome';
+    const pg = await abrirHistorico({
+      'GET /funcionarios': (c) => (c.url.includes('busca=Primeira') ? lenta : lista([funcionario({ id: 22, nome: 'Segunda' })])),
+      'GET /funcionarios/21': detalhe(funcionario({ id: 21, nome: 'Primeira' })),
+      'GET /funcionarios/22': detalhe(funcionario({ id: 22, nome: 'Segunda' })),
+    });
     pg.el('historySearchValue').value = 'Primeira';
-    const primeira = pg.disparar('botaoConsultar');
+    const primeira = pg.el('botaoConsultar').disparar('click');
     await pg.esperar();
     await consultar(pg, 'nome', 'Segunda');
-    liberar(lista([funcionario({ nome: 'Primeira' })]));
+    liberar(lista([funcionario({ id: 21, nome: 'Primeira' })]));
     await primeira;
+    await pg.esperar();
     assert.equal(pg.el('historyEmployeeName').value, 'Segunda');
+    assert.equal(daApi(pg).some((c) => c.caminho === '/funcionarios/21'), false, 'a busca antiga não chega a consultar o detalhe');
   });
 
-  test('exportar sem entregas: mensagem de ausência de registros e NENHUM arquivo gerado', async () => {
-    servidor(lista([funcionario()]));
-    const pg = montarPagina('pages/employee-history.html');
-    await pg.esperar();
+  test('exportar: indisponível nesta entrega e NENHUM arquivo gerado (adaptação autorizada #3)', async () => {
+    const pg = await abrirHistorico({ 'GET /funcionarios': lista([funcionario()]), 'GET /funcionarios/11': detalhe(funcionario()) });
     await consultar(pg, 'nome', 'Ana');
-    await pg.disparar('botaoExportarHistorico');
-    assert.match(pg.el('aviso').innerHTML, /Não há entregas registradas para este colaborador\. Nenhum arquivo foi gerado\./);
-    assert.equal(pg.downloads.length, 0);
+    const botao = pg.el('botaoExportarHistorico');
+    assert.equal(pg.visivelNo(botao), false, 'Exportar não aparece');
+    assert.equal(botao.disabled, true, 'e não age');
+    const antes = pg.chamadas.length;
+    await botao.disparar('click');
+    await pg.esperar();
+    assert.equal(pg.chamadas.length, antes, 'nenhuma requisição');
+    assert.equal(aviso(pg), '', 'nenhuma mensagem de exportação');
   });
 
   test('sessão encerrada: colaborador, lista e busca apagados; respostas pendentes ignoradas', async () => {
-    servidor(lista([funcionario()]));
-    const pg = montarPagina('pages/employee-history.html');
-    await pg.esperar();
+    const estado = { sessao: 'ok' };
+    const pg = await abrirHistorico({ 'GET /funcionarios': lista([funcionario()]), 'GET /funcionarios/11': detalhe(funcionario()) }, estado);
     await consultar(pg, 'nome', 'Ana');
-    pg.sandbox.opcoesMontar.aoEncerrar();
+    assert.equal(pg.el('historyEmployeeName').value, 'Ana Souza');
+    estado.sessao = 'encerrada';
+    await pg.eventoDaJanela('pageshow', { persisted: true });
+    await pg.esperar();
     assert.deepEqual([pg.el('historyEmployeeName').value, pg.el('historySearchValue').value], ['', '']);
     await consultar(pg, 'nome', 'Ana');
     assert.equal(pg.el('historyEmployeeName').value, '');
@@ -959,14 +1011,25 @@ describe('ajuste 2 — CPF na busca: só números ou pontuação usual; letras e
     }
   });
 
+  // Histórico A+B: migrado para o harness de página real (a página carrega js/historico-funcionarios.js); mesma garantia.
   test('página: CPF com letras não gera requisição', async () => {
-    servidor(resposta(200, { status: 'ok', funcionarios: [], total: 0, pagina: 1, limite: 20 }));
-    const pg = montarPagina('pages/employee-history.html');
+    const { abrirPagina } = require('./helpers/dom-pagina'); // eslint-disable-line global-require
+    const pg = abrirPagina('pages/employee-history.html', {
+      rotas: {
+        'GET /auth/me': { status: 200, corpo: { status: 'ok', usuario: { id: 7, nome: 'Pessoa', email: 'p@validacao-epi.invalid', perfil: 'MASTER' }, empresa: { id: 3, nome: 'Empresa Demonstração SafeWork', cnpj: '11222333000181' } } },
+        'GET /auth/global/me': { status: 200, corpo: { status: 'ok', empresas: [{ id: 3 }] } },
+        'GET /auth/permissoes': { status: 200, corpo: { status: 'ok', empresaId: 3, usuarioId: 7, perfil: 'MASTER', recursos: { employeeHistory: { visualizar: true, criar: false, editar: false, excluir: false } }, acoes: {}, administracao: { gruposAcesso: { consultar: false, alterar: false }, permissoesGrupo: { consultar: false, alterar: false }, vinculosGrupo: { consultar: false, alterar: false }, usuarios: { consultar: false, alterar: false }, autorizacoesIndividuais: { consultar: false, concederDireta: false, delegar: false }, vinculosSst: { consultar: false, alterar: false } } } },
+        'POST /funcionarios/consulta-cpf': { status: 200, corpo: { status: 'ok', funcionarios: [], total: 0, pagina: 1, limite: 20 } },
+      },
+    });
     await pg.esperar();
-    pg.el('historyFilterType').value = 'cpf';
+    await pg.esperar();
+    // Busca única: 11 dígitos misturados com letras, sem espaços, é "CPF inválido" (nunca busca textual).
     pg.el('historySearchValue').value = '529a982b247c25';
-    await pg.disparar('botaoConsultar');
-    assert.equal(chamadas.length, 0);
+    await pg.el('botaoConsultar').disparar('click');
+    await pg.esperar();
+    assert.equal(pg.chamadas.filter((c) => !c.caminho.startsWith('/auth/')).length, 0);
+    assert.match(pg.texto('aviso'), /CPF inválido/);
   });
 });
 

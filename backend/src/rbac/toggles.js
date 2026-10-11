@@ -45,6 +45,9 @@ const TOGGLES = Object.freeze([
   { id: 'registrarBaixa', rotulo: 'Registrar Baixa / Saída', grupo: 'ESTOQUE', regra: acao('BAIXA_ESTOQUE'), dependencias: [LEITURA_MATERIAIS] },
   // Permissão própria (ação IMPORTAR_FUNCIONARIOS, ALTERNATIVA desde a 078); independente de employeeHistory.criar.
   { id: 'importacaoFuncionarios', rotulo: 'Importação de Funcionários', grupo: 'COLABORADORES', regra: acao('IMPORTAR_FUNCIONARIOS'), dependencias: [] },
+  // Pacote J: permissão própria (ação EXPORTAR_HISTORICO_FUNCIONARIOS, ALTERNATIVA desde a 085), independente da leitura: ligar não liga
+  // o Histórico. A exportação exige as duas (services/exportacao-historico-autorizacao.service.js); sem a leitura, só o aviso.
+  { id: 'exportarHistoricoFuncionarios', rotulo: 'Exportar Histórico de Funcionários', grupo: 'COLABORADORES', regra: acao('EXPORTAR_HISTORICO_FUNCIONARIOS'), dependencias: [] },
   { id: 'gestaoUsuarios', rotulo: 'Gestão de Usuários', grupo: 'ADMINISTRACAO', regra: acao('GERENCIAR_USUARIOS') },
   // A decisão da SST tem DUAS dimensões: o vínculo ("atua na Segurança do Trabalho?", Novo/Alterar usuário) e a permissão
   // ("o que pode fazer?", estes toggles). Ligar aqui é a CONCESSÃO individual da ação; ela não cria o vínculo e o vínculo
@@ -62,7 +65,7 @@ const TOGGLES = Object.freeze([
 const PENDENCIAS = Object.freeze([
   { id: 'relatorios', rotulo: 'Relatórios', situacao: 'SEM_ENFORCEMENT', motivo: 'Tela em protótipo, sem rota no servidor.' },
   { id: 'episEntregues', rotulo: 'EPIs Entregues', situacao: 'SEM_ENFORCEMENT', motivo: 'Tela em protótipo, sem rota no servidor.' },
-  { id: 'gestaoColaboradores', rotulo: 'Gestão de Colaboradores', situacao: 'SEM_ENFORCEMENT', motivo: 'Página e rotas de gestão ainda não existem (etapa 12K-E).' },
+  { id: 'gestaoColaboradores', rotulo: 'Gestão de Colaboradores', situacao: 'SEM_ENFORCEMENT', motivo: 'A página Cadastro de Colaboradores e as rotas de funcionários já existem; o acesso é configurado por Cadastrar Funcionário e Editar Funcionário (com a leitura do Histórico de Funcionários).' },
   { id: 'configuracoes', rotulo: 'Configurações', situacao: 'SEM_ENFORCEMENT', motivo: 'A tela é pessoal e abre para qualquer sessão; não há rota restrita por permissão.' },
   { id: 'suporte', rotulo: 'Suporte', situacao: 'SEM_ENFORCEMENT', motivo: 'Tela em protótipo, sem rota no servidor.' },
   { id: 'gestaoEmail', rotulo: 'Gestão de E-mail', situacao: 'SEM_ENFORCEMENT', motivo: 'Tela em protótipo, sem rota no servidor.' },

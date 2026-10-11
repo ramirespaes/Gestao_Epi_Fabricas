@@ -5,6 +5,7 @@ const grupoPermissaoService = require('./grupo-permissao.service');
 const grupoRepo = require('../repositories/grupo-acesso.repository');
 const permissaoRepo = require('../repositories/permissao.repository');
 const toggles = require('../rbac/toggles');
+const { avisosDosAcessos } = require('../rbac/avisos-acessos');
 
 /**
  * Acessos ON/OFF de um GRUPO: visão binária sobre as mesmas permissões de grupo (grupo_permissoes_recurso e
@@ -42,12 +43,11 @@ async function detalhar(pool, { empresaId, atorId, grupoId }) {
   const acoesDoGrupo = await grupoPermissaoService.listarAcoes(pool, { empresaId, atorId, grupoId });
   const grupo = await grupoRepo.buscarPorId(pool, empresaId, grupoId);
   if (grupo === null) throw HttpError.notFound('GRUPO_NAO_ENCONTRADO', 'Grupo não encontrado');
-  return {
-    grupo: { id: grupo.id, nome: grupo.nome, ativo: grupo.ativo },
-    toggles: (await acessosDisponiveis(pool)).map((t) => ({
-      id: t.id, rotulo: t.rotulo, grupo: t.grupo, ligado: ligadoNoGrupo(t.regra, recursosDoGrupo, acoesDoGrupo),
-    })),
-  };
+  const lista = (await acessosDisponiveis(pool)).map((t) => ({
+    id: t.id, rotulo: t.rotulo, grupo: t.grupo, ligado: ligadoNoGrupo(t.regra, recursosDoGrupo, acoesDoGrupo),
+  }));
+  // Avisos sobre a CONFIGURAÇÃO do grupo (o que ele concede), não sobre o efeito nos integrantes.
+  return { grupo: { id: grupo.id, nome: grupo.nome, ativo: grupo.ativo }, toggles: lista, avisos: avisosDosAcessos(lista) };
 }
 
 async function aplicarRegra(pool, base, regra, ligado) {
@@ -74,7 +74,7 @@ async function configurarToggle(pool, {
   }
   await aplicarRegra(pool, base, toggle.regra, ligado);
   const atual = await detalhar(pool, { empresaId, atorId, grupoId });
-  return atual.toggles.find((t) => t.id === toggleId);
+  return { acesso: atual.toggles.find((t) => t.id === toggleId), avisos: atual.avisos };
 }
 
 module.exports = { detalhar, configurarToggle };

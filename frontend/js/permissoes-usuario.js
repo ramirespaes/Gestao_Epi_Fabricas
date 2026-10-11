@@ -40,6 +40,21 @@
     GRUPO_PROPRIO: 'Você não pode alterar as permissões do seu próprio grupo.',
     GRUPO_NAO_ENCONTRADO: 'Grupo não encontrado. A lista foi atualizada.',
     GRUPO_DICA: 'Vale para todos os integrantes do grupo enquanto ele estiver ativo. Ligado: o grupo concede o acesso. Desligado: o grupo não concede (o perfil e as exceções individuais continuam valendo).',
+    // Avisos informativos calculados pelo servidor (`avisos: [{ codigo }]`): a tela só traduz o código; nada é revogado.
+    AVISOS: Object.freeze({
+      FUNCIONARIOS_SEM_VISUALIZAR: 'Histórico de Funcionários está desligado, mas Cadastrar e/ou Editar Funcionário continuam concedidos: '
+        + 'a página Cadastro de Colaboradores pode ficar inacessível pelo menu.',
+      EXPORTAR_HISTORICO_SEM_VISUALIZAR: 'Exportar Histórico de Funcionários está ligado, mas Histórico de Funcionários está desligado. '
+        + 'A exportação exige as duas permissões: sem a leitura, este acesso não autoriza o download.',
+    }),
+    AVISOS_GRUPO: Object.freeze({
+      FUNCIONARIOS_SEM_VISUALIZAR: 'A configuração deste grupo concede Cadastrar e/ou Editar Funcionário, mas não concede o Histórico de '
+        + 'Funcionários. Integrantes que não recebam essa leitura pelo perfil ou por exceção individual podem não encontrar o '
+        + 'Cadastro de Colaboradores no menu.',
+      EXPORTAR_HISTORICO_SEM_VISUALIZAR: 'A configuração deste grupo concede Exportar Histórico de Funcionários, mas não concede o Histórico de '
+        + 'Funcionários. A exportação exige as duas permissões; para cada integrante, o resultado também depende do perfil e das '
+        + 'exceções individuais.',
+    }),
     // Copiar permissões
     COPIA_OK: 'Permissões copiadas.',
     COPIA_FALHA: 'Não foi possível copiar as permissões agora. Nada foi alterado.',
@@ -175,6 +190,16 @@
         no(doc, 'label', { class: 'switch' }, [entrada, no(doc, 'span', { class: 't' })]),
       ]);
     },
+    /** Preenche a área de avisos com os códigos conhecidos (texto do usuário ou do grupo); sem nenhum, a área some. */
+    avisos: function (doc, area, avisos, ehGrupo) {
+      var textos = ehGrupo ? TEXTOS.AVISOS_GRUPO : TEXTOS.AVISOS;
+      var itens = (Array.isArray(avisos) ? avisos : []).filter(function (a) {
+        return a && typeof a.codigo === 'string' && Object.prototype.hasOwnProperty.call(textos, a.codigo);
+      }).map(function (a) { return no(doc, 'p', { 'data-aviso': a.codigo, style: 'margin:0' }, [textos[a.codigo]]); });
+      area.replaceChildren.apply(area, itens);
+      area.style.display = itens.length ? '' : 'none';
+      return area;
+    },
     /** O modal inteiro; a lista é exatamente a que `d` traz. */
     modalAcessos: function (doc, d) {
       var ehGrupo = !d.usuario && !!d.grupo;
@@ -183,12 +208,13 @@
       var editavel = (ehGrupo || d.podeAlterar === true) && !d.toggles.some(function (t) { return t.fixo === true; });
       var aviso = editavel ? null : no(doc, 'p', { class: 'dim', id: 'avisoSomenteLeitura', style: 'margin:0 0 12px;font-size:.85rem' }, [SOMENTE_LEITURA[d.motivoSomenteLeitura] || '']);
       var dicaGrupo = ehGrupo ? no(doc, 'p', { class: 'dim', id: 'dicaGrupo', style: 'margin:0 0 12px;font-size:.85rem' }, [TEXTOS.GRUPO_DICA]) : null;
+      var avisos = render.avisos(doc, no(doc, 'div', { id: 'avisoDependencias', role: 'status', style: 'margin:0 0 12px;font-size:.85rem;color:#C07000' }), d.avisos, ehGrupo);
       var secoes = modelo.agrupar(d.toggles).map(function (g) {
         return no(doc, 'div', { 'data-grupo-acesso': g.grupo }, [no(doc, 'h3', {}, [g.rotulo])].concat(g.itens.map(function (t) { return render.linhaAcesso(doc, t, editavel); })));
       });
       return [
         cabecalho(doc, (ehGrupo ? 'Permissões do grupo ' : 'Permissões de ') + u.nome),
-        no(doc, 'div', { class: 'mb' }, [dicaGrupo, aviso].concat(secoes, [no(doc, 'div', { class: 'hint', id: 'hintPermissoes', role: 'status', 'aria-live': 'polite' })])),
+        no(doc, 'div', { class: 'mb' }, [dicaGrupo, aviso, avisos].concat(secoes, [no(doc, 'div', { class: 'hint', id: 'hintPermissoes', role: 'status', 'aria-live': 'polite' })])),
         no(doc, 'div', { class: 'mf' }, [no(doc, 'span'), no(doc, 'button', { class: 'btn primary', type: 'button', 'data-close': '' }, ['Fechar'])]),
       ];
     },

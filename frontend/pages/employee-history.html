@@ -20,10 +20,14 @@
   Página ORIGINAL ligada ao backend real, com a interface preservada:
   sessão empresarial do Portal (C0), permissões efetivas (C1, recurso
   employeeHistory) e GET /api/funcionarios (busca por nome ou matrícula; CPF
-  só completo, por igualdade exata, na empresa da sessão). Ainda não existem
-  entregas de EPI (Bloco 10): indicadores e linha do tempo mostram a
-  ausência de registros — nenhum dado de exemplo. Sem js/db-api.js e sem
-  js/main.js.
+  só completo, por igualdade exata, na empresa da sessão).
+  Histórico de Funcionários, pacote A+B: a escolha de um resultado consulta
+  GET /api/funcionarios/:id pelo id interno real e a identificação mostra só
+  os seis campos do detalhe (js/historico-funcionarios.js). Pacote C: a
+  linha do tempo mostra as entregas reais da ficha de EPI do funcionário
+  (epiFicha.visualizar). Pacote D: os quatro indicadores vêm do resumo da
+  ficha calculado no servidor. Eventos e exportação são dos próximos
+  subincrementos: nada é simulado. Sem js/db-api.js e sem js/main.js.
 -->
 <body>
 
@@ -134,18 +138,10 @@
           </div>
 
           <div class="filters-grid">
-            <div class="field">
-              <label for="historyFilterType">Filtrar por</label>
-              <select id="historyFilterType" class="select">
-                <option value="nome">Nome</option>
-                <option value="matricula">Matrícula</option>
-                <option value="cpf">CPF</option>
-              </select>
-            </div>
-            <div class="field" style="grid-column:span 2">
-              <label for="historySearchValue">Valor da busca</label>
-              <input id="historySearchValue" class="input" type="text" placeholder="Digite o nome, matrícula ou CPF do colaborador" />
-              <div class="helper">Nome ou matrícula: parte do texto. CPF: número completo, com 11 dígitos.</div>
+            <!-- Busca única: o tipo (nome, matrícula ou CPF) é reconhecido pelo valor (js/historico-funcionarios.js). -->
+            <div class="field" style="grid-column:1 / -2">
+              <label for="historySearchValue">Buscar colaborador</label>
+              <input id="historySearchValue" class="input" type="text" placeholder="Nome, CPF ou matrícula" autocomplete="off" />
             </div>
             <div class="filters-actions">
               <button id="botaoLimparHistorico" class="outlined-btn" type="button">Limpar</button>
@@ -156,14 +152,12 @@
           <!-- C4: vários resultados → lista para seleção -->
           <div id="historyResultados" style="display:none;margin-top:18px"></div>
 
-          <div class="form-grid" style="margin-top:18px">
+          <!-- Identificação: os seis campos do detalhe (GET /funcionarios/:id); "—" quando ausente. Oculta até o
+               funcionário ser identificado, como os indicadores e a linha do tempo (js/historico-funcionarios.js). -->
+          <div class="form-grid" style="margin-top:18px;display:none">
             <div class="field">
               <label for="historyEmployeeName">Funcionário</label>
               <input id="historyEmployeeName" class="input" type="text" value="" readonly />
-            </div>
-            <div class="field">
-              <label for="historyEmployeeBadge">Nº do crachá</label>
-              <input id="historyEmployeeBadge" class="input" type="text" value="" readonly />
             </div>
             <div class="field">
               <label for="historyEmployeeMatricula">Matrícula</label>
@@ -173,16 +167,29 @@
               <label for="historySector">Setor</label>
               <input id="historySector" class="input" type="text" value="" readonly />
             </div>
+            <div class="field">
+              <label for="historyEmployeeFuncao">Cargo / função</label>
+              <input id="historyEmployeeFuncao" class="input" type="text" value="" readonly />
+            </div>
+            <div class="field">
+              <label for="historyEmployeeGhe">GHE atual</label>
+              <input id="historyEmployeeGhe" class="input" type="text" value="" readonly />
+            </div>
+            <div class="field">
+              <label for="historyEmployeeSituacao">Situação atual</label>
+              <input id="historyEmployeeSituacao" class="input" type="text" value="" readonly />
+            </div>
           </div>
+          <p id="historyFichaEstado" class="helper" role="status" aria-live="polite" style="margin-top:10px"></p>
         </section>
 
-        <section class="history-summary">
+        <section class="history-summary" style="display:none">
           <div class="history-card">
-            <span>Total de retiradas</span>
+            <span>Retiradas realizadas</span>
             <strong id="hkpiTotal">—</strong>
           </div>
           <div class="history-card">
-            <span>EPIs diferentes</span>
+            <span>EPIs distintos retirados</span>
             <strong id="hkpiEpis">—</strong>
           </div>
           <div class="history-card">
@@ -190,12 +197,43 @@
             <strong id="hkpiUltima">—</strong>
           </div>
           <div class="history-card">
-            <span>Itens ativos</span>
+            <span>EPIs dentro do prazo de uso</span>
             <strong id="hkpiAtivos">—</strong>
           </div>
         </section>
 
-        <section class="card">
+        <!-- Pacote H: período dos quatro históricos abaixo (os indicadores acima são sempre do histórico completo). As
+             datas só valem depois de "Aplicar filtro"; oculto até a identificação. -->
+        <section class="card" style="display:none">
+          <div class="card-header">
+            <div class="card-title">
+              <div class="card-icon">date_range</div>
+              <div>
+                <h2>Período do histórico</h2>
+                <p>Filtra as retiradas e os históricos abaixo. Os indicadores consideram todo o histórico.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="field">
+              <label for="historyPeriodoInicial">Data inicial</label>
+              <input id="historyPeriodoInicial" class="input" type="date" />
+            </div>
+            <div class="field">
+              <label for="historyPeriodoFinal">Data final</label>
+              <input id="historyPeriodoFinal" class="input" type="date" />
+            </div>
+          </div>
+          <div class="filters-actions" style="justify-content:flex-end;margin-top:12px">
+            <button id="botaoTodoHistorico" class="outlined-btn" type="button">Todo o histórico</button>
+            <button id="botaoAplicarPeriodo" class="filled-btn" type="button">Aplicar filtro</button>
+          </div>
+          <p id="historyPeriodoEstado" class="helper" role="status" aria-live="polite">Todo o histórico</p>
+          <p id="historyPeriodoErro" class="helper" role="alert" style="color:var(--error)"></p>
+        </section>
+
+        <section class="card" style="display:none">
           <div class="card-header">
             <div class="card-title">
               <div class="card-icon">history</div>
@@ -210,11 +248,77 @@
             <div class="helper">Consulte um colaborador para ver o histórico.</div>
           </div>
         </section>
-        <div style="display:flex;justify-content:flex-start;padding-top:4px">
-          <button id="botaoExportarHistorico" class="outlined-btn" type="button">
-            <span class="material-symbols-outlined">download</span>Exportar dados do funcionário
-          </button>
-        </div>
+
+        <!-- Pacote E: alterações de GHE registradas na auditoria; separado das entregas de EPI e oculto até a identificação. -->
+        <section class="card" style="display:none">
+          <div class="card-header">
+            <div class="card-title">
+              <div class="card-icon">swap_horiz</div>
+              <div>
+                <h2>Histórico de GHE</h2>
+                <p>Registro inicial e alterações do Grupo Homogêneo de Exposição do colaborador.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="timeline-list" id="historyGheTimeline"></div>
+        </section>
+
+        <!-- Pacote F: mudanças de situação (Ativo, Afastado, Inativo) registradas na auditoria; oculto até a identificação. -->
+        <section class="card" style="display:none">
+          <div class="card-header">
+            <div class="card-title">
+              <div class="card-icon">toggle_on</div>
+              <div>
+                <h2>Histórico de Situação</h2>
+                <p>Situação inicial e mudanças de situação do colaborador.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="timeline-list" id="historySituacaoTimeline"></div>
+        </section>
+
+        <!-- Pacote G: cadastro inicial e alterações de nome, matrícula, setor, cargo/função e data de admissão; oculto até a identificação. -->
+        <section class="card" style="display:none">
+          <div class="card-header">
+            <div class="card-title">
+              <div class="card-icon">edit_note</div>
+              <div>
+                <h2>Histórico de Alterações Cadastrais</h2>
+                <p>Cadastro inicial e alterações de dados cadastrais do colaborador.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="timeline-list" id="historyCadastralTimeline"></div>
+        </section>
+        <!-- Pacote I: exportação em PDF ou XLSX com o período aplicado acima. Só aparece com o colaborador identificado e com
+             as duas permissões (Histórico de Funcionários e Exportar); o servidor confere de novo. -->
+        <section class="card" id="historyExportCartao" style="display:none">
+          <div class="card-header">
+            <div class="card-title">
+              <div class="card-icon">download</div>
+              <div>
+                <h2>Exportar Histórico de Funcionários</h2>
+                <p>Gera um arquivo com o histórico do colaborador, no período aplicado (ou todo o histórico).</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="field">
+              <label for="historyExportFormato">Formato</label>
+              <select id="historyExportFormato" class="input"></select>
+            </div>
+          </div>
+          <div class="filters-actions" style="justify-content:flex-end;margin-top:12px">
+            <button id="botaoExportarHistorico" class="filled-btn" type="button" disabled>
+              <span class="material-symbols-outlined">download</span>Exportar
+            </button>
+          </div>
+          <p id="historyExportEstado" class="helper" role="status" aria-live="polite"></p>
+        </section>
       </section>
     </main>
   </div>
@@ -225,152 +329,53 @@
 <script src="../js/permissoes-efetivas.js"></script>
 <script src="../js/pagina-base.js"></script>
 <script src="../js/funcionarios.js"></script>
+<script src="../js/historico-funcionarios.js"></script>
 <script>
 /*
-  Ligação com o DOM — deliberadamente fina. Regras de consulta, mensagens
-  e HTML escapado vivem em js/funcionarios.js (testado sem navegador).
-  Nenhuma entrega, indicador ou evento é inventado: ainda não existem
-  entregas registradas (Bloco 10).
+  Ligação com o DOM — deliberadamente fina. A busca (regras e chamadas)
+  continua em js/funcionarios.js; a seleção pelo id interno, a ficha do
+  detalhe, as entregas da ficha de EPI e os estados vivem em
+  js/historico-funcionarios.js (testado sem navegador). Nenhuma entrega,
+  indicador ou evento é inventado.
 */
 (function () {
   'use strict';
 
   var $ = function (id) { return document.getElementById(id); };
-  var F = EpiFuncionarios;
+  var H = EpiHistoricoFuncionarios;
+  var tela = null;
 
   // Mesmo endereço do Portal do Cliente (portal/config.js).
   EpiHttp.configurar({ baseUrl: window.SAFEWORK_PORTAL_API_BASE_URL });
 
-  var liberado = false;
-  var encerrada = false;
-  var consultaAtual = 0;  // só a consulta mais recente toca a tela
-  var ultimaLista = [];
-  var selecionado = null;
-  var CAMPOS = ['historyEmployeeName', 'historyEmployeeBadge', 'historyEmployeeMatricula', 'historySector'];
-  var INDICADORES = ['hkpiTotal', 'hkpiEpis', 'hkpiUltima', 'hkpiAtivos'];
-
-  function mostrarAviso(texto, tipo) {
-    var caixa = $('aviso');
-    if (!texto) { caixa.style.display = 'none'; caixa.innerHTML = ''; return; }
-    var cor = tipo === 'erro'
-      ? 'background:var(--error-container);color:var(--error);border-color:rgba(255,59,48,0.2)'
-      : 'background:rgba(255,149,0,0.08);color:#C07000;border-color:rgba(255,149,0,0.25)';
-    caixa.innerHTML = '<div class="notice" style="' + cor + '">' + F.render.escaparHtml(texto) + '</div>';
-    caixa.style.display = 'block';
-  }
-
-  function mostrarTimeline(texto) {
-    $('historyTimeline').innerHTML = '<div class="helper">' + F.render.escaparHtml(texto) + '</div>';
-  }
-
-  function limparColaborador() {
-    selecionado = null;
-    CAMPOS.forEach(function (id) { $(id).value = ''; });
-    INDICADORES.forEach(function (id) { $(id).textContent = '—'; });
-    mostrarTimeline('Consulte um colaborador para ver o histórico.');
-  }
-
-  function limparResultados() {
-    ultimaLista = [];
-    $('historyResultados').innerHTML = '';
-    $('historyResultados').style.display = 'none';
-  }
-
-  /** Dados reais do cadastro; sem entregas registradas ainda. */
-  function selecionar(f) {
-    selecionado = f;
-    $('historyEmployeeName').value = f.nome || '';
-    $('historyEmployeeBadge').value = f.cracha || '';
-    $('historyEmployeeMatricula').value = f.matricula || '';
-    $('historySector').value = f.setor || '';
-    INDICADORES.forEach(function (id) { $(id).textContent = '—'; });
-    mostrarTimeline(F.mensagens.SEM_ENTREGAS);
-  }
-
-  async function consultar() {
-    if (!liberado || encerrada) return;
-    var c = F.historico.consulta($('historyFilterType').value, $('historySearchValue').value);
-    if (!c.ok) { mostrarAviso(c.mensagem, 'erro'); return; }
-    mostrarAviso('', null);
-    var minha = ++consultaAtual;
-    limparColaborador();
-    limparResultados();
-    var r = await F.acoes.listar(c.filtro);
-    if (encerrada || minha !== consultaAtual) return; // resposta antiga: descartada
-    if (!r.ok) {
-      if (F.mensagens.exigeNovoLogin(r)) { EpiSessaoEmpresarial.sessaoEncerrada(); return; }
-      mostrarAviso(F.mensagens.erroConsulta(r), 'erro');
-      return;
-    }
-    var lista = (r.dados && r.dados.funcionarios) || [];
-    var total = (r.dados && typeof r.dados.total === 'number') ? r.dados.total : lista.length;
-    if (lista.length === 0) { mostrarAviso('Nenhum funcionário encontrado nesta empresa com esse critério.', 'atencao'); return; }
-    if (lista.length === 1) { selecionar(lista[0]); return; }
-    ultimaLista = lista;
-    $('historyResultados').innerHTML = (total > lista.length ? '<div class="helper" style="margin-bottom:8px">Mostrando ' + lista.length + ' de ' + total + ' resultados. Refine a busca para encontrar o colaborador.</div>' : '')
-      + F.render.resultados(lista);
-    $('historyResultados').style.display = 'block';
-  }
-
-  function aoEscolher(evento) {
-    var alvo = evento && evento.target && typeof evento.target.closest === 'function' ? evento.target.closest('[data-id]') : null;
-    if (!alvo || encerrada) return;
-    var id = String(alvo.getAttribute('data-id'));
-    var f = ultimaLista.filter(function (x) { return String(x.id) === id; })[0];
-    if (f) selecionar(f);
-  }
-
-  function limpar() {
-    consultaAtual += 1;
-    $('historySearchValue').value = '';
-    $('historyFilterType').value = 'nome';
-    limparResultados();
-    limparColaborador();
-    mostrarAviso('', null);
-  }
-
-  /** Nenhum documento com histórico fictício: sem entregas, nada é gerado. */
-  function exportar() {
-    if (!liberado || encerrada) return;
-    if (!selecionado) { mostrarAviso('Consulte e selecione um colaborador antes de exportar.', 'erro'); return; }
-    mostrarAviso(F.mensagens.MSG.SEM_ENTREGAS_EXPORTACAO, 'atencao');
-  }
-
-  $('botaoConsultar').addEventListener('click', consultar);
-  $('botaoLimparHistorico').addEventListener('click', limpar);
-  $('botaoExportarHistorico').addEventListener('click', exportar);
-  $('historyResultados').addEventListener('click', aoEscolher);
-  $('historySearchValue').addEventListener('keydown', function (e) { if (e && e.key === 'Enter') consultar(); });
-
-  function encerrarTela() {
-    encerrada = true;
-    liberado = false;
-    consultaAtual += 1; // invalida qualquer resposta pendente
-    $('historySearchValue').value = '';
-    limparResultados();
-    limparColaborador();
-    mostrarAviso('', null);
-  }
-
   // Sessão empresarial real (C0) e permissões efetivas (C1): consultar
-  // exige employeeHistory.visualizar. Nada é consultado antes.
+  // exige employeeHistory.visualizar. Nada é consultado antes, e a tela só
+  // passa a reagir à busca depois do acesso confirmado.
   EpiSessaoEmpresarial.montar({
     elementos: {
       tela: $('telaSessao'),
       mensagem: $('telaSessaoMensagem'),
       linkPortal: $('telaSessaoPortal'),
     },
-    aoEncerrar: encerrarTela,
+    aoEncerrar: function () { if (tela) tela.encerrar(); },
   }).then(function (contexto) {
     if (!contexto) return undefined;
     return EpiPermissoes.prepararPagina({
       pagina: 'employeeHistory',
       contexto: contexto,
       links: document.querySelectorAll('.nav a[data-pagina]'),
-      aviso: function (mensagem) { mostrarAviso(mensagem, 'erro'); },
+      aviso: function (mensagem) { H.mostrarAviso(document, mensagem, 'erro'); },
     }).then(function (acesso) {
       if (!acesso) return undefined;
-      liberado = true;
+      // O histórico de EPIs tem permissão própria (epiFicha.visualizar); sem ela a ficha cadastral continua.
+      tela = H.criarTela({
+        podeVerEpis: EpiPermissoes.recurso(acesso.permissoes, 'epiFicha', 'visualizar'),
+        // Pacote I: só mostra o controle; a exportação é autorizada pelo servidor (as duas permissões do pacote J).
+        podeExportar: EpiPermissoes.recurso(acesso.permissoes, 'employeeHistory', 'visualizar')
+          && EpiPermissoes.acao(acesso.permissoes, 'EXPORTAR_HISTORICO_FUNCIONARIOS'),
+        aoSessaoEncerrada: function () { EpiSessaoEmpresarial.sessaoEncerrada(); },
+      });
+      tela.iniciar();
       return undefined;
     });
   });

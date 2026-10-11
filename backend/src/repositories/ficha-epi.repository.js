@@ -1,6 +1,7 @@
 'use strict';
 
 const { escaparCoringasLike } = require('../utils/like');
+const { HOJE } = require('./entrega-epi-historico.repository');
 
 /**
  * Fichas de EPI (fichas_epi, migration 058): uma por trabalhador na empresa,
@@ -17,8 +18,19 @@ const PROJECAO = 'id, empresa_id, numero, funcionario_id, criada_em';
 const DATA_FORMATO = /^\d{4}-\d{2}-\d{2}$/;
 const LIMITE_MAXIMO = 100;
 
+// Histórico total da ficha. episDistintos: material_id distintos. episDentroPrazoUso: por material, só o item da
+// entrega mais recente (entregue_em, entrega, item), contado se data operacional + prazo congelado >= hoje em São Paulo
+// (o mesmo "hoje" de EPIs Entregues). Não diz que o EPI está em uso.
 const RESUMO = `LATERAL (
-    SELECT count(DISTINCT e.id)::int AS total_entregas, count(i.id)::int AS total_itens, max(e.entregue_em) AS ultima_entrega_em
+    SELECT count(DISTINCT e.id)::int AS total_entregas, count(i.id)::int AS total_itens, max(e.entregue_em) AS ultima_entrega_em,
+           count(DISTINCT i.material_id)::int AS epis_distintos,
+           (SELECT count(*)::int
+              FROM (SELECT DISTINCT ON (ui.material_id) ue.data_operacional + ui.material_prazo_uso_dias AS validade_uso
+                      FROM entregas_epi ue
+                      JOIN entregas_epi_itens ui ON ui.empresa_id = ue.empresa_id AND ui.entrega_id = ue.id
+                     WHERE ue.empresa_id = f.empresa_id AND ue.ficha_id = f.id
+                     ORDER BY ui.material_id, ue.entregue_em DESC, ue.id DESC, ui.id DESC) ultima
+             WHERE ultima.validade_uso >= ${HOJE}) AS epis_dentro_prazo_uso
       FROM entregas_epi e
       LEFT JOIN entregas_epi_itens i ON i.empresa_id = e.empresa_id AND i.entrega_id = e.id
      WHERE e.empresa_id = f.empresa_id AND e.ficha_id = f.id
@@ -72,6 +84,8 @@ const mapearResumo = (l) => ({
   totalEntregas: l.total_entregas,
   totalItens: l.total_itens,
   ultimaEntregaEm: l.ultima_entrega_em,
+  episDistintos: l.epis_distintos,
+  episDentroPrazoUso: l.epis_dentro_prazo_uso,
 });
 
 const mapearLinhaDaLista = (l) => ({
@@ -125,12 +139,13 @@ async function criar(executor, { empresaId, funcionarioId, numero }) {
   return mapear(rows[0]);
 }
 
-/** Total de entregas, total de itens e instante da última entrega da ficha. */
+/** Total de entregas, total de itens, instante da última entrega, EPIs distintos e EPIs dentro do prazo de uso. */
 async function resumo(executor, empresaId, fichaId) {
   exigirId(empresaId, 'identificador de empresa');
   exigirId(fichaId, 'identificador de ficha');
   const { rows } = await executor.query(
-    `SELECT r.total_entregas, r.total_itens, r.ultima_entrega_em FROM fichas_epi f, ${RESUMO} WHERE f.empresa_id = $1 AND f.id = $2`,
+    `SELECT r.total_entregas, r.total_itens, r.ultima_entrega_em, r.epis_distintos, r.epis_dentro_prazo_uso
+       FROM fichas_epi f, ${RESUMO} WHERE f.empresa_id = $1 AND f.id = $2`,
     [empresaId, fichaId],
   );
   return rows[0] ? mapearResumo(rows[0]) : null;
@@ -144,7 +159,7 @@ async function listar(executor, empresaId, { pagina, limite, ...filtros }) {
   const { rows } = await executor.query(
     `SELECT f.id, f.empresa_id, f.numero, f.funcionario_id, f.criada_em,
             fu.nome, fu.matricula, fu.cpf, fu.setor, fu.funcao, fu.ativo,
-            r.total_entregas, r.total_itens, r.ultima_entrega_em
+            r.total_entregas, r.total_itens, r.ultima_entrega_em, r.epis_distintos, r.epis_dentro_prazo_uso
        ${ORIGEM_LISTA}
        JOIN ${RESUMO} ON true
        ${FILTRO_LISTA}

@@ -43,6 +43,7 @@ function mundo(t, {
     BAIXA_ESTOQUE: { ativo: true, exigeSst: false, modoAutorizacaoIndividual: 'ALTERNATIVA' },
     REALIZAR_ENTREGA: { ativo: true, exigeSst: false, modoAutorizacaoIndividual: 'ALTERNATIVA' },
     IMPORTAR_FUNCIONARIOS: { ativo: true, exigeSst: false, modoAutorizacaoIndividual: 'NENHUMA' },
+    EXPORTAR_HISTORICO_FUNCIONARIOS: { ativo: true, exigeSst: false, modoAutorizacaoIndividual: 'ALTERNATIVA' },
   },
   ator = { id: ATOR, empresaId: EMPRESA },
 } = {}) {
@@ -59,7 +60,7 @@ function mundo(t, {
 }
 
 describe('planejar', () => {
-  test('banco vazio: 11 recursos AUSENTES com as flags esperadas (excluir=false) e 4 ações AUSENTES (15 itens no plano)', async (t) => {
+  test('banco vazio: 11 recursos AUSENTES com as flags esperadas (excluir=false) e 5 ações AUSENTES (16 itens no plano)', async (t) => {
     mundo(t);
     const plano = await servico.planejar({ query: async () => ({ rows: [] }) }, { empresaId: EMPRESA });
     assert.deepEqual(plano.empresa, { id: EMPRESA, nome: 'Empresa A', ativo: true });
@@ -71,8 +72,9 @@ describe('planejar', () => {
       { acaoCodigo: 'BAIXA_ESTOQUE', situacao: 'AUSENTE', catalogo: 'ATIVA', atual: null },
       { acaoCodigo: 'REALIZAR_ENTREGA', situacao: 'AUSENTE', catalogo: 'ATIVA', atual: null },
       { acaoCodigo: 'IMPORTAR_FUNCIONARIOS', situacao: 'AUSENTE', catalogo: 'ATIVA', atual: null },
+      { acaoCodigo: 'EXPORTAR_HISTORICO_FUNCIONARIOS', situacao: 'AUSENTE', catalogo: 'ATIVA', atual: null },
     ]);
-    assert.deepEqual(servico.resumir(plano), { AUSENTE: 15, ADEQUADA: 0, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 0 }, '11 recursos + 4 ações');
+    assert.deepEqual(servico.resumir(plano), { AUSENTE: 16, ADEQUADA: 0, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 0 }, '11 recursos + 5 ações');
   });
 
   test('distingue ADEQUADA (todas as operações exigidas) de INSUFICIENTE (alguma negada), com as faltantes nomeadas', async (t) => {
@@ -92,8 +94,8 @@ describe('planejar', () => {
     assert.equal(porRecurso.employeeGroups.situacao, 'AUSENTE');
     assert.equal(plano.acoes[0].situacao, 'INSUFICIENTE');
     assert.equal(plano.acoes[1].situacao, 'AUSENTE');
-    // 15 itens: materials ADEQUADA (1); employeeHistory e ENTRADA_ESTOQUE INSUFICIENTES (2); os outros 12 estão AUSENTES.
-    assert.deepEqual(servico.resumir(plano), { AUSENTE: 12, ADEQUADA: 1, INSUFICIENTE: 2, NAO_CATALOGADA: 0, INSERIDA: 0 });
+    // 16 itens: materials ADEQUADA (1); employeeHistory e ENTRADA_ESTOQUE INSUFICIENTES (2); os outros 13 estão AUSENTES.
+    assert.deepEqual(servico.resumir(plano), { AUSENTE: 13, ADEQUADA: 1, INSUFICIENTE: 2, NAO_CATALOGADA: 0, INSERIDA: 0 });
   });
 
   test('pode_excluir=true numa linha existente não é exigido nem conta contra: continua ADEQUADA', async (t) => {
@@ -157,7 +159,7 @@ describe('provisionar — execução real', () => {
     const r = await servico.provisionar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR, dryRun: false, ip: '127.0.0.1', dispositivo: 'cli' });
 
     assert.equal(r.dryRun, false);
-    assert.deepEqual(r.inseridos, { recursos: ['employeeHistory', 'employeeGroups', 'availableItems', 'dashboard', 'stockValidity', 'operations', 'epiFicha', 'request', 'reportsAudit', 'reportsFiscal'], acoes: ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS'] });
+    assert.deepEqual(r.inseridos, { recursos: ['employeeHistory', 'employeeGroups', 'availableItems', 'dashboard', 'stockValidity', 'operations', 'epiFicha', 'request', 'reportsAudit', 'reportsFiscal'], acoes: ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS'] });
     assert.equal(escritas.inserirRecurso.mock.calls.length, 10, '11 recursos do escopo menos materials, que já existia');
     // availableItems, dashboard, stockValidity, operations, epiFicha, reportsAudit (12K-D5) e reportsFiscal (12K-D6) entram SOMENTE com visualizar; os demais com visualizar/criar/editar.
     const somenteVisualizar = { podeVisualizar: true, podeCriar: false, podeEditar: false, podeExcluir: false };
@@ -173,6 +175,7 @@ describe('provisionar — execução real', () => {
       { empresaId: EMPRESA, perfil: 'MASTER', acaoCodigo: 'BAIXA_ESTOQUE', permitido: true },
       { empresaId: EMPRESA, perfil: 'MASTER', acaoCodigo: 'REALIZAR_ENTREGA', permitido: true },
       { empresaId: EMPRESA, perfil: 'MASTER', acaoCodigo: 'IMPORTAR_FUNCIONARIOS', permitido: true },
+      { empresaId: EMPRESA, perfil: 'MASTER', acaoCodigo: 'EXPORTAR_HISTORICO_FUNCIONARIOS', permitido: true },
     ]);
 
     assert.equal(escritas.registrar.mock.calls.length, 1);
@@ -182,7 +185,7 @@ describe('provisionar — execução real', () => {
     assert.equal(auditoria.referencia, String(EMPRESA));
     assert.equal(auditoria.contexto.origem, 'script_administrativo');
     assert.deepEqual(auditoria.dadosNovos.recursos.map((x) => x.recurso), ['employeeHistory', 'employeeGroups', 'availableItems', 'dashboard', 'stockValidity', 'operations', 'epiFicha', 'request', 'reportsAudit', 'reportsFiscal']);
-    assert.deepEqual(auditoria.dadosNovos.acoes, ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS'].map((acaoCodigo) => ({ acaoCodigo, permitido: true })));
+    assert.deepEqual(auditoria.dadosNovos.acoes, ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS'].map((acaoCodigo) => ({ acaoCodigo, permitido: true })));
     assert.equal(r.auditoriaId, '77');
     assert.equal(contar(cliente.chamadas, /^BEGIN$/), 1);
     assert.equal(contar(cliente.chamadas, /^COMMIT$/), 1);
@@ -190,31 +193,31 @@ describe('provisionar — execução real', () => {
 
     // A/B/C/D/E — ajuste final (v4→v5): o plano FINAL não pode chamar de
     // AUSENTE o que foi inserido e confirmado; os itens que eram AUSENTE
-    // (10 recursos e 4 ações) viram INSERIDA, o que já existia (materials)
+    // (10 recursos e 5 ações) viram INSERIDA, o que já existia (materials)
     // permanece ADEQUADA, e os totais refletem exatamente esse estado final.
     const porRecurso = Object.fromEntries(r.plano.recursos.map((x) => [x.recurso, x]));
     assert.equal(porRecurso.materials.situacao, 'ADEQUADA', 'já existia — não foi tocada, não vira INSERIDA');
     assert.equal(porRecurso.employeeHistory.situacao, 'INSERIDA');
     assert.equal(porRecurso.employeeGroups.situacao, 'INSERIDA');
     assert.equal(r.plano.acoes[0].situacao, 'INSERIDA');
-    // 15 itens: materials ADEQUADA (1) + 10 recursos e 4 ações INSERIDOS (14).
-    assert.deepEqual(servico.resumir(r.plano), { AUSENTE: 0, ADEQUADA: 1, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 14 });
+    // 16 itens: materials ADEQUADA (1) + 10 recursos e 5 ações INSERIDOS (15).
+    assert.deepEqual(servico.resumir(r.plano), { AUSENTE: 0, ADEQUADA: 1, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 15 });
   });
 
-  test('A/B/C/D/E — empresa sem NENHUMA permissão: planejamento identifica 15 AUSENTES (11 recursos + 4 ações), execução insere os 15, plano final não tem nenhum AUSENTE restante', async (t) => {
+  test('A/B/C/D/E — empresa sem NENHUMA permissão: planejamento identifica 16 AUSENTES (11 recursos + 5 ações), execução insere os 16, plano final não tem nenhum AUSENTE restante', async (t) => {
     mundo(t); // tudo ausente: recursosExistentes/acoesExistentes vazios (padrão)
     const r = await servico.provisionar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, dryRun: false });
 
     assert.deepEqual(r.inseridos.recursos.sort(), ['availableItems', 'dashboard', 'employeeGroups', 'employeeHistory', 'epiFicha', 'materials', 'operations', 'reportsAudit', 'reportsFiscal', 'request', 'stockValidity']);
-    assert.deepEqual(r.inseridos.acoes, ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS']);
+    assert.deepEqual(r.inseridos.acoes, ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS']);
     for (const item of r.plano.recursos) {
       assert.equal(item.situacao, 'INSERIDA', item.recurso);
       assert.deepEqual(item.faltantes, []);
     }
     assert.ok(r.plano.acoes.every((x) => x.situacao === 'INSERIDA'));
     // E — total de AUSENTES corresponde ao estado final EFETIVAMENTE
-    // confirmado (zero — os 15 itens, 11 recursos e 4 ações, foram inseridos e confirmados nesta transação).
-    assert.deepEqual(servico.resumir(r.plano), { AUSENTE: 0, ADEQUADA: 0, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 15 });
+    // confirmado (zero — os 16 itens, 11 recursos e 5 ações, foram inseridos e confirmados nesta transação).
+    assert.deepEqual(servico.resumir(r.plano), { AUSENTE: 0, ADEQUADA: 0, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 16 });
   });
 
   test('F — dry-run continua sendo SIMULAÇÃO: plano permanece AUSENTE (nunca INSERIDA), nada em inseridos', async (t) => {
@@ -224,7 +227,7 @@ describe('provisionar — execução real', () => {
     assert.deepEqual(r.inseridos, { recursos: [], acoes: [] });
     assert.ok(r.plano.recursos.every((x) => x.situacao === 'AUSENTE'));
     assert.ok(r.plano.acoes.every((x) => x.situacao === 'AUSENTE'));
-    assert.deepEqual(servico.resumir(r.plano), { AUSENTE: 15, ADEQUADA: 0, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 0 }, '11 recursos + 4 ações, todos AUSENTES na simulação');
+    assert.deepEqual(servico.resumir(r.plano), { AUSENTE: 16, ADEQUADA: 0, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 0 }, '11 recursos + 5 ações, todos AUSENTES na simulação');
   });
 
   test('G/H — execução mista: inserido vira INSERIDA; ADEQUADA preexistente continua ADEQUADA; INSUFICIENTE preexistente permanece INSUFICIENTE e sinalizada — nada se confunde', async (t) => {
@@ -246,14 +249,14 @@ describe('provisionar — execução real', () => {
     assert.equal(r.plano.acoes[0].situacao, 'INSUFICIENTE');
     assert.equal(r.plano.acoes[1].situacao, 'INSERIDA');
     assert.deepEqual(r.inseridos.recursos, ['employeeGroups', 'availableItems', 'dashboard', 'stockValidity', 'operations', 'epiFicha', 'request', 'reportsAudit', 'reportsFiscal']);
-    assert.deepEqual(r.inseridos.acoes, ['BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS']);
-    // 15 itens: materials ADEQUADA (1); employeeHistory e ENTRADA_ESTOQUE INSUFICIENTES (2); 9 recursos + 3 ações INSERIDOS (12).
-    assert.deepEqual(servico.resumir(r.plano), { AUSENTE: 0, ADEQUADA: 1, INSUFICIENTE: 2, NAO_CATALOGADA: 0, INSERIDA: 12 });
+    assert.deepEqual(r.inseridos.acoes, ['BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS']);
+    // 16 itens: materials ADEQUADA (1); employeeHistory e ENTRADA_ESTOQUE INSUFICIENTES (2); 9 recursos + 4 ações INSERIDOS (13).
+    assert.deepEqual(servico.resumir(r.plano), { AUSENTE: 0, ADEQUADA: 1, INSUFICIENTE: 2, NAO_CATALOGADA: 0, INSERIDA: 13 });
 
     // H — nenhum segundo insert/nenhuma tentativa de tocar a linha
     // insuficiente preexistente.
     assert.equal(escritas.inserirRecurso.mock.calls.filter((c) => c.arguments[1].recurso === 'employeeHistory').length, 0);
-    assert.deepEqual(escritas.inserirAcao.mock.calls.map((c) => c.arguments[1].acaoCodigo), ['BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS']);
+    assert.deepEqual(escritas.inserirAcao.mock.calls.map((c) => c.arguments[1].acaoCodigo), ['BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS']);
 
     // J — auditoria e o que ela relata como pendência batem com o plano final.
     const auditoria = escritas.registrar.mock.calls[0].arguments[1];
@@ -278,8 +281,8 @@ describe('provisionar — execução real', () => {
     assert.ok(!r.inseridos.recursos.includes('materials'));
     const restantes = r.plano.recursos.filter((x) => x.recurso !== 'materials');
     assert.ok(restantes.every((x) => x.situacao === 'INSERIDA'), 'os que não colidiram foram, de fato, inseridos por esta transação');
-    // 15 itens: materials ADEQUADA (perdeu a corrida, 1) + 10 recursos e 4 ações INSERIDOS (14).
-    assert.deepEqual(servico.resumir(r.plano), { AUSENTE: 0, ADEQUADA: 1, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 14 });
+    // 16 itens: materials ADEQUADA (perdeu a corrida, 1) + 10 recursos e 5 ações INSERIDOS (15).
+    assert.deepEqual(servico.resumir(r.plano), { AUSENTE: 0, ADEQUADA: 1, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 15 });
   });
 
   test('INSUFICIENTE não é tocada: nenhum insert para ela, e ela é relatada na auditoria como não alterada', async (t) => {
@@ -288,7 +291,7 @@ describe('provisionar — execução real', () => {
       acoesExistentes: new Map([['ENTRADA_ESTOQUE', { acaoCodigo: 'ENTRADA_ESTOQUE', permitido: false }]]),
     });
     const r = await servico.provisionar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, dryRun: false });
-    assert.deepEqual(r.inseridos, { recursos: ['employeeHistory', 'employeeGroups', 'availableItems', 'dashboard', 'stockValidity', 'operations', 'epiFicha', 'request', 'reportsAudit', 'reportsFiscal'], acoes: ['BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS'] });
+    assert.deepEqual(r.inseridos, { recursos: ['employeeHistory', 'employeeGroups', 'availableItems', 'dashboard', 'stockValidity', 'operations', 'epiFicha', 'request', 'reportsAudit', 'reportsFiscal'], acoes: ['BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS'] });
     assert.ok(escritas.inserirRecurso.mock.calls.every((c) => c.arguments[1].recurso !== 'materials'));
     assert.ok(escritas.inserirAcao.mock.calls.every((c) => c.arguments[1].acaoCodigo !== 'ENTRADA_ESTOQUE'));
     const auditoria = escritas.registrar.mock.calls[0].arguments[1];
@@ -321,6 +324,7 @@ describe('provisionar — execução real', () => {
         ['BAIXA_ESTOQUE', { acaoCodigo: 'BAIXA_ESTOQUE', permitido: true }],
         ['REALIZAR_ENTREGA', { acaoCodigo: 'REALIZAR_ENTREGA', permitido: true }],
         ['IMPORTAR_FUNCIONARIOS', { acaoCodigo: 'IMPORTAR_FUNCIONARIOS', permitido: true }],
+        ['EXPORTAR_HISTORICO_FUNCIONARIOS', { acaoCodigo: 'EXPORTAR_HISTORICO_FUNCIONARIOS', permitido: true }],
       ]),
     });
     const cliente = criarClienteFalso();
@@ -406,7 +410,7 @@ describe('provisionar — execução real', () => {
       assert.deepEqual(r.inseridos.acoes, []);
       assert.ok(r.plano.acoes.every((x) => x.situacao === 'INSUFICIENTE'));
       const auditoria = escritas.registrar.mock.calls[0].arguments[1];
-      assert.deepEqual(auditoria.contexto.naoAlterados.acoesInsuficientes, ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS']);
+      assert.deepEqual(auditoria.contexto.naoAlterados.acoesInsuficientes, ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS']);
       assert.equal(auditoria.dadosNovos.acoes.length, 0);
     });
 

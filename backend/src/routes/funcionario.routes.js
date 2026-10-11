@@ -29,6 +29,8 @@ const { limitadorRevelacaoCpf } = require('../middleware/rate-limit');
  *   GET   /api/funcionarios/ghes   (S3: seletor do formulário; employeeHistory.visualizar; id, código e descrição)
  *   POST  /api/funcionarios/consulta-cpf   (SEC-008: CPF no corpo, nunca na URL)
  *   GET   /api/funcionarios/:id
+ *   GET   /api/funcionarios/:id/eventos?tipo=GHE|SITUACAO|CADASTRAL[&de=&ate=]   (Histórico de Funcionários E/F/G/H: eventos auditados; employeeHistory.visualizar)
+ *   POST  /api/funcionarios/:id/historico/exportacao   (pacote I: PDF ou XLSX; employeeHistory.visualizar E EXPORTAR_HISTORICO_FUNCIONARIOS, no serviço)
  *   PATCH /api/funcionarios/:id
  *   POST  /api/funcionarios/:id/inativar
  *   POST  /api/funcionarios/:id/reativar
@@ -60,6 +62,9 @@ function criarFuncionarioRoutes({
   // SEC-008: consulta por CPF completo, só leitura, com o CPF no corpo.
   router.post('/funcionarios/consulta-cpf', exigirSessaoInjetado, exigirVisualizar, validar({ body: funcionarioSchemas.consultaCpf.body }), controller.consultarCpf);
   router.get('/funcionarios/:id', exigirSessaoInjetado, exigirVisualizar, validar({ params: funcionarioSchemas.buscar.params }), controller.buscar);
+  router.get('/funcionarios/:id/eventos', exigirSessaoInjetado, exigirVisualizar, validar({ params: funcionarioSchemas.eventos.params, query: funcionarioSchemas.eventos.query }), controller.eventos);
+  // Pacote I: a autorização (visualizar E exportar, pacote J) é do serviço, antes de qualquer leitura; o limite por minuto também.
+  router.post('/funcionarios/:id/historico/exportacao', exigirSessaoInjetado, validar({ params: funcionarioSchemas.exportacao.params, body: funcionarioSchemas.exportacao.body }), controller.exportarHistorico);
   router.patch('/funcionarios/:id', exigirSessaoInjetado, exigirEditar, validar({ params: funcionarioSchemas.alterar.params, body: funcionarioSchemas.alterar.body }), controller.alterar);
   router.post('/funcionarios/:id/inativar', exigirSessaoInjetado, exigirEditar, validar({ params: funcionarioSchemas.inativar.params, body: funcionarioSchemas.inativar.body }), controller.inativar);
   router.post('/funcionarios/:id/reativar', exigirSessaoInjetado, exigirEditar, validar({ params: funcionarioSchemas.reativar.params, body: funcionarioSchemas.reativar.body }), controller.reativar);

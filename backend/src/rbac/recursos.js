@@ -83,8 +83,9 @@ const ESCOPO_PROVISIONAMENTO_MASTER = Object.freeze({
     // 12K-D6: Relatório — Fiscalização. Uma única operação cobre ver, pré-visualizar, gerar, listar e baixar o pacote.
     Object.freeze({ recurso: 'reportsFiscal', operacoes: Object.freeze(['visualizar']) }),
   ]),
-  // estoque.routes.js: entradas e baixas por lote; entrega-epi.routes.js: entrega e seu contexto (migrations 003/017)
-  acoes: Object.freeze(['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS']),
+  // estoque.routes.js: entradas e baixas por lote; entrega-epi.routes.js: entrega e seu contexto (migrations 003/017).
+  // Pacote J (085): exportar o Histórico de Funcionários, avaliado com a leitura em exportacao-historico-autorizacao.service.js.
+  acoes: Object.freeze(['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS']),
 });
 
 for (const recurso of RECURSOS_CONHECIDOS) {
@@ -142,7 +143,7 @@ const RECURSOS_COM_EFEITO = Object.freeze(ESCOPO_PROVISIONAMENTO_MASTER.recursos
  * confere o uso de cada código e que nenhum outro código do catálogo é usado sem estar aqui.
  */
 const ACOES_COM_EFEITO = Object.freeze([
-  'ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'IMPORTAR_FUNCIONARIOS', 'REALIZAR_ENTREGA', 'APROVAR_SOLICITACAO', 'REPROVAR_SOLICITACAO', 'ENCERRAR_SOLICITACAO',
+  'ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS', 'REALIZAR_ENTREGA', 'APROVAR_SOLICITACAO', 'REPROVAR_SOLICITACAO', 'ENCERRAR_SOLICITACAO',
   'GERENCIAR_USUARIOS', 'ADMINISTRAR_GRUPOS_ACESSO', 'ADMINISTRAR_PERMISSOES_GRUPO', 'ADMINISTRAR_VINCULOS_GRUPO',
 ]);
 

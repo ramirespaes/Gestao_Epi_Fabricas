@@ -9,8 +9,9 @@ const { RECURSOS_COM_EFEITO, ACOES_COM_EFEITO } = require('../../src/rbac/recurs
 describe('catálogo binário de acessos', () => {
   test('os 19 acessos aprovados, Aprovar e Reprovar solicitações o Relatório — Auditoria e o Relatório — Fiscalização estão contabilizados, sem repetição e sem CRUD automático', () => {
     const ids = [...TOGGLES, ...PENDENCIAS].map((t) => t.id);
-    assert.equal(ids.length, 26, 'os 24 anteriores mais Cadastrar e Editar Funcionário');
-    assert.equal(new Set(ids).size, 26);
+    assert.equal(ids.length, 27, 'os 24 anteriores mais Cadastrar e Editar Funcionário e, no pacote J, Exportar Histórico de Funcionários');
+    assert.equal(new Set(ids).size, 27);
+    assert.ok(ids.includes('exportarHistoricoFuncionarios'));
   });
 
   test('Entregas por solicitação reutiliza a ação REALIZAR_ENTREGA, sem bloqueio ao desligar e sem acoplar à SST', () => {
