@@ -20,6 +20,7 @@
     "js/grupo-usuarios.js",
     "js/grupos-acesso.js",
     "js/grupos-homogeneos.js",
+    "js/historico-funcionarios.js",
     "js/importacao-ghe.js",
     "js/itens-disponiveis.js",
     "js/materiais.js",

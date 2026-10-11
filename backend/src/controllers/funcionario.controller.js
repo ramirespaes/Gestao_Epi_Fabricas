@@ -1,6 +1,8 @@
 'use strict';
 
 const funcionarioService = require('../services/funcionario.service');
+const eventosService = require('../services/funcionario-eventos.service');
+const exportacaoService = require('../services/funcionario-historico-exportacao.service');
 const { mascararCpf } = require('../utils/normalizacao');
 const { pool } = require('../config/database');
 const { dataOperacional } = require('../utils/data-operacional');
@@ -73,6 +75,32 @@ function criarFuncionarioController({ pool: poolInjetado, relogio = () => new Da
     async buscar(req, res) {
       const funcionario = await funcionarioService.buscar(poolInjetado, { empresaId: req.empresa.id, funcionarioId: req.validado.params.id });
       res.status(200).json({ status: 'ok', funcionario: paraResposta(funcionario) });
+    },
+
+    // Eventos auditados do funcionário (pacote E: GHE), já montados campo a campo pelo serviço; nunca o JSON da auditoria.
+    async eventos(req, res) {
+      const {
+        tipo, de, ate, pagina, limite,
+      } = req.validado.query;
+      const resultado = await eventosService.listarEventos(poolInjetado, {
+        empresaId: req.empresa.id, funcionarioId: req.validado.params.id, tipo, de: de ?? null, ate: ate ?? null, pagina, limite,
+      });
+      res.status(200).json({ status: 'ok', ...resultado });
+    },
+
+    // Pacote I: o arquivo é gerado e auditado pelo serviço; aqui só os cabeçalhos do anexo (nome montado pelo servidor).
+    async exportarHistorico(req, res) {
+      const { formato, de, ate } = req.validado.body;
+      const r = await exportacaoService.exportar(poolInjetado, {
+        empresaId: req.empresa.id, usuarioId: req.usuario.id, perfil: req.usuario.perfil, funcionarioId: req.validado.params.id,
+        formato, de: de ?? null, ate: ate ?? null, ip: req.ip, dispositivo: req.headers['user-agent'],
+      });
+      res.status(200).set({
+        'Content-Type': r.mime,
+        'Content-Disposition': `attachment; filename="${r.nomeArquivo}"`,
+        'Content-Length': String(r.bytes),
+        'Cache-Control': 'no-store',
+      }).end(r.conteudo);
     },
 
     async alterar(req, res) {

@@ -92,7 +92,7 @@ function criarGrupoPermissaoController({ pool: poolInjetado }) {
     },
 
     async acesso(req, res) {
-      const acesso = await grupoAcessosService.configurarToggle(poolInjetado, {
+      const { acesso, avisos } = await grupoAcessosService.configurarToggle(poolInjetado, {
         empresaId: req.empresa.id,
         atorId: req.usuario.id,
         grupoId: req.validado.params.id,
@@ -102,7 +102,7 @@ function criarGrupoPermissaoController({ pool: poolInjetado }) {
         dispositivo: req.headers['user-agent'],
       });
 
-      res.status(200).json({ status: 'ok', acesso });
+      res.status(200).json({ status: 'ok', acesso, avisos });
     },
 
     async configurarAcao(req, res) {

@@ -188,7 +188,8 @@ describe('Gestão de Funcionários — RBAC (PostgreSQL real)', () => {
       }
       assert.equal(await ligadoEm(u.id, 'cadastrarFuncionario'), false, 'nada foi concedido pelas tentativas negadas');
       const novas = await g.todos("SELECT codigo FROM acoes WHERE codigo ~* '(FUNCIONARIO|COLABORADOR|GHE|SITUACAO)' ORDER BY codigo");
-      assert.deepEqual(novas.map((a) => a.codigo), ['IMPORTAR_FUNCIONARIOS'], 'nenhuma ação nova para GHE ou situação');
+      // Pacote J (085): exportar o histórico é a única outra ação aprovada; nenhuma para GHE ou situação.
+      assert.deepEqual(novas.map((a) => a.codigo), ['EXPORTAR_HISTORICO_FUNCIONARIOS', 'IMPORTAR_FUNCIONARIOS'], 'nenhuma ação nova para GHE ou situação');
     });
   });
 

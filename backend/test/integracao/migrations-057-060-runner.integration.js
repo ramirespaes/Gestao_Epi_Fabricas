@@ -55,6 +55,7 @@ const PENDENTES = [
   '082_create_tipos_material_classificacao_v2',
   '083_alter_ghe_add_codigo_create_ghe_tipos_material',
   '084_alter_funcionarios_add_situacao',
+  '085_insert_acao_exportar_historico_funcionarios',
 ];
 const CNPJ = '11222333000181';
 const VIOLACAO_CHECK = '23514';
@@ -122,12 +123,12 @@ describe('runner real: 057 a 060 numa transação, sobre a 056 com estoque movim
     }
   });
 
-  test('o runner aplica 057 a 084 juntas, em ordem, e registra as 85', async () => {
+  test('o runner aplica 057 a 085 juntas, em ordem, e registra as 86', async () => {
     const aplicadas = await aplicarMigrations({ schema: contexto.schema, diretorio: DIRETORIO_REAL });
 
     assert.deepEqual(aplicadas.map((migration) => migration.name), PENDENTES);
     const linhas = await registradas();
-    assert.equal(linhas.length, 85);
+    assert.equal(linhas.length, 86);
     assert.deepEqual(linhas.slice(-PENDENTES.length).map((linha) => linha.name), PENDENTES);
   });
 
@@ -211,10 +212,10 @@ describe('runner real: 057 a 060 numa transação, sobre a 056 com estoque movim
     assert.equal(confirmada, true);
   });
 
-  test('manifesto: as entradas pendentes conferem com os arquivos e o total é 85', () => {
+  test('manifesto: as entradas pendentes conferem com os arquivos e o total é 86', () => {
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO_REAL, 'checksums.json'), 'utf8'));
     const arquivos = fs.readdirSync(DIRETORIO_REAL).filter((n) => /^\d{3}_.*\.sql$/.test(n)).sort();
-    assert.equal(arquivos.length, 85);
+    assert.equal(arquivos.length, 86);
     assert.deepEqual(Object.keys(manifesto.migrations).sort(), arquivos);
     for (const nome of PENDENTES) {
       const arquivo = `${nome}.sql`;

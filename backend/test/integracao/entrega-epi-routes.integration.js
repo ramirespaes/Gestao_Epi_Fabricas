@@ -196,7 +196,7 @@ describe('rotas da entrega de EPI — 10E e 10F (PostgreSQL real)', () => {
         "SELECT acao_codigo, permitido FROM permissoes_acao WHERE empresa_id = $1 AND perfil = 'MASTER' ORDER BY acao_codigo",
         [empresa.A],
       );
-      assert.deepEqual(acoesMaster, ['BAIXA_ESTOQUE', 'ENTRADA_ESTOQUE', 'IMPORTAR_FUNCIONARIOS', 'REALIZAR_ENTREGA'].map((acao_codigo) => ({ acao_codigo, permitido: true })));
+      assert.deepEqual(acoesMaster, ['BAIXA_ESTOQUE', 'ENTRADA_ESTOQUE', 'EXPORTAR_HISTORICO_FUNCIONARIOS', 'IMPORTAR_FUNCIONARIOS', 'REALIZAR_ENTREGA'].map((acao_codigo) => ({ acao_codigo, permitido: true })));
       assert.equal((await get('masterA', '/api/fichas-epi')).status, 200);
       assert.equal((await get('masterA', '/api/entregas-epi/contexto/funcionarios')).status, 200);
       assert.equal((await get('masterB', '/api/fichas-epi')).status, 200);
@@ -629,11 +629,15 @@ describe('rotas da entrega de EPI — 10E e 10F (PostgreSQL real)', () => {
       assert.deepEqual([r.body.ficha.id, r.body.ficha.numero, typeof r.body.ficha.criadaEm], [d.entregaA1.ficha.id, 1, 'string']);
       assert.deepEqual(r.body.funcionarioAtual, { id: d.funcA1, nome: 'Ana Fictícia', matricula: 'A-001', cpfMascarado: '***.***.***-25', setor: 'Produção', funcao: 'Operadora', ativo: true, ghe: { id: d.gheA, nome: 'GHE Produção' } });
       const { rows: [totais] } = await q(
-        `SELECT count(DISTINCT e.id)::int AS entregas, count(i.id)::int AS itens, max(e.entregue_em) AS ultima
+        `SELECT count(DISTINCT e.id)::int AS entregas, count(i.id)::int AS itens, max(e.entregue_em) AS ultima,
+                count(DISTINCT i.material_id)::int AS distintos
            FROM entregas_epi e JOIN entregas_epi_itens i ON i.entrega_id = e.id WHERE e.ficha_id = $1`,
         [d.entregaA1.ficha.id],
       );
-      assert.deepEqual(r.body.resumo, { totalEntregas: totais.entregas, totalItens: totais.itens, ultimaEntregaEm: totais.ultima.toISOString() });
+      // Pacote D: a regra completa de episDentroPrazoUso está em ficha-epi-indicadores.integration.js; aqui, só o formato.
+      const { episDentroPrazoUso, ...resto } = r.body.resumo;
+      assert.deepEqual(resto, { totalEntregas: totais.entregas, totalItens: totais.itens, ultimaEntregaEm: totais.ultima.toISOString(), episDistintos: totais.distintos });
+      assert.ok(Number.isInteger(episDentroPrazoUso) && episDentroPrazoUso >= 0 && episDentroPrazoUso <= totais.distintos, `episDentroPrazoUso=${episDentroPrazoUso}`);
       semDadosSensiveis(r.body, 'ficha');
       assert.equal((await get('leitorA', '/api/fichas-epi/999999')).status, 404);
       const daBeta = await get('masterB', `/api/fichas-epi/${d.entregaA1.ficha.id}`);

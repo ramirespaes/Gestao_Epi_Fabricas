@@ -886,7 +886,7 @@ describe('10I — editor de permissões e escopo do MASTER', () => {
   test('o escopo oficial do MASTER cobre a ficha (visualizar) e a entrega (REALIZAR_ENTREGA), coerente com o editor', () => {
     const escopo = Object.fromEntries(ESCOPO_PROVISIONAMENTO_MASTER.recursos.map((r) => [r.recurso, [...r.operacoes]]));
     assert.deepEqual(escopo.epiFicha, ['visualizar']);
-    assert.deepEqual([...ESCOPO_PROVISIONAMENTO_MASTER.acoes], ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS']);
+    assert.deepEqual([...ESCOPO_PROVISIONAMENTO_MASTER.acoes], ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS']);
   });
 });
 

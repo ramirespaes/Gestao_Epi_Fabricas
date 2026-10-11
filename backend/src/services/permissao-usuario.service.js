@@ -14,6 +14,7 @@ const grupoAcessoRepo = require('../repositories/grupo-acesso.repository');
 const auditoriaRepo = require('../repositories/auditoria.repository');
 const { RECURSOS_COM_EFEITO, ACOES_COM_EFEITO } = require('../rbac/recursos');
 const toggles = require('../rbac/toggles');
+const { avisosDosAcessos } = require('../rbac/avisos-acessos');
 
 /**
  * Permissões do usuário na Gestão de Usuários: leitura em camadas e escrita
@@ -337,28 +338,41 @@ const efetivoDoToggle = (completo, regra) => {
   return celula !== undefined && regra.operacoes.every((op) => celula.operacoes[op]?.efetivo === true);
 };
 
-/** Visão binária: cada acesso do catálogo aprovado, ligado quando o efeito real é permitido (todas as regras dele). */
-function resumirToggles(completo) {
+/**
+ * Visão binária: cada acesso do catálogo aprovado, ligado quando o efeito real é permitido (todas as regras dele).
+ * MASTER: a Gestão de Usuários dele é a autoridade administrativa própria (autoridade-administrativa.js, a mesma de
+ * /auth/permissoes → administracao.usuarios), não a ação no perfil — `autoridadeAdministrativa` traz essa leitura; nada
+ * é concedido nem gravado. `avisos` (avisos-acessos.js) só informa; o MASTER, fixo, não recebe aviso.
+ */
+function resumirToggles(completo, { autoridadeAdministrativa = null } = {}) {
   const fixo = completo.usuario.perfil === PERFIL_MASTER;
+  const lista = toggles.TOGGLES.map((t) => {
+    const daAutoridade = fixo && autoridadeAdministrativa !== null && t.regra.tipo === 'ACAO'
+      && t.regra.codigo === autoridade.ACOES_ADMINISTRATIVAS.USUARIOS;
+    const base = {
+      id: t.id, rotulo: t.rotulo, grupo: t.grupo, ligado: daAutoridade ? autoridadeAdministrativa : efetivoDoToggle(completo, t.regra), fixo,
+    };
+    if (t.regra.concessao !== true || completo.acoes.find((a) => a.codigo === t.regra.codigo)?.exigeSst !== true) return base;
+    // O vínculo SST do alvo vem junto, para a tela avisar que a permissão sozinha não basta.
+    const celula = completo.acoes.find((a) => a.codigo === t.regra.codigo);
+    return { ...base, exigeVinculoSst: true, vinculoSst: celula?.vinculoSst === true };
+  });
   return {
     usuario: completo.usuario,
     podeAlterar: completo.podeAlterar,
     motivoSomenteLeitura: completo.motivoSomenteLeitura,
-    toggles: toggles.TOGGLES.map((t) => {
-      const base = {
-        id: t.id, rotulo: t.rotulo, grupo: t.grupo, ligado: efetivoDoToggle(completo, t.regra), fixo,
-      };
-      if (t.regra.concessao !== true || completo.acoes.find((a) => a.codigo === t.regra.codigo)?.exigeSst !== true) return base;
-      // O vínculo SST do alvo vem junto, para a tela avisar que a permissão sozinha não basta.
-      const celula = completo.acoes.find((a) => a.codigo === t.regra.codigo);
-      return { ...base, exigeVinculoSst: true, vinculoSst: celula?.vinculoSst === true };
-    }),
+    toggles: lista,
     pendencias: toggles.PENDENCIAS,
+    avisos: fixo ? [] : avisosDosAcessos(lista),
   };
 }
 
 async function detalharToggles(pool, dados) {
-  return resumirToggles(await detalhar(pool, dados));
+  const completo = await detalhar(pool, dados);
+  const autoridadeAdministrativa = completo.usuario.perfil === PERFIL_MASTER
+    ? await autoridade.temAutoridadeAdministrativaLeitura(pool, dados.empresaId, completo.usuario.id, autoridade.ACOES_ADMINISTRATIVAS.USUARIOS)
+    : null;
+  return resumirToggles(completo, { autoridadeAdministrativa });
 }
 
 /** Leva UMA regra (ação ou recurso/operações) ao resultado efetivo pedido, com o mínimo de exceção individual. */
@@ -435,7 +449,9 @@ async function configurarToggle(pool, {
         empresaId, atorId: ator.id, alvoId: alvo.id, acao: ACAO_AUDITORIA.TOGGLE, ip, dispositivo, antes: { acesso: toggleId, ligado: antes }, depois: { acesso: toggleId, ligado: depois },
       });
     }
-    return resumirToggles(completo).toggles.find((t) => t.id === toggleId);
+    // Só chega aqui alvo não MASTER (o MASTER é recusado em escrever); os avisos vão junto para a tela se atualizar.
+    const resumo = resumirToggles(completo);
+    return { acesso: resumo.toggles.find((t) => t.id === toggleId), avisos: resumo.avisos };
   });
 }
 

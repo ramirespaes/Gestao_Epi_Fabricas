@@ -38,7 +38,8 @@ describe('Gestão de Funcionários — catálogo de acessos', () => {
 
   test('nenhuma permissão nova: employeeHistory segue com visualizar/criar/editar e não há ação de GHE, situação ou funcionário além da importação', () => {
     assert.deepEqual(RECURSOS_COM_EFEITO.find((r) => r.recurso === 'employeeHistory').operacoes, ['visualizar', 'criar', 'editar']);
-    assert.deepEqual(ACOES_COM_EFEITO.filter((c) => /FUNCIONARIO|COLABORADOR|GHE|SITUACAO/.test(c)), ['IMPORTAR_FUNCIONARIOS']);
+    // Pacote J (085): exportar o histórico é a única outra ação de funcionário aprovada; qualquer terceira continua barrada.
+    assert.deepEqual(ACOES_COM_EFEITO.filter((c) => /FUNCIONARIO|COLABORADOR|GHE|SITUACAO/.test(c)), ['IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS']);
     assert.equal(TOGGLES.filter((t) => t.regra.tipo === 'RECURSO' && t.regra.recurso === 'employeeHistory').length, 3, 'visualizar, criar e editar: um toggle cada');
   });
 

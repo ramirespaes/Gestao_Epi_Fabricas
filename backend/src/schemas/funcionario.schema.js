@@ -3,6 +3,7 @@
 const { z } = require('zod');
 const { normalizarNomeGhe } = require('../utils/normalizacao');
 const { SITUACOES } = require('../utils/situacao-funcionario');
+const { IDS_FORMATOS } = require('../services/exportacao-historico/formatos');
 const {
   idParametro, idCorpo, booleanoQuery, paginacaoQuery, textoCurto, cpfComDigitosVerificadores, dataCalendario,
 } = require('./campos.schema');
@@ -114,6 +115,39 @@ const consultaCpf = {
 
 const buscar = { params: paramsComId };
 
+// Histórico de Funcionários: eventos auditados do funcionário — GHE (pacote E), SITUACAO (pacote F) e CADASTRAL (pacote G).
+// Empresa e funcionário vêm da sessão e do caminho, nada mais é aceito. Período (pacote H): `de` e `ate` inclusivos, cada
+// um opcional, com as mesmas regras de GET /fichas-epi/:id/entregas.
+const periodoEventos = (q, ctx) => {
+  if (q.de && q.ate && q.de > q.ate) {
+    ctx.addIssue({ code: 'custom', path: ['ate'], message: 'A data final precisa ser igual ou posterior à inicial', params: { codigo: 'PERIODO_INVERTIDO' } });
+  }
+};
+const eventos = {
+  params: paramsComId,
+  query: z.strictObject({
+    tipo: z.enum(['GHE', 'SITUACAO', 'CADASTRAL']),
+    de: dataCalendario('DATA_INVALIDA', 'Data inicial inválida').optional(),
+    ate: dataCalendario('DATA_INVALIDA', 'Data final inválida').optional(),
+    ...paginacaoQuery,
+  }).superRefine(periodoEventos),
+};
+
+// Exportação (pacote I): formato da lista do servidor e período FECHADO (as duas datas ou nenhuma); nada mais.
+const periodoFechado = (b, ctx) => {
+  if (b.de && !b.ate) ctx.addIssue({ code: 'custom', path: ['ate'], message: 'Informe também a data final', params: { codigo: 'PERIODO_INCOMPLETO' } });
+  if (b.ate && !b.de) ctx.addIssue({ code: 'custom', path: ['de'], message: 'Informe também a data inicial', params: { codigo: 'PERIODO_INCOMPLETO' } });
+  periodoEventos(b, ctx);
+};
+const exportacao = {
+  params: paramsComId,
+  body: z.strictObject({
+    formato: z.enum(IDS_FORMATOS),
+    de: dataCalendario('DATA_INVALIDA', 'Data inicial inválida').optional(),
+    ate: dataCalendario('DATA_INVALIDA', 'Data final inválida').optional(),
+  }).superRefine(periodoFechado),
+};
+
 const alterar = {
   params: paramsComId,
   body: z.strictObject({
@@ -220,5 +254,5 @@ const importacao = {
 };
 
 module.exports = {
-  criar, listar, consultaCpf, buscar, alterar, inativar, reativar, revelarCpf, situacao, importacao, importacaoGhes, ghesFormulario, linhaImportacao, LINHAS_POR_LOTE, LINHAS_POR_ARQUIVO,
+  criar, listar, consultaCpf, buscar, eventos, exportacao, alterar, inativar, reativar, revelarCpf, situacao, importacao, importacaoGhes, ghesFormulario, linhaImportacao, LINHAS_POR_LOTE, LINHAS_POR_ARQUIVO,
 };

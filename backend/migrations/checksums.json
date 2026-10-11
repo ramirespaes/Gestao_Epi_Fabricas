@@ -85,6 +85,7 @@
     "081_alter_matricula_opcional.sql": "9e5813ef3db1f364abde69041d3a00bbe80b4528764eedb8e447914059001731",
     "082_create_tipos_material_classificacao_v2.sql": "1dfae4782685deded16614cf38a6e283df7a2803297129660451a8d235e46b9f",
     "083_alter_ghe_add_codigo_create_ghe_tipos_material.sql": "b963527cbeeb6b620e499fbbf19a4193bba8f72aac7b62168936c9a8ac3afeda",
-    "084_alter_funcionarios_add_situacao.sql": "b2342b00d606dbfc7e6938b3615e9a6a1d4c450bb13c2a08cd977b0a68a2e1f2"
+    "084_alter_funcionarios_add_situacao.sql": "b2342b00d606dbfc7e6938b3615e9a6a1d4c450bb13c2a08cd977b0a68a2e1f2",
+    "085_insert_acao_exportar_historico_funcionarios.sql": "a05fdbd9d8ffef7015870283f73e377c6507a14d0baf6ffea6d84c4c0a52f8ee"
   }
 }

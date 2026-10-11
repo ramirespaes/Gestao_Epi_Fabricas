@@ -791,6 +791,9 @@
       var nova = P.render.linhaAcesso(document, r.dados.acesso, true);
       linha.parentNode.insertBefore(nova, linha);
       linha.parentNode.removeChild(linha);
+      // Os avisos informativos acompanham a resposta do PUT (o servidor os recalcula).
+      var areaAvisos = document.getElementById('avisoDependencias');
+      if (areaAvisos) P.render.avisos(document, areaAvisos, r.dados.avisos, doGrupo);
       avisoPermissoes(P.TEXTOS.ALTERADO);
       return;
     }
