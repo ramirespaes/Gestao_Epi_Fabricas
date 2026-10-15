@@ -44,6 +44,10 @@ function mundo(t, {
     REALIZAR_ENTREGA: { ativo: true, exigeSst: false, modoAutorizacaoIndividual: 'ALTERNATIVA' },
     IMPORTAR_FUNCIONARIOS: { ativo: true, exigeSst: false, modoAutorizacaoIndividual: 'NENHUMA' },
     EXPORTAR_HISTORICO_FUNCIONARIOS: { ativo: true, exigeSst: false, modoAutorizacaoIndividual: 'ALTERNATIVA' },
+    TOKEN_REVOGAR_DISPOSITIVO: { ativo: true, exigeSst: false, modoAutorizacaoIndividual: 'ALTERNATIVA' },
+    TOKEN_GERAR_ATIVACAO: { ativo: true, exigeSst: false, modoAutorizacaoIndividual: 'ALTERNATIVA' },
+    TOKEN_GERENCIAR_REDES: { ativo: true, exigeSst: false, modoAutorizacaoIndividual: 'OBRIGATORIA' },
+    TOKEN_PREVIA_CATALOGO_REAL: { ativo: true, exigeSst: false, modoAutorizacaoIndividual: 'ALTERNATIVA' },
   },
   ator = { id: ATOR, empresaId: EMPRESA },
 } = {}) {
@@ -60,12 +64,12 @@ function mundo(t, {
 }
 
 describe('planejar', () => {
-  test('banco vazio: 11 recursos AUSENTES com as flags esperadas (excluir=false) e 5 ações AUSENTES (16 itens no plano)', async (t) => {
+  test('banco vazio: 12 recursos AUSENTES com as flags esperadas (excluir=false) e 9 ações AUSENTES (21 itens no plano)', async (t) => {
     mundo(t);
     const plano = await servico.planejar({ query: async () => ({ rows: [] }) }, { empresaId: EMPRESA });
     assert.deepEqual(plano.empresa, { id: EMPRESA, nome: 'Empresa A', ativo: true });
     assert.equal(plano.perfil, 'MASTER');
-    assert.deepEqual(plano.recursos.map((r) => [r.recurso, r.situacao]), [['materials', 'AUSENTE'], ['employeeHistory', 'AUSENTE'], ['employeeGroups', 'AUSENTE'], ['availableItems', 'AUSENTE'], ['dashboard', 'AUSENTE'], ['stockValidity', 'AUSENTE'], ['operations', 'AUSENTE'], ['epiFicha', 'AUSENTE'], ['request', 'AUSENTE'], ['reportsAudit', 'AUSENTE'], ['reportsFiscal', 'AUSENTE']]);
+    assert.deepEqual(plano.recursos.map((r) => [r.recurso, r.situacao]), [['materials', 'AUSENTE'], ['employeeHistory', 'AUSENTE'], ['employeeGroups', 'AUSENTE'], ['availableItems', 'AUSENTE'], ['dashboard', 'AUSENTE'], ['stockValidity', 'AUSENTE'], ['operations', 'AUSENTE'], ['epiFicha', 'AUSENTE'], ['request', 'AUSENTE'], ['reportsAudit', 'AUSENTE'], ['reportsFiscal', 'AUSENTE'], ['atendimentoToken', 'AUSENTE']]);
     assert.deepEqual(plano.recursos[0].esperado, flagsCompletas);
     assert.deepEqual(plano.acoes, [
       { acaoCodigo: 'ENTRADA_ESTOQUE', situacao: 'AUSENTE', catalogo: 'ATIVA', atual: null },
@@ -73,8 +77,12 @@ describe('planejar', () => {
       { acaoCodigo: 'REALIZAR_ENTREGA', situacao: 'AUSENTE', catalogo: 'ATIVA', atual: null },
       { acaoCodigo: 'IMPORTAR_FUNCIONARIOS', situacao: 'AUSENTE', catalogo: 'ATIVA', atual: null },
       { acaoCodigo: 'EXPORTAR_HISTORICO_FUNCIONARIOS', situacao: 'AUSENTE', catalogo: 'ATIVA', atual: null },
+      { acaoCodigo: 'TOKEN_REVOGAR_DISPOSITIVO', situacao: 'AUSENTE', catalogo: 'ATIVA', atual: null },
+      { acaoCodigo: 'TOKEN_GERAR_ATIVACAO', situacao: 'AUSENTE', catalogo: 'ATIVA', atual: null },
+      { acaoCodigo: 'TOKEN_GERENCIAR_REDES', situacao: 'AUSENTE', catalogo: 'ATIVA', atual: null },
+      { acaoCodigo: 'TOKEN_PREVIA_CATALOGO_REAL', situacao: 'AUSENTE', catalogo: 'ATIVA', atual: null },
     ]);
-    assert.deepEqual(servico.resumir(plano), { AUSENTE: 16, ADEQUADA: 0, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 0 }, '11 recursos + 5 ações');
+    assert.deepEqual(servico.resumir(plano), { AUSENTE: 21, ADEQUADA: 0, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 0 }, '12 recursos + 9 ações');
   });
 
   test('distingue ADEQUADA (todas as operações exigidas) de INSUFICIENTE (alguma negada), com as faltantes nomeadas', async (t) => {
@@ -94,8 +102,8 @@ describe('planejar', () => {
     assert.equal(porRecurso.employeeGroups.situacao, 'AUSENTE');
     assert.equal(plano.acoes[0].situacao, 'INSUFICIENTE');
     assert.equal(plano.acoes[1].situacao, 'AUSENTE');
-    // 16 itens: materials ADEQUADA (1); employeeHistory e ENTRADA_ESTOQUE INSUFICIENTES (2); os outros 13 estão AUSENTES.
-    assert.deepEqual(servico.resumir(plano), { AUSENTE: 13, ADEQUADA: 1, INSUFICIENTE: 2, NAO_CATALOGADA: 0, INSERIDA: 0 });
+    // 21 itens: materials ADEQUADA (1); employeeHistory e ENTRADA_ESTOQUE INSUFICIENTES (2); os outros 18 estão AUSENTES.
+    assert.deepEqual(servico.resumir(plano), { AUSENTE: 18, ADEQUADA: 1, INSUFICIENTE: 2, NAO_CATALOGADA: 0, INSERIDA: 0 });
   });
 
   test('pode_excluir=true numa linha existente não é exigido nem conta contra: continua ADEQUADA', async (t) => {
@@ -137,7 +145,7 @@ describe('provisionar — dry-run', () => {
     assert.equal(escritas.registrar.mock.calls.length, 0);
     assert.deepEqual(r.inseridos, { recursos: [], acoes: [] });
     assert.equal(r.auditoriaId, null);
-    assert.equal(r.plano.recursos.length, 11, 'os 11 recursos do escopo do MASTER');
+    assert.equal(r.plano.recursos.length, 12, 'os 12 recursos do escopo do MASTER');
   });
 
   test('dryRun precisa ser booleano explícito; ids validados antes de qualquer leitura', async (t) => {
@@ -159,8 +167,8 @@ describe('provisionar — execução real', () => {
     const r = await servico.provisionar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR, dryRun: false, ip: '127.0.0.1', dispositivo: 'cli' });
 
     assert.equal(r.dryRun, false);
-    assert.deepEqual(r.inseridos, { recursos: ['employeeHistory', 'employeeGroups', 'availableItems', 'dashboard', 'stockValidity', 'operations', 'epiFicha', 'request', 'reportsAudit', 'reportsFiscal'], acoes: ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS'] });
-    assert.equal(escritas.inserirRecurso.mock.calls.length, 10, '11 recursos do escopo menos materials, que já existia');
+    assert.deepEqual(r.inseridos, { recursos: ['employeeHistory', 'employeeGroups', 'availableItems', 'dashboard', 'stockValidity', 'operations', 'epiFicha', 'request', 'reportsAudit', 'reportsFiscal', 'atendimentoToken'], acoes: ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS', 'TOKEN_REVOGAR_DISPOSITIVO', 'TOKEN_GERAR_ATIVACAO', 'TOKEN_GERENCIAR_REDES', 'TOKEN_PREVIA_CATALOGO_REAL'] });
+    assert.equal(escritas.inserirRecurso.mock.calls.length, 11, '12 recursos do escopo menos materials, que já existia');
     // availableItems, dashboard, stockValidity, operations, epiFicha, reportsAudit (12K-D5) e reportsFiscal (12K-D6) entram SOMENTE com visualizar; os demais com visualizar/criar/editar.
     const somenteVisualizar = { podeVisualizar: true, podeCriar: false, podeEditar: false, podeExcluir: false };
     for (const chamada of escritas.inserirRecurso.mock.calls) {
@@ -176,6 +184,10 @@ describe('provisionar — execução real', () => {
       { empresaId: EMPRESA, perfil: 'MASTER', acaoCodigo: 'REALIZAR_ENTREGA', permitido: true },
       { empresaId: EMPRESA, perfil: 'MASTER', acaoCodigo: 'IMPORTAR_FUNCIONARIOS', permitido: true },
       { empresaId: EMPRESA, perfil: 'MASTER', acaoCodigo: 'EXPORTAR_HISTORICO_FUNCIONARIOS', permitido: true },
+      { empresaId: EMPRESA, perfil: 'MASTER', acaoCodigo: 'TOKEN_REVOGAR_DISPOSITIVO', permitido: true },
+      { empresaId: EMPRESA, perfil: 'MASTER', acaoCodigo: 'TOKEN_GERAR_ATIVACAO', permitido: true },
+      { empresaId: EMPRESA, perfil: 'MASTER', acaoCodigo: 'TOKEN_GERENCIAR_REDES', permitido: true },
+      { empresaId: EMPRESA, perfil: 'MASTER', acaoCodigo: 'TOKEN_PREVIA_CATALOGO_REAL', permitido: true },
     ]);
 
     assert.equal(escritas.registrar.mock.calls.length, 1);
@@ -184,8 +196,8 @@ describe('provisionar — execução real', () => {
     assert.equal(auditoria.usuarioId, ATOR);
     assert.equal(auditoria.referencia, String(EMPRESA));
     assert.equal(auditoria.contexto.origem, 'script_administrativo');
-    assert.deepEqual(auditoria.dadosNovos.recursos.map((x) => x.recurso), ['employeeHistory', 'employeeGroups', 'availableItems', 'dashboard', 'stockValidity', 'operations', 'epiFicha', 'request', 'reportsAudit', 'reportsFiscal']);
-    assert.deepEqual(auditoria.dadosNovos.acoes, ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS'].map((acaoCodigo) => ({ acaoCodigo, permitido: true })));
+    assert.deepEqual(auditoria.dadosNovos.recursos.map((x) => x.recurso), ['employeeHistory', 'employeeGroups', 'availableItems', 'dashboard', 'stockValidity', 'operations', 'epiFicha', 'request', 'reportsAudit', 'reportsFiscal', 'atendimentoToken']);
+    assert.deepEqual(auditoria.dadosNovos.acoes, ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS', 'TOKEN_REVOGAR_DISPOSITIVO', 'TOKEN_GERAR_ATIVACAO', 'TOKEN_GERENCIAR_REDES', 'TOKEN_PREVIA_CATALOGO_REAL'].map((acaoCodigo) => ({ acaoCodigo, permitido: true })));
     assert.equal(r.auditoriaId, '77');
     assert.equal(contar(cliente.chamadas, /^BEGIN$/), 1);
     assert.equal(contar(cliente.chamadas, /^COMMIT$/), 1);
@@ -193,31 +205,31 @@ describe('provisionar — execução real', () => {
 
     // A/B/C/D/E — ajuste final (v4→v5): o plano FINAL não pode chamar de
     // AUSENTE o que foi inserido e confirmado; os itens que eram AUSENTE
-    // (10 recursos e 5 ações) viram INSERIDA, o que já existia (materials)
+    // (11 recursos e 9 ações) viram INSERIDA, o que já existia (materials)
     // permanece ADEQUADA, e os totais refletem exatamente esse estado final.
     const porRecurso = Object.fromEntries(r.plano.recursos.map((x) => [x.recurso, x]));
     assert.equal(porRecurso.materials.situacao, 'ADEQUADA', 'já existia — não foi tocada, não vira INSERIDA');
     assert.equal(porRecurso.employeeHistory.situacao, 'INSERIDA');
     assert.equal(porRecurso.employeeGroups.situacao, 'INSERIDA');
     assert.equal(r.plano.acoes[0].situacao, 'INSERIDA');
-    // 16 itens: materials ADEQUADA (1) + 10 recursos e 5 ações INSERIDOS (15).
-    assert.deepEqual(servico.resumir(r.plano), { AUSENTE: 0, ADEQUADA: 1, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 15 });
+    // 21 itens: materials ADEQUADA (1) + 11 recursos e 9 ações INSERIDOS (20).
+    assert.deepEqual(servico.resumir(r.plano), { AUSENTE: 0, ADEQUADA: 1, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 20 });
   });
 
-  test('A/B/C/D/E — empresa sem NENHUMA permissão: planejamento identifica 16 AUSENTES (11 recursos + 5 ações), execução insere os 16, plano final não tem nenhum AUSENTE restante', async (t) => {
+  test('A/B/C/D/E — empresa sem NENHUMA permissão: planejamento identifica 21 AUSENTES (12 recursos + 9 ações), execução insere os 21, plano final não tem nenhum AUSENTE restante', async (t) => {
     mundo(t); // tudo ausente: recursosExistentes/acoesExistentes vazios (padrão)
     const r = await servico.provisionar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, dryRun: false });
 
-    assert.deepEqual(r.inseridos.recursos.sort(), ['availableItems', 'dashboard', 'employeeGroups', 'employeeHistory', 'epiFicha', 'materials', 'operations', 'reportsAudit', 'reportsFiscal', 'request', 'stockValidity']);
-    assert.deepEqual(r.inseridos.acoes, ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS']);
+    assert.deepEqual(r.inseridos.recursos.sort(), ['atendimentoToken', 'availableItems', 'dashboard', 'employeeGroups', 'employeeHistory', 'epiFicha', 'materials', 'operations', 'reportsAudit', 'reportsFiscal', 'request', 'stockValidity']);
+    assert.deepEqual(r.inseridos.acoes, ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS', 'TOKEN_REVOGAR_DISPOSITIVO', 'TOKEN_GERAR_ATIVACAO', 'TOKEN_GERENCIAR_REDES', 'TOKEN_PREVIA_CATALOGO_REAL']);
     for (const item of r.plano.recursos) {
       assert.equal(item.situacao, 'INSERIDA', item.recurso);
       assert.deepEqual(item.faltantes, []);
     }
     assert.ok(r.plano.acoes.every((x) => x.situacao === 'INSERIDA'));
     // E — total de AUSENTES corresponde ao estado final EFETIVAMENTE
-    // confirmado (zero — os 16 itens, 11 recursos e 5 ações, foram inseridos e confirmados nesta transação).
-    assert.deepEqual(servico.resumir(r.plano), { AUSENTE: 0, ADEQUADA: 0, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 16 });
+    // confirmado (zero — os 21 itens, 12 recursos e 9 ações, foram inseridos e confirmados nesta transação).
+    assert.deepEqual(servico.resumir(r.plano), { AUSENTE: 0, ADEQUADA: 0, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 21 });
   });
 
   test('F — dry-run continua sendo SIMULAÇÃO: plano permanece AUSENTE (nunca INSERIDA), nada em inseridos', async (t) => {
@@ -227,7 +239,7 @@ describe('provisionar — execução real', () => {
     assert.deepEqual(r.inseridos, { recursos: [], acoes: [] });
     assert.ok(r.plano.recursos.every((x) => x.situacao === 'AUSENTE'));
     assert.ok(r.plano.acoes.every((x) => x.situacao === 'AUSENTE'));
-    assert.deepEqual(servico.resumir(r.plano), { AUSENTE: 16, ADEQUADA: 0, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 0 }, '11 recursos + 5 ações, todos AUSENTES na simulação');
+    assert.deepEqual(servico.resumir(r.plano), { AUSENTE: 21, ADEQUADA: 0, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 0 }, '12 recursos + 9 ações, todos AUSENTES na simulação');
   });
 
   test('G/H — execução mista: inserido vira INSERIDA; ADEQUADA preexistente continua ADEQUADA; INSUFICIENTE preexistente permanece INSUFICIENTE e sinalizada — nada se confunde', async (t) => {
@@ -248,19 +260,19 @@ describe('provisionar — execução real', () => {
     assert.equal(porRecurso.employeeGroups.situacao, 'INSERIDA');
     assert.equal(r.plano.acoes[0].situacao, 'INSUFICIENTE');
     assert.equal(r.plano.acoes[1].situacao, 'INSERIDA');
-    assert.deepEqual(r.inseridos.recursos, ['employeeGroups', 'availableItems', 'dashboard', 'stockValidity', 'operations', 'epiFicha', 'request', 'reportsAudit', 'reportsFiscal']);
-    assert.deepEqual(r.inseridos.acoes, ['BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS']);
-    // 16 itens: materials ADEQUADA (1); employeeHistory e ENTRADA_ESTOQUE INSUFICIENTES (2); 9 recursos + 4 ações INSERIDOS (13).
-    assert.deepEqual(servico.resumir(r.plano), { AUSENTE: 0, ADEQUADA: 1, INSUFICIENTE: 2, NAO_CATALOGADA: 0, INSERIDA: 13 });
+    assert.deepEqual(r.inseridos.recursos, ['employeeGroups', 'availableItems', 'dashboard', 'stockValidity', 'operations', 'epiFicha', 'request', 'reportsAudit', 'reportsFiscal', 'atendimentoToken']);
+    assert.deepEqual(r.inseridos.acoes, ['BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS', 'TOKEN_REVOGAR_DISPOSITIVO', 'TOKEN_GERAR_ATIVACAO', 'TOKEN_GERENCIAR_REDES', 'TOKEN_PREVIA_CATALOGO_REAL']);
+    // 21 itens: materials ADEQUADA (1); employeeHistory e ENTRADA_ESTOQUE INSUFICIENTES (2); 10 recursos + 8 ações INSERIDOS (18).
+    assert.deepEqual(servico.resumir(r.plano), { AUSENTE: 0, ADEQUADA: 1, INSUFICIENTE: 2, NAO_CATALOGADA: 0, INSERIDA: 18 });
 
     // H — nenhum segundo insert/nenhuma tentativa de tocar a linha
     // insuficiente preexistente.
     assert.equal(escritas.inserirRecurso.mock.calls.filter((c) => c.arguments[1].recurso === 'employeeHistory').length, 0);
-    assert.deepEqual(escritas.inserirAcao.mock.calls.map((c) => c.arguments[1].acaoCodigo), ['BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS']);
+    assert.deepEqual(escritas.inserirAcao.mock.calls.map((c) => c.arguments[1].acaoCodigo), ['BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS', 'TOKEN_REVOGAR_DISPOSITIVO', 'TOKEN_GERAR_ATIVACAO', 'TOKEN_GERENCIAR_REDES', 'TOKEN_PREVIA_CATALOGO_REAL']);
 
     // J — auditoria e o que ela relata como pendência batem com o plano final.
     const auditoria = escritas.registrar.mock.calls[0].arguments[1];
-    assert.deepEqual(auditoria.dadosNovos.recursos.map((x) => x.recurso), ['employeeGroups', 'availableItems', 'dashboard', 'stockValidity', 'operations', 'epiFicha', 'request', 'reportsAudit', 'reportsFiscal']);
+    assert.deepEqual(auditoria.dadosNovos.recursos.map((x) => x.recurso), ['employeeGroups', 'availableItems', 'dashboard', 'stockValidity', 'operations', 'epiFicha', 'request', 'reportsAudit', 'reportsFiscal', 'atendimentoToken']);
     assert.deepEqual(auditoria.contexto.naoAlterados.recursosInsuficientes, [{ recurso: 'employeeHistory', faltantes: ['criar', 'editar'] }]);
     assert.deepEqual(auditoria.contexto.naoAlterados.acoesInsuficientes, ['ENTRADA_ESTOQUE']);
   });
@@ -281,8 +293,8 @@ describe('provisionar — execução real', () => {
     assert.ok(!r.inseridos.recursos.includes('materials'));
     const restantes = r.plano.recursos.filter((x) => x.recurso !== 'materials');
     assert.ok(restantes.every((x) => x.situacao === 'INSERIDA'), 'os que não colidiram foram, de fato, inseridos por esta transação');
-    // 16 itens: materials ADEQUADA (perdeu a corrida, 1) + 10 recursos e 5 ações INSERIDOS (15).
-    assert.deepEqual(servico.resumir(r.plano), { AUSENTE: 0, ADEQUADA: 1, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 15 });
+    // 21 itens: materials ADEQUADA (perdeu a corrida, 1) + 11 recursos e 9 ações INSERIDOS (20).
+    assert.deepEqual(servico.resumir(r.plano), { AUSENTE: 0, ADEQUADA: 1, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 20 });
   });
 
   test('INSUFICIENTE não é tocada: nenhum insert para ela, e ela é relatada na auditoria como não alterada', async (t) => {
@@ -291,7 +303,7 @@ describe('provisionar — execução real', () => {
       acoesExistentes: new Map([['ENTRADA_ESTOQUE', { acaoCodigo: 'ENTRADA_ESTOQUE', permitido: false }]]),
     });
     const r = await servico.provisionar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, dryRun: false });
-    assert.deepEqual(r.inseridos, { recursos: ['employeeHistory', 'employeeGroups', 'availableItems', 'dashboard', 'stockValidity', 'operations', 'epiFicha', 'request', 'reportsAudit', 'reportsFiscal'], acoes: ['BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS'] });
+    assert.deepEqual(r.inseridos, { recursos: ['employeeHistory', 'employeeGroups', 'availableItems', 'dashboard', 'stockValidity', 'operations', 'epiFicha', 'request', 'reportsAudit', 'reportsFiscal', 'atendimentoToken'], acoes: ['BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS', 'TOKEN_REVOGAR_DISPOSITIVO', 'TOKEN_GERAR_ATIVACAO', 'TOKEN_GERENCIAR_REDES', 'TOKEN_PREVIA_CATALOGO_REAL'] });
     assert.ok(escritas.inserirRecurso.mock.calls.every((c) => c.arguments[1].recurso !== 'materials'));
     assert.ok(escritas.inserirAcao.mock.calls.every((c) => c.arguments[1].acaoCodigo !== 'ENTRADA_ESTOQUE'));
     const auditoria = escritas.registrar.mock.calls[0].arguments[1];
@@ -318,6 +330,7 @@ describe('provisionar — execução real', () => {
         ['request', { recurso: 'request', ...flagsCompletas }],
         ['reportsAudit', { recurso: 'reportsAudit', podeVisualizar: true, podeCriar: false, podeEditar: false, podeExcluir: false }],
         ['reportsFiscal', { recurso: 'reportsFiscal', podeVisualizar: true, podeCriar: false, podeEditar: false, podeExcluir: false }],
+        ['atendimentoToken', { recurso: 'atendimentoToken', ...flagsCompletas }],
       ]),
       acoesExistentes: new Map([
         ['ENTRADA_ESTOQUE', { acaoCodigo: 'ENTRADA_ESTOQUE', permitido: true }],
@@ -325,6 +338,10 @@ describe('provisionar — execução real', () => {
         ['REALIZAR_ENTREGA', { acaoCodigo: 'REALIZAR_ENTREGA', permitido: true }],
         ['IMPORTAR_FUNCIONARIOS', { acaoCodigo: 'IMPORTAR_FUNCIONARIOS', permitido: true }],
         ['EXPORTAR_HISTORICO_FUNCIONARIOS', { acaoCodigo: 'EXPORTAR_HISTORICO_FUNCIONARIOS', permitido: true }],
+        ['TOKEN_REVOGAR_DISPOSITIVO', { acaoCodigo: 'TOKEN_REVOGAR_DISPOSITIVO', permitido: true }],
+        ['TOKEN_GERAR_ATIVACAO', { acaoCodigo: 'TOKEN_GERAR_ATIVACAO', permitido: true }],
+        ['TOKEN_GERENCIAR_REDES', { acaoCodigo: 'TOKEN_GERENCIAR_REDES', permitido: true }],
+        ['TOKEN_PREVIA_CATALOGO_REAL', { acaoCodigo: 'TOKEN_PREVIA_CATALOGO_REAL', permitido: true }],
       ]),
     });
     const cliente = criarClienteFalso();
@@ -362,7 +379,7 @@ describe('provisionar — execução real', () => {
 
       const r = await servico.provisionar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, dryRun: false });
 
-      assert.deepEqual(r.inseridos.recursos, ['employeeHistory', 'employeeGroups', 'availableItems', 'dashboard', 'stockValidity', 'operations', 'epiFicha', 'request', 'reportsAudit', 'reportsFiscal'], 'materials NÃO entra em inseridos: a releitura mostrou que já existia');
+      assert.deepEqual(r.inseridos.recursos, ['employeeHistory', 'employeeGroups', 'availableItems', 'dashboard', 'stockValidity', 'operations', 'epiFicha', 'request', 'reportsAudit', 'reportsFiscal', 'atendimentoToken'], 'materials NÃO entra em inseridos: a releitura mostrou que já existia');
       const materials = r.plano.recursos.find((x) => x.recurso === 'materials');
       assert.equal(materials.situacao, 'ADEQUADA');
       assert.deepEqual(materials.faltantes, []);
@@ -383,7 +400,7 @@ describe('provisionar — execução real', () => {
 
       const r = await servico.provisionar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, dryRun: false });
 
-      assert.deepEqual(r.inseridos.recursos, ['materials', 'employeeGroups', 'availableItems', 'dashboard', 'stockValidity', 'operations', 'epiFicha', 'request', 'reportsAudit', 'reportsFiscal']);
+      assert.deepEqual(r.inseridos.recursos, ['materials', 'employeeGroups', 'availableItems', 'dashboard', 'stockValidity', 'operations', 'epiFicha', 'request', 'reportsAudit', 'reportsFiscal', 'atendimentoToken']);
       const employeeHistory = r.plano.recursos.find((x) => x.recurso === 'employeeHistory');
       assert.equal(employeeHistory.situacao, 'INSUFICIENTE');
       assert.deepEqual(employeeHistory.faltantes, ['criar', 'editar']);
@@ -410,7 +427,7 @@ describe('provisionar — execução real', () => {
       assert.deepEqual(r.inseridos.acoes, []);
       assert.ok(r.plano.acoes.every((x) => x.situacao === 'INSUFICIENTE'));
       const auditoria = escritas.registrar.mock.calls[0].arguments[1];
-      assert.deepEqual(auditoria.contexto.naoAlterados.acoesInsuficientes, ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS']);
+      assert.deepEqual(auditoria.contexto.naoAlterados.acoesInsuficientes, ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS', 'TOKEN_REVOGAR_DISPOSITIVO', 'TOKEN_GERAR_ATIVACAO', 'TOKEN_GERENCIAR_REDES', 'TOKEN_PREVIA_CATALOGO_REAL']);
       assert.equal(auditoria.dadosNovos.acoes.length, 0);
     });
 

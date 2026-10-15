@@ -6,6 +6,7 @@ const grupoRepo = require('../repositories/grupo-acesso.repository');
 const permissaoRepo = require('../repositories/permissao.repository');
 const toggles = require('../rbac/toggles');
 const { avisosDosAcessos } = require('../rbac/avisos-acessos');
+const { descreverDependencia } = require('../rbac/dependencias-acessos');
 
 /**
  * Acessos ON/OFF de um GRUPO: visão binária sobre as mesmas permissões de grupo (grupo_permissoes_recurso e
@@ -18,6 +19,7 @@ const { avisosDosAcessos } = require('../rbac/avisos-acessos');
  */
 const MODO_ALTERNATIVA = 'ALTERNATIVA';
 const ERRO_TOGGLE = ['TOGGLE_NAO_ENCONTRADO', 'Acesso não encontrado'];
+const AVISO_DEPENDENCIA_REABILITADA = 'DEPENDENCIA_REABILITADA';
 const FLAG = { visualizar: 'podeVisualizar', criar: 'podeCriar', editar: 'podeEditar', excluir: 'podeExcluir' };
 
 async function acessosDisponiveis(pool) {
@@ -50,13 +52,23 @@ async function detalhar(pool, { empresaId, atorId, grupoId }) {
   return { grupo: { id: grupo.id, nome: grupo.nome, ativo: grupo.ativo }, toggles: lista, avisos: avisosDosAcessos(lista) };
 }
 
-async function aplicarRegra(pool, base, regra, ligado) {
+async function aplicarRegra(pool, base, regra, ligado, contextoExtra = null) {
   if (regra.tipo === 'ACAO') {
     await grupoPermissaoService.configurarAcao(pool, { ...base, acaoCodigo: regra.codigo, permitido: ligado ? true : null });
     return;
   }
   const flags = Object.fromEntries(regra.operacoes.map((op) => [FLAG[op], ligado ? true : null]));
-  await grupoPermissaoService.configurarRecurso(pool, { ...base, recurso: regra.recurso, ...flags });
+  await grupoPermissaoService.configurarRecurso(pool, {
+    ...base, recurso: regra.recurso, ...flags, ...(contextoExtra === null ? {} : { contextoExtra }),
+  });
+}
+
+/** O grupo NEGA explicitamente a dependência (`false`)? Só dado legado/API antiga: o toggle nunca grava `false`. */
+async function dependenciaNegada(pool, base, dependencia) {
+  if (dependencia.tipo !== 'RECURSO') return false;
+  const recursosDoGrupo = await grupoPermissaoService.listarRecursos(pool, { empresaId: base.empresaId, atorId: base.atorId, grupoId: base.grupoId });
+  const linha = recursosDoGrupo.find((r) => r.recurso === dependencia.recurso);
+  return linha !== undefined && dependencia.operacoes.some((op) => linha[FLAG[op]] === false);
 }
 
 async function configurarToggle(pool, {
@@ -68,13 +80,29 @@ async function configurarToggle(pool, {
   const base = {
     empresaId, atorId, grupoId, ip, dispositivo,
   };
-  // A dependência (leitura) vem primeiro: se a regra própria falhar, sobra só uma leitura a mais.
+  // Transparência (não decide nada): o estado de todos os acessos e das dependências ANTES, para devolver `alterados` e avisar.
+  const anterior = await detalhar(pool, { empresaId, atorId, grupoId });
+  const dependencias = [];
   if (ligado) {
-    for (const dependencia of toggle.dependencias ?? []) await aplicarRegra(pool, base, dependencia, true);
+    for (const regra of toggle.dependencias ?? []) {
+      dependencias.push({ regra, ...descreverDependencia(regra), negada: await dependenciaNegada(pool, base, regra) });
+    }
+  }
+  // A dependência (leitura) vem primeiro: se a regra própria falhar, sobra só uma leitura a mais.
+  // Cada dependência que muda de verdade é auditada pelo serviço de permissões de grupo, agora ligada à operação original.
+  if (ligado) {
+    for (const regra of toggle.dependencias ?? []) {
+      await aplicarRegra(pool, base, regra, true, { causa: 'dependencia', acessoOrigem: toggleId });
+    }
   }
   await aplicarRegra(pool, base, toggle.regra, ligado);
   const atual = await detalhar(pool, { empresaId, atorId, grupoId });
-  return { acesso: atual.toggles.find((t) => t.id === toggleId), avisos: atual.avisos };
+  const antesPorId = new Map(anterior.toggles.map((t) => [t.id, t.ligado]));
+  const alterados = atual.toggles.filter((t) => antesPorId.get(t.id) !== t.ligado);
+  // Reabilitada = o grupo NEGAVA a leitura e agora a concede.
+  const reabilitadas = dependencias.filter((d) => d.negada).map((d) => d.rotulo);
+  const avisos = reabilitadas.length > 0 ? [...atual.avisos, { codigo: AVISO_DEPENDENCIA_REABILITADA, acessos: reabilitadas }] : atual.avisos;
+  return { acesso: atual.toggles.find((t) => t.id === toggleId), avisos, alterados };
 }
 
 module.exports = { detalhar, configurarToggle };

@@ -252,13 +252,16 @@ async function carregarAcaoConfiguravel(client, acaoCodigo) {
  * @param {{empresaId: number, atorId: number, grupoId: number, recurso: string,
  *          podeVisualizar?: boolean|null, podeCriar?: boolean|null,
  *          podeEditar?: boolean|null, podeExcluir?: boolean|null,
- *          ip?: string|null, dispositivo?: string|null}} dados
+ *          ip?: string|null, dispositivo?: string|null,
+ *          contextoExtra?: object|null}} dados
  *   empresaId e atorId DEVEM vir do contexto autenticado do chamador.
+ *   contextoExtra: só serviços internos (nunca o corpo da requisição) o informam; entra no `contexto` da auditoria
+ *   (ex.: a dependência de um toggle, ligada à operação original).
  * @returns {Promise<{configuracao: object, alterado: boolean}>}
  */
 async function configurarRecurso(pool, dados) {
   const {
-    empresaId, atorId, grupoId, recurso, ip = null, dispositivo = null,
+    empresaId, atorId, grupoId, recurso, ip = null, dispositivo = null, contextoExtra = null,
   } = dados;
 
   exigirId(empresaId, 'identificador de empresa');
@@ -314,7 +317,7 @@ async function configurarRecurso(pool, dados) {
       ip,
       dispositivo,
       contexto: {
-        recurso, operacoesInformadas: Object.keys(informadas), criouConfiguracao: atual === null, ...(garantiaDeLeitura ? { garantiaDeLeitura: true } : {}),
+        recurso, operacoesInformadas: Object.keys(informadas), criouConfiguracao: atual === null, ...(garantiaDeLeitura ? { garantiaDeLeitura: true } : {}), ...(contextoExtra ?? {}),
       },
       dadosAnteriores: instantaneoRecurso(atual),
       dadosNovos: instantaneoRecurso(configuracao),

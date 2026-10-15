@@ -181,6 +181,19 @@
       abrirComQualquer: true,
       alterar: [],
     },
+    // Etapa H (Atendimento Token): Central Administrativa. Abre com a visualização do recurso atendimentoToken OU com uma
+    // das ações que a Central oferece sem listar dispositivos (gerar ativação, gerenciar redes, prévia do catálogo). Cada
+    // operação é decidida à parte (EpiAtendimentoToken.capacidades); o servidor decide tudo de novo.
+    atendimentoToken: {
+      abrir: [
+        { recurso: 'atendimentoToken', operacao: 'visualizar' },
+        { acao: 'TOKEN_GERAR_ATIVACAO' },
+        { acao: 'TOKEN_GERENCIAR_REDES' },
+        { acao: 'TOKEN_PREVIA_CATALOGO_REAL' },
+      ],
+      abrirComQualquer: true,
+      alterar: [],
+    },
   };
 
   var MENSAGENS = {
@@ -447,6 +460,45 @@
     });
   }
 
+  // Atendimento Token (Etapa H): o item "Autoatendimento (Totem)" que as páginas integradas ainda trazem como "Em
+  // integração" passa a se chamar "Atendimento Token" e a abrir a Central, SÓ para quem pode abri-la pelas permissões
+  // efetivas (PAGINAS.atendimentoToken). É o ponto central da navegação: nenhuma das páginas homologadas foi editada. Sem
+  // permissão (ou com a consulta falha), o item continua exatamente como está; se já tinha sido ajustado e a permissão
+  // some, ele é escondido. O protótipo self-service.html e a liberação visual do MASTER não mudam.
+  var ROTULO_TOTEM_ANTIGO = 'Autoatendimento (Totem)';
+  var ROTULO_ATENDIMENTO_TOKEN = 'Atendimento Token';
+  var HREF_ATENDIMENTO_TOKEN = 'atendimento-token.html';
+  var MARCA_ATENDIMENTO_TOKEN = 'data-atendimento-token';
+
+  function ajustarMenuAtendimentoToken(permissoes, raiz) {
+    if (!raiz || typeof raiz.querySelectorAll !== 'function') return;
+    var pode = podeAbrir(permissoes, 'atendimentoToken');
+    Array.prototype.forEach.call(raiz.querySelectorAll('.nav a'), function (a) {
+      var ajustado = a.getAttribute(MARCA_ATENDIMENTO_TOKEN) === 'true';
+      if (!ajustado && !(a.classList.contains('nav-pendente') && rotuloDoItem(a) === ROTULO_TOTEM_ANTIGO)) return;
+      if (!pode) {
+        if (ajustado) {
+          a.removeAttribute('href');
+          a.style.display = 'none';
+        }
+        return;
+      }
+      a.setAttribute('href', HREF_ATENDIMENTO_TOKEN);
+      a.setAttribute(MARCA_ATENDIMENTO_TOKEN, 'true');
+      a.removeAttribute('aria-disabled');
+      a.removeAttribute('title');
+      a.classList.remove('nav-pendente');
+      a.style.cursor = '';
+      a.style.display = '';
+      Array.prototype.forEach.call(a.childNodes || [], function (no) {
+        if (no.nodeType === 3 && String(no.textContent).trim() !== '') no.textContent = ROTULO_ATENDIMENTO_TOKEN;
+      });
+      Array.prototype.forEach.call(a.querySelectorAll('.nav-etiqueta'), function (etiqueta) {
+        if (etiqueta.parentNode) etiqueta.parentNode.removeChild(etiqueta);
+      });
+    });
+  }
+
   /**
    * Empresa, usuário e perfil a partir do contexto que a página exibe
    * ({usuario, empresa} de EpiSessaoEmpresarial ou do Portal). Campos
@@ -476,6 +528,7 @@
     if (!r.ok) {
       aplicarMenu(null, o.links);
       liberarInspecao(null, documento);
+      ajustarMenuAtendimentoToken(null, documento);
       if (r.motivo === 'SEM_SESSAO' && global.EpiSessaoEmpresarial) {
         global.EpiSessaoEmpresarial.sessaoEncerrada();
         return null;
@@ -486,6 +539,7 @@
 
     aplicarMenu(r.permissoes, o.links);
     liberarInspecao(r.permissoes, documento);
+    ajustarMenuAtendimentoToken(r.permissoes, documento);
     if (!podeAbrir(r.permissoes, o.pagina)) {
       aviso(MENSAGENS.SEM_ACESSO);
       return null;
@@ -511,6 +565,7 @@
       if (!r.ok) {
         aplicarMenu(null, links);
         liberarInspecao(null, documento);
+        ajustarMenuAtendimentoToken(null, documento);
         if (r.motivo === 'SEM_SESSAO') {
           sessao.sessaoEncerrada();
           return { acao: 'encerrada' };
@@ -519,6 +574,7 @@
       }
       aplicarMenu(r.permissoes, links);
       liberarInspecao(r.permissoes, documento);
+      ajustarMenuAtendimentoToken(r.permissoes, documento);
       return { acao: JSON.stringify(r.permissoes) === assinatura ? 'liberar' : 'recarregar' };
     });
   }
@@ -549,6 +605,7 @@
     NAVEGACAO_OCULTA: NAVEGACAO_OCULTA,
     NAVEGACAO_OCULTA_PENDENTES: NAVEGACAO_OCULTA_PENDENTES,
     liberarInspecao: liberarInspecao,
+    ajustarMenuAtendimentoToken: ajustarMenuAtendimentoToken,
     hrefDeInspecao: hrefDeInspecao,
     INSPECAO_PROTOTIPOS: INSPECAO_PROTOTIPOS,
     podeAbrir: podeAbrir,

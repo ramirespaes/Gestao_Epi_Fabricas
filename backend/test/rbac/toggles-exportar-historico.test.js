@@ -75,7 +75,8 @@ describe('J1 — o toggle novo no catálogo', () => {
 
   test('J1.3 um único toggle novo; nenhum dos homologados mudou (id, grupo, regra e dependências); pendências intactas', () => {
     const ids = TOGGLES.map((t) => t.id);
-    assert.deepEqual(ids.filter((id) => !Object.hasOwn(ANTERIORES, id)), [TOGGLE]);
+    // Os sete do Atendimento Token entram na Etapa H (toggles-atendimento-token.test.js); aqui conta só o que é do pacote J.
+    assert.deepEqual(ids.filter((id) => !Object.hasOwn(ANTERIORES, id) && buscar(id).grupo !== 'ATENDIMENTO'), [TOGGLE]);
     for (const [id, [grupo, regra, dependencias]] of Object.entries(ANTERIORES)) {
       const t = buscar(id);
       assert.ok(t, id);
@@ -93,7 +94,7 @@ describe('J2 — ação com efeito, MASTER e catálogo de recursos', () => {
   });
 
   test('J2.2 MASTER: a ação entra no escopo de provisionamento (autoridade pelo provisionamento, como as demais); o resto do escopo não muda', () => {
-    assert.deepEqual([...ESCOPO_PROVISIONAMENTO_MASTER.acoes], ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', CODIGO]);
+    assert.deepEqual([...ESCOPO_PROVISIONAMENTO_MASTER.acoes], ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', CODIGO, 'TOKEN_REVOGAR_DISPOSITIVO', 'TOKEN_GERAR_ATIVACAO', 'TOKEN_GERENCIAR_REDES', 'TOKEN_PREVIA_CATALOGO_REAL']);
     const funcionarios = ESCOPO_PROVISIONAMENTO_MASTER.recursos.find((r) => r.recurso === 'employeeHistory');
     assert.deepEqual([...funcionarios.operacoes], ['visualizar', 'criar', 'editar'], 'exportar não vira operação de recurso');
     assert.equal(RECURSOS_COM_EFEITO.some((r) => r.operacoes.includes('exportar')), false);

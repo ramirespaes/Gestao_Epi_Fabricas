@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Catálogo binário (ON/OFF) de acessos da Gestão de Usuários: 19 toggles aprovados.
+ * Catálogo binário (ON/OFF) de acessos da Gestão de Usuários (inclui os sete do Atendimento Token, Etapa H).
  *
  * Só entra como controle o toggle com enforcement real (rota que o servidor exige). Os demais ficam em
  * `PENDENCIAS` com o motivo: nenhum toggle decorativo. As camadas internas (perfil, grupo, exceção
@@ -10,7 +10,7 @@
  * Nada aqui define matriz por perfil.
  */
 
-const GRUPOS = Object.freeze(['GERAL', 'COLABORADORES', 'EPIS', 'ESTOQUE', 'ADMINISTRACAO']);
+const GRUPOS = Object.freeze(['GERAL', 'COLABORADORES', 'EPIS', 'ESTOQUE', 'ATENDIMENTO', 'ADMINISTRACAO']);
 
 const recurso = (recursoId, operacoes) => Object.freeze({ tipo: 'RECURSO', recurso: recursoId, operacoes: Object.freeze(operacoes) });
 // concessao: o toggle é a concessão individual da ação (que exige vínculo SST para valer), não o efeito final.
@@ -22,6 +22,7 @@ const acao = (codigo, concessao = false, semBloqueio = false) => Object.freeze({
 
 const LEITURA_MATERIAIS = recurso('materials', ['visualizar']);
 const LEITURA_FUNCIONARIOS = recurso('employeeHistory', ['visualizar']);
+const LEITURA_TOKEN = recurso('atendimentoToken', ['visualizar']);
 
 const TOGGLES = Object.freeze([
   { id: 'dashboard', rotulo: 'Dashboard', grupo: 'GERAL', regra: recurso('dashboard', ['visualizar']) },
@@ -59,6 +60,17 @@ const TOGGLES = Object.freeze([
   { id: 'reportsAudit', rotulo: 'Relatório — Auditoria', grupo: 'GERAL', regra: recurso('reportsAudit', ['visualizar']) },
   // 12K-D6: permissão própria do Relatório — Fiscalização (prévia, geração, histórico e download do pacote). Independente das demais.
   { id: 'reportsFiscal', rotulo: 'Relatório — Fiscalização', grupo: 'GERAL', regra: recurso('reportsFiscal', ['visualizar']) },
+  // Etapa H: as sete permissões que as rotas da Central do Atendimento Token já exigem, uma a uma (nenhuma permissão nova; as seis abas
+  // não viram permissões). Cadastrar, Editar, Revogar e Gerar ativação garantem só a leitura do PRÓPRIO Token ao serem ligados. Redes é
+  // OBRIGATORIA: só concessão individual (o serviço de grupo não a oferece). A Prévia não concede a leitura de funcionários (dado
+  // pessoal): só aviso. Monitoramento e Histórico ficam para a Etapa J; não há rota de exclusão, logo não há toggle de excluir.
+  { id: 'tokenVisualizar', rotulo: 'Consultar', grupo: 'ATENDIMENTO', regra: recurso('atendimentoToken', ['visualizar']) },
+  { id: 'tokenCadastrar', rotulo: 'Cadastrar dispositivo', grupo: 'ATENDIMENTO', regra: recurso('atendimentoToken', ['criar']), dependencias: [LEITURA_TOKEN] },
+  { id: 'tokenEditar', rotulo: 'Editar dispositivo', grupo: 'ATENDIMENTO', regra: recurso('atendimentoToken', ['editar']), dependencias: [LEITURA_TOKEN] },
+  { id: 'tokenRevogar', rotulo: 'Revogar dispositivo', grupo: 'ATENDIMENTO', regra: acao('TOKEN_REVOGAR_DISPOSITIVO'), dependencias: [LEITURA_TOKEN] },
+  { id: 'tokenGerarAtivacao', rotulo: 'Gerar ativação (QR)', grupo: 'ATENDIMENTO', regra: acao('TOKEN_GERAR_ATIVACAO'), dependencias: [LEITURA_TOKEN] },
+  { id: 'tokenRedes', rotulo: 'Redes autorizadas', grupo: 'ATENDIMENTO', regra: acao('TOKEN_GERENCIAR_REDES') },
+  { id: 'tokenPrevia', rotulo: 'Prévia do catálogo', grupo: 'ATENDIMENTO', regra: acao('TOKEN_PREVIA_CATALOGO_REAL') },
 ].map((t) => Object.freeze(t)));
 
 // Sem enforcement real hoje: não viram controle até existir a rota (ou a decisão) que falta.
@@ -70,7 +82,7 @@ const PENDENCIAS = Object.freeze([
   { id: 'suporte', rotulo: 'Suporte', situacao: 'SEM_ENFORCEMENT', motivo: 'Tela em protótipo, sem rota no servidor.' },
   { id: 'gestaoEmail', rotulo: 'Gestão de E-mail', situacao: 'SEM_ENFORCEMENT', motivo: 'Tela em protótipo, sem rota no servidor.' },
   { id: 'privacidadeLgpd', rotulo: 'Privacidade / LGPD', situacao: 'SEM_ENFORCEMENT', motivo: 'Tela em protótipo, sem rota no servidor.' },
-  { id: 'token', rotulo: 'Token', situacao: 'SEM_ENFORCEMENT', motivo: 'Página administrativa do Token ainda não existe.' },
+  { id: 'tokenMonitoramentoHistorico', rotulo: 'Token — Monitoramento e Histórico', situacao: 'SEM_ENFORCEMENT', motivo: 'Abas ainda sem dado nem rota; as ações próprias existem no banco e entram na Etapa J.' },
 ].map((p) => Object.freeze(p)));
 
 // Atribuição DIRETA por operação (APIs antigas de usuário e de grupo): só Funcionários garante a leitura ao conceder criar ou editar,

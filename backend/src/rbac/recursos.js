@@ -44,8 +44,10 @@ const RECURSOS_BLOCO_9 = Object.freeze(['employeeGroups']);
 
 // 12K-D5: permissão própria de cada relatório (a Auditoria é a primeira; as demais entram com o D6).
 const RECURSOS_RELATORIOS = Object.freeze(['reportsAudit', 'reportsFiscal']);
+// Atendimento Token (Etapa B): administração dos tablets de autoatendimento.
+const RECURSOS_ATENDIMENTO_TOKEN = Object.freeze(['atendimentoToken']);
 
-const RECURSOS_CONHECIDOS = Object.freeze([...RECURSOS_LEGADOS, ...RECURSOS_BLOCO_9, ...RECURSOS_RELATORIOS]);
+const RECURSOS_CONHECIDOS = Object.freeze([...RECURSOS_LEGADOS, ...RECURSOS_BLOCO_9, ...RECURSOS_RELATORIOS, ...RECURSOS_ATENDIMENTO_TOKEN]);
 
 // Operações que as rotas de produção exigem, por recurso:
 //   materials       -> material.routes.js (visualizar/criar/editar) e
@@ -82,10 +84,15 @@ const ESCOPO_PROVISIONAMENTO_MASTER = Object.freeze({
     Object.freeze({ recurso: 'reportsAudit', operacoes: Object.freeze(['visualizar']) }),
     // 12K-D6: Relatório — Fiscalização. Uma única operação cobre ver, pré-visualizar, gerar, listar e baixar o pacote.
     Object.freeze({ recurso: 'reportsFiscal', operacoes: Object.freeze(['visualizar']) }),
+    // Atendimento Token (Etapa B): token-dispositivo.routes.js — consultar (visualizar), cadastrar (criar) e editar (editar).
+    // Sem `excluir`: o tablet nunca é apagado, só revogado (ação abaixo).
+    Object.freeze({ recurso: 'atendimentoToken', operacoes: Object.freeze(['visualizar', 'criar', 'editar']) }),
   ]),
   // estoque.routes.js: entradas e baixas por lote; entrega-epi.routes.js: entrega e seu contexto (migrations 003/017).
   // Pacote J (085): exportar o Histórico de Funcionários, avaliado com a leitura em exportacao-historico-autorizacao.service.js.
-  acoes: Object.freeze(['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS']),
+  // Atendimento Token (087): entram aqui as ações que alguma rota aplica — revogar (B), gerar ativação (C), gerenciar redes e prévia
+  // com catálogo real (Central, Etapa H). Ver monitoramento e histórico (Etapa J) entram quando a rota que as aplica existir.
+  acoes: Object.freeze(['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS', 'TOKEN_REVOGAR_DISPOSITIVO', 'TOKEN_GERAR_ATIVACAO', 'TOKEN_GERENCIAR_REDES', 'TOKEN_PREVIA_CATALOGO_REAL']),
 });
 
 for (const recurso of RECURSOS_CONHECIDOS) {
@@ -125,6 +132,7 @@ const ROTULOS_RECURSOS = Object.freeze({
   request: 'Pedido de EPI',
   reportsAudit: 'Relatório — Auditoria',
   reportsFiscal: 'Relatório — Fiscalização',
+  atendimentoToken: 'Atendimento Token',
 });
 for (const { recurso } of ESCOPO_PROVISIONAMENTO_MASTER.recursos) {
   if (typeof ROTULOS_RECURSOS[recurso] !== 'string') {
@@ -145,6 +153,7 @@ const RECURSOS_COM_EFEITO = Object.freeze(ESCOPO_PROVISIONAMENTO_MASTER.recursos
 const ACOES_COM_EFEITO = Object.freeze([
   'ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS', 'REALIZAR_ENTREGA', 'APROVAR_SOLICITACAO', 'REPROVAR_SOLICITACAO', 'ENCERRAR_SOLICITACAO',
   'GERENCIAR_USUARIOS', 'ADMINISTRAR_GRUPOS_ACESSO', 'ADMINISTRAR_PERMISSOES_GRUPO', 'ADMINISTRAR_VINCULOS_GRUPO',
+  'TOKEN_REVOGAR_DISPOSITIVO', 'TOKEN_GERAR_ATIVACAO', 'TOKEN_GERENCIAR_REDES', 'TOKEN_PREVIA_CATALOGO_REAL',
 ]);
 
 module.exports = {
