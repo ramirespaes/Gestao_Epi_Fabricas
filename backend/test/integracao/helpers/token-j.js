@@ -56,12 +56,60 @@ const depois = (instante, segundos) => new Date(instante.getTime() + segundos * 
 /** Instante-base dos cenários do job: 48 h no passado, para que todo relógio injetado (até ~27 h depois) fique antes do "agora" real. */
 const instanteBase = () => new Date(Date.now() - 48 * 3600 * 1000);
 
-async function abrirAmbienteJ() {
-  assert.ok(
-    globalThis.__GEPI_GUARDA_J2A__,
-    'guarda D1 ausente: use o comando oficial do RED integrado (--require ./test/integracao/exigir-instancia-dedicada.js)',
-  );
+/**
+ * Prova alternativa à guarda D1, só para o PostgreSQL efêmero do GitHub Actions (a D1 é do cluster dedicado do Mac e continua
+ * obrigatória fora daqui). Três condições juntas: (1) ambiente do runner hospedado pelo GitHub e destino exato do serviço da
+ * execução; (2) nenhuma variável de conexão alternativa; (3) marcador no comentário do próprio banco, gravado pelo workflow nesta
+ * execução (run, tentativa e nonce aleatório), conferido por `marcadorDoBancoConfere` antes de qualquer operação do J2a.
+ * Não existe em src/: vive só nos helpers de teste. A variável CI não conta (o workflow pode sobrescrevê-la).
+ */
+const CI_ENV_ESPERADO = Object.freeze({
+  GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted', DB_HOST: '127.0.0.1', DB_PORT: '5432', DB_NAME: 'gestao_epi_teste_local', DB_USER: 'postgres',
+});
+const CI_ENV_PROIBIDAS = /^(PG.*|DATABASE_URL|NODE_OPTIONS|NODE_PG_FORCE_NATIVE|DOTENV_.*)$/i;
+const CI_RUN_ID = /^[0-9]{1,20}$/;
+const CI_TENTATIVA = /^[0-9]{1,6}$/;
+const CI_NONCE = /^[0-9a-f]{32}$/;
+
+/** Marcador esperado nesta execução, ou null se os identificadores dela forem inválidos. */
+function marcadorEsperadoCi(env) {
+  if (!CI_RUN_ID.test(env.GITHUB_RUN_ID ?? '') || !CI_TENTATIVA.test(env.GITHUB_RUN_ATTEMPT ?? '') || !CI_NONCE.test(env.GEPI_CI_NONCE ?? '')) return null;
+  return `GEPI_CI_EFEMERO:${env.GITHUB_RUN_ID}:${env.GITHUB_RUN_ATTEMPT}:${env.GEPI_CI_NONCE}`;
+}
+
+/** Motivo da recusa do ambiente de CI, ou null. Nunca devolve valores de variáveis. */
+function motivoDeRecusaCi(env) {
+  for (const [nome, valor] of Object.entries(CI_ENV_ESPERADO)) if (env[nome] !== valor) return `${nome} divergente`;
+  for (const nome of Object.keys(env)) if (CI_ENV_PROIBIDAS.test(nome)) return `variável proibida presente: ${nome}`;
+  if (marcadorEsperadoCi(env) === null) return 'identificadores da execução ausentes ou inválidos';
+  return null;
+}
+
+/** Igualdade exata com o marcador desta execução: ausente, antigo ou diferente em qualquer parte é recusado. */
+const marcadorDoBancoConfere = (lido, esperado) => typeof lido === 'string' && typeof esperado === 'string' && esperado.length > 0 && lido === esperado;
+
+const SQL_MARCADOR_DO_BANCO = "SELECT shobj_description(oid, 'pg_database') AS marcador FROM pg_database WHERE datname = current_database()";
+
+async function abrirAmbienteJ({ env = process.env } = {}) {
+  const guardaD1 = Boolean(globalThis.__GEPI_GUARDA_J2A__);
+  if (!guardaD1) {
+    assert.ok(
+      motivoDeRecusaCi(env) === null,
+      'guarda D1 ausente: use o comando oficial do RED integrado (--require ./test/integracao/exigir-instancia-dedicada.js)',
+    );
+  }
   const a = await abrirAmbientePedido();
+
+  // Sem a D1, o marcador do banco desta execução é conferido antes de qualquer operação do J2a; divergência encerra o ambiente.
+  if (!guardaD1) {
+    try {
+      const { rows } = await a.q(SQL_MARCADOR_DO_BANCO);
+      assert.ok(marcadorDoBancoConfere(rows[0]?.marcador, marcadorEsperadoCi(env)), 'instância efêmera de CI não comprovada: marcador do banco ausente ou divergente');
+    } catch (erro) {
+      await a.encerrar();
+      throw erro;
+    }
+  }
 
   // Escritas sem WHERE por empresa (zerarContatos) só são seguras no schema temporário: recusa o ambiente se o search_path não for só ele.
   try {
@@ -163,4 +211,5 @@ async function abrirAmbienteJ() {
 
 module.exports = {
   HEARTBEAT, LIMIAR_OFFLINE_S, CONFIRMACAO_S, REDE_DE_TESTE, carregarOpcional, exigirStatus, depois, instanteBase, abrirAmbienteJ,
+  motivoDeRecusaCi, marcadorEsperadoCi, marcadorDoBancoConfere,
 };
