@@ -141,6 +141,44 @@
             <p id="importacaoArquivo" style="font-size:13px;color:var(--on-surface-variant);margin:0 0 8px"></p>
             <div id="importacaoAviso" role="status" aria-live="polite" style="display:none;margin-bottom:12px"></div>
             <div id="importacaoResumo" style="margin-bottom:12px"></div>
+            <div id="importacaoTiposNaoEncontrados" hidden style="margin-bottom:12px">
+              <h4 style="font-size:14px;font-weight:600;margin:0 0 4px">Tipos de EPI não encontrados</h4>
+              <p style="font-size:13px;color:var(--on-surface-variant);margin:0 0 8px">Estes EPIs da planilha não existem no catálogo de tipos: as linhas deles não serão aplicadas. Cadastre o tipo com o nome da planilha e a prévia é refeita.</p>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Tipo de EPI</th>
+                      <th>Linhas</th>
+                      <th>GHEs</th>
+                      <th>Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody id="importacaoTiposCorpo"></tbody>
+                </table>
+              </div>
+              <div id="formTipoImportacao" hidden style="margin-top:12px">
+                <div class="filters-grid">
+                  <div class="field">
+                    <label for="tipoImportacaoNome">Nome do tipo (da planilha)</label>
+                    <input id="tipoImportacaoNome" class="input" type="text" readonly>
+                  </div>
+                  <div class="field">
+                    <label for="tipoImportacaoGrupo">Grupo *</label>
+                    <select id="tipoImportacaoGrupo" class="select"></select>
+                  </div>
+                  <div class="field">
+                    <label for="tipoImportacaoProtecao">Grupo de Proteção *</label>
+                    <select id="tipoImportacaoProtecao" class="select"></select>
+                  </div>
+                  <div class="filters-actions">
+                    <button id="botaoCancelarTipoImportacao" class="outlined-btn" type="button">Cancelar</button>
+                    <button id="botaoSalvarTipoImportacao" class="filled-btn" type="button"><span class="material-symbols-outlined">save</span>Cadastrar tipo</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p id="tipoImportacaoEstado" role="status" aria-live="polite" style="font-size:13px;margin:0 0 12px"></p>
             <div style="margin-bottom:8px"><button id="botaoMostrarExistentes" class="outlined-btn" type="button" hidden>Mostrar itens já existentes</button></div>
             <div class="table-wrap">
               <table>
@@ -273,6 +311,7 @@
 <script src="../js/pagina-base.js"></script>
 <script src="../vendor/read-excel-file-9.3.10.min.js"></script>
 <script src="../js/importacao-ghe.js"></script>
+<script src="../js/tipos-material.js"></script>
 <script src="../js/grupos-homogeneos.js"></script>
 <script>
 /*
@@ -316,6 +355,13 @@
   var confirmandoImportacao = false;
   var dadosPrevia = null;          // última resposta do preview (o que o servidor mediu); a tabela é só uma visão dela
   var mostrarExistentes = false;   // os itens sem alteração só aparecem quando pedidos
+  // Tipos não encontrados (A1): o cadastro é o do catálogo (js/tipos-material.js), pela rota dele; aqui só se escolhe
+  // grupo e proteção para o nome que veio da planilha. Sem o módulo carregado, a tela avisa em vez de oferecer o botão.
+  var T = typeof EpiTiposMaterial !== 'undefined' ? EpiTiposMaterial : null;
+  var podeCadastrarTipo = false;   // materials.criar efetiva; o servidor confere de novo
+  var tiposNaoEncontrados = [];    // resumo.tiposNaoEncontrados da última prévia
+  var tipoEmCadastro = null;
+  var gravandoTipoImportacao = false;
 
   $('gruposCorpo').innerHTML = G.render.estado('Carregando…', 4);
   $('matrizCorpo').innerHTML = G.render.estado('Escolha um GHE para ver os EPIs.', 6);
@@ -627,6 +673,86 @@
     $('importacaoCorpo').innerHTML = '';
     $('botaoConfirmarImportacao').disabled = true;
     avisoImportacao('', null);
+    esconderTiposNaoEncontrados();
+  }
+
+  function fecharFormularioTipo() {
+    tipoEmCadastro = null;
+    $('formTipoImportacao').hidden = true;
+    $('tipoImportacaoNome').value = '';
+  }
+
+  function esconderTiposNaoEncontrados() {
+    tiposNaoEncontrados = [];
+    fecharFormularioTipo();
+    $('tipoImportacaoEstado').textContent = '';
+    $('importacaoTiposCorpo').innerHTML = '';
+    $('importacaoTiposNaoEncontrados').hidden = true;
+  }
+
+  function desenharTiposNaoEncontrados() {
+    var resumo = dadosPrevia && dadosPrevia.resumo;
+    tiposNaoEncontrados = resumo && Array.isArray(resumo.tiposNaoEncontrados) ? resumo.tiposNaoEncontrados : [];
+    fecharFormularioTipo();
+    $('importacaoTiposCorpo').innerHTML = I.render.tiposNaoEncontrados(tiposNaoEncontrados, { podeCadastrar: podeCadastrarTipo, indisponivel: T === null });
+    $('importacaoTiposNaoEncontrados').hidden = tiposNaoEncontrados.length === 0;
+  }
+
+  function abrirFormularioTipo(indice) {
+    var item = tiposNaoEncontrados[indice];
+    if (T === null || !podeCadastrarTipo || gravandoTipoImportacao || confirmandoImportacao || lendoArquivo || encerrada) return;
+    if (!item || item.reservado || item.nomeExcedeLimite) return;
+    tipoEmCadastro = item;
+    $('tipoImportacaoNome').value = item.nome; // texto do servidor, nunca HTML
+    $('tipoImportacaoGrupo').innerHTML = T.render.opcoes(T.VOCABULARIO.grupos, 'Selecione');
+    $('tipoImportacaoProtecao').innerHTML = T.render.opcoes(T.VOCABULARIO.gruposProtecao, 'Selecione');
+    $('tipoImportacaoGrupo').value = '';
+    $('tipoImportacaoProtecao').value = '';
+    $('tipoImportacaoEstado').textContent = '';
+    $('formTipoImportacao').hidden = false;
+  }
+
+  // A mesma planilha (linhas ORIGINAIS) analisada de novo: o servidor decide o que o tipo novo resolveu.
+  async function refazerPrevia() {
+    if (!linhasOriginais.length) return;
+    var r = await I.acoes.previa(linhasOriginais);
+    if (encerrada) return;
+    if (!r.ok) {
+      if (falhou(r)) return;
+      avisoImportacao(I.mensagens.erro(r), 'erro');
+      return;
+    }
+    dadosPrevia = r.dados;
+    desenharPrevia();
+  }
+
+  async function salvarTipoImportacao() {
+    if (T === null || !podeCadastrarTipo || tipoEmCadastro === null || gravandoTipoImportacao || encerrada) return;
+    var montado = T.formulario.montarTipo({ grupo: $('tipoImportacaoGrupo').value, grupoProtecao: $('tipoImportacaoProtecao').value, nome: tipoEmCadastro.nome });
+    if (!montado.ok) {
+      $('tipoImportacaoEstado').textContent = montado.erros.map(function (e) { return e.mensagem; }).join(' ');
+      return;
+    }
+    gravandoTipoImportacao = true;
+    $('botaoSalvarTipoImportacao').disabled = true;
+    try {
+      var r = await T.acoes.criar(montado.corpo);
+      if (encerrada) return;
+      // O envelope de erro de EpiHttp traz codigo e detalhes no topo; o módulo do catálogo os lê em `dados`.
+      var erro = r.ok ? null : { status: r.status, dados: { codigo: r.codigo, detalhes: r.detalhes } };
+      if (r.ok || T.mensagens.codigoDe(erro) === 'TIPO_MATERIAL_JA_EXISTE') {
+        var texto = r.ok ? 'Tipo "' + montado.corpo.nome + '" cadastrado. A prévia foi atualizada.' : T.mensagens.erro(erro);
+        await refazerPrevia();
+        if (encerrada) return;
+        $('tipoImportacaoEstado').textContent = texto;
+        return;
+      }
+      if (T.mensagens.exigeNovoLogin(r)) { EpiSessaoEmpresarial.sessaoEncerrada(); return; }
+      $('tipoImportacaoEstado').textContent = T.mensagens.erro(erro);
+    } finally {
+      gravandoTipoImportacao = false;
+      $('botaoSalvarTipoImportacao').disabled = false;
+    }
   }
 
   // Preview por diferenças: a tabela principal mostra o que grava ou tem problema; o que já está em dia fica atrás do botão.
@@ -641,6 +767,7 @@
     $('botaoConfirmarImportacao').disabled = !d.haAlteracao;
     botao.hidden = d.semAlteracao === 0;
     botao.textContent = mostrarExistentes ? 'Ocultar itens já existentes' : 'Mostrar itens já existentes';
+    desenharTiposNaoEncontrados();
   }
 
   // Falha antes da API (arquivo, colunas, limite): mensagem no painel, sem preview e sem nada para confirmar.
@@ -724,6 +851,7 @@
       linhasOriginais = [];
       dadosPrevia = null;
       $('botaoMostrarExistentes').hidden = true;
+      esconderTiposNaoEncontrados(); // sem as linhas originais não há prévia a refazer
       fecharAreaDoGhe();
       $('importacaoResumo').innerHTML = I.render.resumoResultado(r.dados);
       $('importacaoCorpo').innerHTML = I.render.linhasResultado(r.dados.linhas);
@@ -743,6 +871,13 @@
     mostrarExistentes = !mostrarExistentes;
     desenharPrevia();
   });
+  $('importacaoTiposCorpo').addEventListener('click', function (evento) {
+    var alvo = evento.target && evento.target.closest ? evento.target.closest('[data-acao]') : null;
+    if (!alvo || alvo.getAttribute('data-acao') !== 'cadastrar-tipo') return;
+    abrirFormularioTipo(Number(alvo.getAttribute('data-indice')));
+  });
+  $('botaoSalvarTipoImportacao').addEventListener('click', salvarTipoImportacao);
+  $('botaoCancelarTipoImportacao').addEventListener('click', fecharFormularioTipo);
   $('botaoCancelarGrupo').addEventListener('click', fecharFormulario);
   $('botaoSalvarGrupo').addEventListener('click', salvarGrupo);
   $('botaoSalvarMatriz').addEventListener('click', salvarMatriz);
@@ -794,6 +929,8 @@
       var recursos = acesso.permissoes && acesso.permissoes.recursos ? acesso.permissoes.recursos.employeeGroups : null;
       podeEditar = acesso.podeAlterar === true;
       podeCriar = !!(recursos && recursos.criar === true);
+      var materiais = acesso.permissoes && acesso.permissoes.recursos ? acesso.permissoes.recursos.materials : null;
+      podeCadastrarTipo = !!(materiais && materiais.criar === true);
       $('botaoNovoGrupo').hidden = !podeCriar;
       $('botaoImportarGhe').hidden = !(podeCriar && podeEditar); // a API de importação exige criar E editar
       $('botaoSalvarMatriz').hidden = !podeEditar;

@@ -139,7 +139,7 @@ describe('nomenclatura visual: Cadastro de Colaboradores', () => {
   const LINK_ATIVO = '<a class="active" href="javascript:void(0)" data-pagina="funcionarios" style="display:none"><div class="nav-icon teal">people</div>Cadastro de Colaboradores</a>';
 
   test('menu lateral de todas as páginas integradas (inclusive o menu do celular, que é a mesma barra): o item chama "Cadastro de Colaboradores"', () => {
-    assert.equal(COM_MENU.length, 17);
+    assert.equal(COM_MENU.length, 18); // + atendimento-token.html (Etapa H)
     for (const arquivo of COM_MENU) {
       const html = ler(`pages/${arquivo}`);
       assert.ok(html.includes(arquivo === 'funcionarios.html' ? LINK_ATIVO : LINK), arquivo);

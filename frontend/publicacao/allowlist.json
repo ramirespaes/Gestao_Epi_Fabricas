@@ -5,6 +5,8 @@
     "js/alerta-falta-estoque.js",
     "js/api-http.js",
     "js/aprovacao-sst.js",
+    "js/atendimento-token-tela.js",
+    "js/atendimento-token.js",
     "js/autorizacoes-individuais.js",
     "js/catalogo-visual.js",
     "js/configuracoes.js",
@@ -38,6 +40,7 @@
     "js/tipos-material.js",
     "js/usuarios.js",
     "js/validade-estoque.js",
+    "pages/atendimento-token.html",
     "pages/autorizacoes-individuais.html",
     "pages/available-items.html",
     "pages/config.html",
@@ -76,7 +79,13 @@
     "portal/redefinir-senha.js",
     "portal/trocar-senha.html",
     "portal/trocar-senha.js",
+    "totem/boot.js",
+    "totem/index.html",
+    "totem/totem.css",
+    "totem/totem.js",
+    "vendor/LICENSE-qrcode-generator.txt",
     "vendor/LICENSE-read-excel-file.txt",
+    "vendor/qrcode-generator-2.0.4.js",
     "vendor/read-excel-file-9.3.10.min.js"
   ]
 }

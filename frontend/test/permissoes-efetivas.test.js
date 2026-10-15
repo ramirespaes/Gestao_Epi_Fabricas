@@ -229,7 +229,8 @@ describe('decisões: só `true` explícito libera', () => {
     // A regra "qualquer uma" só onde foi decidida: a Ficha (10I) e, na 12G-1, o Pedido
     // de EPI (ver OU criar) e as Entregas por solicitação (entregar OU encerrar).
     // E a Gestão de Estoque (`materials`): abre com qualquer um dos três acessos independentes.
-    const comQualquer = ['epiFicha', 'request', 'stockRequests', 'materials', 'reports'];
+    // Etapa H: a Central do Atendimento Token abre com a visualização do recurso OU uma das três ações da Central.
+    const comQualquer = ['epiFicha', 'request', 'stockRequests', 'materials', 'reports', 'atendimentoToken'];
     for (const pagina of Object.keys(P.PAGINAS)) assert.equal(P.PAGINAS[pagina].abrirComQualquer, comQualquer.includes(pagina) ? true : undefined, pagina);
   });
 });

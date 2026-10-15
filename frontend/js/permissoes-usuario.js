@@ -20,6 +20,7 @@
     COLABORADORES: 'Colaboradores',
     EPIS: 'EPIs',
     ESTOQUE: 'Estoque',
+    ATENDIMENTO: 'Atendimento Token',
     ADMINISTRACAO: 'Administração',
   });
   var CAMINHO = '/administracao/usuarios';
@@ -46,6 +47,12 @@
         + 'a página Cadastro de Colaboradores pode ficar inacessível pelo menu.',
       EXPORTAR_HISTORICO_SEM_VISUALIZAR: 'Exportar Histórico de Funcionários está ligado, mas Histórico de Funcionários está desligado. '
         + 'A exportação exige as duas permissões: sem a leitura, este acesso não autoriza o download.',
+      TOKEN_SEM_CONSULTAR: 'Consultar (Atendimento Token) está desligado, mas outro acesso do Atendimento Token que depende dele continua concedido: '
+        + 'as abas e os botões dessas funções podem não aparecer na Central.',
+      PREVIA_SEM_HISTORICO_FUNCIONARIOS: 'Prévia do catálogo está ligada, mas Histórico de Funcionários está desligado. '
+        + 'A prévia com um funcionário real exige as duas permissões: sem a leitura, a busca de funcionário não fica disponível.',
+      // Evento (só na resposta do PUT): o servidor lista o que foi reabilitado; a regra de autorização não mudou.
+      DEPENDENCIA_REABILITADA: 'Esta alteração também reabilitou um acesso que estava bloqueado para este usuário: ',
     }),
     AVISOS_GRUPO: Object.freeze({
       FUNCIONARIOS_SEM_VISUALIZAR: 'A configuração deste grupo concede Cadastrar e/ou Editar Funcionário, mas não concede o Histórico de '
@@ -54,6 +61,12 @@
       EXPORTAR_HISTORICO_SEM_VISUALIZAR: 'A configuração deste grupo concede Exportar Histórico de Funcionários, mas não concede o Histórico de '
         + 'Funcionários. A exportação exige as duas permissões; para cada integrante, o resultado também depende do perfil e das '
         + 'exceções individuais.',
+      TOKEN_SEM_CONSULTAR: 'A configuração deste grupo concede acessos do Atendimento Token que dependem de Consultar, mas não concede Consultar. '
+        + 'Integrantes que não recebam essa leitura pelo perfil ou por exceção individual podem não ver essas funções na Central.',
+      PREVIA_SEM_HISTORICO_FUNCIONARIOS: 'A configuração deste grupo concede a Prévia do catálogo, mas não concede o Histórico de Funcionários. '
+        + 'A prévia com um funcionário real exige as duas permissões; para cada integrante, o resultado também depende do perfil e das '
+        + 'exceções individuais.',
+      DEPENDENCIA_REABILITADA: 'Esta alteração também reabilitou, na configuração deste grupo, um acesso que estava negado: ',
     }),
     // Copiar permissões
     COPIA_OK: 'Permissões copiadas.',
@@ -78,6 +91,18 @@
     return padrao;
   }
 
+  /**
+   * Depois de um PUT bem-sucedido, redesenha as linhas dos OUTROS acessos que o servidor alterou (`alterados`), por
+   * dependência. A linha clicada continua sendo redesenhada pela própria página (ela usa `dados.acesso`). Resposta sem
+   * `alterados` (servidor anterior) não muda nada. Devolve sempre a resposta recebida.
+   */
+  function sincronizarResposta(tipo, id, acesso, r) {
+    if (r && r.ok && r.dados && Array.isArray(r.dados.alterados) && global.document) {
+      render.sincronizar(global.document, tipo, id, r.dados.alterados, acesso);
+    }
+    return r;
+  }
+
   // ─── API ──────────────────────────────────────────────────────────
   var acoes = {
     /** Visão das permissões em camadas: só o resumo da cópia usa; Configurar usa `acessos`. */
@@ -86,14 +111,16 @@
     definirAcesso: function (id, acesso, ligado) {
       if (typeof acesso !== 'string' || !/^[a-zA-Z][a-zA-Z0-9]{0,39}$/.test(acesso)) throw new TypeError('acesso inválido');
       if (typeof ligado !== 'boolean') throw new TypeError('valor inválido');
-      return http().requisitar('PUT', CAMINHO + '/' + exigirId(id) + '/acessos/' + acesso, { corpo: { ligado: ligado } });
+      return Promise.resolve(http().requisitar('PUT', CAMINHO + '/' + exigirId(id) + '/acessos/' + acesso, { corpo: { ligado: ligado } }))
+        .then(function (r) { return sincronizarResposta('usuario', id, acesso, r); });
     },
     /** Permissões do GRUPO como acessos ON/OFF (mesmas permissões de grupo existentes, visão binária). */
     acessosDoGrupo: function (grupoId) { return http().requisitar('GET', CAMINHO_GRUPOS + '/' + exigirId(grupoId) + '/acessos'); },
     definirAcessoDoGrupo: function (grupoId, acesso, ligado) {
       if (typeof acesso !== 'string' || !/^[a-zA-Z][a-zA-Z0-9]{0,39}$/.test(acesso)) throw new TypeError('acesso inválido');
       if (typeof ligado !== 'boolean') throw new TypeError('valor inválido');
-      return http().requisitar('PUT', CAMINHO_GRUPOS + '/' + exigirId(grupoId) + '/acessos/' + acesso, { corpo: { ligado: ligado } });
+      return Promise.resolve(http().requisitar('PUT', CAMINHO_GRUPOS + '/' + exigirId(grupoId) + '/acessos/' + acesso, { corpo: { ligado: ligado } }))
+        .then(function (r) { return sincronizarResposta('grupo', grupoId, acesso, r); });
     },
     copiar: function (destinoId, origemId) {
       return http().requisitar('POST', CAMINHO + '/' + exigirId(destinoId) + '/permissoes/copiar', { corpo: { origemId: exigirId(origemId) } });
@@ -190,12 +217,41 @@
         no(doc, 'label', { class: 'switch' }, [entrada, no(doc, 'span', { class: 't' })]),
       ]);
     },
+    /**
+     * Redesenha as linhas dos acessos alterados por dependência, SÓ se o modal aberto é do mesmo alvo (tipo e id) — uma
+     * resposta que chega depois de o modal ser trocado nunca toca em outro usuário ou grupo. Ignora o acesso clicado
+     * (a página o redesenha), entradas malformadas e acessos que não estão na janela. Mantém o estado editável da linha.
+     */
+    sincronizar: function (doc, tipo, id, alterados, clicado) {
+      var raiz = doc.querySelector('[data-alvo-acessos]');
+      if (!raiz || raiz.getAttribute('data-alvo-acessos') !== tipo + ':' + id) return 0;
+      var feitos = 0;
+      (Array.isArray(alterados) ? alterados : []).forEach(function (t) {
+        if (!t || typeof t !== 'object' || typeof t.id !== 'string' || typeof t.rotulo !== 'string' || typeof t.ligado !== 'boolean' || t.id === clicado) return;
+        var linhas = raiz.querySelectorAll('[data-linha-acesso]');
+        var atual = null;
+        for (var i = 0; i < linhas.length; i += 1) {
+          if (linhas[i].getAttribute('data-linha-acesso') === t.id) atual = linhas[i];
+        }
+        if (!atual || !atual.parentNode) return;
+        var entrada = atual.querySelector('input[data-acesso]');
+        var nova = render.linhaAcesso(doc, t, !!entrada && !entrada.disabled);
+        atual.parentNode.insertBefore(nova, atual);
+        atual.parentNode.removeChild(atual);
+        feitos += 1;
+      });
+      return feitos;
+    },
     /** Preenche a área de avisos com os códigos conhecidos (texto do usuário ou do grupo); sem nenhum, a área some. */
     avisos: function (doc, area, avisos, ehGrupo) {
       var textos = ehGrupo ? TEXTOS.AVISOS_GRUPO : TEXTOS.AVISOS;
       var itens = (Array.isArray(avisos) ? avisos : []).filter(function (a) {
         return a && typeof a.codigo === 'string' && Object.prototype.hasOwnProperty.call(textos, a.codigo);
-      }).map(function (a) { return no(doc, 'p', { 'data-aviso': a.codigo, style: 'margin:0' }, [textos[a.codigo]]); });
+      }).map(function (a) {
+        // Aviso de evento: o servidor lista os acessos afetados (só texto, nunca HTML); sem lista válida, o texto-base basta.
+        var nomes = Array.isArray(a.acessos) ? a.acessos.filter(function (n) { return typeof n === 'string' && n.length > 0 && n.length <= 120; }).slice(0, 10) : [];
+        return no(doc, 'p', { 'data-aviso': a.codigo, style: 'margin:0' }, [textos[a.codigo] + (nomes.length ? nomes.join(', ') + '.' : '')]);
+      });
       area.replaceChildren.apply(area, itens);
       area.style.display = itens.length ? '' : 'none';
       return area;
@@ -214,7 +270,7 @@
       });
       return [
         cabecalho(doc, (ehGrupo ? 'Permissões do grupo ' : 'Permissões de ') + u.nome),
-        no(doc, 'div', { class: 'mb' }, [dicaGrupo, aviso, avisos].concat(secoes, [no(doc, 'div', { class: 'hint', id: 'hintPermissoes', role: 'status', 'aria-live': 'polite' })])),
+        no(doc, 'div', { class: 'mb', 'data-alvo-acessos': (ehGrupo ? 'grupo:' : 'usuario:') + u.id }, [dicaGrupo, aviso, avisos].concat(secoes, [no(doc, 'div', { class: 'hint', id: 'hintPermissoes', role: 'status', 'aria-live': 'polite' })])),
         no(doc, 'div', { class: 'mf' }, [no(doc, 'span'), no(doc, 'button', { class: 'btn primary', type: 'button', 'data-close': '' }, ['Fechar'])]),
       ];
     },

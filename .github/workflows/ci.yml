@@ -89,6 +89,43 @@ jobs:
         working-directory: backend
         run: npm ci
 
+      # Prova de que o banco é o serviço efêmero DESTA execução, exigida pelas suítes J2a no lugar da guarda D1 (que é do cluster dedicado
+      # do Mac e não se aplica aqui). Gera um nonce aleatório, recusa banco que já tenha comentário e grava o marcador
+      # GEPI_CI_EFEMERO:<run>:<tentativa>:<nonce>; o helper test/integracao/helpers/token-j.js relê e compara antes de qualquer operação.
+      - name: Backend - marcar a instância efêmera do banco desta execução
+        working-directory: backend
+        run: |
+          NONCE="$(openssl rand -hex 16)"
+          echo "GEPI_CI_NONCE=${NONCE}" >> "$GITHUB_ENV"
+          GEPI_CI_NONCE="${NONCE}" node - <<'JS'
+          const { Client } = require('pg');
+          const e = process.env;
+          const falha = (motivo) => { process.stderr.write(`instância efêmera de CI não marcada: ${motivo}\n`); process.exit(1); };
+          const esperado = { GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted', DB_HOST: '127.0.0.1', DB_PORT: '5432', DB_NAME: 'gestao_epi_teste_local', DB_USER: 'postgres' };
+          for (const [nome, valor] of Object.entries(esperado)) if (e[nome] !== valor) falha(`${nome} divergente`);
+          for (const nome of Object.keys(e)) if (/^(PG.*|DATABASE_URL|NODE_OPTIONS|NODE_PG_FORCE_NATIVE|DOTENV_.*)$/i.test(nome)) falha(`variável proibida presente: ${nome}`);
+          if (!/^[0-9]{1,20}$/.test(e.GITHUB_RUN_ID ?? '') || !/^[0-9]{1,6}$/.test(e.GITHUB_RUN_ATTEMPT ?? '') || !/^[0-9a-f]{32}$/.test(e.GEPI_CI_NONCE ?? '')) falha('identificadores da execução inválidos');
+          const marcador = `GEPI_CI_EFEMERO:${e.GITHUB_RUN_ID}:${e.GITHUB_RUN_ATTEMPT}:${e.GEPI_CI_NONCE}`;
+          const LER = "SELECT shobj_description(oid, 'pg_database') AS marcador FROM pg_database WHERE datname = current_database()";
+          (async () => {
+            const cliente = new Client({ host: e.DB_HOST, port: Number(e.DB_PORT), database: e.DB_NAME, user: e.DB_USER, password: e.DB_PASSWORD, connectionTimeoutMillis: 8000 });
+            try {
+              await cliente.connect();
+              const antes = (await cliente.query(LER)).rows[0];
+              if (!antes) falha('banco não encontrado');
+              if (antes.marcador !== null) falha('o banco já tem comentário: não é uma instância nova');
+              await cliente.query(`COMMENT ON DATABASE gestao_epi_teste_local IS '${marcador}'`);
+              const depois = (await cliente.query(LER)).rows[0];
+              if (!depois || depois.marcador !== marcador) falha('o marcador lido diverge do gravado');
+              process.stdout.write('instância efêmera de CI marcada\n');
+            } catch (erro) {
+              falha(`erro de banco (${typeof erro?.code === 'string' ? erro.code : 'sem código'})`);
+            } finally {
+              await cliente.end().catch(() => {});
+            }
+          })();
+          JS
+
       - name: Backend - testes de integração
         working-directory: backend
         run: npm run test:integracao

@@ -41,7 +41,7 @@ describe('nomes: Gestão de estoque e Análise de estoque', () => {
       assert.ok(estoque.length >= 1 && estoque.every((r) => r === 'Gestão de estoque'), `${arquivo}: ${JSON.stringify(estoque)}`);
       assert.ok(analise.length >= 1 && analise.every((r) => r === 'Análise de estoque'), `${arquivo}: ${JSON.stringify(analise)}`);
     }
-    assert.equal(PAGINAS.length - MENU_ADMINISTRATIVO.length, 23);
+    assert.equal(PAGINAS.length - MENU_ADMINISTRATIVO.length, 24); // + atendimento-token.html (Etapa H)
   });
 
   test('título e cabeçalho das duas páginas', () => {
@@ -147,6 +147,7 @@ describe('segurança: innerHTML só com texto fixo ou HTML escapado', () => {
     // Classificação V2: tipos do catálogo e grupos de proteção, pelo render escapado de js/materiais.js.
     /^render\.opcoesTipos\(tipos, extra\)$/,
     /^render\.opcoesProtecao\(\)$/,
+    /^render\.opcoesProtecao\(lista\)$/,
     // Catálogo de tipos (js/tipos-material.js): linhas e opções pelo render escapado do módulo.
     /^Tipos\.render\.linhas\(tipos, podeEditarTipos\)$/,
     /^Tipos\.render\.opcoes\(Tipos\.VOCABULARIO\.gruposProtecao, '(Todos|Selecione)'\)$/,

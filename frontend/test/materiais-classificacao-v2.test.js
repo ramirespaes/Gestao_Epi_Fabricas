@@ -348,7 +348,7 @@ describe('V2 — página: selects encadeados e campos "Especifique…"', () => {
     await pg.esperar();
     await escolher(pg, 'EPI');
     assert.equal(pg.visivel('campoGrupoProtecao'), true);
-    assert.deepEqual(pg.opcoes('materialGrupoProtecao').map(([v]) => v), ['', ...GRUPOS_PROTECAO, OUTROS]);
+    assert.deepEqual(pg.opcoes('materialGrupoProtecao').map(([v]) => v), ['', 'Proteção auditiva', 'Proteção ocular', OUTROS]);
     assert.equal(pg.el('materialGrupoProtecao').value, '');
     assert.deepEqual(pg.opcoes('materialTipo').map(([v]) => v), [''], 'sem proteção, sem tipos');
     await escolher(pg, 'EPI', 'Proteção auditiva');

@@ -162,6 +162,7 @@
                   <select id="materialGrupoProtecao" class="select">
                     <option value="">Selecione</option>
                   </select>
+                  <div id="materialProtecaoEstado" class="helper" role="status" aria-live="polite"></div>
                 </div>
                 <div class="field" id="campoGrupoProtecaoCustom" style="display:none">
                   <label for="materialGrupoProtecaoCustom">Especifique o grupo de proteção</label>
@@ -173,6 +174,7 @@
                   <select id="materialTipo" class="select">
                     <option value="">Selecione</option>
                   </select>
+                  <div id="materialTipoEstado" class="helper" role="status" aria-live="polite"></div>
                 </div>
                 <div class="field" id="customMaterialTypeField" style="display:none">
                   <label for="materialTipoCustom">Especifique o tipo</label>
@@ -322,6 +324,7 @@
                     <button id="botaoEditarMaterial" class="outlined-btn" type="button" style="display:none" disabled><span class="material-symbols-outlined">edit</span>Editar material</button>
                   </div>
                   <div class="helper" id="gradeMaterialHelper">Escolha um material cadastrado para ver o estoque real.</div>
+                  <div id="materialClassificacaoAtual" class="helper" role="status" aria-live="polite"></div>
                 </div>
                 <!-- Saldos do material: físico = bloqueado + disponível -->
                 <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
@@ -623,6 +626,10 @@
   // proteção atuais do formulário (`seq` descarta resposta antiga), a opção
   // temporária do registro em edição e se os campos estão liberados.
   var catalogoAtual = { grupo: '', grupoProtecao: '', tipos: [], seq: 0 };
+  // Última sugestão automática de nome (só no cadastro novo); null = o nome do campo não veio de sugestão.
+  var nomeSugerido = null;
+  // Consulta das proteções do grupo (catálogo): resposta de um grupo anterior é descartada.
+  var consultaProtecoes = 0;
   var extraTipoEdicao = null;
   var camposLiberados = false;
   var CAMPO_ENTRADA_POR_ERRO = { tamanho: 'entradaTamanho', quantidade: 'entradaQuantidade', caNumero: 'entradaCa', caValidade: 'entradaCaValidade' };
@@ -745,19 +752,54 @@
     var protecao = $('materialGrupoProtecao').value;
     var minha = ++catalogoAtual.seq;
     var tipos = [];
-    if (formulario.GRUPOS_CATALOGO.indexOf(grupo) !== -1 && formulario.GRUPOS_PROTECAO.indexOf(protecao) !== -1) {
+    var falha = null;
+    var noCatalogo = formulario.GRUPOS_CATALOGO.indexOf(grupo) !== -1 && formulario.GRUPOS_PROTECAO.indexOf(protecao) !== -1;
+    if (noCatalogo) {
+      estadoDoTipo({ situacao: 'CARREGANDO' });
       var r = await EpiMateriais.acoes.listarTipos({ grupo: grupo, grupoProtecao: protecao });
       if (telaEncerrada || minha !== catalogoAtual.seq) return false;
       if (!r.ok) {
         if (tratarSessao(r)) return false;
         mostrarAviso(mensagens.erroCatalogo(r), 'atencao');
+        falha = r;
       } else {
         tipos = r.dados.tipos;
       }
     }
     catalogoAtual = { grupo: grupo, grupoProtecao: protecao, tipos: tipos, seq: minha };
     preencherTipos(valor, extra);
+    if (!noCatalogo) estadoSemConsulta();
+    else if (falha) estadoDoTipo({ situacao: 'FALHA', resposta: falha });
+    else {
+      var total = formulario.tiposDoCatalogo(tipos, grupo, protecao).length;
+      estadoDoTipo({ situacao: total ? 'DISPONIVEL' : 'VAZIO', grupo: grupo, grupoProtecao: protecao, total: total });
+    }
     return true;
+  }
+
+  /** Estado do catálogo junto ao Tipo: só texto, nunca HTML. */
+  function estadoDoTipo(e) {
+    $('materialTipoEstado').textContent = mensagens.estadoCatalogo(e);
+  }
+
+  /** Sem consulta: EPI/Vestimenta ainda sem proteção pede a proteção; "Outros" e sem grupo não usam o catálogo. */
+  function estadoSemConsulta() {
+    var aguardando = formulario.GRUPOS_CATALOGO.indexOf($('materialCategoria').value) !== -1 && !$('materialGrupoProtecao').value;
+    estadoDoTipo({ situacao: aguardando ? 'SEM_PROTECAO' : '' });
+  }
+
+  /**
+   * Cadastro novo: o nome acompanha o tipo do catálogo enquanto for a sugestão automática; nome personalizado fica.
+   * Na edição o nome gravado nunca muda sozinho. O tipo é sempre o id escolhido, nunca deduzido do nome.
+   */
+  function sugerirNome() {
+    if (edicao) return;
+    var valor = $('materialTipo').value;
+    var tipoNome = '';
+    catalogoAtual.tipos.forEach(function (t) { if (String(t.id) === valor) tipoNome = t.nome; });
+    var novo = formulario.sugestaoNome({ nomeAtual: $('materialNome').value, sugestaoAnterior: nomeSugerido, tipoNome: tipoNome });
+    if (novo !== $('materialNome').value) $('materialNome').value = novo;
+    nomeSugerido = tipoNome && novo === tipoNome ? tipoNome : null;
   }
 
   /**
@@ -776,17 +818,51 @@
     if (!e.mostrarTipoCustom) $('materialTipoCustom').value = '';
     if (e.tipoForcadoOutros) $('materialTipo').value = formulario.OUTROS;
     $('materialTipo').disabled = !camposLiberados || e.tipoForcadoOutros;
+    sugerirNome();
     tipoMudou();
     preencherTamanhosEntrada();
   }
 
   /** Trocar o grupo SEMPRE recomeça proteção, tipo e especificações: a pessoa escolhe de novo, sem consulta até escolher a proteção. */
   function categoriaMudou() {
-    $('materialGrupoProtecao').innerHTML = render.opcoesProtecao();
+    desenharProtecoes([]);
     $('materialGrupoProtecao').value = '';
     catalogoAtual = { grupo: '', grupoProtecao: '', tipos: [], seq: catalogoAtual.seq + 1 };
     preencherTipos('', extraTipoEdicao);
+    estadoSemConsulta();
     atualizarClassificacao();
+    return carregarProtecoes('');
+  }
+
+  function desenharProtecoes(lista) {
+    $('materialGrupoProtecao').innerHTML = render.opcoesProtecao(lista);
+  }
+
+  /**
+   * Proteções do grupo atual pelo catálogo (tipos ativos do grupo, todas as páginas), mais `manter` na edição. Falha =
+   * contingência: a lista completa com o aviso de que não foi validada, que só sai na próxima consulta bem-sucedida.
+   * Grupo fora do catálogo ("Outros", legado, vazio) não consulta. Devolve false se a resposta ficou obsoleta.
+   */
+  async function carregarProtecoes(manter) {
+    var grupo = $('materialCategoria').value;
+    var minha = ++consultaProtecoes;
+    if (formulario.GRUPOS_CATALOGO.indexOf(grupo) === -1) {
+      desenharProtecoes(undefined);
+      $('materialProtecaoEstado').textContent = '';
+      return true;
+    }
+    var r = await EpiMateriais.acoes.listarTipos({ grupo: grupo });
+    if (telaEncerrada || minha !== consultaProtecoes || $('materialCategoria').value !== grupo) return false;
+    if (!r.ok) {
+      if (tratarSessao(r)) return false;
+      desenharProtecoes(undefined);
+      $('materialProtecaoEstado').textContent = mensagens.estadoProtecoes({ situacao: 'FALHA', resposta: r });
+    } else {
+      desenharProtecoes(formulario.protecoesDoCatalogo(r.dados.tipos, grupo, manter));
+      $('materialProtecaoEstado').textContent = '';
+    }
+    $('materialGrupoProtecao').value = '';
+    return true;
   }
 
   /** Trocar o grupo de proteção recomeça o tipo e consulta o catálogo (só EPI/Vestimenta com proteção conhecida). */
@@ -900,6 +976,7 @@
     $('materialValidadeTipo').value = 'meses';
     $('materialRegistrarEntrada').value = 'nao';
     limparErros();
+    nomeSugerido = null;
     $('materialCategoria').value = '';
     categoriaMudou(); // proteção, tipo e especificações recomeçam vazios, sem consulta
     mostrarAvisoClassificacao(null);
@@ -1073,12 +1150,12 @@
       materialPrazo: c.prazo, materialDesc: c.descricao, materialRegistrarEntrada: 'nao', materialGrade: c.grade,
     };
     Object.keys(valores).forEach(function (id) { $(id).value = valores[id]; });
-    $('materialGrupoProtecao').innerHTML = render.opcoesProtecao();
-    $('materialGrupoProtecao').value = c.grupoProtecao;
-    // Tipos do catálogo do grupo e da proteção do registro. O tipo do próprio
-    // registro fica como opção temporária se não vier na lista (legado, inativado
-    // ou catálogo indisponível): nada é trocado em silêncio.
+    // Proteções do grupo pelo catálogo, mantendo a gravada mesmo sem tipo ativo; depois, os tipos do catálogo do grupo
+    // e da proteção do registro. O tipo do próprio registro fica como opção temporária se não vier na lista (legado,
+    // inativado ou catálogo indisponível): nada é trocado em silêncio.
     var carga = edicao;
+    if (!(await carregarProtecoes(c.grupoProtecao)) || edicao !== carga) return;
+    $('materialGrupoProtecao').value = c.grupoProtecao;
     var carregou = await carregarTiposDoFormulario(c.tipo, extraTipoEdicao);
     if (!carregou || edicao !== carga) return;
     if (c.tipo && $('materialTipo').value !== c.tipo) {
@@ -1194,6 +1271,7 @@
   function mostrarEstoque(dados, falha) {
     var t = dados ? dados.totais : null;
     mostrarPictograma(dados ? dados.material : null);
+    $('materialClassificacaoAtual').textContent = dados ? mensagens.textoClassificacao(dados.material) : '';
     $('saldoFisico').textContent = t ? String(t.fisico) : '—';
     $('saldoBloqueado').textContent = t ? String(t.bloqueado) : '—';
     $('saldoDisponivel').textContent = t ? String(t.disponivel) : '—';

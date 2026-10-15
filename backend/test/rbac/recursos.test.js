@@ -11,6 +11,9 @@ const gheRoutes = require('../../src/routes/grupo-homogeneo-exposicao.routes');
 const itensDisponiveisRoutes = require('../../src/routes/itens-disponiveis.routes');
 const dashboardRoutes = require('../../src/routes/dashboard.routes');
 const entregaEpiRoutes = require('../../src/routes/entrega-epi.routes');
+const tokenDispositivoRoutes = require('../../src/routes/token-dispositivo.routes');
+const tokenAtivacaoRoutes = require('../../src/routes/token-ativacao.routes');
+const tokenCentralRoutes = require('../../src/routes/token-central.routes');
 
 /**
  * Lista central de recursos RBAC (Bloco 9, Etapa B). O objetivo destes
@@ -69,9 +72,10 @@ describe('escopo do provisionamento do MASTER', () => {
         ['request', ['visualizar', 'criar', 'editar']],
         ['reportsAudit', ['visualizar']],
         ['reportsFiscal', ['visualizar']],
+        ['atendimentoToken', ['visualizar', 'criar', 'editar']],
       ],
     );
-    assert.deepEqual([...escopo.acoes], ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS']);
+    assert.deepEqual([...escopo.acoes], ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS', 'TOKEN_REVOGAR_DISPOSITIVO', 'TOKEN_GERAR_ATIVACAO', 'TOKEN_GERENCIAR_REDES', 'TOKEN_PREVIA_CATALOGO_REAL']);
     for (const r of escopo.recursos) {
       assert.ok(!r.operacoes.includes('excluir'), 'nenhuma rota usa excluir');
     }
@@ -82,10 +86,11 @@ describe('escopo do provisionamento do MASTER', () => {
     const recursosDasRotas = new Set([materialRoutes.RECURSO, estoqueRoutes.RECURSO, estoqueRoutes.RECURSO_VALIDADE, estoqueRoutes.RECURSO_OPERACOES,
       funcionarioRoutes.RECURSO, gheRoutes.RECURSO, itensDisponiveisRoutes.RECURSO, dashboardRoutes.RECURSO, entregaEpiRoutes.RECURSO_FICHA, solicitacaoRoutes.RECURSO_SOLICITACAO,
       'reportsAudit' /* 12K-D5: relatorio.routes.js (literal, como o teste de efeito real confere) */,
-      'reportsFiscal' /* 12K-D6: relatorio.routes.js (literal) */]);
+      'reportsFiscal' /* 12K-D6: relatorio.routes.js (literal) */,
+      tokenDispositivoRoutes.RECURSO /* Atendimento Token, Etapa B */]);
     const recursosDoEscopo = new Set(recursos.ESCOPO_PROVISIONAMENTO_MASTER.recursos.map((r) => r.recurso));
     assert.deepEqual([...recursosDoEscopo].sort(), [...recursosDasRotas].sort());
-    assert.deepEqual([...recursos.ESCOPO_PROVISIONAMENTO_MASTER.acoes], [estoqueRoutes.ACAO_ENTRADA_ESTOQUE, estoqueRoutes.ACAO_BAIXA_ESTOQUE, entregaEpiRoutes.ACAO_REALIZAR_ENTREGA, 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS']);
+    assert.deepEqual([...recursos.ESCOPO_PROVISIONAMENTO_MASTER.acoes], [estoqueRoutes.ACAO_ENTRADA_ESTOQUE, estoqueRoutes.ACAO_BAIXA_ESTOQUE, entregaEpiRoutes.ACAO_REALIZAR_ENTREGA, 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS', tokenDispositivoRoutes.ACAO_REVOGAR_DISPOSITIVO, tokenAtivacaoRoutes.ACAO_GERAR_ATIVACAO, tokenCentralRoutes.ACAO_REDES, tokenCentralRoutes.ACAO_PREVIA]);
     assert.ok(recursosDoEscopo.size < recursos.RECURSOS_CONHECIDOS.length, 'escopo é menor que a lista de conhecidos');
     for (const legado of ['userAdmin', 'config', 'lgpd', 'importEmployees']) {
       assert.ok(!recursosDoEscopo.has(legado), `${legado} não tem rota no backend e não entra no escopo`);
@@ -114,7 +119,7 @@ describe('escopo do provisionamento do MASTER', () => {
       ['APROVAR_SOLICITACAO', 'REPROVAR_SOLICITACAO', 'ENCERRAR_SOLICITACAO', 'REALIZAR_ENTREGA'],
     );
     assert.equal(recursos.ESCOPO_PROVISIONAMENTO_MASTER.recursos.some((r) => r.recurso === 'request'), true);
-    assert.deepEqual([...recursos.ESCOPO_PROVISIONAMENTO_MASTER.acoes], ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS'], 'ações do escopo do MASTER (078: entrada e baixa separadas; importação própria; 085: exportar o histórico)');
+    assert.deepEqual([...recursos.ESCOPO_PROVISIONAMENTO_MASTER.acoes], ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS', 'TOKEN_REVOGAR_DISPOSITIVO', 'TOKEN_GERAR_ATIVACAO', 'TOKEN_GERENCIAR_REDES', 'TOKEN_PREVIA_CATALOGO_REAL'], 'ações do escopo do MASTER (078: entrada e baixa separadas; importação própria; 085: exportar o histórico)');
   });
 
   test('Bloco 12 (12G-0): o contexto da criação é request.criar; as encerráveis são ENCERRAR_SOLICITACAO (não REALIZAR_ENTREGA); as ações do escopo do MASTER não mudam', () => {
@@ -122,7 +127,7 @@ describe('escopo do provisionamento do MASTER', () => {
     assert.equal(solicitacaoRoutes.OPERACAO_CONTEXTO, 'criar');
     assert.equal(solicitacaoRoutes.ACAO_ENCERRAVEIS, 'ENCERRAR_SOLICITACAO');
     assert.notEqual(solicitacaoRoutes.ACAO_ENCERRAVEIS, solicitacaoRoutes.ACAO_ENTREGAVEIS);
-    assert.deepEqual([...recursos.ESCOPO_PROVISIONAMENTO_MASTER.acoes], ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS']);
+    assert.deepEqual([...recursos.ESCOPO_PROVISIONAMENTO_MASTER.acoes], ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS', 'TOKEN_REVOGAR_DISPOSITIVO', 'TOKEN_GERAR_ATIVACAO', 'TOKEN_GERENCIAR_REDES', 'TOKEN_PREVIA_CATALOGO_REAL']);
   });
 
   test('05/10/2026: o escopo do MASTER cobre o Pedido de EPI (request: visualizar, criar, editar) e só ele entre os recursos da solicitação; os demais perfis continuam sem concessão automática', () => {

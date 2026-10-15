@@ -15,6 +15,7 @@ const auditoriaRepo = require('../repositories/auditoria.repository');
 const { RECURSOS_COM_EFEITO, ACOES_COM_EFEITO } = require('../rbac/recursos');
 const toggles = require('../rbac/toggles');
 const { avisosDosAcessos } = require('../rbac/avisos-acessos');
+const { descreverDependencia } = require('../rbac/dependencias-acessos');
 
 /**
  * Permissões do usuário na Gestão de Usuários: leitura em camadas e escrita
@@ -224,9 +225,9 @@ async function escrever(pool, { empresaId, atorId, usuarioId }, operacao) {
   });
 }
 
-async function auditar(client, { empresaId, atorId, alvoId, acao, antes, depois, ip, dispositivo }) {
+async function auditar(client, { empresaId, atorId, alvoId, acao, antes, depois, ip, dispositivo, contextoExtra = null }) {
   await auditoriaRepo.registrar(client, {
-    empresaId, usuarioId: atorId, acao, referencia: String(alvoId), ip, dispositivo, contexto: { origem: 'administracao_usuarios' }, dadosAnteriores: antes, dadosNovos: depois,
+    empresaId, usuarioId: atorId, acao, referencia: String(alvoId), ip, dispositivo, contexto: { origem: 'administracao_usuarios', ...(contextoExtra ?? {}) }, dadosAnteriores: antes, dadosNovos: depois,
   });
 }
 
@@ -328,6 +329,7 @@ async function aplicarAcao(client, {
 }
 
 const ERRO_TOGGLE = ['TOGGLE_NAO_ENCONTRADO', 'Acesso não encontrado'];
+const AVISO_DEPENDENCIA_REABILITADA = 'DEPENDENCIA_REABILITADA';
 
 const efetivoDoToggle = (completo, regra) => {
   // Toggle de CONCESSÃO (decisão da SST): ligado = há concessão individual direta, com ou sem vínculo SST; o efeito final
@@ -431,9 +433,23 @@ async function configurarToggle(pool, {
   return escrever(pool, { empresaId, atorId, usuarioId }, async (client, ator, alvo) => {
     const toggle = toggles.buscar(toggleId);
     if (toggle === null) throw HttpError.notFound(...ERRO_TOGGLE);
-    const antes = efetivoDoToggle(await montar(client, ator, empresaId, alvo), toggle.regra);
+    const completoAntes = await montar(client, ator, empresaId, alvo);
+    const antes = efetivoDoToggle(completoAntes, toggle.regra);
     const { regra } = toggle;
     const base = { empresaId, ator, alvo, ip, dispositivo };
+    // Transparência (não decide nada): como cada dependência estava ANTES — efetiva? bloqueada de forma explícita? —, para
+    // auditar e avisar depois. A regra de autorização é a de sempre: a concessão nova reabre a dependência.
+    const dependencias = [];
+    if (ligado) {
+      for (const dependencia of toggle.dependencias ?? []) {
+        dependencias.push({
+          regra: dependencia,
+          ...descreverDependencia(dependencia),
+          efetivaAntes: efetivoDoToggle(completoAntes, dependencia),
+          bloqueada: await dependenciaBloqueada(client, empresaId, alvo.id, dependencia),
+        });
+      }
+    }
     await ajustarRegra(client, base, regra, ligado);
     if (ligado) {
       for (const dependencia of toggle.dependencias ?? []) {
@@ -449,10 +465,41 @@ async function configurarToggle(pool, {
         empresaId, atorId: ator.id, alvoId: alvo.id, acao: ACAO_AUDITORIA.TOGGLE, ip, dispositivo, antes: { acesso: toggleId, ligado: antes }, depois: { acesso: toggleId, ligado: depois },
       });
     }
+    // Cada dependência que mudou de verdade vira um registro próprio, ligado à operação original (mesmo evento e mesmas chaves).
+    const reabilitadas = [];
+    for (const d of dependencias) {
+      const efetivaDepois = efetivoDoToggle(completo, d.regra);
+      if (efetivaDepois === d.efetivaAntes) continue;
+      const acesso = d.toggleId ?? d.chave;
+      await auditar(client, {
+        empresaId,
+        atorId: ator.id,
+        alvoId: alvo.id,
+        acao: ACAO_AUDITORIA.TOGGLE,
+        ip,
+        dispositivo,
+        antes: { acesso, ligado: d.efetivaAntes, ...(d.bloqueada ? { bloqueadoIndividualmente: true } : {}) },
+        depois: { acesso, ligado: efetivaDepois },
+        contextoExtra: { causa: 'dependencia', acessoOrigem: toggleId },
+      });
+      if (d.bloqueada && efetivaDepois) reabilitadas.push(d.rotulo);
+    }
     // Só chega aqui alvo não MASTER (o MASTER é recusado em escrever); os avisos vão junto para a tela se atualizar.
     const resumo = resumirToggles(completo);
-    return { acesso: resumo.toggles.find((t) => t.id === toggleId), avisos: resumo.avisos };
+    const antesPorId = new Map(resumirToggles(completoAntes).toggles.map((t) => [t.id, t.ligado]));
+    const alterados = resumo.toggles.filter((t) => antesPorId.get(t.id) !== t.ligado);
+    const avisos = reabilitadas.length > 0 ? [...resumo.avisos, { codigo: AVISO_DEPENDENCIA_REABILITADA, acessos: reabilitadas }] : resumo.avisos;
+    return { acesso: resumo.toggles.find((t) => t.id === toggleId), avisos, alterados };
   });
+}
+
+/** A dependência está explicitamente BLOQUEADA para o usuário (flag individual `false`, ou bloqueio individual da ação)? */
+async function dependenciaBloqueada(client, empresaId, usuarioId, dependencia) {
+  if (dependencia.tipo === 'RECURSO') {
+    const linha = (await permissaoIndividualRepo.listarRecursos(client, empresaId, usuarioId)).find((r) => r.recurso === dependencia.recurso);
+    return linha !== undefined && dependencia.operacoes.some((op) => linha[op] === false);
+  }
+  return (await permissaoIndividualRepo.listarBloqueios(client, empresaId, usuarioId)).includes(dependencia.codigo);
 }
 
 /**

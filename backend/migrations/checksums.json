@@ -86,6 +86,9 @@
     "082_create_tipos_material_classificacao_v2.sql": "1dfae4782685deded16614cf38a6e283df7a2803297129660451a8d235e46b9f",
     "083_alter_ghe_add_codigo_create_ghe_tipos_material.sql": "b963527cbeeb6b620e499fbbf19a4193bba8f72aac7b62168936c9a8ac3afeda",
     "084_alter_funcionarios_add_situacao.sql": "b2342b00d606dbfc7e6938b3615e9a6a1d4c450bb13c2a08cd977b0a68a2e1f2",
-    "085_insert_acao_exportar_historico_funcionarios.sql": "a05fdbd9d8ffef7015870283f73e377c6507a14d0baf6ffea6d84c4c0a52f8ee"
+    "085_insert_acao_exportar_historico_funcionarios.sql": "a05fdbd9d8ffef7015870283f73e377c6507a14d0baf6ffea6d84c4c0a52f8ee",
+    "086_create_atendimento_token.sql": "76121c8fb7ab76207a643d6ac0aff941e4bf1411a69915a405bd62f7008b97c7",
+    "087_insert_acoes_atendimento_token.sql": "549ea559731d5ee94f78005ea76de33b91bbbc053ceb1bc29f0cd5d9e1d35031",
+    "089_token_dispositivos_queda_suspeita.sql": "b223559b81999df482365e7771f073084938e187cb1e26bd656b63bd2bc34bf2"
   }
 }

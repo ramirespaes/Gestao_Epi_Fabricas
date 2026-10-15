@@ -77,10 +77,10 @@ function criarUsuarioAdministracaoController({ pool: poolInjetado }) {
 
     async acesso(req, res) {
       const { id, toggle } = req.validado.params;
-      const { acesso, avisos } = await permissaoUsuarioService.configurarToggle(poolInjetado, {
+      const { acesso, avisos, alterados } = await permissaoUsuarioService.configurarToggle(poolInjetado, {
         ...daSessao(req), ...doDispositivo(req), usuarioId: id, toggleId: toggle, ligado: req.validado.body.ligado,
       });
-      res.status(200).json({ status: 'ok', acesso, avisos });
+      res.status(200).json({ status: 'ok', acesso, avisos, alterados });
     },
 
     async copiarPermissoes(req, res) {

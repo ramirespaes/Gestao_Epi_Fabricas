@@ -32,8 +32,8 @@ const secao = (html, nome) => {
 };
 
 describe('menu lateral: entrada Funcionários', () => {
-  test('a referência de páginas com menu integrado é a mesma da Gestão de Usuários: as 16 de antes e a própria funcionarios.html (17)', () => {
-    assert.equal(COM_MENU.length, 17, COM_MENU.join(', '));
+  test('a referência de páginas com menu integrado é a mesma da Gestão de Usuários: as 16 de antes, a própria funcionarios.html (17) e a Central atendimento-token.html (18, Etapa H)', () => {
+    assert.equal(COM_MENU.length, 18, COM_MENU.join(', '));
     assert.ok(COM_MENU.includes('funcionarios.html'));
   });
 

@@ -21,7 +21,8 @@
     "db:mfa:liberar-cadastro": "node --require dotenv/config scripts/mfa-liberar-cadastro.js",
     "db:mfa:redefinir": "node --require dotenv/config scripts/mfa-redefinir.js",
     "alertas:processar": "node --require dotenv/config scripts/processar-alertas-estoque.js",
-    "fiscalizacao:recuperar": "node --require dotenv/config scripts/fiscalizacao-recuperar-abandonados.js"
+    "fiscalizacao:recuperar": "node --require dotenv/config scripts/fiscalizacao-recuperar-abandonados.js",
+    "token:verificar-comunicacao": "node --require dotenv/config scripts/verificar-comunicacao-token.js"
   },
   "keywords": [],
   "author": "",
