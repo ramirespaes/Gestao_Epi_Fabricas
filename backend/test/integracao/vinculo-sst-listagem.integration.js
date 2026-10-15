@@ -5,7 +5,9 @@ const assert = require('node:assert/strict');
 const { abrirPoolTemporario } = require('./helpers/schema-temporario');
 const { exigirModulo } = require('../helpers/exigir-modulo');
 const { todasAsMigrations, inserir } = require('./helpers/entrega-epi');
-const { montarMundoDoServico, inserirUsuario, esperarHttpError } = require('./helpers/solicitacao-epi-servico');
+const {
+  montarMundoDoServico, removerAutoridadeSst, inserirUsuario, esperarHttpError,
+} = require('./helpers/solicitacao-epi-servico');
 
 /**
  * Listagem dos vínculos SST (12E-1) contra PostgreSQL real: só o MASTER ativo
@@ -39,6 +41,8 @@ describe('listagem dos vínculos SST — serviço (PostgreSQL real)', () => {
     contexto = await abrirPoolTemporario(todasAsMigrations());
     pool = contexto.pool;
     d = await montarMundoDoServico(pool);
+    // K2: o mundo já dá aos decisores o vínculo e as três ações; a listagem parte de empresa sem vínculo algum.
+    await removerAutoridadeSst(pool, d);
     const conceder = (empresaId, atorId, usuarioId, motivo) => servico().concederVinculo(pool, { empresaId, atorId, usuarioId, motivo });
     await conceder(d.empresaA, d.master, d.sst1, 'Técnico de segurança');
     await conceder(d.empresaA, d.master, d.sst2);

@@ -178,14 +178,15 @@ describe('decisão da SST — serviço (PostgreSQL real)', () => {
     assert.deepEqual((await estadoGravado(outra.solicitacao.id)).itens.map((i) => i.decisao), [null], 'o item da outra solicitação não foi tocado');
   });
 
-  test('separação de funções: quem criou não aprova nem reprova a própria solicitação; outro usuário pode', async () => {
+  test('separação de funções: quem criou não aprova nem reprova a própria solicitação; outro usuário da SST autorizado pode', async () => {
     const m = await materialNoGhe();
     const { solicitacao, itens } = await criar([item(m)]);
     await esperarHttpError(decidir(solicitacao.id, [aprovar(itens[0])], { atorId: d.solicitante }), 403, 'AUTODECISAO_PROIBIDA');
     await esperarHttpError(decidir(solicitacao.id, [reprovar(itens[0])], { atorId: d.solicitante }), 403, 'AUTODECISAO_PROIBIDA');
     assert.equal((await estadoGravado(solicitacao.id)).cabecalho.status, 'PENDENTE');
-    const ok = await decidir(solicitacao.id, [aprovar(itens[0])], { atorId: d.outroSolicitante });
-    assert.equal(ok.solicitacao.decisao.decididaPor, d.outroSolicitante);
+    // K2: o serviço exige a autoridade da SST; o "outro usuário" precisa tê-la, além de não ser o solicitante.
+    const ok = await decidir(solicitacao.id, [aprovar(itens[0])], { atorId: d.sst2 });
+    assert.equal(ok.solicitacao.decisao.decididaPor, d.sst2);
   });
 
   test('só decide solicitação PENDENTE: decidida, reprovada, cancelada ou inexistente é recusada', async () => {
@@ -368,10 +369,11 @@ describe('decisão da SST — serviço (PostgreSQL real)', () => {
   });
 
   describe('concorrência', () => {
-    test('oito decisões simultâneas, de decisores diferentes e resultados opostos: exatamente uma vence; as outras sete recebem 409', async () => {
+    test('oito decisões simultâneas, de decisores autorizados diferentes e resultados opostos: exatamente uma vence; as outras sete recebem 409', async () => {
       const m = await materialNoGhe();
       const { solicitacao, itens } = await criar([item(m)]);
-      const decisores = [d.sst1, d.sst2, d.master, d.outroSolicitante];
+      // K2: só decisores com autoridade; sem ela a perdedora receberia 403 em vez do 409 da corrida.
+      const decisores = [d.sst1, d.sst2];
       const resultados = await Promise.allSettled(Array.from({ length: 8 }, (_, i) => decidir(
         solicitacao.id,
         [i % 2 === 0 ? aprovar(itens[0]) : reprovar(itens[0])],

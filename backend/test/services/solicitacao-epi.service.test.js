@@ -266,6 +266,7 @@ describe('encerrarSolicitacao (D6, 12E-2)', () => {
     const parRepo = () => require('../../src/repositories/estoque-par.repository');
     const usuarioRepo = () => require('../../src/repositories/usuario.repository');
     const auditoriaRepo = () => require('../../src/repositories/auditoria.repository');
+    const permissaoRepo = () => require('../../src/repositories/permissao.repository');
 
     const DECIDIDA = new Date('2026-10-02T13:00:00Z');
     const cabecalho = (extra = {}) => ({
@@ -294,6 +295,13 @@ describe('encerrarSolicitacao (D6, 12E-2)', () => {
       });
       t.mock.method(solicitacaoRepo(), 'travarPorId', anotar('travarPorId', async () => cabecalho({ status })));
       t.mock.method(usuarioRepo(), 'buscarPorId', anotar('ator', async () => ({ id: 8, empresaId: 42, perfil: 'ADMINISTRADOR', ativo })));
+      // K2: o encerramento revalida a autoridade na transação. Só os DADOS são simulados (SST com vínculo, concessão e sem bloqueio);
+      // a decisão é da política real do middleware.
+      t.mock.method(permissaoRepo(), 'buscarConfiguracaoAcao', anotar('autoridade', async () => ({ ativo: true, exigeSst: true, modoAutorizacaoIndividual: 'OBRIGATORIA' })));
+      t.mock.method(permissaoRepo(), 'buscarPermissaoAcao', async () => null);
+      t.mock.method(permissaoRepo(), 'usuarioTemAutorizacaoIndividual', async () => true);
+      t.mock.method(permissaoRepo(), 'usuarioIntegraSst', async () => true);
+      t.mock.method(permissaoRepo(), 'usuarioTemBloqueio', async () => false);
       t.mock.method(itemRepo(), 'listarPorSolicitacaoComEntregue', anotar('itens', async () => itens));
       t.mock.method(parRepo(), 'travarPares', anotar('travarPares', async (_c, _e, pares) => pares));
       let leituras = 0;
@@ -314,13 +322,13 @@ describe('encerrarSolicitacao (D6, 12E-2)', () => {
       itemComEntregue({ id: 3, materialId: 32, tamanho: '42', quantidade: 1, decisao: 'REPROVADO', quantidadeAprovada: 0, justificativaDecisao: 'Sem necessidade' }),
     ];
 
-    test('trava a solicitação, confere o ator, lê os itens, trava só os pares com pendente, lê a posição, encerra, relê e audita, nesta ordem, numa transação', async (t) => {
+    test('trava a solicitação, confere o ator, revalida a autoridade, lê os itens, trava só os pares com pendente, lê a posição, encerra, relê e audita, nesta ordem, numa transação', async (t) => {
       const { pool, ordem } = simular(t, { itens: itensDeTeste() });
       await funcao()(pool, dadosDeEncerramento({ hoje: '2026-10-03' }));
       const passos = ordem.filter((x) => !/^(BEGIN|COMMIT|ROLLBACK)/.test(x));
       assert.equal(ordem[0], 'BEGIN');
       assert.equal(ordem[ordem.length - 1], 'COMMIT');
-      assert.deepEqual(passos.slice(0, 8), ['travarPorId', 'ator', 'itens', 'travarPares', 'lerPosicoes', 'encerrar', 'lerPosicoes', 'auditoria']);
+      assert.deepEqual(passos.slice(0, 9), ['travarPorId', 'ator', 'autoridade', 'itens', 'travarPares', 'lerPosicoes', 'encerrar', 'lerPosicoes', 'auditoria']);
       assert.equal(passos.includes('listarCobertura'), false, 'a ENCERRADA não tem cobertura a calcular');
     });
 

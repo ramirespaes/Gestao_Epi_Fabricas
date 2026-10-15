@@ -6,7 +6,7 @@ const { abrirPoolTemporario } = require('./helpers/schema-temporario');
 const { exigirModulo } = require('../helpers/exigir-modulo');
 const { todasAsMigrations, inserir } = require('./helpers/entrega-epi');
 const {
-  montarMundoDoServico, inserirUsuario, esperarHttpError, comLimite,
+  montarMundoDoServico, removerAutoridadeSst, inserirUsuario, esperarHttpError, comLimite,
 } = require('./helpers/solicitacao-epi-servico');
 const permissaoRepo = require('../../src/repositories/permissao.repository');
 const auditoriaRepo = require('../../src/repositories/auditoria.repository');
@@ -44,6 +44,8 @@ describe('vínculo SST — serviço administrativo (PostgreSQL real)', () => {
     contexto = await abrirPoolTemporario(todasAsMigrations());
     pool = contexto.pool;
     d = await montarMundoDoServico(pool);
+    // K2: o mundo já dá aos decisores o vínculo e as três ações; aqui eles começam sem vínculo, porque o vínculo é o que se testa.
+    await removerAutoridadeSst(pool, d);
   });
 
   after(async () => { if (contexto) await contexto.encerrar(); });

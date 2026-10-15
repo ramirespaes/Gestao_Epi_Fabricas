@@ -252,15 +252,18 @@ describe('encerramento da solicitação de EPI — serviço (PostgreSQL real)', 
       assert.equal((await linha(alvo.id)).justificativa_encerramento, 'Transferência confirmada');
     });
 
-    test('quem criou a solicitação pode encerrá-la (sem regra de autodecisão); a decisão continua proibida a ele', async () => {
+    test('quem criou a solicitação pode encerrá-la (sem regra de autodecisão, mas com a autoridade de encerrar); a decisão continua proibida a ele', async () => {
       const m = await f.material();
-      const alvo = await f.aprovada({ materialId: m, quantidade: 1 });
-      const visao = await encerrarA(alvo.id, { atorId: d.solicitante });
-      assert.equal(visao.solicitacao.encerramento.encerradaPor, d.solicitante);
-      const [registro] = await auditorias(alvo.id);
+      // K2: o autoencerramento continua permitido, mas exige a autoridade; quem cria e encerra aqui é uma SST autorizada.
+      const itens = [{ materialId: m, tamanho: '40', quantidade: 1, motivo: 'ADMISSAO' }];
+      const criada = await criar(itens, { atorId: d.sst2 });
+      await decidir(criada.solicitacao.id, [{ itemId: criada.itens[0].id, decisao: 'APROVADO' }]);
+      const visao = await encerrarA(criada.solicitacao.id, { atorId: d.sst2 });
+      assert.equal(visao.solicitacao.encerramento.encerradaPor, d.sst2);
+      const [registro] = await auditorias(criada.solicitacao.id);
       assert.equal(registro.contexto.autoencerramento, true);
-      const pendente = await criar([{ materialId: m, tamanho: '40', quantidade: 1, motivo: 'ADMISSAO' }]);
-      await esperarHttpError(decidir(pendente.solicitacao.id, [{ itemId: pendente.itens[0].id, decisao: 'APROVADO' }], { atorId: d.solicitante }), 403, 'AUTODECISAO_PROIBIDA');
+      const pendente = await criar(itens, { atorId: d.sst2 });
+      await esperarHttpError(decidir(pendente.solicitacao.id, [{ itemId: pendente.itens[0].id, decisao: 'APROVADO' }], { atorId: d.sst2 }), 403, 'AUTODECISAO_PROIBIDA');
     });
 
     test('encerrador inativo: 403 USUARIO_INATIVO; inexistente na empresa: 404; nada muda', async () => {

@@ -3,6 +3,7 @@
 const { describe, test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { montarAmbiente12f } = require('./helpers/ambiente-http-12f');
+const { removerAutoridadeSst } = require('./helpers/solicitacao-epi-servico');
 const vinculoSst = require('../../src/services/vinculo-sst.service');
 
 /**
@@ -21,6 +22,8 @@ describe('GET /api/vinculos-sst (PostgreSQL real)', () => {
   before(async () => {
     env = await montarAmbiente12f();
     ({ d, como } = env);
+    // K2: o mundo já dá aos decisores o vínculo e as três ações; a listagem parte de empresa sem vínculo algum.
+    await removerAutoridadeSst(env.pool, d);
     u.sst = await env.usuarioCom(d.empresaA, { perfil: 'ADMINISTRADOR', acoes: ['APROVAR_SOLICITACAO'], sst: true });
     u.comum = await env.usuarioCom(d.empresaA);
     const conceder = (empresaId, atorId, usuarioId) => vinculoSst.concederVinculo(env.pool, { empresaId, atorId, usuarioId, motivo: 'Técnico de segurança' });

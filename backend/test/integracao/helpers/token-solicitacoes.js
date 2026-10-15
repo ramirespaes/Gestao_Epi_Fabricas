@@ -121,12 +121,12 @@ async function abrirAmbienteSolicitacoes() {
       if (typeof d === 'number') return { itemId, decisao: 'APROVADO', quantidadeAprovada: d, justificativa: 'Quantidade reduzida pela SST' };
       return { itemId, decisao: 'APROVADO' };
     });
-    return solicitacaoSvc.decidirSolicitacao(a.ctx.pool, { empresaId: A(), atorId: a.d.master, solicitacaoId: solicitacao.id, decisoes, hoje: dataOperacional() });
+    return solicitacaoSvc.decidirSolicitacao(a.ctx.pool, { empresaId: A(), atorId: a.d.sst1, solicitacaoId: solicitacao.id, decisoes, hoje: dataOperacional() });
   }
 
   const cancelar = (solicitacao) => solicitacaoSvc.cancelarSolicitacao(a.ctx.pool, { empresaId: A(), atorId: solicitacao.solicitante, solicitacaoId: solicitacao.id, hoje: dataOperacional() });
   const encerrarPedido = (solicitacao) => solicitacaoSvc.encerrarSolicitacao(a.ctx.pool, {
-    empresaId: A(), atorId: a.d.master, solicitacaoId: solicitacao.id, justificativa: 'Não será mais entregue', hoje: dataOperacional(),
+    empresaId: A(), atorId: a.d.sst1, solicitacaoId: solicitacao.id, justificativa: 'Não será mais entregue', hoje: dataOperacional(),
   });
 
   /** Entrada de estoque (lote com CA válido) do material e tamanho. Devolve o id do lote. */
