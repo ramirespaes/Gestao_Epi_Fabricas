@@ -139,7 +139,51 @@ function serializarCookieDesafioMfa(token, validadeMinutos) {
 // A remoção não depende do prazo: Max-Age=0 e Expires no passado.
 const serializarRemocaoCookieDesafioMfa = () => politicaDesafioMfa(1).serializarRemocao();
 
+/**
+ * Cookie da credencial persistente do tablet (Atendimento Token, Etapa C). Nome próprio (authConfig.dispositivo.cookieNome,
+ * distinto dos quatro anteriores), Path restrito às rotas do tablet — o navegador não o envia às rotas administrativas —, mesma
+ * política de Secure/SameSite da sessão e Max-Age longo (180 dias por padrão). O Max-Age NÃO é a autorização: o servidor valida a
+ * credencial, o tablet, a empresa e a rede a cada requisição e a rotaciona.
+ */
+const CAMINHO_COOKIE_DISPOSITIVO = '/api/atendimento-token/tablet';
+const MINUTOS_POR_DIA = 24 * 60;
+
+const politicaDispositivo = criarPoliticaCookie({
+  nome: authConfig.dispositivo.cookieNome,
+  secure: authConfig.sessao.cookieSecure,
+  sameSite: authConfig.sessao.cookieSameSite,
+  expiracaoMinutos: authConfig.dispositivo.cookieDias * MINUTOS_POR_DIA,
+  path: CAMINHO_COOKIE_DISPOSITIVO,
+});
+
+const serializarCookieDispositivo = (token) => politicaDispositivo.serializarSessao(token);
+const serializarRemocaoCookieDispositivo = () => politicaDispositivo.serializarRemocao();
+
+/**
+ * Cookie do atendimento temporário do funcionário no tablet (Atendimento Token, Etapa D). Nome e Path próprios, SameSite=Strict
+ * fixo (independente do SameSite das sessões) e Max-Age curto, igual ao prazo de inatividade: é renovado a cada interação válida,
+ * mas a validade é sempre decidida pelo servidor (expira_em, relógio do banco), nunca pelo cookie.
+ */
+const CAMINHO_COOKIE_ATENDIMENTO = '/api/atendimento-token/tablet/atendimento';
+
+const politicaAtendimento = criarPoliticaCookie({
+  nome: authConfig.atendimento.cookieNome,
+  secure: authConfig.sessao.cookieSecure,
+  sameSite: 'strict',
+  expiracaoMinutos: Math.ceil(authConfig.atendimento.inatividadeSegundos / SEGUNDOS_POR_MINUTO),
+  path: CAMINHO_COOKIE_ATENDIMENTO,
+});
+
+const serializarCookieAtendimento = (token) => politicaAtendimento.serializarSessao(token);
+const serializarRemocaoCookieAtendimento = () => politicaAtendimento.serializarRemocao();
+
 module.exports = {
+  CAMINHO_COOKIE_ATENDIMENTO,
+  serializarCookieAtendimento,
+  serializarRemocaoCookieAtendimento,
+  CAMINHO_COOKIE_DISPOSITIVO,
+  serializarCookieDispositivo,
+  serializarRemocaoCookieDispositivo,
   criarPoliticaCookie,
   serializarCookieSessao,
   serializarRemocaoCookieSessao,

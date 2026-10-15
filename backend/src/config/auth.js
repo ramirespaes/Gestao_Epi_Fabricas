@@ -68,6 +68,11 @@ const INTEIROS = Object.freeze({
   // Validade do link de redefinição de senha. O teto de 240 é o mesmo das
   // migrations 061 e 062: o banco recusa pedido com mais de 4 horas.
   RECUPERACAO_SENHA_VALIDADE_MINUTOS: { min: 5, max: 240, padrao: 60 },
+  // Atendimento Token (Etapa C): credencial persistente do tablet. Rotação após 24 h de uso; carência de 2 min só para
+  // requisições legítimas concorrentes; cookie de 180 dias (a autorização continua decidida no servidor, a cada requisição).
+  DISPOSITIVO_ROTACAO_HORAS: { min: 1, max: 168, padrao: 24 },
+  DISPOSITIVO_CARENCIA_SEGUNDOS: { min: 5, max: 600, padrao: 120 },
+  DISPOSITIVO_COOKIE_DIAS: { min: 30, max: 400, padrao: 180 },
 });
 
 const OPCOES = Object.freeze({
@@ -93,6 +98,8 @@ const MENSAGENS = Object.freeze({
   NOME_GLOBAL_IGUAL_ADMIN: 'não pode ser igual a SESSAO_ADMIN_COOKIE_NOME',
   NOME_MFA_REPETIDO: 'não pode repetir o nome de outro cookie de sessão',
   PREFIXO_HOST_CAMINHO: 'prefixo __Host- exige Path=/, e o cookie do desafio usa /api/plataforma/auth',
+  NOME_DISPOSITIVO_REPETIDO: 'não pode repetir o nome de outro cookie de sessão',
+  PREFIXO_HOST_CAMINHO_DISPOSITIVO: 'prefixo __Host- exige Path=/, e o cookie do tablet usa /api/atendimento-token/tablet',
 });
 
 const COOKIE_NOME_FORMATO = /^(__Host-|__Secure-)?[A-Za-z0-9_-]{1,64}$/;
@@ -106,6 +113,9 @@ const COOKIE_NOME_GLOBAL_PADRAO = 'gepi_sessao_global';
 // Cookie do desafio pré-MFA do Painel Privado: quarto nome, distinto dos três
 // de sessão, porque o desafio nunca é sessão.
 const COOKIE_NOME_MFA_ADMIN_PADRAO = 'gepi_mfa_admin';
+// Cookie da credencial do tablet do Atendimento Token: quinto nome, distinto dos quatro anteriores. Nunca é sessão: não
+// autentica nenhuma rota administrativa, e nenhum cookie de sessão autentica o tablet.
+const COOKIE_NOME_DISPOSITIVO_PADRAO = 'gepi_tablet';
 const HEX = /^[0-9a-fA-F]+$/;
 
 const esquema = z
@@ -131,6 +141,10 @@ const esquema = z
     SESSAO_ADMIN_COOKIE_NOME: z.string().regex(COOKIE_NOME_FORMATO).default(COOKIE_NOME_ADMIN_PADRAO),
     SESSAO_GLOBAL_COOKIE_NOME: z.string().regex(COOKIE_NOME_FORMATO).default(COOKIE_NOME_GLOBAL_PADRAO),
     SESSAO_MFA_ADMIN_COOKIE_NOME: z.string().regex(COOKIE_NOME_FORMATO).default(COOKIE_NOME_MFA_ADMIN_PADRAO),
+    SESSAO_DISPOSITIVO_COOKIE_NOME: z.string().regex(COOKIE_NOME_FORMATO).default(COOKIE_NOME_DISPOSITIVO_PADRAO),
+    DISPOSITIVO_ROTACAO_HORAS: inteiroDeAmbiente(INTEIROS.DISPOSITIVO_ROTACAO_HORAS),
+    DISPOSITIVO_CARENCIA_SEGUNDOS: inteiroDeAmbiente(INTEIROS.DISPOSITIVO_CARENCIA_SEGUNDOS),
+    DISPOSITIVO_COOKIE_DIAS: inteiroDeAmbiente(INTEIROS.DISPOSITIVO_COOKIE_DIAS),
     SESSAO_COOKIE_SECURE: booleanoDeAmbiente.optional(),
     SESSAO_COOKIE_SAMESITE: z.enum(OPCOES.SESSAO_COOKIE_SAMESITE).default('lax'),
     SESSAO_EXPIRACAO_MINUTOS: inteiroDeAmbiente(INTEIROS.SESSAO_EXPIRACAO_MINUTOS),
@@ -223,6 +237,18 @@ const esquema = z
   .refine((e) => !(e.SESSAO_MFA_ADMIN_COOKIE_NOME.startsWith('__Secure-') && !cookieSecureEfetivo(e)), {
     message: MENSAGENS.PREFIXO_SECURE,
     path: ['SESSAO_MFA_ADMIN_COOKIE_NOME'],
+  })
+  .refine(
+    (e) => ![e.SESSAO_COOKIE_NOME, e.SESSAO_ADMIN_COOKIE_NOME, e.SESSAO_GLOBAL_COOKIE_NOME, e.SESSAO_MFA_ADMIN_COOKIE_NOME].includes(e.SESSAO_DISPOSITIVO_COOKIE_NOME),
+    { message: MENSAGENS.NOME_DISPOSITIVO_REPETIDO, path: ['SESSAO_DISPOSITIVO_COOKIE_NOME'] },
+  )
+  .refine((e) => !e.SESSAO_DISPOSITIVO_COOKIE_NOME.startsWith('__Host-'), {
+    message: MENSAGENS.PREFIXO_HOST_CAMINHO_DISPOSITIVO,
+    path: ['SESSAO_DISPOSITIVO_COOKIE_NOME'],
+  })
+  .refine((e) => !(e.SESSAO_DISPOSITIVO_COOKIE_NOME.startsWith('__Secure-') && !cookieSecureEfetivo(e)), {
+    message: MENSAGENS.PREFIXO_SECURE,
+    path: ['SESSAO_DISPOSITIVO_COOKIE_NOME'],
   });
 
 function cookieSecureEfetivo(e) {
@@ -291,6 +317,17 @@ function analisarConfigAuth(origem) {
     },
     recuperacaoSenha: {
       validadeMinutos: e.RECUPERACAO_SENHA_VALIDADE_MINUTOS,
+    },
+    dispositivo: {
+      cookieNome: e.SESSAO_DISPOSITIVO_COOKIE_NOME,
+      rotacaoHoras: e.DISPOSITIVO_ROTACAO_HORAS,
+      carenciaSegundos: e.DISPOSITIVO_CARENCIA_SEGUNDOS,
+      cookieDias: e.DISPOSITIVO_COOKIE_DIAS,
+    },
+    // Atendimento Token (Etapa D): política fixa, não configurável por ambiente. Só 60 s de inatividade deslizante, sem teto absoluto.
+    atendimento: {
+      cookieNome: 'gepi_atendimento',
+      inatividadeSegundos: 60,
     },
   });
 

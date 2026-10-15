@@ -49,6 +49,9 @@ const PADRAO = {
   liberacaoMfa: { expiracaoMinutos: 30 },
   // Validade do link de redefinição de senha (Bloco 11).
   recuperacaoSenha: { validadeMinutos: 60 },
+  // Atendimento Token (Etapa C): cookie próprio do tablet, rotação de 24 h, carência de 2 min e cookie de 180 dias.
+  dispositivo: { cookieNome: 'gepi_tablet', rotacaoHoras: 24, carenciaSegundos: 120, cookieDias: 180 },
+  atendimento: { cookieNome: 'gepi_atendimento', inatividadeSegundos: 60 },
 };
 
 describe('configuração carregada do ambiente de teste', () => {
@@ -214,6 +217,25 @@ describe('carregarConfigAuth com ambiente artificial', () => {
     assert.equal(erroDe({ ...base, SESSAO_MFA_ADMIN_COOKIE_NOME: '__Secure-gepi_mfa', SESSAO_COOKIE_SECURE: 'true' }), null);
     const { sessao, desafioMfa } = carregarConfigAuth(base);
     assert.equal(new Set([sessao.cookieNome, sessao.cookieNomeAdmin, sessao.cookieNomeGlobal, desafioMfa.cookieNome]).size, 4);
+  });
+
+  test('Atendimento Token (Etapa C): cookie do tablet distinto dos quatro outros, sem __Host- (o Path não é /), e prazos com limites e mensagens sem o valor', () => {
+    const { dispositivo } = carregarConfigAuth(base);
+    assert.deepEqual(dispositivo, { cookieNome: 'gepi_tablet', rotacaoHoras: 24, carenciaSegundos: 120, cookieDias: 180 });
+    for (const repetido of ['gepi_sessao', 'gepi_sessao_admin', 'gepi_sessao_global', 'gepi_mfa_admin']) {
+      assert.match(erroDe({ ...base, SESSAO_DISPOSITIVO_COOKIE_NOME: repetido }), /SESSAO_DISPOSITIVO_COOKIE_NOME: não pode repetir o nome de outro cookie de sessão/);
+    }
+    assert.match(erroDe({ ...base, SESSAO_DISPOSITIVO_COOKIE_NOME: '__Host-gepi_tablet', SESSAO_COOKIE_SECURE: 'true' }), /SESSAO_DISPOSITIVO_COOKIE_NOME: prefixo __Host- exige Path=\//);
+    assert.match(erroDe({ ...base, SESSAO_DISPOSITIVO_COOKIE_NOME: '__Secure-gepi_tablet' }), /SESSAO_DISPOSITIVO_COOKIE_NOME: prefixo __Secure- exige cookie Secure/);
+    assert.equal(erroDe({ ...base, SESSAO_DISPOSITIVO_COOKIE_NOME: '__Secure-gepi_tablet', SESSAO_COOKIE_SECURE: 'true' }), null);
+    assert.deepEqual(carregarConfigAuth({ ...base, DISPOSITIVO_ROTACAO_HORAS: '12', DISPOSITIVO_CARENCIA_SEGUNDOS: '60', DISPOSITIVO_COOKIE_DIAS: '90' }).dispositivo,
+      { cookieNome: 'gepi_tablet', rotacaoHoras: 12, carenciaSegundos: 60, cookieDias: 90 });
+    for (const [nome, valor] of [['DISPOSITIVO_ROTACAO_HORAS', '0'], ['DISPOSITIVO_ROTACAO_HORAS', '169'], ['DISPOSITIVO_CARENCIA_SEGUNDOS', '4'], ['DISPOSITIVO_CARENCIA_SEGUNDOS', '601'], ['DISPOSITIVO_COOKIE_DIAS', '29'], ['DISPOSITIVO_COOKIE_DIAS', '401']]) {
+      const mensagem = erroDe({ ...base, [nome]: valor });
+      assert.match(mensagem, new RegExp(`${nome}: (abaixo do mínimo|acima do máximo) permitido`));
+    }
+    // Os limites já garantem que o cookie (mínimo de 30 dias) dura muito mais que a rotação (máximo de 168 horas).
+    assert.equal(erroDe({ ...base, DISPOSITIVO_ROTACAO_HORAS: '168', DISPOSITIVO_COOKIE_DIAS: '30' }), null);
   });
 
   test('prazos do desafio MFA: padrões 5 e 15 minutos, com limites e mensagens sem o valor', () => {

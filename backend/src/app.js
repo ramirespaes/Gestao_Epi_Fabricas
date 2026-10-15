@@ -33,6 +33,14 @@ const { solicitacaoEpiRoutes } = require('./routes/solicitacao-epi.routes');
 const { vinculoSstRoutes } = require('./routes/vinculo-sst.routes');
 const { alertaEstoqueRoutes } = require('./routes/alerta-estoque.routes');
 const { relatorioRoutes } = require('./routes/relatorio.routes');
+const { tokenDispositivoRoutes } = require('./routes/token-dispositivo.routes');
+const { tokenAtivacaoRoutes } = require('./routes/token-ativacao.routes');
+const { tokenTabletRoutes } = require('./routes/token-tablet.routes');
+const { tokenAtendimentoRoutes } = require('./routes/token-atendimento.routes');
+const { tokenCatalogoRoutes } = require('./routes/token-catalogo.routes');
+const { tokenPedidoRoutes } = require('./routes/token-pedido.routes');
+const { tokenSolicitacoesRoutes } = require('./routes/token-solicitacoes.routes');
+const { tokenCentralRoutes } = require('./routes/token-central.routes');
 const { recuperacaoSenhaPortalRoutes, recuperacaoSenhaPlataformaRoutes } = require('./routes/recuperacao-senha.routes');
 const { trocaSenhaGlobalRoutes, trocaSenhaPlataformaRoutes } = require('./routes/troca-senha.routes');
 // Configurações: telefone, aparência e e-mail de acesso da identidade da sessão global.
@@ -177,7 +185,19 @@ app.use(
 //
 // alertaEstoqueRoutes (Bloco 12, 12G-6): o "Gerar alerta" de falta de estoque
 // (POST, REALIZAR_ENTREGA), na mesma cadeia e com a mesma verificação de origem.
-app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeral, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, recuperacaoSenhaPortalRoutes, trocaSenhaGlobalRoutes, contaRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, tipoMaterialRoutes, estoqueRoutes, itensDisponiveisRoutes, grupoHomogeneoExposicaoRoutes, gheMaterialRoutes, gheTipoMaterialRoutes, gheImportacaoRoutes, funcionarioRoutes, dashboardRoutes, usuarioAdministracaoRoutes, conviteUsuarioRoutes, entregaEpiRoutes, solicitacaoEpiRoutes, vinculoSstRoutes, alertaEstoqueRoutes, relatorioRoutes);
+//
+// tokenDispositivoRoutes e tokenAtivacaoRoutes (Atendimento Token, Etapas B e C): administração dos tablets e geração do
+// código de ativação, com sessão administrativa e RBAC. tokenTabletRoutes (Etapa C): ativação e estado do TABLET, sem sessão
+// administrativa, na mesma cadeia (CORS, verificação de origem, JSON), com limitadores próprios (por IP folgado e por tablet);
+// por isso o limitador geral por IP não se aplica a elas — vários tablets atrás do mesmo NAT somariam uma cota só.
+// tokenAtendimentoRoutes (Etapa D): identificação e atendimento temporário do funcionário no tablet, sob o mesmo prefixo e a mesma regra.
+// tokenCatalogoRoutes (Etapa E): catálogo (somente leitura) de materiais do atendimento, sob o mesmo prefixo.
+// tokenPedidoRoutes (Etapa F): finalização do pedido do funcionário identificado (solicitação AUTOATENDIMENTO) e consulta do resultado, sob o mesmo prefixo.
+// tokenSolicitacoesRoutes (Etapa G): consulta, após a identificação, das solicitações em aberto do funcionário do atendimento atual (somente leitura).
+// tokenCentralRoutes (Etapa H): Central Administrativa (sessão administrativa): visão geral, estado da ativação, prévia do catálogo e redes autorizadas.
+const NAO_EH_TABLET = (req) => !/^\/atendimento-token\/tablet(\/|$)/.test(req.path);
+const limitadorGeralSalvoTablet = (req, res, next) => (NAO_EH_TABLET(req) ? limitadorGeral(req, res, next) : next());
+app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeralSalvoTablet, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, recuperacaoSenhaPortalRoutes, trocaSenhaGlobalRoutes, contaRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, tipoMaterialRoutes, estoqueRoutes, itensDisponiveisRoutes, grupoHomogeneoExposicaoRoutes, gheMaterialRoutes, gheTipoMaterialRoutes, gheImportacaoRoutes, funcionarioRoutes, dashboardRoutes, usuarioAdministracaoRoutes, conviteUsuarioRoutes, entregaEpiRoutes, solicitacaoEpiRoutes, vinculoSstRoutes, alertaEstoqueRoutes, relatorioRoutes, tokenDispositivoRoutes, tokenAtivacaoRoutes, tokenTabletRoutes, tokenAtendimentoRoutes, tokenCatalogoRoutes, tokenPedidoRoutes, tokenSolicitacoesRoutes, tokenCentralRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
