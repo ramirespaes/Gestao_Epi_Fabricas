@@ -404,7 +404,7 @@ describe('inspeção estática: pages/employee-groups.html', () => {
     const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
     assert.deepEqual(scripts, [
       '../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js',
-      '../vendor/read-excel-file-9.3.10.min.js', '../js/importacao-ghe.js', '../js/grupos-homogeneos.js',
+      '../vendor/read-excel-file-9.3.10.min.js', '../js/importacao-ghe.js', '../js/tipos-material.js', '../js/grupos-homogeneos.js',
     ]);
     assert.ok(fs.existsSync(path.join(RAIZ, 'vendor/read-excel-file-9.3.10.min.js')));
     assert.match(ler('publicacao/allowlist.json'), /"js\/importacao-ghe\.js"/);

@@ -302,7 +302,7 @@ describe('inspeção estática: pages/employee-groups.html', () => {
 
   test('os scripts são os do 6C (biblioteca XLSX local e módulo de importação antes do módulo de GHE) e não há armazenamento local', () => {
     const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
-    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../vendor/read-excel-file-9.3.10.min.js', '../js/importacao-ghe.js', '../js/grupos-homogeneos.js']);
+    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../vendor/read-excel-file-9.3.10.min.js', '../js/importacao-ghe.js', '../js/tipos-material.js', '../js/grupos-homogeneos.js']);
     assert.equal(/localStorage|sessionStorage/.test(html.replace(/<!--[\s\S]*?-->/g, '')), false);
   });
 });

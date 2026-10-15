@@ -218,6 +218,10 @@ const PARA_FLAG = { visualizar: 'podeVisualizar', criar: 'podeCriar', editar: 'p
 
 describe('Permissões do Grupo sem controle decorativo', () => {
   const porId = Object.fromEntries(G.RECURSOS.map((r) => [r.id, r]));
+  // Recursos do escopo do MASTER que esta tela NÃO edita, por decisão explícita: o Atendimento Token (Etapas B e C) é administrado
+  // pelas próprias rotas do Token (recurso `atendimentoToken`, operações visualizar/criar/editar) e o MASTER o recebe pelo
+  // provisionamento. A lista é fechada: qualquer outro recurso novo do servidor continua exigindo uma linha nesta tela.
+  const FORA_DESTA_TELA = ['atendimentoToken'];
 
   test('Validade e Operações de estoque oferecem só "Visualizar"; as outras operações aparecem como "não se aplica"', () => {
     for (const id of ['stockValidity', 'operations']) {
@@ -241,13 +245,21 @@ describe('Permissões do Grupo sem controle decorativo', () => {
     for (const recurso of G.RECURSOS) {
       assert.deepEqual(recurso.operacoes, escopo[recurso.id] || [], recurso.id);
     }
-    for (const id of Object.keys(escopo)) assert.ok(porId[id], `${id} precisa estar na tela`);
+    for (const id of Object.keys(escopo)) {
+      if (!FORA_DESTA_TELA.includes(id)) assert.ok(porId[id], `${id} precisa estar na tela`);
+    }
+    for (const id of FORA_DESTA_TELA) {
+      assert.equal(id in porId, false, `${id} é administrado fora desta tela e não pode aparecer nela`);
+      assert.ok(escopo[id], `${id} segue no escopo do MASTER (provisionamento)`);
+    }
+    assert.deepEqual(escopo.atendimentoToken, ['podeVisualizar', 'podeCriar', 'podeEditar'], 'contrato do Atendimento Token (Etapa B): sem excluir');
     assert.deepEqual(escopo.request, ['podeVisualizar', 'podeCriar', 'podeEditar'], 'o MASTER recebe o Pedido de EPI pelo provisionamento');
   });
 
   test('GHE e EPIs (employeeGroups) entra na tela: o servidor já protege o GHE com ele', () => {
     assert.deepEqual(porId.employeeGroups, { id: 'employeeGroups', nome: 'Gestão de GHE', operacoes: ['podeVisualizar', 'podeCriar', 'podeEditar'] });
-    assert.deepEqual(G.RECURSOS.map((r) => r.id).sort(), [...RECURSOS_CONHECIDOS].sort());
+    assert.ok(FORA_DESTA_TELA.every((id) => RECURSOS_CONHECIDOS.includes(id)), 'a exceção só vale para recurso que o servidor realmente conhece');
+    assert.deepEqual(G.RECURSOS.map((r) => r.id).sort(), RECURSOS_CONHECIDOS.filter((id) => !FORA_DESTA_TELA.includes(id)).sort());
   });
 
   test('página ainda sem efeito não mostra seletor nem "Salvar": mostra o motivo', () => {

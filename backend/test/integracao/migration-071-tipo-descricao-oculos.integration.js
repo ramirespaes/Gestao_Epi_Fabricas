@@ -130,25 +130,33 @@ describe('migration 071 — descrição de "Outros" e tipos de óculos de prote�
     assert.deepEqual((await linha(legado.oculos)).oculos_com_grau, true);
   });
 
-  test('manifesto: 86 migrations, 000 a 085; a 045 e a 058 continuam idênticas ao manifesto; a 071 só acrescenta a sua entrada', () => {
+  test('manifesto: 89 migrations, 000 a 087 e 089; a 045 e a 058 continuam idênticas ao manifesto; a 071 só acrescenta a sua entrada', () => {
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO, 'checksums.json'), 'utf8'));
     const arquivos = fs.readdirSync(DIRETORIO).filter((n) => /^\d{3}_.*\.sql$/.test(n)).sort();
-    assert.equal(arquivos.length, 86);
-    assert.equal(arquivos[arquivos.length - 15], ARQUIVO_071);
-    assert.equal(arquivos[arquivos.length - 14], '072_alter_identidades_add_telefone_tema_modo_visual.sql');
-    assert.equal(arquivos[arquivos.length - 13], '073_alter_usuarios_add_funcionario_id.sql');
-    assert.equal(arquivos[arquivos.length - 12], '074_alter_identidades_add_senha_provisoria.sql');
-    assert.equal(arquivos[arquivos.length - 11], '075_alter_identidades_add_cpf.sql');
-    assert.equal(arquivos[arquivos.length - 10], '076_alter_usuarios_add_matricula_setor_horario.sql');
-    assert.equal(arquivos[arquivos.length - 9], '077_create_usuario_ips_permitidos.sql');
-    assert.equal(arquivos[arquivos.length - 8], '078_insert_acoes_estoque_entrada_baixa.sql');
-    assert.equal(arquivos[arquivos.length - 7], '079_alter_logs_auditoria_add_perfil_ator.sql');
-    assert.equal(arquivos[arquivos.length - 6], '080_create_fiscalizacao_pacotes.sql');
-    assert.equal(arquivos[arquivos.length - 5], '081_alter_matricula_opcional.sql');
-    assert.equal(arquivos[arquivos.length - 4], '082_create_tipos_material_classificacao_v2.sql');
-    assert.equal(arquivos[arquivos.length - 3], '083_alter_ghe_add_codigo_create_ghe_tipos_material.sql');
-    assert.equal(arquivos[arquivos.length - 2], '084_alter_funcionarios_add_situacao.sql');
-    assert.equal(arquivos[arquivos.length - 1], '085_insert_acao_exportar_historico_funcionarios.sql');
+    assert.equal(arquivos.length, 89);
+    const inicio = arquivos.indexOf(ARQUIVO_071);
+    assert.notEqual(inicio, -1);
+    assert.deepEqual(arquivos.slice(inicio, inicio + 17), [
+      ARQUIVO_071,
+      '072_alter_identidades_add_telefone_tema_modo_visual.sql',
+      '073_alter_usuarios_add_funcionario_id.sql',
+      '074_alter_identidades_add_senha_provisoria.sql',
+      '075_alter_identidades_add_cpf.sql',
+      '076_alter_usuarios_add_matricula_setor_horario.sql',
+      '077_create_usuario_ips_permitidos.sql',
+      '078_insert_acoes_estoque_entrada_baixa.sql',
+      '079_alter_logs_auditoria_add_perfil_ator.sql',
+      '080_create_fiscalizacao_pacotes.sql',
+      '081_alter_matricula_opcional.sql',
+      '082_create_tipos_material_classificacao_v2.sql',
+      '083_alter_ghe_add_codigo_create_ghe_tipos_material.sql',
+      '084_alter_funcionarios_add_situacao.sql',
+      '085_insert_acao_exportar_historico_funcionarios.sql',
+      '086_create_atendimento_token.sql',
+      '087_insert_acoes_atendimento_token.sql',
+    ]);
+    assert.equal(arquivos[inicio + 17], '089_token_dispositivos_queda_suspeita.sql');
+    assert.equal(arquivos.length, inicio + 18, 'a 089 é a última');
     assert.deepEqual(Object.keys(manifesto.migrations).sort(), arquivos);
     for (const nome of arquivos) {
       const sha = crypto.createHash('sha256').update(fs.readFileSync(path.join(DIRETORIO, nome))).digest('hex');

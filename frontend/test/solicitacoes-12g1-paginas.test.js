@@ -45,6 +45,7 @@ const EXEMPLOS = /Tício|Ticio|João Pereira|Carlos Mendes|Ana Souza|Fulano|CR-0
 // Configurações (05/10/2026) passou a página integrada depois da 12G-1.
 const INTEGRADAS_ANTES = ['available-items.html', 'config.html', 'dashboard.html', 'delivered-items.html', 'employee-groups.html', 'employee-history.html', 'epi-ficha.html', 'funcionarios.html', 'import-employees.html', 'materials.html', 'operations.html', 'reports.html', 'stock-validity.html', 'gestao-usuarios.html'];
 const INTEGRADAS = [...INTEGRADAS_ANTES, ...Object.keys(NOVAS)].sort();
+const CENTRAL_ATENDIMENTO_TOKEN = 'atendimento-token.html';
 const ADMINISTRATIVAS = ['autorizacoes-individuais.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'grupos-acesso.html', 'new-user.html', 'user-admin.html'];
 const COM_MENU_COMPLETO = fs.readdirSync(path.join(RAIZ, 'pages')).filter((f) => f.endsWith('.html') && !ADMINISTRATIVAS.includes(f)).sort();
 
@@ -275,12 +276,14 @@ describe('menu, Portal e Permissões do Grupo', () => {
   });
 
   test('nenhuma das 24 páginas de menu completo usa os nomes antigos; os protótipos mantêm a navegação deles com os nomes novos', () => {
-    assert.equal(COM_MENU_COMPLETO.length, 23);
+    assert.equal(COM_MENU_COMPLETO.length, 24); // + atendimento-token.html (Etapa H)
     for (const arquivo of COM_MENU_COMPLETO) {
       const rotulos = secao(ler(`pages/${arquivo}`), 'Solicitações').itens.map((i) => i.rotulo);
-      assert.deepEqual(rotulos, ['Autoatendimento (Totem)', 'Pedido de EPI', 'Aprovação da Segurança do Trabalho', 'Entregas por solicitação'], arquivo);
+      // A Central do Atendimento Token (Etapa H) é a página própria do item: ela mostra o nome novo, como cada página integrada marca a si mesma.
+      const primeiro = arquivo === CENTRAL_ATENDIMENTO_TOKEN ? 'Atendimento Token' : 'Autoatendimento (Totem)';
+      assert.deepEqual(rotulos, [primeiro, 'Pedido de EPI', 'Aprovação da Segurança do Trabalho', 'Entregas por solicitação'], arquivo);
     }
-    for (const arquivo of COM_MENU_COMPLETO.filter((f) => !INTEGRADAS.includes(f))) {
+    for (const arquivo of COM_MENU_COMPLETO.filter((f) => !INTEGRADAS.includes(f) && f !== CENTRAL_ATENDIMENTO_TOKEN)) {
       const itens = secao(ler(`pages/${arquivo}`), 'Solicitações').itens;
       assert.match(itens.find((i) => i.rotulo === 'Aprovação da Segurança do Trabalho').html, /data-page="supervisorApproval"/, arquivo);
       assert.match(itens.find((i) => i.rotulo === 'Entregas por solicitação').html, /data-page="stockRequests"/, arquivo);

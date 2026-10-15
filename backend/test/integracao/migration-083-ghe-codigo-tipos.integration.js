@@ -315,11 +315,11 @@ describe('migration 083 — código do GHE e GHE × tipo do catálogo', () => {
     assert.deepEqual(indices.sort(), ['idx_ghe_tipos_material_tipo@ghe_tipos_material', 'uq_ghe_empresa_codigo@grupos_homogeneos_exposicao']);
   });
 
-  test('manifesto: as migrations 000–082 continuam idênticas; a 083 vem logo depois, coerente com o arquivo (a 084 e a 085 são posteriores)', () => {
+  test('manifesto: as migrations 000–082 continuam idênticas; a 083 vem logo depois, coerente com o arquivo (a 084 a 087 e a 089 são posteriores)', () => {
     exigir083();
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO, 'checksums.json'), 'utf8')).migrations;
     const arquivos = fs.readdirSync(DIRETORIO).filter((n) => /^\d{3}_.*\.sql$/.test(n)).sort();
-    assert.equal(arquivos.length, 86);
+    assert.equal(arquivos.length, 89);
     assert.deepEqual(Object.keys(manifesto).sort(), arquivos);
     const sha = (nome) => crypto.createHash('sha256').update(fs.readFileSync(path.join(DIRETORIO, nome))).digest('hex');
     for (const nome of arquivos) assert.equal(sha(nome), manifesto[nome], nome);
@@ -328,9 +328,12 @@ describe('migration 083 — código do GHE e GHE × tipo do catálogo', () => {
     const digest = crypto.createHash('sha256').update(`${antigas.map((n) => `${n}  ${sha(n)}`).join('\n')}\n`).digest('hex');
     assert.equal(digest, DIGEST_000_A_082, 'alguma migration 000–082 foi editada');
     const novas = arquivos.filter((n) => n.slice(0, 3) > '082');
-    assert.equal(novas.length, 3);
+    assert.equal(novas.length, 6);
     assert.match(novas[0], /^083_.+\.sql$/);
     assert.match(novas[1], /^084_.+\.sql$/);
     assert.match(novas[2], /^085_.+\.sql$/);
+    assert.match(novas[3], /^086_.+\.sql$/);
+    assert.match(novas[4], /^087_.+\.sql$/);
+    assert.match(novas[5], /^089_.+\.sql$/);
   });
 });

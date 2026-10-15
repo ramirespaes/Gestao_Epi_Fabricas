@@ -886,7 +886,8 @@ describe('10I — editor de permissões e escopo do MASTER', () => {
   test('o escopo oficial do MASTER cobre a ficha (visualizar) e a entrega (REALIZAR_ENTREGA), coerente com o editor', () => {
     const escopo = Object.fromEntries(ESCOPO_PROVISIONAMENTO_MASTER.recursos.map((r) => [r.recurso, [...r.operacoes]]));
     assert.deepEqual(escopo.epiFicha, ['visualizar']);
-    assert.deepEqual([...ESCOPO_PROVISIONAMENTO_MASTER.acoes], ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS']);
+    // As quatro ações TOKEN_* entraram no escopo do MASTER nas Etapas B, C e H do Atendimento Token (contrato do backend: test/rbac/recursos.test.js).
+    assert.deepEqual([...ESCOPO_PROVISIONAMENTO_MASTER.acoes], ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS', 'TOKEN_REVOGAR_DISPOSITIVO', 'TOKEN_GERAR_ATIVACAO', 'TOKEN_GERENCIAR_REDES', 'TOKEN_PREVIA_CATALOGO_REAL']);
   });
 });
 
