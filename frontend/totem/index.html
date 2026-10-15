@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1a3a6b">
+  <meta name="referrer" content="no-referrer">
+  <script src="boot.js"></script>
+  <title>Retirada de EPI — Gestão de EPIs</title>
+  <link rel="stylesheet" href="totem.css">
+</head>
+<body>
+
+<!-- Ícones locais (traço, 24×24). Nenhuma fonte nem imagem externa. -->
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <symbol id="i-seguranca" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5L16 9.5"/></symbol>
+  <symbol id="i-sair" viewBox="0 0 24 24"><path d="M9 4H5v16h4"/><path d="M16 8l4 4-4 4"/><path d="M20 12H9"/></symbol>
+  <symbol id="i-cracha" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="12" cy="10" r="2.5"/><path d="M7.5 17c.8-2 2.4-3 4.5-3s3.7 1 4.5 3"/></symbol>
+  <symbol id="i-apagar" viewBox="0 0 24 24"><path d="M9 5h11v14H9l-6-7z"/><path d="M12.5 9.5l5 5M17.5 9.5l-5 5"/></symbol>
+  <symbol id="i-entrar" viewBox="0 0 24 24"><path d="M15 4h4v16h-4"/><path d="M4 12h11"/><path d="M11 8l4 4-4 4"/></symbol>
+  <symbol id="i-voltar" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M11 6l-6 6 6 6"/></symbol>
+  <symbol id="i-grade" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/></symbol>
+  <symbol id="i-sacola" viewBox="0 0 24 24"><path d="M5 8h14l-1 12H6z"/><path d="M9 8V6a3 3 0 016 0v2"/></symbol>
+  <symbol id="i-ok" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5"/></symbol>
+  <symbol id="i-tablet" viewBox="0 0 24 24"><rect x="5" y="2.5" width="14" height="19" rx="2.5"/><path d="M11 18.5h2"/></symbol>
+  <symbol id="i-bloqueio" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></symbol>
+  <symbol id="i-relogio" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="brand"><i><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-seguranca"/></svg></i>Retirada de EPI</div>
+  <div class="sessao" id="sessao">
+    <span class="quem" id="quem"></span>
+    <span class="tempo" id="tempo"></span>
+    <button type="button" class="btn btn-outlined btn-sm" id="btnSair"><svg class="mi mi-sm" aria-hidden="true" focusable="false"><use href="#i-sair"/></svg>Sair</button>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ATIVAÇÃO — o tablet é liberado por um código de uso único, lido do QR; o consumo é sempre por toque -->
+  <section class="tela" id="telaAtivacao">
+    <div class="acesso">
+      <div class="ico"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-tablet"/></svg></div>
+      <h1>Ativar este tablet</h1>
+      <p>Toque em Ativar para liberar este tablet para uso.</p>
+      <div class="erro" id="erroAtivacao" role="alert"></div>
+      <p class="msg" id="orientacaoAtivacao" hidden></p>
+      <button type="button" class="btn btn-filled" id="btnAtivar"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-entrar"/></svg>Ativar</button>
+    </div>
+  </section>
+
+  <!-- TABLET NÃO AUTORIZADO -->
+  <section class="tela" id="telaNaoAutorizado">
+    <div class="acesso">
+      <div class="ico" style="background:rgba(255,59,48,.12);color:var(--error)"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-bloqueio"/></svg></div>
+      <p class="msg-grande">Este tablet não está autorizado. Procure a administração do sistema.</p>
+    </div>
+  </section>
+
+  <!-- TABLET FORA DA REDE AUTORIZADA -->
+  <section class="tela" id="telaRede">
+    <div class="acesso">
+      <div class="ico" style="background:rgba(255,59,48,.12);color:var(--error)"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-bloqueio"/></svg></div>
+      <p class="msg-grande">Este tablet está fora da rede autorizada. Procure a administração do sistema.</p>
+    </div>
+  </section>
+
+  <!-- TELA 1 — acesso por CPF ou matrícula -->
+  <section class="tela" id="telaAcesso">
+    <div class="acesso">
+      <div class="ico"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-cracha"/></svg></div>
+      <h1>Identifique-se</h1>
+      <p>Digite seu CPF ou o número da sua matrícula para ver os equipamentos disponíveis.</p>
+      <div class="tipos" id="tipos" role="group" aria-label="Forma de identificação">
+        <button type="button" class="tam" id="tipoCpf" aria-pressed="false"><b>CPF</b></button>
+        <button type="button" class="tam" id="tipoMatricula" aria-pressed="false"><b>Matrícula</b></button>
+      </div>
+      <div class="campo">
+        <label for="doc" id="rotuloDoc">CPF ou matrícula</label>
+        <input id="doc" class="input" type="text" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go" maxlength="30">
+        <div class="erro" id="erro" role="alert"></div>
+      </div>
+      <div class="teclado" id="teclado">
+        <button type="button" class="tecla" data-tecla="1">1</button>
+        <button type="button" class="tecla" data-tecla="2">2</button>
+        <button type="button" class="tecla" data-tecla="3">3</button>
+        <button type="button" class="tecla" data-tecla="4">4</button>
+        <button type="button" class="tecla" data-tecla="5">5</button>
+        <button type="button" class="tecla" data-tecla="6">6</button>
+        <button type="button" class="tecla" data-tecla="7">7</button>
+        <button type="button" class="tecla" data-tecla="8">8</button>
+        <button type="button" class="tecla" data-tecla="9">9</button>
+        <button type="button" class="tecla sec" id="btnLimpar">Limpar</button>
+        <button type="button" class="tecla" data-tecla="0">0</button>
+        <button type="button" class="tecla sec" id="btnApagar" aria-label="Apagar"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-apagar"/></svg></button>
+      </div>
+      <button type="button" class="btn btn-filled" id="btnContinuar"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-entrar"/></svg>Continuar</button>
+      <button type="button" class="link" id="btnTeclado">Minha matrícula tem letras — usar teclado</button>
+      <small>Seus dados são usados apenas para identificar você nesta retirada.</small>
+    </div>
+  </section>
+
+  <!-- AVISO — pedidos já existentes do funcionário (consulta da Etapa G) -->
+  <section class="tela" id="telaAviso">
+    <div class="acesso">
+      <div class="ico"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-relogio"/></svg></div>
+      <div class="aviso-sec" id="secDisponiveis" hidden>
+        <h1>Você possui EPIs disponíveis para retirada.</h1>
+        <p>Procure a Segurança do Trabalho para realizar a retirada desses materiais.</p>
+        <ul id="listaDisponiveis"></ul>
+      </div>
+      <div class="aviso-sec" id="secAguardandoEstoque" hidden>
+        <h2>Aprovados, aguardando a chegada do material</h2>
+        <ul id="listaAguardandoEstoque"></ul>
+      </div>
+      <div class="aviso-sec" id="secAguardandoAprovacao" hidden>
+        <h2>Aguardando aprovação</h2>
+        <ul id="listaAguardandoAprovacao"></ul>
+      </div>
+      <div class="aviso-sec" id="secIndisponivel" hidden>
+        <h2>Temporariamente indisponíveis. Procure a Segurança do Trabalho.</h2>
+        <ul id="listaIndisponivel"></ul>
+      </div>
+      <button type="button" class="btn btn-filled" id="btnAvisoOk"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-grade"/></svg>OK — Solicitar novos EPIs</button>
+    </div>
+  </section>
+
+  <!-- TELA 2 — produtos -->
+  <section class="tela" id="telaProdutos">
+    <div class="ola">
+      <h1 id="ola"></h1>
+      <p id="olaSub"></p>
+      <div class="chips" id="olaChips"></div>
+    </div>
+    <div id="resumo"></div>
+    <p class="msg" id="estadoCatalogo" hidden></p>
+    <p id="subtituloProdutos" hidden style="font-size:14px;color:var(--on-var);margin-top:18px">Toque em um produto para ver os tamanhos disponíveis.</p>
+    <div class="grade" id="grade"></div>
+    <div class="acao" id="blocoRevisar" hidden>
+      <button type="button" class="btn btn-filled" id="btnRevisar"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-sacola"/></svg>Revisar e enviar pedido</button>
+    </div>
+  </section>
+
+  <!-- TELA 3 — tamanhos do produto -->
+  <section class="tela" id="telaTamanhos">
+    <button type="button" class="btn btn-outlined voltar" id="btnVoltarProdutos"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-voltar"/></svg>Voltar aos produtos</button>
+    <div class="detalhe">
+      <div class="prod-img" id="detImg"></div>
+      <div>
+        <h2 id="detNome"></h2>
+        <div class="sub" id="detTipo"></div>
+        <div class="tams-titulo">Tamanhos</div>
+        <div class="tams" id="tams"></div>
+        <div class="acao">
+          <div class="acao-txt" id="acaoTxt">Toque em um tamanho para escolher</div>
+          <div class="acao-btns">
+            <button type="button" class="btn btn-outlined" id="btnOutroProduto"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-grade"/></svg>Escolher outro produto</button>
+            <button type="button" class="btn btn-filled" id="btnSolicitar" disabled><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-sacola"/></svg>Adicionar ao pedido</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- REVISÃO — itens do pedido e motivo de cada um -->
+  <section class="tela" id="telaRevisao">
+    <button type="button" class="btn btn-outlined voltar" id="btnVoltarRevisao"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-voltar"/></svg>Voltar aos produtos</button>
+    <div class="ola">
+      <h1>Revise o seu pedido</h1>
+      <p>Escolha o motivo de cada item</p>
+    </div>
+    <div id="itensRevisao"></div>
+    <div class="erro" id="erroEnvio" role="alert"></div>
+    <div class="acao">
+      <div class="acao-btns">
+        <button type="button" class="btn btn-filled" id="btnEnviar" disabled><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-entrar"/></svg>Enviar pedido</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ENVIO INCERTO — o resultado do envio não foi confirmado -->
+  <section class="tela" id="telaIncerto">
+    <div class="acesso">
+      <div class="ico" style="background:rgba(178,106,0,.16);color:var(--warn)"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-relogio"/></svg></div>
+      <h1>Não conseguimos confirmar o envio do seu pedido.</h1>
+      <p class="msg" id="msgProcessando" hidden></p>
+      <button type="button" class="btn btn-filled" id="btnVerificar">Verificar</button>
+      <button type="button" class="btn btn-outlined" id="btnReenviar" hidden>Enviar novamente</button>
+    </div>
+  </section>
+
+  <!-- TELA 4 — confirmação (neutra: só o que o servidor confirmou) -->
+  <section class="tela" id="telaConfirma">
+    <div class="acesso" style="margin-top:4vh">
+      <div class="ico" style="background:rgba(26,127,55,.14);color:var(--ok)"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-ok"/></svg></div>
+      <h1>Solicitação enviada com sucesso.</h1>
+      <p>Seu pedido foi registrado e será analisado pela Segurança do Trabalho.</p>
+      <button type="button" class="btn btn-filled" id="btnConcluir"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-sair"/></svg>Concluir e sair</button>
+    </div>
+  </section>
+
+</main>
+
+<div id="toasts"></div>
+
+<script src="../portal/config.js"></script>
+<script src="totem.js"></script>
+</body>
+</html>

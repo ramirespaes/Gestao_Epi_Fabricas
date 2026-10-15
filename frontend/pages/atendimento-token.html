@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Atendimento Token — Gestão de EPIs</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+  <link rel="stylesheet" href="../css/main.css">
+  <script src="../js/tema.js"></script>
+  <style>
+    /* Itens do menu ainda não integrados ao backend (sem link) */
+    .nav a.nav-pendente{cursor:default;opacity:.55}
+    .nav a.nav-pendente:hover{background:transparent}
+    .nav-etiqueta{margin-left:auto;font-size:10px;font-weight:500;color:var(--on-surface-variant);border:1px solid var(--outline);border-radius:99px;padding:1px 7px;white-space:nowrap}
+    #estadoPagina{margin-bottom:18px}
+    /* Etapa H (frontend): Central Administrativa do Atendimento Token, só com tokens do tema. */
+    .report-tab:focus-visible,.outlined-btn:focus-visible,.filled-btn:focus-visible,.input:focus-visible,.select:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+    .report-tab{display:inline-flex;align-items:center}
+    .painel-aba:focus-visible{outline:none}
+    .aviso-area{margin-bottom:14px}
+    .dica{font-size:12px;color:var(--on-surface-variant);margin:0}
+    .campo-erro{color:var(--error);font-size:12px;margin:0}
+    .campo-erro:empty{display:none}
+    .input[aria-invalid="true"]{border-color:var(--error);box-shadow:0 0 0 1px var(--error)}
+    .stats.cartoes-token{grid-template-columns:repeat(3,minmax(0,1fr))}
+    #visaoGeralSituacao{margin:16px 0 0;font-size:14px}
+    .acoes-linha{display:flex;gap:8px;flex-wrap:wrap}
+    .acoes-linha .outlined-btn{height:34px;padding:0 12px;font-size:13px}
+    .perigo-texto{color:var(--error)}
+    .filled-btn.perigo{background:var(--error)}
+    .destaque-perigo{margin-top:12px;background:var(--error-container);color:var(--error);border-color:rgba(255,59,48,0.25);font-weight:600}
+    html[data-theme="dark"] .destaque-perigo{color:var(--on-surface)}
+    .paginacao{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding-top:12px;flex-wrap:wrap}
+    .paginacao span{font-size:13px;color:var(--on-surface-variant)}
+    .detalhe-lista{display:grid;grid-template-columns:max-content 1fr;gap:6px 14px;font-size:13px;margin:12px 0 0}
+    .detalhe-lista dt{color:var(--on-surface-variant)}
+    .detalhe-lista dd{margin:0;overflow-wrap:anywhere}
+    .linha-selecao{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+    .linha-selecao .field{flex:1 1 280px;min-width:0}
+    .resumo-ativacao{margin:16px 0 0;font-size:15px;font-weight:700}
+    .resumo-ativacao[data-estado="PENDENTE"]{color:var(--primary)}
+    .resumo-ativacao[data-estado="CONSUMIDA"]{color:#1A7A35}
+    html[data-theme="dark"] .resumo-ativacao[data-estado="CONSUMIDA"]{color:var(--success)}
+    .resumo-ativacao[data-estado="EXPIRADA"],.resumo-ativacao[data-estado="CANCELADA"]{color:var(--on-surface-variant)}
+    .grupo-redes{margin-top:22px}
+    .form-rede{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) auto;gap:12px;align-items:start;margin:14px 0}
+    .form-rede .botao-linha{align-self:end}
+    .lista-funcionarios,.lista-materiais{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+    .lista-funcionarios > li{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--outline-variant);border-radius:14px;background:var(--surface)}
+    .lista-funcionarios > li > .request-meta{flex:1 1 220px}
+    .lista-funcionarios > li > .previa-caixa{flex:1 1 100%;min-width:0;margin-top:2px}
+    .lista-materiais li{display:flex;flex-direction:column;gap:2px;padding:12px 14px;border:1px solid var(--outline-variant);border-radius:14px;background:var(--surface)}
+    .request-meta{display:flex;flex-direction:column;gap:2px;min-width:0}
+    .request-meta strong,.request-meta span{overflow-wrap:anywhere}
+    .request-meta span{font-size:12px;color:var(--on-surface-variant)}
+    .busca-previa{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin:14px 0}
+    .busca-previa .field{flex:1 1 260px;min-width:0}
+    .previa-caixa{margin-top:18px;padding-top:16px;border-top:1px solid var(--outline-variant)}
+    .previa-caixa h3{margin:0 0 8px;font-size:15px}
+    #qrArea{width:min(100%,260px);margin:0 auto;background:#fff;border-radius:12px;padding:8px;line-height:0}
+    #qrArea svg{width:100%;height:auto;display:block}
+    #qrContagem{text-align:center;font-weight:700;margin:12px 0 4px;font-variant-numeric:tabular-nums}
+    #qrMensagem{margin:0 0 4px}
+    .modal-card.largo{width:min(100%,640px)}
+    #conteudoProtegido button:disabled{background:var(--surface-container-high);color:var(--on-surface-variant);border:0.5px solid var(--outline-variant);opacity:.6;filter:grayscale(1);cursor:not-allowed}
+    @media (max-width: 900px){.stats.cartoes-token{grid-template-columns:repeat(2,minmax(0,1fr))}.form-rede{grid-template-columns:1fr}}
+    @media (max-width: 560px){.stats.cartoes-token{grid-template-columns:1fr}.detalhe-lista{grid-template-columns:1fr}.detalhe-lista dd{margin-bottom:6px}.report-tab{flex:1 1 auto;justify-content:center}.lista-funcionarios > li{flex-direction:column;align-items:stretch}.lista-funcionarios > li > .request-meta{flex:0 0 auto}.lista-funcionarios > li > .previa-caixa{flex:0 0 auto}}
+  </style>
+</head>
+<!--
+  Atendimento Token — Central Administrativa (Etapa H, bloco frontend).
+
+  Página ORIGINAL ligada à sessão empresarial real e às permissões efetivas
+  (recurso atendimentoToken e as ações TOKEN_*), com os estados padrão de
+  js/estado-pagina.js. Uma só página com seis abas: Visão Geral, Dispositivos,
+  Ativação (com as redes autorizadas), Monitoramento, Prévia e Testes e
+  Histórico. Monitoramento e Histórico são só a estrutura da Etapa J.
+  Toda a lógica está em js/atendimento-token.js (contratos) e
+  js/atendimento-token-tela.js (tela), testadas sem navegador; o servidor
+  decide tudo de novo. O código de ativação só existe no QR exibido, em
+  memória, e é descartado ao fechar a janela, sair da aba, expirar ou
+  recarregar. Esta tela não usa o protótipo do funcionário (token-epi.html).
+-->
+<body>
+
+<!-- ══ VERIFICAÇÃO DA SESSÃO ══ Sem login próprio: usa a sessão empresarial
+     criada pelo Portal do Cliente, confirmada no servidor por
+     js/sessao-empresarial.js. Nada é carregado antes da confirmação. -->
+<div id="telaSessao" style="position:fixed;inset:0;z-index:10000;background:var(--surface);
+     display:flex;align-items:center;justify-content:center;padding:20px">
+  <div style="width:100%;max-width:400px;text-align:center">
+    <div style="width:64px;height:64px;border-radius:20px;background:#1a3a6b;
+                display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
+      <span class="material-symbols-outlined" style="font-size:32px;color:#fff">safety_check</span>
+    </div>
+    <h1 style="font-size:20px;font-weight:700;margin:0">Gestão de EPIs</h1>
+    <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">SafeWork Engenharia</p>
+    <p id="telaSessaoMensagem" role="status" aria-live="polite" style="font-size:13px;color:var(--on-surface-variant);margin-top:8px">Verificando sua sessão…</p>
+    <a id="telaSessaoPortal" href="../portal/index.html" class="filled-btn" style="display:none;margin-top:16px">
+      <span class="material-symbols-outlined">login</span>Ir para o Portal do Cliente
+    </a>
+  </div>
+</div>
+
+<div class="mobile-overlay" onclick="closeMobileMenu()"></div>
+<div class="mobile-topbar">
+    <div class="mobile-topbar-icon">safety_check</div>
+    <span class="mobile-topbar-title">Gestão de EPIs</span>
+  </div>
+  <button class="mobile-global-menu" type="button" onclick="toggleSidebar()" aria-label="Abrir menu">
+    <svg width="20" height="14" viewBox="0 0 20 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <line x1="0" y1="1"  x2="20" y2="1"  stroke="#1C1C1E" stroke-width="1.8" stroke-linecap="round"/>
+      <line x1="0" y1="7"  x2="20" y2="7"  stroke="#1C1C1E" stroke-width="1.8" stroke-linecap="round"/>
+      <line x1="0" y1="13" x2="20" y2="13" stroke="#1C1C1E" stroke-width="1.8" stroke-linecap="round"/>
+    </svg>
+  </button>
+  <div class="layout">
+<aside class="sidebar">
+      <div class="brand">
+        <div class="brand-left">
+          <div class="brand-badge">security</div>
+          <div>
+            <div class="brand-title">Gestão de EPIs</div>
+            <div class="brand-sub" style="font-size:11px;color:var(--on-surface-variant);margin-top:2px;">v1.0</div>
+          </div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <div class="nav-section">Visão geral</div>
+        <a href="dashboard.html" data-pagina="dashboard" style="display:none"><div class="nav-icon blue">dashboard</div>Dashboard</a>
+        <a href="reports.html" data-pagina="reports" style="display:none"><div class="nav-icon indigo">analytics</div>Relatórios</a>
+        <div class="nav-section">Estoque</div>
+        <a href="materials.html" data-pagina="materials" style="display:none"><div class="nav-icon teal">inventory_2</div>Gestão de estoque</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon orange">shopping_cart</div>Compras / Entradas<span class="nav-etiqueta">Em integração</span></a>
+        <a href="stock-validity.html" data-pagina="stockValidity" style="display:none"><div class="nav-icon red">event_busy</div>Validade de estoque</a>
+        <a href="available-items.html" data-pagina="availableItems" style="display:none"><div class="nav-icon green">checklist</div>Análise de estoque</a>
+        <a href="operations.html" data-pagina="operations" style="display:none"><div class="nav-icon gray">receipt_long</div>Operações de estoque</a>
+        <a href="employee-groups.html" data-pagina="employeeGroups" style="display:none"><div class="nav-icon purple">group_work</div>Gestão de GHE</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor<span class="nav-etiqueta">Em integração</span></a>
+        <div class="nav-section">Entregas</div>
+        <a href="delivered-items.html" data-pagina="deliveredItems" style="display:none"><div class="nav-icon green">inventory</div>EPIs Entregues</a>
+        <a href="epi-ficha.html" data-pagina="epiFicha" style="display:none"><div class="nav-icon brown">description</div>Ficha de EPI</a>
+        <a href="funcionarios.html" data-pagina="funcionarios" style="display:none"><div class="nav-icon teal">people</div>Cadastro de Colaboradores</a>
+        <a href="employee-history.html" data-pagina="employeeHistory" style="display:none"><div class="nav-icon blue">history</div>Histórico de Funcionários</a>
+        <div class="nav-section">Solicitações</div>
+        <a class="active" href="javascript:void(0)" data-pagina="atendimentoToken" style="display:none"><div class="nav-icon blue">badge</div>Atendimento Token</a>
+        <a href="request.html" data-pagina="request" style="display:none"><div class="nav-icon blue">assignment</div>Pedido de EPI</a>
+        <a href="supervisor-approval.html" data-pagina="supervisorApproval" style="display:none"><div class="nav-icon orange">fact_check</div>Aprovação da Segurança do Trabalho</a>
+        <a href="stock-requests.html" data-pagina="stockRequests" style="display:none"><div class="nav-icon red">playlist_add_check_circle</div>Entregas por solicitação</a>
+        <div class="nav-section">Administração</div>
+        <a href="grupos-acesso.html" data-pagina="grupos-acesso" style="display:none"><div class="nav-icon indigo">groups</div>Grupos de Acesso</a>
+        <a href="grupo-permissoes.html" data-pagina="grupo-permissoes" style="display:none"><div class="nav-icon indigo">lock_person</div>Permissões do Grupo</a>
+        <a href="grupo-usuarios.html" data-pagina="grupo-usuarios" style="display:none"><div class="nav-icon indigo">group_add</div>Integrantes do Grupo</a>
+        <a href="autorizacoes-individuais.html" data-pagina="autorizacoes-individuais" style="display:none"><div class="nav-icon indigo">verified_user</div>Autorizações Individuais</a>
+        <a href="import-employees.html" data-pagina="importEmployees" style="display:none"><div class="nav-icon green">upload_file</div>Importar Funcionários</a>
+        <a href="new-user.html" data-pagina="newUser" style="display:none"><div class="nav-icon green">person_add</div>Novo Usuário</a>
+        <a href="user-admin.html" data-pagina="userAdmin" style="display:none"><div class="nav-icon indigo">group</div>Administração de Usuários</a>
+        <a href="gestao-usuarios.html" data-pagina="gestaoUsuarios" style="display:none"><div class="nav-icon indigo">manage_accounts</div>Gestão de Usuários</a>
+        <a href="config.html" data-pagina="config" style="display:none"><div class="nav-icon gray">settings</div>Configurações</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon teal">support_agent</div>Suporte<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">mark_email_read</div>Gestão de E-mails<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon indigo">privacy_tip</div>Privacidade / LGPD<span class="nav-etiqueta">Em integração</span></a>
+        <a href="../portal/inicio.html"><div class="nav-icon blue">home</div>Início</a>
+      </nav>
+    </aside>
+
+    <main class="content">
+<section id="atendimentoTokenView" class="view active">
+        <div class="page-actions">
+          <div>
+            <h2 style="font-family:var(--font-brand);font-size:22px;line-height:1.1;letter-spacing:-0.4px;font-weight:500">Atendimento Token</h2>
+            <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Central administrativa dos tablets de atendimento: dispositivos, ativação por QR, redes autorizadas e prévia do catálogo.</p>
+          </div>
+        </div>
+
+        <div id="estadoPagina" style="display:none"></div>
+
+        <div id="conteudoProtegido" style="display:none">
+          <div class="report-tabs" id="abas" role="tablist" aria-label="Seções da Central do Atendimento Token">
+            <button class="report-tab" type="button" role="tab" id="aba-visaoGeral" data-aba="visaoGeral" aria-controls="painel-visaoGeral" aria-selected="false" tabindex="-1" style="display:none">Visão Geral</button>
+            <button class="report-tab" type="button" role="tab" id="aba-dispositivos" data-aba="dispositivos" aria-controls="painel-dispositivos" aria-selected="false" tabindex="-1" style="display:none">Dispositivos</button>
+            <button class="report-tab" type="button" role="tab" id="aba-ativacao" data-aba="ativacao" aria-controls="painel-ativacao" aria-selected="false" tabindex="-1" style="display:none">Ativação</button>
+            <button class="report-tab" type="button" role="tab" id="aba-monitoramento" data-aba="monitoramento" aria-controls="painel-monitoramento" aria-selected="false" tabindex="-1" style="display:none">Monitoramento</button>
+            <button class="report-tab" type="button" role="tab" id="aba-previa" data-aba="previa" aria-controls="painel-previa" aria-selected="false" tabindex="-1" style="display:none">Prévia e Testes</button>
+            <button class="report-tab" type="button" role="tab" id="aba-historico" data-aba="historico" aria-controls="painel-historico" aria-selected="false" tabindex="-1" style="display:none">Histórico</button>
+          </div>
+
+          <!-- ═ Visão Geral ═ -->
+          <section class="painel-aba" id="painel-visaoGeral" role="tabpanel" aria-labelledby="aba-visaoGeral" tabindex="0" style="display:none">
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">
+                  <div class="card-icon">dashboard</div>
+                  <div>
+                    <h2>Visão geral</h2>
+                    <p>A situação administrativa dos tablets da empresa. Não mostra se estão online: isso é da Etapa J.</p>
+                  </div>
+                </div>
+                <button class="outlined-btn" id="botaoAtualizarVisaoGeral" type="button">Atualizar</button>
+              </div>
+              <div id="estado-visaoGeral" style="display:none"></div>
+              <div id="conteudo-visaoGeral" style="display:none">
+                <div class="stats cartoes-token" id="visaoGeralCartoes"></div>
+                <p id="visaoGeralSituacao"></p>
+              </div>
+            </div>
+          </section>
+
+          <!-- ═ Dispositivos ═ -->
+          <section class="painel-aba" id="painel-dispositivos" role="tabpanel" aria-labelledby="aba-dispositivos" tabindex="0" style="display:none">
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">
+                  <div class="card-icon">tablet_android</div>
+                  <div>
+                    <h2>Dispositivos</h2>
+                    <p>Os tablets cadastrados. O dispositivo revogado fica só para consulta.</p>
+                  </div>
+                </div>
+                <div class="acoes-linha">
+                  <button class="filled-btn" id="botaoNovoDispositivo" type="button" style="display:none"><span class="material-symbols-outlined">add</span>Novo dispositivo</button>
+                  <button class="outlined-btn" id="botaoAtualizarDispositivos" type="button">Atualizar</button>
+                </div>
+              </div>
+              <div id="avisoDispositivos" class="aviso-area" style="display:none"></div>
+              <div id="estado-dispositivos" style="display:none"></div>
+              <div id="conteudo-dispositivos" style="display:none">
+                <div class="table-wrap" id="tabelaDispositivos">
+                  <table>
+                    <thead><tr><th>Dispositivo</th><th>Unidade / setor</th><th>Situação</th><th>Ativado em</th><th>Ações</th></tr></thead>
+                    <tbody id="corpoDispositivos"></tbody>
+                  </table>
+                </div>
+                <div class="paginacao">
+                  <button class="outlined-btn" id="dispositivosAnterior" type="button" disabled>Anterior</button>
+                  <span id="dispositivosPaginacaoTexto">—</span>
+                  <button class="outlined-btn" id="dispositivosProxima" type="button" disabled>Próxima</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ═ Ativação (e redes autorizadas) ═ -->
+          <section class="painel-aba" id="painel-ativacao" role="tabpanel" aria-labelledby="aba-ativacao" tabindex="0" style="display:none">
+            <div id="estado-ativacao" style="display:none"></div>
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">
+                  <div class="card-icon">qr_code_2</div>
+                  <div>
+                    <h2>Ativar um tablet</h2>
+                    <p id="ativacaoOrientacaoGeral"></p>
+                  </div>
+                </div>
+              </div>
+              <div id="avisoListaAtivacao" class="aviso-area" style="display:none"></div>
+              <p id="ativacaoSemLista" class="dica" style="display:none"></p>
+              <div id="blocoSelecaoAtivacao" style="display:none">
+                <div class="linha-selecao">
+                  <div class="field">
+                    <label for="ativacaoDispositivo">Dispositivo</label>
+                    <select class="select" id="ativacaoDispositivo"></select>
+                  </div>
+                  <button class="outlined-btn" id="botaoAtualizarEstadoAtivacao" type="button" style="display:none">Atualizar estado</button>
+                  <button class="filled-btn" id="botaoGerarAtivacao" type="button" disabled style="display:none"><span class="material-symbols-outlined">qr_code_2</span>Gerar ativação</button>
+                </div>
+                <div id="avisoAtivacao" class="aviso-area" style="display:none;margin-top:14px"></div>
+                <p class="resumo-ativacao" id="ativacaoResumo" role="status"></p>
+                <dl class="detalhe-lista" id="ativacaoDetalhe"></dl>
+                <p class="dica" id="ativacaoOrientacao" style="margin-top:12px"></p>
+              </div>
+            </div>
+
+            <div class="card grupo-redes" id="blocoRedes" style="display:none">
+              <div class="card-header">
+                <div class="card-title">
+                  <div class="card-icon">lan</div>
+                  <div>
+                    <h2>Redes autorizadas</h2>
+                    <p id="redesOrientacao"></p>
+                  </div>
+                </div>
+                <button class="outlined-btn" id="botaoAtualizarRedes" type="button">Atualizar</button>
+              </div>
+              <div id="avisoRedes" class="aviso-area" style="display:none"></div>
+              <form id="formRede" class="form-rede" novalidate>
+                <div class="field">
+                  <label for="redeEndereco">Endereço IP</label>
+                  <input class="input" id="redeEndereco" type="text" maxlength="45" autocomplete="off" inputmode="text" aria-describedby="rede-endereco-erro">
+                  <p id="rede-endereco-erro" class="campo-erro" role="alert"></p>
+                </div>
+                <div class="field">
+                  <label for="redeDescricao">Descrição (opcional)</label>
+                  <input class="input" id="redeDescricao" type="text" maxlength="150" autocomplete="off" aria-describedby="rede-descricao-erro">
+                  <p id="rede-descricao-erro" class="campo-erro" role="alert"></p>
+                </div>
+                <button class="filled-btn botao-linha" id="botaoCadastrarRede" type="submit"><span class="material-symbols-outlined">add</span>Autorizar IP</button>
+              </form>
+              <div id="avisoListaRedes" class="aviso-area" style="display:none"></div>
+              <div id="estado-redes" style="display:none"></div>
+              <div class="table-wrap" id="tabelaRedes" style="display:none">
+                <table>
+                  <thead><tr><th>Endereço IP</th><th>Descrição</th><th>Situação</th><th>Autorizado em</th><th>Desativado em</th><th>Ação</th></tr></thead>
+                  <tbody id="corpoRedes"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- ═ Monitoramento (Etapa J) ═ -->
+          <section class="painel-aba" id="painel-monitoramento" role="tabpanel" aria-labelledby="aba-monitoramento" tabindex="0" style="display:none">
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">
+                  <div class="card-icon">monitor_heart</div>
+                  <div>
+                    <h2>Monitoramento</h2>
+                    <p>Comunicação dos tablets.</p>
+                  </div>
+                </div>
+              </div>
+              <div id="estado-monitoramento" style="display:none"></div>
+            </div>
+          </section>
+
+          <!-- ═ Prévia e Testes ═ -->
+          <section class="painel-aba" id="painel-previa" role="tabpanel" aria-labelledby="aba-previa" tabindex="0" style="display:none">
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">
+                  <div class="card-icon">preview</div>
+                  <div>
+                    <h2>Prévia do catálogo</h2>
+                    <p id="previaAviso"></p>
+                  </div>
+                </div>
+              </div>
+              <p id="previaSemBusca" class="dica" style="display:none"></p>
+              <form id="previaBuscaForm" class="busca-previa" novalidate style="display:none">
+                <div class="field">
+                  <label for="previaBusca">Funcionário (nome ou matrícula)</label>
+                  <input class="input" id="previaBusca" type="search" maxlength="100" autocomplete="off" aria-describedby="previa-busca-erro">
+                  <p id="previa-busca-erro" class="campo-erro" role="alert"></p>
+                </div>
+                <button class="filled-btn" id="botaoBuscarFuncionario" type="submit"><span class="material-symbols-outlined">search</span>Buscar</button>
+              </form>
+              <div id="estado-previaBusca" style="display:none"></div>
+              <div id="previaFuncionarios"></div>
+              <div class="previa-caixa" id="previaResultadoCaixa" role="region" aria-labelledby="previaTitulo" style="display:none">
+                <h3 id="previaTitulo">Prévia do catálogo</h3>
+                <div id="avisoPrevia" class="aviso-area" style="display:none"></div>
+                <div id="estado-previaResultado" style="display:none"></div>
+                <div id="previaResultado"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ═ Histórico (Etapa J) ═ -->
+          <section class="painel-aba" id="painel-historico" role="tabpanel" aria-labelledby="aba-historico" tabindex="0" style="display:none">
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">
+                  <div class="card-icon">history</div>
+                  <div>
+                    <h2>Histórico</h2>
+                    <p>Eventos dos dispositivos e dos atendimentos.</p>
+                  </div>
+                </div>
+              </div>
+              <div id="estado-historico" style="display:none"></div>
+            </div>
+          </section>
+
+          <!-- Cadastro, edição e detalhes do dispositivo -->
+          <div class="modal-overlay" id="modalDispositivo" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="tituloModalDispositivo">
+            <div class="modal-card largo">
+              <div class="modal-header">
+                <div class="modal-title">
+                  <div class="card-icon">tablet_android</div>
+                  <div>
+                    <h2 id="tituloModalDispositivo" style="font-family:var(--font-brand);font-size:17px;font-weight:500">Novo dispositivo</h2>
+                    <p id="descricaoModalDispositivo" style="font-size:12px;color:var(--on-surface-variant);margin-top:2px"></p>
+                  </div>
+                </div>
+                <button class="modal-close" type="button" id="botaoFecharModalDispositivo" aria-label="Fechar">close</button>
+              </div>
+              <form id="formDispositivo" novalidate>
+                <div id="avisoDispositivo" class="aviso-area" style="display:none"></div>
+                <div class="form-grid">
+                  <div class="field full">
+                    <label for="nd-nome">Nome *</label>
+                    <input class="input" id="nd-nome" type="text" maxlength="100" autocomplete="off" aria-describedby="nd-nome-erro">
+                    <p id="nd-nome-erro" class="campo-erro" role="alert"></p>
+                  </div>
+                  <div class="field">
+                    <label for="nd-unidade">Unidade</label>
+                    <input class="input" id="nd-unidade" type="text" maxlength="100" autocomplete="off" aria-describedby="nd-unidade-erro">
+                    <p id="nd-unidade-erro" class="campo-erro" role="alert"></p>
+                  </div>
+                  <div class="field">
+                    <label for="nd-setor">Setor</label>
+                    <input class="input" id="nd-setor" type="text" maxlength="100" autocomplete="off" aria-describedby="nd-setor-erro">
+                    <p id="nd-setor-erro" class="campo-erro" role="alert"></p>
+                  </div>
+                  <div class="field full">
+                    <label for="nd-localInstalacao">Local de instalação</label>
+                    <input class="input" id="nd-localInstalacao" type="text" maxlength="150" autocomplete="off" aria-describedby="nd-localInstalacao-erro">
+                    <p id="nd-localInstalacao-erro" class="campo-erro" role="alert"></p>
+                  </div>
+                  <div class="field">
+                    <label for="nd-fabricante">Fabricante</label>
+                    <input class="input" id="nd-fabricante" type="text" maxlength="100" autocomplete="off" aria-describedby="nd-fabricante-erro">
+                    <p id="nd-fabricante-erro" class="campo-erro" role="alert"></p>
+                  </div>
+                  <div class="field">
+                    <label for="nd-modelo">Modelo</label>
+                    <input class="input" id="nd-modelo" type="text" maxlength="100" autocomplete="off" aria-describedby="nd-modelo-erro">
+                    <p id="nd-modelo-erro" class="campo-erro" role="alert"></p>
+                  </div>
+                  <div class="field full">
+                    <label for="nd-numeroSerie">Número de série</label>
+                    <input class="input" id="nd-numeroSerie" type="text" maxlength="100" autocomplete="off" aria-describedby="nd-numeroSerie-erro">
+                    <p id="nd-numeroSerie-erro" class="campo-erro" role="alert"></p>
+                  </div>
+                </div>
+                <dl class="detalhe-lista" id="detalheDispositivo" style="display:none"></dl>
+                <div class="footer-actions">
+                  <button class="outlined-btn" type="button" id="botaoCancelarDispositivo">Cancelar</button>
+                  <button class="filled-btn" type="submit" id="botaoSalvarDispositivo"><span class="material-symbols-outlined">check</span>Salvar</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- Confirmação (revogar dispositivo, desativar IP, nova ativação) -->
+          <div class="modal-overlay" id="modalConfirmar" role="alertdialog" aria-modal="true" aria-hidden="true" aria-labelledby="tituloModalConfirmar">
+            <div class="modal-card">
+              <div class="modal-header">
+                <div class="modal-title">
+                  <div class="card-icon">warning</div>
+                  <div><h2 id="tituloModalConfirmar" style="font-family:var(--font-brand);font-size:17px;font-weight:500"></h2></div>
+                </div>
+              </div>
+              <div id="corpoModalConfirmar" style="font-size:13px;line-height:1.6;display:flex;flex-direction:column;gap:8px"></div>
+              <div id="avisoModalConfirmar" class="aviso-area" style="display:none;margin-top:12px"></div>
+              <div class="footer-actions">
+                <button class="outlined-btn" type="button" id="botaoCancelarConfirmar">Cancelar</button>
+                <button class="filled-btn" type="button" id="botaoConfirmar">Confirmar</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- QR de ativação: o código só existe aqui, em memória, até esta janela fechar ou o prazo acabar -->
+          <div class="modal-overlay" id="modalQr" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="tituloModalQr">
+            <div class="modal-card">
+              <div class="modal-header">
+                <div class="modal-title">
+                  <div class="card-icon">qr_code_2</div>
+                  <div>
+                    <h2 id="tituloModalQr" style="font-family:var(--font-brand);font-size:17px;font-weight:500">Ativação do tablet</h2>
+                    <p style="font-size:12px;color:var(--on-surface-variant);margin-top:2px"><span id="qrDispositivo"></span> · <span id="qrValidade"></span></p>
+                  </div>
+                </div>
+                <button class="modal-close" type="button" id="botaoFecharQrTopo" aria-label="Fechar">close</button>
+              </div>
+              <div id="qrArea"></div>
+              <p id="qrMensagem" class="notice" role="status" style="display:none"></p>
+              <p id="qrContagem" role="timer"></p>
+              <p class="dica">Leia este QR no tablet. Ele serve uma única vez e não pode ser exibido de novo: fechar esta janela descarta o código.</p>
+              <div class="footer-actions">
+                <button class="outlined-btn" type="button" id="botaoNovaAtivacaoQr" style="display:none">Gerar nova ativação</button>
+                <button class="filled-btn" type="button" id="botaoFecharQr">Fechar e descartar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+<script src="../js/api-http.js"></script>
+<script src="../portal/config.js"></script>
+<script src="../js/sessao-empresarial.js"></script>
+<script src="../js/permissoes-efetivas.js"></script>
+<script src="../js/pagina-base.js"></script>
+<script src="../js/estado-pagina.js"></script>
+<script src="../vendor/qrcode-generator-2.0.4.js"></script>
+<script src="../js/atendimento-token.js"></script>
+<script src="../js/atendimento-token-tela.js"></script>
+<script>
+/*
+  Ligação com o DOM — deliberadamente fina. Sessão e permissões reais
+  (js/estado-pagina.js); as seis abas vivem em js/atendimento-token-tela.js
+  e os contratos em js/atendimento-token.js (testados sem navegador).
+*/
+(function () {
+  'use strict';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var tela = null;
+
+  function encerrarTudo() {
+    if (tela) tela.encerrar();
+  }
+
+  // Mesmo endereço do Portal do Cliente (portal/config.js).
+  EpiHttp.configurar({ baseUrl: window.SAFEWORK_PORTAL_API_BASE_URL });
+
+  EpiEstadoPagina.montarPaginaProtegida({
+    pagina: 'atendimentoToken',
+    elementos: {
+      tela: $('telaSessao'),
+      mensagem: $('telaSessaoMensagem'),
+      linkPortal: $('telaSessaoPortal'),
+      conteudo: $('conteudoProtegido'),
+      estado: $('estadoPagina'),
+      links: document.querySelectorAll('.nav a[data-pagina]'),
+    },
+    aoEncerrar: encerrarTudo,
+  }).then(function (acesso) {
+    if (!acesso) return undefined;
+    tela = EpiAtendimentoTokenTela.criar({
+      capacidades: EpiAtendimentoToken.capacidades(acesso.permissoes),
+      aoSessaoEncerrada: function () {
+        encerrarTudo();
+        EpiEstadoPagina.sessaoEncerrada({ conteudo: $('conteudoProtegido'), estado: $('estadoPagina') });
+      },
+    });
+    return tela.iniciar();
+  });
+})();
+</script>
+</body>
+</html>

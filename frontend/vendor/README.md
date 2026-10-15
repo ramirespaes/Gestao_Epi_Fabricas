@@ -28,7 +28,7 @@ Comportamentos em que a página confia (verificados no código-fonte da versão)
 | Item | Valor |
 |---|---|
 | Arquivo | `vendor/qrcode-generator-2.0.4.js` (56.694 bytes) |
-| Uso | QR Code do cadastro do autenticador (TOTP) no Painel Privado, páginas `painel-privado/index.html` e `painel-privado/seguranca.html`; expõe o global `qrcode` |
+| Uso | QR Code do cadastro do autenticador (TOTP) no Painel Privado, páginas `painel-privado/index.html` e `painel-privado/seguranca.html`, e QR de ativação do tablet na Central do Atendimento Token (`pages/atendimento-token.html`, Etapa H); expõe o global `qrcode` |
 | Origem | pacote npm `qrcode-generator@2.0.4`, arquivo `dist/qrcode.js`, extraído de `https://registry.npmjs.org/qrcode-generator/-/qrcode-generator-2.0.4.tgz` em 28/09/2026 |
 | Integridade do pacote | `sha512-mZSiP6RnbHl4xL2Ap5HfkjLnmxfKcPWpWe/c+5XxCuetEenqmNFf1FH/ftXPCtFG5/TDobjsjz6sSNL0Sr8Z9g==`, igual à publicada no registro npm |
 | Publicação no npm | 07/08/2025 |
@@ -38,7 +38,7 @@ Comportamentos em que a página confia (verificados no código-fonte da versão)
 | SRI (sha384) | `sha384-e9EFD6BGC90bkW9aDV5xbbBfzwN7G8YImHao2lfLVKV/hPB0E0go+H3I64h7oHtA` |
 | Hash conferido por | `frontend/test/painel-privado-mfa.test.js` |
 | Dependências | nenhuma |
-| Fora do pacote do cliente | o Painel Privado não é publicado com o Portal; este arquivo não entra em `publicacao/allowlist.json` |
+| No pacote do cliente | desde a Etapa H, este arquivo e `vendor/LICENSE-qrcode-generator.txt` entram em `publicacao/allowlist.json`, porque a página da Central do Atendimento Token (publicada) os carrega; o Painel Privado continua fora do pacote |
 
 Só `dist/qrcode.js` foi incorporado. Ficaram de fora as variantes `SJIS` e `UTF8`, os módulos `.mjs`, os tipos e os testes do pacote.
 
