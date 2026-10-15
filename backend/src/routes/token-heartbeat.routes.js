@@ -5,6 +5,8 @@ const { validar } = require('../middleware/validar');
 const { criarLimitador } = require('../middleware/rate-limit');
 const { criarExigirDispositivo } = require('../middleware/autenticacao-dispositivo');
 const schemas = require('../schemas/token-heartbeat.schema');
+const { criarTokenHeartbeatController } = require('../controllers/token-heartbeat.controller');
+const { pool } = require('../config/database');
 
 /**
  * Atendimento Token — heartbeat do tablet (Etapa J, J2a). Sem sessão administrativa; a autenticação, a rede e a rotação da
@@ -12,9 +14,10 @@ const schemas = require('../schemas/token-heartbeat.schema');
  *
  *   POST /api/atendimento-token/tablet/heartbeat   cookie do tablet; corpo e query vazios
  *
- * Esta rota AINDA NÃO é montada em app.js: a montagem é uma etapa própria. Os limites seguem o das demais rotas do tablet: o
- * limite por IP é só contenção de inundação (vários tablets dividem o IP de saída) e o fino é por tablet, com a chave vinda do
- * servidor depois da autenticação. A ordem (limite por IP, validação, autenticação) é a do /estado.
+ * Ciclo 2 (K3): a instância `tokenHeartbeatRoutes` é montada em app.js, na mesma cadeia das demais rotas do tablet (CORS, verificação
+ * de Origin, JSON), fora do limitador geral por IP. A fábrica segue exportada, com a mesma assinatura, para os testes. Os limites seguem o
+ * das demais rotas do tablet: o limite por IP é só contenção de inundação (vários tablets dividem o IP de saída) e o fino é por tablet,
+ * com a chave vinda do servidor depois da autenticação. A ordem (limite por IP, validação, autenticação) é a do /estado.
  */
 
 const LIMITE_POR_IP = Object.freeze({ limite: 600, janelaSegundos: 60 });
@@ -33,4 +36,6 @@ function criarTokenHeartbeatRoutes({ controller, pool, limitador, limitadorDispo
   return router;
 }
 
-module.exports = { LIMITE_POR_IP, LIMITE_POR_DISPOSITIVO, chavePorDispositivo, criarTokenHeartbeatRoutes };
+const tokenHeartbeatRoutes = criarTokenHeartbeatRoutes({ controller: criarTokenHeartbeatController({ pool }), pool });
+
+module.exports = { LIMITE_POR_IP, LIMITE_POR_DISPOSITIVO, chavePorDispositivo, criarTokenHeartbeatRoutes, tokenHeartbeatRoutes };

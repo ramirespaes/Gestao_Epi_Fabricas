@@ -143,6 +143,11 @@ const SHIM = `(function (g) {
   };
   Date.now = function () { return BASE_TEMPO + t; };
   g.performance = { now: function () { return t; } };
+  // Sorteio controlável (Ciclo 2, K4): com __aleatorio.valor = null o Math.random é o original; o teste fixa um valor em [0, 1) para
+  // observar o jitter do heartbeat. Nada mais da página usa Math.random (a chave do pedido vem de crypto).
+  var sorteioOriginal = Math.random;
+  g.__aleatorio = { valor: null };
+  Math.random = function () { return g.__aleatorio.valor === null ? sorteioOriginal() : g.__aleatorio.valor; };
   g.__abortos = 0;
   if (typeof g.scrollTo !== 'function') g.scrollTo = function () {}; // o harness não tem rolagem; o navegador tem
 
@@ -228,6 +233,10 @@ function criarServidor(opcoes = {}) {
     ativacoes: 0,
     atividades: 0,
     chamadas: [],
+    // Ciclo 2 (K4): as batidas de presença do tablet (POST /heartbeat) ficam num canal PRÓPRIO, fora de `chamadas`: elas não são
+    // operação do atendimento e as sequências de chamadas dos testes anteriores continuam descrevendo só as operações.
+    batidas: [],
+    ordem: 0,
     violacoes: [],
     falhas: [],
     segurados: [],
@@ -282,6 +291,11 @@ function criarServidor(opcoes = {}) {
 
   const rotas = {
     [`GET ${BASE}/estado`]: () => barreira() ?? resp(200, { status: 'ok', dispositivo }),
+    // Contrato do backend (token-heartbeat.routes): corpo e query vazios e estritos, validados ANTES da autenticação; só o cookie do tablet.
+    [`POST ${BASE}/heartbeat`]: (c) => {
+      if (c.corpo === null || typeof c.corpo !== 'object' || Array.isArray(c.corpo) || Object.keys(c.corpo).length > 0) return erro(400, 'VALIDACAO');
+      return barreira() ?? resp(200, { status: 'ok' });
+    },
     [`POST ${BASE}/ativar`]: (c) => {
       if (chaves(c.corpo ?? {}) !== 'codigo' || typeof c.corpo.codigo !== 'string' || c.corpo.codigo.length < 1 || c.corpo.codigo.length > 128) {
         return erro(400, 'VALIDACAO');
@@ -387,7 +401,9 @@ function criarServidor(opcoes = {}) {
   const PEDIDO_RESULTADO = new RegExp(`^GET ${BASE}/atendimento/pedidos/([^/?]+)$`);
 
   async function tratar(c) {
-    s.chamadas.push({ chave: c.chave, corpo: c.corpo, url: c.url, cabecalhos: c.cabecalhos, em: s.agora, credentials: c.credentials });
+    s.ordem += 1;
+    const registro = { chave: c.chave, corpo: c.corpo, url: c.url, cabecalhos: c.cabecalhos, em: s.agora, credentials: c.credentials, ordem: s.ordem };
+    (c.chave === `POST ${BASE}/heartbeat` ? s.batidas : s.chamadas).push(registro);
     if (c.credentials !== 'include') s.violacoes.push(`sem credentials: include (${c.chave})`);
     for (const k of Object.keys(c.cabecalhos ?? {})) {
       if (!['content-type', 'accept'].includes(k.toLowerCase())) s.violacoes.push(`cabeçalho não permitido ${k} (${c.chave})`);
@@ -411,6 +427,8 @@ function criarServidor(opcoes = {}) {
         if (f.modo === 'segurar') await new Promise((resolver) => { s.segurados.push(resolver); });
         if (f.modo === '429') return erro(429, 'LIMITE_REQUISICOES_EXCEDIDO', { cabecalhos: { 'Retry-After': String(f.retryAfter ?? 5) } });
         if (f.modo === 'status') {
+          // `segurar`: a resposta já está decidida na chegada (o status da falha); só a entrega espera `liberarSegurados`.
+          if (f.segurar) await new Promise((resolver) => { s.segurados.push(resolver); });
           if (f.bruto !== undefined) return resp(f.status, undefined, {}, f.bruto); // corpo que não é JSON
           return f.corpo !== undefined ? resp(f.status, f.corpo) : erro(f.status, f.codigo ?? 'ERRO');
         }
