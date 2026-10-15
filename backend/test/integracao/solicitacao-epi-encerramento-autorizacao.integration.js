@@ -8,7 +8,7 @@ const { abrirPoolTemporario } = require('./helpers/schema-temporario');
 const { exigirModulo } = require('../helpers/exigir-modulo');
 const { todasAsMigrations, inserir } = require('./helpers/entrega-epi');
 const {
-  montarMundoDoServico, chaveNova, esperarHttpError,
+  montarMundoDoServico, removerAutoridadeSst, chaveNova, esperarHttpError,
 } = require('./helpers/solicitacao-epi-servico');
 const { criarFerramentas } = require('./helpers/reserva-estoque');
 const { avaliarPermissaoAcao } = require('../../src/middleware/autorizacao');
@@ -131,6 +131,8 @@ describe('autoridade para encerrar a solicitação — autorização central (Po
   });
 
   test('vínculo ou autorização de outra empresa não valem: a decisão é sempre na empresa da sessão', async () => {
+    // K2: o mundo já dá ao sstB o vínculo e as ações. Só o sstB parte do zero aqui; sst1 e sst2 seguem autorizados para as ferramentas (f.aprovada) dos testes seguintes.
+    await removerAutoridadeSst(pool, { sst1: d.sstB, sst2: d.sstB, sstB: d.sstB });
     await vincularSst(d.sstB, d.empresaB, d.masterB);
     await autorizar(d.sstB, ENCERRAR, d.empresaB, d.masterB);
     assert.equal(await pode(d.sstB, 'ADMINISTRADOR', ENCERRAR, d.empresaB), true, 'na própria empresa');

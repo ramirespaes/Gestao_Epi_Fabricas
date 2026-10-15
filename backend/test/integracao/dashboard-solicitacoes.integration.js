@@ -99,7 +99,7 @@ describe('12G-6 — Dashboard: aguardando SST, aguardando estoque e disponíveis
     await entregar(a4, lote4, 1); // A4: ENTREGUE, fora
     const a5 = await f.aprovada({ materialId: await f.material(), quantidade: 1 });
     await solicitacaoSvc.encerrarSolicitacao(pool, {
-      empresaId: d.empresaA, atorId: d.master, solicitacaoId: a5.id, justificativa: 'Não será mais entregue (fictício)', hoje: f.HOJE,
+      empresaId: d.empresaA, atorId: d.sst1, solicitacaoId: a5.id, justificativa: 'Não será mais entregue (fictício)', hoje: f.HOJE,
     }); // A5: ENCERRADA, fora
     const m6 = await f.material();
     await f.estoque(m6, 5);

@@ -26,6 +26,34 @@ async function vincularMaterialAoGhe(executor, empresaId, gheId, materialId) {
   await inserir(executor, 'ghe_materiais', { empresa_id: empresaId, grupo_homogeneo_id: gheId, material_id: materialId });
 }
 
+// K2: decidir e encerrar revalidam a autoridade na transação; quem decide nos fixtures precisa do vínculo SST e das três ações.
+const ACOES_DA_SST = Object.freeze(['APROVAR_SOLICITACAO', 'REPROVAR_SOLICITACAO', 'ENCERRAR_SOLICITACAO']);
+
+/**
+ * Concede, como o próprio MASTER da empresa de cada um (sst1 e sst2 na A, sstB na B), o vínculo SST e as três ações da SST. Linhas reais
+ * de vinculo_sst e usuario_autorizacoes: a política efetiva as lê, nada é atalho. O MASTER nunca é decisor nos fixtures.
+ */
+async function provisionarAutoridadeSst(executor, d) {
+  const porEmpresa = [[d.empresaA, d.master, [d.sst1, d.sst2]], [d.empresaB, d.masterB, [d.sstB]]];
+  for (const [empresaId, concedidoPor, usuarios] of porEmpresa) {
+    for (const usuarioId of usuarios) {
+      await inserir(executor, 'vinculo_sst', { empresa_id: empresaId, usuario_id: usuarioId, concedido_por: concedidoPor });
+      for (const acao of ACOES_DA_SST) {
+        await inserir(executor, 'usuario_autorizacoes', {
+          empresa_id: empresaId, usuario_id: usuarioId, acao_codigo: acao, autorizado_por: concedidoPor,
+        });
+      }
+    }
+  }
+}
+
+/** Volta sst1, sst2 e sstB ao estado "sem vínculo e sem concessão", para as suítes que testam o próprio vínculo SST desses usuários. */
+async function removerAutoridadeSst(executor, d) {
+  const ids = [d.sst1, d.sst2, d.sstB];
+  await executor.query('DELETE FROM usuario_autorizacoes WHERE usuario_id = ANY($1::int[])', [ids]);
+  await executor.query('DELETE FROM vinculo_sst WHERE usuario_id = ANY($1::int[])', [ids]);
+}
+
 async function montarMundoDoServico(pool) {
   const d = { CNPJ_A, CNPJ_B };
   d.empresaA = await criarEmpresa(pool, CNPJ_A, 'Empresa A Fictícia');
@@ -42,6 +70,7 @@ async function montarMundoDoServico(pool) {
   d.usuarioB = await inserirUsuario(pool, d.empresaB, 'usuario-b@example.invalid', 'USUARIO');
   d.masterB = await inserirUsuario(pool, d.empresaB, 'master-b@example.invalid', 'MASTER');
   d.sstB = await inserirUsuario(pool, d.empresaB, 'sst-b@example.invalid', 'ADMINISTRADOR');
+  await provisionarAutoridadeSst(pool, d);
 
   d.gheA = await criarGhe(pool, d.empresaA, 'GHE A');
   d.gheA2 = await criarGhe(pool, d.empresaA, 'GHE A2');
@@ -145,6 +174,6 @@ const comLimite = (promessa, rotulo, ms = 4000) => Promise.race([
 ]);
 
 module.exports = {
-  inserirUsuario, vincularMaterialAoGhe, montarMundoDoServico, chaveNova, esperarHttpError, esperarValidacao, portao,
-  aguardarTravaAdvisoryPendente, aguardarEsperaPorTravaDeLinha, comLimite,
+  inserirUsuario, vincularMaterialAoGhe, montarMundoDoServico, provisionarAutoridadeSst, removerAutoridadeSst, ACOES_DA_SST, chaveNova, esperarHttpError,
+  esperarValidacao, portao, aguardarTravaAdvisoryPendente, aguardarEsperaPorTravaDeLinha, comLimite,
 };

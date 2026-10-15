@@ -280,7 +280,7 @@ describe('12G-6 — Gerar alerta (falta de estoque de um pedido)', () => {
       });
       const encerrada = await pedidoComFalta();
       await solicitacaoSvc.encerrarSolicitacao(pool, {
-        empresaId: d.empresaA, atorId: d.master, solicitacaoId: encerrada.id, justificativa: 'Não será mais entregue (fictício)', hoje: f.HOJE,
+        empresaId: d.empresaA, atorId: d.sst1, solicitacaoId: encerrada.id, justificativa: 'Não será mais entregue (fictício)', hoje: f.HOJE,
       });
       for (const id of [pendente.solicitacao.id, encerrada.id]) {
         const r = await alertar(u.entrega, id);

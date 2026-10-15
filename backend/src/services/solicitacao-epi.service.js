@@ -1,6 +1,8 @@
 'use strict';
 
 const { HttpError } = require('../errors/HttpError');
+const { avaliarPermissaoAcao, MENSAGEM_PERMISSAO_NEGADA } = require('../middleware/autorizacao');
+const { PERFIL_MASTER } = require('./autoridade-administrativa');
 const { exigirPodeReceberEpi, exigirNaoInativo } = require('../utils/situacao-funcionario');
 const funcionarioRepo = require('../repositories/funcionario.repository');
 const materialRepo = require('../repositories/material.repository');
@@ -25,9 +27,12 @@ const { posicaoPublica } = require('./saldo-livre');
  * Solicitação de EPI (12B): criação, decisão da Segurança do Trabalho,
  * cancelamento, encerramento (12E-2) e consulta. Só a camada de negócio, sem
  * HTTP. A autorização de quem pode criar, decidir, cancelar ou encerrar é das
- * rotas, quando existirem (recurso `request`, ações APROVAR_SOLICITACAO,
- * REPROVAR_SOLICITACAO e ENCERRAR_SOLICITACAO, pela autorização central); aqui
- * ficam as regras que não dependem do middleware: separação de funções,
+ * rotas (recurso `request`, ações APROVAR_SOLICITACAO, REPROVAR_SOLICITACAO e
+ * ENCERRAR_SOLICITACAO, pela autorização central). Decidir e encerrar também
+ * a revalidam AQUI, dentro da transação (K2), sem opção de omitir: o MASTER
+ * nunca decide nem encerra, e quem não é MASTER precisa da autoridade efetiva
+ * das ações que o ato usa, avaliada pela mesma política do middleware. Aqui
+ * ficam ainda as regras que não dependem do middleware: separação de funções,
  * trabalhador e material ativos, justificativas e o estado da solicitação.
  * empresaId e atorId vêm da sessão. A solicitação não reserva nem baixa
  * estoque: a reserva é lógica e derivada (posição por empresa, material e
@@ -52,6 +57,9 @@ const ACAO_CRIADA = 'SOLICITACAO_EPI_CRIADA';
 const ACAO_DECIDIDA = 'SOLICITACAO_EPI_DECIDIDA';
 const ACAO_CANCELADA = 'SOLICITACAO_EPI_CANCELADA';
 const ACAO_ENCERRADA = 'SOLICITACAO_EPI_ENCERRADA';
+const AUTORIDADE_APROVAR = 'APROVAR_SOLICITACAO';
+const AUTORIDADE_REPROVAR = 'REPROVAR_SOLICITACAO';
+const AUTORIDADE_ENCERRAR = 'ENCERRAR_SOLICITACAO';
 const CARACTERE_CONTROLE = /\p{Cc}/u;
 const MSG_FORMATO_INVALIDO = 'Formato inválido';
 
@@ -232,6 +240,29 @@ async function exigirAtorAtivo(client, empresaId, atorId) {
   if (ator === null) throw HttpError.notFound('USUARIO_NAO_ENCONTRADO', 'Usuário não encontrado');
   if (ator.ativo !== true) throw HttpError.forbidden('USUARIO_INATIVO', 'Usuário inativo');
   return ator;
+}
+
+/**
+ * K2: autoridade de decidir e de encerrar, revalidada na transação do ato. O MASTER é negado sempre (perfil lido da linha do ator, nunca
+ * de argumento), mesmo que tenha linha de perfil, concessão e vínculo. Os demais precisam de cada ação que o ato usa, pela política EFETIVA
+ * do middleware (vínculo SST, concessão individual e ausência de bloqueio), avaliada sobre o `client` da transação: a revogação
+ * confirmada antes desta leitura impede o ato. Mesmo 403 PERMISSAO_NEGADA da rota; nada é gravado antes.
+ */
+async function exigirAutoridadeDaSolicitacao(client, { empresaId, ator, acoes }) {
+  const negar = () => HttpError.forbidden('PERMISSAO_NEGADA', MENSAGEM_PERMISSAO_NEGADA);
+  if (ator.perfil === PERFIL_MASTER || acoes.length === 0) throw negar();
+  for (const acao of acoes) {
+    const permitido = await avaliarPermissaoAcao(client, { empresaId, usuarioId: ator.id, perfil: ator.perfil }, acao);
+    if (!permitido) throw negar();
+  }
+}
+
+/** As ações que a decisão usa, pelo que ela faz com os itens (a mesma regra da rota): aprovar exige APROVAR, reprovar exige REPROVAR. */
+function acoesDaDecisao(decisoes) {
+  const acoes = [];
+  if (decisoes.some((x) => x.decisao === 'APROVADO')) acoes.push(AUTORIDADE_APROVAR);
+  if (decisoes.some((x) => x.decisao === 'REPROVADO')) acoes.push(AUTORIDADE_REPROVAR);
+  return acoes;
 }
 
 const chaveDoPar = (materialId, tamanho) => `${materialId}\n${tamanho ?? ''}`;
@@ -489,10 +520,11 @@ async function decidirSolicitacao(pool, {
     const solicitacao = await solicitacaoRepo.travarPorId(client, empresaId, solicitacaoId);
     if (solicitacao === null) throw HttpError.notFound('SOLICITACAO_NAO_ENCONTRADA', 'Solicitação não encontrada');
     if (solicitacao.status !== 'PENDENTE') throw HttpError.conflict('SOLICITACAO_NAO_PENDENTE', 'A solicitação já foi decidida ou cancelada');
-    await exigirAtorAtivo(client, empresaId, atorId);
+    const ator = await exigirAtorAtivo(client, empresaId, atorId);
     if (solicitacao.origemSolicitacao === 'USUARIO_INTERNO' && solicitacao.solicitanteUsuarioId === atorId) {
       throw HttpError.forbidden('AUTODECISAO_PROIBIDA', 'Quem criou a solicitação não pode aprová-la nem reprová-la');
     }
+    await exigirAutoridadeDaSolicitacao(client, { empresaId, ator, acoes: acoesDaDecisao(decisoesN) });
 
     const itens = await itemRepo.listarPorSolicitacao(client, empresaId, solicitacaoId);
     const porId = new Map(itens.map((i) => [i.id, i]));
@@ -646,7 +678,8 @@ async function encerrarSolicitacao(pool, {
     if (!STATUS_COM_COBERTURA.includes(solicitacao.status)) {
       throw HttpError.conflict('SOLICITACAO_NAO_ENCERRAVEL', 'Só a solicitação aprovada e ainda não entregue pode ser encerrada');
     }
-    await exigirAtorAtivo(client, empresaId, atorId);
+    const ator = await exigirAtorAtivo(client, empresaId, atorId);
+    await exigirAutoridadeDaSolicitacao(client, { empresaId, ator, acoes: [AUTORIDADE_ENCERRAR] });
 
     // Com a solicitação travada, nenhuma entrega ligada a ela entra: a entregue lida aqui é a final.
     const itens = await itemRepo.listarPorSolicitacaoComEntregue(client, empresaId, solicitacaoId);

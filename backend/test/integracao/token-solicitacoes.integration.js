@@ -335,7 +335,7 @@ describe('Atendimento Token — G: consulta das solicitações existentes do fun
       const sb = await solicitacaoSvc.criarSolicitacao(a.ctx.pool, {
         empresaId: a.d.empresaB, atorId: usuarioB, funcionarioId: cb.f.id, itens: [{ materialId: protetorB, tamanho: null, quantidade: 7, motivo: 'ADMISSAO' }], chaveIdempotencia: a.chave(),
       });
-      await solicitacaoSvc.decidirSolicitacao(a.ctx.pool, { empresaId: a.d.empresaB, atorId: a.d.masterB, solicitacaoId: sb.solicitacao.id, decisoes: [{ itemId: sb.itens[0].id, decisao: 'APROVADO' }], hoje: dataOperacional() });
+      await solicitacaoSvc.decidirSolicitacao(a.ctx.pool, { empresaId: a.d.empresaB, atorId: a.d.sstB, solicitacaoId: sb.solicitacao.id, decisoes: [{ itemId: sb.itens[0].id, decisao: 'APROVADO' }], hoje: dataOperacional() });
       await a.repor(protetorB, null, 9, { empresaId: a.d.empresaB });
       assert.deepEqual((await ler(c)).itens, [L(c.protetor, NOMES.protetor, null, 'AGUARDANDO_ESTOQUE', 2)]);
       assert.deepEqual((await ler(cb)).itens, [L(protetorB, NOMES.protetor, null, 'DISPONIVEL_PARA_RETIRADA', 7)]);

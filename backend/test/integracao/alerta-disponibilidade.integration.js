@@ -72,7 +72,7 @@ describe('12G-6 — aviso automático de disponibilidade (agendamento e processa
     const { rows } = await pool.query("SELECT id, empresa_id FROM solicitacoes_epi WHERE status IN ('APROVADA', 'APROVADA_PARCIAL')");
     for (const r of rows) {
       await solicitacaoSvc.encerrarSolicitacao(pool, {
-        empresaId: r.empresa_id, atorId: r.empresa_id === d.empresaA ? d.master : d.masterB, solicitacaoId: r.id, justificativa: 'Fim do cenário de teste (fictício)', hoje,
+        empresaId: r.empresa_id, atorId: r.empresa_id === d.empresaA ? d.sst1 : d.sstB, solicitacaoId: r.id, justificativa: 'Fim do cenário de teste (fictício)', hoje,
       });
     }
   });
@@ -272,7 +272,7 @@ describe('12G-6 — aviso automático de disponibilidade (agendamento e processa
       const encerrado = await umDisponivel();
       const valido = await umDisponivel();
       await solicitacaoSvc.encerrarSolicitacao(pool, {
-        empresaId: d.empresaA, atorId: d.master, solicitacaoId: encerrado.id, justificativa: 'Trabalhador transferido (fictício)', hoje,
+        empresaId: d.empresaA, atorId: d.sst1, solicitacaoId: encerrado.id, justificativa: 'Trabalhador transferido (fictício)', hoje,
       });
       const email = servicoEmailFalso();
       await processar(email);

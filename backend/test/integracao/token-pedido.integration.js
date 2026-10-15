@@ -135,7 +135,7 @@ describe('Atendimento Token — F: pedido do tablet pelo fluxo de solicitações
       const fila = await consultaSvc.listarFila(a.ctx.pool, { empresaId: A(), pagina: 1, limite: 100 });
       assert.equal(JSON.stringify(fila).includes(`"numero":${sol.numero}`), true, 'a fila da SST enxerga o pedido AUTOATENDIMENTO');
       const antes = await a.fotografia();
-      const dec = await solicitacaoSvc.decidirSolicitacao(a.ctx.pool, { empresaId: A(), atorId: a.d.master, solicitacaoId: sol.id, decisoes: [{ itemId: gravados[0].id, decisao: 'APROVADO' }] });
+      const dec = await solicitacaoSvc.decidirSolicitacao(a.ctx.pool, { empresaId: A(), atorId: a.d.sst1, solicitacaoId: sol.id, decisoes: [{ itemId: gravados[0].id, decisao: 'APROVADO' }] });
       assert.equal(dec.solicitacao.status, 'APROVADA');
       const visao = await solicitacaoSvc.buscarSolicitacao(a.ctx.pool, { empresaId: A(), solicitacaoId: sol.id });
       assert.equal(visao.itens[0].situacao, 'AGUARDANDO_ESTOQUE');
@@ -147,7 +147,7 @@ describe('Atendimento Token — F: pedido do tablet pelo fluxo de solicitações
       const c = await montar();
       const { sol, gravados } = await persistirAutoatendimento(c, [{ materialId: c.comGrade, tamanho: 'M', quantidade: 1 }]);
       const antes = await a.fotografia();
-      await solicitacaoSvc.decidirSolicitacao(a.ctx.pool, { empresaId: A(), atorId: a.d.master, solicitacaoId: sol.id, decisoes: [{ itemId: gravados[0].id, decisao: 'APROVADO' }] });
+      await solicitacaoSvc.decidirSolicitacao(a.ctx.pool, { empresaId: A(), atorId: a.d.sst1, solicitacaoId: sol.id, decisoes: [{ itemId: gravados[0].id, decisao: 'APROVADO' }] });
       assert.equal((await solicitacaoSvc.buscarSolicitacao(a.ctx.pool, { empresaId: A(), solicitacaoId: sol.id })).itens[0].situacao, 'AGUARDANDO_ESTOQUE');
       await criarLote(a.ctx.pool, { empresaId: A(), materialId: c.comGrade, quantidade: 5, tamanho: 'M' });
       assert.equal((await solicitacaoSvc.buscarSolicitacao(a.ctx.pool, { empresaId: A(), solicitacaoId: sol.id })).itens[0].situacao, 'PRONTA_PARA_ENTREGA');
@@ -831,7 +831,7 @@ describe('Atendimento Token — F: pedido do tablet pelo fluxo de solicitações
       const fila = await consultaSvc.listarFila(a.ctx.pool, { empresaId: A(), pagina: 1, limite: 100 });
       assert.equal(JSON.stringify(fila).includes(`"numero":${sol.numero}`), true, 'a fila da SST mostra o pedido');
       const itens = await a.itensDe(sol.id);
-      const dec = await solicitacaoSvc.decidirSolicitacao(a.ctx.pool, { empresaId: A(), atorId: a.d.master, solicitacaoId: sol.id, decisoes: itens.map((i) => ({ itemId: i.id, decisao: 'APROVADO' })) });
+      const dec = await solicitacaoSvc.decidirSolicitacao(a.ctx.pool, { empresaId: A(), atorId: a.d.sst1, solicitacaoId: sol.id, decisoes: itens.map((i) => ({ itemId: i.id, decisao: 'APROVADO' })) });
       assert.equal(dec.solicitacao.status, 'APROVADA');
       const situacoes = async () => (await solicitacaoSvc.buscarSolicitacao(a.ctx.pool, { empresaId: A(), solicitacaoId: sol.id })).itens.map((i) => i.situacao);
       assert.deepEqual(await situacoes(), ['AGUARDANDO_ESTOQUE', 'AGUARDANDO_ESTOQUE']);
