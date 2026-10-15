@@ -1,6 +1,7 @@
 'use strict';
 
 const { normalizarCodigoGhe } = require('./codigo-ghe');
+const { OUTROS } = require('./classificacao-material');
 
 /**
  * Núcleo PURO da importação GHE / EPI (evolução GHE / importação GHE-EPI, Incremento 5A): sem banco, sem HTTP, sem
@@ -19,6 +20,8 @@ const { normalizarCodigoGhe } = require('./codigo-ghe');
  */
 
 const DESCRICAO_MAXIMA = 150;
+// Teto do nome em tipos_material (schema e serviço do catálogo): acima dele o tipo não pode ser cadastrado com este nome.
+const NOME_TIPO_MAXIMO = 100;
 const CONTROLE = /[\u0000-\u001f\u007f-\u009f]/;
 
 const SITUACAO_GHE = Object.freeze({
@@ -218,6 +221,22 @@ function aplicarRegrasDoArquivo(registros) {
   }
 }
 
+/**
+ * Tipos citados e ausentes do catálogo, agrupados pela MESMA chave que decidiu EPI_NAO_ENCONTRADO, na ordem da primeira
+ * ocorrência. Só informa: o cadastro é ato explícito da SST pela rota do catálogo, nunca desta importação.
+ */
+function tiposNaoEncontrados(registros) {
+  const porChave = agrupar(registros.filter((r) => r.situacao === S.EPI_NAO_ENCONTRADO), (r) => chaveCanonica(r.epi));
+  return [...porChave].map(([chave, linhas]) => ({
+    nome: linhas[0].epi,
+    variantes: [...new Set(linhas.map((r) => r.epi))],
+    linhas: linhas.map((r) => r.linha),
+    ghes: [...new Set(linhas.map((r) => r.ghe))],
+    reservado: chave === chaveCanonica(OUTROS),
+    nomeExcedeLimite: Array.from(linhas[0].epi).length > NOME_TIPO_MAXIMO,
+  }));
+}
+
 function montarGhesDoArquivo(registros, resolucoes) {
   const resultado = [];
   for (const [codigo, linhas] of agrupar(registros.filter((r) => r.situacaoGhe !== null), (r) => r.ghe)) {
@@ -286,6 +305,7 @@ function analisarLote({
       aplicaveis: registros.filter((r) => r.aplicavel).length,
       porSituacao: contar(registros, (r) => r.situacao),
       ghes: contar(ghesDoArquivo, (x) => x.situacao),
+      tiposNaoEncontrados: tiposNaoEncontrados(registros),
     },
     ghes: ghesDoArquivo,
     linhas: registros,

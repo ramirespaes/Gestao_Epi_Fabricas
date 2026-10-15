@@ -290,6 +290,29 @@
         + item('Linhas sem alteração', r.semAlteracao) + item('Linhas não aplicadas', r.bloqueadas) + '</ul>';
       return '<p><strong>' + (res.importacaoId ? 'Importação concluída.' : 'Nenhuma alteração necessária.') + '</strong></p>' + contagens;
     },
+    /**
+     * Tipos citados na planilha e ausentes do catálogo (resumo.tiposNaoEncontrados, agrupados pelo servidor). O botão só
+     * aparece com permissão e para nome cadastrável; `indisponivel` = o módulo do catálogo não carregou (não é permissão).
+     */
+    tiposNaoEncontrados: function (lista, opcoes) {
+      var o = opcoes || {};
+      // Orientações fixas vão como conteúdo de célula (nunca atributo): basta escapar &, < e >.
+      var orientacao = function (texto) { return String(texto).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };
+      return (lista || []).map(function (t, i) {
+        var linhas = t.linhas || [];
+        var outras = (t.variantes || []).filter(function (v) { return v !== t.nome; });
+        var acao;
+        if (t.reservado) acao = orientacao(mensagens.TIPO_RESERVADO);
+        else if (t.nomeExcedeLimite) acao = orientacao(mensagens.TIPO_NOME_LONGO);
+        else if (o.indisponivel) acao = orientacao(mensagens.TIPO_INDISPONIVEL);
+        else if (!o.podeCadastrar) acao = orientacao(mensagens.TIPO_SEM_PERMISSAO);
+        else acao = '<button type="button" class="outlined-btn btn-sm" data-acao="cadastrar-tipo" data-indice="' + i + '">Cadastrar tipo</button>';
+        return '<tr><td>' + escaparHtml(t.nome)
+          + (outras.length ? '<br><small style="color:var(--on-surface-variant)">' + escaparHtml('Também escrito como: ' + outras.join('; ')) + '</small>' : '')
+          + '</td><td>' + escaparHtml(linhas.length + (linhas.length === 1 ? ' linha: ' : ' linhas: ') + linhas.join(', ')) + '</td>'
+          + celula((t.ghes || []).join(', ')) + '<td>' + acao + '</td></tr>';
+      }).join('');
+    },
   };
 
   // ─── Mensagens ─────────────────────────────────────────────────────
@@ -301,6 +324,10 @@
       if (!d || d.haAlteracao) return null;
       return d.comProblema > 0 ? mensagens.SEM_ALTERACAO_COM_PROBLEMAS : mensagens.SEM_ALTERACAO;
     },
+    TIPO_SEM_PERMISSAO: 'Sem permissão para cadastrar tipos de EPI. Peça a quem cadastra materiais na Gestão de Estoque.',
+    TIPO_RESERVADO: '"Outros" não é um tipo do catálogo. Para material especial, use o vínculo direto de exceção no GHE.',
+    TIPO_NOME_LONGO: 'O catálogo aceita nomes de até 100 caracteres. Corrija o nome na planilha e importe de novo.',
+    TIPO_INDISPONIVEL: 'O cadastro de tipos não pôde ser carregado. Recarregue a página para tentar de novo.',
     PERGUNTA_CONFIRMAR: 'Confirmar a importação? As linhas válidas serão aplicadas; as linhas bloqueadas ou inválidas não serão aplicadas. '
       + 'GHEs e vínculos que não estão no arquivo não são removidos.',
     arquivo: function (r) {

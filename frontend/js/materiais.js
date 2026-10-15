@@ -187,7 +187,10 @@
       var tipos = [];
       var total = 0;
       for (var pagina = 1; pagina <= PAGINAS_MAXIMAS; pagina += 1) {
-        var q = ['grupo=' + encodeURIComponent(texto(f.grupo)), 'grupoProtecao=' + encodeURIComponent(texto(f.grupoProtecao)), 'ativo=true', 'pagina=' + pagina, 'limite=' + LIMITE_LISTA];
+        // Sem proteção, a consulta é só pelo grupo (o servidor recusa grupoProtecao vazio).
+        var q = ['grupo=' + encodeURIComponent(texto(f.grupo))]
+          .concat(texto(f.grupoProtecao) ? ['grupoProtecao=' + encodeURIComponent(texto(f.grupoProtecao))] : [])
+          .concat(['ativo=true', 'pagina=' + pagina, 'limite=' + LIMITE_LISTA]);
         var r = await http().requisitar('GET', '/tipos-material?' + q.join('&'));
         if (!r.ok) return r;
         var lote = r.dados && Array.isArray(r.dados.tipos) ? r.dados.tipos : [];
@@ -307,6 +310,31 @@
   }
 
   /**
+   * Grupos de proteção com tipo ATIVO do grupo no catálogo, na ordem oficial e sem repetir, mais `manter` (a proteção
+   * gravada do material em edição). Só valores do vocabulário; grupo fora do catálogo → [].
+   */
+  function protecoesDoCatalogo(tipos, grupo, manter) {
+    var g = texto(grupo);
+    if (GRUPOS_CATALOGO.indexOf(g) === -1) return [];
+    var presentes = (Array.isArray(tipos) ? tipos : [])
+      .filter(function (t) { return !!t && t.ativo !== false && t.grupo === g; })
+      .map(function (t) { return t.grupoProtecao; })
+      .concat([texto(manter)]);
+    return GRUPOS_PROTECAO.filter(function (p) { return presentes.indexOf(p) !== -1; });
+  }
+
+  /**
+   * Nome que o campo deve ter depois de escolher (ou tirar) um tipo do catálogo: vazio ou ainda igual à sugestão
+   * anterior acompanha o tipo ('' sem tipo do catálogo, como em "Outros"); nome personalizado nunca é sobrescrito.
+   */
+  function sugestaoNome(c) {
+    var o = c || {};
+    var atual = o.nomeAtual === undefined || o.nomeAtual === null ? '' : String(o.nomeAtual);
+    var intacto = !texto(atual) || (o.sugestaoAnterior !== undefined && o.sugestaoAnterior !== null && atual === o.sugestaoAnterior);
+    return intacto ? texto(o.tipoNome) : atual;
+  }
+
+  /**
    * O que a tela mostra para a combinação atual: proteção só em EPI/Vestimenta;
    * cada "Especifique…" só com o seu "Outros"; tipo travado em "Outros" quando
    * o grupo ou a proteção são "Outros"; óculos com grau só em EPI + Proteção
@@ -419,6 +447,18 @@
     if (m.modeloClassificacao !== MODELO_V2) return 'LEGADO';
     if (m.tipoMaterialAtivo === false) return 'TIPO_INATIVO';
     return '';
+  }
+
+  /**
+   * Situação da classificação só pelos campos estruturados (nunca pelo nome): LEGADO, CATALOGO (tipo ativo),
+   * TIPO_INATIVO, TIPO_INDISPONIVEL (id sem o estado do tipo confirmado) ou OUTROS (V2 sem tipo do catálogo).
+   */
+  function situacaoClassificacao(material) {
+    var m = material || {};
+    if (m.modeloClassificacao !== MODELO_V2) return 'LEGADO';
+    if (m.tipoMaterialId === null || m.tipoMaterialId === undefined) return 'OUTROS';
+    if (m.tipoMaterialAtivo === true) return 'CATALOGO';
+    return m.tipoMaterialAtivo === false ? 'TIPO_INATIVO' : 'TIPO_INDISPONIVEL';
   }
 
   /**
@@ -724,11 +764,14 @@
     TIPOS_OCULOS: TIPOS_OCULOS,
     TIPO_OCULOS_LEGADO: TIPO_OCULOS_LEGADO,
     tiposDoCatalogo: tiposDoCatalogo,
+    protecoesDoCatalogo: protecoesDoCatalogo,
+    sugestaoNome: sugestaoNome,
     estadoClassificacao: estadoClassificacao,
     classificacaoIntocada: classificacaoIntocada,
     oculosAplicavel: oculosAplicavel,
     oculosDoMaterial: oculosDoMaterial,
     rotuloClassificacao: rotuloClassificacao,
+    situacaoClassificacao: situacaoClassificacao,
     grupoEfetivo: grupoEfetivo,
     grupoProtecaoEfetivo: grupoProtecaoEfetivo,
     tipoEfetivo: tipoEfetivo,
@@ -1066,6 +1109,55 @@
     return 'Não foi possível consultar o catálogo de tipos. Escolha o grupo de proteção de novo para tentar outra vez.';
   }
 
+  /**
+   * Texto junto ao campo Tipo. situacao: SEM_PROTECAO | CARREGANDO | DISPONIVEL (total) | VAZIO | FALHA (resposta);
+   * qualquer outra (grupo "Outros", sem grupo) = '' porque o catálogo não se aplica. Vazio nunca é falha.
+   */
+  function estadoCatalogo(e) {
+    var o = e || {};
+    var combinacao = texto(o.grupo) + ' / ' + texto(o.grupoProtecao);
+    if (o.situacao === 'SEM_PROTECAO') return 'Escolha o grupo de proteção para ver os tipos do catálogo.';
+    if (o.situacao === 'CARREGANDO') return 'Carregando tipos do catálogo…';
+    if (o.situacao === 'DISPONIVEL') return o.total + (o.total === 1 ? ' tipo' : ' tipos') + ' do catálogo para ' + combinacao + '.';
+    if (o.situacao === 'VAZIO') {
+      return 'Nenhum tipo do catálogo para ' + combinacao + '. Cadastre o tipo em Tipos de EPI / Vestimenta, nesta página, ou use "Outros".';
+    }
+    if (o.situacao === 'FALHA') return erroCatalogo(o.resposta);
+    return '';
+  }
+
+  /**
+   * Linha da classificação do material escolhido no estoque. A previsão por tipo vale só nos GHEs que têm o tipo
+   * vinculado; legado e "Outros" só entram num GHE por vínculo direto de exceção. Nunca fala de estoque.
+   */
+  function textoClassificacao(material) {
+    if (!material) return '';
+    var m = material;
+    var protecao = texto(grupoProtecaoEfetivo(m));
+    var classificacao = texto(grupoEfetivo(m)) + (protecao ? ' / ' + protecao : '');
+    var situacao = situacaoClassificacao(m);
+    if (situacao === 'CATALOGO') {
+      return 'Tipo do catálogo: ' + texto(m.tipo) + ' (' + classificacao + '). Entra na previsão por tipo só nos GHEs que têm esse tipo vinculado.';
+    }
+    if (situacao === 'TIPO_INATIVO') {
+      return 'Tipo do catálogo inativo: ' + texto(m.tipo) + ' (' + classificacao + '). O vínculo existente continua valendo nos GHEs que têm esse tipo vinculado; '
+        + 'o tipo não pode ser usado em novos materiais.';
+    }
+    if (situacao === 'TIPO_INDISPONIVEL') return 'Não foi possível confirmar o tipo do catálogo deste material. Abra a edição para conferir a classificação.';
+    if (situacao === 'OUTROS') {
+      return 'Outros: ' + texto(tipoEfetivo(m)) + ' (' + classificacao + '). Sem tipo do catálogo: só entra na previsão de um GHE por vínculo direto de exceção.';
+    }
+    return 'Cadastro antigo (legado), sem tipo do catálogo: só entra na previsão de um GHE por vínculo direto de exceção. Para classificá-lo, edite o material.';
+  }
+
+  /** Aviso junto à Proteção: só na contingência (consulta por grupo falhou), nunca como se o catálogo confirmasse a lista. */
+  function estadoProtecoes(e) {
+    var o = e || {};
+    if (o.situacao !== 'FALHA') return '';
+    var motivo = ehRede(o.resposta) ? 'Falha de rede.' : (o.resposta && o.resposta.status === 403 ? 'Seu perfil não pode consultar o catálogo de tipos.' : 'O servidor não respondeu.');
+    return 'Não foi possível validar os grupos de proteção no catálogo (' + motivo + ') Mostrando a lista completa: pode haver grupo sem tipo cadastrado.';
+  }
+
   /** GET /materiais/:id ao entrar no modo edição. */
   function erroCarregarEdicao(r) {
     if (ehRede(r)) return 'Falha de rede ao abrir o material. Verifique a conexão e tente novamente.';
@@ -1129,7 +1221,7 @@
   var mensagens = {
     avisoMotivoBaixa: avisoMotivoBaixa,
     exigeNovoLogin: exigeNovoLogin, confirmado: confirmado, erroCadastro: erroCadastro, erroEntrada: erroEntrada, erroBaixa: erroBaixa,
-    erroEstoque: erroEstoque, erroEdicao: erroEdicao, erroCarregarEdicao: erroCarregarEdicao, erroCatalogo: erroCatalogo, resultado: resultado,
+    erroEstoque: erroEstoque, erroEdicao: erroEdicao, erroCarregarEdicao: erroCarregarEdicao, erroCatalogo: erroCatalogo, estadoCatalogo: estadoCatalogo, estadoProtecoes: estadoProtecoes, textoClassificacao: textoClassificacao, resultado: resultado,
     resultadoEntrada: resultadoEntrada, resultadoBaixa: resultadoBaixa, MSG: MSG,
   };
 
@@ -1150,9 +1242,13 @@
       + (lista || []).map(function (t) { return '<option value="' + escaparHtml(t) + '">' + escaparHtml(t) + '</option>'; }).join('');
   }
 
-  /** Opções do grupo de proteção: placeholder, os doze grupos e "Outros". Nada é escolhido sozinho. */
-  function opcoesProtecao() {
-    return '<option value="">Selecione</option>' + GRUPOS_PROTECAO.concat([OUTROS]).map(function (p) {
+  /**
+   * Opções do grupo de proteção: placeholder, `lista` (as do catálogo do grupo) ou, sem lista, os doze grupos, e "Outros".
+   * Nada é escolhido sozinho.
+   */
+  function opcoesProtecao(lista) {
+    var itens = Array.isArray(lista) ? lista : GRUPOS_PROTECAO;
+    return '<option value="">Selecione</option>' + itens.concat([OUTROS]).map(function (p) {
       return '<option value="' + escaparHtml(p) + '">' + escaparHtml(p) + '</option>';
     }).join('');
   }
