@@ -36,6 +36,7 @@ const { relatorioRoutes } = require('./routes/relatorio.routes');
 const { tokenDispositivoRoutes } = require('./routes/token-dispositivo.routes');
 const { tokenAtivacaoRoutes } = require('./routes/token-ativacao.routes');
 const { tokenTabletRoutes } = require('./routes/token-tablet.routes');
+const { tokenHeartbeatRoutes } = require('./routes/token-heartbeat.routes');
 const { tokenAtendimentoRoutes } = require('./routes/token-atendimento.routes');
 const { tokenCatalogoRoutes } = require('./routes/token-catalogo.routes');
 const { tokenPedidoRoutes } = require('./routes/token-pedido.routes');
@@ -190,6 +191,7 @@ app.use(
 // código de ativação, com sessão administrativa e RBAC. tokenTabletRoutes (Etapa C): ativação e estado do TABLET, sem sessão
 // administrativa, na mesma cadeia (CORS, verificação de origem, JSON), com limitadores próprios (por IP folgado e por tablet);
 // por isso o limitador geral por IP não se aplica a elas — vários tablets atrás do mesmo NAT somariam uma cota só.
+// tokenHeartbeatRoutes (Ciclo 2, K3): batida de presença do tablet (POST, credencial do tablet, corpo e query vazios), sob o mesmo prefixo e a mesma regra.
 // tokenAtendimentoRoutes (Etapa D): identificação e atendimento temporário do funcionário no tablet, sob o mesmo prefixo e a mesma regra.
 // tokenCatalogoRoutes (Etapa E): catálogo (somente leitura) de materiais do atendimento, sob o mesmo prefixo.
 // tokenPedidoRoutes (Etapa F): finalização do pedido do funcionário identificado (solicitação AUTOATENDIMENTO) e consulta do resultado, sob o mesmo prefixo.
@@ -197,7 +199,7 @@ app.use(
 // tokenCentralRoutes (Etapa H): Central Administrativa (sessão administrativa): visão geral, estado da ativação, prévia do catálogo e redes autorizadas.
 const NAO_EH_TABLET = (req) => !/^\/atendimento-token\/tablet(\/|$)/.test(req.path);
 const limitadorGeralSalvoTablet = (req, res, next) => (NAO_EH_TABLET(req) ? limitadorGeral(req, res, next) : next());
-app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeralSalvoTablet, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, recuperacaoSenhaPortalRoutes, trocaSenhaGlobalRoutes, contaRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, tipoMaterialRoutes, estoqueRoutes, itensDisponiveisRoutes, grupoHomogeneoExposicaoRoutes, gheMaterialRoutes, gheTipoMaterialRoutes, gheImportacaoRoutes, funcionarioRoutes, dashboardRoutes, usuarioAdministracaoRoutes, conviteUsuarioRoutes, entregaEpiRoutes, solicitacaoEpiRoutes, vinculoSstRoutes, alertaEstoqueRoutes, relatorioRoutes, tokenDispositivoRoutes, tokenAtivacaoRoutes, tokenTabletRoutes, tokenAtendimentoRoutes, tokenCatalogoRoutes, tokenPedidoRoutes, tokenSolicitacoesRoutes, tokenCentralRoutes);
+app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeralSalvoTablet, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, recuperacaoSenhaPortalRoutes, trocaSenhaGlobalRoutes, contaRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, tipoMaterialRoutes, estoqueRoutes, itensDisponiveisRoutes, grupoHomogeneoExposicaoRoutes, gheMaterialRoutes, gheTipoMaterialRoutes, gheImportacaoRoutes, funcionarioRoutes, dashboardRoutes, usuarioAdministracaoRoutes, conviteUsuarioRoutes, entregaEpiRoutes, solicitacaoEpiRoutes, vinculoSstRoutes, alertaEstoqueRoutes, relatorioRoutes, tokenDispositivoRoutes, tokenAtivacaoRoutes, tokenTabletRoutes, tokenHeartbeatRoutes, tokenAtendimentoRoutes, tokenCatalogoRoutes, tokenPedidoRoutes, tokenSolicitacoesRoutes, tokenCentralRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

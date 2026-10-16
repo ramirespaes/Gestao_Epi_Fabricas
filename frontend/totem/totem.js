@@ -3,7 +3,8 @@
  * consulta das solicitações em aberto e catálogo do funcionário).
  *
  * Fala com o servidor só para: estado do tablet, ativação (Etapa C); identificação, renovação e encerramento do atendimento
- * (Etapa D); catálogo (Etapa E); solicitações em aberto (Etapa G). Carrinho completo, motivos e envio do pedido são do I-G4.
+ * (Etapa D); catálogo (Etapa E); solicitações em aberto (Etapa G); presença do tablet por batida periódica (Ciclo 2, K4).
+ * Carrinho completo, motivos e envio do pedido são do I-G4.
  * Nada é gravado no navegador: o estado vive só na memória da página.
  *
  * Duas credenciais distintas, ambas em cookies do servidor (esta página nunca as lê nem as escreve):
@@ -98,6 +99,10 @@
   var LIMITE_ITENS = 20;
   var MOTIVOS = ['SUBSTITUICAO_PRAZO', 'DESGASTE_DANO', 'PERDA_EXTRAVIO'];
   var RETORNO_CONFIRMACAO_MS = 20000; // exposição máxima da confirmação neutra
+  // Presença do tablet (Ciclo 2, K4). Contrato do backend (config/token-monitoramento): uma batida a cada 60 s, com jitter de 10 %
+  // para os tablets não baterem juntos; o servidor dá o tablet como sem comunicação depois de 180 s sem contato.
+  var HEARTBEAT_INTERVALO_MS = 60000;
+  var HEARTBEAT_JITTER = 0.1;
 
   var estado = {
     tipo: null,
@@ -124,6 +129,10 @@
     identificando: false,
     espera: 0, // instante até o qual a identificação fica pausada por um 429
   };
+
+  // Batida de presença do tablet: independente do atendimento do funcionário (não tem geração, não entra na barreira e sobrevive à
+  // troca de sessão); só o bloqueio do tablet a para. `vida` muda a cada parada: a resposta de uma batida enviada numa vida anterior é antiga.
+  var heartbeat = { ativo: false, emVoo: false, timer: null, vida: 0 };
 
   // Código de ativação: sai do fechamento do boot.js uma única vez e vive só aqui, até ser descartado.
   var ativacao = { codigo: window.TotemAtivacao.tomar(), situacao: window.TotemAtivacao.estado(), enviando: false, prazo: null };
@@ -260,6 +269,7 @@
   }
 
   function bloquear(tela) {
+    pararHeartbeat();
     limparAtendimento();
     limparIdentificacao();
     descartarCodigo();
@@ -296,22 +306,74 @@
     return chamar('POST', '/atendimento/encerrar', {}, true).then(function (r) { bloqueioDe(r); });
   }
 
+  /* ═══ Presença do tablet (Ciclo 2, K4) ═══
+     O tablet avisa o servidor, por POST /heartbeat, que está de pé. É assunto do TABLET, não do funcionário: usa só o cookie do
+     tablet, fica fora da barreira do atendimento (não define nem remove o cookie do atendimento), não renova nem consulta a
+     sessão do funcionário e não leva dado nenhum (corpo {}, sem query). A cadência é de um setTimeout por vez, remarcado só quando
+     a batida anterior termina (resposta ou tempo limite do transporte): nunca duas em voo e nunca um temporizador por cima do outro.
+     Falha de rede ou 5xx não muda a tela nem para a cadência; 429 respeita o Retry-After (como a renovação); 401 e 403 são o
+     bloqueio do tablet de sempre e param a presença. O servidor decide o resto (RESTABELECIMENTO, queda, alerta). */
+  function atrasoDaBatida() {
+    return HEARTBEAT_INTERVALO_MS * (1 + (Math.random() * 2 - 1) * HEARTBEAT_JITTER);
+  }
+
+  function pararHeartbeat() {
+    heartbeat.ativo = false;
+    heartbeat.vida += 1;
+    clearTimeout(heartbeat.timer);
+    heartbeat.timer = null;
+  }
+
+  function agendarHeartbeat(esperaMs) {
+    if (!heartbeat.ativo || heartbeat.timer !== null) return;
+    heartbeat.timer = setTimeout(function () { heartbeat.timer = null; enviarHeartbeat(); }, Math.max(atrasoDaBatida(), esperaMs));
+  }
+
+  function enviarHeartbeat() {
+    if (!heartbeat.ativo || heartbeat.emVoo) return;
+    heartbeat.emVoo = true;
+    var vida = heartbeat.vida;
+    chamar('POST', '/heartbeat', {}).then(function (r) {
+      heartbeat.emVoo = false;
+      if (!heartbeat.ativo) return; // parada durante o voo: o bloqueio já cuidou da tela
+      // Parada e retomada durante o voo: a resposta é de antes da liberação e não diz nada sobre o estado atual do tablet (um 401/403
+      // antigo bloquearia de novo uma tela já liberada). Descarta e deixa a presença atual seguir no ritmo normal.
+      if (vida !== heartbeat.vida) { agendarHeartbeat(0); return; }
+      if (bloqueioDe(r)) return;
+      var esperaMs = 0;
+      if (r.tipo === 'resposta' && r.status === 429) esperaMs = Math.min(Math.max(r.espera === null ? ESPERA_PADRAO_S : r.espera, 1), ESPERA_MAXIMA_S) * 1000;
+      agendarHeartbeat(esperaMs);
+    });
+  }
+
+  /* Idempotente: com a presença já ativa (reinício da página, ativação repetida) não há batida extra nem segundo temporizador. */
+  function iniciarHeartbeat() {
+    if (heartbeat.ativo) return;
+    heartbeat.ativo = true;
+    enviarHeartbeat();
+  }
+
   /* ═══ Início: estado do tablet e atendimento deixado aberto ═══ */
   function inicio() {
     chamar('GET', '/estado').then(function (r) {
       if (r.tipo === 'resposta' && r.status === 401) { bloquear('telaNaoAutorizado'); return null; }
       if (bloqueioDe(r)) return null;
-      if (r.tipo !== 'resposta' || r.status !== 200) { voltarAIdentificacao(TEXTOS.comunicacao); return null; }
+      // O tablet não foi recusado (autorizado, ou o servidor não respondeu): a presença passa a ser comunicada, mas só DEPOIS de a tela
+      // inicial estar posta, para que um bloqueio vindo da batida (401/403) nunca seja coberto pelo fim desta sequência. Se a
+      // credencial na verdade não valer, a primeira batida recebe 401/403 e bloqueia como qualquer outra operação.
+      if (r.tipo !== 'resposta' || r.status !== 200) { voltarAIdentificacao(TEXTOS.comunicacao); iniciarHeartbeat(); return null; }
       return chamar('GET', '/atendimento', undefined, true).then(function (a) {
         if (bloqueioDe(a)) return null;
-        if (a.tipo === 'resposta' && a.status === 200) return encerrarNoServidor().then(function () { voltarAIdentificacao(null); });
+        if (a.tipo === 'resposta' && a.status === 200) return encerrarNoServidor().then(function () { voltarAIdentificacao(null); iniciarHeartbeat(); });
         voltarAIdentificacao(null);
+        iniciarHeartbeat();
         return null;
       });
     });
   }
 
   function reiniciar() {
+    heartbeat.vida += 1; // a batida em voo é de antes deste reinício: o /estado de agora é a leitura mais recente do tablet
     descartarCodigo();
     limparAtendimento();
     limparIdentificacao();
@@ -335,6 +397,7 @@
     terminarAtivacao();
     mostrarFalhaDaAtivacao('', '');
     voltarAIdentificacao(null);
+    iniciarHeartbeat(); // tablet recém-autorizado: a presença começa agora
   }
 
   /* Sem resposta: o servidor pode ou não ter consumido o código. Nada é presumido e nada é reenviado sozinho; a única
