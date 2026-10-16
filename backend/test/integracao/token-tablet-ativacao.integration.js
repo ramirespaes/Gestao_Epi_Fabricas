@@ -97,7 +97,7 @@ describe('Atendimento Token — C: ativação do tablet (PostgreSQL real)', () =
       assert.equal(texto.includes(cookie.valor) || texto.includes(codigo), false, 'nem a credencial nem o código voltam no corpo');
     });
 
-    test('B2 — o cookie é HttpOnly, de nome próprio, restrito ao caminho do tablet, persistente e com Secure/SameSite da política de sessão; sem Domain', async () => {
+    test('B2 — o cookie é HttpOnly, de nome próprio, restrito ao caminho do tablet, persistente, com SameSite=Strict fixo e Secure da política de sessão; sem Domain', async () => {
       const { codigo } = await preparar();
       const r = await a.ativar(app, codigo);
       assert.equal(r.status, 200, aviso(r));
@@ -107,7 +107,7 @@ describe('Atendimento Token — C: ativação do tablet (PostgreSQL real)', () =
       assert.equal(cookie.atributos.httponly, true);
       assert.equal(cookie.atributos.path, CAMINHO_TABLET, 'o navegador só envia o cookie às rotas do tablet (nunca às administrativas)');
       assert.equal(cookie.atributos.domain, undefined);
-      assert.equal(String(cookie.atributos.samesite).toLowerCase(), authConfig.sessao.cookieSameSite);
+      assert.equal(String(cookie.atributos.samesite).toLowerCase(), 'strict', 'K5-A (D-C9): SameSite=Strict fixo, independente de SESSAO_COOKIE_SAMESITE');
       assert.equal(cookie.atributos.secure === true, authConfig.sessao.cookieSecure, 'Secure segue a política de sessão (obrigatório em produção)');
       assert.ok(Number(cookie.atributos['max-age']) >= 30 * 24 * 3600, 'persistente: sobrevive à reinicialização do tablet (Max-Age de pelo menos 30 dias)');
       assert.equal(cookie.atributos.expires, undefined, 'Max-Age, não Expires (não depende do relógio do cliente)');

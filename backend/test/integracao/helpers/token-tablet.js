@@ -23,7 +23,7 @@ const { authConfig } = require('../../../src/config/auth');
  *   POST /api/atendimento-token/dispositivos/:id/ativacao   ação TOKEN_GERAR_ATIVACAO     (administrativo, sessão + RBAC)
  *   POST /api/atendimento-token/tablet/ativar               sem sessão; { codigo }         (consome o código de uso único)
  *   GET  /api/atendimento-token/tablet/estado               cookie do tablet; sem corpo    (exemplo mínimo de rota protegida)
- *   cookie do tablet: nome `gepi_tablet`, HttpOnly, Path=/api/atendimento-token/tablet, SameSite/Secure da política de sessão.
+ *   cookie do tablet: nome `gepi_tablet`, HttpOnly, Path=/api/atendimento-token/tablet, SameSite=Strict fixo (K5-A), Secure da política de sessão.
  */
 
 const COOKIE_TABLET = 'gepi_tablet';

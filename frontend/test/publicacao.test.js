@@ -230,3 +230,65 @@ describe('publicação do frontend do cliente por allowlist explícita', () => {
     assert.equal(semSaida.status, 1);
   });
 });
+
+/**
+ * K6 — prontidão de publicação. Defeito real encontrado em 15/10/2026: a página de Cadastro de Colaboradores
+ * (pages/funcionarios.html + js/gestao-funcionarios.js) era tela integrada, tinha item de menu em 18 páginas publicadas e
+ * ficava fora do pacote, sem que nenhum teste acusasse (o empacotador confere recursos CARREGADOS, não links de navegação).
+ * Estas verificações fecham a lacuna sem relaxar nenhuma exclusão: main.js, db-api.js, inspecao-visual.js, o Painel Privado e os
+ * seis protótipos ainda não integrados continuam fora.
+ */
+describe('K6 — páginas integradas e links de navegação no pacote', () => {
+  const PROTOTIPOS = ['pages/eligibility-rules.html', 'pages/emails-gestao.html', 'pages/lgpd.html', 'pages/purchases.html', 'pages/self-service.html', 'pages/support.html'];
+  const paginasDoRepositorio = () => ['pages', 'portal']
+    .flatMap((d) => fs.readdirSync(path.join(RAIZ, d)).filter((f) => f.endsWith('.html') && !/ 2\./.test(f)).map((f) => `${d}/${f}`))
+    .sort();
+  const semComentariosHtml = (html) => html.replace(/<!--[\s\S]*?-->/g, '');
+  const ePrototipo = (rel) => /js\/main\.js|js\/db-api\.js/.test(semComentariosHtml(fs.readFileSync(path.join(RAIZ, rel), 'utf8')));
+
+  test('o Cadastro de Colaboradores (página e módulo) está na allowlist e entra no pacote, com os recursos que carrega', () => {
+    const allowlist = lerAllowlist();
+    for (const arquivo of ['pages/funcionarios.html', 'js/gestao-funcionarios.js']) assert.ok(allowlist.includes(arquivo), `${arquivo} precisa estar na allowlist`);
+    for (const recurso of arquivosLocaisDe('pages/funcionarios.html')) assert.ok(allowlist.includes(recurso), `funcionarios.html carrega ${recurso}, que não está na allowlist`);
+    const saida = path.join(diretorioTemporario(), 'pacote');
+    const publicados = empacotar({ saida }).arquivos;
+    for (const arquivo of ['pages/funcionarios.html', 'js/gestao-funcionarios.js']) assert.ok(publicados.includes(arquivo), `${arquivo} precisa estar no pacote`);
+    assert.equal(fs.readFileSync(path.join(saida, 'pages', 'funcionarios.html'), 'utf8'), fs.readFileSync(path.join(RAIZ, 'pages', 'funcionarios.html'), 'utf8'), 'publicada sem alteração');
+  });
+
+  test('toda página que não é protótipo (pages/ e portal/) está na allowlist: página integrada não fica fora do pacote', () => {
+    const allowlist = new Set(lerAllowlist());
+    const integradasFora = paginasDoRepositorio().filter((p) => !allowlist.has(p) && !ePrototipo(p));
+    assert.deepEqual(integradasFora, [], `páginas integradas fora do pacote: ${integradasFora.join(', ')}`);
+  });
+
+  test('as páginas fora do pacote são exatamente os seis protótipos não integrados, e todas carregam main.js ou db-api.js', () => {
+    const allowlist = new Set(lerAllowlist());
+    const fora = paginasDoRepositorio().filter((p) => !allowlist.has(p));
+    assert.deepEqual(fora, PROTOTIPOS);
+    for (const p of PROTOTIPOS) assert.ok(ePrototipo(p), `${p} deveria ser protótipo (main.js/db-api.js)`);
+    // Um protótipo que passe a ser integrado deixa de carregar main.js/db-api.js: aí ele entra na allowlist e sai desta lista, por decisão.
+  });
+
+  test('as exclusões intencionais continuam: NUNCA_PUBLICAR intacto e main.js, db-api.js e inspecao-visual.js fora da allowlist', () => {
+    const { NUNCA_PUBLICAR } = require('../publicacao/empacotar');
+    assert.deepEqual([...NUNCA_PUBLICAR].sort(), ['js/db-api.js', 'js/inspecao-visual.js', 'js/main.js', 'painel-privado/']);
+    const allowlist = lerAllowlist();
+    for (const fora of ['js/main.js', 'js/db-api.js', 'js/inspecao-visual.js']) assert.equal(allowlist.includes(fora), false, `${fora} nunca entra no pacote`);
+    assert.equal(allowlist.some((f) => f.startsWith('painel-privado/')), false);
+  });
+
+  test('todo link de navegação (<a href> para .html) de uma página publicada leva a uma página que também está no pacote', () => {
+    const allowlist = new Set(lerAllowlist());
+    const quebrados = [];
+    for (const origem of [...allowlist].filter((f) => f.endsWith('.html'))) {
+      const html = semComentariosHtml(fs.readFileSync(path.join(RAIZ, origem), 'utf8'));
+      for (const m of html.matchAll(/<a\b[^>]*?\shref\s*=\s*["']([^"'#?]+\.html)(?:[?#][^"']*)?["']/gi)) {
+        if (/^[a-z][a-z0-9+.-]*:|^\/\//i.test(m[1])) continue; // link externo
+        const alvo = path.posix.normalize(m[1].startsWith('/') ? m[1].slice(1) : path.posix.join(path.posix.dirname(origem), m[1]));
+        if (!allowlist.has(alvo)) quebrados.push(`${origem} -> ${alvo}`);
+      }
+    }
+    assert.deepEqual(quebrados, [], `links de navegação para fora do pacote: ${quebrados.slice(0, 6).join('; ')}${quebrados.length > 6 ? ` (+${quebrados.length - 6})` : ''}`);
+  });
+});

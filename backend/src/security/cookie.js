@@ -141,9 +141,12 @@ const serializarRemocaoCookieDesafioMfa = () => politicaDesafioMfa(1).serializar
 
 /**
  * Cookie da credencial persistente do tablet (Atendimento Token, Etapa C). Nome próprio (authConfig.dispositivo.cookieNome,
- * distinto dos quatro anteriores), Path restrito às rotas do tablet — o navegador não o envia às rotas administrativas —, mesma
- * política de Secure/SameSite da sessão e Max-Age longo (180 dias por padrão). O Max-Age NÃO é a autorização: o servidor valida a
- * credencial, o tablet, a empresa e a rede a cada requisição e a rotaciona.
+ * distinto dos quatro anteriores), Path restrito às rotas do tablet — o navegador não o envia às rotas administrativas —, Secure
+ * como o da sessão, SameSite=Strict FIXO (K5-A / D-C9: independente de SESSAO_COOKIE_SAMESITE; o navegador não o envia em
+ * requisições cross-site, nem em navegação de topo vinda de outro site, que alcançaria o GET /estado, o qual pode rotacionar a
+ * credencial) e Max-Age longo (180 dias por padrão). A interface do tablet e a API são do mesmo site, então o cookie segue nas
+ * requisições legítimas. O Max-Age NÃO é a autorização: o servidor valida a credencial, o tablet, a empresa e a rede a cada
+ * requisição e a rotaciona.
  */
 const CAMINHO_COOKIE_DISPOSITIVO = '/api/atendimento-token/tablet';
 const MINUTOS_POR_DIA = 24 * 60;
@@ -151,7 +154,7 @@ const MINUTOS_POR_DIA = 24 * 60;
 const politicaDispositivo = criarPoliticaCookie({
   nome: authConfig.dispositivo.cookieNome,
   secure: authConfig.sessao.cookieSecure,
-  sameSite: authConfig.sessao.cookieSameSite,
+  sameSite: 'strict',
   expiracaoMinutos: authConfig.dispositivo.cookieDias * MINUTOS_POR_DIA,
   path: CAMINHO_COOKIE_DISPOSITIVO,
 });

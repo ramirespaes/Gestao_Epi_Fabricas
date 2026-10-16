@@ -77,7 +77,8 @@ describe('C — política do cookie do tablet', () => {
     assert.match(texto, new RegExp(`^gepi_tablet=${token};`));
     assert.match(texto, /; HttpOnly/);
     assert.match(texto, new RegExp(`; Path=${CAMINHO_COOKIE}(;|$)`));
-    assert.match(texto, /; SameSite=(Lax|Strict|None)/);
+    assert.match(texto, /; SameSite=Strict(;|$)/, 'K5-A (D-C9): o cookie do tablet é Strict fixo, independente de SESSAO_COOKIE_SAMESITE');
+    assert.equal(/SameSite=(Lax|None)/i.test(texto), false);
     assert.equal(/; Domain=/i.test(texto), false);
     assert.equal(/; Expires=/i.test(texto), false);
     assert.ok(Number(/Max-Age=(\d+)/.exec(texto)?.[1]) >= 30 * 24 * 3600);
