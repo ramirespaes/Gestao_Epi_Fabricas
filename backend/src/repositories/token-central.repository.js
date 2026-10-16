@@ -72,4 +72,22 @@ async function funcionarioDaEmpresa(executor, empresaId, funcionarioId) {
   return rows[0] === undefined ? null : { id: rows[0].id, ativo: rows[0].ativo === true };
 }
 
-module.exports = { contarDispositivos, contarAtivacoesPendentes, dispositivoExiste, ativacaoMaisRecente, funcionarioDaEmpresa };
+/**
+ * GHE ATUAL do funcionário para a conferência da prévia (K7): código (nulo no GHE anterior à 083), descrição (o `nome`, como o sistema
+ * a exibe) e situação. `null` quando o funcionário não tem GHE. Só leitura; roda no mesmo instantâneo do catálogo, que parte do mesmo
+ * `funcionarios.grupo_homogeneo_id`. Não altera `token-catalogo.repository` (baseline E).
+ */
+async function gheDoFuncionario(executor, empresaId, funcionarioId) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirId(funcionarioId, 'identificador de funcionário');
+  const { rows } = await executor.query(
+    `SELECT g.codigo, g.nome AS descricao, g.ativo
+       FROM funcionarios f
+       JOIN grupos_homogeneos_exposicao g ON g.empresa_id = f.empresa_id AND g.id = f.grupo_homogeneo_id
+      WHERE f.empresa_id = $1 AND f.id = $2`,
+    [empresaId, funcionarioId],
+  );
+  return rows[0] === undefined ? null : { codigo: rows[0].codigo ?? null, descricao: rows[0].descricao, ativo: rows[0].ativo === true };
+}
+
+module.exports = { contarDispositivos, contarAtivacoesPendentes, dispositivoExiste, ativacaoMaisRecente, funcionarioDaEmpresa, gheDoFuncionario };

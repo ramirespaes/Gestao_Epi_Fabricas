@@ -148,10 +148,11 @@ function servidor(base = {}) {
   return s;
 }
 
-async function abrir({ perm = TUDO, base = {}, perfil } = {}) {
+async function abrir({ perm = TUDO, base = {}, perfil, hash } = {}) {
   const s = servidor({ permissoes: perm, perfil, ...base });
   const pg = abrirPagina(PAGINA, {
     rotas: s.rotas,
+    ...(hash === undefined ? {} : { hash }),
     // Só para o teste: guarda a instância da tela para conferir que o código não fica retido na memória.
     transformar: (relativo, codigo) => {
       if (relativo !== 'js/atendimento-token-tela.js') return codigo;
@@ -180,14 +181,15 @@ const chamadasDe = (pg, chave) => pg.chamadas.filter((c) => c.chave === chave);
 const daCentral = (pg) => pg.chamadas.filter((c) => c.caminho.startsWith('/atendimento-token'));
 const botoes = (pg, seletor) => pg.consulta(seletor);
 const linha = (pg, corpo, id, atributo = 'data-dispositivo-id') => pg.consulta(`#${corpo} tr[${atributo}="${id}"]`)[0];
-const visiveisAbas = (pg) => ['visaoGeral', 'dispositivos', 'ativacao', 'monitoramento', 'previa', 'historico'].filter((a) => pg.visivel(`aba-${a}`));
-const painelAberto = (pg) => ['visaoGeral', 'dispositivos', 'ativacao', 'monitoramento', 'previa', 'historico'].filter((a) => pg.visivel(`painel-${a}`));
+const ABAS_DA_CENTRAL = ['visaoGeral', 'dispositivos', 'ativacao', 'monitoramento', 'previa', 'historico', 'visualizarTotem'];
+const visiveisAbas = (pg) => ABAS_DA_CENTRAL.filter((a) => pg.visivel(`aba-${a}`));
+const painelAberto = (pg) => ABAS_DA_CENTRAL.filter((a) => pg.visivel(`painel-${a}`));
 const aviso = (pg, id) => pg.el(id).textContent;
 
 describe('abertura protegida e permissões', () => {
-  test('com tudo permitido: as seis abas, a Visão Geral aberta e o menu com "Atendimento Token" como página atual', async () => {
+  test('com tudo permitido: as sete abas, a Visão Geral aberta e o menu com "Atendimento Token" como página atual', async () => {
     const { pg } = await abrir();
-    assert.deepEqual(visiveisAbas(pg), ['visaoGeral', 'dispositivos', 'ativacao', 'monitoramento', 'previa', 'historico']);
+    assert.deepEqual(visiveisAbas(pg), ['visaoGeral', 'dispositivos', 'ativacao', 'monitoramento', 'previa', 'historico', 'visualizarTotem']);
     assert.deepEqual(painelAberto(pg), ['visaoGeral']);
     assert.equal(pg.visivel('conteudoProtegido'), true);
     assert.equal(pg.el('aba-visaoGeral').getAttribute('aria-selected'), 'true');
@@ -224,7 +226,7 @@ describe('abertura protegida e permissões', () => {
 
   test('só a prévia: abre direto na Prévia; nenhuma leitura de visão geral, dispositivos ou redes', async () => {
     const { pg } = await abrir({ perm: permissoes({ acoes: { TOKEN_PREVIA_CATALOGO_REAL: true }, funcionarios: true }) });
-    assert.deepEqual(visiveisAbas(pg), ['monitoramento', 'previa', 'historico']);
+    assert.deepEqual(visiveisAbas(pg), ['monitoramento', 'previa', 'historico', 'visualizarTotem']);
     assert.deepEqual(painelAberto(pg), ['monitoramento']);
     assert.equal(daCentral(pg).length, 0);
   });
@@ -949,7 +951,7 @@ describe('Prévia e Testes', () => {
     assert.equal(chamadasDe(pg, 'GET /funcionarios').length, 0);
   });
 
-  test('prévia: mostra os materiais do catálogo (nome, tipo, unidade, tamanhos) e o aviso; é só GET', async () => {
+  test('prévia: mostra os materiais do catálogo (nome, tipo, unidade, "Possui tamanhos") e o aviso; é só GET', async () => {
     const { pg } = await abrir();
     await aba(pg, 'previa');
     await buscar(pg, 'ana');
@@ -958,8 +960,9 @@ describe('Prévia e Testes', () => {
     assert.match(pg.texto('previaTitulo'), /Prévia do catálogo — Ana Silva/);
     const materiais = pg.consulta('#previaResultado li');
     assert.equal(materiais.length, 2);
-    assert.match(materiais[0].textContent, /Luva Nitrílica[\s\S]*Luva · EPI · Unidade: par[\s\S]*Tamanhos: P, M, G/);
-    assert.match(materiais[1].textContent, /Capacete[\s\S]*Sem escolha de tamanho/);
+    assert.match(materiais[0].textContent, /Luva Nitrílica[\s\S]*Luva · EPI · Unidade: par[\s\S]*Possui tamanhos/);
+    assert.doesNotMatch(materiais[0].textContent, /P, M, G|Tamanhos:/, 'K7: a lista não enumera os tamanhos');
+    assert.match(materiais[1].textContent, /Capacete[\s\S]*Sem tamanho/);
     assert.match(pg.texto('previaResultado'), /O funcionário vê estes materiais no tablet/);
     assert.match(pg.texto('previaResultado'), /2 materiais no catálogo/);
     const previa = chamadasDe(pg, 'GET /atendimento-token/previa/catalogo');
@@ -1301,7 +1304,7 @@ describe('abas: navegação, acessibilidade e carregamento sob demanda', () => {
   test('papéis ARIA, uma aba selecionada por vez e painéis ligados às abas', async () => {
     const { pg } = await abrir();
     assert.equal(pg.el('abas').getAttribute('role'), 'tablist');
-    for (const a of ['visaoGeral', 'dispositivos', 'ativacao', 'monitoramento', 'previa', 'historico']) {
+    for (const a of ABAS_DA_CENTRAL) {
       assert.equal(pg.el(`aba-${a}`).getAttribute('role'), 'tab');
       assert.equal(pg.el(`aba-${a}`).getAttribute('aria-controls'), `painel-${a}`);
       assert.equal(pg.el(`painel-${a}`).getAttribute('role'), 'tabpanel');
@@ -1449,5 +1452,760 @@ describe('responsividade e acessibilidade da marcação', () => {
     for (const modal of ['modalDispositivo', 'modalConfirmar', 'modalQr']) assert.match(html, new RegExp(`id="${modal}" role="(alert)?dialog" aria-modal="true" aria-hidden="true" aria-labelledby=`), modal);
     assert.match(html, /@media \(max-width: 560px\)/);
     assert.match(html, /@media \(max-width: 900px\)/);
+  });
+});
+
+// ───────────────────────── K7 — aba "Visualizar Totem" (prévia visual, modalidade 1) ─────────────────────────
+
+const quadroDaPrevia = (pg) => pg.consulta('#totemPreviaQuadro iframe');
+
+describe('K7 — aba Visualizar Totem', () => {
+  test('K7-D1 — fica depois de Histórico no HTML e na lista, com o rótulo Visualizar Totem e os papéis ARIA das outras abas', async () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const html = fs.readFileSync(path.join(__dirname, '..', PAGINA), 'utf8');
+    assert.ok(html.indexOf('id="aba-historico"') > 0 && html.indexOf('id="aba-visualizarTotem"') > html.indexOf('id="aba-historico"'));
+    assert.ok(html.indexOf('id="painel-visualizarTotem"') > html.indexOf('id="painel-historico"'));
+    const { pg } = await abrir();
+    assert.equal(pg.el('aba-visualizarTotem').textContent.trim(), 'Visualizar Totem');
+    assert.equal(pg.el('aba-visualizarTotem').getAttribute('aria-controls'), 'painel-visualizarTotem');
+  });
+
+  test('K7-D2 — reutiliza a permissão TOKEN_PREVIA_CATALOGO_REAL: sem ela a aba não aparece nem abre', async () => {
+    const { pg } = await abrir({ perm: SO_LEITURA });
+    assert.equal(pg.visivel('aba-visualizarTotem'), false);
+    assert.equal(pg.visivel('painel-visualizarTotem'), false);
+    const so = await abrir({ perm: permissoes({ acoes: { TOKEN_PREVIA_CATALOGO_REAL: true } }) });
+    assert.equal(so.pg.visivel('aba-visualizarTotem'), true);
+  });
+
+  test('K7-D3 — o iframe só existe depois de abrir a aba, com sandbox mínimo (scripts, sem mesma origem) e caminho da prévia', async () => {
+    const { pg } = await abrir();
+    assert.equal(quadroDaPrevia(pg).length, 0, 'nada carregado ao abrir a página');
+    await aba(pg, 'visualizarTotem');
+    const quadros = quadroDaPrevia(pg);
+    assert.equal(quadros.length, 1);
+    const q = quadros[0];
+    assert.equal(q.getAttribute('src'), '../totem/previa.html');
+    assert.equal(q.getAttribute('sandbox'), 'allow-scripts', 'só scripts: origem opaca, sem cookies, sem storage e sem acesso à Central');
+    assert.equal(/allow-same-origin|allow-top-navigation|allow-popups|allow-forms|allow-modals|allow-downloads/.test(q.getAttribute('sandbox')), false);
+    assert.equal(q.getAttribute('referrerpolicy'), 'no-referrer');
+    assert.ok((q.getAttribute('title') || '').length > 5, 'título acessível');
+    assert.ok(q.getAttribute('allow') == null, 'nenhuma permissão de recurso do navegador');
+  });
+
+  test('K7-D4 — ao sair da aba o iframe é descarregado; ao voltar nasce de novo; "Reiniciar prévia" também recria', async () => {
+    const { pg } = await abrir();
+    await aba(pg, 'visualizarTotem');
+    const primeiro = quadroDaPrevia(pg)[0];
+    await aba(pg, 'historico');
+    assert.equal(quadroDaPrevia(pg).length, 0, 'descarregado ao sair');
+    await aba(pg, 'visualizarTotem');
+    const segundo = quadroDaPrevia(pg)[0];
+    assert.ok(segundo && segundo !== primeiro, 'um iframe novo');
+    await pg.clicar('botaoReiniciarPrevia');
+    const terceiro = quadroDaPrevia(pg);
+    assert.equal(terceiro.length, 1);
+    assert.notEqual(terceiro[0], segundo);
+  });
+
+  test('K7-D5 — a Central não faz nenhuma chamada ao abrir a aba, e a nota mostra as matrículas fictícias e o aviso de dados fictícios', async () => {
+    const { pg } = await abrir();
+    const antes = pg.chamadas.length;
+    await aba(pg, 'visualizarTotem');
+    assert.equal(pg.chamadas.length, antes, 'abrir a prévia visual não consulta a API');
+    const texto = pg.el('painel-visualizarTotem').textContent.replace(/\s+/g, ' ');
+    for (const m of ['1001', '1002', '1003']) assert.match(texto, new RegExp(m));
+    assert.match(texto, /fictíci/i);
+    assert.match(texto, /Nada é gravado/i);
+    assert.match(texto, /Matrícula/);
+    assert.match(texto, /CPF não é aceito/i);
+  });
+
+  test('K7-D6 — encerrar a tela (sessão acabou) remove o iframe', async () => {
+    const { pg } = await abrir();
+    await aba(pg, 'visualizarTotem');
+    assert.equal(quadroDaPrevia(pg).length, 1);
+    pg.janela.__tela.encerrar();
+    assert.equal(quadroDaPrevia(pg).length, 0);
+  });
+
+  test('K7-D7b — a demonstração é o modo padrão e o iframe dela continua com o caminho sem parâmetros', async () => {
+    const { pg } = await abrir();
+    await aba(pg, 'visualizarTotem');
+    assert.equal(pg.el('modoPreviaDemo').checked, true);
+    assert.equal(pg.el('modoPreviaReal').checked, false);
+    assert.equal(quadroDaPrevia(pg)[0].getAttribute('src'), '../totem/previa.html');
+    assert.equal(pg.visivel('cartaoConsultaReal'), false);
+    assert.equal(pg.visivel('avisoPreviaReal'), false);
+    assert.equal(pg.visivel('avisoPreviaDemo'), true);
+    assert.equal(pg.ouvintesDaJanela('message'), 0, 'sem ouvinte de mensagem na demonstração');
+  });
+
+  test('K7-D7 — Monitoramento e Histórico continuam só como estrutura "em integração"', async () => {
+    const { pg } = await abrir();
+    await aba(pg, 'historico');
+    assert.match(pg.el('painel-historico').textContent, /Etapa J[\s\S]*nenhum dado é exibido/);
+    await aba(pg, 'monitoramento');
+    assert.match(pg.el('painel-monitoramento').textContent, /Etapa J[\s\S]*nenhum dado é exibido/);
+    assert.equal(quadroDaPrevia(pg).length, 0);
+  });
+});
+
+// ───────────────────────── K7 — Consulta real: seletor de modo, cartão do GHE e ponte postMessage ─────────────────────────
+
+describe('K7 — consulta real na Central', () => {
+  const CANAL = 'safework-previa-totem';
+  const ROTA = 'POST /atendimento-token/previa/identificar';
+  const CPF_FICTICIO = '12345678901';
+  const MATERIAL = (id, nome, extra = {}) => ({ id, nome, unidade: 'PAR', categoria: 'EPI', grupoProtecao: 'Proteção dos pés', tipo: { id: 1, nome: 'Botina' }, exigeTamanho: true, tamanhos: ['40', '41'], imagem: { disponivel: false }, ...extra });
+  const RESPOSTA_OK = (extra = {}) => ({
+    status: 'ok',
+    previa: {
+      funcionario: { primeiroNome: 'Dora' },
+      ghe: { codigo: 'GHE-102', descricao: 'Soldagem', ativo: true },
+      catalogo: { estado: 'OK', total: 2, materiais: [MATERIAL(31, 'Botina Teste'), MATERIAL(32, 'Capacete Teste', { exigeTamanho: false, tamanhos: [] })] },
+    },
+    ...extra,
+  });
+  const exigirRecurso = (pg) => assert.ok(pg.consulta('#modoPreviaReal').length === 1, 'RED K7: o seletor de modo ainda não existe (comportamento ausente)');
+
+  const janelaFalsa = () => { const enviadas = []; return { enviadas, postMessage: (m, alvo) => enviadas.push({ m: JSON.parse(JSON.stringify(m)), alvo }) }; };
+  const identificarMsg = (extra = {}) => ({ canal: CANAL, versao: 1, tipo: 'IDENTIFICAR', id: 'consulta-0001', tipoId: 'MATRICULA', valor: 'MX-4242', ...extra });
+  const doQuadro = (pg, janela, data, extra = {}) => pg.eventoDaJanela('message', { data, source: janela, origin: 'null', ...extra });
+  const chamadasIdentificar = (pg) => pg.chamadas.filter((c) => c.chave === ROTA);
+
+  async function abrirReal({ perm = TUDO, resposta = () => ({ status: 200, corpo: RESPOSTA_OK() }) } = {}) {
+    const r = await abrir({ perm, base: { forcar: { [ROTA]: resposta } } });
+    await aba(r.pg, 'visualizarTotem');
+    exigirRecurso(r.pg);
+    await r.pg.marcar('modoPreviaReal');
+    const quadro = quadroDaPrevia(r.pg)[0];
+    const filha = janelaFalsa();
+    quadro.contentWindow = filha;
+    return { ...r, quadro, filha };
+  }
+
+  test('K7-F1 — "Consulta real" só aparece com a ação da prévia E employeeHistory.visualizar; a demonstração continua para quem tem só a prévia', async () => {
+    const so = await abrir({ perm: permissoes({ acoes: { TOKEN_PREVIA_CATALOGO_REAL: true } }) });
+    await aba(so.pg, 'visualizarTotem');
+    exigirRecurso(so.pg);
+    assert.equal(so.pg.visivel('opcaoModoReal'), false, 'sem employeeHistory.visualizar a consulta real não é oferecida');
+    assert.equal(so.pg.visivel('modoPreviaDemo'), true);
+    const todos = await abrir();
+    await aba(todos.pg, 'visualizarTotem');
+    assert.equal(todos.pg.visivel('opcaoModoReal'), true);
+  });
+
+  test('K7-F2 — escolher "Consulta real" recria o iframe com modo e origem da Central no endereço, sem relaxar o sandbox, e mostra o aviso e o cartão', async () => {
+    const { pg, quadro } = await abrirReal();
+    const q = quadroDaPrevia(pg);
+    assert.equal(q.length, 1);
+    assert.equal(quadro, q[0]);
+    assert.equal(q[0].getAttribute('src'), `../totem/previa.html?modo=real&pai=${encodeURIComponent(pg.janela.location.origin)}`);
+    assert.equal(q[0].getAttribute('sandbox'), 'allow-scripts');
+    assert.ok(q[0].getAttribute('allow') == null);
+    assert.equal(pg.visivel('avisoPreviaReal'), true);
+    assert.equal(pg.visivel('avisoPreviaDemo'), false);
+    assert.equal(pg.visivel('previaTotemCodigos'), false);
+    assert.equal(pg.visivel('cartaoConsultaReal'), true);
+    assert.equal(pg.ouvintesDaJanela('message'), 1);
+    assert.equal(pg.chamadas.filter((c) => c.caminho.includes('previa')).length, 0, 'nenhuma consulta antes de o colaborador ser digitado');
+  });
+
+  test('K7-F3 — a identificação vira UM POST com o identificador só no corpo; o cartão mostra colaborador, GHE (código e descrição), situação e materiais; o iframe recebe só nome e catálogo', async () => {
+    const { pg, filha } = await abrirReal();
+    await doQuadro(pg, filha, identificarMsg());
+    const chamadas = chamadasIdentificar(pg);
+    assert.equal(chamadas.length, 1);
+    assert.deepEqual(chamadas[0].corpo, { tipo: 'MATRICULA', valor: 'MX-4242' });
+    assert.equal(chamadas[0].url.includes('MX-4242'), false, 'nunca na URL');
+    const cartao = pg.el('cartaoConsultaReal').textContent.replace(/\s+/g, ' ');
+    for (const esperado of ['Dora', 'GHE-102', 'Soldagem', 'Ativo', 'Botina Teste', 'Capacete Teste']) assert.match(cartao, new RegExp(esperado));
+    assert.equal(pg.el('crTotal').textContent.trim(), '2');
+    assert.equal(filha.enviadas.length, 1);
+    assert.equal(filha.enviadas[0].alvo, '*', 'a origem do iframe é opaca: o destino é a janela exata, não uma origem');
+    const msg = filha.enviadas[0].m;
+    assert.deepEqual(Object.keys(msg).sort(), ['canal', 'catalogo', 'id', 'primeiroNome', 'resultado', 'tipo', 'versao']);
+    assert.deepEqual([msg.canal, msg.versao, msg.tipo, msg.id, msg.resultado, msg.primeiroNome], [CANAL, 1, 'RESULTADO', 'consulta-0001', 'OK', 'Dora']);
+    assert.equal(msg.catalogo.materiais.length, 2);
+    const texto = JSON.stringify(msg);
+    for (const proibido of ['GHE-102', 'Soldagem', 'MX-4242']) assert.equal(texto.includes(proibido), false, `o iframe não recebe ${proibido}`);
+  });
+
+  test('K7-F4 — mensagem de fonte, origem, formato, canal, versão, tipo, id ou valor inválidos é ignorada: nenhuma consulta e nenhuma resposta', async () => {
+    const { pg, filha } = await abrirReal();
+    const casos = [
+      ['outra fonte', identificarMsg(), { source: janelaFalsa() }],
+      ['sem fonte', identificarMsg(), { source: undefined }],
+      ['origem que não é nula', identificarMsg(), { origin: pg.janela.location.origin }],
+      ['campo extra', identificarMsg({ cpf: CPF_FICTICIO }), {}],
+      ['campo a menos', (() => { const m = identificarMsg(); delete m.id; return m; })(), {}],
+      ['canal errado', identificarMsg({ canal: 'outro' }), {}],
+      ['versão errada', identificarMsg({ versao: 2 }), {}],
+      ['tipo errado', identificarMsg({ tipo: 'RESULTADO' }), {}],
+      ['id curto', identificarMsg({ id: 'abc' }), {}],
+      ['id com caractere inválido', identificarMsg({ id: 'consulta 0001 <x>' }), {}],
+      ['tipoId desconhecido', identificarMsg({ tipoId: 'NOME' }), {}],
+      ['valor vazio', identificarMsg({ valor: '' }), {}],
+      ['valor longo', identificarMsg({ valor: 'x'.repeat(31) }), {}],
+      ['valor com controle', identificarMsg({ valor: 'ab\ncd' }), {}],
+      ['valor que não é texto', identificarMsg({ valor: 4242 }), {}],
+      ['dados não objeto', 'texto', {}],
+      ['dados nulos', null, {}],
+      ['dados lista', [identificarMsg()], {}],
+    ];
+    for (const [rotulo, data, extra] of casos) {
+      await doQuadro(pg, filha, data, extra);
+      assert.equal(chamadasIdentificar(pg).length, 0, `${rotulo}: não pode consultar`);
+      assert.equal(filha.enviadas.length, 0, `${rotulo}: não pode responder`);
+    }
+  });
+
+  test('K7-F5 — os resultados do servidor viram respostas fixas ao iframe: não identificado, limite e indisponível; 401 encerra a sessão e não responde nada', async () => {
+    const mapa = [
+      [{ status: 404, corpo: { status: 'error', codigo: 'FUNCIONARIO_NAO_IDENTIFICADO', message: 'x' } }, 'NAO_IDENTIFICADO'],
+      [{ status: 429, corpo: { status: 'error', codigo: 'LIMITE_REQUISICOES_EXCEDIDO', message: 'x' } }, 'LIMITE'],
+      [{ status: 403, corpo: { status: 'error', codigo: 'PERMISSAO_NEGADA', message: 'x' } }, 'INDISPONIVEL'],
+      [{ status: 500, corpo: { status: 'error', codigo: 'ERRO_INTERNO', message: 'x' } }, 'INDISPONIVEL'],
+      [{ status: 200, corpo: { status: 'ok', previa: { funcionario: { primeiroNome: '' } } } }, 'INDISPONIVEL'],
+    ];
+    for (const [servidor, esperado] of mapa) {
+      const { pg, filha } = await abrirReal({ resposta: () => servidor });
+      await doQuadro(pg, filha, identificarMsg());
+      assert.equal(filha.enviadas.length, 1, esperado);
+      assert.deepEqual(Object.keys(filha.enviadas[0].m).sort(), ['canal', 'id', 'resultado', 'tipo', 'versao']);
+      assert.equal(filha.enviadas[0].m.resultado, esperado);
+    }
+    const { pg, filha } = await abrirReal({ resposta: () => ({ status: 401, corpo: { status: 'error', codigo: 'SESSAO_INVALIDA', message: 'x' } }) });
+    await doQuadro(pg, filha, identificarMsg());
+    assert.equal(filha.enviadas.length, 0, 'sessão perdida: nada é liberado ao iframe');
+    assert.equal(pg.visivel('conteudoProtegido'), false);
+  });
+
+  test('K7-F6 — o identificador (CPF ou matrícula) não aparece em armazenamento, cookie, histórico, console, URL, cartão nem na resposta ao iframe', async () => {
+    const { pg, filha } = await abrirReal({ resposta: () => ({ status: 404, corpo: { status: 'error', codigo: 'FUNCIONARIO_NAO_IDENTIFICADO', message: 'x' } }) });
+    await doQuadro(pg, filha, identificarMsg({ tipoId: 'CPF', valor: CPF_FICTICIO }));
+    const lugares = JSON.stringify({ s: pg.storage, c: pg.cookiesEscritos, h: pg.historico, n: pg.navegacoes, k: pg.consoleChamadas, card: pg.el('cartaoConsultaReal').textContent, resp: filha.enviadas, urls: pg.chamadas.map((c) => c.url) });
+    assert.equal(lugares.includes(CPF_FICTICIO), false);
+    assert.equal(chamadasIdentificar(pg)[0].corpoBruto.includes(CPF_FICTICIO), true, 'só o corpo do POST leva o valor');
+  });
+
+  test('K7-F7 — NÃO identificado: o cartão avisa sem repetir o valor, e identificado limpa o aviso anterior', async () => {
+    let n = 0;
+    const { pg, filha } = await abrirReal({ resposta: () => (n++ === 0 ? { status: 404, corpo: { status: 'error', codigo: 'FUNCIONARIO_NAO_IDENTIFICADO', message: 'x' } } : { status: 200, corpo: RESPOSTA_OK() }) });
+    await doQuadro(pg, filha, identificarMsg());
+    assert.match(pg.el('crMensagem').textContent, /não identificado|não encontrado/i);
+    assert.equal(pg.el('crMensagem').textContent.includes('MX-4242'), false);
+    await doQuadro(pg, filha, identificarMsg({ id: 'consulta-0002' }));
+    assert.equal(pg.el('crMensagem').textContent.trim(), '');
+    assert.match(pg.el('crColaborador').textContent, /Dora/);
+  });
+
+  test('K7-F8 — uma consulta por vez: a segunda mensagem enquanto a primeira está em andamento é ignorada', async () => {
+    let liberar;
+    const { pg, filha } = await abrirReal({ resposta: () => new Promise((resolver) => { liberar = () => resolver({ status: 200, corpo: RESPOSTA_OK() }); }) });
+    const primeira = doQuadro(pg, filha, identificarMsg());
+    await pg.esperar();
+    await doQuadro(pg, filha, identificarMsg({ id: 'consulta-0002' }));
+    assert.equal(chamadasIdentificar(pg).length, 1);
+    liberar();
+    await primeira;
+    await pg.esperar();
+    assert.equal(filha.enviadas.length, 1);
+    assert.equal(filha.enviadas[0].m.id, 'consulta-0001');
+  });
+
+  test('K7-F9 — sair da aba, trocar de modo ou encerrar a sessão descarta iframe, ouvinte, cartão e consulta em andamento: resposta tardia nunca chega ao iframe', async () => {
+    for (const acao of ['sair', 'demonstracao', 'reiniciar', 'encerrar']) {
+      let liberar;
+      const { pg, filha } = await abrirReal({ resposta: () => new Promise((resolver) => { liberar = () => resolver({ status: 200, corpo: RESPOSTA_OK() }); }) });
+      const andamento = doQuadro(pg, filha, identificarMsg());
+      await pg.esperar();
+      if (acao === 'sair') await aba(pg, 'historico');
+      if (acao === 'demonstracao') await pg.marcar('modoPreviaDemo');
+      if (acao === 'reiniciar') await pg.clicar('botaoReiniciarPrevia');
+      if (acao === 'encerrar') pg.janela.__tela.encerrar();
+      liberar();
+      await andamento;
+      await pg.esperar();
+      assert.equal(filha.enviadas.length, 0, `${acao}: nada pode ser entregue ao iframe descartado`);
+      assert.equal(pg.el('crColaborador').textContent.includes('Dora'), false, `${acao}: o cartão não recebe o resultado tardio`);
+      if (acao !== 'reiniciar') assert.equal(pg.ouvintesDaJanela('message'), acao === 'sair' || acao === 'demonstracao' || acao === 'encerrar' ? 0 : 1, acao);
+      await doQuadro(pg, filha, identificarMsg({ id: 'consulta-0003' }));
+      assert.equal(chamadasIdentificar(pg).length, 1, `${acao}: mensagem de iframe descartado é ignorada`);
+    }
+  });
+
+  test('K7-F10 — ao voltar à aba o modo é sempre a demonstração; o cartão e o estado anterior não voltam', async () => {
+    const { pg, filha } = await abrirReal();
+    await doQuadro(pg, filha, identificarMsg());
+    assert.match(pg.el('crColaborador').textContent, /Dora/);
+    await aba(pg, 'historico');
+    await aba(pg, 'visualizarTotem');
+    assert.equal(pg.el('modoPreviaDemo').checked, true);
+    assert.equal(quadroDaPrevia(pg)[0].getAttribute('src'), '../totem/previa.html');
+    assert.equal(pg.el('crColaborador').textContent.includes('Dora'), false);
+    assert.equal(pg.visivel('cartaoConsultaReal'), false);
+  });
+
+  test('K7-F11 — só os campos da lista chegam ao iframe e ao cartão, mesmo que o servidor mande mais', async () => {
+    const resposta = RESPOSTA_OK();
+    resposta.previa.funcionario = { primeiroNome: 'Dora', nome: 'Dora Souza Fictícia', cpf: CPF_FICTICIO, matricula: 'MX-4242', id: 77 };
+    resposta.previa.ghe.setor = 'Soldagem industrial';
+    resposta.previa.catalogo.materiais[0].saldo = 99;
+    const { pg, filha } = await abrirReal({ resposta: () => ({ status: 200, corpo: resposta }) });
+    await doQuadro(pg, filha, identificarMsg());
+    const tudo = JSON.stringify(filha.enviadas) + pg.el('cartaoConsultaReal').textContent;
+    for (const proibido of ['Souza', CPF_FICTICIO, 'industrial', '"saldo"', '"id":77']) assert.equal(tudo.includes(proibido), false, proibido);
+  });
+
+  test('K7-F12 — a demonstração não foi tocada: com o modo real e de volta à demonstração, o iframe da demo nasce sem parâmetros e sem ouvinte', async () => {
+    const { pg } = await abrirReal();
+    await pg.marcar('modoPreviaDemo');
+    assert.equal(quadroDaPrevia(pg).length, 1);
+    assert.equal(quadroDaPrevia(pg)[0].getAttribute('src'), '../totem/previa.html');
+    assert.equal(pg.ouvintesDaJanela('message'), 0);
+    assert.equal(pg.visivel('cartaoConsultaReal'), false);
+  });
+});
+
+// ───────────────────────── K7 — rodada de melhorias visuais e de navegação (cinco requisitos) ─────────────────────────
+
+describe('K7 melhorias — 1. cartões da Visão Geral', () => {
+  const ESPERADO = [
+    ['Dispositivos cadastrados', 'azul', 'tablet_android', '3'],
+    ['Dispositivos ativos', 'verde', 'check_circle', '1'],
+    ['Aguardando ativação', 'laranja', 'hourglass_top', '1'],
+    ['Dispositivos revogados', 'vermelho', 'block', '1'],
+    ['Ativações pendentes', 'roxo', 'qr_code_2', '0'],
+  ];
+
+  test('M1-1 — os cinco cartões têm o tom, o ícone, o título e o valor real; o valor e o cálculo não mudaram', async () => {
+    const { pg } = await abrir();
+    const cartoes = pg.consulta('#visaoGeralCartoes .stat');
+    assert.equal(cartoes.length, 5);
+    cartoes.forEach((c, i) => {
+      const [titulo, tom, icone, valor] = ESPERADO[i];
+      assert.equal(c.getAttribute('data-cartao'), titulo);
+      assert.equal(c.getAttribute('data-tom'), tom);
+      assert.equal(c.querySelector('i').getAttribute('data-icone'), icone);
+      assert.equal(c.querySelector('span').textContent, titulo);
+      assert.equal(c.querySelector('strong').textContent, valor);
+    });
+  });
+
+  test('M1-2 — a cor nunca é o único indicador: cada cartão tem título em texto e ícone próprio; o ícone é decorativo e não entra no texto', async () => {
+    const { pg } = await abrir();
+    const cartoes = pg.consulta('#visaoGeralCartoes .stat');
+    assert.equal(new Set(cartoes.map((c) => c.querySelector('i').getAttribute('data-icone'))).size, 5, 'cinco ícones distintos');
+    assert.equal(new Set(cartoes.map((c) => c.getAttribute('data-tom'))).size, 5, 'cinco tons distintos');
+    for (const c of cartoes) {
+      assert.equal(c.querySelector('i').getAttribute('aria-hidden'), 'true');
+      assert.equal(c.textContent, `${c.getAttribute('data-cartao')}${c.querySelector('strong').textContent}`, 'o nome do ícone não vaza para o texto');
+    }
+  });
+
+  test('M1-3 — a folha da página define fundo suave, tom, ícone e destaque do número para os cinco tons, no claro e no escuro', () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const html = fs.readFileSync(path.join(__dirname, '..', PAGINA), 'utf8');
+    for (const tom of ['azul', 'verde', 'laranja', 'vermelho', 'roxo']) {
+      const re = tom === 'azul' ? /\.stat-token\{--tom:#007AFF/ : new RegExp(`\\.stat-token\\[data-tom="${tom}"\\]\\{--tom:#`);
+      assert.match(html, re, `tom ${tom}`);
+      if (tom !== 'azul') assert.match(html, new RegExp(`html\\[data-theme="dark"\\] \\.stat-token\\[data-tom="${tom}"\\]`), `escuro ${tom}`);
+    }
+    assert.match(html, /\.stat-token\{[^}]*border-radius:14px[^}]*background:var\(--tom-fundo\)/);
+    assert.match(html, /\.stat-token strong\{[^}]*font-size:34px/);
+    assert.match(html, /\.stat-token-icone::before\{font-size:20px\}/);
+  });
+
+  test('M1-4 — o painel continua lendo só a rota da visão geral (nenhuma fonte de dados nova)', async () => {
+    const { pg } = await abrir();
+    assert.equal(chamadasDe(pg, 'GET /atendimento-token/visao-geral').length, 1);
+    assert.equal(pg.chamadas.filter((c) => c.metodo !== 'GET').length, 0);
+  });
+});
+
+describe('K7 melhorias — 2. botões e ícones', () => {
+  const lerPagina = () => require('node:fs').readFileSync(require('node:path').join(__dirname, '..', PAGINA), 'utf8');
+
+  test('M2-1 — "Reiniciar prévia" e os "Atualizar" ganham ícone; o texto dos botões não mudou', async () => {
+    const { pg } = await abrir();
+    const esperado = { botaoReiniciarPrevia: ['restart_alt', 'Reiniciar prévia'], botaoAtualizarVisaoGeral: ['refresh', 'Atualizar'], botaoAtualizarDispositivos: ['refresh', 'Atualizar'],
+      botaoAtualizarRedes: ['refresh', 'Atualizar'], botaoAtualizarEstadoAtivacao: ['refresh', 'Atualizar estado'], dispositivosAnterior: ['chevron_left', 'Anterior'],
+      dispositivosProxima: ['chevron_right', 'Próxima'], botaoCancelarDispositivo: ['close', 'Cancelar'], botaoCancelarConfirmar: ['close', 'Cancelar'], botaoNovaAtivacaoQr: ['qr_code_2', 'Gerar nova ativação'] };
+    for (const [id, [icone, texto]] of Object.entries(esperado)) {
+      assert.equal(pg.el(id).getAttribute('data-icone'), icone, id);
+      assert.equal(pg.el(id).textContent.trim(), texto, `${id}: o texto não inclui o nome do ícone`);
+    }
+  });
+
+  test('M2-2 — botões de linha criados pela tela também têm ícone, e a ação perigosa continua distinta (perigo-texto) e confirmada como antes', async () => {
+    const { pg } = await abrir();
+    await aba(pg, 'dispositivos');
+    const editar = botoes(pg, '#corpoDispositivos [data-acao="editar"]')[0];
+    const revogar = botoes(pg, '#corpoDispositivos [data-acao="revogar"]')[0];
+    assert.equal(editar.getAttribute('data-icone'), 'edit');
+    assert.equal(revogar.getAttribute('data-icone'), 'block');
+    assert.equal(revogar.classList.contains('perigo-texto'), true);
+    assert.equal(editar.classList.contains('perigo-texto'), false);
+    assert.equal(revogar.textContent, 'Revogar');
+    await aba(pg, 'ativacao');
+    assert.equal(botoes(pg, '#corpoRedes [data-acao="desativar-rede"]')[0].getAttribute('data-icone'), 'wifi_off');
+  });
+
+  test('M2-3 — a hierarquia é preservada: abas continuam abas (sem virar botões azuis), ações primárias continuam sólidas, secundárias tonais e perigosas vermelhas', async () => {
+    const { pg } = await abrir();
+    for (const a of ['visaoGeral', 'dispositivos', 'ativacao', 'monitoramento', 'previa', 'historico', 'visualizarTotem']) {
+      const classes = pg.el(`aba-${a}`).getAttribute('class');
+      assert.match(classes, /\breport-tab\b/);
+      assert.doesNotMatch(classes, /filled-btn|outlined-btn|tonal-btn/, `a aba ${a} não vira botão`);
+      assert.equal(pg.el(`aba-${a}`).getAttribute('data-icone'), null, 'abas sem ícone de botão');
+    }
+    assert.match(pg.el('botaoNovoDispositivo').getAttribute('class'), /\bfilled-btn\b/);
+    assert.match(pg.el('botaoConfirmar').getAttribute('class'), /\bfilled-btn\b/);
+    const html = lerPagina();
+    assert.match(html, /#conteudoProtegido \.outlined-btn\.perigo-texto[^{]*\{[^}]*var\(--error\)/);
+    assert.doesNotMatch(html, /\.report-tab\.active\{[^}]*background:var\(--primary\)/, 'aba ativa não ganha o azul sólido dos botões');
+  });
+
+  test('M2-4 — hover, foco visível e desabilitado estão definidos; o desabilitado continua cinza e sem hover', () => {
+    const html = lerPagina();
+    assert.match(html, /\.outlined-btn:hover:not\(:disabled\)/);
+    assert.match(html, /\.outlined-btn:active:not\(:disabled\)/);
+    assert.match(html, /\.filled-btn:hover:not\(:disabled\)/);
+    assert.match(html, /\.report-tab:focus-visible,\.outlined-btn:focus-visible,\.filled-btn:focus-visible/);
+    assert.match(html, /#conteudoProtegido button:disabled\{[^}]*filter:grayscale\(1\)/);
+    assert.match(html, /\[data-icone\]::before\{content:attr\(data-icone\)/);
+  });
+});
+
+describe('K7 melhorias — 4. a aba escolhida sobrevive à atualização da página', () => {
+  const ABAS_TODAS = ['visaoGeral', 'dispositivos', 'ativacao', 'monitoramento', 'previa', 'historico', 'visualizarTotem'];
+  const hashDe = (pg) => pg.location.hash;
+  const gravacoesDeAba = (pg) => pg.historico.filter((h) => typeof h.url === 'string' && h.url.includes('#aba='));
+
+  test('M4-1 — sem fragmento: abre a Visão Geral e não escreve nada no endereço', async () => {
+    const { pg } = await abrir();
+    assert.deepEqual(painelAberto(pg), ['visaoGeral']);
+    assert.equal(hashDe(pg), '');
+    assert.equal(gravacoesDeAba(pg).length, 0);
+  });
+
+  test('M4-2 — clicar numa aba grava #aba=<nome> (um registro de histórico por troca) e repetir a mesma aba não duplica', async () => {
+    const { pg } = await abrir();
+    await aba(pg, 'dispositivos');
+    assert.equal(hashDe(pg), '#aba=dispositivos');
+    await aba(pg, 'dispositivos');
+    await aba(pg, 'previa');
+    assert.equal(hashDe(pg), '#aba=previa');
+    assert.deepEqual(gravacoesDeAba(pg).map((h) => [h.metodo, h.url]), [['pushState', '#aba=dispositivos'], ['pushState', '#aba=previa']]);
+  });
+
+  for (const nome of ABAS_TODAS) {
+    test(`M4-3 (${nome}) — F5/Cmd+R: reabrir com #aba=${nome} volta exatamente para essa aba e só ela`, async () => {
+      const { pg } = await abrir({ hash: `#aba=${nome}` });
+      assert.deepEqual(painelAberto(pg), [nome]);
+      assert.equal(pg.el(`aba-${nome}`).getAttribute('aria-selected'), 'true');
+      assert.equal(hashDe(pg), `#aba=${nome}`);
+    });
+  }
+
+  test('M4-4 — a atualização completa: clicar, "recarregar" com o endereço atual e continuar na mesma aba', async () => {
+    const { pg } = await abrir();
+    await aba(pg, 'ativacao');
+    const recarregada = await abrir({ hash: hashDe(pg) });
+    assert.deepEqual(painelAberto(recarregada.pg), ['ativacao']);
+  });
+
+  test('M4-5 — fragmento desconhecido ou de outro uso (nome inventado, token, lixo) é ignorado: Visão Geral, sem reescrever o endereço', async () => {
+    for (const hash of ['#aba=inexistente', '#token=ABC', '#aba=', '#aba=visaoGeral&x=1', '#ABA=previa', '#aba=__proto__', '#qualquer']) {
+      const { pg } = await abrir({ hash });
+      assert.deepEqual(painelAberto(pg), ['visaoGeral'], hash);
+      assert.equal(gravacoesDeAba(pg).length, 0, hash);
+    }
+  });
+
+  test('M4-6 — aba salva sem permissão: cai numa aba permitida, corrige o endereço e NUNCA monta nem consulta o conteúdo restrito', async () => {
+    const { pg } = await abrir({ perm: SO_LEITURA, hash: '#aba=previa' });
+    assert.deepEqual(painelAberto(pg), ['visaoGeral']);
+    assert.equal(pg.visivel('painel-previa'), false);
+    assert.equal(hashDe(pg), '#aba=visaoGeral');
+    assert.equal(chamadasDe(pg, 'GET /atendimento-token/previa/catalogo').length, 0);
+    assert.equal(chamadasDe(pg, 'GET /funcionarios').length, 0);
+    const outra = await abrir({ perm: SO_LEITURA, hash: '#aba=visualizarTotem' });
+    assert.equal(outra.pg.visivel('painel-visualizarTotem'), false);
+    assert.equal(quadroDaPrevia(outra.pg).length, 0, 'sem iframe da prévia');
+  });
+
+  test('M4-7 — o Visualizar Totem sem a ação da prévia não abre pelo endereço; com permissão, abre', async () => {
+    const semAcao = permissoes({ recurso: { visualizar: true }, acoes: { TOKEN_GERAR_ATIVACAO: true } });
+    const negado = await abrir({ perm: semAcao, hash: '#aba=visualizarTotem' });
+    assert.equal(negado.pg.visivel('painel-visualizarTotem'), false);
+    assert.deepEqual(painelAberto(negado.pg), ['visaoGeral']);
+    const ok = await abrir({ hash: '#aba=visualizarTotem' });
+    assert.deepEqual(painelAberto(ok.pg), ['visualizarTotem']);
+    assert.equal(quadroDaPrevia(ok.pg).length, 1);
+  });
+
+  test('M4-8 — voltar/avançar do navegador (hashchange) troca a aba; fragmento vazio volta à Visão Geral; fragmento sem permissão é corrigido', async () => {
+    const { pg } = await abrir({ perm: SO_LEITURA });
+    pg.location.hash = '#aba=ativacao';
+    await pg.eventoDaJanela('hashchange');
+    assert.deepEqual(painelAberto(pg), ['ativacao']);
+    pg.location.hash = '';
+    await pg.eventoDaJanela('hashchange');
+    assert.deepEqual(painelAberto(pg), ['visaoGeral']);
+    pg.location.hash = '#aba=previa';
+    await pg.eventoDaJanela('hashchange');
+    assert.deepEqual(painelAberto(pg), ['visaoGeral'], 'sem permissão: não abre');
+    assert.equal(hashDe(pg), '#aba=visaoGeral', 'e o endereço é corrigido');
+  });
+
+  test('M4-9 — pelo teclado (setas/Home/End) a aba também é gravada; o foco e o aria-selected seguem corretos', async () => {
+    const { pg } = await abrir();
+    await pg.el('abas').disparar('keydown', { key: 'ArrowRight', preventDefault() {} });
+    assert.equal(hashDe(pg), '#aba=dispositivos');
+    await pg.el('abas').disparar('keydown', { key: 'End', preventDefault() {} });
+    assert.equal(hashDe(pg), '#aba=visualizarTotem');
+    assert.equal(pg.el('aba-visualizarTotem').getAttribute('aria-selected'), 'true');
+  });
+
+  test('M4-10 — nada pessoal vai para o endereço nem para o armazenamento: o fragmento só tem o nome da aba, mesmo com busca, CPF e prévia', async () => {
+    const { pg } = await abrir();
+    const marca = marcaDeArmazenamento(pg);
+    await aba(pg, 'previa');
+    await pg.digitar('previaBusca', 'ana');
+    await pg.enviar('previaBuscaForm');
+    assert.match(hashDe(pg), /^#aba=previa$/);
+    await aba(pg, 'visualizarTotem');
+    assert.match(hashDe(pg), /^#aba=visualizarTotem$/);
+    assert.equal(pg.location.search, '');
+    assert.equal(pg.location.href.includes('ana'), false);
+    semNovosRastros(pg, marca);
+  });
+
+  test('M4-11 — sessão encerrada: a tela solta o endereço (não reage mais ao histórico) e não monta mais nada', async () => {
+    const { pg } = await abrir();
+    pg.janela.__tela.encerrar();
+    pg.location.hash = '#aba=dispositivos';
+    await pg.eventoDaJanela('hashchange');
+    assert.equal(pg.visivel('painel-dispositivos'), false);
+    assert.equal(pg.ouvintesDaJanela('hashchange'), 0);
+  });
+
+  test('M4-12 — sair de Ativação por F5 não retém o código; o endereço guardado não traz código nem token', async () => {
+    const { pg } = await abrir();
+    await aba(pg, 'ativacao');
+    assert.equal(hashDe(pg).includes(SEGREDO), false);
+    assert.equal(pg.janela.__tela._qrRetido(), false);
+  });
+});
+
+describe('K7 melhorias — 5. produtos com tamanhos', () => {
+  const CANAL = 'safework-previa-totem';
+  const ROTA = 'POST /atendimento-token/previa/identificar';
+  const MATERIAL = (id, nome, extra = {}) => ({ id, nome, unidade: 'par', categoria: 'EPI', grupoProtecao: 'Proteção dos pés', tipo: { id: 14, nome: 'Sapato de Segurança' }, exigeTamanho: true, tamanhos: ['33', '34', '35', '44', '46'], imagem: { disponivel: false }, ...extra });
+  const RESPOSTA = () => ({ status: 'ok', previa: { funcionario: { primeiroNome: 'Dora' }, ghe: { codigo: 'GHE-029', descricao: 'Portaria', ativo: true },
+    catalogo: { estado: 'OK', total: 4, materiais: [
+      MATERIAL(31, 'Sapato de Segurança - Homologação'),
+      MATERIAL(32, 'Camiseta Operacional', { categoria: 'Vestimenta', tipo: { id: 30, nome: 'Camiseta' }, tamanhos: ['P', 'M', 'G', 'GG'] }),
+      MATERIAL(33, 'Calça de Segurança', { categoria: 'Vestimenta', tipo: { id: 21, nome: 'Calça de Segurança' }, tamanhos: ['38', '40', '42'] }),
+      MATERIAL(34, 'Capacete de Segurança', { tipo: { id: 4, nome: 'Capacete de Segurança' }, exigeTamanho: false, tamanhos: [] }),
+    ] } } });
+  const janelaFalsa = () => { const enviadas = []; return { enviadas, postMessage: (m, alvo) => enviadas.push({ m: JSON.parse(JSON.stringify(m)), alvo }) }; };
+
+  async function abrirComResultado() {
+    const r = await abrir({ base: { forcar: { [ROTA]: () => ({ status: 200, corpo: RESPOSTA() }) } } });
+    await aba(r.pg, 'visualizarTotem');
+    await r.pg.marcar('modoPreviaReal');
+    const filha = janelaFalsa();
+    quadroDaPrevia(r.pg)[0].contentWindow = filha;
+    await r.pg.eventoDaJanela('message', { data: { canal: CANAL, versao: 1, tipo: 'IDENTIFICAR', id: 'consulta-0001', tipoId: 'MATRICULA', valor: 'MX-4242' }, source: filha, origin: 'null' });
+    return { ...r, filha };
+  }
+
+  test('M5-1 — Conferência da consulta real: "Possui tamanhos" para qualquer produto com grade (calçado, camiseta, calça) e "Sem tamanho" para os demais; nunca as numerações', async () => {
+    const { pg } = await abrirComResultado();
+    const itens = pg.consulta('#crMateriais li').map((li) => li.textContent);
+    assert.deepEqual(itens, [
+      'Sapato de Segurança - Homologação · Sapato de Segurança · Possui tamanhos',
+      'Camiseta Operacional · Camiseta · Possui tamanhos',
+      'Calça de Segurança · Calça de Segurança · Possui tamanhos',
+      'Capacete de Segurança · Capacete de Segurança · Sem tamanho',
+    ]);
+    const lista = pg.el('crMateriais').textContent;
+    for (const proibido of ['33', '34', '44', '46', 'GG', 'Tamanhos:']) assert.equal(lista.includes(proibido), false, `a lista não mostra ${proibido}`);
+  });
+
+  test('M5-2 — dentro do Totem os tamanhos reais continuam chegando ao iframe para a escolha, depois da identificação', async () => {
+    const { filha } = await abrirComResultado();
+    assert.equal(filha.enviadas.length, 1);
+    const mats = filha.enviadas[0].m.catalogo.materiais;
+    assert.deepEqual(mats[0].tamanhos, ['33', '34', '35', '44', '46']);
+    assert.deepEqual(mats[1].tamanhos, ['P', 'M', 'G', 'GG']);
+    assert.deepEqual(mats[3].tamanhos, []);
+    assert.equal(mats[0].exigeTamanho, true);
+  });
+
+  test('M5-3 — a Prévia do catálogo (lista por funcionário) segue a mesma regra', async () => {
+    const { pg } = await abrir({ base: { previas: { 31: { estado: 'OK', total: 2, materiais: [MATERIAL(31, 'Sapato de Segurança - Homologação'), MATERIAL(34, 'Capacete', { exigeTamanho: false, tamanhos: [], tipo: { id: 4, nome: 'Capacete' } })] } } } });
+    await aba(pg, 'previa');
+    await pg.digitar('previaBusca', 'ana');
+    await pg.enviar('previaBuscaForm');
+    await botoes(pg, '#previaFuncionarios [data-funcionario-id="31"][data-acao="previa"]')[0].disparar('click');
+    await pg.esperar();
+    const itens = pg.consulta('#previaResultado li').map((li) => li.textContent);
+    assert.match(itens[0], /Sapato de Segurança - Homologação.*Possui tamanhos/);
+    assert.match(itens[1], /Capacete.*Sem tamanho/);
+    assert.doesNotMatch(itens.join(' '), /\b33\b|\b44\b|Tamanhos:/);
+  });
+
+  test('M5-4 — o código da tela não enumera mais os tamanhos nessas duas listas', () => {
+    const codigo = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'js/atendimento-token-tela.js'), 'utf8');
+    assert.doesNotMatch(codigo, /'Tamanhos: '/);
+    assert.doesNotMatch(codigo, /m\.tamanhos\.join/);
+    assert.match(codigo, /POSSUI_TAMANHOS: 'Possui tamanhos'/);
+  });
+});
+
+// ───────────────────────── K7 — A1 (monocromático) e A2 (alto contraste) ─────────────────────────
+// Os modos vêm de js/tema.js: monocromatico → html[data-a11y="monochrome"]; alto_contraste → html[data-display="contrast"].
+// Os testes leem as regras reais do <style> da página (nada é recalculado por fora) e conferem cores, contraste e escopo.
+
+describe('K7 A1/A2 — modos monocromático e alto contraste da Central', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const LER = (rel) => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+  const estilo = () => /<style>([\s\S]*?)<\/style>/.exec(LER(PAGINA))[1].replace(/\/\*[\s\S]*?\*\//g, '');
+  const regras = () => [...estilo().matchAll(/([^{}@]+)\{([^{}]*)\}/g)].map((m) => ({ sel: m[1].replace(/\s+/g, ' ').replace(/\s*,\s*/g, ', ').trim(), decl: m[2] }));
+  const doModo = (prefixo) => regras().filter((r) => r.sel.split(',').some((s) => s.trim().startsWith(prefixo)));
+  const MONO = 'html[data-a11y="monochrome"]';
+  const CONTRASTE = 'html[data-display="contrast"]';
+  const regra = (seletor) => { const r = regras().find((x) => x.sel === seletor); assert.ok(r, `regra não encontrada: ${seletor}`); return r; };
+  const propriedade = (r, nome) => { const m = new RegExp(`(?:^|;)\\s*${nome.replace(/-/g, '\\-')}:([^;]+)`).exec(r.decl); return m ? m[1].trim() : null; };
+  const semImportante = (v) => v.replace(/\s*!important/, '').trim();
+
+  // Cores: #RRGGBB e rgba(r,g,b,a); rgba é composta sobre a cor de base (superfície do cartão).
+  const rgb = (v, base = [255, 255, 255]) => {
+    const t = semImportante(v);
+    let m = /^#([0-9a-f]{6})$/i.exec(t);
+    if (m) return [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16));
+    m = /^rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)$/.exec(t);
+    assert.ok(m, `cor não reconhecida: ${v}`);
+    const a = Number(m[4]);
+    return [1, 2, 3].map((i, k) => Math.round(Number(m[i]) * a + base[k] * (1 - a)));
+  };
+  const luz = ([r, g, b]) => { const c = [r, g, b].map((x) => { const s = x / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; }); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+  const razao = (a, b) => { const [x, y] = [luz(a), luz(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+  const acromatica = (v) => { const [r, g, b] = rgb(v); return r === g && g === b; };
+  const CORES_NA_DECL = (decl) => [...decl.matchAll(/(#[0-9a-fA-F]{6}\b|rgba\([^)]*\))/g)].map((m) => m[1]);
+
+  test('A1-1 — os seletores dos modos são os que o tema.js realmente aplica', () => {
+    const tema = LER('js/tema.js');
+    assert.match(tema, /alto_contraste:\s*\{\s*atributo:\s*'data-display',\s*valor:\s*'contrast'\s*\}/);
+    assert.match(tema, /monocromatico:\s*\{\s*atributo:\s*'data-a11y',\s*valor:\s*'monochrome'\s*\}/);
+    assert.ok(LER('css/main.css').includes(`${MONO} {`) || LER('css/main.css').includes(`${MONO}{`), 'o main.css define o monocromático com este seletor');
+    assert.ok(LER('css/main.css').includes(`${CONTRASTE} .card`), 'o main.css define o alto contraste com este seletor');
+  });
+
+  test('A1-2 — monocromático: os cartões usam só tons neutros (cinza), nos temas claro e escuro, e a regra vale para os cinco tons', () => {
+    for (const sel of [`${MONO} .stat-token`, `${MONO}[data-theme="dark"] .stat-token`]) {
+      const r = regra(sel);
+      for (const v of ['--tom', '--tom-texto', '--tom-fundo', '--tom-borda']) {
+        const valor = propriedade(r, v);
+        assert.ok(valor, `${sel} define ${v}`);
+        assert.match(valor, /!important$/, `${v} com !important (vence os tons e o tema escuro, de maior especificidade)`);
+        assert.equal(acromatica(valor), true, `${sel}: ${v}=${valor} é neutro`);
+      }
+    }
+    assert.doesNotMatch(regra(`${MONO} .stat-token`).sel, /data-tom/, 'sem data-tom: cobre os cinco tons de uma vez');
+    assert.ok(luz(rgb(propriedade(regra(`${MONO}[data-theme="dark"] .stat-token`), '--tom-texto'))) > 0.8, 'no escuro o número é claro');
+    assert.ok(luz(rgb(propriedade(regra(`${MONO} .stat-token`), '--tom-texto'))) < 0.05, 'no claro o número é escuro');
+  });
+
+  test('A1-3 — monocromático: título do cartão, borda e realce dos botões também ficam neutros; a ação perigosa segue o --error do próprio modo', () => {
+    assert.match(regra(`${MONO} .stat-token-topo span`).decl, /color:var\(--tom-texto\) !important/);
+    for (const r of doModo(MONO).filter((x) => /outlined-btn|filled-btn/.test(x.sel))) {
+      for (const cor of CORES_NA_DECL(r.decl)) assert.equal(acromatica(cor), true, `${r.sel}: ${cor}`);
+      assert.doesNotMatch(r.sel, /perigo-texto(?!\))/, 'a regra neutra exclui o botão perigoso');
+    }
+    assert.ok(doModo(MONO).filter((x) => /outlined-btn/.test(x.sel)).length >= 4, 'borda e hover, no claro e no escuro');
+  });
+
+  test('A1-4 — os temas claro e escuro aprovados não mudaram: os valores dos cinco tons e do escuro continuam os mesmos', () => {
+    const esperado = {
+      '.stat-token': '--tom:#007AFF;--tom-texto:#0062CC;--tom-fundo:rgba(0,122,255,0.10);--tom-borda:rgba(0,122,255,0.18)',
+      '.stat-token[data-tom="verde"]': '--tom:#34C759;--tom-texto:#1A7A35;--tom-fundo:rgba(52,199,89,0.10);--tom-borda:rgba(52,199,89,0.22)',
+      '.stat-token[data-tom="laranja"]': '--tom:#FF9500;--tom-texto:#B26A00;--tom-fundo:rgba(255,149,0,0.10);--tom-borda:rgba(255,149,0,0.22)',
+      '.stat-token[data-tom="vermelho"]': '--tom:#FF3B30;--tom-texto:#C4170D;--tom-fundo:rgba(255,59,48,0.10);--tom-borda:rgba(255,59,48,0.22)',
+      '.stat-token[data-tom="roxo"]': '--tom:#AF52DE;--tom-texto:#8639B3;--tom-fundo:rgba(175,82,222,0.10);--tom-borda:rgba(175,82,222,0.22)',
+      'html[data-theme="dark"] .stat-token': '--tom-texto:#64A8FF',
+      'html[data-theme="dark"] .stat-token[data-tom="verde"]': '--tom-texto:#5FDB80',
+      'html[data-theme="dark"] .stat-token[data-tom="laranja"]': '--tom-texto:#FFB340',
+      'html[data-theme="dark"] .stat-token[data-tom="vermelho"]': '--tom-texto:#FF7A72',
+      'html[data-theme="dark"] .stat-token[data-tom="roxo"]': '--tom-texto:#C98BEA',
+    };
+    const soVariaveis = (d) => [...d.matchAll(/--tom[a-z-]*:[^;]+/g)].map((m) => m[0]).join(';');
+    for (const [sel, decl] of Object.entries(esperado)) {
+      const r = regras().find((x) => x.sel === sel && x.decl.includes('--tom-texto'));
+      assert.ok(r, sel);
+      assert.equal(soVariaveis(r.decl), decl, sel);
+    }
+    const botao = regra('#conteudoProtegido .outlined-btn, .modal-card .outlined-btn').decl;
+    assert.match(botao, /border:0\.5px solid rgba\(0,122,255,0\.18\);background:var\(--primary-container\);color:var\(--primary\)/);
+  });
+
+  test('A2-1 — alto contraste: cartões e botões secundários ganham borda de 1,5 px; o desabilitado também', () => {
+    assert.match(regra(`${CONTRASTE} .stat-token`).decl, /border-width:1\.5px !important/);
+    const botoes = regra(`${CONTRASTE} #conteudoProtegido .outlined-btn, ${CONTRASTE} .modal-card .outlined-btn`).decl;
+    assert.match(botoes, /border-width:1\.5px !important/);
+    assert.match(regra(`${CONTRASTE} #conteudoProtegido button:disabled`).decl, /border:1\.5px solid/);
+  });
+
+  test('A2-2 — alto contraste: texto dos cartões com contraste WCAG AA (≥ 4,5:1 o número; ≥ 7:1 o título) e borda ≥ 3:1, nos cinco tons', () => {
+    const tons = ['azul', 'verde', 'laranja', 'vermelho', 'roxo'];
+    for (const tom of tons) {
+      const r = regra(`${CONTRASTE} .stat-token[data-tom="${tom}"]`);
+      const texto = rgb(propriedade(r, '--tom-texto')); const fundo = rgb(propriedade(r, '--tom-fundo')); const borda = rgb(propriedade(r, '--tom-borda'));
+      assert.ok(razao(texto, fundo) >= 4.5, `${tom}: número ${razao(texto, fundo).toFixed(2)}`);
+      assert.ok(razao([0, 0, 0], fundo) >= 7, `${tom}: título ${razao([0, 0, 0], fundo).toFixed(2)}`);
+      assert.ok(razao(borda, fundo) >= 3, `${tom}: borda ${razao(borda, fundo).toFixed(2)}`);
+    }
+    assert.match(regra(`${CONTRASTE} .stat-token-topo span`).decl, /color:#000000 !important/, 'o título não depende do tema escuro');
+    assert.equal(new Set(tons.map((t) => propriedade(regra(`${CONTRASTE} .stat-token[data-tom="${t}"]`), '--tom-fundo'))).size, 5, 'cinco fundos distintos');
+  });
+
+  test('A2-3 — alto contraste: botão secundário e botão perigoso legíveis (≥ 4,5:1) e diferentes entre si por cor E por borda; o ícone do cartão é desenhado em contorno', () => {
+    const normal = regra(`${CONTRASTE} #conteudoProtegido .outlined-btn, ${CONTRASTE} .modal-card .outlined-btn`).decl;
+    const perigo = regra(`${CONTRASTE} #conteudoProtegido .outlined-btn.perigo-texto, ${CONTRASTE} .modal-card .outlined-btn.perigo-texto`).decl;
+    const dados = (d) => ({ cor: propriedade({ decl: d }, 'color'), fundo: propriedade({ decl: d }, 'background'), borda: propriedade({ decl: d }, 'border-color') });
+    const n = dados(normal); const p = dados(perigo);
+    assert.ok(razao(rgb(n.cor), rgb(n.fundo)) >= 4.5, `secundário ${razao(rgb(n.cor), rgb(n.fundo)).toFixed(2)}`);
+    assert.ok(razao(rgb(p.cor), rgb(p.fundo)) >= 4.5, `perigoso ${razao(rgb(p.cor), rgb(p.fundo)).toFixed(2)}`);
+    assert.notEqual(semImportante(n.cor), semImportante(p.cor));
+    assert.notEqual(semImportante(n.borda), semImportante(p.borda));
+    assert.ok(razao(rgb(n.borda), rgb(n.fundo)) >= 3 && razao(rgb(p.borda), rgb(p.fundo)) >= 3, 'borda perceptível');
+    assert.match(regra(`${CONTRASTE} .stat-token-icone`).decl, /background:#FFFFFF !important;border:1\.5px solid var\(--tom-borda\)/);
+    assert.match(regra(`${CONTRASTE} #conteudoProtegido .outlined-btn.perigo-texto:hover:not(:disabled), ${CONTRASTE} .modal-card .outlined-btn.perigo-texto:hover:not(:disabled)`).decl, /background:#FFD6D6 !important/);
+  });
+
+  test('A2-4 — alto contraste: foco visível de 3 px nas abas e nos botões', () => {
+    const r = regra(`${CONTRASTE} .report-tab:focus-visible, ${CONTRASTE} .outlined-btn:focus-visible, ${CONTRASTE} .filled-btn:focus-visible`);
+    assert.match(r.decl, /outline:3px solid #000 !important/);
+    assert.match(r.decl, /outline-offset:2px/);
+  });
+
+  test('A1/A2 — escopo: as regras dos dois modos só mexem em cor, borda, sombra e contorno (nada de display, tamanho ou conteúdo), e o DOM e os valores seguem iguais', async () => {
+    const proibidas = /(?:^|;)\s*(?:display|visibility|content|font-size|width|height|padding|margin|opacity):/;
+    const doisModos = [...doModo(MONO), ...doModo(CONTRASTE)].filter((r) => /stat-token|outlined-btn|filled-btn|report-tab|button:disabled/.test(r.sel));
+    assert.ok(doisModos.length >= 18, `regras dos modos: ${doisModos.length}`);
+    for (const r of doisModos) assert.doesNotMatch(r.decl, proibidas, r.sel);
+    const { pg } = await abrir();
+    const cartoes = pg.consulta('#visaoGeralCartoes .stat');
+    assert.deepEqual(cartoes.map((c) => [c.getAttribute('data-cartao'), c.querySelector('strong').textContent]),
+      [['Dispositivos cadastrados', '3'], ['Dispositivos ativos', '1'], ['Aguardando ativação', '1'], ['Dispositivos revogados', '1'], ['Ativações pendentes', '0']]);
+    assert.equal(new Set(cartoes.map((c) => c.querySelector('i').getAttribute('data-icone'))).size, 5, 'o significado continua nos ícones e nos títulos');
   });
 });

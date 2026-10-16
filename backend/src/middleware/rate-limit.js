@@ -96,6 +96,13 @@ const chaveRevelacaoCpf = (req) => `${req.empresa?.id}:${req.usuario?.id}`;
 const criarLimitadorRevelacaoCpf = () => criarLimitador({ ...LIMITE_REVELACAO_CPF, chave: chaveRevelacaoCpf });
 const limitadorRevelacaoCpf = criarLimitadorRevelacaoCpf();
 
+// Consulta real da prévia do Totem (K7): 20 por minuto por EMPRESA + USUÁRIO da sessão (nunca só por IP). Roda depois da sessão e das duas
+// permissões, então só conta quem pode consultar. A resposta de limite é a genérica: nunca ecoa o identificador. Contador em memória do processo.
+const LIMITE_PREVIA_IDENTIFICACAO = Object.freeze({ limite: 20, janelaSegundos: 60 });
+const chavePreviaIdentificacao = (req) => `${req.empresa?.id}:${req.usuario?.id}`;
+const criarLimitadorPreviaIdentificacao = () => criarLimitador({ ...LIMITE_PREVIA_IDENTIFICACAO, chave: chavePreviaIdentificacao });
+const limitadorPreviaIdentificacao = criarLimitadorPreviaIdentificacao();
+
 module.exports = {
   criarLimitador,
   limitadorGeral,
@@ -117,4 +124,7 @@ module.exports = {
   LIMITE_REVELACAO_CPF,
   criarLimitadorRevelacaoCpf,
   limitadorRevelacaoCpf,
+  LIMITE_PREVIA_IDENTIFICACAO,
+  criarLimitadorPreviaIdentificacao,
+  limitadorPreviaIdentificacao,
 };

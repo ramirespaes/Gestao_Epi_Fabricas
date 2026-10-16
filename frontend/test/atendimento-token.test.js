@@ -330,8 +330,8 @@ describe('capacidades: só as permissões reais, nunca o nome do perfil', () => 
 });
 
 describe('ordem das abas e rótulos', () => {
-  test('as seis abas, nesta ordem', () => {
-    assert.deepEqual(T.ABAS, ['visaoGeral', 'dispositivos', 'ativacao', 'monitoramento', 'previa', 'historico']);
-    assert.deepEqual(T.ABAS.map((a) => T.ROTULOS_ABA[a]), ['Visão Geral', 'Dispositivos', 'Ativação', 'Monitoramento', 'Prévia e Testes', 'Histórico']);
+  test('as sete abas, nesta ordem (K7: Visualizar Totem depois de Histórico)', () => {
+    assert.deepEqual(T.ABAS, ['visaoGeral', 'dispositivos', 'ativacao', 'monitoramento', 'previa', 'historico', 'visualizarTotem']);
+    assert.deepEqual(T.ABAS.map((a) => T.ROTULOS_ABA[a]), ['Visão Geral', 'Dispositivos', 'Ativação', 'Monitoramento', 'Prévia e Testes', 'Histórico', 'Visualizar Totem']);
   });
 });

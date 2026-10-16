@@ -18,6 +18,10 @@
   var SVG_NS = 'http://www.w3.org/2000/svg';
   var MARGEM_QR = 4;
   var PREVIA_LIMITE_BUSCA = 20;
+  var CAMINHO_PREVIA_TOTEM = '../totem/previa.html';
+  var CANAL_PREVIA = 'safework-previa-totem';
+  var ID_CONSULTA = /^[A-Za-z0-9-]{8,64}$/;
+  var CONTROLE_TEXTO = /[\u0000-\u001f\u007f-\u009f]/;
 
   var TEXTOS = {
     PREVIA_AVISO: 'Prévia administrativa, somente leitura: mostra o que o tablet exibiria para o funcionário escolhido. Não abre atendimento, não cria pedido, reserva nem entrega e não é o atendimento real.',
@@ -37,7 +41,15 @@
     QR_EXPIRADO: 'O prazo do código terminou e ele foi descartado. Gere uma nova ativação.',
     QR_INDISPONIVEL: 'Não foi possível desenhar o QR neste navegador. O código foi descartado; recarregue a página e gere uma nova ativação.',
     NADA_ALTERADO: 'Nada foi alterado.',
-    ULTIMA_REDE: 'Este é o ÚNICO IP autorizado da empresa. Ao desativá-lo, TODOS os tablets perdem o acesso imediatamente.',
+    GHE_SEM_CODIGO: 'Sem código (cadastro anterior)',
+    CONSULTA_AGUARDANDO: 'Digite o CPF ou a matrícula no Totem abaixo. O resultado aparece aqui.',
+    CONSULTA_NAO_IDENTIFICADO: 'Colaborador não identificado. Confira o CPF ou a matrícula.',
+    CONSULTA_LIMITE: 'Muitas consultas em pouco tempo. Aguarde um minuto e tente de novo.',
+    CONSULTA_SEM_PERMISSAO: 'Sem permissão para a consulta real.',
+    CONSULTA_ERRO: 'Não foi possível consultar agora. Tente novamente.',
+    POSSUI_TAMANHOS: 'Possui tamanhos',
+    SEM_TAMANHO: 'Sem tamanho',
+    ULTIMA_REDE:'Este é o ÚNICO IP autorizado da empresa. Ao desativá-lo, TODOS os tablets perdem o acesso imediatamente.',
   };
 
   function criar(o) {
@@ -68,6 +80,8 @@
       previaFuncionario: null,
       previaAberta: null,
       busca: [],
+      modoPrevia: 'demo',
+      ponte: { gen: 0, frame: null, ouvinte: null, emAndamento: false },
     };
     // A caixa da prévia é uma só: vai para dentro do item do funcionário escolhido e volta ao seu lugar de origem (`caixaPai`) ao fechar.
     var caixaPai = null;
@@ -152,9 +166,38 @@
     // ─── Abas ─────────────────────────────────────────────────────────
     function abasPermitidas() { return T.ABAS.filter(function (a) { return cap.abas[a] === true; }); }
 
-    function mostrarAba(nome, comFoco) {
+    // A aba aberta fica no fragmento da URL (#aba=<nome>) para sobreviver a F5/Cmd+R e ao histórico do navegador. Só o NOME de uma aba
+    // conhecida: nunca CPF, matrícula, token, carrinho ou qualquer dado da prévia. O fragmento não vai ao servidor, e a permissão é
+    // reavaliada aqui: nome desconhecido é ignorado e aba sem permissão cai na aba padrão, sem montar o conteúdo restrito.
+    function abaPadrao() { return cap.abas.visaoGeral === true ? 'visaoGeral' : (abasPermitidas()[0] || null); }
+
+    function abaDoEndereco() {
+      var hash = janela.location && typeof janela.location.hash === 'string' ? janela.location.hash : '';
+      var m = /^#aba=([A-Za-z]{1,30})$/.exec(hash);
+      return m && T.ABAS.indexOf(m[1]) !== -1 ? m[1] : null;
+    }
+
+    function gravarAbaNoEndereco(nome, substituir) {
+      var h5 = janela.history;
+      if (!h5 || !janela.location || janela.location.hash === '#aba=' + nome) return;
+      var metodo = substituir ? 'replaceState' : 'pushState';
+      if (typeof h5[metodo] !== 'function') return;
+      try { h5[metodo](null, '', '#aba=' + nome); } catch (e) { /* sem histórico: a aba só não sobrevive à atualização */ }
+    }
+
+    function aoMudarEndereco() {
+      if (estado.encerrada) return;
+      var pedida = abaDoEndereco();
+      var destino = pedida !== null && cap.abas[pedida] === true ? pedida : abaPadrao();
+      if (pedida !== null && destino !== pedida && destino !== null) gravarAbaNoEndereco(destino, true);
+      if (destino !== null && destino !== estado.aba) mostrarAba(destino, false, false);
+    }
+
+    function mostrarAba(nome, comFoco, registrar) {
       if (estado.encerrada || !cap.abas[nome]) return;
+      if (registrar === true && nome !== estado.aba) gravarAbaNoEndereco(nome, false);
       if (estado.aba === 'ativacao' && nome !== 'ativacao') descartarQr();
+      if (estado.aba === 'visualizarTotem' && nome !== 'visualizarTotem') sairDaPreviaTotem();
       estado.aba = nome;
       T.ABAS.forEach(function (a) {
         var botao = $('aba-' + a);
@@ -168,7 +211,163 @@
       carregarAba(nome, false);
     }
 
+    // ─── Visualizar Totem (K7) ────────────────────────────────────────
+    // O iframe só existe com a aba aberta. Sandbox só com scripts, sem mesma origem: a prévia roda em origem opaca, sem acesso a
+    // cookies, armazenamento nem a esta página. A prévia não chama a API (previa-adaptador.js responde tudo em memória).
+    // Consulta real: o iframe não tem credencial nem rede. Ele pede a identificação por postMessage; ESTA tela, que tem a sessão
+    // administrativa, consulta o servidor e devolve só o primeiro nome e o catálogo. O identificador digitado vive numa variável local
+    // até a chamada terminar: nunca vai a armazenamento, URL, console, cartão nem resposta.
+    function consultaRealPermitida() { return cap.previa === true && cap.buscarFuncionario === true; }
+    function objetoSimples(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
+    function mesmasChaves(objeto, esperadas) {
+      var chaves = Object.keys(objeto).sort();
+      return chaves.length === esperadas.length && chaves.every(function (c, i) { return c === esperadas[i]; });
+    }
+
+    function enderecoDaPrevia() {
+      if (estado.modoPrevia !== 'real') return CAMINHO_PREVIA_TOTEM;
+      return CAMINHO_PREVIA_TOTEM + '?modo=real&pai=' + encodeURIComponent(janela.location && janela.location.origin);
+    }
+
+    function montarPreviaTotem() {
+      var quadro = $('totemPreviaQuadro');
+      if (!quadro || quadro.firstChild) return;
+      var f = doc.createElement('iframe');
+      f.setAttribute('src', enderecoDaPrevia());
+      f.setAttribute('sandbox', 'allow-scripts');
+      f.setAttribute('referrerpolicy', 'no-referrer');
+      f.setAttribute('title', estado.modoPrevia === 'real' ? 'Prévia visual do Totem, consulta real' : 'Prévia visual do Totem, com dados fictícios');
+      quadro.appendChild(f);
+      if (estado.modoPrevia === 'real') ligarPonte(f);
+    }
+
+    function descartarPreviaTotem() {
+      desligarPonte();
+      var quadro = $('totemPreviaQuadro');
+      if (quadro) limpar(quadro);
+      limparCartao();
+    }
+
+    function ligarPonte(f) {
+      desligarPonte();
+      var gen = estado.ponte.gen;
+      estado.ponte.frame = f;
+      estado.ponte.ouvinte = function (ev) { return aoMensagemDoQuadro(ev, gen); };
+      janela.addEventListener('message', estado.ponte.ouvinte);
+    }
+
+    function desligarPonte() {
+      if (estado.ponte.ouvinte) janela.removeEventListener('message', estado.ponte.ouvinte);
+      estado.ponte.ouvinte = null;
+      estado.ponte.frame = null;
+      estado.ponte.emAndamento = false;
+      estado.ponte.gen += 1; // respostas de consultas de um iframe descartado nunca são entregues
+    }
+
+    function mensagemDeIdentificacaoValida(m) {
+      return objetoSimples(m) && mesmasChaves(m, ['canal', 'id', 'tipo', 'tipoId', 'valor', 'versao'])
+        && m.canal === CANAL_PREVIA && m.versao === 1 && m.tipo === 'IDENTIFICAR'
+        && typeof m.id === 'string' && ID_CONSULTA.test(m.id)
+        && (m.tipoId === 'CPF' || m.tipoId === 'MATRICULA')
+        && typeof m.valor === 'string' && m.valor.length > 0 && Array.from(m.valor).length <= 30 && !CONTROLE_TEXTO.test(m.valor);
+    }
+
+    function responderAoQuadro(f, id, extra) {
+      if (estado.ponte.frame !== f || !f.contentWindow) return;
+      var m = { canal: CANAL_PREVIA, versao: 1, tipo: 'RESULTADO', id: id };
+      Object.keys(extra).forEach(function (k) { m[k] = extra[k]; });
+      // A origem do iframe é opaca: o destino é a janela exata deste iframe, não uma origem.
+      f.contentWindow.postMessage(m, '*');
+    }
+
+    function mostrarCartao(d) {
+      $('crMensagem').textContent = '';
+      $('crColaborador').textContent = d.primeiroNome;
+      $('crGhe').textContent = d.ghe === null ? 'Sem GHE' : (d.ghe.codigo !== null ? d.ghe.codigo : TEXTOS.GHE_SEM_CODIGO) + ' — ' + d.ghe.descricao;
+      $('crGheSituacao').textContent = d.ghe === null ? '—' : (d.ghe.ativo ? 'Ativo' : 'Inativo');
+      $('crCatalogo').textContent = T.ESTADOS_CATALOGO[d.catalogo.estado];
+      $('crTotal').textContent = String(d.catalogo.total);
+      var lista = $('crMateriais');
+      limpar(lista);
+      d.catalogo.materiais.forEach(function (m) {
+        var li = doc.createElement('li');
+        li.textContent = m.nome + (m.tipo ? ' · ' + m.tipo.nome : '') + ' · ' + (m.exigeTamanho ? TEXTOS.POSSUI_TAMANHOS : TEXTOS.SEM_TAMANHO);
+        lista.appendChild(li);
+      });
+    }
+
+    function limparCartao(mensagem) {
+      ['crColaborador', 'crGhe', 'crGheSituacao', 'crCatalogo', 'crTotal'].forEach(function (id) { var el = $(id); if (el) el.textContent = '—'; });
+      var lista = $('crMateriais');
+      if (lista) limpar(lista);
+      var m = $('crMensagem');
+      if (m) m.textContent = mensagem || '';
+    }
+
+    async function aoMensagemDoQuadro(ev, gen) {
+      if (estado.encerrada || gen !== estado.ponte.gen) return;
+      var f = estado.ponte.frame;
+      if (!f || !f.contentWindow || !ev || ev.source !== f.contentWindow || ev.origin !== 'null') return;
+      var m = ev.data;
+      if (!mensagemDeIdentificacaoValida(m) || estado.ponte.emAndamento) return;
+      estado.ponte.emAndamento = true;
+      var id = m.id;
+      var r;
+      try {
+        r = await T.acoes.previaIdentificar(m.tipoId, m.valor);
+      } catch (e) {
+        r = null;
+      }
+      m = null;
+      if (estado.encerrada || gen !== estado.ponte.gen) return;
+      estado.ponte.emAndamento = false;
+      if (r && T.mensagens.exigeNovoLogin(r)) { sessaoExpirou(); return; }
+      if (r && r.ok) {
+        var d = T.modelo.previaIdentificar(r.dados);
+        if (d !== null) {
+          mostrarCartao(d);
+          responderAoQuadro(f, id, { resultado: 'OK', primeiroNome: d.primeiroNome, catalogo: d.catalogo });
+          return;
+        }
+        limparCartao(TEXTOS.CONSULTA_ERRO);
+        responderAoQuadro(f, id, { resultado: 'INDISPONIVEL' });
+        return;
+      }
+      var status = r ? r.status : 0;
+      if (status === 404) { limparCartao(TEXTOS.CONSULTA_NAO_IDENTIFICADO); responderAoQuadro(f, id, { resultado: 'NAO_IDENTIFICADO' }); return; }
+      if (status === 429) { limparCartao(TEXTOS.CONSULTA_LIMITE); responderAoQuadro(f, id, { resultado: 'LIMITE' }); return; }
+      limparCartao(status === 403 ? TEXTOS.CONSULTA_SEM_PERMISSAO : TEXTOS.CONSULTA_ERRO);
+      responderAoQuadro(f, id, { resultado: 'INDISPONIVEL' });
+    }
+
+    function aplicarModoPrevia() {
+      var real = estado.modoPrevia === 'real';
+      $('modoPreviaDemo').checked = !real;
+      $('modoPreviaReal').checked = real;
+      define($('avisoPreviaDemo'), !real);
+      define($('previaTotemCodigos'), !real);
+      define($('avisoPreviaReal'), real);
+      define($('cartaoConsultaReal'), real);
+      if (real) limparCartao(TEXTOS.CONSULTA_AGUARDANDO);
+    }
+
+    function trocarModoPrevia(modo) {
+      if (modo === 'real' && !consultaRealPermitida()) modo = 'demo';
+      if (estado.modoPrevia === modo) { aplicarModoPrevia(); return; }
+      descartarPreviaTotem();
+      estado.modoPrevia = modo;
+      aplicarModoPrevia();
+      montarPreviaTotem();
+    }
+
+    function sairDaPreviaTotem() {
+      descartarPreviaTotem();
+      estado.modoPrevia = 'demo';
+      aplicarModoPrevia();
+    }
+
     function carregarAba(nome, forcar) {
+      if (nome === 'visualizarTotem') { montarPreviaTotem(); return Promise.resolve(); }
       if (!forcar && estado.carregado[nome]) return Promise.resolve();
       estado.carregado[nome] = true;
       if (nome === 'visaoGeral') return carregarVisaoGeral();
@@ -195,7 +394,7 @@
       else if (k === 'ArrowLeft') destino = lista[(i - 1 + lista.length) % lista.length];
       else if (k === 'Home') destino = lista[0];
       else if (k === 'End') destino = lista[lista.length - 1];
-      if (destino) { if (evento.preventDefault) evento.preventDefault(); mostrarAba(destino, true); }
+      if (destino) { if (evento.preventDefault) evento.preventDefault(); mostrarAba(destino, true, true); }
     }
 
     // ─── Visão Geral ──────────────────────────────────────────────────
@@ -211,14 +410,18 @@
       painelEstado('visaoGeral', null);
       var grade = $('visaoGeralCartoes');
       limpar(grade);
+      // Tom e ícone são só apresentação: o significado vem sempre do título em texto (a cor nunca é o único indicador).
       [
-        ['Dispositivos cadastrados', v.dispositivos.cadastrados],
-        ['Dispositivos ativos', v.dispositivos.ativos],
-        ['Aguardando ativação', v.dispositivos.pendentes],
-        ['Dispositivos revogados', v.dispositivos.revogados],
-        ['Ativações pendentes', v.ativacoesPendentes],
+        ['Dispositivos cadastrados', v.dispositivos.cadastrados, 'azul', 'tablet_android'],
+        ['Dispositivos ativos', v.dispositivos.ativos, 'verde', 'check_circle'],
+        ['Aguardando ativação', v.dispositivos.pendentes, 'laranja', 'hourglass_top'],
+        ['Dispositivos revogados', v.dispositivos.revogados, 'vermelho', 'block'],
+        ['Ativações pendentes', v.ativacoesPendentes, 'roxo', 'qr_code_2'],
       ].forEach(function (c) {
-        grade.appendChild(h('div', { classe: 'stat', 'data-cartao': c[0] }, [h('span', { texto: c[0] }), h('strong', { texto: String(c[1]) })]));
+        grade.appendChild(h('div', { classe: 'stat stat-token', 'data-cartao': c[0], 'data-tom': c[2] }, [
+          h('div', { classe: 'stat-token-topo' }, [h('span', { texto: c[0] }), h('i', { classe: 'stat-token-icone', 'aria-hidden': 'true', 'data-icone': c[3] })]),
+          h('strong', { texto: String(c[1]) }),
+        ]));
       });
       $('visaoGeralSituacao').textContent = T.SITUACOES_GERAIS[v.situacaoGeral];
       $('visaoGeralSituacao').setAttribute('data-situacao', v.situacaoGeral);
@@ -267,11 +470,11 @@
       }
       itens.forEach(function (d) {
         var acoesLinha = h('div', { classe: 'acoes-linha' });
-        var abrir = h('button', { classe: 'outlined-btn', type: 'button', 'data-acao': cap.editar && d.situacao !== 'REVOGADO' ? 'editar' : 'detalhes', 'data-dispositivo-id': String(d.id) });
+        var abrir = h('button', { classe: 'outlined-btn', type: 'button', 'data-icone': cap.editar && d.situacao !== 'REVOGADO' ? 'edit' : 'visibility', 'data-acao': cap.editar && d.situacao !== 'REVOGADO' ? 'editar' : 'detalhes', 'data-dispositivo-id': String(d.id) });
         abrir.textContent = cap.editar && d.situacao !== 'REVOGADO' ? 'Editar' : 'Detalhes';
         acoesLinha.appendChild(abrir);
         if (cap.revogar && d.situacao !== 'REVOGADO') {
-          acoesLinha.appendChild(h('button', { classe: 'outlined-btn perigo-texto', type: 'button', 'data-acao': 'revogar', 'data-dispositivo-id': String(d.id), texto: 'Revogar' }));
+          acoesLinha.appendChild(h('button', { classe: 'outlined-btn perigo-texto', type: 'button', 'data-icone': 'block', 'data-acao': 'revogar', 'data-dispositivo-id': String(d.id), texto: 'Revogar' }));
         }
         corpo.appendChild(h('tr', { 'data-dispositivo-id': String(d.id) }, [
           h('td', {}, [h('strong', { texto: d.nome }), h('div', { classe: 'dica', texto: textoOu(d.localInstalacao) })]),
@@ -764,7 +967,7 @@
       itens.forEach(function (r) {
         var celulaAcao = h('td');
         if (r.ativa) {
-          celulaAcao.appendChild(h('button', { classe: 'outlined-btn perigo-texto', type: 'button', 'data-acao': 'desativar-rede', 'data-rede-id': String(r.id), texto: 'Desativar' }));
+          celulaAcao.appendChild(h('button', { classe: 'outlined-btn perigo-texto', type: 'button', 'data-icone': 'wifi_off', 'data-acao': 'desativar-rede', 'data-rede-id': String(r.id), texto: 'Desativar' }));
         }
         corpo.appendChild(h('tr', { 'data-rede-id': String(r.id), 'data-ativa': r.ativa ? 'true' : 'false' }, [
           h('td', {}, [h('strong', { texto: r.endereco })]),
@@ -902,7 +1105,7 @@
       lista.forEach(function (f) {
         var ativo = f.situacao === 'ATIVO';
         var botao = h('button', {
-          classe: 'outlined-btn', type: 'button', id: 'previaBotao-' + f.id, 'data-acao': 'previa', 'data-funcionario-id': String(f.id),
+          classe: 'outlined-btn', type: 'button', 'data-icone': 'preview', id: 'previaBotao-' + f.id, 'data-acao': 'previa', 'data-funcionario-id': String(f.id),
           'aria-controls': 'previaResultadoCaixa', 'aria-expanded': 'false', texto: TEXTOS.PREVIA_VER,
         });
         if (!ativo) { botao.disabled = true; botao.setAttribute('title', TEXTOS.PREVIA_NAO_ATIVO); }
@@ -1008,7 +1211,7 @@
           ul.appendChild(h('li', { 'data-material-id': String(m.id) }, [
             h('strong', { texto: m.nome }),
             h('span', { classe: 'dica', texto: meta || '—' }),
-            h('span', { classe: 'dica', texto: m.exigeTamanho ? 'Tamanhos: ' + (m.tamanhos.join(', ') || '—') : 'Sem escolha de tamanho' }),
+            h('span', { classe: 'dica', texto: m.exigeTamanho ? TEXTOS.POSSUI_TAMANHOS : TEXTOS.SEM_TAMANHO }),
           ]));
         });
         area.appendChild(ul);
@@ -1047,7 +1250,7 @@
       else carregarPrevia(id);
     }
 
-    function aoSairDaPagina() { apagarQr(); }
+    function aoSairDaPagina() { apagarQr(); descartarPreviaTotem(); }
 
     var ligacoes = [];
     function ouvir(alvo, tipo, fn) { alvo.addEventListener(tipo, fn); ligacoes.push([alvo, tipo, fn]); }
@@ -1058,12 +1261,17 @@
       var permitidas = abasPermitidas();
       T.ABAS.forEach(function (a) {
         define($('aba-' + a), cap.abas[a] === true);
-        ouvir($('aba-' + a), 'click', function () { mostrarAba(a, false); });
+        ouvir($('aba-' + a), 'click', function () { mostrarAba(a, false, true); });
       });
       ouvir($('abas'), 'keydown', aoTeclarNasAbas);
       ouvir(doc, 'keydown', aoTeclar);
 
       ouvir($('botaoAtualizarVisaoGeral'), 'click', function () { carregarVisaoGeral(); });
+      define($('opcaoModoReal'), consultaRealPermitida());
+      ouvir($('modoPreviaDemo'), 'change', function () { trocarModoPrevia('demo'); });
+      ouvir($('modoPreviaReal'), 'change', function () { trocarModoPrevia('real'); });
+      ouvir($('botaoReiniciarPrevia'), 'click', function () { descartarPreviaTotem(); aplicarModoPrevia(); montarPreviaTotem(); });
+      aplicarModoPrevia();
 
       // Dispositivos.
       define($('botaoNovoDispositivo'), cap.criar);
@@ -1107,7 +1315,13 @@
       ouvir(janela, 'beforeunload', aoSairDaPagina);
 
       if (permitidas.length === 0) return Promise.resolve();
-      mostrarAba(permitidas[0], false);
+      // Aba inicial: a do fragmento, se existe e é permitida; senão a Visão Geral (ou a primeira permitida). Aba pedida sem permissão
+      // corrige o fragmento sem abrir (nem montar) o painel restrito.
+      ouvir(janela, 'hashchange', aoMudarEndereco);
+      var pedida = abaDoEndereco();
+      var inicial = pedida !== null && cap.abas[pedida] === true ? pedida : abaPadrao();
+      if (pedida !== null && inicial !== pedida) gravarAbaNoEndereco(inicial, true);
+      mostrarAba(inicial, false, false);
       return Promise.resolve();
     }
 
@@ -1115,6 +1329,7 @@
       if (estado.encerrada) return;
       apagarQr();
       estado.encerrada = true;
+      descartarPreviaTotem();
       estado.modais.slice().forEach(function (m) { fecharModal(m.id, true); });
       ligacoes.forEach(function (l) {
         if (typeof l[0].removeEventListener === 'function') l[0].removeEventListener(l[1], l[2]);

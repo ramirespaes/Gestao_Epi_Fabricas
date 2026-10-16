@@ -7,6 +7,7 @@ const { tokenCentralController } = require('../controllers/token-central.control
 const { exigirSessao } = require('../middleware/autenticacao');
 const { criarExigirPermissaoRecurso, criarExigirPermissaoAcao } = require('../middleware/autorizacao');
 const { pool } = require('../config/database');
+const { limitadorPreviaIdentificacao } = require('../middleware/rate-limit');
 
 /**
  * Atendimento Token — Central Administrativa (Etapa H). Sessão ADMINISTRATIVA (nunca a credencial do tablet nem o atendimento do
@@ -15,6 +16,8 @@ const { pool } = require('../config/database');
  *   GET  /visao-geral                       recurso atendimentoToken.visualizar
  *   GET  /dispositivos/:id/ativacao         recurso atendimentoToken.visualizar   (estado derivado da ativação mais recente)
  *   GET  /previa/catalogo?funcionarioId=    ação TOKEN_PREVIA_CATALOGO_REAL        (catálogo real; somente leitura + auditoria)
+ *   POST /previa/identificar                ação TOKEN_PREVIA_CATALOGO_REAL E employeeHistory.visualizar (K7: consulta real por CPF ou matrícula,
+ *                                            no CORPO; leitura READ ONLY + uma linha de auditoria sem identificador; 20 por minuto por empresa + usuário)
  *   GET  /redes                             ação TOKEN_GERENCIAR_REDES (OBRIGATORIA)
  *   POST /redes                             ação TOKEN_GERENCIAR_REDES             { rede: IP exato, descricao? }
  *   POST /redes/:id/desativar               ação TOKEN_GERENCIAR_REDES             {}
@@ -28,8 +31,11 @@ const ACAO_PREVIA = 'TOKEN_PREVIA_CATALOGO_REAL';
 const ACAO_REDES = 'TOKEN_GERENCIAR_REDES';
 const RAIZ = '/atendimento-token';
 
-function criarTokenCentralRoutes({ controller, exigirSessao: exigirSessaoInjetado, pool: poolInjetado }) {
+function criarTokenCentralRoutes({
+  controller, exigirSessao: exigirSessaoInjetado, pool: poolInjetado, limitadorPrevia: limitadorPreviaInjetado = limitadorPreviaIdentificacao,
+}) {
   const router = Router();
+  const exigirHistoricoFuncionarios = criarExigirPermissaoRecurso({ pool: poolInjetado }, 'employeeHistory', 'visualizar');
   const exigirVisualizar = criarExigirPermissaoRecurso({ pool: poolInjetado }, RECURSO, 'visualizar');
   const exigirPrevia = criarExigirPermissaoAcao({ pool: poolInjetado }, ACAO_PREVIA);
   const exigirRedes = criarExigirPermissaoAcao({ pool: poolInjetado }, ACAO_REDES);
@@ -37,6 +43,9 @@ function criarTokenCentralRoutes({ controller, exigirSessao: exigirSessaoInjetad
   router.get(`${RAIZ}/visao-geral`, exigirSessaoInjetado, exigirVisualizar, validar({ query: schemas.visaoGeral.query }), controller.visaoGeral);
   router.get(`${RAIZ}/dispositivos/:id/ativacao`, exigirSessaoInjetado, exigirVisualizar, validar({ params: schemas.estadoAtivacao.params, query: schemas.estadoAtivacao.query }), controller.estadoAtivacao);
   router.get(`${RAIZ}/previa/catalogo`, exigirSessaoInjetado, exigirPrevia, validar({ query: schemas.previa.query }), controller.previaCatalogo);
+  // Ordem: sessão → as DUAS permissões → limite (só conta quem pode consultar) → validação do corpo (a negação vem antes de qualquer detalhe).
+  router.post(`${RAIZ}/previa/identificar`, exigirSessaoInjetado, exigirPrevia, exigirHistoricoFuncionarios, limitadorPreviaInjetado,
+    validar({ query: schemas.previaIdentificar.query, body: schemas.previaIdentificar.body }), controller.previaIdentificar);
   router.get(`${RAIZ}/redes`, exigirSessaoInjetado, exigirRedes, validar({ query: schemas.listarRedes.query }), controller.listarRedes);
   router.post(`${RAIZ}/redes`, exigirSessaoInjetado, exigirRedes, validar({ query: schemas.cadastrarRede.query, body: schemas.cadastrarRede.body }), controller.cadastrarRede);
   router.post(`${RAIZ}/redes/:id/desativar`, exigirSessaoInjetado, exigirRedes, validar({ params: schemas.desativarRede.params, query: schemas.desativarRede.query, body: schemas.desativarRede.body }), controller.desativarRede);

@@ -61,8 +61,73 @@
     #qrArea svg{width:100%;height:auto;display:block}
     #qrContagem{text-align:center;font-weight:700;margin:12px 0 4px;font-variant-numeric:tabular-nums}
     #qrMensagem{margin:0 0 4px}
+    .modo-previa{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin:0 0 12px;padding:0;border:0}
+    .modo-previa legend{float:left;margin:0 6px 0 0;padding:0;font-size:13px;font-weight:700;color:var(--on-surface-variant)}
+    .modo-opcao{display:inline-flex;align-items:center;gap:6px;font-size:14px;cursor:pointer}
+    .cartao-consulta{margin:0 0 12px;padding:14px 16px;border:1px solid var(--outline-variant);border-radius:14px;background:var(--surface)}
+    .cartao-consulta h3{margin:0 0 8px;font-size:15px}
+    .cartao-consulta .lista-materiais{margin-top:10px}
+    .aviso-previa{margin:0 0 10px;padding:10px 14px;border-radius:12px;background:var(--secondary-container);color:var(--on-surface);font-size:13px}
+    #totemPreviaQuadro{display:flex;justify-content:center;margin-top:14px;padding:12px;background:var(--surface-container-high);border:1px solid var(--outline-variant);border-radius:14px;overflow:auto}
+    #totemPreviaQuadro iframe{width:100%;max-width:1024px;height:min(768px,80vh);min-height:520px;border:0;border-radius:10px;background:#fff}
     .modal-card.largo{width:min(100%,640px)}
     #conteudoProtegido button:disabled{background:var(--surface-container-high);color:var(--on-surface-variant);border:0.5px solid var(--outline-variant);opacity:.6;filter:grayscale(1);cursor:not-allowed}
+    /* K7 — melhorias visuais (só apresentação; textos, dados e permissões não mudam). */
+    /* Ícones por atributo: o glifo vem do CSS, então o texto do botão (e o que o leitor de tela lê) não recebe o nome do ícone. */
+    [data-icone]::before{content:attr(data-icone);content:attr(data-icone) / "";font-family:'Material Symbols Outlined';font-weight:400;font-style:normal;font-size:18px;line-height:1;letter-spacing:normal;text-transform:none;white-space:nowrap;direction:ltr;font-feature-settings:'liga';-webkit-font-feature-settings:'liga';flex:none}
+    h3[data-icone]{display:flex;align-items:center;gap:8px}
+    h3[data-icone]::before{color:var(--primary);font-size:20px}
+    /* Botões secundários e de ação: mesma família do chip aprovado "Histórico por funcionário" (pílula tonal azul, ícone à frente). */
+    #conteudoProtegido .outlined-btn,.modal-card .outlined-btn{height:36px;padding:0 14px;gap:6px;border:0.5px solid rgba(0,122,255,0.18);background:var(--primary-container);color:var(--primary);font-size:13px;font-weight:500;transition:background-color .18s ease,border-color .18s ease,box-shadow .18s ease,opacity .18s ease}
+    #conteudoProtegido .outlined-btn:hover:not(:disabled),.modal-card .outlined-btn:hover:not(:disabled){background:rgba(0,122,255,0.18);border-color:rgba(0,122,255,0.35)}
+    #conteudoProtegido .outlined-btn:active:not(:disabled),.modal-card .outlined-btn:active:not(:disabled){background:rgba(0,122,255,0.26)}
+    #conteudoProtegido .outlined-btn.perigo-texto,.modal-card .outlined-btn.perigo-texto{background:var(--error-container);border-color:rgba(255,59,48,0.28);color:var(--error)}
+    #conteudoProtegido .outlined-btn.perigo-texto:hover:not(:disabled),.modal-card .outlined-btn.perigo-texto:hover:not(:disabled){background:rgba(255,59,48,0.18);border-color:rgba(255,59,48,0.45)}
+    #conteudoProtegido .filled-btn,.modal-card .filled-btn{gap:6px;transition:opacity .18s ease,box-shadow .18s ease}
+    #conteudoProtegido .filled-btn:hover:not(:disabled),.modal-card .filled-btn:hover:not(:disabled){opacity:.9;box-shadow:0 2px 8px rgba(0,122,255,0.28)}
+    #conteudoProtegido .filled-btn.perigo:hover:not(:disabled){box-shadow:0 2px 8px rgba(255,59,48,0.28)}
+    .acoes-linha .outlined-btn{height:34px;padding:0 12px}
+    /* Cartões da Visão Geral: fundo suave, ícone e número em destaque; o significado está no título, nunca só na cor. */
+    .stats.cartoes-token{gap:16px}
+    .stat-token{--tom:#007AFF;--tom-texto:#0062CC;--tom-fundo:rgba(0,122,255,0.10);--tom-borda:rgba(0,122,255,0.18);display:flex;flex-direction:column;gap:14px;padding:18px;border-radius:14px;background:var(--tom-fundo);border:0.5px solid var(--tom-borda)}
+    .stat-token[data-tom="verde"]{--tom:#34C759;--tom-texto:#1A7A35;--tom-fundo:rgba(52,199,89,0.10);--tom-borda:rgba(52,199,89,0.22)}
+    .stat-token[data-tom="laranja"]{--tom:#FF9500;--tom-texto:#B26A00;--tom-fundo:rgba(255,149,0,0.10);--tom-borda:rgba(255,149,0,0.22)}
+    .stat-token[data-tom="vermelho"]{--tom:#FF3B30;--tom-texto:#C4170D;--tom-fundo:rgba(255,59,48,0.10);--tom-borda:rgba(255,59,48,0.22)}
+    .stat-token[data-tom="roxo"]{--tom:#AF52DE;--tom-texto:#8639B3;--tom-fundo:rgba(175,82,222,0.10);--tom-borda:rgba(175,82,222,0.22)}
+    html[data-theme="dark"] .stat-token{--tom-texto:#64A8FF}
+    html[data-theme="dark"] .stat-token[data-tom="verde"]{--tom-texto:#5FDB80}
+    html[data-theme="dark"] .stat-token[data-tom="laranja"]{--tom-texto:#FFB340}
+    html[data-theme="dark"] .stat-token[data-tom="vermelho"]{--tom-texto:#FF7A72}
+    html[data-theme="dark"] .stat-token[data-tom="roxo"]{--tom-texto:#C98BEA}
+    .stat-token-topo{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+    .stat-token-topo span{font-size:12px;font-weight:500;color:var(--on-surface-variant);line-height:1.3}
+    .stat-token-icone{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;flex:none;font-style:normal;background:var(--tom-borda);color:var(--tom-texto)}
+    .stat-token-icone::before{font-size:20px}
+    .stat-token strong{margin:0;font-size:34px;line-height:1;font-weight:500;letter-spacing:-1px;color:var(--tom-texto);font-variant-numeric:tabular-nums}
+    /* A1 — monocromático (js/tema.js: html[data-a11y="monochrome"]): tons neutros nos cartões e nas bordas/realces dos botões; o significado fica no título e no ícone. A ação perigosa segue com o --error do próprio modo. */
+    html[data-a11y="monochrome"] .stat-token{--tom:#555555 !important;--tom-texto:#1A1A1A !important;--tom-fundo:rgba(0,0,0,0.06) !important;--tom-borda:rgba(0,0,0,0.28) !important}
+    html[data-a11y="monochrome"][data-theme="dark"] .stat-token{--tom:#BBBBBB !important;--tom-texto:#F2F2F2 !important;--tom-fundo:rgba(255,255,255,0.08) !important;--tom-borda:rgba(255,255,255,0.32) !important}
+    html[data-a11y="monochrome"] .stat-token-topo span{color:var(--tom-texto) !important}
+    html[data-a11y="monochrome"] #conteudoProtegido .outlined-btn:not(.perigo-texto),html[data-a11y="monochrome"] .modal-card .outlined-btn:not(.perigo-texto){border-color:rgba(0,0,0,0.3)}
+    html[data-a11y="monochrome"] #conteudoProtegido .outlined-btn:hover:not(:disabled):not(.perigo-texto),html[data-a11y="monochrome"] .modal-card .outlined-btn:hover:not(:disabled):not(.perigo-texto){background:rgba(0,0,0,0.16);border-color:rgba(0,0,0,0.5)}
+    html[data-a11y="monochrome"] #conteudoProtegido .filled-btn:hover:not(:disabled),html[data-a11y="monochrome"] .modal-card .filled-btn:hover:not(:disabled){box-shadow:0 2px 8px rgba(0,0,0,0.3)}
+    html[data-a11y="monochrome"][data-theme="dark"] #conteudoProtegido .outlined-btn:not(.perigo-texto),html[data-a11y="monochrome"][data-theme="dark"] .modal-card .outlined-btn:not(.perigo-texto){border-color:rgba(255,255,255,0.35)}
+    html[data-a11y="monochrome"][data-theme="dark"] #conteudoProtegido .outlined-btn:hover:not(:disabled):not(.perigo-texto),html[data-a11y="monochrome"][data-theme="dark"] .modal-card .outlined-btn:hover:not(:disabled):not(.perigo-texto){background:rgba(255,255,255,0.16);border-color:rgba(255,255,255,0.55)}
+    /* A2 — alto contraste (js/tema.js: html[data-display="contrast"]): bordas de 1,5 px, a paleta escura do próprio modo (main.css), foco de 3 px e ação perigosa distinta (vermelho x azul). */
+    html[data-display="contrast"] .stat-token{border-width:1.5px !important}
+    html[data-display="contrast"] .stat-token[data-tom="azul"]{--tom-texto:#0040CC !important;--tom-fundo:#CCE0FF !important;--tom-borda:#0040CC !important}
+    html[data-display="contrast"] .stat-token[data-tom="verde"]{--tom-texto:#005A14 !important;--tom-fundo:#CCFFDD !important;--tom-borda:#005A14 !important}
+    html[data-display="contrast"] .stat-token[data-tom="laranja"]{--tom-texto:#7A3D00 !important;--tom-fundo:#FFE5B2 !important;--tom-borda:#7A3D00 !important}
+    html[data-display="contrast"] .stat-token[data-tom="vermelho"]{--tom-texto:#B30000 !important;--tom-fundo:#FFD6D6 !important;--tom-borda:#B30000 !important}
+    html[data-display="contrast"] .stat-token[data-tom="roxo"]{--tom-texto:#5B2A86 !important;--tom-fundo:#EBDDF7 !important;--tom-borda:#5B2A86 !important}
+    html[data-display="contrast"] .stat-token-topo span{color:#000000 !important}
+    html[data-display="contrast"] .stat-token-icone{background:#FFFFFF !important;border:1.5px solid var(--tom-borda)}
+    html[data-display="contrast"] #conteudoProtegido .outlined-btn,html[data-display="contrast"] .modal-card .outlined-btn{border-width:1.5px !important;border-color:#0040CC !important;color:#0040CC !important;background:#E6EEFF !important}
+    html[data-display="contrast"] #conteudoProtegido .outlined-btn:hover:not(:disabled),html[data-display="contrast"] .modal-card .outlined-btn:hover:not(:disabled){background:#CCE0FF !important}
+    html[data-display="contrast"] #conteudoProtegido .outlined-btn.perigo-texto,html[data-display="contrast"] .modal-card .outlined-btn.perigo-texto{border-color:#B30000 !important;color:#B30000 !important;background:#FFE6E6 !important}
+    html[data-display="contrast"] #conteudoProtegido .outlined-btn.perigo-texto:hover:not(:disabled),html[data-display="contrast"] .modal-card .outlined-btn.perigo-texto:hover:not(:disabled){background:#FFD6D6 !important}
+    html[data-display="contrast"] .report-tab:focus-visible,html[data-display="contrast"] .outlined-btn:focus-visible,html[data-display="contrast"] .filled-btn:focus-visible{outline:3px solid #000 !important;outline-offset:2px}
+    html[data-display="contrast"] #conteudoProtegido button:disabled{border:1.5px solid rgba(0,0,0,0.45) !important}
     @media (max-width: 900px){.stats.cartoes-token{grid-template-columns:repeat(2,minmax(0,1fr))}.form-rede{grid-template-columns:1fr}}
     @media (max-width: 560px){.stats.cartoes-token{grid-template-columns:1fr}.detalhe-lista{grid-template-columns:1fr}.detalhe-lista dd{margin-bottom:6px}.report-tab{flex:1 1 auto;justify-content:center}.lista-funcionarios > li{flex-direction:column;align-items:stretch}.lista-funcionarios > li > .request-meta{flex:0 0 auto}.lista-funcionarios > li > .previa-caixa{flex:0 0 auto}}
   </style>
@@ -184,6 +249,7 @@
             <button class="report-tab" type="button" role="tab" id="aba-monitoramento" data-aba="monitoramento" aria-controls="painel-monitoramento" aria-selected="false" tabindex="-1" style="display:none">Monitoramento</button>
             <button class="report-tab" type="button" role="tab" id="aba-previa" data-aba="previa" aria-controls="painel-previa" aria-selected="false" tabindex="-1" style="display:none">Prévia e Testes</button>
             <button class="report-tab" type="button" role="tab" id="aba-historico" data-aba="historico" aria-controls="painel-historico" aria-selected="false" tabindex="-1" style="display:none">Histórico</button>
+            <button class="report-tab" type="button" role="tab" id="aba-visualizarTotem" data-aba="visualizarTotem" aria-controls="painel-visualizarTotem" aria-selected="false" tabindex="-1" style="display:none">Visualizar Totem</button>
           </div>
 
           <!-- ═ Visão Geral ═ -->
@@ -197,7 +263,7 @@
                     <p>A situação administrativa dos tablets da empresa. Não mostra se estão online: isso é da Etapa J.</p>
                   </div>
                 </div>
-                <button class="outlined-btn" id="botaoAtualizarVisaoGeral" type="button">Atualizar</button>
+                <button class="outlined-btn" id="botaoAtualizarVisaoGeral" type="button" data-icone="refresh">Atualizar</button>
               </div>
               <div id="estado-visaoGeral" style="display:none"></div>
               <div id="conteudo-visaoGeral" style="display:none">
@@ -220,7 +286,7 @@
                 </div>
                 <div class="acoes-linha">
                   <button class="filled-btn" id="botaoNovoDispositivo" type="button" style="display:none"><span class="material-symbols-outlined">add</span>Novo dispositivo</button>
-                  <button class="outlined-btn" id="botaoAtualizarDispositivos" type="button">Atualizar</button>
+                  <button class="outlined-btn" id="botaoAtualizarDispositivos" type="button" data-icone="refresh">Atualizar</button>
                 </div>
               </div>
               <div id="avisoDispositivos" class="aviso-area" style="display:none"></div>
@@ -233,9 +299,9 @@
                   </table>
                 </div>
                 <div class="paginacao">
-                  <button class="outlined-btn" id="dispositivosAnterior" type="button" disabled>Anterior</button>
+                  <button class="outlined-btn" id="dispositivosAnterior" type="button" data-icone="chevron_left" disabled>Anterior</button>
                   <span id="dispositivosPaginacaoTexto">—</span>
-                  <button class="outlined-btn" id="dispositivosProxima" type="button" disabled>Próxima</button>
+                  <button class="outlined-btn" id="dispositivosProxima" type="button" data-icone="chevron_right" disabled>Próxima</button>
                 </div>
               </div>
             </div>
@@ -262,7 +328,7 @@
                     <label for="ativacaoDispositivo">Dispositivo</label>
                     <select class="select" id="ativacaoDispositivo"></select>
                   </div>
-                  <button class="outlined-btn" id="botaoAtualizarEstadoAtivacao" type="button" style="display:none">Atualizar estado</button>
+                  <button class="outlined-btn" id="botaoAtualizarEstadoAtivacao" type="button" data-icone="refresh" style="display:none">Atualizar estado</button>
                   <button class="filled-btn" id="botaoGerarAtivacao" type="button" disabled style="display:none"><span class="material-symbols-outlined">qr_code_2</span>Gerar ativação</button>
                 </div>
                 <div id="avisoAtivacao" class="aviso-area" style="display:none;margin-top:14px"></div>
@@ -281,7 +347,7 @@
                     <p id="redesOrientacao"></p>
                   </div>
                 </div>
-                <button class="outlined-btn" id="botaoAtualizarRedes" type="button">Atualizar</button>
+                <button class="outlined-btn" id="botaoAtualizarRedes" type="button" data-icone="refresh">Atualizar</button>
               </div>
               <div id="avisoRedes" class="aviso-area" style="display:none"></div>
               <form id="formRede" class="form-rede" novalidate>
@@ -348,7 +414,7 @@
               <div id="estado-previaBusca" style="display:none"></div>
               <div id="previaFuncionarios"></div>
               <div class="previa-caixa" id="previaResultadoCaixa" role="region" aria-labelledby="previaTitulo" style="display:none">
-                <h3 id="previaTitulo">Prévia do catálogo</h3>
+                <h3 id="previaTitulo" data-icone="person_search">Prévia do catálogo</h3>
                 <div id="avisoPrevia" class="aviso-area" style="display:none"></div>
                 <div id="estado-previaResultado" style="display:none"></div>
                 <div id="previaResultado"></div>
@@ -369,6 +435,45 @@
                 </div>
               </div>
               <div id="estado-historico" style="display:none"></div>
+            </div>
+          </section>
+
+          <!-- ═ Visualizar Totem (K7): prévia visual com dados fictícios; o iframe nasce ao abrir a aba e some ao sair ═ -->
+          <section class="painel-aba" id="painel-visualizarTotem" role="tabpanel" aria-labelledby="aba-visualizarTotem" tabindex="0" style="display:none">
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">
+                  <div class="card-icon">tablet_android</div>
+                  <div>
+                    <h2>Visualizar Totem</h2>
+                    <p>Prévia visual da interface do tablet, com dados fictícios.</p>
+                  </div>
+                </div>
+                <div class="acoes-linha">
+                  <button class="outlined-btn" id="botaoReiniciarPrevia" type="button" data-icone="restart_alt">Reiniciar prévia</button>
+                </div>
+              </div>
+              <fieldset class="modo-previa" id="seletorModoPrevia">
+                <legend>Modalidade</legend>
+                <label class="modo-opcao"><input type="radio" name="modoPrevia" id="modoPreviaDemo" value="demo" checked> Demonstração</label>
+                <label class="modo-opcao" id="opcaoModoReal" style="display:none"><input type="radio" name="modoPrevia" id="modoPreviaReal" value="real"> Consulta real</label>
+              </fieldset>
+              <p class="aviso-previa" id="avisoPreviaDemo" role="note"><strong>Dados fictícios. Nada é gravado:</strong> nenhum atendimento, pedido, movimentação de estoque ou auditoria é criado, nenhuma consulta é feita ao sistema e nenhuma credencial de tablet é usada.</p>
+              <p class="dica" id="previaTotemCodigos">Para navegar, toque em <strong>Matrícula</strong> e digite uma das matrículas de demonstração: <strong>1001</strong> (catálogo completo), <strong>1002</strong> (sem GHE: nenhum material liberado) ou <strong>1003</strong> (com pedidos em aberto). O CPF não é aceito na prévia.</p>
+              <p class="aviso-previa" id="avisoPreviaReal" role="note" style="display:none"><strong>Consulta real, somente leitura:</strong> o colaborador é identificado no cadastro da sua empresa por CPF ou matrícula, e o Totem mostra os EPIs reais do GHE dele. Nenhum atendimento, pedido, reserva, entrega ou movimentação é criado: o carrinho e o envio são simulados. Fica registrada apenas a auditoria da consulta, sem o CPF. O CPF digitado não é guardado.</p>
+              <div class="cartao-consulta" id="cartaoConsultaReal" style="display:none" aria-live="polite">
+                <h3 data-icone="fact_check">Conferência da consulta real</h3>
+                <p class="dica" id="crMensagem"></p>
+                <dl class="detalhe-lista">
+                  <dt>Colaborador</dt><dd id="crColaborador">—</dd>
+                  <dt>GHE</dt><dd id="crGhe">—</dd>
+                  <dt>Situação do GHE</dt><dd id="crGheSituacao">—</dd>
+                  <dt>Catálogo</dt><dd id="crCatalogo">—</dd>
+                  <dt>Materiais liberados</dt><dd id="crTotal">—</dd>
+                </dl>
+                <ul class="lista-materiais" id="crMateriais"></ul>
+              </div>
+              <div id="totemPreviaQuadro"></div>
             </div>
           </section>
 
@@ -426,7 +531,7 @@
                 </div>
                 <dl class="detalhe-lista" id="detalheDispositivo" style="display:none"></dl>
                 <div class="footer-actions">
-                  <button class="outlined-btn" type="button" id="botaoCancelarDispositivo">Cancelar</button>
+                  <button class="outlined-btn" type="button" id="botaoCancelarDispositivo" data-icone="close">Cancelar</button>
                   <button class="filled-btn" type="submit" id="botaoSalvarDispositivo"><span class="material-symbols-outlined">check</span>Salvar</button>
                 </div>
               </form>
@@ -445,7 +550,7 @@
               <div id="corpoModalConfirmar" style="font-size:13px;line-height:1.6;display:flex;flex-direction:column;gap:8px"></div>
               <div id="avisoModalConfirmar" class="aviso-area" style="display:none;margin-top:12px"></div>
               <div class="footer-actions">
-                <button class="outlined-btn" type="button" id="botaoCancelarConfirmar">Cancelar</button>
+                <button class="outlined-btn" type="button" id="botaoCancelarConfirmar" data-icone="close">Cancelar</button>
                 <button class="filled-btn" type="button" id="botaoConfirmar">Confirmar</button>
               </div>
             </div>
@@ -469,7 +574,7 @@
               <p id="qrContagem" role="timer"></p>
               <p class="dica">Leia este QR no tablet. Ele serve uma única vez e não pode ser exibido de novo: fechar esta janela descarta o código.</p>
               <div class="footer-actions">
-                <button class="outlined-btn" type="button" id="botaoNovaAtivacaoQr" style="display:none">Gerar nova ativação</button>
+                <button class="outlined-btn" type="button" id="botaoNovaAtivacaoQr" data-icone="qr_code_2" style="display:none">Gerar nova ativação</button>
                 <button class="filled-btn" type="button" id="botaoFecharQr">Fechar e descartar</button>
               </div>
             </div>
