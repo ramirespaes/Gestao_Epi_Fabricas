@@ -23,6 +23,13 @@ function criarTokenCentralController({ pool: poolInjetado }) {
       const previa = await tokenCentralService.previaCatalogo(poolInjetado, { ...contexto(req), funcionarioId: req.validado.query.funcionarioId });
       res.status(200).json({ status: 'ok', previa });
     },
+    async previaIdentificar(req, res) {
+      // Nada disto pode ser guardado em cache: o corpo traz dado de um colaborador real. O identificador digitado nunca volta.
+      res.set('Cache-Control', 'no-store');
+      const { tipo, valor } = req.validado.body;
+      const previa = await tokenCentralService.previaIdentificar(poolInjetado, { ...contexto(req), tipo, valor });
+      res.status(200).json({ status: 'ok', previa });
+    },
     async listarRedes(req, res) {
       const { pagina, limite } = req.validado.query;
       const resultado = await tokenRedeAdminService.listar(poolInjetado, { empresaId: req.empresa.id, pagina, limite });

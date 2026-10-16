@@ -45,7 +45,8 @@ describe('H — Central Administrativa no app real (sem banco)', () => {
     const doToken = rotas.filter((r) => r.includes('/atendimento-token/') && !r.includes('/atendimento-token/tablet'));
     assert.deepEqual(doToken.filter((r) => /\/redes/.test(r)).sort(), ['GET /atendimento-token/redes', 'POST /atendimento-token/redes', 'POST /atendimento-token/redes/:id/desativar'],
       'redes: exatamente listar, cadastrar e desativar (nada de exclusão nem edição)');
-    assert.deepEqual(doToken.filter((r) => !r.startsWith('GET ') && !/dispositivos|\/redes/.test(r)), [], 'nenhuma escrita nova fora das rotas B/C e das redes');
+    // K7: a consulta real da prévia é POST (o CPF vai no corpo, nunca na URL), mas é leitura: ver token-previa-identificar-*.
+    assert.deepEqual(doToken.filter((r) => !r.startsWith('GET ') && !/dispositivos|\/redes/.test(r)), ['POST /atendimento-token/previa/identificar'], 'nenhuma escrita nova fora das rotas B/C, das redes e da consulta real da prévia (K7)');
     assert.equal(doToken.some((r) => /monitoramento|heartbeat|alerta|historico|eventos|carrinho/i.test(r)), false, 'nada da Etapa J');
   });
 
@@ -76,7 +77,8 @@ describe('H — Central Administrativa no app real (sem banco)', () => {
       }
     }
     const dasNovas = rotasDoPortal().filter((r) => /\/atendimento-token\/(visao-geral|previa)/.test(r));
-    assert.deepEqual(dasNovas.sort(), ['GET /atendimento-token/previa/catalogo', 'GET /atendimento-token/visao-geral'], 'montadas e só como GET');
+    // K7: a consulta real da prévia é a única exceção (POST, porque o CPF vai no corpo; leitura + auditoria): ver token-previa-identificar-*.
+    assert.deepEqual(dasNovas.sort(), ['GET /atendimento-token/previa/catalogo', 'GET /atendimento-token/visao-geral', 'POST /atendimento-token/previa/identificar'], 'montadas e só como GET, salvo a consulta real da prévia (K7)');
   });
 
   test('CH-A6 — RBAC real: as ações da prévia e de gerenciar redes entram no escopo do MASTER e entre as ações com efeito junto com as rotas que as aplicam; Monitoramento e Histórico NÃO entram nesta etapa (sem rota)', () => {

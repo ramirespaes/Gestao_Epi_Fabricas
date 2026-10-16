@@ -3,6 +3,7 @@
 const { HttpError } = require('../errors/HttpError');
 const centralRepo = require('../repositories/token-central.repository');
 const auditoriaRepo = require('../repositories/auditoria.repository');
+const atendimentoRepo = require('../repositories/token-atendimento.repository');
 const { montarCatalogoDoFuncionario } = require('./token-catalogo.service');
 
 /**
@@ -109,6 +110,47 @@ async function previaCatalogo(pool, { empresaId, atorId, funcionarioId, ip = nul
   });
 }
 
+const TIPOS_IDENTIFICADOR = Object.freeze(['CPF', 'MATRICULA']);
+const funcionarioNaoIdentificado = () => HttpError.notFound('FUNCIONARIO_NAO_IDENTIFICADO', 'Funcionário não identificado');
+const primeiroNome = (nome) => String(nome).trim().split(/\s+/)[0];
+
+/**
+ * Consulta real da prévia do Totem (K7): identifica o colaborador por CPF ou matrícula EXATOS (só ATIVO, da empresa da sessão) e devolve
+ * o primeiro nome, o GHE atual e o catálogo real, pelas mesmas regras do tablet. A leitura inteira (identificação, GHE e catálogo) roda
+ * numa transação `READ ONLY REPEATABLE READ`: o próprio banco recusa qualquer escrita ali, e GHE e catálogo saem do mesmo instantâneo.
+ * A ÚNICA escrita é uma linha de auditoria, numa transação à parte, SEM o CPF, a matrícula ou o valor digitado (só o id do funcionário, o
+ * tipo, se foi encontrado e a contagem). Sem a auditoria nada é devolvido. Não cria atendimento, pedido, reserva, entrega nem alteração.
+ * O identificador nunca entra em SQL concatenado, em mensagem de erro nem em log.
+ */
+async function previaIdentificar(pool, { empresaId, atorId, tipo, valor, ip = null, dispositivo = null }) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirId(atorId, 'identificador de ator');
+  if (!TIPOS_IDENTIFICADOR.includes(tipo) || typeof valor !== 'string' || valor.length === 0) throw new TypeError('identificador inválido');
+
+  const lido = await emTransacao(pool, EM_LEITURA, async (client) => {
+    const funcionario = await atendimentoRepo.buscarFuncionarioAtivo(client, { empresaId, tipo, valor });
+    if (funcionario === null) return null;
+    const ghe = await centralRepo.gheDoFuncionario(client, empresaId, funcionario.id);
+    const catalogo = await montarCatalogoDoFuncionario(client, { empresaId, funcionarioId: funcionario.id });
+    return { funcionarioId: funcionario.id, nome: funcionario.nome, ghe, catalogo };
+  });
+
+  await emTransacao(pool, 'BEGIN', (client) => auditoriaRepo.registrar(client, {
+    empresaId,
+    usuarioId: atorId,
+    acao: ACAO_AUDITORIA_PREVIA,
+    referencia: lido === null ? null : String(lido.funcionarioId),
+    ip,
+    dispositivo,
+    contexto: lido === null
+      ? { tipoIdentificador: tipo, encontrado: false }
+      : { tipoIdentificador: tipo, encontrado: true, estado: lido.catalogo.estado, total: lido.catalogo.total },
+  }));
+
+  if (lido === null) throw funcionarioNaoIdentificado();
+  return { funcionario: { primeiroNome: primeiroNome(lido.nome) }, ghe: lido.ghe, catalogo: lido.catalogo };
+}
+
 module.exports = {
-  ACAO_PREVIA, ACAO_AUDITORIA_PREVIA, ESTADOS_ATIVACAO, SITUACOES_GERAIS, estadoDaAtivacao, situacaoGeralDe, visaoGeral, estadoAtivacao, previaCatalogo,
+  ACAO_PREVIA, ACAO_AUDITORIA_PREVIA, ESTADOS_ATIVACAO, SITUACOES_GERAIS, estadoDaAtivacao, situacaoGeralDe, visaoGeral, estadoAtivacao, previaCatalogo, previaIdentificar,
 };
