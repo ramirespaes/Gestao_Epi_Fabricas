@@ -83,6 +83,8 @@
     "portal/trocar-senha.js",
     "totem/boot.js",
     "totem/index.html",
+    "totem/previa-adaptador.js",
+    "totem/previa.html",
     "totem/totem.css",
     "totem/totem.js",
     "vendor/LICENSE-qrcode-generator.txt",

@@ -32,7 +32,7 @@
     MONITORAMENTO: 'TOKEN_VISUALIZAR_MONITORAMENTO',
     HISTORICO: 'TOKEN_VISUALIZAR_HISTORICO',
   });
-  var ABAS = Object.freeze(['visaoGeral', 'dispositivos', 'ativacao', 'monitoramento', 'previa', 'historico']);
+  var ABAS = Object.freeze(['visaoGeral', 'dispositivos', 'ativacao', 'monitoramento', 'previa', 'historico', 'visualizarTotem']);
   var ROTULOS_ABA = Object.freeze({
     visaoGeral: 'Visão Geral',
     dispositivos: 'Dispositivos',
@@ -40,6 +40,7 @@
     monitoramento: 'Monitoramento',
     previa: 'Prévia e Testes',
     historico: 'Histórico',
+    visualizarTotem: 'Visualizar Totem',
   });
 
   var FUSO = 'America/Sao_Paulo';
@@ -47,6 +48,7 @@
   var LIMITE_API = 100;
   var PAGINAS_MAXIMAS = 10;
   var BUSCA_MAXIMA = 100;
+  var IDENTIFICADOR_MAXIMO = 30; // CPF (11 algarismos, com ou sem pontuação) ou matrícula: o limite do servidor para o valor
   var LIMITES = Object.freeze({ nome: 100, unidade: 100, setor: 100, localInstalacao: 150, fabricante: 100, modelo: 100, numeroSerie: 100, descricaoRede: 150 });
   // Validade máxima do código de ativação (uso único). O prazo exibido é sempre o do servidor; este teto só protege a tela.
   var VALIDADE_MAXIMA_MS = 10 * 60 * 1000;
@@ -170,6 +172,15 @@
     previa: function (funcionarioId) {
       exigirId(funcionarioId, 'identificador de funcionário');
       return http().requisitar('GET', RAIZ + '/previa/catalogo?funcionarioId=' + funcionarioId);
+    },
+    /**
+     * Consulta real da prévia (K7): identifica o colaborador por CPF ou matrícula. O identificador vai SÓ no corpo do POST, nunca na URL;
+     * a validação é a do servidor (CPF: 11 algarismos com pontuação opcional; matrícula: 1 a 30 pontos de código, sem controle).
+     */
+    previaIdentificar: function (tipo, valor) {
+      if (tipo !== 'CPF' && tipo !== 'MATRICULA') throw new TypeError('tipo de identificador inválido');
+      if (typeof valor !== 'string' || valor.length === 0 || tamanhoEmPontos(valor) > IDENTIFICADOR_MAXIMO || CONTROLE.test(valor)) throw new TypeError('identificador inválido');
+      return http().requisitar('POST', RAIZ + '/previa/identificar', { corpo: { tipo: tipo, valor: valor } });
     },
     /** Busca do cadastro de funcionários (nome ou matrícula; nunca CPF na URL). */
     buscarFuncionarios: function (busca, limite) {
@@ -318,6 +329,47 @@
         });
       }
       return { estado: c.estado, total: c.total, materiais: materiais };
+    },
+    /**
+     * Consulta real (K7): SÓ primeiro nome, GHE e catálogo, com exatamente os campos que o Totem usa; qualquer outro campo (CPF,
+     * matrícula, nome completo, ids, setor, saldo) é descartado, e formato fora do contrato vira null (nunca um resultado parcial).
+     */
+    previaIdentificar: function (dados) {
+      var p = ehObjeto(dados) ? dados.previa : null;
+      if (!ehObjeto(p) || !ehObjeto(p.funcionario) || !ehObjeto(p.catalogo)) return null;
+      var nome = p.funcionario.primeiroNome;
+      if (typeof nome !== 'string' || nome.trim() === '' || tamanhoEmPontos(nome) > 100) return null;
+
+      var ghe = null;
+      if (p.ghe !== null && p.ghe !== undefined) {
+        var g = p.ghe;
+        var codigo = g && g.codigo;
+        if (!ehObjeto(g) || (codigo !== null && (typeof codigo !== 'string' || tamanhoEmPontos(codigo) > 30)) || typeof g.descricao !== 'string' || g.descricao === '' || tamanhoEmPontos(g.descricao) > 150 || typeof g.ativo !== 'boolean') return null;
+        ghe = { codigo: codigo, descricao: g.descricao, ativo: g.ativo };
+      }
+
+      var c = p.catalogo;
+      if (!hasOwn(ESTADOS_CATALOGO, c.estado) || !inteiroNaoNegativo(c.total) || !Array.isArray(c.materiais) || c.materiais.length > 200) return null;
+      var texto100 = function (v) { return v === null || v === undefined ? null : (typeof v === 'string' && tamanhoEmPontos(v) <= 100 ? v : false); };
+      var materiais = [];
+      for (var i = 0; i < c.materiais.length; i += 1) {
+        var m = c.materiais[i];
+        if (!ehObjeto(m) || !inteiroPositivo(m.id) || typeof m.nome !== 'string' || m.nome === '' || tamanhoEmPontos(m.nome) > 150 || typeof m.exigeTamanho !== 'boolean') return null;
+        if (!Array.isArray(m.tamanhos) || m.tamanhos.length > 100 || !m.tamanhos.every(function (t) { return typeof t === 'string' && t !== '' && tamanhoEmPontos(t) <= 20; })) return null;
+        var unidade = texto100(m.unidade);
+        var categoria = texto100(m.categoria);
+        var protecao = texto100(m.grupoProtecao);
+        if (unidade === false || categoria === false || protecao === false) return null;
+        var tipo = null;
+        if (m.tipo !== null && m.tipo !== undefined) {
+          if (!ehObjeto(m.tipo) || !inteiroPositivo(m.tipo.id) || typeof m.tipo.nome !== 'string' || tamanhoEmPontos(m.tipo.nome) > 150) return null;
+          tipo = { id: m.tipo.id, nome: m.tipo.nome };
+        }
+        materiais.push({
+          id: m.id, nome: m.nome, unidade: unidade, categoria: categoria, grupoProtecao: protecao, tipo: tipo, exigeTamanho: m.exigeTamanho, tamanhos: m.tamanhos.slice(), imagem: { disponivel: false },
+        });
+      }
+      return { primeiroNome: nome, ghe: ghe, catalogo: { estado: c.estado, total: c.total, materiais: materiais } };
     },
   };
 
@@ -471,6 +523,8 @@
         monitoramento: true,
         previa: previa,
         historico: true,
+        // K7: a prévia visual usa dados fictícios e nenhuma rota; reaproveita a permissão da prévia só para organizar quem a vê.
+        visualizarTotem: previa,
       },
     };
   }
