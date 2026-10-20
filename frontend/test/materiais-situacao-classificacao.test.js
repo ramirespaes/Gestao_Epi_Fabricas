@@ -202,7 +202,7 @@ function montarPagina(opcoes = {}) {
   const sandbox = {
     document: { getElementById: el, querySelectorAll: () => [], createElementNS: noSvg },
     window: { SAFEWORK_PORTAL_API_BASE_URL: BASE },
-    EpiHttp, EpiMateriais, EpiEstoqueMinimos: require('../js/estoque-minimos'), EpiCatalogoVisual: require('../js/catalogo-visual'), // eslint-disable-line global-require
+    EpiHttp, EpiMateriais, EpiEstoqueMinimos: require('../js/estoque-minimos'), EpiCatalogoVisual: require('../js/catalogo-visual'), EpiImagensMaterial: { montar: () => ({ habilitar() {}, reiniciar() {}, definirGravada() {}, paraEnvio() {}, encerrar() {} }), mensagens: { deGravacao: () => null } }, // eslint-disable-line global-require
     EpiPermissoes: { prepararPagina: async () => ({ permissoes: PERMISSOES, podeAlterar: true }), acao: P.acao, recurso: P.recurso, somenteLeitura() {} },
     EpiSessaoEmpresarial: { montar: async () => CONTEXTO, sessaoEncerrada() {} },
     showToast() {}, console, setTimeout, Promise, String, Number, Array, Object, JSON, crypto: globalThis.crypto,

@@ -89,6 +89,7 @@
     "085_insert_acao_exportar_historico_funcionarios.sql": "a05fdbd9d8ffef7015870283f73e377c6507a14d0baf6ffea6d84c4c0a52f8ee",
     "086_create_atendimento_token.sql": "76121c8fb7ab76207a643d6ac0aff941e4bf1411a69915a405bd62f7008b97c7",
     "087_insert_acoes_atendimento_token.sql": "549ea559731d5ee94f78005ea76de33b91bbbc053ceb1bc29f0cd5d9e1d35031",
-    "089_token_dispositivos_queda_suspeita.sql": "b223559b81999df482365e7771f073084938e187cb1e26bd656b63bd2bc34bf2"
+    "089_token_dispositivos_queda_suspeita.sql": "b223559b81999df482365e7771f073084938e187cb1e26bd656b63bd2bc34bf2",
+    "090_create_biblioteca_imagens_material.sql": "38bf19945ff017b708dc844adbf49a7ec2a95fb14238e9dfa66ee492c3861732"
   }
 }

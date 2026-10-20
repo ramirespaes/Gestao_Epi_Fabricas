@@ -150,7 +150,7 @@ function descreverRedefinicao({ rotulo, pagina, rota, arquivoRotas, caminhoNoBac
       const limpo = semComentariosHtml(html);
       assert.match(limpo, /<meta name="referrer" content="no-referrer">/);
       assert.match(limpo, /<html lang="pt-BR">/);
-      assert.match(limpo, /<title>[^<]*SafeWork[^<]*<\/title>/);
+      assert.match(limpo, /<title>Gestão de EPI<\/title>/);
       assert.deepEqual(externosDe(pagina), [], 'a redefinição não carrega script de fora');
       assert.match(tagDe(html, 'form-redefinicao'), /\bnovalidate\b/);
       for (const id of ['senha', 'senha-confirmacao']) {

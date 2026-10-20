@@ -1,0 +1,16 @@
+/* EPIs Entregues: adaptações do acabamento compartilhado em reports.css.
+   Somente apresentação; os status continuam sendo os recebidos do servidor. */
+body.delivered-items-visual #deliveredItemsView{display:grid;gap:20px;min-width:0}
+body.delivered-items-visual .page-actions{margin-bottom:0}
+body.delivered-items-visual .filters-grid .field{min-width:0}
+body.delivered-items-visual .filters-grid .input,
+body.delivered-items-visual .filters-grid .select{width:100%;max-width:100%;min-width:0}
+body.delivered-items-visual .filters-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+body.delivered-items-visual .table-wrap{min-width:0;overflow-x:auto}
+body.delivered-items-visual #deliveredTable td:nth-child(6){font-variant-numeric:tabular-nums}
+body.delivered-items-visual #deliveredTable tr[data-status="VALIDO"]{--entrega-accent:var(--success);--entrega-status-fundo:var(--success-container)}
+body.delivered-items-visual #deliveredTable tr[data-status="PROXIMO"]{--entrega-accent:var(--warning);--entrega-status-fundo:var(--warning-container)}
+body.delivered-items-visual #deliveredTable tr[data-status="VENCIDO"]{--entrega-accent:var(--error);--entrega-status-fundo:var(--error-container)}
+body.delivered-items-visual #deliveredTable tr[data-status] .badge{border:1px solid var(--entrega-accent);background:var(--entrega-status-fundo)!important;color:var(--on-surface)!important;line-height:1.5;white-space:nowrap}
+body.delivered-items-visual #deliveredTable tr[data-status] td:nth-child(9) span{color:var(--on-surface)!important}
+@media(max-width:560px){body.delivered-items-visual .filters-actions button{flex:1}}

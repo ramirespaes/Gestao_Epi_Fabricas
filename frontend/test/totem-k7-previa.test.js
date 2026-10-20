@@ -26,9 +26,10 @@ const existe = (rel) => fs.existsSync(path.join(RAIZ, rel));
 const sha = (rel) => crypto.createHash('sha256').update(fs.readFileSync(path.join(RAIZ, rel))).digest('hex');
 const exigir = (rel) => assert.ok(existe(rel), `RED K7: ${rel} ainda não existe (comportamento ausente)`);
 
-// Os arquivos do Totem real não podem mudar (decisão do K7): hashes de 15/10/2026.
+// Os arquivos do Totem real não podem mudar (decisão do K7): hashes de 15/10/2026; index.html com o favicon e o título do refinamento visual de 18/10/2026
+// (pino atualizado na consolidação de 19/10/2026).
 const PINOS = Object.freeze({
-  'totem/index.html': '517e08e4d9ba17a31a2773b632bdc21b89d54f8bd8e06b9bc5bed3ad4d62b70c',
+  'totem/index.html': 'e41495afa9e0e7f5b1d0b104080180821c42a7c909b5f5d7667ca213cf7ee181',
   'totem/totem.js': '9ee5d2f8d66e154c067c0f7a35c5214a1341fcd42899f92ac3c16cdf5a60c33e',
   'totem/totem.css': '9c6b3665fe47ad88543e8f59053b082544816943d5753c41980625f4b379e3ac',
   'totem/boot.js': '583454fe94c2ed73776fd77b4560eb70c59dd708ad582b2a61ff4878104d6899',

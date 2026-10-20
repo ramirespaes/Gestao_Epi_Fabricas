@@ -31,9 +31,9 @@ describe('módulo: consulta, modelo e CSV', () => {
     await E.acoes.listar({ item: ' sapát ', funcionario: 'João & Cia', de: '2026-01-01', ate: '31/12/2026', status: 'VENCIDO', pagina: 3, limite: 50 });
     await E.acoes.listar({ item: '', funcionario: '   ', status: 'QUALQUER', de: 'x', pagina: 0, limite: -1, cpf: '52998224725' });
     assert.deepEqual(chamadas, [
-      ['GET', '/entregas-epi/itens?pagina=1&limite=20'],
+      ['GET', '/entregas-epi/itens?pagina=1&limite=15'],
       ['GET', '/entregas-epi/itens?item=sap%C3%A1t&funcionario=Jo%C3%A3o%20%26%20Cia&de=2026-01-01&status=VENCIDO&pagina=3&limite=50'],
-      ['GET', '/entregas-epi/itens?pagina=1&limite=20'],
+      ['GET', '/entregas-epi/itens?pagina=1&limite=15'],
     ]);
     delete global.EpiHttp;
   });
@@ -100,7 +100,7 @@ const contexto = () => ({
   status: 'ok', usuario: { id: 1, nome: 'Pessoa', email: 'p@validacao-epi.invalid', perfil: 'USUARIO' },
   empresa: { id: 3, nome: 'Empresa Teste', cnpj: '11222333000181' }, preferencias: { tema: 'claro', modoVisual: 'padrao' },
 });
-const lista = (itens, extra = {}) => ({ status: 200, corpo: { status: 'ok', itens, total: itens.length, pagina: 1, limite: 20, diasProximoVencimento: 30, ...extra } });
+const lista = (itens, extra = {}) => ({ status: 200, corpo: { status: 'ok', itens, total: itens.length, pagina: 1, limite: 15, diasProximoVencimento: 30, ...extra } });
 
 function abrir({ ficha = true, itens = [item()], resposta = null } = {}) {
   return abrirPagina(ARQUIVO, {
@@ -167,7 +167,7 @@ describe('EPIs Entregues — página (DOM simulado, sessão e permissões reais)
     await pg.esperar();
     const ultima = consultas(pg).at(-1);
     assert.deepEqual([...new URL(ultima.url).searchParams.entries()], [
-      ['item', 'sapat'], ['funcionario', 'ana'], ['de', '2026-01-01'], ['ate', '2026-12-31'], ['status', 'VENCIDO'], ['pagina', '1'], ['limite', '20'],
+      ['item', 'sapat'], ['funcionario', 'ana'], ['de', '2026-01-01'], ['ate', '2026-12-31'], ['status', 'VENCIDO'], ['pagina', '1'], ['limite', '15'],
     ]);
     assert.equal(/cpf/i.test(ultima.url), false);
   });
@@ -175,11 +175,11 @@ describe('EPIs Entregues — página (DOM simulado, sessão e permissões reais)
   test('filtros vazios nunca geram parâmetro: o pedido é só página e limite, ao abrir, ao filtrar e depois de Limpar; cada filtro isolado envia só o seu', async () => {
     const pg = await pronta();
     const parametros = () => [...new URL(consultas(pg).at(-1).url).searchParams.entries()];
-    assert.deepEqual(parametros(), [['pagina', '1'], ['limite', '20']], 'ao abrir');
+    assert.deepEqual(parametros(), [['pagina', '1'], ['limite', '15']], 'ao abrir');
     const filtrar = async () => { await pg.consulta('#botaoFiltrar')[0].disparar('click'); await pg.esperar(); await pg.esperar(); };
     const limpar = async () => { await pg.consulta('#botaoLimpar')[0].disparar('click'); await pg.esperar(); await pg.esperar(); };
     await filtrar();
-    assert.deepEqual(parametros(), [['pagina', '1'], ['limite', '20']], 'Filtrar sem nada preenchido');
+    assert.deepEqual(parametros(), [['pagina', '1'], ['limite', '15']], 'Filtrar sem nada preenchido');
     const isolados = [
       ['#deliveredType', 'luva', [['item', 'luva']]],
       ['#deliveredEmployee', 'm-001', [['funcionario', 'm-001']]],
@@ -190,21 +190,21 @@ describe('EPIs Entregues — página (DOM simulado, sessão e permissões reais)
     for (const [seletor, valor, esperado] of isolados) {
       pg.consulta(seletor)[0].value = valor;
       await filtrar();
-      assert.deepEqual(parametros(), [...esperado, ['pagina', '1'], ['limite', '20']], seletor);
+      assert.deepEqual(parametros(), [...esperado, ['pagina', '1'], ['limite', '15']], seletor);
       await limpar();
-      assert.deepEqual(parametros(), [['pagina', '1'], ['limite', '20']], `Limpar depois de ${seletor}`);
+      assert.deepEqual(parametros(), [['pagina', '1'], ['limite', '15']], `Limpar depois de ${seletor}`);
     }
     pg.consulta('#deliveredFrom')[0].value = '2026-09-01';
     pg.consulta('#deliveredTo')[0].value = '2026-10-06';
     await filtrar();
-    assert.deepEqual(parametros(), [['de', '2026-09-01'], ['ate', '2026-10-06'], ['pagina', '1'], ['limite', '20']], 'intervalo completo no formato AAAA-MM-DD');
+    assert.deepEqual(parametros(), [['de', '2026-09-01'], ['ate', '2026-10-06'], ['pagina', '1'], ['limite', '15']], 'intervalo completo no formato AAAA-MM-DD');
     assert.equal(pg.texto('aviso'), '', 'nenhum aviso de erro numa consulta válida');
     // Espaços e valores inválidos viram "omitido", nunca parâmetro vazio.
     await limpar();
     pg.consulta('#deliveredType')[0].value = '   ';
     pg.consulta('#deliveredEmployee')[0].value = '';
     await filtrar();
-    assert.deepEqual(parametros(), [['pagina', '1'], ['limite', '20']]);
+    assert.deepEqual(parametros(), [['pagina', '1'], ['limite', '15']]);
     assert.equal(/=(&|$)/.test(consultas(pg).at(-1).url), false, 'nenhum parâmetro vazio');
   });
 
@@ -236,19 +236,37 @@ describe('EPIs Entregues — página (DOM simulado, sessão e permissões reais)
     await pg.esperar();
     await pg.esperar();
     assert.equal(consultas(pg).length, antes + 1);
-    assert.equal(new URL(consultas(pg).at(-1).url).search, '?pagina=1&limite=20');
+    assert.equal(new URL(consultas(pg).at(-1).url).search, '?pagina=1&limite=15');
     assert.equal(pg.consulta('#deliveredFrom')[0].value, '');
     assert.equal(pg.texto('aviso'), '');
   });
 
-  test('paginação: Próxima e Anterior consultam a página certa; vazio com e sem filtro tem texto próprio', async () => {
-    const itens = Array.from({ length: 20 }, (_, i) => item({ itemId: i + 1 }));
-    const pg = await pronta({ resposta: () => lista(itens, { total: 45 }) });
-    assert.equal(pg.texto('paginacaoTexto'), '1–20 de 45');
-    assert.equal(pg.consulta('#paginaProxima')[0].disabled, false);
+  test('paginação de 15 entregas preserva os filtros e permite voltar da última página', async () => {
+    const todos = Array.from({ length: 31 }, (_, i) => item({ itemId: i + 1 }));
+    const pg = await pronta({ resposta: (req) => {
+      const u = new URL(req.url), p = Number(u.searchParams.get('pagina')), limite = Number(u.searchParams.get('limite'));
+      return lista(todos.slice((p - 1) * limite, p * limite), { total: todos.length, pagina: p, limite });
+    } });
+    assert.equal(linhas(pg).length, 15);
+    assert.equal(pg.texto('paginacaoTexto'), '1–15 de 31');
+    assert.equal(pg.consulta('#paginaAnterior')[0].disabled, true);
+    pg.consulta('#deliveredEmployee')[0].value = 'ana';
+    await pg.consulta('#botaoFiltrar')[0].disparar('click');
+    await pg.esperar();
     await pg.consulta('#paginaProxima')[0].disparar('click');
     await pg.esperar();
-    assert.equal(new URL(consultas(pg).at(-1).url).searchParams.get('pagina'), '2');
+    assert.equal(linhas(pg).length, 15);
+    assert.equal(pg.texto('paginacaoTexto'), '16–30 de 31');
+    assert.equal(new URL(consultas(pg).at(-1).url).search, '?funcionario=ana&pagina=2&limite=15');
+    await pg.consulta('#paginaProxima')[0].disparar('click');
+    await pg.esperar();
+    assert.equal(linhas(pg).length, 1);
+    assert.equal(pg.texto('paginacaoTexto'), '31–31 de 31');
+    assert.equal(pg.consulta('#paginaProxima')[0].disabled, true);
+    await pg.consulta('#paginaAnterior')[0].disparar('click');
+    await pg.esperar();
+    assert.equal(linhas(pg).length, 15);
+    assert.equal(new URL(consultas(pg).at(-1).url).search, '?funcionario=ana&pagina=2&limite=15');
     const vazio = await pronta({ itens: [] });
     assert.equal(vazio.texto('deliveredTableBody'), E.TEXTOS.VAZIO);
     vazio.consulta('#deliveredType')[0].value = 'capacete';

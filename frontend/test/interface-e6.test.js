@@ -46,11 +46,11 @@ describe('nomes: Gestão de estoque e Análise de estoque', () => {
 
   test('título e cabeçalho das duas páginas', () => {
     const estoque = ler('pages/materials.html');
-    assert.match(estoque, /<title>Gestão de estoque — Gestão de EPIs<\/title>/);
+    assert.match(estoque, /<title>Gestão de EPI<\/title>/);
     assert.match(estoque, /font-weight:500">Gestão de estoque<\/h2>/);
     assert.equal(/Cadastro de Materiais/.test(semComentarios(estoque)), false);
     const analise = ler('pages/available-items.html');
-    assert.match(analise, /<title>Análise de estoque — Gestão de EPIs<\/title>/);
+    assert.match(analise, /<title>Gestão de EPI<\/title>/);
     assert.match(analise, /font-weight:500">Análise de estoque<\/h2>/);
     assert.equal(/Itens Disponíveis/.test(semComentarios(analise)), false);
   });

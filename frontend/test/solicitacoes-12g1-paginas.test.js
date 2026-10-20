@@ -98,8 +98,8 @@ describe('as três páginas saem do protótipo (inspeção estática)', () => {
     const html = ler(`pages/${arquivo}`);
     const codigo = semComentarios(html);
 
-    test(`${arquivo}: título "${titulo}" no <title> e no cabeçalho; tema antes de pintar`, () => {
-      assert.match(html, new RegExp(`<title>${titulo} — Gestão de EPIs</title>`));
+    test(`${arquivo}: aba "Gestão de EPI" e cabeçalho "${titulo}"; tema antes de pintar`, () => {
+      assert.match(html, /<title>Gestão de EPI<\/title>/);
       assert.match(html, new RegExp(`font-weight:500">${titulo}</h2>`));
       assert.match(html.split('</head>')[0], /<link rel="stylesheet" href="\.\.\/css\/main\.css">\s*<script src="\.\.\/js\/tema\.js"><\/script>/);
     });

@@ -1,0 +1,76 @@
+/* Aprovação da Segurança do Trabalho: acabamento compartilhado em reports.css.
+   Fila, decisões, quantidades, justificativas e permissões continuam nos scripts originais. */
+body.aprovacao-sst-visual #supervisorApprovalView{display:grid;gap:20px;min-width:0}
+body.aprovacao-sst-visual .page-actions{margin-bottom:0}
+body.aprovacao-sst-visual .aprovacao-grid{min-width:0}
+body.aprovacao-sst-visual .card{padding:12px;min-width:0}
+body.aprovacao-sst-visual .card-header{padding:12px;margin-bottom:12px}
+body.aprovacao-sst-visual .card-icon{background:var(--primary-container);color:var(--primary)}
+/* Fila: moldura de 28px = registro de 16px + recuo de 12px. */
+body.aprovacao-sst-visual .fila-linhas{gap:12px}
+body.aprovacao-sst-visual .fila-linha{padding:16px;border-radius:16px;background:var(--surface-container);border-color:var(--outline);flex-wrap:wrap;min-width:0}
+body.aprovacao-sst-visual .fila-linha:hover:not(:disabled){background:var(--primary-container);border-color:var(--primary)}
+body.aprovacao-sst-visual .fila-linha[aria-current="true"]{background:var(--primary-container);border-color:var(--primary)}
+body.aprovacao-sst-visual .request-meta{min-width:0;overflow-wrap:anywhere}
+body.aprovacao-sst-visual .request-meta strong{font-size:15px;line-height:1.5}
+body.aprovacao-sst-visual .request-meta span{font-size:13px;line-height:1.65}
+body.aprovacao-sst-visual .request-status{border:1px solid var(--warning);line-height:1.5;max-width:100%;overflow-wrap:anywhere}
+body.aprovacao-sst-visual .paginacao{padding:16px 12px 4px;line-height:1.6}
+/* Análise: moldura de 36px, recuo de 12px e itens de 24px.
+   Cada item tem padding de 12px ao redor dos controles de raio 12px. */
+body.aprovacao-sst-visual #cardAnalise{border-radius:36px}
+body.aprovacao-sst-visual .itens-analise{gap:12px}
+body.aprovacao-sst-visual .item-analise{padding:12px;border-radius:24px;border-color:var(--outline);background:var(--surface-container);gap:16px;min-width:0}
+body.aprovacao-sst-visual .item-analise[data-decisao="APROVADO"]{border-left:4px solid var(--success)}
+body.aprovacao-sst-visual .item-analise[data-decisao="REPROVADO"]{border-left:4px solid var(--error)}
+body.aprovacao-sst-visual .item-analise-topo{gap:12px}
+body.aprovacao-sst-visual .item-analise-nome{line-height:1.5;gap:6px;min-width:0}
+body.aprovacao-sst-visual .item-ordem{line-height:1.6}
+body.aprovacao-sst-visual .ghe-selo{white-space:normal;line-height:1.5;max-width:100%;border:1px solid var(--outline)}
+body.aprovacao-sst-visual .ghe-selo[data-ghe="previsto"]{border-color:var(--success)}
+body.aprovacao-sst-visual .ghe-selo[data-ghe="fora"]{border-color:var(--warning)}
+body.aprovacao-sst-visual .field{gap:8px;min-width:0}
+body.aprovacao-sst-visual .input{min-width:0;max-width:100%;background:var(--surface-container-high)}
+body.aprovacao-sst-visual .input:disabled{background:var(--surface-container-high);color:var(--on-surface-variant);cursor:not-allowed}
+body.aprovacao-sst-visual .input[aria-invalid="true"]{border-color:var(--error);box-shadow:0 0 0 1px var(--error)}
+body.aprovacao-sst-visual .decisao-item legend{font-size:13px;line-height:1.6}
+body.aprovacao-sst-visual .opcoes-decisao{gap:10px}
+body.aprovacao-sst-visual .opcao-decisao{min-height:44px;padding:10px 14px;border-radius:12px;line-height:1.5;background:var(--surface-container-high);border-color:var(--outline)}
+body.aprovacao-sst-visual .opcao-decisao[data-opcao="APROVADO"]:has(input:checked){background:var(--success-container);border-color:var(--success)}
+body.aprovacao-sst-visual .opcao-decisao[data-opcao="REPROVADO"]:has(input:checked){background:var(--error-container);border-color:var(--error)}
+body.aprovacao-sst-visual .opcao-decisao:hover:not(:has(input:disabled)){box-shadow:0 0 0 1px var(--outline)}
+body.aprovacao-sst-visual .opcao-decisao input{flex:none}
+body.aprovacao-sst-visual .detalhe-pedido{grid-template-columns:minmax(0,max-content) minmax(0,1fr);padding:12px;gap:8px 16px;line-height:1.7}
+body.aprovacao-sst-visual .detalhe-pedido dt,
+body.aprovacao-sst-visual .detalhe-pedido dd{min-width:0;overflow-wrap:anywhere}
+body.aprovacao-sst-visual .dica,
+body.aprovacao-sst-visual .campo-erro{font-size:13px;line-height:1.7}
+body.aprovacao-sst-visual #analiseVazia{padding:0 12px 12px}
+body.aprovacao-sst-visual .rodape-analise{padding:16px 12px 4px;gap:16px}
+body.aprovacao-sst-visual #resultadoPrevisto{line-height:1.7;overflow-wrap:anywhere}
+body.aprovacao-sst-visual .acoes-analise{gap:10px}
+html[data-display] body.aprovacao-sst-visual .request-status,
+html[data-a11y] body.aprovacao-sst-visual .request-status,
+html[data-display] body.aprovacao-sst-visual .ghe-selo,
+html[data-a11y] body.aprovacao-sst-visual .ghe-selo{color:var(--on-surface)}
+html[data-a11y="lowvision"] body.aprovacao-sst-visual .request-meta span,
+html[data-a11y="lowvision"] body.aprovacao-sst-visual .item-ordem,
+html[data-a11y="lowvision"] body.aprovacao-sst-visual .ghe-selo,
+html[data-a11y="lowvision"] body.aprovacao-sst-visual .request-status,
+html[data-a11y="lowvision"] body.aprovacao-sst-visual .dica,
+html[data-a11y="lowvision"] body.aprovacao-sst-visual .campo-erro,
+html[data-a11y="lowvision"] body.aprovacao-sst-visual .detalhe-pedido,
+html[data-a11y="lowvision"] body.aprovacao-sst-visual #resultadoPrevisto{font-size:15px}
+html[data-a11y="lowvision"] body.aprovacao-sst-visual .opcao-decisao{min-height:48px;font-size:16px}
+@media(max-width:720px){
+  body.aprovacao-sst-visual .card{padding:12px}
+}
+@media(max-width:560px){
+  body.aprovacao-sst-visual .detalhe-pedido{grid-template-columns:minmax(0,1fr)}
+}
+@media(forced-colors:active){
+  body.aprovacao-sst-visual .fila-linha,
+  body.aprovacao-sst-visual .item-analise,
+  body.aprovacao-sst-visual .opcao-decisao,
+  body.aprovacao-sst-visual .ghe-selo{background:Canvas;border-color:CanvasText;box-shadow:none}
+}

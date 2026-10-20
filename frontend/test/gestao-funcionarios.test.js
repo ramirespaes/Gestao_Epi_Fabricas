@@ -323,9 +323,9 @@ describe('Gestão de Funcionários — listagem e busca', () => {
     assert.ok(lista.every((c) => Number(new URL(c.url).searchParams.get('limite')) <= limiteMaximo), 'nunca acima do limite da API');
     const paginasPedidas = lista.map((c) => Number(new URL(c.url).searchParams.get('pagina') || 1)).sort((a, b) => a - b);
     assert.deepEqual(paginasPedidas, Array.from({ length: paginasPedidas.length }, (_, i) => i + 1), 'páginas consecutivas, sem repetir nem pular');
-    assert.equal(tabela(pg).filter((l) => l.length === 7).length, 230);
+    assert.equal(tabela(pg).filter((l) => l.length === 7).length, 20);
     assert.doesNotMatch(mensagens(pg), /\S/, 'nenhum erro de carregamento');
-    assert.equal(pg.texto('count').trim(), '230 de 230 colaboradores');
+    assert.equal(pg.texto('count').trim(), '1–20 de 230 colaboradores');
     await digitarEm(pg, 'q', 'P-229');
     assert.deepEqual(tabela(pg).filter((l) => l.length === 7).map((l) => l[0]), ['Pessoa 229']);
   });
@@ -345,9 +345,10 @@ describe('Gestão de Funcionários — listagem e busca', () => {
     const m = mundo({ lista: todos, rotas: {} });
     m.rotas['GET /funcionarios'] = servir(todos, ({ pagina, limite }) => ({ funcionarios: todos.slice((pagina - 1) * limite, pagina * limite), total: todos.length }));
     const pg = abrirPagina(ARQUIVO, { rotas: m.rotas });
-    await esperarAte(pg, () => /5050 de 5050/.test(pg.texto('count')));
+    await esperarAte(pg, () => /1–20 de 5050/.test(pg.texto('count')));
     assert.ok(chamadasDe(pg, 'GET /funcionarios').length > 50, 'passou de 50 páginas');
-    assert.equal(pg.texto('count').trim(), '5050 de 5050 colaboradores');
+    assert.equal(pg.texto('count').trim(), '1–20 de 5050 colaboradores');
+    assert.ok(pg.consulta('#paginasColaboradores button').length <= 7, 'os números não criam centenas de controles');
     assert.doesNotMatch(pg.textoDoDom(), /incompleta|não consegue carregar/i);
     await digitarEm(pg, 'q', 'Q-5049');
     assert.deepEqual(tabela(pg).filter((l) => l.length === 7).map((l) => l[0]), ['Pessoa 5049']);
@@ -988,5 +989,132 @@ describe('Gestão de Funcionários — filtro de Situação (local, junto da bus
     await filtrar(pg, 'INATIVO');
     assert.deepEqual(acoesDaLinha(pg, 'Ana Souza'), ['Editar', 'Ativar']);
     assert.ok(botaoPorTexto(pg, 'Novo colaborador'), 'cadastro disponível');
+  });
+});
+
+// Paginação de apresentação: o conjunto completo continua disponível para os filtros locais.
+describe('Cadastro de Colaboradores — 20 por página', () => {
+  const conjunto = (total) => Array.from({ length: total }, (_, i) => funcionario({
+    id: 1000 + i, nome: `Pessoa ${String(i).padStart(3, '0')}`, matricula: `P-${i}`,
+    situacao: i % 2 ? 'AFASTADO' : 'ATIVO',
+  }));
+  const nomesVisiveis = (pg) => tabela(pg).filter((l) => l.length === 7).map((l) => l[0]);
+  const atual = (pg) => pg.consulta('#paginasColaboradores [aria-current="page"]')[0];
+  async function numero(pg, n) {
+    const botao = pg.consulta('#paginasColaboradores button').find((b) => b.textContent === String(n));
+    assert.ok(botao, `página ${n} disponível`);
+    await botao.disparar('click');
+  }
+
+  test('230 colaboradores aparecem em 12 páginas, sem repetição nem perda e sem novas chamadas ao navegar', async () => {
+    const lista = conjunto(230);
+    const pg = await pronta({ lista });
+    const chamadasAntes = pg.chamadas.length;
+    assert.equal(pg.visivel('paginacaoColaboradores'), true);
+    assert.equal(pg.el('paginaColaboradoresAnterior').disabled, true);
+    const vistos = [];
+    for (let p = 1; p <= 12; p += 1) {
+      assert.equal(nomesVisiveis(pg).length, p === 12 ? 10 : 20);
+      vistos.push(...nomesVisiveis(pg));
+      assert.equal(atual(pg).textContent, String(p));
+      assert.equal(pg.texto('paginaColaboradoresResumo'), `Página ${p} de 12`);
+      if (p < 12) await pg.clicar('paginaColaboradoresProxima');
+    }
+    assert.deepEqual(vistos, lista.map((f) => f.nome));
+    assert.equal(pg.texto('count'), '221–230 de 230 colaboradores');
+    assert.equal(pg.el('paginaColaboradoresProxima').disabled, true);
+    assert.equal(pg.chamadas.length, chamadasAntes);
+    await pg.clicar('paginaColaboradoresAnterior');
+    assert.equal(nomesVisiveis(pg)[0], 'Pessoa 200');
+  });
+
+  test('números permitem ir direto à última página e voltar; a página atual mantém foco e identificação acessível', async () => {
+    const pg = await pronta({ lista: conjunto(41) });
+    assert.equal(pg.el('paginacaoColaboradores').getAttribute('aria-label'), 'Páginas de colaboradores');
+    const n = pg.consulta('#paginasColaboradores button').find((b) => b.textContent === '3');
+    n.focus();
+    await numero(pg, 3);
+    assert.deepEqual(nomesVisiveis(pg), ['Pessoa 040']);
+    assert.equal(atual(pg).getAttribute('aria-label'), 'Página 3');
+    assert.equal(atual(pg).getAttribute('aria-controls'), 'tbody');
+    assert.equal(pg.documento.activeElement, atual(pg), 'o foco não fica no botão removido');
+    await numero(pg, 1);
+    assert.equal(nomesVisiveis(pg)[0], 'Pessoa 000');
+    assert.equal(pg.el('paginaColaboradoresAnterior').disabled, true);
+    assert.equal(pg.el('count').getAttribute('aria-live'), 'polite');
+  });
+
+  test('buscar alcança os registros de qualquer página e volta ao início sem perder o filtro de situação', async () => {
+    const pg = await pronta({ lista: conjunto(65) });
+    const antes = pg.chamadas.length;
+    await numero(pg, 4);
+    await digitarEm(pg, 'q', 'P-64');
+    assert.deepEqual(nomesVisiveis(pg), ['Pessoa 064']);
+    assert.equal(pg.visivel('paginacaoColaboradores'), false);
+    await digitarEm(pg, 'q', '');
+    assert.equal(atual(pg).textContent, '1');
+    await numero(pg, 3);
+    pg.el('fSituacaoFiltro').value = 'AFASTADO';
+    await pg.el('fSituacaoFiltro').disparar('change');
+    assert.equal(atual(pg).textContent, '1');
+    assert.equal(nomesVisiveis(pg).length, 20);
+    assert.equal(pg.texto('count'), '1–20 de 32 colaboradores (65 no cadastro)');
+    await numero(pg, 2);
+    await digitarEm(pg, 'q', 'P-63');
+    assert.deepEqual(nomesVisiveis(pg), ['Pessoa 063']);
+    await digitarEm(pg, 'q', 'P-64');
+    assert.deepEqual(nomesVisiveis(pg), [], 'a busca continua combinada com a situação');
+    assert.equal(pg.visivel('paginacaoColaboradores'), false);
+    assert.equal(pg.chamadas.length, antes);
+  });
+
+  test('até 20 resultados, inclusive vazio: não há controles de paginação desnecessários', async () => {
+    for (const total of [0, 1, 20, 21]) {
+      const pg = await pronta({ lista: conjunto(total) });
+      assert.equal(nomesVisiveis(pg).length, Math.min(total, 20));
+      assert.equal(pg.visivel('paginacaoColaboradores'), total > 20);
+      assert.equal(pg.consulta('#paginasColaboradores button').length, total > 20 ? 2 : 0);
+    }
+  });
+
+  test('carregamento e falha não oferecem navegação em uma lista incompleta', async () => {
+    let liberar;
+    const pendente = new Promise((resolve) => { liberar = resolve; });
+    const m = mundo({ lista: conjunto(41), rotas: {
+      'GET /funcionarios': async () => { await pendente; return { status: 500, corpo: { status: 'error', codigo: 'ERRO_INTERNO' } }; },
+    } });
+    const pg = abrirPagina(ARQUIVO, { rotas: m.rotas });
+    await pg.esperar();
+    assert.equal(pg.visivel('paginacaoColaboradores'), false);
+    liberar();
+    await pg.esperar();
+    await pg.esperar();
+    assert.equal(pg.visivel('paginacaoColaboradores'), false);
+    assert.deepEqual(nomesVisiveis(pg), []);
+    assert.match(pg.texto('tbody'), /Não foi possível carregar/);
+  });
+
+  test('editar na última página mantém o PATCH existente e a página; se a lista encolher, limita à última página válida', async () => {
+    const m = mundo({ e: true, lista: conjunto(41), rotas: {
+      'PATCH /funcionarios/1040': { status: 200, corpo: { status: 'ok' } },
+    } });
+    const pg = abrirPagina(ARQUIVO, { rotas: m.rotas });
+    await pg.esperar();
+    await pg.esperar();
+    await numero(pg, 3);
+    await abrirEdicao(pg, 'Pessoa 040');
+    await digitarEm(pg, 'fSetor', 'Setor de Teste');
+    await salvar(pg);
+    assert.deepEqual(chamadasDe(pg, 'PATCH /funcionarios/1040')[0].corpo, { setor: 'Setor de Teste' });
+    assert.equal(atual(pg).textContent, '3');
+    assert.deepEqual(nomesVisiveis(pg), ['Pessoa 040']);
+    await abrirEdicao(pg, 'Pessoa 040');
+    await digitarEm(pg, 'fSetor', 'Outro setor');
+    m.estado.lista.pop(); // simula a lista menor devolvida pelo servidor após atualização concorrente
+    await salvar(pg);
+    assert.equal(atual(pg).textContent, '2');
+    assert.equal(nomesVisiveis(pg).length, 20);
+    assert.equal(pg.texto('count'), '21–40 de 40 colaboradores');
+    assert.equal(pg.el('paginaColaboradoresProxima').disabled, true);
   });
 });

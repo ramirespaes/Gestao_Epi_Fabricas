@@ -185,6 +185,7 @@ function montarPagina({ podeCadastrarTipo = true, cadastro = 'ok', banco = banco
   const mapa = {};
   const el = (id) => (mapa[id] = mapa[id] || {
     id, value: '', innerHTML: '', textContent: '', disabled: false, hidden: undefined, style: {}, listeners: {}, files: [],
+    appendChild(no) { no.parentNode = this; return no; },
     addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
     focus() {}, click() {},
   });

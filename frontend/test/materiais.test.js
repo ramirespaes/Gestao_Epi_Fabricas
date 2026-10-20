@@ -366,7 +366,9 @@ describe('inspeção estática: pages/materials.html integrada, com a interface 
     const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
     // 12D-3: o painel do mínimo por tamanho é um módulo próprio, carregado depois do de materiais.
     // 12G-7: o catálogo visual desenha o pictograma do material escolhido.
-    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/materiais.js', '../js/estoque-minimos.js', '../js/catalogo-visual.js', '../js/tipos-material.js']);
+    // 5B-2: o seletor da imagem do material (Biblioteca Padrão) é um módulo próprio, carregado depois do catálogo de tipos.
+    // 5C-8a: o envio de imagens novas (binário) é outro módulo próprio, carregado logo depois do da seleção.
+    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/materiais.js', '../js/estoque-minimos.js', '../js/catalogo-visual.js', '../js/tipos-material.js', '../js/imagens-material.js', '../js/imagens-envio.js']);
     assert.match(codigo, /EpiHttp\.configurar\(\{ baseUrl: window\.SAFEWORK_PORTAL_API_BASE_URL \}\)/);
     assert.match(codigo, /EpiSessaoEmpresarial\.montar\(/);
     assert.match(codigo, /EpiPermissoes\.prepararPagina\(\{\s*pagina: 'materials'/);
@@ -411,7 +413,7 @@ describe('inspeção estática: pages/materials.html integrada, com a interface 
     for (const rotulo of ['Relatórios', 'Operações', 'Regras Função / Setor', 'Compras / Entradas', 'Validade de estoque', 'Análise de estoque', 'EPIs Entregues', 'Ficha de EPI', 'Histórico de Funcionários', 'Autoatendimento (Totem)', 'Pedido de EPI', 'Aprovação da Segurança do Trabalho', 'Entregas por solicitação', 'Importar Funcionários', 'Novo Usuário', 'Administração de Usuários', 'Configurações', 'Suporte', 'Gestão de E-mails', 'Privacidade / LGPD']) {
       assert.ok(html.includes(rotulo), `rótulo ${rotulo} preservado`);
     }
-    const hrefs = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]).filter((h) => !h.startsWith('http') && !h.startsWith('../css/') && h !== 'javascript:void(0)');
+    const hrefs = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]).filter((h) => !h.startsWith('http') && !h.startsWith('../css/') && h !== '../favicon.svg' && h !== 'javascript:void(0)');
     const permitidos = new Set(['available-items.html', 'stock-validity.html', 'operations.html', 'dashboard.html', 'reports.html', 'delivered-items.html', 'employee-groups.html', 'epi-ficha.html', 'funcionarios.html', 'employee-history.html', 'import-employees.html', 'request.html', 'supervisor-approval.html', 'stock-requests.html', 'grupos-acesso.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'autorizacoes-individuais.html', 'new-user.html', 'user-admin.html', 'gestao-usuarios.html', 'config.html', '../portal/index.html', '../portal/inicio.html']);
     for (const h of hrefs) assert.ok(permitidos.has(h), `materials.html aponta para ${h}`);
     assert.match(html, /onclick="toggleSidebar\(\)"/);
@@ -529,7 +531,7 @@ function montarPagina({ permissoes = { recursos: { materials: { visualizar: true
   const sandbox = {
     document: { getElementById: el, querySelectorAll: () => [], createElementNS: noSvg },
     window: { SAFEWORK_PORTAL_API_BASE_URL: BASE },
-    EpiHttp, EpiMateriais: carregarMateriais(), EpiEstoqueMinimos: require('../js/estoque-minimos'), EpiCatalogoVisual: require('../js/catalogo-visual'), EpiPermissoes: { prepararPagina: async () => ({ permissoes, podeAlterar }), acao: P.acao, recurso: P.recurso, somenteLeitura() {} },
+    EpiHttp, EpiMateriais: carregarMateriais(), EpiEstoqueMinimos: require('../js/estoque-minimos'), EpiCatalogoVisual: require('../js/catalogo-visual'), EpiImagensMaterial: { montar: () => ({ habilitar() {}, reiniciar() {}, definirGravada() {}, paraEnvio() {}, encerrar() {} }), mensagens: { deGravacao: () => null } }, EpiPermissoes: { prepararPagina: async () => ({ permissoes, podeAlterar }), acao: P.acao, recurso: P.recurso, somenteLeitura() {} },
     EpiSessaoEmpresarial: { montar: async (o) => { sandbox.opcoesMontar = o; return CONTEXTO; }, sessaoEncerrada() { sandbox.encerrada = true; } },
     showToast: (m, t) => toasts.push([m, t]), toasts, console, setTimeout, Promise, String, Number, Array, Object, JSON, crypto: globalThis.crypto,
   };
@@ -1388,7 +1390,8 @@ describe('entrada de estoque posterior — módulo', () => {
 describe('entrada de estoque posterior — inspeção estática', () => {
   const html = ler('pages/materials.html');
   test('entrada e baixa no quadro Estoque por lote, ocultas até a permissão; tamanho sem seleção', () => {
-    const quadro = html.slice(html.indexOf('<h2>Estoque por lote</h2>'), html.indexOf('<h2>Estoque mínimo por tamanho</h2>'));
+    const inicio = html.indexOf('<h2>Estoque por lote</h2>');
+    const quadro = html.slice(inicio, html.indexOf('</section>', inicio));
     assert.match(quadro, /<div id="blocoEntradaEstoque" style="display:none[^"]*">/);
     assert.match(quadro, /<div id="blocoBaixaEstoque" style="display:none[^"]*">/);
     assert.match(quadro, /Registrar entrada de estoque/);

@@ -1,0 +1,138 @@
+/* Cadastro de Colaboradores: acabamento compartilhado de reports.css.
+   A estrutura, os estados e os manipuladores continuam na página e no módulo originais. */
+body.colaboradores-visual .fn{
+  /* Herda a paleta de EpiTema em lugar das cores locais fixas, inclusive no escuro. */
+  --primary:inherit;--surface:inherit;--outline:inherit;--error:inherit;--success:inherit;
+  --on-surface-variant:inherit;
+  --on:var(--on-surface);--on-var:var(--on-surface-variant);
+  --surface-2:var(--surface-container-high);--bg:var(--surface);
+  font-family:var(--font-plain);min-width:0;
+}
+body.colaboradores-visual .fn .page-head{
+  padding:28px;border-radius:28px;border:1px solid var(--reports-border);
+  background:var(--reports-glass);box-shadow:var(--reports-depth);align-items:center;
+}
+body.colaboradores-visual .fn .page-head h1{font-size:30px;line-height:1.25;font-weight:600}
+body.colaboradores-visual .fn .page-head p{font-size:14px;line-height:1.65;margin-top:8px}
+/* Tabela de 16px + recuo de 12px = cartão de 28px. */
+body.colaboradores-visual .fn .card{padding:12px;border-radius:28px}
+/* O contêiner fica só na lista; os modais fixos permanecem fora dele. */
+body.colaboradores-visual .fn #conteudoProtegido>.card{container:colaboradores / inline-size}
+body.colaboradores-visual .fn .toolbar{padding:12px;gap:12px;margin-bottom:12px}
+body.colaboradores-visual .fn .search{min-width:min(100%,220px)}
+body.colaboradores-visual .fn .input,
+body.colaboradores-visual .fn select{height:46px;background:var(--surface-container);color:var(--on-surface)}
+body.colaboradores-visual .fn .input:focus,
+body.colaboradores-visual .fn select:focus{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-container)}
+body.colaboradores-visual .fn .input.invalid{border-color:var(--error);box-shadow:0 0 0 3px var(--error-container)}
+body.colaboradores-visual .fn .btn{justify-content:center;font-weight:600}
+body.colaboradores-visual .fn .btn-filled{color:var(--on-primary);box-shadow:0 2px 6px rgba(0,0,0,.1)}
+body.colaboradores-visual .fn .btn-filled:hover{background:var(--primary);box-shadow:0 0 0 2px var(--on-surface),0 4px 12px rgba(0,0,0,.12)}
+body.colaboradores-visual .fn .btn-outlined{background:var(--surface-container)}
+body.colaboradores-visual .fn .btn-outlined:hover{background:var(--surface-container-high);border-color:var(--primary)}
+body.colaboradores-visual .fn .btn:disabled{box-shadow:none}
+/* Acabamento das ações da lista, com a paleta já fornecida por EpiTema.
+   data-visual identifica somente o desenho; os cliques continuam no componente original. */
+body.colaboradores-visual .fn #tbody .acoes>.btn[data-visual="edit"]{--acao-fundo:var(--primary-container);--acao-texto:var(--on-primary-container);--acao-icone:var(--on-primary-container)}
+body.colaboradores-visual .fn #tbody .acoes>.btn[data-visual="event_busy"]{--acao-fundo:var(--warning-container);--acao-texto:var(--on-surface);--acao-icone:color-mix(in srgb,var(--warning) 50%,var(--on-surface))}
+body.colaboradores-visual .fn #tbody .acoes>.btn[data-visual="block"]{--acao-fundo:var(--error-container);--acao-texto:var(--on-surface);--acao-icone:color-mix(in srgb,var(--error) 68%,var(--on-surface))}
+body.colaboradores-visual .fn #tbody .acoes>.btn:is([data-visual="edit"],[data-visual="event_busy"],[data-visual="block"]){background:var(--acao-fundo);color:var(--acao-texto);border-color:var(--outline)}
+body.colaboradores-visual .fn #tbody .acoes>.btn:is([data-visual="edit"],[data-visual="event_busy"],[data-visual="block"])>.material-symbols-outlined{color:var(--acao-icone)}
+@media(hover:hover){
+  body.colaboradores-visual .fn #tbody .acoes>.btn:is([data-visual="edit"],[data-visual="event_busy"],[data-visual="block"]):not(:disabled):not([aria-disabled="true"]):hover{background:color-mix(in srgb,var(--acao-fundo) 75%,var(--surface-container-high));border-color:var(--on-surface-variant)}
+}
+body.colaboradores-visual .fn .table-wrap{border-radius:16px}
+/* Conserva o tamanho das células e a quebra de linha da tabela original. */
+body.colaboradores-visual .fn thead th{padding:11px 12px;font-size:12px;color:var(--on-surface);background:var(--surface-container-high);line-height:1.5}
+body.colaboradores-visual .fn tbody td{padding:11px 12px;border-top:1px solid var(--outline-variant);line-height:1.6}
+body.colaboradores-visual .fn tbody tr:hover{background:var(--primary-container)}
+body.colaboradores-visual .fn .badge{line-height:1.5;border:1px solid var(--outline);color:var(--on-surface)}
+body.colaboradores-visual .fn .badge.situacao-ATIVO{background:var(--success-container);color:var(--on-surface);border-color:var(--success)}
+body.colaboradores-visual .fn .badge.situacao-AFASTADO{background:var(--warning-container);color:var(--on-surface);border-color:var(--warning)}
+body.colaboradores-visual .fn .badge.situacao-INATIVO{background:var(--surface-container-high);color:var(--on-surface-variant)}
+body.colaboradores-visual .fn .count{padding:4px 12px 8px;line-height:1.5}
+body.colaboradores-visual .fn .paginacao-colaboradores{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:8px 12px 12px}
+body.colaboradores-visual .fn .paginacao-colaboradores[hidden]{display:none}
+body.colaboradores-visual .fn .paginas-colaboradores{display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+body.colaboradores-visual .fn .btn-pagina{min-width:44px;padding:0 10px}
+body.colaboradores-visual .fn .btn-pagina[aria-current="page"]{background:var(--primary-container);color:var(--on-primary-container);border-color:var(--primary)}
+body.colaboradores-visual .fn .paginacao-reticencias{padding:0 4px;color:var(--on-surface-variant)}
+/* Base sólida dos modais; o acabamento compartilhado vem de main.css.
+   Controles de 12px + recuo lateral de 20px = moldura de 32px. */
+body.colaboradores-visual .fn .modal{background:var(--surface-container);border:1px solid var(--outline);border-radius:32px;box-shadow:var(--shadow-lg)}
+body.colaboradores-visual .fn .modal-head,
+body.colaboradores-visual .fn .modal-foot{border-color:var(--outline-variant)}
+body.colaboradores-visual .fn .modal-ico{background:var(--primary-container);color:var(--primary)}
+body.colaboradores-visual .fn .modal-head p{line-height:1.6}
+body.colaboradores-visual .fn .field{gap:8px}
+body.colaboradores-visual .fn .toast{color:var(--on-surface);border:1px solid var(--outline);line-height:1.5}
+body.colaboradores-visual .fn .toast.ok{background:var(--surface-container);border-color:var(--success)}
+body.colaboradores-visual .fn .toast.err{background:var(--surface-container);border-color:var(--error)}
+body.colaboradores-visual .fn .toast.info{background:var(--surface-container);border-color:var(--primary)}
+@supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  @media(forced-colors:none){
+    html:not([data-display]):not([data-a11y]) body.colaboradores-visual .fn .page-head{
+      backdrop-filter:blur(22px) saturate(150%);-webkit-backdrop-filter:blur(22px) saturate(150%);
+    }
+  }
+}
+html[data-display] body.colaboradores-visual .fn .page-head,
+html[data-a11y] body.colaboradores-visual .fn .page-head{border:2px solid var(--outline)}
+html[data-display] body.colaboradores-visual .fn .overlay,
+html[data-a11y] body.colaboradores-visual .fn .overlay{backdrop-filter:none;-webkit-backdrop-filter:none}
+html[data-a11y="lowvision"] body.colaboradores-visual .fn .btn{min-height:48px;height:auto;font-size:16px;white-space:normal}
+html[data-a11y="lowvision"] body.colaboradores-visual .fn select{min-height:52px;font-size:16px;border-width:2px}
+html[data-a11y="lowvision"] body.colaboradores-visual .fn .field label,
+html[data-a11y="lowvision"] body.colaboradores-visual .fn .count,
+html[data-a11y="lowvision"] body.colaboradores-visual .fn .err{font-size:15px}
+@media(max-width:900px){
+  body.colaboradores-visual .fn thead th,body.colaboradores-visual .fn tbody td{padding:10px 8px}
+}
+@media(max-width:720px){
+  body.colaboradores-visual .fn .page-head{padding:20px}
+  body.colaboradores-visual .fn thead th,body.colaboradores-visual .fn tbody td{padding:8px 5px}
+}
+@media(max-width:600px){
+  body.colaboradores-visual .fn .page-head h1{font-size:22px}
+  body.colaboradores-visual .fn .modal{border-radius:28px}
+}
+/* Mesmos nós da tabela e mesmos botões. O espaço útil da lista determina
+   a troca para cards, incluindo janelas divididas e a barra lateral fixa.
+   Moldura de 28px = card interno de 16px + recuo existente de 12px. */
+@container colaboradores (max-width:900px){
+  body.colaboradores-visual .fn .table-wrap{border:0;border-radius:0;background:transparent;overflow:visible}
+  body.colaboradores-visual .fn table{display:block;min-width:0;width:100%}
+  body.colaboradores-visual .fn thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  body.colaboradores-visual .fn #tbody{display:grid;gap:12px}
+  body.colaboradores-visual .fn #tbody>tr{display:block;min-width:0;padding:16px;border:1px solid var(--outline);border-radius:16px;background:var(--surface-container)}
+  body.colaboradores-visual .fn #tbody>tr>td{display:grid;grid-template-columns:80px minmax(0,1fr);align-items:start;gap:12px;min-width:0;padding:6px 0;border:0;font-size:14px;line-height:1.6;overflow-wrap:anywhere}
+  body.colaboradores-visual .fn #tbody>tr>td[data-label]::before{content:attr(data-label);font-size:12px;font-weight:600;line-height:1.85;color:var(--on-surface-variant)}
+  body.colaboradores-visual .fn #tbody>tr>td.name{display:block;padding:0 0 12px;font-size:17px;font-weight:600;line-height:1.45;color:var(--on-surface)}
+  body.colaboradores-visual .fn #tbody>tr>td.name::before{display:none}
+  body.colaboradores-visual .fn #tbody .badge{justify-self:start;max-width:100%}
+  body.colaboradores-visual .fn #tbody>tr>td:has(>.acoes){display:block;margin-top:10px;padding-top:12px;border-top:1px solid var(--outline-variant)}
+  body.colaboradores-visual .fn #tbody>tr>td:has(>.acoes)::before{display:none}
+  body.colaboradores-visual .fn #tbody .acoes{gap:8px;flex-direction:row;flex-wrap:wrap;align-items:stretch}
+  body.colaboradores-visual .fn #tbody .acoes>.btn{flex:1 1 90px;min-width:0;min-height:44px;height:auto;padding:10px 12px;font-size:13px;line-height:1.4;white-space:normal}
+  body.colaboradores-visual .fn #tbody .acoes .material-symbols-outlined{flex:none}
+  body.colaboradores-visual .fn #tbody>tr>td.empty{display:block;padding:24px 8px;text-align:center}
+  html[data-a11y="lowvision"] body.colaboradores-visual .fn #tbody>tr>td[data-label]::before{font-size:15px;line-height:1.6}
+  html[data-a11y="lowvision"] body.colaboradores-visual .fn #tbody>tr>td.name{font-size:18px!important}
+  html[data-a11y="lowvision"] body.colaboradores-visual .fn #tbody .acoes>.btn{min-height:48px;font-size:16px}
+  @supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+    @media(forced-colors:none){
+      html:not([data-display]):not([data-a11y]) body.colaboradores-visual .fn #tbody>tr{
+        background:linear-gradient(135deg,rgba(255,255,255,.20),transparent 62%),var(--reports-glass);
+        border-color:var(--reports-border);box-shadow:var(--reports-depth);
+      }
+      html[data-theme="dark"]:not([data-display]):not([data-a11y]) body.colaboradores-visual .fn #tbody>tr{background:linear-gradient(135deg,rgba(255,255,255,.06),transparent 62%),var(--reports-glass)}
+    }
+  }
+}
+@media(forced-colors:active){
+  body.colaboradores-visual .fn .page-head,
+  body.colaboradores-visual .fn .modal,
+  body.colaboradores-visual .fn .toast{background:Canvas;border-color:CanvasText;box-shadow:none}
+  body.colaboradores-visual .fn .overlay{backdrop-filter:none;-webkit-backdrop-filter:none}
+  body.colaboradores-visual .fn #tbody>tr{background:Canvas!important;border-color:CanvasText;box-shadow:none}
+}

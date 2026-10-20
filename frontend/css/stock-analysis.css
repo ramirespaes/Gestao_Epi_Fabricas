@@ -1,0 +1,83 @@
+/* Análise de estoque: adaptações do visual compartilhado de css/reports.css.
+   Filtros, tabela e legenda preservam os tokens do tema existente. */
+body.stock-analysis-visual #availableItemsView{display:grid;gap:20px;min-width:0}
+body.stock-analysis-visual .page-actions{margin-bottom:0}
+body.stock-analysis-visual .filters-grid .field{min-width:0}
+body.stock-analysis-visual .filters-grid .input,
+body.stock-analysis-visual .filters-grid .select{width:100%;max-width:100%;min-width:0}
+body.stock-analysis-visual .filters-actions{display:flex;flex-wrap:wrap;gap:10px}
+body.stock-analysis-visual .check-inline{min-height:46px;margin-top:20px;font-size:13px;color:var(--on-surface)}
+body.stock-analysis-visual .check-inline input{accent-color:var(--primary);flex:none}
+body.stock-analysis-visual .legenda-posicao{margin:0 0 20px;padding:12px 16px;border-radius:16px;background:var(--surface);border:1px solid var(--outline-variant);color:var(--on-surface-variant);line-height:1.7}
+body.stock-analysis-visual .legenda-posicao summary{color:var(--on-surface);font-weight:600;min-height:24px}
+body.stock-analysis-visual .table-wrap{overflow-x:auto;min-width:0}
+body.stock-analysis-visual #availableItemsView>.card{container:consulta-estoque / inline-size}
+/* As colunas secundárias também ficam disponíveis: a regra antiga da
+   página não deve remover informação ao reduzir a janela. */
+body.stock-analysis-visual .col-sec{display:table-cell}
+body.stock-analysis-visual #paginacaoItens{padding-top:18px!important;gap:12px!important}
+html[data-a11y="lowvision"] body.stock-analysis-visual .check-inline,
+html[data-a11y="lowvision"] body.stock-analysis-visual .legenda-posicao{font-size:16px}
+@media(max-width:560px){
+body.stock-analysis-visual .check-inline{margin-top:0}
+body.stock-analysis-visual .filters-actions button{flex:1}
+}
+
+/* Mesma tabela e mesmos dados em blocos compactos, sem rolagem lateral.
+   O tamanho e os saldos vêm primeiro; classificação e status permanecem
+   disponíveis. Nenhum valor é recalculado ou duplicado. */
+@container consulta-estoque (max-width:900px){
+  body.stock-analysis-visual #availableItemsView .table-wrap{overflow:visible;border:0;border-radius:0;background:transparent}
+  body.stock-analysis-visual #availableItemsView table{display:block;width:100%;min-width:0}
+  body.stock-analysis-visual #availableItemsView thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  body.stock-analysis-visual #itensDisponiveisCorpo{display:grid;gap:12px}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:8px;min-width:0;padding:12px;border:1px solid var(--outline-variant);border-radius:16px;background:var(--reports-glass)}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td{display:block;min-width:0;grid-column:span 4;padding:0;border:0;white-space:normal;overflow-wrap:anywhere;font-size:13px;line-height:1.5}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td::before{font-size:12px;font-weight:500;color:var(--on-surface-variant)}
+  body.stock-analysis-visual #availableItemsView #itensDisponiveisCorpo>tr>td:nth-child(3){order:0;grid-column:1/-1;font-size:15px;font-weight:600}
+  body.stock-analysis-visual #itensDisponiveisCorpo td:nth-child(3)>small{display:block;font-size:12px;font-weight:400}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(4){order:1;grid-column:span 6}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(12){order:2;grid-column:span 6}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(n+5):nth-child(-n+11){padding:8px;border:1px solid var(--outline-variant);border-radius:10px;background:var(--surface-container);font-size:16px;font-weight:600;font-variant-numeric:tabular-nums}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(n+5):nth-child(-n+11)::before{display:block;margin-bottom:2px}
+  body.stock-analysis-visual #itensDisponiveisCorpo td:nth-child(9)>small{display:block;font-size:11px;font-weight:400}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(5){order:3}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(6){order:4}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(7){order:5}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(8){order:6;grid-column:span 3}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(9){order:7;grid-column:span 3}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(10){order:8;grid-column:span 3}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(11){order:9;grid-column:span 3}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(1){order:10}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(2){order:11;grid-column:span 8}
+  body.stock-analysis-visual #availableItemsView #itensDisponiveisCorpo>tr>td:nth-child(13){order:12;grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(1)::before{content:'Categoria: '}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(2)::before{content:'Tipo: '}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(4)::before{content:'Tamanho: '}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(5)::before{content:'Físico utilizável'}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(6)::before{content:'Comprometido'}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(7)::before{content:'Saldo livre'}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(8)::before{content:'Sem cobertura'}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(9)::before{content:'Mínimo'}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(10)::before{content:'Déficit'}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(11)::before{content:'Necessidade'}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(12)::before{content:'Unidade: '}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(13)::before{content:'Status:'}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr:has(>td[colspan]){display:block}
+  body.stock-analysis-visual #availableItemsView #itensDisponiveisCorpo>tr>td[colspan]{padding:20px 4px!important;text-align:center}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td[colspan]::before{display:none}
+  html[data-a11y="lowvision"] body.stock-analysis-visual #availableItemsView #itensDisponiveisCorpo>tr>td{padding:0!important}
+  html[data-a11y="lowvision"] body.stock-analysis-visual #availableItemsView #itensDisponiveisCorpo>tr>td:nth-child(n+5):nth-child(-n+11){padding:8px!important}
+  html[data-a11y="lowvision"] body.stock-analysis-visual #itensDisponiveisCorpo>tr>td::before{font-size:14px}
+  html[data-a11y="lowvision"] body.stock-analysis-visual #itensDisponiveisCorpo td small{font-size:13px}
+}
+@container consulta-estoque (max-width:560px){
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(n+5):nth-child(-n+11){grid-column:span 6}
+  body.stock-analysis-visual #availableItemsView #itensDisponiveisCorpo>tr>td:nth-child(11){grid-column:1/-1;display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(1),
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(2){grid-column:1/-1}
+}
+@media(forced-colors:active){
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr,
+  body.stock-analysis-visual #itensDisponiveisCorpo>tr>td:nth-child(n+5):nth-child(-n+11){background:Canvas;border-color:CanvasText}
+}

@@ -1,0 +1,92 @@
+/* Entregas por solicitação: acabamento compartilhado em reports.css.
+   Lotes, confirmação, assinatura, registro, encerramento e alertas mantêm os scripts originais. */
+body.entregas-solicitacao-visual #stockRequestsView{display:grid;gap:20px;min-width:0}
+body.entregas-solicitacao-visual .page-actions{margin-bottom:0}
+body.entregas-solicitacao-visual .entregas-grid{min-width:0}
+body.entregas-solicitacao-visual .card{padding:12px;min-width:0}
+body.entregas-solicitacao-visual .card-header{padding:12px;margin-bottom:12px}
+body.entregas-solicitacao-visual .card-icon{background:var(--primary-container);color:var(--primary)}
+/* Lista: painel de 28px, recuo de 12px e registros de 16px. */
+body.entregas-solicitacao-visual .lista-linhas,
+body.entregas-solicitacao-visual .itens-detalhe{gap:12px}
+body.entregas-solicitacao-visual .request-item{padding:16px;border-radius:16px;background:var(--surface-container);border-color:var(--outline);min-width:0}
+body.entregas-solicitacao-visual .itens-detalhe .request-item + .request-item{margin-top:0}
+body.entregas-solicitacao-visual .lista-linha:hover:not(:disabled){background:var(--primary-container);border-color:var(--primary)}
+body.entregas-solicitacao-visual .lista-linha[aria-current="true"]{background:var(--primary-container);border-color:var(--primary)}
+body.entregas-solicitacao-visual .request-meta{min-width:0;overflow-wrap:anywhere}
+body.entregas-solicitacao-visual .request-meta strong{font-size:15px;line-height:1.5}
+body.entregas-solicitacao-visual .request-meta span{font-size:13px;line-height:1.65}
+body.entregas-solicitacao-visual .request-status{max-width:100%;line-height:1.5;border:1px solid var(--outline);overflow-wrap:anywhere}
+body.entregas-solicitacao-visual #conteudoProtegido .selo-situacao{--entrega-selo:var(--outline);border:1px solid var(--entrega-selo);white-space:normal;max-width:100%;line-height:1.5;overflow-wrap:anywhere}
+body.entregas-solicitacao-visual #conteudoProtegido .selo-situacao[data-situacao="PRONTA_PARA_ENTREGA"],
+body.entregas-solicitacao-visual #conteudoProtegido .selo-situacao[data-situacao="ENTREGUE"]{--entrega-selo:var(--success)}
+body.entregas-solicitacao-visual #conteudoProtegido .selo-situacao[data-situacao="PARCIALMENTE_COBERTA"],
+body.entregas-solicitacao-visual #conteudoProtegido .selo-situacao[data-situacao="PARCIALMENTE_ENTREGUE"]{--entrega-selo:var(--warning)}
+body.entregas-solicitacao-visual #conteudoProtegido .selo-situacao[data-situacao="AGUARDANDO_ESTOQUE"],
+body.entregas-solicitacao-visual #conteudoProtegido .selo-situacao[data-situacao="SUSPENSA"]{--entrega-selo:var(--error)}
+body.entregas-solicitacao-visual .paginacao{padding:16px 12px 4px;line-height:1.6}
+body.entregas-solicitacao-visual .detalhe-pedido{grid-template-columns:minmax(0,max-content) minmax(0,1fr);padding:12px;gap:8px 16px;line-height:1.7}
+body.entregas-solicitacao-visual .detalhe-pedido dt,
+body.entregas-solicitacao-visual .detalhe-pedido dd{min-width:0;overflow-wrap:anywhere}
+body.entregas-solicitacao-visual #detalheVazio{padding:0 12px 12px}
+body.entregas-solicitacao-visual .acoes-detalhe{padding:16px 12px 4px;gap:12px}
+/* Detalhe de 36px = painel interno de 24px + recuo de 12px.
+   Painéis sólidos de 24px = controles de 12px + padding de 12px. */
+body.entregas-solicitacao-visual #cardDetalhe{border-radius:36px}
+body.entregas-solicitacao-visual .painel{padding:12px;border-radius:24px;border-color:var(--outline);background:var(--surface-container);gap:16px}
+body.entregas-solicitacao-visual .painel h3{line-height:1.5}
+body.entregas-solicitacao-visual .field{min-width:0;gap:8px}
+body.entregas-solicitacao-visual .input{min-width:0;max-width:100%}
+body.entregas-solicitacao-visual .painel .input{background:var(--surface-container-high)}
+body.entregas-solicitacao-visual .input[aria-invalid="true"]{border-color:var(--error);box-shadow:0 0 0 1px var(--error)}
+body.entregas-solicitacao-visual .entrega-item{gap:12px;padding-bottom:16px;margin-bottom:16px}
+body.entregas-solicitacao-visual .entrega-item:last-child{margin-bottom:0}
+body.entregas-solicitacao-visual .entrega-item-titulo{font-size:14px;line-height:1.6;gap:6px}
+body.entregas-solicitacao-visual .entrega-item-titulo span,
+body.entregas-solicitacao-visual .entrega-lote label span{font-size:13px;line-height:1.65}
+body.entregas-solicitacao-visual .entrega-lote label{min-width:0;line-height:1.6;gap:6px}
+body.entregas-solicitacao-visual .dica,
+body.entregas-solicitacao-visual .campo-erro{font-size:13px;line-height:1.7}
+body.entregas-solicitacao-visual .declaracao{border:1px solid var(--outline);line-height:1.7;font-size:13px}
+body.entregas-solicitacao-visual .modos legend{font-size:13px;line-height:1.6}
+body.entregas-solicitacao-visual .opcao-modo{min-height:44px;padding:10px 14px;border-radius:12px;line-height:1.5;background:var(--surface-container-high);border-color:var(--outline)}
+body.entregas-solicitacao-visual .opcao-modo:has(input:checked){background:var(--primary-container);border-color:var(--primary)}
+body.entregas-solicitacao-visual .opcao-modo:hover:not(:has(input:disabled)){box-shadow:0 0 0 1px var(--outline)}
+body.entregas-solicitacao-visual .opcao-modo input,
+body.entregas-solicitacao-visual .area-confirmacao input{flex:none}
+body.entregas-solicitacao-visual .area-confirmacao{line-height:1.7}
+body.entregas-solicitacao-visual .acoes-painel{gap:10px;padding-top:12px;border-top:1px solid var(--outline-variant)}
+/* A janela preserva padding, largura e borda originais para manter a área útil do canvas.
+   Raio 34px = raio 12px do canvas + padding 22px da janela. Não aplica filtros à assinatura. */
+body.entregas-solicitacao-visual .modal-card{border-radius:34px;border-color:var(--outline);background:var(--surface-container)}
+body.entregas-solicitacao-visual .modal-header{gap:16px}
+body.entregas-solicitacao-visual .modal-title{min-width:0}
+body.entregas-solicitacao-visual .modal-title p{line-height:1.65}
+body.entregas-solicitacao-visual .footer-actions{padding-top:16px;border-top:1px solid var(--outline-variant)}
+html[data-display] body.entregas-solicitacao-visual #conteudoProtegido .selo-situacao,
+html[data-a11y] body.entregas-solicitacao-visual #conteudoProtegido .selo-situacao,
+html[data-display] body.entregas-solicitacao-visual .request-status,
+html[data-a11y] body.entregas-solicitacao-visual .request-status{color:var(--on-surface)}
+html[data-a11y="lowvision"] body.entregas-solicitacao-visual .request-meta span,
+html[data-a11y="lowvision"] body.entregas-solicitacao-visual #conteudoProtegido .selo-situacao,
+html[data-a11y="lowvision"] body.entregas-solicitacao-visual .entrega-item-titulo span,
+html[data-a11y="lowvision"] body.entregas-solicitacao-visual .entrega-lote label span,
+html[data-a11y="lowvision"] body.entregas-solicitacao-visual .dica,
+html[data-a11y="lowvision"] body.entregas-solicitacao-visual .campo-erro,
+html[data-a11y="lowvision"] body.entregas-solicitacao-visual .detalhe-pedido,
+html[data-a11y="lowvision"] body.entregas-solicitacao-visual .area-confirmacao,
+html[data-a11y="lowvision"] body.entregas-solicitacao-visual .declaracao{font-size:15px}
+html[data-a11y="lowvision"] body.entregas-solicitacao-visual .opcao-modo{min-height:48px;font-size:16px}
+@media(max-width:720px){
+  body.entregas-solicitacao-visual .card{padding:12px}
+}
+@media(max-width:560px){
+  body.entregas-solicitacao-visual .detalhe-pedido{grid-template-columns:minmax(0,1fr)}
+}
+@media(forced-colors:active){
+  body.entregas-solicitacao-visual .request-item,
+  body.entregas-solicitacao-visual .painel,
+  body.entregas-solicitacao-visual .opcao-modo,
+  body.entregas-solicitacao-visual .declaracao,
+  body.entregas-solicitacao-visual .modal-card{background:Canvas;border-color:CanvasText;box-shadow:none}
+}

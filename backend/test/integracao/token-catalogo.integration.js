@@ -94,11 +94,11 @@ describe('Atendimento Token — E: catálogo de materiais do atendimento (Postgr
       assert.deepEqual(por[legado], ['40', '42']);
     });
 
-    test('K4 — LACUNA CONFIRMADA das fotografias: hoje não existe nenhuma coluna, tabela ou rota de imagem de material (nem upload, nem armazenamento de imagem); o único armazenamento é o local do ZIP da fiscalização', async () => {
+    test('K4 — a ÚNICA estrutura de imagem de material é a da Biblioteca de Imagens (migration 090: três tabelas e as duas colunas de materiais); o catálogo do tablet ainda não a usa', async () => {
       const colunas = await a.q("SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = current_schema() AND (column_name ~* '(imagem|foto|image|url_|arquivo|storage)' OR table_name ~* '(imagem|foto|image)')");
-      assert.deepEqual(colunas.rows, [], 'quando a estrutura de imagens existir (decisão futura), este controle será revisto');
-      const doMaterial = await a.q("SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'materiais'");
-      assert.equal(doMaterial.rows.some((c) => /img|imag|foto/i.test(c.column_name)), false);
+      const tabelasDaBiblioteca = ['imagens_empresa', 'imagens_padrao', 'imagens_padrao_tipos'];
+      const fora = colunas.rows.filter((c) => !tabelasDaBiblioteca.includes(c.table_name)).map((c) => `${c.table_name}.${c.column_name}`).sort();
+      assert.deepEqual(fora, ['materiais.imagem_empresa_id', 'materiais.imagem_padrao_id'], 'nenhuma outra coluna, tabela ou armazenamento de imagem fora da 090');
     });
   });
 

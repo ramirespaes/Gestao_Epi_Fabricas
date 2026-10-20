@@ -25,6 +25,7 @@
 
   var CAMINHO = '/funcionarios';
   var LIMITE_PAGINA = 100; // LIMITES.LIMITE_MAXIMO da API (o padrão dela é 20)
+  var COLABORADORES_POR_PAGINA = 20; // apresentação local; não altera a carga nem a busca na lista completa
   var PAGINA_MAXIMA_API = 10000; // LIMITES.PAGINA_MAXIMA: a API recusa páginas acima disso
   var FUSO = 'America/Sao_Paulo';
   var NASCIMENTO_MINIMO = '1900-01-01';
@@ -405,6 +406,7 @@
     var $ = function (id) { return doc.getElementById(id); };
 
     var lista = [];
+    var paginaAtual = 1;
     var ghes = [];
     var listaFalhou = false;
     var carregandoLista = false;
@@ -498,12 +500,12 @@
       return no('tr', {}, [td]);
     }
     function botaoAcao(rotulo, nomeIcone, aoClicar) {
-      var b = no('button', { class: 'btn btn-outlined btn-sm', type: 'button' }, [no('span', { class: 'material-symbols-outlined', style: 'font-size:16px' }, [nomeIcone]), rotulo]);
+      var b = no('button', { class: 'btn btn-outlined btn-sm', type: 'button', 'data-visual': nomeIcone }, [no('span', { class: 'material-symbols-outlined', style: 'font-size:16px' }, [nomeIcone]), rotulo]);
       b.addEventListener('click', aoClicar);
       return b;
     }
     function linhaDe(f) {
-      var celulaAcao = no('td', {});
+      var celulaAcao = no('td', { 'data-label': 'Ações' });
       var botoes = [];
       if (cap.editar) {
         botoes.push(botaoAcao('Editar', 'edit', function () { abrirFormulario(f); }));
@@ -513,25 +515,68 @@
       }
       if (botoes.length) celulaAcao.appendChild(no('div', { class: 'acoes' }, botoes)); else celulaAcao.textContent = '—';
       return no('tr', {}, [
-        no('td', { class: 'name' }, [f.nome]),
-        no('td', {}, [f.matricula || '—']),
-        no('td', {}, [f.setor || '—']),
-        no('td', {}, [f.funcao || '—']),
-        no('td', {}, rotuloDoGheNaTabela(f.grupoHomogeneo) ? [no('span', { class: 'badge' }, [rotuloDoGheNaTabela(f.grupoHomogeneo)])] : ['—']),
-        no('td', {}, [no('span', { class: 'badge situacao-' + f.situacao }, [ROTULOS_SITUACAO[f.situacao]])]),
+        no('td', { class: 'name', 'data-label': 'Nome' }, [f.nome]),
+        no('td', { 'data-label': 'Matrícula' }, [f.matricula || '—']),
+        no('td', { 'data-label': 'Setor' }, [f.setor || '—']),
+        no('td', { 'data-label': 'Cargo' }, [f.funcao || '—']),
+        no('td', { 'data-label': 'GHE' }, rotuloDoGheNaTabela(f.grupoHomogeneo) ? [no('span', { class: 'badge' }, [rotuloDoGheNaTabela(f.grupoHomogeneo)])] : ['—']),
+        no('td', { 'data-label': 'Situação' }, [no('span', { class: 'badge situacao-' + f.situacao }, [ROTULOS_SITUACAO[f.situacao]])]),
         celulaAcao,
       ]);
+    }
+    function irParaPagina(pagina) {
+      if (encerrada || carregandoLista || listaFalhou) return;
+      paginaAtual = pagina;
+      desenharLista();
+      // O botão numérico é recriado: mantém o foco na página selecionada para uso por teclado.
+      var atual = $('paginasColaboradores').querySelector('[aria-current="page"]');
+      if (atual) atual.focus({ preventScroll: true });
+    }
+    function desenharPaginacao(totalPaginas) {
+      var nav = $('paginacaoColaboradores');
+      var numeros = $('paginasColaboradores');
+      numeros.replaceChildren();
+      nav.hidden = carregandoLista || listaFalhou || totalPaginas <= 1;
+      $('paginaColaboradoresAnterior').disabled = paginaAtual <= 1 || nav.hidden;
+      $('paginaColaboradoresProxima').disabled = paginaAtual >= totalPaginas || nav.hidden;
+      $('paginaColaboradoresResumo').textContent = nav.hidden ? '' : 'Página ' + paginaAtual + ' de ' + totalPaginas;
+      if (nav.hidden) return;
+      // Primeira, última e vizinhas da atual: a navegação não cresce junto com o cadastro.
+      var anterior = 0;
+      for (var p = 1; p <= totalPaginas; p += 1) {
+        if (p !== 1 && p !== totalPaginas && Math.abs(p - paginaAtual) > 2) continue;
+        if (anterior && p - anterior > 1) numeros.appendChild(no('span', { 'aria-hidden': 'true', class: 'paginacao-reticencias' }, ['…']));
+        (function (numero) {
+          var b = no('button', { type: 'button', class: 'btn btn-outlined btn-pagina', 'aria-label': 'Página ' + numero, 'aria-controls': 'tbody' }, [String(numero)]);
+          if (numero === paginaAtual) b.setAttribute('aria-current', 'page');
+          b.addEventListener('click', function () { irParaPagina(numero); });
+          numeros.appendChild(b);
+        })(p);
+        anterior = p;
+      }
+    }
+    function filtrarLista() {
+      paginaAtual = 1;
+      desenharLista();
     }
     function desenharLista() {
       var corpo = $('tbody');
       if (!corpo) return;
       corpo.replaceChildren();
+      desenharPaginacao(0);
       if (carregandoLista) { corpo.appendChild(linhaVazia(TEXTOS.CARREGANDO)); $('count').textContent = ''; return; }
       if (listaFalhou) { corpo.appendChild(linhaVazia(TEXTOS.FALHA_LISTA)); $('count').textContent = ''; return; }
       var linhas = visao.ordenar(visao.filtrar(lista, $('q').value, $('fSituacaoFiltro').value));
+      var totalPaginas = Math.max(1, Math.ceil(linhas.length / COLABORADORES_POR_PAGINA));
+      paginaAtual = Math.min(Math.max(1, paginaAtual), totalPaginas);
+      var inicio = (paginaAtual - 1) * COLABORADORES_POR_PAGINA;
+      var pagina = linhas.slice(inicio, inicio + COLABORADORES_POR_PAGINA);
       if (linhas.length === 0) corpo.appendChild(linhaVazia(TEXTOS.VAZIO));
-      linhas.forEach(function (f) { corpo.appendChild(linhaDe(f)); });
-      $('count').textContent = visao.contagem(linhas.length, lista.length);
+      pagina.forEach(function (f) { corpo.appendChild(linhaDe(f)); });
+      $('count').textContent = totalPaginas > 1
+        ? (inicio + 1) + '–' + (inicio + pagina.length) + ' de ' + linhas.length + ' colaboradores' + (linhas.length !== lista.length ? ' (' + lista.length + ' no cadastro)' : '')
+        : visao.contagem(linhas.length, lista.length);
+      desenharPaginacao(totalPaginas);
     }
     async function recarregar() {
       carregandoLista = true;
@@ -710,8 +755,10 @@
     function ligar() {
       if (ligada) return;
       ligada = true;
-      $('q').addEventListener('input', desenharLista);
-      $('fSituacaoFiltro').addEventListener('change', desenharLista);
+      $('q').addEventListener('input', filtrarLista);
+      $('fSituacaoFiltro').addEventListener('change', filtrarLista);
+      $('paginaColaboradoresAnterior').addEventListener('click', function () { irParaPagina(paginaAtual - 1); });
+      $('paginaColaboradoresProxima').addEventListener('click', function () { irParaPagina(paginaAtual + 1); });
       if ($('btnCpfOlho')) $('btnCpfOlho').addEventListener('click', alternarCpf);
       // Aba oculta ou saída da página: o CPF completo não fica para trás (voltar a ficar visível não o revela de novo).
       doc.addEventListener('visibilitychange', function () { if (doc.hidden === true || doc.visibilityState === 'hidden') ocultarCpf(); });

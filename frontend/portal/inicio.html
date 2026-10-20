@@ -2,12 +2,14 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" sizes="any" href="../favicon.svg">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="referrer" content="no-referrer">
-  <title>Início — SafeWork</title>
+  <title>Gestão de EPI</title>
   <link rel="stylesheet" href="portal.css">
+  <link rel="stylesheet" href="inicio-visual.css">
 </head>
-<body>
+<body class="inicio-visual">
   <header class="topo">
     <div class="identificacao">
       <strong id="empresa-nome">SafeWork — Gestão de EPIs</strong>
@@ -26,7 +28,7 @@
     <div id="mensagem" class="mensagem" role="alert" aria-live="polite"></div>
 
     <div id="conteudo" class="oculto">
-      <section class="bloco">
+      <section class="bloco inicio-contexto">
         <h2>Acesso confirmado</h2>
         <p>Usuário: <strong id="usuario-nome"></strong> (<span id="usuario-email"></span>)</p>
         <p>Perfil nesta empresa: <strong id="usuario-perfil"></strong></p>

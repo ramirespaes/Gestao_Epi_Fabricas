@@ -5,6 +5,7 @@ const {
   idParametro, idCorpo, booleanoQuery, paginacaoQuery, textoCurto, LIMITES,
 } = require('./campos.schema');
 const materialTamanhoRepo = require('../repositories/material-tamanho.repository');
+const { idGrandeCorpo } = require('./identificador-grande.schema');
 
 /**
  * Schemas das rotas de materiais (Bloco 9, Etapa A). Só estrutura e
@@ -91,6 +92,12 @@ const tamanhos = z.array(textoCurto(materialTamanhoRepo.TAMANHO_MAXIMO, 'TAMANHO
     });
   });
 
+// Imagem do material (Biblioteca de Imagens): a imagem pertence ao MATERIAL, por identificador. Ausente = não mexer (em alterar) ou sem imagem
+// (em criar); `null` = remover (em alterar); `{ origem, id }` = associar. O id é BIGINT em texto decimal canônico (ou inteiro seguro), sempre
+// normalizado para texto; chave extra, origem fora do enum e id malformado são 400 apontando body.imagem. Quem decide se a imagem existe, é da
+// empresa e está ativa é o serviço (404 uniforme).
+const imagem = z.strictObject({ origem: z.enum(['PADRAO', 'EMPRESA']), id: idGrandeCorpo });
+
 const paramsComId = z.strictObject({ id: idParametro });
 
 const criar = {
@@ -112,6 +119,7 @@ const criar = {
     unidade: unidade.optional(),
     estoqueMinimo: estoqueMinimo.optional(),
     tamanhos: tamanhos.optional(),
+    imagem: imagem.nullable().optional(),
   }),
 };
 
@@ -150,6 +158,7 @@ const alterar = {
     oculosComGrau: oculosComGrau.optional(),
     estoqueMinimo: estoqueMinimo.optional(),
     tamanhos: tamanhos.optional(),
+    imagem: imagem.nullable().optional(),
   }),
 };
 

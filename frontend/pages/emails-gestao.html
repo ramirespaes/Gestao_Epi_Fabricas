@@ -2,13 +2,16 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" sizes="any" href="../favicon.svg">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gestão de E-mails — Gestão de EPIs</title>
+  <title>Gestão de EPI</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
   <link rel="stylesheet" href="../css/main.css">
+  <link rel="stylesheet" href="../css/reports.css">
+  <link rel="stylesheet" href="../css/integracao-visual.css">
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
-<body>
+<body class="reports-visual integracao-visual">
 
 <div id="loginScreen" style="position:fixed;inset:0;z-index:10000;
        background:var(--surface);display:flex;align-items:center;justify-content:center;
@@ -228,7 +231,7 @@
         </div>
 
         <!-- KPIs -->
-        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px">
+        <div class="integracao-kpis emails-kpis">
           <div class="stat"><span>Enviados hoje</span><strong id="emailKpiHoje" style="color:#007AFF">12</strong></div>
           <div class="stat"><span>Esta semana</span><strong id="emailKpiSemana">87</strong></div>
           <div class="stat"><span>Falhas pendentes</span><strong id="emailKpiFalha" style="color:#FF3B30">2</strong></div>
@@ -247,7 +250,7 @@
               <span class="material-symbols-outlined" style="font-size:16px">filter_list_off</span>Limpar
             </button>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:10px;align-items:end">
+          <div class="emails-filtros">
             <div class="field">
               <label>Tipo de e-mail</label>
               <select class="select" id="emailFilterType" onchange="emailApplyFilters()">
@@ -294,7 +297,7 @@
               <div><h2>Templates ativos</h2><p>E-mails automáticos configurados no sistema.</p></div>
             </div>
           </div>
-          <div id="emailTemplatesGrid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px"></div>
+          <div id="emailTemplatesGrid" class="emails-templates-grid"></div>
         </section>
 
         <!-- HISTÓRICO DE ENVIOS -->

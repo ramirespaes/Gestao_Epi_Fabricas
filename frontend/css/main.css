@@ -25,6 +25,8 @@
       --warning-container:rgba(255,149,0,0.10);
       --success:#34C759;
       --success-container:rgba(52,199,89,0.10);
+      /* Verde de referência da troca de senha, exclusivo do estado ON. */
+      --switch-on:#1F7563;
       --shadow:none;
       --shadow-lg:0 8px 32px rgba(0,0,0,0.10);
       --radius-xs:10px;
@@ -56,6 +58,7 @@
       --warning-container:rgba(255,159,10,0.15);
       --success:#30D158;
       --success-container:rgba(48,209,88,0.15);
+      --switch-on:#26806B;
       --shadow:none;
       --shadow-lg:0 8px 32px rgba(0,0,0,0.36);
     }
@@ -107,6 +110,8 @@
 
     .brand-title{font-family:var(--font-brand);font-size:16px;font-weight:500;letter-spacing:-0.3px}
     .brand-sub{font-size:12px;color:var(--on-surface-variant);margin-top:2px}
+    /* O rótulo de versão não é exibido no cabeçalho do menu. */
+    .sidebar .brand-sub{display:none}
     .sidebar-toggle-btn{width:42px;height:42px;border:none;border-radius:21px;background:var(--surface);border:1px solid var(--outline-variant);color:var(--on-surface);cursor:pointer;display:grid;place-items:center;font-family:'Material Symbols Outlined';font-size:22px;flex-shrink:0}
 
     .nav{display:flex;flex-direction:column;gap:2px;margin-top:8px;padding-bottom:28px}
@@ -229,6 +234,29 @@
     }
     .input:focus,.select:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(0,122,255,0.18)}
     .input[disabled]{background:var(--surface-container-high);color:var(--on-surface-variant);cursor:not-allowed}
+    /* Campos compartilhados: vidro mais fosco, sem o branco chapado.
+       Apenas o fundo ganha prioridade sobre as folhas locais; foco, erros,
+       geometria e estados indisponíveis continuam nos componentes existentes.
+       O desfoque vem da superfície externa, sem um filtro por campo. */
+    @media screen and (forced-colors:none) and (prefers-contrast:no-preference) {
+      html:not([data-display]):not([data-a11y]) {
+        --field-glass:var(--surface-container-high);
+      }
+      @supports (color:color-mix(in srgb,white,transparent)) {
+        html:not([data-display]):not([data-a11y]) {
+          --field-glass:linear-gradient(135deg,rgba(255,255,255,.12),transparent 65%),color-mix(in srgb,var(--primary) 3%,color-mix(in srgb,var(--surface-container-highest) 76%,transparent));
+        }
+        html[data-theme="dark"]:not([data-display]):not([data-a11y]) {
+          --field-glass:linear-gradient(135deg,rgba(255,255,255,.045),transparent 65%),color-mix(in srgb,var(--primary) 3%,color-mix(in srgb,var(--surface-container-high) 76%,transparent));
+        }
+      }
+      html:not([data-display]):not([data-a11y]) :is(input.input,input.in,textarea.input,textarea.in,select.input,select.select,select.in,.fn select):not(:disabled):not([readonly]):not([aria-disabled="true"]):not([aria-busy="true"]):not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]) {
+        background:var(--field-glass)!important;
+      }
+      html:not([data-display]):not([data-a11y]) :is(select.input,select.select,select.in,.fn select) :is(option,optgroup) {
+        background:var(--surface-container);color:var(--on-surface);
+      }
+    }
     .helper{font-size:12px;color:var(--on-surface-variant);line-height:1.4}
 
     .switch-list{display:flex;flex-direction:column;gap:14px}
@@ -250,8 +278,14 @@
       content:'';position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;
       background:#fff;transition:.22s ease;box-shadow:0 3px 6px rgba(0,0,0,0.22),0 1px 2px rgba(0,0,0,0.14);
     }
-    .switch.active{background:#34C759}
+    .switch.active{background:var(--switch-on)}
     .switch.active::after{left:22px}
+    /* Os modos assistivos mantêm suas paletas, inclusive nos trilhos dos
+       checkboxes da Gestão de Usuários. Não altera o token --success. */
+    html:is([data-display],[data-a11y]){--switch-on:var(--success)}
+    @supports (color:color-mix(in srgb,green,black)){
+      html:is([data-display],[data-a11y]){--switch-on:color-mix(in srgb,var(--success) 68%,black)}
+    }
 
     .chips{display:flex;flex-wrap:wrap;gap:10px}
     .choice-chip{
@@ -354,6 +388,39 @@
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.42);display:none;align-items:center;justify-content:center;padding:20px;z-index:1000}
     .modal-overlay.open{display:flex}
     .modal-card{width:min(100%,520px);background:var(--surface-container);border:0.5px solid var(--outline-variant);border-radius:20px;padding:22px;box-shadow:var(--shadow-lg)}
+    /* Superfície compartilhada dos pop-ups. Inclui os componentes locais
+       existentes sem modificar sua geometria, visibilidade ou conteúdo.
+       As prioridades abaixo são somente de acabamento: as folhas de cada
+       tela continuam responsáveis por dimensões, rolagem e controles.
+       Screen evita alterar a impressão da Ficha de EPI. */
+    @media screen and (forced-colors:none) and (prefers-contrast:no-preference) {
+      @supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) and (color:color-mix(in srgb,white,transparent)) {
+        html:not([data-display]):not([data-a11y]) :is(.modal-overlay > .modal-card,.gu .overlay > .modal,.fn .overlay > .modal,.modal-ca > .modal-ca-caixa) {
+          --popup-blur:26px;--popup-saturation:160%;
+          --popup-glass:linear-gradient(135deg,rgba(255,255,255,.34),transparent 58%),color-mix(in srgb,var(--primary) 4%,color-mix(in srgb,var(--surface-container) 68%,transparent));
+          --popup-border:color-mix(in srgb,var(--outline) 35%,rgba(255,255,255,.65));
+          --popup-shadow:0 1px 0 rgba(255,255,255,.9) inset,0 -1px 0 rgba(255,255,255,.18) inset,0 20px 60px rgba(20,40,70,.18);
+          background:var(--popup-glass)!important;
+          border-color:var(--popup-border)!important;
+          box-shadow:var(--popup-shadow)!important;
+          -webkit-backdrop-filter:blur(var(--popup-blur)) saturate(var(--popup-saturation))!important;
+          backdrop-filter:blur(var(--popup-blur)) saturate(var(--popup-saturation))!important;
+        }
+        html[data-theme="dark"]:not([data-display]):not([data-a11y]) :is(.modal-overlay > .modal-card,.gu .overlay > .modal,.fn .overlay > .modal,.modal-ca > .modal-ca-caixa) {
+          --popup-glass:linear-gradient(135deg,rgba(255,255,255,.11),transparent 58%),color-mix(in srgb,var(--primary) 4%,color-mix(in srgb,var(--surface-container) 76%,transparent));
+          --popup-border:color-mix(in srgb,var(--outline) 35%,rgba(255,255,255,.22));
+          --popup-shadow:0 1px 0 rgba(255,255,255,.26) inset,0 -1px 0 rgba(255,255,255,.04) inset,0 20px 60px rgba(0,0,0,.35);
+        }
+        html:not([data-display]):not([data-a11y]) :is(.modal-overlay,.gu .overlay,.fn .overlay,.modal-ca){background:rgba(10,16,20,.28)!important}
+        html[data-theme="dark"]:not([data-display]):not([data-a11y]) :is(.modal-overlay,.gu .overlay,.fn .overlay,.modal-ca){background:rgba(10,16,20,.52)!important}
+      }
+    }
+    @media screen and (prefers-contrast:more) {
+      :is(.modal-overlay > .modal-card,.gu .overlay > .modal,.fn .overlay > .modal,.modal-ca > .modal-ca-caixa){background:var(--surface-container)!important;box-shadow:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+    }
+    @media screen and (forced-colors:active) {
+      :is(.modal-overlay > .modal-card,.gu .overlay > .modal,.fn .overlay > .modal,.modal-ca > .modal-ca-caixa){background:Canvas!important;color:CanvasText!important;border-color:CanvasText!important;box-shadow:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+    }
     .modal-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:18px}
     .modal-title{display:flex;align-items:flex-start;gap:12px}
     .modal-close{width:40px;height:40px;border:none;border-radius:20px;background:var(--surface);color:var(--on-surface);cursor:pointer;font-family:'Material Symbols Outlined';font-size:20px;border:1px solid var(--outline-variant)}
@@ -969,17 +1036,20 @@
     }
     [data-theme="dark"] .chip-empty { color: #FF6961; }
 
-    /* ── TOPBAR MOBILE ── */
+    /* Cabeçalho no fluxo da página: sobe com a rolagem e fica abaixo do
+       drawer aberto. Somente .mobile-global-menu permanece fixo. */
     .mobile-topbar {
       display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
+      position: relative;
       height: 56px;
-      background: white;
-      border-bottom: 0.5px solid var(--outline-variant);
-      z-index: 205;
+      /* Só a identidade e o botão ficam visíveis, sem a faixa retangular.
+         A prioridade neutraliza o vidro e os fundos locais das páginas. */
+      background: transparent !important;
+      border-bottom: 0 !important;
+      box-shadow: none !important;
+      -webkit-backdrop-filter: none !important;
+      backdrop-filter: none !important;
+      z-index: auto;
       align-items: center;
       padding: 0 64px 0 16px;
       gap: 10px;
@@ -987,13 +1057,13 @@
     .mobile-topbar-icon {
       width: 32px;
       height: 32px;
-      background: #007AFF;
+      background: var(--primary);
       border-radius: 9px;
       display: grid;
       place-items: center;
       font-family: 'Material Symbols Outlined';
       font-size: 18px;
-      color: white;
+      color: var(--on-primary);
       flex-shrink: 0;
     }
     .mobile-topbar-title {
@@ -1002,6 +1072,14 @@
       font-weight: 500;
       color: var(--on-surface);
       letter-spacing: -0.2px;
+    }
+
+    /* Marca única: o menu lateral e o cabeçalho usam o mesmo escudo verde
+       do favicon, sem depender dos glifos security / safety_check. */
+    body :is(.brand-badge,.mobile-topbar-icon) {
+      background:transparent url('../favicon.svg') center / contain no-repeat !important;
+      font-size:0 !important;
+      flex-shrink:0;
     }
 
     /* ═══════════════════════════════════════════════════════
@@ -1027,10 +1105,10 @@
       body.mobile-menu-open .mobile-overlay { opacity: 1; pointer-events: auto; z-index: 199; }
       body.mobile-menu-open                 { overflow: hidden; }
 
-      /* Content ocupa tela toda */
+      /* Cabeçalho já ocupa 56px no fluxo; mantém o recuo de 8px do conteúdo. */
       .content {
         margin-left: 0 !important;
-        padding: 64px 20px 24px !important;
+        padding: 8px 20px 24px !important;
         width: 100% !important;
       }
 
@@ -1057,12 +1135,60 @@
       .stack            { gap: 14px; }
     }
 
-    /* TABLET: 721–1024px */
+    /* Navegação compartilhada: deixa as cores da página atravessarem o vidro,
+       tanto na lateral fixa do desktop quanto no menu de telas menores.
+       Só muda a superfície; posição, largura, rolagem e abertura continuam
+       nas regras acima. Modos assistivos e ausência de suporte
+       preservam o fundo sólido. Não adiciona animação nem blur no overlay. */
+    @media screen and (forced-colors:none) and (prefers-contrast:no-preference) {
+      @supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) and (color:color-mix(in srgb,white,transparent)) {
+        html:not([data-display]):not([data-a11y]) :is(.sidebar,.mobile-topbar,.mobile-global-menu) {
+          background:linear-gradient(135deg,rgba(255,255,255,.30),transparent 62%),color-mix(in srgb,var(--surface-container) 48%,transparent);
+          -webkit-backdrop-filter:blur(26px) saturate(160%);
+          backdrop-filter:blur(26px) saturate(160%);
+        }
+        html:not([data-theme="dark"]):not([data-display]):not([data-a11y]) .sidebar {
+          border-right:1px solid color-mix(in srgb,var(--outline) 30%,rgba(255,255,255,.6));
+          box-shadow:-1px 0 0 rgba(255,255,255,.7) inset,12px 0 36px rgba(20,40,70,.12);
+        }
+        html:not([data-theme="dark"]):not([data-display]):not([data-a11y]) .mobile-topbar {
+          border-bottom:1px solid color-mix(in srgb,var(--outline) 30%,rgba(255,255,255,.6));
+          box-shadow:0 1px 0 rgba(255,255,255,.7) inset,0 4px 20px rgba(20,40,70,.06);
+        }
+        html:not([data-theme="dark"]):not([data-display]):not([data-a11y]) .mobile-global-menu {
+          border-color:color-mix(in srgb,var(--outline) 40%,rgba(255,255,255,.6));
+          box-shadow:0 1px 0 rgba(255,255,255,.7) inset,0 2px 8px rgba(20,40,70,.12);
+        }
+        html:not([data-theme="dark"]):not([data-display]):not([data-a11y]) .mobile-overlay {
+          background:rgba(15,23,42,.16);
+        }
+        /* Mesmo desfoque no escuro, com reflexos mais suaves e sem a
+           camada preta pesada que ocultava as cores atrás do painel. */
+        html[data-theme="dark"]:not([data-display]):not([data-a11y]) :is(.sidebar,.mobile-topbar,.mobile-global-menu) {
+          background:linear-gradient(135deg,rgba(255,255,255,.11),transparent 62%),color-mix(in srgb,var(--surface-container) 52%,transparent);
+        }
+        html[data-theme="dark"]:not([data-display]):not([data-a11y]) .sidebar {
+          border-right:1px solid color-mix(in srgb,var(--outline) 60%,rgba(255,255,255,.2));
+          box-shadow:-1px 0 0 rgba(255,255,255,.22) inset,12px 0 36px rgba(0,0,0,.24);
+        }
+        html[data-theme="dark"]:not([data-display]):not([data-a11y]) .mobile-topbar {
+          border-bottom:1px solid color-mix(in srgb,var(--outline) 60%,rgba(255,255,255,.2));
+          box-shadow:0 1px 0 rgba(255,255,255,.18) inset,0 4px 20px rgba(0,0,0,.16);
+        }
+        html[data-theme="dark"]:not([data-display]):not([data-a11y]) .mobile-global-menu {
+          border-color:color-mix(in srgb,var(--outline) 60%,rgba(255,255,255,.2));
+          box-shadow:0 1px 0 rgba(255,255,255,.2) inset,0 2px 8px rgba(0,0,0,.24);
+        }
+        html[data-theme="dark"]:not([data-display]):not([data-a11y]) .mobile-overlay {
+          background:rgba(0,0,0,.22);
+        }
+      }
+    }
     
 
     /* MOBILE: ≤720px */
     @media (max-width: 720px) {
-      .content            { padding: 56px 12px 16px !important; }
+      .content            { padding: 6px 12px 16px !important; }
       .mobile-topbar      { display: flex !important; height: 50px !important; }
       .mobile-global-menu { display: grid !important; top: 6px !important; right: 10px !important; width: 38px !important; height: 38px !important; }
       .kpi-row            { grid-template-columns: 1fr !important; }

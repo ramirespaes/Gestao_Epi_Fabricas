@@ -1,0 +1,39 @@
+/* Operações de estoque: reaproveita css/reports.css e os tokens existentes.
+   Tabela: raio externo 28px = raio interno 16px + recuo 12px. */
+body.stock-operations-visual #operationsView{--vidro-fundo:var(--reports-glass);--vidro-borda:var(--reports-border);--vidro-sombra:var(--reports-depth);--realce:none;display:grid;gap:20px;padding:0;background:none;border-radius:28px;min-width:0}
+body.stock-operations-visual .operacoes-topo{padding:28px;border:1px solid var(--reports-border);border-radius:28px;background:var(--reports-glass);box-shadow:var(--reports-depth);gap:16px;align-items:center}
+body.stock-operations-visual .operacoes-topo h2{font-size:30px;line-height:1.25;font-weight:600}
+body.stock-operations-visual .operacoes-topo p{line-height:1.65}
+body.stock-operations-visual .selo-leitura{border-radius:12px;background:var(--surface);border-color:var(--outline-variant);box-shadow:none;padding:8px 12px;line-height:1.5}
+body.stock-operations-visual .vidro{border-radius:28px;backdrop-filter:none;-webkit-backdrop-filter:none}
+body.stock-operations-visual .filtros{grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));padding:24px;margin:0;gap:16px}
+body.stock-operations-visual .filtros .field,
+body.stock-operations-visual .filtros .input,
+body.stock-operations-visual .filtros .select{min-width:0;max-width:100%;width:100%}
+body.stock-operations-visual .filtros .acoes{grid-column:1/-1;justify-content:flex-end;flex-wrap:wrap;gap:10px}
+body.stock-operations-visual .tabela-operacoes{padding:12px;margin:0;min-width:0}
+body.stock-operations-visual .tabela-operacoes .table-wrap{border-radius:16px;background:var(--surface-container);max-width:100%}
+body.stock-operations-visual .paginacao{padding:16px 4px 4px;gap:12px;flex-wrap:wrap;line-height:1.6}
+@supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+@media(forced-colors:none){
+html:not([data-display]):not([data-a11y]) body.stock-operations-visual .operacoes-topo,
+html:not([data-display]):not([data-a11y]) body.stock-operations-visual .filtros,
+html:not([data-display]):not([data-a11y]) body.stock-operations-visual .tabela-operacoes{backdrop-filter:blur(22px) saturate(150%);-webkit-backdrop-filter:blur(22px) saturate(150%)}
+}
+}
+html[data-display] body.stock-operations-visual .vidro,
+html[data-a11y] body.stock-operations-visual .vidro{background:var(--surface-container);border:2px solid var(--outline);box-shadow:none}
+html[data-a11y] body.stock-operations-visual .operacoes{--tipo-saldo:var(--tertiary);--tipo-saldo-fundo:var(--primary-container);--tipo-entrada:var(--success);--tipo-entrada-fundo:var(--success-container);--tipo-baixa:var(--error);--tipo-baixa-fundo:var(--error-container);--tipo-entrega:var(--primary);--tipo-entrega-fundo:var(--primary-container)}
+html[data-a11y="monochrome"] body.stock-operations-visual .tipo{color:var(--on-surface);background:var(--surface-container-high);border:1px solid var(--outline)}
+@media(max-width:720px){
+body.stock-operations-visual .operacoes-topo,
+body.stock-operations-visual .filtros{padding:20px}
+}
+@media(max-width:560px){
+body.stock-operations-visual .filtros{grid-template-columns:1fr}
+body.stock-operations-visual .filtros .acoes button{flex:1}
+}
+@media(forced-colors:active){
+body.stock-operations-visual .vidro,
+body.stock-operations-visual .operacoes-topo{background:Canvas!important;color:CanvasText!important;border:1px solid CanvasText!important;box-shadow:none}
+}

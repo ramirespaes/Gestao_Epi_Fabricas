@@ -422,7 +422,8 @@ describe('[K4-E] regras de implementação e HTML aprovado intacto', () => {
 
   test('[K4-18] o HTML aprovado, o CSS e o boot do Totem não foram alterados pelo K4 (SHA-256 anteriores ao K4)', () => {
     const sha = (nome) => crypto.createHash('sha256').update(fs.readFileSync(path.join(RAIZ_TOTEM, nome))).digest('hex');
-    assert.equal(sha('index.html'), '517e08e4d9ba17a31a2773b632bdc21b89d54f8bd8e06b9bc5bed3ad4d62b70c');
+    // index.html: Etapa I mais o favicon e o título do refinamento visual de 18/10/2026 (pino atualizado na consolidação de 19/10/2026).
+    assert.equal(sha('index.html'), 'e41495afa9e0e7f5b1d0b104080180821c42a7c909b5f5d7667ca213cf7ee181');
     assert.equal(sha('totem.css'), '9c6b3665fe47ad88543e8f59053b082544816943d5753c41980625f4b379e3ac');
     assert.equal(sha('boot.js'), '583454fe94c2ed73776fd77b4560eb70c59dd708ad582b2a61ff4878104d6899');
   });

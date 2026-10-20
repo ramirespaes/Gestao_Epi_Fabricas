@@ -2,8 +2,9 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" sizes="any" href="../favicon.svg">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gestão de estoque — Gestão de EPIs</title>
+  <title>Gestão de EPI</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
   <link rel="stylesheet" href="../css/main.css">
   <script src="../js/tema.js"></script>
@@ -12,7 +13,149 @@
     .nav a.nav-pendente{cursor:default;opacity:.55}
     .nav a.nav-pendente:hover{background:transparent}
     .nav-etiqueta{margin-left:auto;font-size:10px;font-weight:500;color:var(--on-surface-variant);border:1px solid var(--outline);border-radius:99px;padding:1px 7px;white-space:nowrap}
+
+    /* Imagem do material (5B-2): campo do formulário e seletor da Biblioteca Padrão. Estilos só desta página, presos ao campo e ao pop-up. */
+    #campoImagemMaterial .bi-imagem-linha{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:8px 12px;border:0.5px solid var(--outline);border-radius:10px;background:var(--surface);min-height:60px}
+    #campoImagemMaterial .bi-previa{width:44px;height:44px;flex:none;border-radius:8px;border:0.5px solid var(--outline-variant);background:var(--surface-container);display:grid;place-items:center;overflow:hidden}
+    #campoImagemMaterial .bi-previa img{width:100%;height:100%;object-fit:contain;display:block}
+    #campoImagemMaterial .bi-imagem-info{flex:1 1 160px;min-width:0}
+    #campoImagemMaterial .bi-imagem-estado{font-size:13px;line-height:1.4;color:var(--on-surface);min-width:0}
+    #campoImagemMaterial .bi-nome{font-weight:500;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    #campoImagemMaterial .bi-sub{color:var(--on-surface-variant);font-size:12px;display:block;margin-top:2px}
+    #campoImagemMaterial .bi-imagem-acoes{display:flex;flex-wrap:wrap;gap:8px;align-items:center;flex:none}
+    #campoImagemMaterial .bi-imagem-acoes .outlined-btn{display:inline-flex;align-items:center;gap:6px;cursor:pointer;height:36px}
+    #campoImagemMaterial .bi-imagem-acoes .outlined-btn .material-symbols-outlined{font-size:18px}
+    #campoImagemMaterial .bi-imagem-acoes .outlined-btn:disabled,#campoImagemMaterial .bi-link:disabled{cursor:not-allowed;opacity:.6}
+    #campoImagemMaterial .bi-link{border:none;background:none;padding:0 2px;color:var(--primary);font:500 12px var(--font-plain);text-decoration:underline;cursor:pointer;display:inline-block;margin-top:4px}
+    #campoImagemMaterial .bi-previa-vazia,#campoImagemMaterial .bi-previa-falha,#modalImagemMaterial .bi-previa-falha{position:relative;display:grid;place-items:center;width:100%;height:100%;color:var(--on-surface-variant)}
+    #campoImagemMaterial .bi-previa-vazia .material-symbols-outlined,#campoImagemMaterial .bi-previa-falha .material-symbols-outlined,#modalImagemMaterial .bi-previa-falha .material-symbols-outlined{font-size:22px}
+    #campoImagemMaterial .bi-previa-falha .material-symbols-outlined,#modalImagemMaterial .bi-previa-falha .material-symbols-outlined{color:var(--warning)}
+    #campoImagemMaterial .bi-so-leitor,#modalImagemMaterial .bi-so-leitor{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+    #campoImagemMaterial button:focus-visible,#modalImagemMaterial button:focus-visible,#modalImagemMaterial input:focus-visible,#modalImagemMaterial [role="option"]:focus-visible{outline:3px solid color-mix(in srgb,var(--primary) 55%,transparent);outline-offset:2px}
+    #modalImagemMaterial .bi-modal-titulo h2:focus,#modalImagemMaterial .bi-modal-titulo h2:focus-visible{outline:none}
+    body.bi-sem-rolagem{overflow:hidden}
+    #modalImagemMaterial .bi-modal{width:min(100%,980px);max-height:min(92vh,780px);padding:0;display:flex;flex-direction:column;overflow:hidden}
+    #modalImagemMaterial .bi-modal-topo{padding:20px 22px 12px;margin-bottom:0}
+    #modalImagemMaterial .bi-modal-titulo{min-width:0}
+    #modalImagemMaterial .bi-modal-titulo h2{font:500 18px var(--font-brand);letter-spacing:-.3px}
+    #modalImagemMaterial .bi-modal-titulo p{font-size:13px;color:var(--on-surface-variant);margin-top:4px}
+    #modalImagemMaterial .bi-barra{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:0 22px 6px}
+    #modalImagemMaterial .bi-busca{position:relative;flex:1;min-width:200px}
+    #modalImagemMaterial .bi-busca .material-symbols-outlined{position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:20px;color:var(--on-surface-variant);pointer-events:none}
+    #modalImagemMaterial .bi-busca .input{width:100%;padding-left:40px}
+    #modalImagemMaterial .bi-contagem{font-size:12px;color:var(--on-surface-variant);min-height:20px}
+    #modalImagemMaterial .bi-estado-modal{padding:0 22px;font-size:13px;color:var(--on-surface-variant)}
+    #modalImagemMaterial .bi-corpo{flex:1;min-height:0;overflow:auto;padding:4px 22px 16px}
+    #modalImagemMaterial .bi-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:12px}
+    #modalImagemMaterial .bi-item{position:relative;display:flex;flex-direction:column;gap:8px;padding:8px;border-radius:14px;border:1.5px solid var(--outline-variant);background:var(--surface);cursor:pointer;text-align:left;user-select:none}
+    #modalImagemMaterial .bi-item:hover{border-color:var(--outline)}
+    #modalImagemMaterial .bi-item[aria-selected="true"]{border-color:var(--primary);background:var(--primary-container)}
+    #modalImagemMaterial .bi-item-img{aspect-ratio:1/1;border-radius:10px;overflow:hidden;background:var(--surface-container);display:grid;place-items:center;border:0.5px solid var(--outline-variant)}
+    #modalImagemMaterial .bi-item-img img{width:100%;height:100%;object-fit:contain;display:block}
+    #modalImagemMaterial .bi-item-nome{font-size:13px;font-weight:500;line-height:1.3;word-break:break-word}
+    #modalImagemMaterial .bi-item-marca{position:absolute;top:14px;right:14px;width:26px;height:26px;border-radius:50%;background:var(--primary);color:#fff;display:none;place-items:center}
+    #modalImagemMaterial .bi-item-marca .material-symbols-outlined{font-size:18px}
+    #modalImagemMaterial .bi-item[aria-selected="true"] .bi-item-marca{display:grid}
+    #modalImagemMaterial .bi-rodape{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center;padding:14px 22px;border-top:0.5px solid var(--outline-variant);background:var(--surface-container)}
+    #modalImagemMaterial .bi-selecao-resumo{font-size:13px;color:var(--on-surface-variant);min-width:0;flex:1 1 220px}
+    #modalImagemMaterial .bi-rodape-acoes{display:flex;gap:10px;flex-wrap:wrap}
+    #modalImagemMaterial .bi-rodape-acoes button{cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+    #modalImagemMaterial .bi-rodape-acoes .filled-btn{border:none}
+    #modalImagemMaterial .bi-rodape-acoes button:disabled{background:var(--surface-container-high);color:var(--on-surface-variant);border:0.5px solid var(--outline-variant);cursor:not-allowed;opacity:.8}
+
+    /* Imagens da empresa (5C-8a): abas Todas / Padrão SafeWork / Minha Empresa, "Adicionar imagens" e a vista de envio, no mesmo pop-up. */
+    #modalImagemMaterial .bi-vista{display:flex;flex-direction:column;flex:1;min-height:0}
+    #modalImagemMaterial .bi-vista[hidden]{display:none}
+    #modalImagemMaterial .bi-filtro{display:inline-flex;padding:3px;border-radius:12px;background:var(--surface);border:0.5px solid var(--outline-variant)}
+    #modalImagemMaterial .bi-seg{border:none;background:transparent;color:var(--on-surface-variant);padding:7px 14px;border-radius:9px;font:500 13px var(--font-plain);cursor:pointer}
+    #modalImagemMaterial .bi-seg[aria-pressed="true"]{background:var(--surface-container);color:var(--primary);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+    #modalImagemMaterial .bi-barra .outlined-btn{display:inline-flex;align-items:center;gap:4px;cursor:pointer}
+    #modalImagemMaterial .bi-barra .outlined-btn .material-symbols-outlined{font-size:18px}
+    #modalImagemMaterial .bi-contagem{padding:0 22px 8px}
+    #modalImagemMaterial .bi-aviso-lote{margin:0 22px 8px;padding:8px 12px;border-radius:10px;background:var(--success-container);font-size:12px}
+    #modalImagemMaterial .bi-item-origem{font-size:11px;color:var(--on-surface-variant)}
+    #modalImagemMaterial .bi-oculto-visual{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);border:0;white-space:nowrap}
+    #modalImagemMaterial .bi-soltar{display:flex;flex-direction:column;align-items:center;gap:6px;padding:22px 16px;border:1.5px dashed var(--outline);border-radius:16px;background:var(--surface);text-align:center}
+    #modalImagemMaterial .bi-soltar>.material-symbols-outlined{font-size:40px;color:var(--primary)}
+    #modalImagemMaterial .bi-soltar-titulo{font-weight:600;font-size:15px}
+    #modalImagemMaterial .bi-botao-arquivo{display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:none}
+    #modalImagemMaterial .bi-botao-arquivo .material-symbols-outlined{font-size:18px}
+    #modalImagemMaterial .bi-botao-arquivo:disabled{background:var(--surface-container-high);color:var(--on-surface-variant);cursor:not-allowed;opacity:.8}
+    #modalImagemMaterial .bi-regras-upload{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--on-surface-variant)}
+    #modalImagemMaterial .bi-lote-mensagem{font-size:12px;color:var(--on-surface);min-height:0}
+    #modalImagemMaterial .bi-lote-mensagem:not(:empty){margin:10px 0 0;padding:8px 12px;border-radius:10px;background:var(--warning-container)}
+    #modalImagemMaterial .bi-arquivos{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:10px}
+    #modalImagemMaterial .bi-arquivo{display:grid;grid-template-columns:72px 1fr;gap:12px;align-items:center;padding:10px;border-radius:14px;border:1px solid var(--outline-variant);background:var(--surface)}
+    #modalImagemMaterial .bi-arquivo.recusado{border-color:color-mix(in srgb,var(--error) 40%,transparent);background:var(--error-container)}
+    #modalImagemMaterial .bi-arquivo-mini{width:72px;height:72px;border-radius:10px;overflow:hidden;background:var(--surface-container);display:grid;place-items:center;border:0.5px solid var(--outline-variant)}
+    #modalImagemMaterial .bi-arquivo-mini img{width:100%;height:100%;object-fit:contain}
+    #modalImagemMaterial .bi-arquivo-mini .material-symbols-outlined{color:var(--on-surface-variant)}
+    #modalImagemMaterial .bi-arquivo-dados{display:flex;flex-direction:column;gap:6px;min-width:0}
+    #modalImagemMaterial .bi-arquivo-linha{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:12px;color:var(--on-surface-variant)}
+    #modalImagemMaterial .bi-arquivo-dados .input{height:38px}
+    #modalImagemMaterial .bi-estado{display:inline-flex;align-items:center;gap:4px;font-weight:600;color:var(--on-surface)}
+    #modalImagemMaterial .bi-estado .material-symbols-outlined{font-size:16px}
+    #modalImagemMaterial .bi-estado.ok .material-symbols-outlined{color:var(--success)}
+    #modalImagemMaterial .bi-estado.erro .material-symbols-outlined{color:var(--error)}
+    #modalImagemMaterial .bi-estado.aviso .material-symbols-outlined{color:var(--warning)}
+    #modalImagemMaterial .bi-erro-campo{font-size:12px;color:var(--error)}
+    #modalImagemMaterial .bi-arquivo-remover{border:none;background:transparent;color:var(--primary);cursor:pointer;font:500 12px var(--font-plain);padding:2px 4px}
+    #modalImagemMaterial .bi-arquivo-remover:disabled{color:var(--on-surface-variant);cursor:not-allowed;opacity:.6}
+
+    /* Gerenciar as imagens da empresa (5C-8b): vista própria no mesmo pop-up (renomear, inativar, reativar e excluir), só com materials.editar. */
+    #modalImagemMaterial .bi-gestao-ajuda{margin:0;padding:0 22px 8px;font-size:12px;color:var(--on-surface-variant)}
+    #modalImagemMaterial .bi-gestao-chave{display:inline-flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-right:auto}
+    #modalImagemMaterial .bi-gestao-chave input{width:16px;height:16px;accent-color:var(--primary);cursor:pointer}
+    #modalImagemMaterial .bi-aviso-erro{background:var(--error-container)}
+    #modalImagemMaterial .bi-gestao-lista{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+    #modalImagemMaterial .bi-gestao-item{display:grid;grid-template-columns:64px 1fr;gap:12px;align-items:start;padding:10px;border-radius:14px;border:1px solid var(--outline-variant);background:var(--surface)}
+    #modalImagemMaterial .bi-gestao-item.inativa{border-style:dashed;background:var(--surface-container)}
+    #modalImagemMaterial .bi-gestao-mini{width:64px;height:64px;border-radius:10px;overflow:hidden;background:var(--surface-container);display:grid;place-items:center;border:0.5px solid var(--outline-variant)}
+    #modalImagemMaterial .bi-gestao-mini img{width:100%;height:100%;object-fit:contain;display:block}
+    #modalImagemMaterial .bi-gestao-item.inativa .bi-gestao-mini img{opacity:.55}
+    #modalImagemMaterial .bi-gestao-corpo{display:flex;flex-direction:column;gap:6px;min-width:0}
+    #modalImagemMaterial .bi-gestao-nome{font-size:14px;font-weight:500;line-height:1.3;word-break:break-word}
+    #modalImagemMaterial .bi-gestao-meta{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;font-size:12px;color:var(--on-surface-variant)}
+    #modalImagemMaterial .bi-selo{display:inline-block;padding:1px 8px;border-radius:99px;font-weight:600;font-size:11px;border:0.5px solid var(--outline-variant)}
+    #modalImagemMaterial .bi-selo.ativa{background:var(--success-container);color:var(--success)}
+    #modalImagemMaterial .bi-selo.inativa{background:var(--surface-container-high);color:var(--on-surface-variant)}
+    #modalImagemMaterial .bi-etiqueta{color:var(--warning);font-weight:600}
+    #modalImagemMaterial .bi-gestao-acoes{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+    #modalImagemMaterial .bi-gestao-acoes button{height:32px;padding:0 12px;font-size:12.5px;cursor:pointer}
+    #modalImagemMaterial .bi-gestao-acoes button:disabled{cursor:not-allowed;opacity:.55}
+    #modalImagemMaterial .bi-gestao-acoes .bi-perigo-texto{color:var(--error)}
+    #modalImagemMaterial .bi-gestao-acoes .bi-perigo{background:var(--error);color:#fff;border:none}
+    #modalImagemMaterial .bi-gestao-confirma{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:12px;border:1px solid color-mix(in srgb,var(--error) 40%,transparent);background:var(--error-container);font-size:13px}
+    #modalImagemMaterial .bi-gestao-confirma p{margin:0}
+    #modalImagemMaterial .bi-gestao-confirma-titulo{font-weight:600}
+    #modalImagemMaterial .bi-gestao-dica{font-size:12px;color:var(--warning)}
+    #modalImagemMaterial .bi-rodape-gestao{justify-content:flex-end}
+    @media (max-width:720px){
+      #modalImagemMaterial .bi-modal{width:100% !important;margin:0 !important;max-height:94vh;height:94vh;border-radius:20px 20px 0 0}
+      #modalImagemMaterial .bi-modal-topo{padding:16px 16px 10px}
+      #modalImagemMaterial .bi-barra{padding:0 16px 6px}
+      #modalImagemMaterial .bi-estado-modal{padding:0 16px}
+      #modalImagemMaterial .bi-corpo{padding:4px 16px 12px}
+      #modalImagemMaterial .bi-rodape{padding:12px 16px}
+      #modalImagemMaterial .bi-grade{grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px}
+      #campoImagemMaterial .bi-imagem-info{flex-basis:calc(100% - 60px)}
+      #campoImagemMaterial .bi-imagem-acoes{width:100%}
+      #modalImagemMaterial .bi-rodape-acoes{width:100%}
+      #modalImagemMaterial .bi-rodape-acoes button{flex:1;justify-content:center}
+      #modalImagemMaterial .bi-contagem{padding:0 16px 6px}
+      #modalImagemMaterial .bi-aviso-lote{margin:0 16px 8px}
+      #modalImagemMaterial .bi-filtro{width:100%}
+      #modalImagemMaterial .bi-seg{flex:1;padding:7px 6px}
+      #modalImagemMaterial .bi-arquivo{grid-template-columns:56px 1fr}
+      #modalImagemMaterial .bi-arquivo-mini{width:56px;height:56px}
+      #modalImagemMaterial .bi-gestao-ajuda{padding:0 16px 8px}
+      #modalImagemMaterial .bi-gestao-item{grid-template-columns:48px 1fr}
+      #modalImagemMaterial .bi-gestao-mini{width:48px;height:48px}
+    }
+    @media (prefers-reduced-motion:reduce){#modalImagemMaterial *,#campoImagemMaterial *{transition:none !important;animation:none !important}}
   </style>
+  <link rel="stylesheet" href="../css/reports.css">
+  <link rel="stylesheet" href="../css/stock-management.css">
 </head>
 <!--
   Cadastro de Materiais e EPIs (Bloco 9, Etapa C, Parte C2).
@@ -25,7 +168,7 @@
   lateral mantém a estrutura visual, mas os itens ainda não integrados
   não têm link (etiqueta "Em integração").
 -->
-<body>
+<body class="reports-visual stock-management-visual">
 
 <!-- ══ VERIFICAÇÃO DA SESSÃO ══ (Etapa C, Parte C0) Esta página não tem
      login próprio: usa a sessão empresarial criada pelo Portal do Cliente
@@ -203,6 +346,21 @@
                   <input id="materialGrade" class="input" type="text" placeholder="Ex.: 38, 39, 40, 41" />
                   <div class="helper">Tamanhos válidos deste material, separados por vírgula, na ordem em que devem aparecer. Com grade, a entrada de estoque e o pedido só aceitam esses tamanhos, mesmo sem estoque. Em branco: material sem grade definida (aceita o tamanho como antes).</div>
                 </div>
+                <!-- Imagem do material (5B-3, 5C-8a): escolha na Biblioteca Padrão ou na biblioteca da empresa (js/imagens-material.js; arquivos novos por js/imagens-envio.js); a imagem escolhida é gravada junto com o material, ao salvar -->
+                <div class="field full" id="campoImagemMaterial">
+                  <label for="botaoEscolherImagem">Imagem do material</label>
+                  <div class="bi-imagem-linha">
+                    <div class="bi-previa" id="imagemMaterialPrevia"></div>
+                    <div class="bi-imagem-info">
+                      <div class="bi-imagem-estado" id="imagemMaterialEstado" role="status" aria-live="polite">Nenhuma imagem selecionada</div>
+                      <button id="botaoRemoverImagem" class="bi-link" type="button" hidden style="display:none">Remover seleção</button>
+                    </div>
+                    <div class="bi-imagem-acoes">
+                      <button id="botaoEscolherImagem" class="outlined-btn" type="button" aria-haspopup="dialog"><span class="material-symbols-outlined" aria-hidden="true">add_photo_alternate</span>Escolher imagem</button>
+                    </div>
+                  </div>
+                  <div class="helper">Opcional. Você escolhe a imagem; nada é associado pelo tipo, grupo ou GHE. A imagem escolhida será gravada quando você salvar o material.</div>
+                </div>
                 <div class="field">
                   <label for="materialFabricante">Fabricante</label>
                   <input id="materialFabricante" class="input" type="text" placeholder="Ex.: Bracol / 3M / Danny" />
@@ -301,6 +459,56 @@
                 <button id="botaoSalvar" class="filled-btn" type="button" style="display:none"><span class="material-symbols-outlined">save</span>Salvar material</button>
               </div>
             </section>
+
+            <section class="card" id="cardMinimos">
+              <div class="card-header">
+                <div class="card-title">
+                  <div class="card-icon">tune</div>
+                  <div>
+                    <h2>Estoque mínimo por tamanho</h2>
+                    <p>Mínimo próprio de cada tamanho; sem ele, vale o mínimo padrão do cadastro.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="helper" id="minimosAviso">Escolha um material para ver os mínimos por tamanho.</div>
+              <div class="table-wrap" id="minimosTabela" style="display:none;margin-top:8px">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Tamanho</th>
+                      <th style="text-align:right">Mínimo próprio</th>
+                      <th style="text-align:right">Mínimo efetivo</th>
+                      <th>Origem</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="minimosCorpo"></tbody>
+                </table>
+              </div>
+
+              <!-- Definir ou alterar o mínimo de um tamanho (só com materials.editar; só para material com tamanhos) -->
+              <div id="blocoMinimos" style="display:none;margin-top:16px;padding-top:14px;border-top:0.5px solid rgba(0,0,0,0.08)">
+                <div style="font-size:13px;font-weight:600;margin-bottom:10px">Definir mínimo de um tamanho</div>
+                <div class="form-grid">
+                  <div class="field">
+                    <label for="minimoTamanho">Tamanho *</label>
+                    <input id="minimoTamanho" class="input" type="text" list="minimoTamanhosLista" maxlength="20" autocomplete="off" placeholder="Ex.: 42 ou GG" />
+                    <datalist id="minimoTamanhosLista"></datalist>
+                  </div>
+                  <div class="field">
+                    <label for="minimoValor">Mínimo *</label>
+                    <input id="minimoValor" class="input" type="number" min="0" step="1" placeholder="Ex.: 10" />
+                  </div>
+                </div>
+                <div class="helper">Use 0 para um tamanho sem mínimo. "Remover" na tabela devolve o tamanho ao mínimo padrão.</div>
+                <div class="footer-actions">
+                  <button id="botaoDefinirMinimo" class="filled-btn" type="button" disabled><span class="material-symbols-outlined">save</span>Definir mínimo</button>
+                </div>
+              </div>
+              <div id="minimosStatus" role="status" aria-live="polite" style="margin-top:10px;font-size:12px"></div>
+            </section>
+
           </div>
 
           <div class="stack">
@@ -428,55 +636,6 @@
               </div>
             </section>
 
-            <section class="card" id="cardMinimos">
-              <div class="card-header">
-                <div class="card-title">
-                  <div class="card-icon">tune</div>
-                  <div>
-                    <h2>Estoque mínimo por tamanho</h2>
-                    <p>Mínimo próprio de cada tamanho; sem ele, vale o mínimo padrão do cadastro.</p>
-                  </div>
-                </div>
-              </div>
-
-              <div class="helper" id="minimosAviso">Escolha um material para ver os mínimos por tamanho.</div>
-              <div class="table-wrap" id="minimosTabela" style="display:none;margin-top:8px">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Tamanho</th>
-                      <th style="text-align:right">Mínimo próprio</th>
-                      <th style="text-align:right">Mínimo efetivo</th>
-                      <th>Origem</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody id="minimosCorpo"></tbody>
-                </table>
-              </div>
-
-              <!-- Definir ou alterar o mínimo de um tamanho (só com materials.editar; só para material com tamanhos) -->
-              <div id="blocoMinimos" style="display:none;margin-top:16px;padding-top:14px;border-top:0.5px solid rgba(0,0,0,0.08)">
-                <div style="font-size:13px;font-weight:600;margin-bottom:10px">Definir mínimo de um tamanho</div>
-                <div class="form-grid">
-                  <div class="field">
-                    <label for="minimoTamanho">Tamanho *</label>
-                    <input id="minimoTamanho" class="input" type="text" list="minimoTamanhosLista" maxlength="20" autocomplete="off" placeholder="Ex.: 42 ou GG" />
-                    <datalist id="minimoTamanhosLista"></datalist>
-                  </div>
-                  <div class="field">
-                    <label for="minimoValor">Mínimo *</label>
-                    <input id="minimoValor" class="input" type="number" min="0" step="1" placeholder="Ex.: 10" />
-                  </div>
-                </div>
-                <div class="helper">Use 0 para um tamanho sem mínimo. "Remover" na tabela devolve o tamanho ao mínimo padrão.</div>
-                <div class="footer-actions">
-                  <button id="botaoDefinirMinimo" class="filled-btn" type="button" disabled><span class="material-symbols-outlined">save</span>Definir mínimo</button>
-                </div>
-              </div>
-              <div id="minimosStatus" role="status" aria-live="polite" style="margin-top:10px;font-size:12px"></div>
-            </section>
-
             <!-- Catálogo de tipos de EPI / Vestimenta da empresa (classificação V2): consulta com materials.visualizar,
                  cadastro manual com materials.criar, inativar/reativar com materials.editar. "Outros" não é linha do catálogo. -->
             <section class="card" id="cardCatalogoTipos">
@@ -516,7 +675,7 @@
                   <input id="catalogoBusca" class="input" type="search" maxlength="100" placeholder="Nome do tipo" />
                 </div>
               </div>
-              <div class="helper" id="catalogoStatus" style="margin:6px 0 8px">Carregando o catálogo…</div>
+              <div class="helper" id="catalogoStatus" role="status" aria-live="polite" style="margin:6px 0 8px">Carregando o catálogo…</div>
               <div class="table-wrap">
                 <table>
                   <thead>
@@ -531,6 +690,13 @@
                   <tbody id="catalogoCorpo"></tbody>
                 </table>
               </div>
+              <nav id="paginacaoCatalogo" class="paginacao-catalogo" aria-label="Páginas de tipos de EPI e vestimenta" hidden>
+                <button id="catalogoAnterior" class="outlined-btn" type="button" aria-controls="catalogoCorpo">Anterior</button>
+                <div id="catalogoPaginas" class="catalogo-paginas"></div>
+                <button id="catalogoProxima" class="outlined-btn" type="button" aria-controls="catalogoCorpo">Próxima</button>
+                <button id="catalogoTentarNovamente" class="outlined-btn" type="button" hidden>Tentar novamente</button>
+                <p id="catalogoResumo" class="helper"></p>
+              </nav>
 
               <!-- Novo tipo (só com materials.criar) -->
               <div id="blocoNovoTipo" style="display:none;margin-top:16px;padding-top:14px;border-top:0.5px solid rgba(0,0,0,0.08)">
@@ -575,6 +741,8 @@
 <script src="../js/estoque-minimos.js"></script>
 <script src="../js/catalogo-visual.js"></script>
 <script src="../js/tipos-material.js"></script>
+<script src="../js/imagens-material.js"></script>
+<script src="../js/imagens-envio.js"></script>
 <script>
 /*
   Ligação com o DOM — deliberadamente fina. Toda a lógica (corpo do POST,
@@ -639,6 +807,10 @@
   // a própria origem + /api em produção (portal/config.js).
   EpiHttp.configurar({ baseUrl: window.SAFEWORK_PORTAL_API_BASE_URL });
 
+  // Imagem do material (5B-3, 5C-8a): o campo e o seletor das bibliotecas Padrão e da empresa são de js/imagens-material.js. A escolha só é gravada quando o material é salvo:
+  // `paraEnvio()` diz se o POST/PATCH leva `imagem` (troca ou remoção) ou não; um 401 devolve ao Portal como em qualquer outra consulta.
+  var imagemMaterial = EpiImagensMaterial.montar({ documento: document, aoSessaoEncerrada: function () { EpiSessaoEmpresarial.sessaoEncerrada(); } });
+
   var CAMPOS = ['materialNome', 'materialCategoria', 'materialCategoriaCustom', 'materialGrupoProtecao', 'materialGrupoProtecaoCustom', 'materialTipo', 'materialTipoCustom',
     'materialOculosComGrau', 'materialFabricante', 'materialCodigo', 'materialControleTamanho',
     'materialGrade', 'materialQuantidadeComprada', 'materialTamanhoEntrada', 'materialEntradaCa', 'materialEntradaCaValidade', 'materialUnidade', 'materialEstoqueMinimo',
@@ -689,6 +861,14 @@
     mostrarAviso('', null);
     EpiSessaoEmpresarial.sessaoEncerrada();
     return true;
+  }
+
+  /**
+   * A recusa da imagem (404 IMAGEM_NAO_ENCONTRADA, 400 em body.imagem) tem texto próprio antes do genérico: nunca vira "Material não encontrado".
+   * `imagem` é a que foi enviada no corpo ({ origem, id }, ou nada): a origem decide de qual biblioteca o texto fala.
+   */
+  function erroComImagem(resposta, textoGenerico, imagem) {
+    return EpiImagensMaterial.mensagens.deGravacao(resposta, imagem ? imagem.origem : undefined) || textoGenerico(resposta);
   }
 
   function exigeTamanhoDe(material) {
@@ -984,6 +1164,7 @@
     updatePrazoLabel();
     toggleGrade();
     toggleEntradaInicial();
+    imagemMaterial.reiniciar();
     $('materialNome').focus();
   }
 
@@ -1017,6 +1198,8 @@
       return;
     }
     limparErros();
+    var imagem = imagemMaterial.paraEnvio(); // 5B-3: só a imagem que a pessoa escolheu; sem escolha, o corpo é o de sempre
+    if (imagem) montado.corpo.imagem = imagem;
     var botao = $('botaoSalvar');
     botao.disabled = true;
     try {
@@ -1024,7 +1207,7 @@
       if (!r.ok) {
         if (tratarSessao(r.resposta)) return;
         if (r.confirmado) {
-          mostrarAviso(mensagens.erroCadastro(r.resposta), 'erro');
+          mostrarAviso(erroComImagem(r.resposta, mensagens.erroCadastro, imagem), 'erro');
           return;
         }
         // Rede ou 5xx: o cadastro pode ter acontecido. Formulário preservado,
@@ -1068,6 +1251,7 @@
       toggleEntradaInicial();
     }
     $('materialUnidade').disabled = !liberado || emEdicao;
+    imagemMaterial.habilitar(liberado, { enviar: acessoAtual.podeAlterar, gerenciar: acessoAtual.podeEditar }); // enviar imagem nova = materials.criar; gerenciar as imagens da empresa = materials.editar; escolher segue o formulário
     $('materialUnidadeHelper').style.display = emEdicao ? '' : 'none';
     $('materialRegistrarEntradaHelper').textContent = emEdicao ? TEXTOS_ENTRADA.edicao
       : (liberado && !acessoAtual.podeEntrada ?TEXTOS_ENTRADA.semMovimentar : TEXTOS_ENTRADA.padrao);
@@ -1141,6 +1325,7 @@
     acrescentarOpcao('materialCategoria', preparado.opcoesExtras.categoria);
     acrescentarOpcao('materialUnidade', preparado.opcoesExtras.unidade);
     edicao = { id: material.id, original: material };
+    imagemMaterial.definirGravada(material.imagem); // a imagem que o material já tem no servidor; nada da escolha anterior sobra
     extraTipoEdicao = preparado.opcoesExtras.tipo;
     limparErros();
     var valores = {
@@ -1202,6 +1387,9 @@
       return;
     }
     limparErros();
+    // 5B-3: ausente = a imagem não mudou; null = remover; { origem, id } = trocar. Só a imagem mudando já é uma alteração.
+    var imagem = imagemMaterial.paraEnvio();
+    if (imagem !== undefined) { montado.corpo.imagem = imagem; montado.alterado = true; }
     if (!montado.alterado) { mostrarAviso(mensagens.MSG.EDICAO_SEM_ALTERACAO, 'atencao'); return; }
     cargaEdicao += 1;
     var numero = cargaEdicao;
@@ -1215,7 +1403,7 @@
         if (r.codigo === 'MATERIAL_CODIGO_INTERNO_DUPLICADO') marcarErros([{ campo: 'codigoInterno' }]);
         if (r.codigo === 'MATERIAL_TAMANHO_SALDO_INCOMPATIVEL' || r.codigo === 'MATERIAL_TAMANHO_MINIMOS_INCOMPATIVEIS') marcarErros([{ campo: 'controleTamanho' }]);
         // 4xx: recusa confirmada. Rede ou 5xx: não confirmado; formulário preservado, sem repetição.
-        mostrarAviso(mensagens.erroEdicao(r), mensagens.confirmado(r) ? 'erro' : 'atencao');
+        mostrarAviso(erroComImagem(r, mensagens.erroEdicao, imagem), mensagens.confirmado(r) ? 'erro' : 'atencao');
         return;
       }
       var material = r.dados && r.dados.material ? r.dados.material : alvo.original;
@@ -1588,6 +1776,13 @@
   var Tipos = window.EpiTiposMaterial || null;
   var catalogoSeq = 0;
   var catalogoOcupado = false;
+  var LIMITE_PAGINA_CATALOGO = 5;
+  var paginaCatalogo = 1;
+  var totalCatalogo = 0;
+  var quantidadeCatalogo = 0;
+  var carregandoCatalogo = false;
+  var falhaCatalogo = false;
+  var paginaTentativaCatalogo = 1;
   var CAMPOS_NOVO_TIPO = ['novoTipoGrupo', 'novoTipoProtecao', 'novoTipoNome'];
   var CAMPO_TIPO_POR_ERRO = { grupo: 'novoTipoGrupo', grupoProtecao: 'novoTipoProtecao', nome: 'novoTipoNome' };
 
@@ -1596,33 +1791,103 @@
     $('catalogoMensagem').style.color = erro ? 'var(--error)' : '';
   }
 
-  function filtroDoCatalogo() {
+  function filtroDoCatalogo(pagina) {
     var situacao = $('catalogoSituacao').value;
-    var filtro = { grupo: $('catalogoGrupo').value, grupoProtecao: $('catalogoProtecao').value, busca: $('catalogoBusca').value, pagina: 1, limite: 100 };
+    var filtro = { grupo: $('catalogoGrupo').value, grupoProtecao: $('catalogoProtecao').value, busca: $('catalogoBusca').value, pagina: pagina, limite: LIMITE_PAGINA_CATALOGO };
     if (situacao !== 'todos') filtro.ativo = situacao !== 'inativos';
     return filtro;
   }
 
-  /** Lista do catálogo com os filtros da tela; resposta antiga é descartada. Botões de situação só com materials.editar. */
-  async function carregarCatalogo() {
+  function atualizarPaginacaoCatalogo() {
+    var paginas = Math.max(1, Math.ceil(totalCatalogo / LIMITE_PAGINA_CATALOGO));
+    var bloqueada = carregandoCatalogo || catalogoOcupado || telaEncerrada;
+    $('paginacaoCatalogo').hidden = totalCatalogo === 0 && !falhaCatalogo;
+    $('catalogoAnterior').hidden = falhaCatalogo;
+    $('catalogoProxima').hidden = falhaCatalogo;
+    $('catalogoAnterior').disabled = bloqueada || paginaCatalogo <= 1;
+    $('catalogoProxima').disabled = bloqueada || paginaCatalogo >= paginas;
+    $('catalogoTentarNovamente').hidden = !falhaCatalogo;
+    $('catalogoTentarNovamente').disabled = bloqueada;
+    $('catalogoPaginas').replaceChildren();
+    if (!totalCatalogo || falhaCatalogo) { $('catalogoResumo').textContent = ''; return; }
+    // Primeira, última e vizinhas: o número de botões não cresce com o catálogo.
+    var numeros = [1, paginas];
+    for (var n = Math.max(1, paginaCatalogo - 2); n <= Math.min(paginas, paginaCatalogo + 2); n += 1) numeros.push(n);
+    numeros.sort(function (a, b) { return a - b; });
+    var anterior = 0;
+    numeros.forEach(function (numero) {
+      if (numero === anterior) return;
+      if (anterior && numero - anterior > 1) {
+        var intervalo = document.createElement('span');
+        intervalo.textContent = '…';
+        intervalo.setAttribute('aria-hidden', 'true');
+        $('catalogoPaginas').appendChild(intervalo);
+      }
+      var botao = document.createElement('button');
+      botao.id = 'catalogoPagina' + numero;
+      botao.className = 'outlined-btn';
+      botao.type = 'button';
+      botao.textContent = String(numero);
+      botao.disabled = bloqueada;
+      botao.setAttribute('data-pagina-catalogo', String(numero));
+      botao.setAttribute('aria-controls', 'catalogoCorpo');
+      botao.setAttribute('aria-label', 'Página ' + numero);
+      if (numero === paginaCatalogo) botao.setAttribute('aria-current', 'page');
+      $('catalogoPaginas').appendChild(botao);
+      anterior = numero;
+    });
+    var inicio = (paginaCatalogo - 1) * LIMITE_PAGINA_CATALOGO + 1;
+    $('catalogoResumo').textContent = carregandoCatalogo ? 'Carregando tipos…'
+      : inicio + '–' + (inicio + quantidadeCatalogo - 1) + ' de ' + totalCatalogo + ' tipos · Página ' + paginaCatalogo + ' de ' + paginas;
+  }
+
+  /** Paginação já suportada pela API; filtros e seletor do formulário continuam independentes. */
+  async function carregarCatalogo(paginaDestino) {
     if (!Tipos || telaEncerrada) return;
+    var destino = Number.isInteger(paginaDestino) && paginaDestino > 0 ? paginaDestino : paginaCatalogo;
+    paginaTentativaCatalogo = destino;
     var minha = ++catalogoSeq;
-    var r = await Tipos.acoes.listar(filtroDoCatalogo());
+    carregandoCatalogo = true;
+    falhaCatalogo = false;
+    $('catalogoCorpo').innerHTML = '';
+    $('catalogoCorpo').setAttribute('aria-busy', 'true');
+    $('catalogoStatus').textContent = 'Carregando tipos…';
+    atualizarPaginacaoCatalogo();
+    var r = await Tipos.acoes.listar(filtroDoCatalogo(destino));
     if (telaEncerrada || minha !== catalogoSeq) return;
+    carregandoCatalogo = false;
+    $('catalogoCorpo').removeAttribute('aria-busy');
     if (!r.ok) {
-      if (tratarSessao(r)) return;
-      $('catalogoCorpo').innerHTML = '';
+      if (tratarSessao(r)) { totalCatalogo = 0; atualizarPaginacaoCatalogo(); return; }
+      falhaCatalogo = true;
       $('catalogoStatus').textContent = Tipos.mensagens.erro(r);
+      atualizarPaginacaoCatalogo();
       return;
     }
     var d = r.dados || {};
-    var tipos = Array.isArray(d.tipos) ? d.tipos : [];
+    var tipos = Array.isArray(d.tipos) ? d.tipos.slice(0, LIMITE_PAGINA_CATALOGO) : [];
+    totalCatalogo = Number.isInteger(d.total) && d.total >= 0 ? d.total : tipos.length;
+    var ultima = Math.max(1, Math.ceil(totalCatalogo / LIMITE_PAGINA_CATALOGO));
+    if (destino > ultima) return carregarCatalogo(ultima);
+    paginaCatalogo = destino;
+    quantidadeCatalogo = tipos.length;
     var podeEditarTipos = acessoAtual.podeEditar && !telaEncerrada;
     $('catalogoCorpo').innerHTML = Tipos.render.linhas(tipos, podeEditarTipos);
     $('catalogoStatus').textContent = !tipos.length ? 'Nenhum tipo com estes filtros.'
-      : (typeof d.total === 'number' && d.total > tipos.length
-        ? 'Mostrando ' + tipos.length + ' de ' + d.total + ' tipos: restrinja os filtros para ver os demais.'
-        : tipos.length + (tipos.length === 1 ? ' tipo' : ' tipos'));
+      : 'Mostrando até ' + LIMITE_PAGINA_CATALOGO + ' tipos por página.';
+    atualizarPaginacaoCatalogo();
+  }
+
+  function mudarPaginaCatalogo(destino) {
+    if (telaEncerrada || carregandoCatalogo || catalogoOcupado || falhaCatalogo || !Number.isInteger(destino)
+      || destino < 1 || destino > Math.ceil(totalCatalogo / LIMITE_PAGINA_CATALOGO) || destino === paginaCatalogo) return undefined;
+    return carregarCatalogo(destino).then(function () {
+      if (telaEncerrada || falhaCatalogo || carregandoCatalogo || $('paginacaoCatalogo').hidden) return;
+      var foco = document.activeElement;
+      if (foco && foco !== document.body && !$('paginacaoCatalogo').contains(foco)) return;
+      var atual = $('catalogoPagina' + paginaCatalogo);
+      if (atual) atual.focus({ preventScroll: true });
+    });
   }
 
   /** O seletor de tipo do material acompanha o catálogo (tipo novo, inativado ou reativado), sem perder a escolha atual. */
@@ -1640,6 +1905,7 @@
       return;
     }
     catalogoOcupado = true;
+    atualizarPaginacaoCatalogo();
     $('botaoNovoTipo').disabled = true;
     try {
       var r = await Tipos.acoes.criar(montado.corpo);
@@ -1658,6 +1924,7 @@
     } finally {
       catalogoOcupado = false;
       $('botaoNovoTipo').disabled = !acessoAtual.podeAlterar || telaEncerrada;
+      atualizarPaginacaoCatalogo();
     }
   }
 
@@ -1665,6 +1932,7 @@
   async function alternarTipo(acao, id) {
     if (!Tipos || !acessoAtual.podeEditar || telaEncerrada || catalogoOcupado) return;
     catalogoOcupado = true;
+    atualizarPaginacaoCatalogo();
     try {
       var r = await (acao === 'reativar' ? Tipos.acoes.reativar(id) : Tipos.acoes.inativar(id));
       if (telaEncerrada) return;
@@ -1680,6 +1948,7 @@
       await recarregarTiposDoFormulario();
     } finally {
       catalogoOcupado = false;
+      atualizarPaginacaoCatalogo();
     }
   }
 
@@ -1726,6 +1995,7 @@
     // registro carregado para edição sai da tela.
     telaEncerrada = true;
     if (edicao || carregandoEdicao) sairModoEdicao(); else cargaEdicao += 1;
+    imagemMaterial.encerrar();
     atualizarBotaoEditar();
     materialDoEstoque = null;
     lotesAtuais = [];
@@ -1735,6 +2005,13 @@
     mostrarEstoque(null);
     $('gradeMaterial').innerHTML = '';
     catalogoSeq += 1;
+    totalCatalogo = 0;
+    quantidadeCatalogo = 0;
+    paginaCatalogo = 1;
+    carregandoCatalogo = false;
+    falhaCatalogo = false;
+    $('catalogoCorpo').removeAttribute('aria-busy');
+    atualizarPaginacaoCatalogo();
     $('catalogoCorpo').innerHTML = '';
     $('catalogoStatus').textContent = '';
     catalogoMensagem('', false);
@@ -1785,7 +2062,18 @@
   if (Tipos) {
     $('catalogoProtecao').innerHTML = Tipos.render.opcoes(Tipos.VOCABULARIO.gruposProtecao, 'Todos');
     $('novoTipoProtecao').innerHTML = Tipos.render.opcoes(Tipos.VOCABULARIO.gruposProtecao, 'Selecione');
-    ['catalogoGrupo', 'catalogoProtecao', 'catalogoSituacao', 'catalogoBusca'].forEach(function (id) { $(id).addEventListener('change', carregarCatalogo); });
+    ['catalogoGrupo', 'catalogoProtecao', 'catalogoSituacao', 'catalogoBusca'].forEach(function (id) { $(id).addEventListener('change', function () { return carregarCatalogo(1); }); });
+    $('catalogoAnterior').addEventListener('click', function () { return mudarPaginaCatalogo(paginaCatalogo - 1); });
+    $('catalogoProxima').addEventListener('click', function () { return mudarPaginaCatalogo(paginaCatalogo + 1); });
+    $('catalogoPaginas').addEventListener('click', function (evento) {
+      var alvo = evento.target.closest('[data-pagina-catalogo]');
+      if (!alvo || alvo.disabled) return undefined;
+      return mudarPaginaCatalogo(Number(alvo.getAttribute('data-pagina-catalogo')));
+    });
+    $('catalogoTentarNovamente').addEventListener('click', function () {
+      if (telaEncerrada || carregandoCatalogo || catalogoOcupado) return undefined;
+      return carregarCatalogo(paginaTentativaCatalogo);
+    });
     $('botaoNovoTipo').addEventListener('click', cadastrarTipo);
     $('catalogoCorpo').addEventListener('click', acaoDaLinhaDoCatalogo);
   }

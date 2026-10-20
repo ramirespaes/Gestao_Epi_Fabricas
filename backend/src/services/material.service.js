@@ -8,6 +8,10 @@ const tamanhoRepo = require('../repositories/material-tamanho.repository');
 const auditoriaRepo = require('../repositories/auditoria.repository');
 const tipoMaterialRepo = require('../repositories/tipo-material.repository');
 const classificacao = require('../utils/classificacao-material');
+const imagemEmpresaRepo = require('../repositories/imagem-empresa.repository');
+const imagemPadraoRepo = require('../repositories/imagem-padrao.repository');
+const materialImagemRepo = require('../repositories/material-imagem.repository');
+const { normalizarIdGrande } = require('../utils/identificador-grande');
 
 /**
  * Serviço de cadastro de materiais (Bloco 9, Etapa A).
@@ -85,6 +89,40 @@ function recusarOculos(codigo, mensagem) {
 function recusarClassificacao(campo, codigo, mensagem) {
   return HttpError.validacao([{ campo, codigo, mensagem }]);
 }
+
+// Imagem do material (Biblioteca de Imagens): a imagem pertence ao MATERIAL, por identificador. `imagem` ausente (undefined) não mexe na
+// associação; `null` a remove; `{ origem: 'PADRAO' | 'EMPRESA', id }` associa. O id é BIGINT: texto decimal (ou inteiro seguro) na entrada,
+// texto decimal em todo o resto. Imagem inexistente, de outra empresa ou inativa é sempre o MESMO 404, para não revelar nada.
+const MSG_IMAGEM_INVALIDA = 'Imagem do material inválida';
+const MSG_IMAGEM_NAO_ENCONTRADA = 'Imagem não encontrada';
+const ORIGENS_DE_IMAGEM = Object.freeze(['PADRAO', 'EMPRESA']);
+
+function normalizarImagem(imagem) {
+  if (imagem === undefined || imagem === null) return imagem;
+  const invalida = () => recusarClassificacao('body.imagem', 'IMAGEM_INVALIDA', MSG_IMAGEM_INVALIDA);
+  if (typeof imagem !== 'object' || Array.isArray(imagem)) throw invalida();
+  const chaves = Object.keys(imagem).sort();
+  if (chaves.length !== 2 || chaves[0] !== 'id' || chaves[1] !== 'origem' || !ORIGENS_DE_IMAGEM.includes(imagem.origem)) throw invalida();
+  const id = normalizarIdGrande(imagem.id);
+  if (id === null) throw invalida();
+  return { origem: imagem.origem, id };
+}
+
+const referenciaDaImagem = (i) => (i === null ? null : { origem: i.origem, id: i.id });
+
+/** Trava a imagem com FOR SHARE (depois do material) e exige que exista nesta empresa (ou na biblioteca padrão) e esteja ativa. */
+async function travarImagemParaAssociacao(client, empresaId, { origem, id }) {
+  if (origem === 'EMPRESA') {
+    const i = await imagemEmpresaRepo.buscarPorIdParaAssociacao(client, empresaId, id);
+    if (i === null || i.estado !== 'ATIVA') throw HttpError.notFound('IMAGEM_NAO_ENCONTRADA', MSG_IMAGEM_NAO_ENCONTRADA);
+    return { origem, id: i.id, versao: i.versao, nome: i.nome };
+  }
+  const p = await imagemPadraoRepo.buscarPorIdParaAssociacao(client, id);
+  if (p === null || p.ativo !== true) throw HttpError.notFound('IMAGEM_NAO_ENCONTRADA', MSG_IMAGEM_NAO_ENCONTRADA);
+  return { origem, id: p.id, versao: p.versao, nome: p.nome };
+}
+
+const colunasDaImagem = ({ origem, id }) => (origem === 'EMPRESA' ? { imagemPadraoId: null, imagemEmpresaId: id } : { imagemPadraoId: id, imagemEmpresaId: null });
 
 // Classificação V2 (migration 082): Grupo → Grupo de Proteção → Tipo do catálogo ou "Outros" com descrição, decidida
 // aqui com o campo do problema no 400. Campo que não se aplica ao estado escolhido é recusado: nada escondido chega ao
@@ -384,10 +422,12 @@ async function criar(pool, {
   prazoUsoDias = null, exigeTamanho = null, oculosComGrau, unidade, estoqueMinimo = 0,
   categoria = null, codigoInterno = null, descricao = null, tamanhos = [],
   categoriaDescricao = null, grupoProtecao = null, grupoProtecaoDescricao = null, tipoMaterialId = null,
+  imagem,
   ip = null, dispositivo = null,
 }) {
   exigirId(empresaId, 'identificador de empresa');
   exigirId(atorId, 'identificador de ator');
+  const imagemNormalizada = normalizarImagem(imagem);
 
   const nomeNormalizado = normalizarNome(nome);
   const categoriaNormalizada = normalizarTextoOpcional(categoria, materialRepo.TAMANHO_MAXIMO_CATEGORIA);
@@ -458,6 +498,13 @@ async function criar(pool, {
     }
     material.tamanhos = grade;
 
+    // Imagem: depois de o material existir (material → imagem), na MESMA transação; a associação só vale se o material for salvo.
+    material.imagem = null;
+    if (imagemNormalizada !== undefined && imagemNormalizada !== null) {
+      material.imagem = await travarImagemParaAssociacao(client, empresaId, imagemNormalizada);
+      await materialImagemRepo.definir(client, empresaId, material.id, colunasDaImagem(material.imagem));
+    }
+
     await auditoriaRepo.registrar(client, {
       empresaId,
       usuarioId: atorId,
@@ -466,7 +513,7 @@ async function criar(pool, {
       ip,
       dispositivo,
       contexto: { criadoPor: atorId },
-      dadosNovos: instantaneo(material),
+      dadosNovos: { ...instantaneo(material), ...(imagemNormalizada === undefined ? {} : { imagem: referenciaDaImagem(material.imagem) }) },
     });
 
     return material;
@@ -489,7 +536,11 @@ async function buscar(pool, { empresaId, materialId }) {
   if (material === null) {
     throw HttpError.notFound('MATERIAL_NAO_ENCONTRADO', MSG_MATERIAL_NAO_ENCONTRADO);
   }
-  return { ...material, tamanhos: await tamanhoRepo.listarPorMaterial(pool, empresaId, materialId) };
+  return {
+    ...material,
+    tamanhos: await tamanhoRepo.listarPorMaterial(pool, empresaId, materialId),
+    imagem: await materialImagemRepo.obterPorMaterial(pool, empresaId, materialId),
+  };
 }
 
 /**
@@ -507,7 +558,9 @@ async function listar(pool, {
     materialRepo.contarPorEmpresa(pool, empresaId, { ativo, busca }),
   ]);
 
-  return { materiais, total, pagina, limite };
+  // Uma consulta só para a página inteira (sem N+1), sempre pela empresa.
+  const imagens = await materialImagemRepo.obterPorMateriais(pool, empresaId, materiais.map((m) => m.id));
+  return { materiais: materiais.map((m) => ({ ...m, imagem: imagens.get(m.id) ?? null })), total, pagina, limite };
 }
 
 /**
@@ -535,13 +588,15 @@ async function alterar(pool, {
   grupoProtecao, grupoProtecaoInformado = false,
   grupoProtecaoDescricao, grupoProtecaoDescricaoInformado = false,
   tipoMaterialId, tipoMaterialIdInformado = false,
+  imagem,
   ip = null, dispositivo = null,
 }) {
   exigirId(empresaId, 'identificador de empresa');
   exigirId(atorId, 'identificador de ator');
   exigirId(materialId, 'identificador de material');
+  const imagemNormalizada = normalizarImagem(imagem);
 
-  const grade = tamanhosInformado ? normalizarGrade(tamanhos) : null;
+  const grade =tamanhosInformado ? normalizarGrade(tamanhos) : null;
   const tipoDescricaoNormalizada = tipoDescricaoInformado ? normalizarDescricao(tipoDescricao, materialRepo.TAMANHO_MAXIMO_TIPO_DESCRICAO) : null;
   const categoriaDescricaoNormalizada = categoriaDescricaoInformado ? normalizarDescricao(categoriaDescricao, materialRepo.TAMANHO_MAXIMO_TIPO_DESCRICAO) : null;
   const grupoProtecaoNormalizado = grupoProtecaoInformado ? normalizarTextoOpcional(grupoProtecao, 60) : null;
@@ -569,7 +624,8 @@ async function alterar(pool, {
   const nenhumCampo = !alterarNome && !tipoInformado && !tipoDescricaoInformado && !fabricanteInformado
     && !prazoUsoDiasInformado && exigeTamanho === undefined && estoqueMinimo === undefined
     && !categoriaInformado && !codigoInternoInformado && !descricaoInformado && !oculosComGrauInformado && !tamanhosInformado
-    && !categoriaDescricaoInformado && !grupoProtecaoInformado && !grupoProtecaoDescricaoInformado && !tipoMaterialIdInformado;
+    && !categoriaDescricaoInformado && !grupoProtecaoInformado && !grupoProtecaoDescricaoInformado && !tipoMaterialIdInformado
+    && imagemNormalizada === undefined;
 
   return emTransacao(pool, async (client) => {
     if (nenhumCampo) {
@@ -594,6 +650,8 @@ async function alterar(pool, {
     if (anterior === null) {
       throw HttpError.notFound('MATERIAL_NAO_ENCONTRADO', MSG_MATERIAL_NAO_ENCONTRADO);
     }
+    // Imagem atual (material já travado): serve à resposta, à auditoria e a reconhecer "a mesma imagem".
+    const imagemAtual = await materialImagemRepo.obterPorMaterial(client, empresaId, materialId);
     // A primeira classificação do legado é livre. Depois, só troco se nenhum
     // lote com saldo ficar incompatível; saldo zero é histórico e não impede.
     // A trava do material acima segura entradas novas até o fim desta troca.
@@ -693,6 +751,19 @@ async function alterar(pool, {
     }
     atualizado.tamanhos = grade !== null ? grade : gradeAnterior;
 
+    // Imagem (material já travado acima → imagem com FOR SHARE): ausente = não mexe; null = solta; objeto = associa. Reenviar a imagem que o
+    // material já tem não exige que ela ainda esteja ativa (a associação existente sobrevive à inativação) e não regrava o vínculo.
+    let imagemFinal = imagemAtual;
+    if (imagemNormalizada === null) {
+      if (imagemAtual !== null) await materialImagemRepo.definir(client, empresaId, materialId, { imagemPadraoId: null, imagemEmpresaId: null });
+      imagemFinal = null;
+    } else if (imagemNormalizada !== undefined && !(imagemAtual !== null && imagemAtual.origem === imagemNormalizada.origem && imagemAtual.id === imagemNormalizada.id)) {
+      imagemFinal = await travarImagemParaAssociacao(client, empresaId, imagemNormalizada);
+      await materialImagemRepo.definir(client, empresaId, materialId, colunasDaImagem(imagemFinal));
+    }
+    atualizado.imagem = imagemFinal;
+    const comImagem = imagemNormalizada !== undefined;
+
     await auditoriaRepo.registrar(client, {
       empresaId,
       usuarioId: atorId,
@@ -700,8 +771,8 @@ async function alterar(pool, {
       referencia: String(materialId),
       ip,
       dispositivo,
-      dadosAnteriores: instantaneo({ ...anterior, tamanhos: gradeAnterior }),
-      dadosNovos: instantaneo(atualizado),
+      dadosAnteriores: { ...instantaneo({ ...anterior, tamanhos: gradeAnterior }), ...(comImagem ? { imagem: referenciaDaImagem(imagemAtual) } : {}) },
+      dadosNovos: { ...instantaneo(atualizado), ...(comImagem ? { imagem: referenciaDaImagem(imagemFinal) } : {}) },
     });
 
     return atualizado;

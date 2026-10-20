@@ -31,7 +31,7 @@ describe('harness: árvore, estilo e visibilidade, com a página de aceite do Po
     assert.equal(pg.consulta('h1')[0].textContent, 'Convite de acesso');
     assert.equal(pg.consulta('#formAceite input[type="password"]').length, 2);
     assert.equal(pg.consulta('dl.dados > dt').length, 4);
-    assert.equal(pg.documento.title, 'Aceitar convite — SafeWork');
+    assert.equal(pg.documento.title, 'Gestão de EPI');
 
     assert.equal(pg.visivel('carregando'), true);
     assert.equal(pg.visivel('formAceite'), false, 'o CSS da página esconde o formulário até o script mostrar');
@@ -346,9 +346,9 @@ describe('harness: leitura estática dos arquivos de uma página', () => {
     const scripts = scriptsDe(html);
     assert.deepEqual(scripts.filter((s) => s.src).map((s) => s.src), [URL_TURNSTILE, '../js/api-http.js', '../js/portal-cliente.js', 'config.js', 'login.js']);
     assert.equal(scripts.filter((s) => s.inline !== undefined).length, 1);
-    assert.deepEqual(arquivosLocaisDe('portal/index.html'), ['js/api-http.js', 'js/portal-cliente.js', 'portal/config.js', 'portal/login.js']);
+    assert.deepEqual(arquivosLocaisDe('portal/index.html'), ['js/api-http.js', 'js/portal-cliente.js', 'portal/config.js', 'portal/login.js', 'favicon.svg', 'portal/acesso-visual.css']);
     assert.deepEqual(arquivosLocaisDe('painel-privado/seguranca.html'), [
-      'js/api-http.js', 'vendor/qrcode-generator-2.0.4.js', 'painel-privado/config.js', 'painel-privado/mfa.js', 'painel-privado/sair.js', 'painel-privado/seguranca.js', 'painel-privado/mfa.css',
+      'js/api-http.js', 'vendor/qrcode-generator-2.0.4.js', 'painel-privado/config.js', 'painel-privado/mfa.js', 'painel-privado/sair.js', 'painel-privado/seguranca.js', 'favicon.svg', 'painel-privado/mfa.css',
     ]);
   });
 

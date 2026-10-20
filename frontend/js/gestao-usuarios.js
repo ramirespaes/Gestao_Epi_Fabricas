@@ -369,7 +369,7 @@
       ];
     },
     modalGuia: function (doc) {
-      var corpo = no(doc, 'div', { class: 'mb', style: 'line-height:1.6' }, GUIA.map(function (p, i) {
+      var corpo = no(doc, 'div', { class: 'mb guia-rapido', style: 'line-height:1.6' }, GUIA.map(function (p, i) {
         var estilo = i === 0 ? 'margin-top:0' : (i === GUIA.length - 1 ? 'margin-bottom:0' : null);
         return no(doc, 'p', { style: estilo }, [no(doc, p[0][0], {}, [p[0][1]]), p[1]]);
       }));

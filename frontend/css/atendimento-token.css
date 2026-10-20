@@ -1,0 +1,95 @@
+/* Central de Atendimento Token: apresentação compartilhada em reports.css.
+   Não redefine as abas, a exibição por permissão, o QR nem a interface interna do tablet. */
+body.atendimento-token-visual #atendimentoTokenView{display:grid;gap:20px;min-width:0}
+body.atendimento-token-visual .page-actions{margin-bottom:0}
+body.atendimento-token-visual .report-tabs{margin:0 0 20px;width:auto}
+/* Painel de 28px, recuo de 12px e tabela/blocos de 16px. */
+body.atendimento-token-visual .painel-aba .card{padding:12px;margin-bottom:0}
+body.atendimento-token-visual .card-header{padding:12px;margin-bottom:12px}
+body.atendimento-token-visual .card-icon{background:var(--primary-container);color:var(--primary)}
+body.atendimento-token-visual .painel-aba .grupo-redes{margin-top:20px}
+body.atendimento-token-visual .field{min-width:0}
+body.atendimento-token-visual .input,
+body.atendimento-token-visual .select{width:100%;min-width:0;max-width:100%}
+body.atendimento-token-visual .table-wrap{min-width:0;overflow-x:auto}
+body.atendimento-token-visual .acoes-linha{align-items:center;gap:8px}
+body.atendimento-token-visual .linha-selecao,
+body.atendimento-token-visual .busca-previa,
+body.atendimento-token-visual .form-rede{padding:12px}
+body.atendimento-token-visual .detalhe-lista{line-height:1.7;gap:8px 16px}
+body.atendimento-token-visual .detalhe-lista dt,
+body.atendimento-token-visual .detalhe-lista dd{min-width:0;overflow-wrap:anywhere}
+body.atendimento-token-visual .dica,
+body.atendimento-token-visual .campo-erro{line-height:1.7}
+body.atendimento-token-visual .paginacao{padding:16px 12px 4px;line-height:1.6}
+body.atendimento-token-visual .lista-funcionarios > li,
+body.atendimento-token-visual .lista-materiais li,
+body.atendimento-token-visual .cartao-consulta{padding:16px;border-radius:16px;background:var(--surface-container);border-color:var(--outline)}
+body.atendimento-token-visual .request-meta{gap:6px}
+body.atendimento-token-visual .request-meta span{font-size:13px;line-height:1.65}
+body.atendimento-token-visual .previa-caixa{padding-top:16px}
+body.atendimento-token-visual .aviso-previa{border:1px solid var(--outline);border-radius:16px;line-height:1.7}
+body.atendimento-token-visual .modo-previa{padding:12px;gap:16px}
+/* A moldura da prévia acompanha o iframe: 14px + 12px = 26px.
+   Dimensões, conteúdo e comportamento do iframe não são alterados. */
+body.atendimento-token-visual #totemPreviaQuadro{border-radius:26px;border-color:var(--outline)}
+body.atendimento-token-visual #totemPreviaQuadro iframe{border-radius:14px}
+/* Mesmos cinco indicadores, agora ligados à paleta existente. As variáveis !important
+   de monocromático e alto contraste da página continuam prevalecendo. */
+body.atendimento-token-visual .stat.stat-token{
+  --tom:var(--primary);--tom-texto:var(--on-surface);--tom-fundo:var(--primary-container);--tom-borda:var(--outline);
+  --reports-accent:var(--tom);
+  padding:18px;border-radius:20px;background:var(--tom-fundo);border-color:var(--tom-borda);gap:16px;box-shadow:none;
+}
+body.atendimento-token-visual .stat.stat-token[data-tom="verde"]{--tom:var(--success);--tom-fundo:var(--success-container)}
+body.atendimento-token-visual .stat.stat-token[data-tom="laranja"]{--tom:var(--warning);--tom-fundo:var(--warning-container)}
+body.atendimento-token-visual .stat.stat-token[data-tom="vermelho"]{--tom:var(--error);--tom-fundo:var(--error-container)}
+body.atendimento-token-visual .stat.stat-token[data-tom="roxo"]{--tom:var(--tertiary);--tom-fundo:var(--primary-container)}
+body.atendimento-token-visual .stat-token-topo span{font-size:13px;line-height:1.6}
+body.atendimento-token-visual .stat-token-icone{width:40px;height:40px;border-radius:12px;background:var(--surface-container);color:var(--tom);border:1px solid var(--tom-borda)}
+body.atendimento-token-visual .stat.stat-token strong{color:var(--tom-texto)!important;line-height:1.2;letter-spacing:-.5px}
+/* O vidro fica no painel externo; os indicadores não recebem uma segunda camada de blur. */
+@supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  @media(forced-colors:none){
+    html:not([data-display]):not([data-a11y]) body.atendimento-token-visual .stat.stat-token{
+      background:linear-gradient(135deg,rgba(255,255,255,.12),transparent 70%),var(--tom-fundo);
+      backdrop-filter:none;-webkit-backdrop-filter:none;box-shadow:0 1px 0 rgba(255,255,255,.2) inset;
+    }
+  }
+}
+/* Mantém a hierarquia primária, tonal e perigosa já usada pela Central. */
+body.atendimento-token-visual #conteudoProtegido .outlined-btn,
+body.atendimento-token-visual #conteudoProtegido .filled-btn{height:auto;min-height:44px;padding:10px 16px;border-radius:12px;line-height:1.5;white-space:normal}
+body.atendimento-token-visual #conteudoProtegido .outlined-btn{border-color:var(--outline);color:var(--primary)}
+body.atendimento-token-visual #conteudoProtegido .outlined-btn:hover:not(:disabled):not(.perigo-texto){background:var(--primary-container);border-color:var(--primary);box-shadow:0 0 0 1px var(--primary)}
+body.atendimento-token-visual #conteudoProtegido .outlined-btn:active:not(:disabled):not(.perigo-texto){background:var(--primary-container)}
+body.atendimento-token-visual #conteudoProtegido .outlined-btn.perigo-texto{border-color:var(--error);color:var(--error)}
+body.atendimento-token-visual #conteudoProtegido .outlined-btn.perigo-texto:hover:not(:disabled){background:var(--error-container);border-color:var(--error);box-shadow:0 0 0 1px var(--error)}
+body.atendimento-token-visual #conteudoProtegido button:disabled{box-shadow:none}
+/* Janelas sólidas: campos e confirmações legíveis, inclusive na ativação por QR.
+   Controles de 12px + recuo de 20px = moldura de 32px. */
+body.atendimento-token-visual .modal-card{padding:20px;border-radius:32px;border:1px solid var(--outline);background:var(--surface-container);max-height:calc(100dvh - 40px);overflow-y:auto}
+body.atendimento-token-visual .modal-header{gap:16px;margin-bottom:20px}
+body.atendimento-token-visual .modal-title{min-width:0}
+body.atendimento-token-visual .modal-title p{line-height:1.65}
+body.atendimento-token-visual .footer-actions{padding-top:16px;border-top:1px solid var(--outline-variant)}
+html[data-display] body.atendimento-token-visual .stat-token-icone,
+html[data-a11y] body.atendimento-token-visual .stat-token-icone{color:var(--tom-texto)}
+html[data-a11y="lowvision"] body.atendimento-token-visual .dica,
+html[data-a11y="lowvision"] body.atendimento-token-visual .campo-erro,
+html[data-a11y="lowvision"] body.atendimento-token-visual .detalhe-lista,
+html[data-a11y="lowvision"] body.atendimento-token-visual .request-meta span,
+html[data-a11y="lowvision"] body.atendimento-token-visual .stat-token-topo span{font-size:15px}
+html[data-a11y="lowvision"] body.atendimento-token-visual #conteudoProtegido .outlined-btn{min-height:48px;font-size:16px}
+@media(max-width:720px){
+  body.atendimento-token-visual .painel-aba .card{padding:12px}
+  body.atendimento-token-visual .report-tabs{padding:8px;gap:8px}
+}
+@media(forced-colors:active){
+  body.atendimento-token-visual .stat.stat-token,
+  body.atendimento-token-visual .modal-card,
+  body.atendimento-token-visual .cartao-consulta,
+  body.atendimento-token-visual .lista-funcionarios > li,
+  body.atendimento-token-visual .lista-materiais li{background:Canvas;border:1px solid CanvasText;box-shadow:none}
+  body.atendimento-token-visual .stat.stat-token strong{color:CanvasText!important}
+}

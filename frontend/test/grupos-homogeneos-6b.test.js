@@ -139,6 +139,7 @@ function montarPagina(responder, { acessoDaPagina = ACESSO_TOTAL, confirmar = tr
   const mapa = {};
   const el = (id) => (mapa[id] = mapa[id] || {
     id, value: '', innerHTML: '', textContent: '', disabled: false, hidden: undefined, style: {}, listeners: {},
+    appendChild(no) { no.parentNode = this; return no; },
     addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
     focus() {}, click() { this.cliques = (this.cliques || 0) + 1; },
   });

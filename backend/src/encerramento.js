@@ -7,6 +7,10 @@
  * transporte e só então sai. Sai com 1 se algo ficou para trás ou se o
  * fechamento falhou. O registro leva só o evento e a quantidade, nunca
  * destinatário, conteúdo ou a mensagem do erro.
+ * Se houver processador de imagens ativo (`processos`), os filhos que ainda
+ * estiverem rodando são encerrados por `encerrarTodos()` depois do e-mail e
+ * antes da saída, mesmo que o e-mail tenha falhado; a espera é limitada pelo
+ * próprio processador. Sem `processos` nada muda.
  */
 
 const ETIQUETA_DE_REGISTRO = '[server]';
@@ -16,8 +20,9 @@ const LIMITE_PADRAO_MS = 10_000;
 const registroPadrao = (etiqueta, campos) => { console.log(etiqueta, campos); };
 
 function criarEncerramento({
-  servidor, servico, limiteMs = LIMITE_PADRAO_MS, sair = process.exit, registrar = registroPadrao,
+  servidor, servico, processos = null, limiteMs = LIMITE_PADRAO_MS, sair = process.exit, registrar = registroPadrao,
 }) {
+  if (processos !== null && typeof processos.encerrarTodos !== 'function') throw new TypeError('processos do encerramento inválidos');
   let emAndamento = null;
 
   async function executar(sinal) {
@@ -35,6 +40,14 @@ function criarEncerramento({
     } catch {
       registrar(ETIQUETA_DE_REGISTRO, { evento: 'encerramento_falhou' });
       codigo = 1;
+    }
+    if (processos !== null) {
+      try {
+        await processos.encerrarTodos();
+      } catch {
+        registrar(ETIQUETA_DE_REGISTRO, { evento: 'encerramento_processos_falhou' });
+        codigo = 1;
+      }
     }
     sair(codigo);
   }

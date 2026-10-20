@@ -82,7 +82,7 @@ describe('acoes — URLs, query e corpo exatos', () => {
     await F.acoes.listarFichas({ busca: 'Ana & Cia', numero: 3, funcionarioId: 5, materialId: 7, ativo: false, de: '2026-09-01', ate: '2026-09-30', pagina: 2, limite: 10 });
     assert.deepEqual(chamadas[0], { metodo: 'GET', caminho: '/api/fichas-epi?busca=Ana%20%26%20Cia&numero=3&funcionarioId=5&materialId=7&ativo=false&de=2026-09-01&ate=2026-09-30&pagina=2&limite=10', corpo: undefined });
     await F.acoes.listarFichas({});
-    assert.equal(chamadas[1].caminho, '/api/fichas-epi?pagina=1&limite=20');
+    assert.equal(chamadas[1].caminho, '/api/fichas-epi?pagina=1&limite=15');
     await F.acoes.consultarFichaPorCpf(' 529.982.247-25 ');
     assert.deepEqual(chamadas[2], { metodo: 'POST', caminho: '/api/fichas-epi/consulta-cpf', corpo: { cpf: '52998224725' } });
     await F.acoes.buscarFicha(3);
@@ -131,8 +131,8 @@ describe('permissoes — duas capacidades independentes', () => {
 
 describe('filtros da busca de fichas', () => {
   test('monta o filtro real: busca literal, número, situação, período; período invertido e número inválido recusados; CPF separado', () => {
-    assert.deepEqual(F.filtros.fichas({ busca: ' Ana ', numero: ' 12 ', ativo: 'true', de: '2026-09-01', ate: '2026-09-30' }), { ok: true, filtro: { busca: 'Ana', numero: 12, ativo: true, de: '2026-09-01', ate: '2026-09-30', pagina: 1, limite: 20 } });
-    assert.deepEqual(F.filtros.fichas({}), { ok: true, filtro: { pagina: 1, limite: 20 } });
+    assert.deepEqual(F.filtros.fichas({ busca: ' Ana ', numero: ' 12 ', ativo: 'true', de: '2026-09-01', ate: '2026-09-30' }), { ok: true, filtro: { busca: 'Ana', numero: 12, ativo: true, de: '2026-09-01', ate: '2026-09-30', pagina: 1, limite: 15 } });
+    assert.deepEqual(F.filtros.fichas({}), { ok: true, filtro: { pagina: 1, limite: 15 } });
     assert.equal(F.filtros.fichas({ de: '2026-09-30', ate: '2026-09-01' }).ok, false);
     assert.equal(F.filtros.fichas({ numero: 'abc' }).ok, false);
     assert.equal(F.filtros.fichas({ de: '30/09/2026' }).ok, false);
@@ -498,7 +498,7 @@ describe('fluxo da nova entrega — respostas fora de ordem, duplo clique, 201, 
     assert.deepEqual(pendentes.map((p) => p.chamada.caminho), ['/api/fichas-epi/3', '/api/fichas-epi/4']);
     pendentes[1].responder(200, { status: 'ok', ficha: { id: 4, numero: 2, criadaEm: 'x' }, funcionarioAtual: funcionario({ id: 6 }), resumo: { totalEntregas: 1, totalItens: 1, ultimaEntregaEm: null } });
     await pB;
-    assert.equal(pendentes[2].chamada.caminho, '/api/fichas-epi/4/entregas?pagina=1&limite=20');
+    assert.equal(pendentes[2].chamada.caminho, '/api/fichas-epi/4/entregas?pagina=1&limite=15');
     pendentes[2].responder(200, { status: 'ok', ficha: { id: 4, numero: 2 }, entregas: [entregaPublica({ id: 20, ficha: { id: 4, numero: 2, funcionarioId: 6 } })], total: 1, pagina: 1, limite: 20 });
     await consulta.pendente();
     pendentes[0].responder(200, { status: 'ok', ficha: { id: 3, numero: 1, criadaEm: 'x' }, funcionarioAtual: funcionario(), resumo: { totalEntregas: 0, totalItens: 0, ultimaEntregaEm: null } });
@@ -1290,5 +1290,24 @@ describe('12D-3 — página da entrega direta com a posição (DOM simulado, flu
     await pg.clicar('btnRegistrarEntrega');
     assert.match(pg.el('entregaStatus').textContent, /saldo do lote/i);
     assert.equal(pg.el('btnRegistrarEntrega').disabled, false);
+  });
+});
+
+
+describe('Ficha de EPI — tamanho das páginas', () => {
+  test('consultas padrão pedem 15 registros sem alterar o limite de itens da entrega', async () => {
+    servidor(resposta(200, { status: 'ok' }));
+    assert.equal(F.LIMITES.limitePagina, 15);
+    assert.equal(F.LIMITES.itens, 20);
+    await F.acoes.listarFichas({});
+    await F.acoes.listarEntregasDaFicha(3, {});
+    await F.acoes.localizarTrabalhadores({ busca: 'Ana' });
+    await F.acoes.materiais(5, {});
+    assert.deepEqual(chamadas.map((c) => c.caminho), [
+      '/api/fichas-epi?pagina=1&limite=15',
+      '/api/fichas-epi/3/entregas?pagina=1&limite=15',
+      '/api/entregas-epi/contexto/funcionarios?busca=Ana&pagina=1&limite=15',
+      '/api/entregas-epi/contexto/5/materiais?pagina=1&limite=15',
+    ]);
   });
 });

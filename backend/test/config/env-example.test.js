@@ -70,3 +70,34 @@ describe('.env.example — e-mail e URLs públicas', () => {
     assert.throws(() => carregarConfigHttp({ ...exemplo, NODE_ENV: 'production' }), /URL_PUBLICA|CORS_ORIGIN|PLATAFORMA_HOST/);
   });
 });
+
+describe('.env.example — imagens de produto (Biblioteca de Imagens, Unidade 1)', () => {
+  const AJUSTAVEIS = ['IMAGENS_COTA_IMAGENS', 'IMAGENS_COTA_MIB', 'IMAGENS_ENVIOS_POR_MINUTO_USUARIO', 'IMAGENS_ENVIOS_POR_HORA_EMPRESA', 'IMAGENS_PROCESSAMENTOS_SIMULTANEOS'];
+
+  test('documenta o diretório, vazio (nenhum caminho real), e as cinco variáveis ajustáveis só como exemplo comentado', () => {
+    assert.ok(Object.hasOwn(exemplo, 'IMAGENS_ARMAZENAMENTO_DIRETORIO'));
+    assert.equal(exemplo.IMAGENS_ARMAZENAMENTO_DIRETORIO, '');
+    for (const nome of AJUSTAVEIS) {
+      assert.equal(Object.hasOwn(exemplo, nome), false, `${nome} deve ficar comentada`);
+      assert.match(TEXTO, new RegExp(`^# ${nome}=[0-9]+$`, 'm'), `${nome} não está documentada como exemplo comentado`);
+    }
+  });
+
+  test('não documenta como ajustáveis os limites fixos de arquivo, lado, pixels e derivadas', () => {
+    assert.doesNotMatch(TEXTO, /IMAGENS_(ARQUIVO|LADO|PIXELS|MINIATURA|EXIBICAO|AMPLIAR)/);
+  });
+
+  test('o exemplo, como está, é aceito pela configuração das imagens: recurso indisponível e valores padrão', () => {
+    const { lerConfiguracao, exigirDiretorio } = require('../../src/config/imagens');
+    const configuracao = lerConfiguracao({ ...exemplo });
+    assert.equal(configuracao.diretorio, null);
+    assert.throws(() => exigirDiretorio(configuracao), (falha) => falha.codigo === 'IMAGENS_INDISPONIVEL');
+    assert.equal(configuracao.cotaImagens, 300);
+  });
+
+  test('os exemplos comentados, descomentados, também são aceitos', () => {
+    const { lerConfiguracao } = require('../../src/config/imagens');
+    const descomentado = dotenv.parse(TEXTO.replace(/^# (IMAGENS_[A-Z_]+=[0-9]+)$/gm, '$1'));
+    assert.doesNotThrow(() => lerConfiguracao(descomentado));
+  });
+});

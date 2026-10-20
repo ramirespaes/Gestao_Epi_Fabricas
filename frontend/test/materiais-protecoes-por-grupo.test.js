@@ -143,7 +143,7 @@ function montarPagina(opcoes = {}) {
     const listeners = {};
     return {
       id, value: '', checked: false, textContent: '', innerHTML: '', disabled: false, selectedIndex: 0, style: {}, atributos: {}, listeners,
-      tagName: SELECTS.has(id) ? 'SELECT' : 'INPUT', hidden: false, filhos: [], replaceChildren(...nos) { this.filhos = nos; },
+      tagName: SELECTS.has(id) ? 'SELECT' : 'INPUT', hidden: false, filhos: [], replaceChildren(...nos) { this.filhos = nos; }, appendChild(no) { this.filhos.push(no); return no; },
       addEventListener(ev, fn) { (listeners[ev] = listeners[ev] || []).push(fn); },
       setAttribute(k, v) { this.atributos[k] = v; }, removeAttribute(k) { delete this.atributos[k]; }, focus() {},
       querySelector() { return elemento('form-grid'); }, querySelectorAll() { return []; },
@@ -151,10 +151,11 @@ function montarPagina(opcoes = {}) {
   };
   const el = (id) => (mapa[id] = mapa[id] || elemento(id));
   const noSvg = (ns, tag) => ({ namespaceURI: ns, tagName: tag, atributos: {}, filhos: [], setAttribute(k, v) { this.atributos[k] = String(v); }, appendChild(n) { this.filhos.push(n); return n; } });
+  const noHtml = (tag) => ({ tagName: String(tag).toUpperCase(), id: '', className: '', type: '', textContent: '', disabled: false, atributos: {}, setAttribute(k, v) { this.atributos[k] = String(v); } });
   const sandbox = {
-    document: { getElementById: el, querySelectorAll: () => [], createElementNS: noSvg },
+    document: { getElementById: el, querySelectorAll: () => [], createElementNS: noSvg, createElement: noHtml },
     window: { SAFEWORK_PORTAL_API_BASE_URL: BASE, EpiTiposMaterial: require('../js/tipos-material') }, // eslint-disable-line global-require
-    EpiHttp, EpiMateriais, EpiEstoqueMinimos: require('../js/estoque-minimos'), EpiCatalogoVisual: require('../js/catalogo-visual'), // eslint-disable-line global-require
+    EpiHttp, EpiMateriais, EpiEstoqueMinimos: require('../js/estoque-minimos'), EpiCatalogoVisual: require('../js/catalogo-visual'), EpiImagensMaterial: { montar: () => ({ habilitar() {}, reiniciar() {}, definirGravada() {}, paraEnvio() {}, encerrar() {} }), mensagens: { deGravacao: () => null } }, // eslint-disable-line global-require
     EpiTiposMaterial: require('../js/tipos-material'), // eslint-disable-line global-require
     EpiPermissoes: { prepararPagina: async () => ({ permissoes: PERMISSOES, podeAlterar: true }), acao: P.acao, recurso: P.recurso, somenteLeitura() {} },
     EpiSessaoEmpresarial: { montar: async () => CONTEXTO, sessaoEncerrada() {} },

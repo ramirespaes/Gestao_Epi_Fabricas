@@ -177,7 +177,7 @@ describe('C3 — Itens Disponíveis pela página integrada (PostgreSQL real)', (
     assert.equal(pagina.podeAbrir, true);
     const r = await EpiItens.acoes.listar({});
     assert.equal(r.ok, true, JSON.stringify(r));
-    assert.deepEqual([r.dados.itens.length, r.dados.total, r.dados.pagina, r.dados.limite], [50, 121, 1, 50]);
+    assert.deepEqual([r.dados.itens.length, r.dados.total, r.dados.pagina, r.dados.limite], [15, 121, 1, 15]);
     assert.deepEqual(r.dados.filtros, { categorias: ['EPI'], tipos: ['Capacete', 'Luva'], tamanhos: ['G', 'M', 'Único'] });
     const html = EpiItens.render.linhas(r.dados.itens);
     assert.match(html, /Sem estoque/);

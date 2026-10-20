@@ -2,8 +2,9 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" sizes="any" href="../favicon.svg">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dashboard — Gestão de EPIs</title>
+  <title>Gestão de EPI</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
   <link rel="stylesheet" href="../css/main.css">
   <script src="../js/tema.js"></script>
@@ -30,6 +31,7 @@
     .conta-menu button:hover,.conta-menu button:focus-visible{background:var(--surface-container)}
     @media (max-width: 900px){.conta-usuario{position:static;align-items:flex-start;margin-bottom:12px}.conta-botao{align-items:flex-start;text-align:left}}
   </style>
+  <link rel="stylesheet" href="../css/dashboard.css">
 </head>
 <!--
   Dashboard (Bloco 9, Etapa C, Parte C6).
@@ -43,7 +45,7 @@
   componentes ficam "—" / "em integração".
   Sem js/db-api.js, sem js/main.js, sem números fixos nem dados de exemplo.
 -->
-<body>
+<body class="dashboard-visual">
 
 <!-- ══ VERIFICAÇÃO DA SESSÃO ══ (Etapa C, Parte C0) Esta página não tem
      login próprio: usa a sessão empresarial criada pelo Portal do Cliente
@@ -70,6 +72,7 @@
 <div class="mobile-topbar">
     <div class="mobile-topbar-icon">safety_check</div>
     <span class="mobile-topbar-title">Gestão de EPIs</span>
+    <div id="contaUsuarioTopo" class="dashboard-account-slot"></div>
   </div>
   <button class="mobile-global-menu" type="button" onclick="toggleSidebar()" aria-label="Abrir menu">
     <svg width="20" height="14" viewBox="0 0 20 14" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -143,46 +146,15 @@
             </div>
           </div><!-- fim do bloco de conta -->
           <div style="display:flex;flex-direction:column;gap:6px;max-width:720px">
-            <span style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.72)">Dashboard principal</span>
-            <h2 id="dashboardWelcomeTitle">Bem-vindo ao Gestão de EPIs</h2>
+            <span class="dashboard-eyebrow">SafeWork · Gestão de EPIs</span>
+            <h2 id="dashboardWelcomeTitle">Dashboard principal</h2>
             <p id="dashboardWelcomeUser" style="font-size:16px;font-weight:600;color:#fff;margin-top:0"></p>
+            <p class="dashboard-date"><span class="material-symbols-outlined" aria-hidden="true">calendar_today</span><span id="dashboardCurrentDate"></span></p>
             <p>Controle a entrega de EPIs, acompanhe vencimentos, monitore estoque e visualize rapidamente o que exige ação no sistema.</p>
-          </div>
-          <div class="dashboard-hero-chips">
-            <button class="dashboard-hero-chip" type="button" disabled title="Em integração" style="border:none;color:var(--primary);opacity:.55">
-              <span class="material-symbols-outlined">inventory</span>EPIs entregues
-            </button>
-            <a class="dashboard-hero-chip" href="employee-history.html" style="border:none;color:var(--primary);text-decoration:none">
-              <span class="material-symbols-outlined">person_search</span>Histórico por funcionário
-            </a>
-            <button class="dashboard-hero-chip" type="button" disabled title="Em integração" style="border:none;color:var(--primary);opacity:.55">
-              <span class="material-symbols-outlined">alarm</span>Alertas de vencimento
-            </button>
           </div>
         </section>
 
         <div id="aviso" role="status" aria-live="polite" style="display:none;margin:18px 0"></div>
-
-        <section class="dashboard-filter-card">
-          <div class="dashboard-filters">
-            <div class="field" style="min-width:180px">
-              <label for="dashSetor">Setor (em integração)</label>
-              <select id="dashSetor" class="select" disabled>
-                <option>Todos</option>
-              </select>
-            </div>
-            <div class="field" style="min-width:220px">
-              <label for="dashStatus">Status (em integração)</label>
-              <select id="dashStatus" class="select" disabled>
-                <option>Todos</option>
-              </select>
-            </div>
-            <div class="dashboard-search">
-              <span class="material-symbols-outlined">search</span>
-              <input type="text" placeholder="Buscar funcionário (em integração)" disabled />
-            </div>
-          </div>
-        </section>
 
         <section class="kpi-row">
           <article class="kpi-card primary">
@@ -292,6 +264,49 @@
             </div>
             <div class="kpi-value" id="kpiFuncionariosValor">—</div>
             <div class="kpi-meta" id="kpiFuncionariosMeta">Funcionários ativos cadastrados</div>
+          </article>
+          <!-- Preparação visual: os cinco indicadores abaixo ainda não têm
+               ligação com a API. Os valores não são calculados nesta página. -->
+          <article class="kpi-card primary">
+            <div class="kpi-head">
+              <div class="kpi-title">Solicitações aguardando entrega</div>
+              <div class="kpi-icon" aria-hidden="true">pending_actions</div>
+            </div>
+            <div class="kpi-value" id="kpiAguardandoEntregaValor">—</div>
+            <div class="kpi-meta" id="kpiAguardandoEntregaMeta">em integração</div>
+          </article>
+          <article class="kpi-card success">
+            <div class="kpi-head">
+              <div class="kpi-title">Alertas enviados hoje</div>
+              <div class="kpi-icon" aria-hidden="true">notifications_active</div>
+            </div>
+            <div class="kpi-value" id="kpiAlertasHojeValor">—</div>
+            <div class="kpi-meta" id="kpiAlertasHojeMeta">em integração</div>
+          </article>
+          <article class="kpi-card danger">
+            <div class="kpi-head">
+              <div class="kpi-title">EPIs vencidos em uso</div>
+              <div class="kpi-icon" aria-hidden="true">event_busy</div>
+            </div>
+            <div class="kpi-value" id="kpiEpisVencidosUsoValor">—</div>
+            <div class="kpi-meta" id="kpiEpisVencidosUsoMeta">em integração</div>
+          </article>
+          <article class="kpi-card warning">
+            <div class="kpi-head">
+              <div class="kpi-title">Funcionários com EPI pendente</div>
+              <div class="kpi-icon" aria-hidden="true">assignment_late</div>
+            </div>
+            <div class="kpi-value" id="kpiFuncionariosEpiPendenteValor">—</div>
+            <div class="kpi-meta" id="kpiFuncionariosEpiPendenteMeta">em integração</div>
+          </article>
+          <article class="kpi-card primary">
+            <div class="kpi-head">
+              <div class="kpi-title">Atendimento Token online/offline</div>
+              <div class="kpi-icon" aria-hidden="true">devices</div>
+            </div>
+            <div class="kpi-value" id="kpiTokenOnlineValor">—</div>
+            <div class="kpi-meta">Online · Offline: <span id="kpiTokenOfflineValor">—</span></div>
+            <div class="kpi-meta" id="kpiTokenDispositivosMeta">em integração</div>
           </article>
         </section>
 
@@ -471,6 +486,30 @@
     ligarAtalhosValidade(!!(indicadores && indicadores.caVencido && indicadores.caVencido.permitido === true));
   }
 
+  // Só reposiciona o mesmo bloco visual; IDs, dados da sessão e ouvintes continuam intactos.
+  function posicionarContaNoCabecalho() {
+    if (typeof window.matchMedia !== 'function') return;
+    var conta = $('contaUsuario');
+    var topo = $('contaUsuarioTopo');
+    if (!conta || !topo) return;
+    var origem = conta.parentNode;
+    var seguinte = conta.nextSibling;
+    var consulta = window.matchMedia('(max-width: 1024px)');
+    function ajustar() {
+      var destino = consulta.matches ? topo : origem;
+      if (conta.parentNode === destino) return;
+      var foco = document.activeElement;
+      var preservarFoco = foco && conta.contains(foco);
+      if (consulta.matches) topo.appendChild(conta);
+      else origem.insertBefore(conta, seguinte);
+      if (preservarFoco) foco.focus({ preventScroll: true });
+    }
+    ajustar();
+    if (typeof consulta.addEventListener === 'function') consulta.addEventListener('change', ajustar);
+    else if (typeof consulta.addListener === 'function') consulta.addListener(ajustar);
+  }
+  posicionarContaNoCabecalho();
+
   // Bloco de conta: nome e empresa abrem e fecham o menu com Trocar de empresa e Sair.
   function menuEmpresa(aberto) {
     $('menuEmpresa').style.display = aberto ? '' : 'none';
@@ -513,6 +552,9 @@
   }).then(function (contexto) {
     if (!contexto) return undefined;
     $('dashboardWelcomeUser').textContent = contexto.usuario && contexto.usuario.nome ? 'Olá, ' + contexto.usuario.nome + '.' : '';
+    $('dashboardCurrentDate').textContent = new Intl.DateTimeFormat('pt-BR', {
+      weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Sao_Paulo',
+    }).format(new Date());
     return EpiPermissoes.prepararPagina({
       pagina: 'dashboard',
       contexto: contexto,

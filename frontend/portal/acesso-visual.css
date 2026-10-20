@@ -1,0 +1,69 @@
+/* Login e recuperação do Portal: acabamento compartilhado sobre a paleta
+   original de cada página. Nenhum seletor, script ou persistência de tema novo.
+   Painel de 36px = controles de 12px + recuo de 24px. */
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;min-height:100svh;background:var(--bg);color:var(--ink);font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+.centro{min-height:100svh;display:flex;align-items:center;justify-content:center;padding:24px}
+.cartao{width:100%;max-width:480px;min-width:0;padding:24px;border:1px solid var(--line);border-radius:36px;background:var(--surface);box-shadow:0 20px 60px var(--sombra)}
+.marca{margin-bottom:28px;padding-bottom:20px;border-bottom:1px solid var(--line);text-align:left}
+.marca:has(.logo-site:not([hidden])){display:grid;grid-template-columns:48px minmax(0,1fr);column-gap:14px;align-items:center}
+.logo-site{display:inline-grid;place-items:center;grid-row:1/3;flex:none;width:48px;height:48px;margin:0 0 12px;border:1px solid var(--line);border-radius:16px;background:var(--logo-fundo);color:#fff;text-decoration:none;box-shadow:0 1px 0 #ffffff30 inset}
+.marca:has(.logo-site:not([hidden])) .logo-site{margin:0}
+.logo-site svg{width:27px;height:27px}
+.marca-nome{display:block;min-width:0;font-size:20px;font-weight:740;line-height:1.35;letter-spacing:-.04em;color:var(--ink)}
+.marca-nome span{font-weight:480;letter-spacing:-.035em;color:var(--muted)}
+.marca-sub{display:block;min-width:0;margin-top:6px;font-size:11px;font-weight:600;line-height:1.6;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+h1{margin:0 0 20px;font-size:28px;font-weight:740;line-height:1.2;letter-spacing:-.03em;color:var(--ink);overflow-wrap:anywhere}
+.ajuda{margin:0 0 20px;font-size:14px;line-height:1.7;color:var(--muted);overflow-wrap:anywhere}
+.mensagem{min-height:1.2rem;margin-bottom:16px;font-size:13px;line-height:1.65;border-radius:12px;overflow-wrap:anywhere}
+.mensagem.erro{padding:12px 14px;color:var(--erro);background:var(--erro-fundo);border:1px solid var(--erro)}
+.mensagem.info{padding:12px 14px;color:var(--ink);background:var(--info-fundo);border:1px solid var(--line)}
+.mensagem:empty{min-height:0;padding:0;margin-bottom:0;background:none}
+label{display:block;margin:0 0 8px;font-size:13px;font-weight:600;line-height:1.5;color:var(--ink)}
+input{width:100%;min-width:0;height:48px;padding:0 14px;margin-bottom:20px;font:inherit;font-size:16px;color:var(--ink);background:var(--campo);border:1px solid var(--line);border-radius:12px;outline:none;transition:border-color .15s,box-shadow .15s}
+input:hover:not(:disabled){border-color:var(--hover)}
+input:focus-visible{border-color:var(--hover);box-shadow:0 0 0 3px var(--foco)}
+.botao{display:block;width:100%;min-height:48px;padding:12px 16px;margin-top:4px;font:inherit;font-size:15px;font-weight:600;line-height:1.5;text-align:center;text-decoration:none;color:#fff;background:var(--accent);border:1px solid transparent;border-radius:12px;cursor:pointer;transition:background-color .15s,box-shadow .15s}
+.botao:hover:not(:disabled),.botao:focus-visible{background:var(--accent-forte)}
+.botao:disabled{opacity:.6;cursor:not-allowed}
+.voltar,.voltar-site{display:flex;align-items:center;justify-content:center;min-height:44px;margin-top:16px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;font-size:13px;font-weight:600;line-height:1.5;text-align:center;color:var(--ink);text-decoration:none;transition:background-color .15s,border-color .15s}
+.esqueci-senha{margin-top:12px;background:var(--info-fundo)}
+@media(hover:hover){
+  .voltar:hover,.voltar-site:hover{border-color:var(--hover);background:var(--info-fundo)}
+}
+:is(input,.botao,.voltar,.voltar-site,.logo-site):focus-visible{outline:3px solid var(--accent);outline-offset:4px}
+/* O widget continua com seu próprio tamanho e aparência; nenhum filtro,
+   recorte ou transformação é aplicado à verificação de segurança. */
+.verificacao{display:flex;justify-content:center;min-width:0}
+.verificacao iframe{margin-bottom:12px}
+@media screen and (forced-colors:none) and (prefers-contrast:no-preference){
+  @supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) and (color:color-mix(in srgb,white,transparent)){
+    body{background:radial-gradient(ellipse at 85% 12%,color-mix(in srgb,var(--accent) 18%,transparent),transparent 55%),radial-gradient(ellipse at 10% 80%,color-mix(in srgb,var(--hover) 20%,transparent),transparent 55%),var(--bg);background-attachment:fixed}
+    .cartao{background:linear-gradient(135deg,#ffffff4d,transparent 58%),color-mix(in srgb,var(--surface) 68%,transparent);border-color:color-mix(in srgb,var(--line) 45%,#ffffff99);backdrop-filter:blur(26px) saturate(160%);-webkit-backdrop-filter:blur(26px) saturate(160%);box-shadow:0 1px 0 #ffffffd9 inset,0 20px 60px var(--sombra)}
+    input:not(:disabled):not([readonly]){background:color-mix(in srgb,var(--ink) 4%,color-mix(in srgb,var(--campo) 76%,transparent))}
+    @media(prefers-color-scheme:dark){
+      .cartao{background:linear-gradient(135deg,#ffffff1a,transparent 58%),color-mix(in srgb,var(--surface) 76%,transparent);border-color:color-mix(in srgb,var(--line) 60%,#ffffff33);box-shadow:0 1px 0 #ffffff38 inset,0 20px 60px var(--sombra)}
+    }
+  }
+}
+@media(max-width:500px){
+  .centro{padding:16px}
+  .cartao{padding:20px;border-radius:32px}
+  h1{font-size:25px}
+}
+/* Em 320px, o widget pode ocupar a largura interna do cartão. Os campos
+   continuam recuados; o iframe e o desafio não são redimensionados. */
+@media(max-width:360px){
+  .centro{padding:8px}
+  .cartao{padding:20px 12px;border-radius:24px}
+  .verificacao{margin-inline:-12px}
+}
+@media(prefers-reduced-motion:reduce){input,.botao,.voltar,.voltar-site{transition:none}}
+@media(prefers-contrast:more){.cartao,input,.voltar,.voltar-site,.logo-site{border:2px solid var(--ink);box-shadow:none}}
+@media(forced-colors:active){
+  body,.cartao,input,.voltar,.voltar-site,.mensagem{background:Canvas;color:CanvasText;border-color:CanvasText;box-shadow:none}
+  .botao{background:ButtonFace;color:ButtonText;border-color:ButtonText}
+  .logo-site{background:Highlight;color:HighlightText;border-color:ButtonText;box-shadow:none}
+  :is(input,.botao,.voltar,.voltar-site,.logo-site):focus-visible{outline-color:Highlight}
+}

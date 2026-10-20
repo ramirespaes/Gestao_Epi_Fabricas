@@ -2,8 +2,9 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" sizes="any" href="../favicon.svg">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Validade de estoque — Gestão de EPIs</title>
+  <title>Gestão de EPI</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
   <link rel="stylesheet" href="../css/main.css">
   <script src="../js/tema.js"></script>
@@ -58,6 +59,8 @@
     @media (max-width: 640px){.indicadores{grid-template-columns:repeat(2,minmax(0,1fr))}.filtros .field{min-width:100%}}
     @media (prefers-reduced-motion: reduce){.indicador{transition:none}button.indicador:hover{transform:none}}
   </style>
+  <link rel="stylesheet" href="../css/reports.css">
+  <link rel="stylesheet" href="../css/stock-validity.css">
 </head>
 <!--
   Validade de estoque (Bloco 9, E7): acompanhamento lote a lote do CA, dos
@@ -65,7 +68,7 @@
   de POST /api/estoque/lotes/:loteId/baixas. Sessão empresarial do Portal,
   permissões do servidor; sem js/db-api.js e sem js/main.js.
 -->
-<body>
+<body class="reports-visual stock-validity-visual">
 
 <div id="telaSessao" style="position:fixed;inset:0;z-index:10000;background:var(--surface);
      display:flex;align-items:center;justify-content:center;padding:20px">

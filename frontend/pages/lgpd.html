@@ -2,13 +2,16 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" sizes="any" href="../favicon.svg">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Privacidade / LGPD — Gestão de EPIs</title>
+  <title>Gestão de EPI</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
   <link rel="stylesheet" href="../css/main.css">
+  <link rel="stylesheet" href="../css/reports.css">
+  <link rel="stylesheet" href="../css/integracao-visual.css">
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
-<body>
+<body class="reports-visual integracao-visual">
 
 <div id="loginScreen" style="position:fixed;inset:0;z-index:10000;
        background:var(--surface);display:flex;align-items:center;justify-content:center;
@@ -228,14 +231,14 @@
         </div>
 
         <!-- KPIs LGPD -->
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:4px" class="lgpd-kpis">
+        <div class="integracao-kpis lgpd-kpis">
           <div class="stat"><span>Titulares cadastrados</span><strong>24</strong></div>
           <div class="stat"><span>Solicitações abertas</span><strong>0</strong></div>
           <div class="stat"><span>Prazo máximo resposta</span><strong>15 dias</strong></div>
           <div class="stat"><span>DPO responsável</span><strong style="font-size:14px;margin-top:8px">Definir</strong></div>
         </div>
 
-        <section class="grid">
+        <section class="grid lgpd-layout">
           <div class="stack">
 
             <!-- POLÍTICA DE PRIVACIDADE -->

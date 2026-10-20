@@ -185,7 +185,7 @@ describe('Novo Usuário e Administração de Usuários: telas aposentadas', () =
       const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
       assert.deepEqual(scripts, ['../js/tema.js'], 'só o tema');
       assert.equal(/EpiHttp|EpiUsuarios|EpiPermissoes|EpiSessaoEmpresarial|requisitar|fetch\(|XMLHttpRequest|localStorage|sessionStorage|innerHTML/.test(codigo), false);
-      assert.match(html, new RegExp(`<title>${titulo} — tela substituída</title>`));
+      assert.match(html, /<title>Gestão de EPI<\/title>/);
       assert.match(html, /http-equiv="refresh" content="0; url=gestao-usuarios\.html"/);
       assert.match(codigo, /window\.location\.replace\(/);
       assert.match(html, /<a href="gestao-usuarios\.html" id="destino">Gestão de Usuários<\/a>/);

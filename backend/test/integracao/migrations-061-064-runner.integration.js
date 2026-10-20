@@ -51,9 +51,10 @@ const PENDENTES = [
   '086_create_atendimento_token',
   '087_insert_acoes_atendimento_token',
   '089_token_dispositivos_queda_suspeita',
+  '090_create_biblioteca_imagens_material',
 ];
 const TABELAS_NOVAS = ['redefinicoes_senha', 'redefinicoes_senha_plataforma', 'recuperacao_senha_solicitacoes', 'logs_auditoria_identidade'];
-const TOTAL = 89;
+const TOTAL = 90;
 
 describe('runner real: 061 a 074 numa transação, sobre a 060 com contas e sessões existentes', () => {
   let contexto;
@@ -100,7 +101,7 @@ describe('runner real: 061 a 074 numa transação, sobre a 060 com contas e sess
     for (const tabela of TABELAS_NOVAS) assert.equal(await tabelaExiste(c, tabela), false, tabela);
   });
 
-  test('o runner aplica 061 a 087 e 089 juntas, em ordem, e registra as 89', async () => {
+  test('o runner aplica 061 a 087, 089 e 090 juntas, em ordem, e registra as 90', async () => {
     const aplicadas = await aplicarMigrations({ schema: contexto.schema, diretorio: DIRETORIO_REAL });
 
     assert.deepEqual(aplicadas.map((migration) => migration.name), PENDENTES);
@@ -139,7 +140,7 @@ describe('runner real: 061 a 074 numa transação, sobre a 060 com contas e sess
     assert.equal(n, 1);
   });
 
-  test('manifesto: as entradas pendentes conferem com os arquivos e o total é 89', () => {
+  test('manifesto: as entradas pendentes conferem com os arquivos e o total é 90', () => {
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO_REAL, 'checksums.json'), 'utf8'));
     const arquivos = fs.readdirSync(DIRETORIO_REAL).filter((n) => /^\d{3}_.*\.sql$/.test(n)).sort();
     assert.equal(arquivos.length, TOTAL);

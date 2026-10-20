@@ -1,0 +1,39 @@
+/* Ficha de EPI: acabamento de tela, reaproveitando reports.css.
+   Carregado com media="screen": não redefine a impressão nem a área de assinatura. */
+body.epi-ficha-visual #epiFichaView{display:grid;gap:20px;min-width:0}
+body.epi-ficha-visual .page-actions{margin-bottom:0}
+body.epi-ficha-visual .field{min-width:0}
+body.epi-ficha-visual .input,body.epi-ficha-visual .select{max-width:100%;min-width:0}
+body.epi-ficha-visual .ficha-search-grid .input,body.epi-ficha-visual .ficha-search-grid .select{width:100%}
+body.epi-ficha-visual .table-wrap{min-width:0;overflow-x:auto}
+body.epi-ficha-visual .paginacao{margin-top:16px;line-height:1.6}
+body.epi-ficha-visual #fichaSearchToggle{background:transparent!important;padding:20px!important;gap:12px}
+body.epi-ficha-visual #fichaSearchPanel{padding-left:20px!important;padding-right:20px!important}
+body.epi-ficha-visual #fichaSearchResults{padding:0 20px 20px!important}
+body.epi-ficha-visual #fichaEpiPadding{padding:20px!important}
+body.epi-ficha-visual .ficha-rotulo{background:var(--primary-container);color:var(--on-primary-container);border-color:var(--outline);padding:8px 10px;line-height:1.5}
+body.epi-ficha-visual .ficha-valor{color:var(--on-surface);padding:8px 10px;line-height:1.5;overflow-wrap:anywhere;min-width:0}
+body.epi-ficha-visual .ficha-celula{border-color:var(--outline);min-width:0}
+body.epi-ficha-visual .ficha-secao{background:var(--primary-container);color:var(--on-primary-container);border:1px solid var(--outline-variant);border-radius:10px;padding:10px 12px;line-height:1.5;margin-bottom:12px;gap:8px;flex-wrap:wrap}
+body.epi-ficha-visual .ficha-tabela th{padding:10px;border-color:var(--outline);background:var(--surface-container-high);color:var(--on-surface);font-size:12px;text-transform:none;letter-spacing:normal;line-height:1.5}
+body.epi-ficha-visual .ficha-tabela td{padding:10px;border-color:var(--outline-variant);font-size:12px;line-height:1.6}
+body.epi-ficha-visual .ficha-tabela tr.linha-entrega-inicio td{border-top-color:var(--primary)}
+body.epi-ficha-visual .passo{padding:16px;border-radius:20px;background:var(--surface);border:1px solid var(--outline);margin-bottom:16px}
+body.epi-ficha-visual .passo h3{line-height:1.5;margin-bottom:12px}
+body.epi-ficha-visual .passo h3 .num{background:var(--primary);color:var(--on-primary);flex:none}
+body.epi-ficha-visual .modo-btn{min-height:44px;border-radius:12px;padding:10px 16px;line-height:1.5}
+body.epi-ficha-visual .modo-btn.ativo{background:var(--primary);color:var(--on-primary)}
+body.epi-ficha-visual .modal-card{border-radius:28px;padding:24px}
+body.epi-ficha-visual .mini-btn{height:auto;min-height:36px;padding:7px 12px;border-radius:10px;line-height:1.5}
+body.epi-ficha-visual #fichaRodape{line-height:1.6}
+html[data-a11y="lowvision"] body.epi-ficha-visual .ficha-rotulo,
+html[data-a11y="lowvision"] body.epi-ficha-visual .ficha-valor,
+html[data-a11y="lowvision"] body.epi-ficha-visual .ficha-tabela th,
+html[data-a11y="lowvision"] body.epi-ficha-visual .ficha-tabela td{font-size:15px}
+@media(max-width:560px){
+ body.epi-ficha-visual #fichaSearchToggle{padding:16px!important}
+ body.epi-ficha-visual #fichaSearchPanel{padding-left:16px!important;padding-right:16px!important}
+ body.epi-ficha-visual #fichaSearchResults{padding:0 16px 16px!important}
+ body.epi-ficha-visual #fichaEpiPadding{padding:12px!important}
+ body.epi-ficha-visual .passo{padding:12px}
+}

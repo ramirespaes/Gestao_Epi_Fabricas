@@ -12,7 +12,7 @@
    */
 
   var CAMINHO = '/entregas-epi/itens';
-  var LIMITE = 20;
+  var LIMITE = 15;
   var TRACO = '—';
   var DATA = /^\d{4}-\d{2}-\d{2}$/;
   var BUSCA_MAXIMA = 100;

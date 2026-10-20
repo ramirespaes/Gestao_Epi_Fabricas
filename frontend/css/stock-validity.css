@@ -1,0 +1,111 @@
+/* Validade de estoque: evolução do vidro existente, sobre reports.css.
+   Reutiliza EpiTema e os controles atuais, sem alterar os scripts.
+   Tabela: raio 28px = superfície interna de 16px + recuo de 12px.
+   Filtros: raio 28px = controles de 12px + recuo de 16px.
+   Baixa: raio 32px = controles de 12px + recuo de 20px. */
+body.stock-validity-visual #stockValidityView{--vidro-fundo:var(--reports-glass);--vidro-borda:var(--reports-border);--vidro-sombra:var(--reports-depth);--realce:none;display:grid;gap:20px;padding:0;background:none;border-radius:28px;min-width:0}
+body.stock-validity-visual .validade-topo{padding:28px;border:1px solid var(--reports-border);border-radius:28px;background:var(--reports-glass);box-shadow:var(--reports-depth);gap:16px;align-items:center}
+body.stock-validity-visual .validade-topo > div{min-width:0}
+body.stock-validity-visual .validade-topo h2{font-size:30px;font-weight:600;line-height:1.25}
+body.stock-validity-visual .validade-topo p{font-size:14px;line-height:1.65;margin-top:8px}
+body.stock-validity-visual .validade-hoje{padding:8px 12px;border:1px solid var(--outline-variant);border-radius:12px;background:var(--surface);font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+body.stock-validity-visual .validade-hoje:empty{display:none}
+body.stock-validity-visual .vidro{border-radius:28px;backdrop-filter:none;-webkit-backdrop-filter:none}
+body.stock-validity-visual .indicadores{grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin:0}
+body.stock-validity-visual .indicador{--validade-accent:var(--primary);padding:20px;border-radius:20px;gap:10px;min-width:0;background:var(--surface-container)}
+body.stock-validity-visual .indicador.perigo{--validade-accent:var(--error)}
+body.stock-validity-visual .indicador.alerta{--validade-accent:var(--warning)}
+body.stock-validity-visual .indicador.ok{--validade-accent:var(--success)}
+body.stock-validity-visual .indicador-rotulo{color:var(--on-surface);font-size:13px;font-weight:600;line-height:1.5}
+body.stock-validity-visual .indicador strong{font-size:32px;font-weight:600;line-height:1.2;font-variant-numeric:tabular-nums;color:var(--on-surface)}
+body.stock-validity-visual .indicador-nota{font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+body.stock-validity-visual .filtros{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) auto;padding:16px;margin:0;gap:16px}
+body.stock-validity-visual .filtros .field,
+body.stock-validity-visual .painel-baixa .field{min-width:0}
+body.stock-validity-visual .filtros .input,
+body.stock-validity-visual .filtros .select,
+body.stock-validity-visual .painel-baixa .input,
+body.stock-validity-visual .painel-baixa .select{width:100%;min-width:0;max-width:100%}
+body.stock-validity-visual .input:focus,
+body.stock-validity-visual .select:focus{box-shadow:0 0 0 3px var(--primary-container)}
+body.stock-validity-visual .filtros .acoes{flex-wrap:wrap;gap:10px}
+body.stock-validity-visual .tabela-validade{padding:12px;margin:0;min-width:0}
+body.stock-validity-visual .tabela-validade .table-wrap{border-radius:16px;background:var(--surface-container);max-width:100%;min-width:0}
+body.stock-validity-visual .tabela-validade table{min-width:1080px}
+body.stock-validity-visual .tabela-validade td{vertical-align:middle}
+body.stock-validity-visual .tabela-validade small.detalhe{font-size:12px;line-height:1.6;margin-top:4px}
+body.stock-validity-visual .badge,
+body.stock-validity-visual .disp,
+body.stock-validity-visual .tag-inativo{padding:5px 10px;line-height:1.5}
+body.stock-validity-visual .paginacao{padding:16px 4px 4px;gap:12px;flex-wrap:wrap;line-height:1.6}
+body.stock-validity-visual .painel-baixa{padding:20px;border-radius:32px;margin:0;border-color:var(--outline)}
+body.stock-validity-visual .painel-baixa h3{font-size:18px;line-height:1.4}
+body.stock-validity-visual .painel-baixa .descricao{line-height:1.65;margin:8px 0 20px;overflow-wrap:anywhere}
+body.stock-validity-visual .painel-baixa .form-grid{gap:16px;min-width:0}
+body.stock-validity-visual .painel-baixa .helper{line-height:1.65;margin-top:16px}
+body.stock-validity-visual .painel-baixa .footer-actions{gap:12px;flex-wrap:wrap;margin-top:20px;padding-top:16px;border-top:1px solid var(--outline-variant)}
+/* Fundo colorido sólido no modo padrão, mesmo sem suporte ao blur. */
+@supports(color:color-mix(in srgb,red,transparent)){
+  @media(forced-colors:none){
+    html:not([data-display]):not([data-a11y]) body.stock-validity-visual .indicador{background:color-mix(in srgb,var(--validade-accent) 10%,var(--surface-container));border-color:color-mix(in srgb,var(--validade-accent) 28%,var(--outline-variant))}
+    html:not([data-display]):not([data-a11y]) body.stock-validity-visual .indicador strong{color:color-mix(in srgb,var(--validade-accent) 60%,var(--on-surface))}
+  }
+}
+@supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  @media(forced-colors:none){
+    html:not([data-display]):not([data-a11y]) body.stock-validity-visual .validade-topo,
+    html:not([data-display]):not([data-a11y]) body.stock-validity-visual .vidro{backdrop-filter:blur(22px) saturate(150%);-webkit-backdrop-filter:blur(22px) saturate(150%)}
+    html:not([data-display]):not([data-a11y]) body.stock-validity-visual .indicador{
+      background:linear-gradient(135deg,rgba(255,255,255,.34),transparent 58%),color-mix(in srgb,var(--validade-accent) 9%,color-mix(in srgb,var(--surface-container) 28%,transparent));
+      border-color:color-mix(in srgb,var(--validade-accent) 24%,rgba(255,255,255,.5));box-shadow:0 1px 0 rgba(255,255,255,.85) inset,0 -1px 0 rgba(255,255,255,.12) inset,0 8px 24px rgba(20,40,70,.07);
+    }
+    html[data-theme="dark"]:not([data-display]):not([data-a11y]) body.stock-validity-visual .indicador{
+      background:linear-gradient(135deg,rgba(255,255,255,.11),transparent 58%),color-mix(in srgb,var(--validade-accent) 10%,color-mix(in srgb,var(--surface-container) 26%,transparent));
+      border-color:color-mix(in srgb,var(--validade-accent) 26%,rgba(255,255,255,.2));box-shadow:0 1px 0 rgba(255,255,255,.24) inset,0 -1px 0 rgba(255,255,255,.025) inset,0 10px 28px rgba(0,0,0,.18);
+    }
+  }
+}
+html[data-display] body.stock-validity-visual .vidro,
+html[data-a11y] body.stock-validity-visual .vidro,
+html[data-display] body.stock-validity-visual .validade-topo,
+html[data-a11y] body.stock-validity-visual .validade-topo{background:var(--surface-container);border:2px solid var(--outline);box-shadow:none}
+html[data-display] body.stock-validity-visual .indicador strong,
+html[data-a11y] body.stock-validity-visual .indicador strong,
+html[data-a11y] body.stock-validity-visual .disp{color:var(--on-surface)}
+html[data-a11y="lowvision"] body.stock-validity-visual .indicador-nota,
+html[data-a11y="lowvision"] body.stock-validity-visual .indicador-rotulo,
+html[data-a11y="lowvision"] body.stock-validity-visual .painel-baixa .helper{font-size:15px}
+html[data-a11y="lowvision"] body.stock-validity-visual .input,
+html[data-a11y="lowvision"] body.stock-validity-visual .select{height:52px;font-size:16px}
+@media(max-width:1400px){
+  body.stock-validity-visual .indicadores{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:900px){
+  body.stock-validity-visual .filtros{grid-template-columns:repeat(2,minmax(0,1fr))}
+  body.stock-validity-visual .filtros .acoes{grid-column:1/-1;justify-content:flex-end}
+}
+@media(max-width:720px){
+  body.stock-validity-visual .validade-topo{padding:20px}
+  body.stock-validity-visual .validade-topo h2{font-size:24px}
+  body.stock-validity-visual .indicadores{grid-template-columns:repeat(2,minmax(0,1fr))}
+  body.stock-validity-visual .indicador{padding:16px}
+}
+@media(max-width:560px){
+  body.stock-validity-visual .filtros{grid-template-columns:minmax(0,1fr)}
+  body.stock-validity-visual .filtros .acoes button{flex:1}
+  body.stock-validity-visual .painel-baixa .form-grid{grid-template-columns:minmax(0,1fr)}
+  body.stock-validity-visual .painel-baixa .footer-actions button{flex:1}
+}
+@media(max-width:380px){
+  body.stock-validity-visual .indicadores{grid-template-columns:minmax(0,1fr)}
+}
+@media(prefers-reduced-motion:reduce){
+  body.stock-validity-visual button.indicador:hover{transform:none}
+}
+@media(forced-colors:active){
+  body.stock-validity-visual .vidro,
+  body.stock-validity-visual .validade-topo{background:Canvas!important;color:CanvasText!important;border:1px solid CanvasText!important;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
+  body.stock-validity-visual .indicador strong,
+  body.stock-validity-visual .indicador-rotulo,
+  body.stock-validity-visual .indicador-nota{color:CanvasText}
+}

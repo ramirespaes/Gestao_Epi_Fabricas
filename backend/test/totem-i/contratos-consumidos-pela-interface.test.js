@@ -156,9 +156,21 @@ describe('[BE] Q8 — o que o servidor registra em log não carrega a URL (nem a
 });
 
 describe('[BE] Imagens — o contrato atual do catálogo', () => {
-  test('[BE-40] a API devolve imagem: { disponivel: false } constante; não existe estrutura de imagem (E15 permanece pendente)', () => {
+  // Adequação autorizada pela V7 (Unidade 4, 16/10/2026): a Biblioteca de Imagens criou rotas ADMINISTRATIVAS de imagem (sessão + RBAC `materials`),
+  // então a proibição de "nenhuma rota de imagem ou upload" passou a valer onde ela protege de verdade — o namespace do TABLET (Atendimento Token) —
+  // e, fora dele, só duas rotas administrativas podem falar de imagem. Não é inócuo: um arquivo `token-*.routes.js` com imagem/upload, ou qualquer
+  // OUTRO arquivo de rota com imagem/upload/multer, reprova o teste; o controle positivo prova que a expressão enxerga a rota de imagem.
+  test('[BE-40] o catálogo do tablet mantém o estado explícito SEM_IMAGEM e o namespace do TABLET (Atendimento Token) não tem rota de imagem nem upload; fora dele só as rotas administrativas autorizadas falam de imagem', () => {
     assert.match(fonte('services/token-catalogo.service.js'), /SEM_IMAGEM = Object\.freeze\(\{ disponivel: false \}\)/);
-    const rotas = listar(path.join(SRC, 'routes')).map((f) => fs.readFileSync(f, 'utf8')).join('\n');
-    assert.equal(/imagem|upload|multer/i.test(rotas), false, 'nenhuma rota de imagem ou upload');
+    const arquivos = listar(path.join(SRC, 'routes')).filter((f) => f.endsWith('.routes.js'));
+    const menciona = (f) => /imagem|upload|multer/i.test(fs.readFileSync(f, 'utf8'));
+    const nome = (f) => path.basename(f);
+    const doTablet = arquivos.filter((f) => /token-[a-z-]+\.routes\.js$/.test(f));
+    assert.ok(doTablet.length >= 9, `leu as rotas do Atendimento Token (${doTablet.length})`);
+    assert.deepEqual(doTablet.filter(menciona).map(nome), [], 'nenhuma rota de imagem ou upload sob o Atendimento Token');
+    const AUTORIZADAS = ['imagem-material.routes.js', 'material.routes.js'];
+    const mencionam = arquivos.filter(menciona).map(nome);
+    assert.deepEqual(mencionam.filter((n) => !AUTORIZADAS.includes(n)), [], 'só as rotas administrativas autorizadas (biblioteca e materiais) falam de imagem, upload ou multer');
+    assert.ok(mencionam.includes('imagem-material.routes.js'), 'controle positivo: a expressão enxerga a rota administrativa de imagem');
   });
 });

@@ -33,13 +33,24 @@ async function buscarGheDoFuncionario(executor, { empresaId, funcionarioId }) {
  * Materiais físicos solicitáveis do GHE: ativos, classificados quanto a tamanho (exige_tamanho não nulo), autorizados pelo GHE
  * (direto, ou por tipo ATIVO) e, se exigem tamanho, com ao menos um tamanho cadastrado. Material que não exige tamanho nunca é
  * excluído por falta de grade. Sem LIMIT: nenhum teto elimina material elegível. Ordem estável: lower(nome), id.
+ *
+ * Imagem (Biblioteca de Imagens, Unidade 3 G4): a MESMA imagem vinculada ao material no cadastro (`materiais.imagem_empresa_id` /
+ * `imagem_padrao_id`, migration 090), lida por dois LEFT JOIN sobre chaves únicas — a imagem da empresa pela chave composta
+ * (empresa_id, id), para nunca cruzar empresas, e a padrão pelo id —, só quando ATIVA; senão as três colunas saem nulas. Os JOINs não
+ * filtram nem multiplicam materiais (chave única em cada lado) e o WHERE, a ordem e a seleção da Etapa E não mudam. `imagem_id` é BIGINT:
+ * sai como texto do driver e segue como texto decimal no contrato.
  */
 async function listarMateriaisAutorizados(executor, { empresaId, gheId }) {
   exigirId(empresaId, 'identificador de empresa');
   exigirId(gheId, 'identificador de GHE');
   const { rows } = await executor.query(
-    `SELECT m.id, m.nome, m.unidade, m.categoria, m.grupo_protecao, m.tipo, m.tipo_material_id, m.exige_tamanho, ${TAMANHOS} AS tamanhos
+    `SELECT m.id, m.nome, m.unidade, m.categoria, m.grupo_protecao, m.tipo, m.tipo_material_id, m.exige_tamanho, ${TAMANHOS} AS tamanhos,
+            CASE WHEN ie.id IS NOT NULL THEN 'EMPRESA' WHEN ip.id IS NOT NULL THEN 'PADRAO' END AS imagem_origem,
+            COALESCE(ie.id, ip.id) AS imagem_id,
+            COALESCE(ie.versao, ip.versao) AS imagem_versao
        FROM materiais m
+       LEFT JOIN imagens_empresa ie ON ie.empresa_id = m.empresa_id AND ie.id = m.imagem_empresa_id AND ie.estado = 'ATIVA'
+       LEFT JOIN imagens_padrao ip ON ip.id = m.imagem_padrao_id AND ip.ativo
       WHERE m.empresa_id = $1 AND m.ativo AND m.exige_tamanho IS NOT NULL AND ${AUTORIZADO}
       ORDER BY lower(m.nome), m.id`,
     [empresaId, gheId],
