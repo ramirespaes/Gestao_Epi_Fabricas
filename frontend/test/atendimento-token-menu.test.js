@@ -138,7 +138,7 @@ describe('páginas homologadas e protótipos: nenhuma alteração em massa', () 
     const prototipos = PAGINAS.filter((f) => f !== CENTRAL && !INTEGRADAS.includes(f) && /Autoatendimento \(Totem\)/.test(ler(`pages/${f}`)));
     assert.ok(prototipos.length >= 6);
     for (const f of prototipos) assert.equal(/Atendimento Token/.test(ler(`pages/${f}`)), false, f);
-    assert.match(ler('pages/self-service.html'), /<title>Autoatendimento \(Totem\) — Gestão de EPIs<\/title>/);
+    assert.match(ler('pages/self-service.html'), /<title>Gestão de EPI<\/title>/);
   });
 
   test('o menu da Central é igual ao das páginas integradas, exceto o item de Solicitações que é a própria Central', () => {

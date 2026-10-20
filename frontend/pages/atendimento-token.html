@@ -2,8 +2,9 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" sizes="any" href="../favicon.svg">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Atendimento Token — Gestão de EPIs</title>
+  <title>Gestão de EPI</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
   <link rel="stylesheet" href="../css/main.css">
   <script src="../js/tema.js"></script>
@@ -131,6 +132,8 @@
     @media (max-width: 900px){.stats.cartoes-token{grid-template-columns:repeat(2,minmax(0,1fr))}.form-rede{grid-template-columns:1fr}}
     @media (max-width: 560px){.stats.cartoes-token{grid-template-columns:1fr}.detalhe-lista{grid-template-columns:1fr}.detalhe-lista dd{margin-bottom:6px}.report-tab{flex:1 1 auto;justify-content:center}.lista-funcionarios > li{flex-direction:column;align-items:stretch}.lista-funcionarios > li > .request-meta{flex:0 0 auto}.lista-funcionarios > li > .previa-caixa{flex:0 0 auto}}
   </style>
+  <link rel="stylesheet" href="../css/reports.css">
+  <link rel="stylesheet" href="../css/atendimento-token.css">
 </head>
 <!--
   Atendimento Token — Central Administrativa (Etapa H, bloco frontend).
@@ -146,7 +149,7 @@
   memória, e é descartado ao fechar a janela, sair da aba, expirar ou
   recarregar. Esta tela não usa o protótipo do funcionário (token-epi.html).
 -->
-<body>
+<body class="reports-visual atendimento-token-visual">
 
 <!-- ══ VERIFICAÇÃO DA SESSÃO ══ Sem login próprio: usa a sessão empresarial
      criada pelo Portal do Cliente, confirmada no servidor por

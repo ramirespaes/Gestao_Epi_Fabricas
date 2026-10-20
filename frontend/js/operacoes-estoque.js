@@ -21,7 +21,7 @@
    */
 
   var CAMINHO = '/estoque/operacoes';
-  var LIMITE = 50;
+  var LIMITE = 15;
   var TAMANHO_UNICO = 'Único';
   var TRACO = '—';
   var MENOS = '−';

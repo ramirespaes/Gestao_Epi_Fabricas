@@ -2,8 +2,9 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" sizes="any" href="../favicon.svg">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gestão de Usuários — Gestão de EPIs</title>
+  <title>Gestão de EPI</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
   <link rel="stylesheet" href="../css/main.css">
   <script src="../js/tema.js"></script>
@@ -210,6 +211,8 @@
     .gu #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
     @media (prefers-reduced-motion:reduce){.gu *{transition:none !important}}
   </style>
+  <link rel="stylesheet" href="../css/reports.css">
+  <link rel="stylesheet" href="../css/gestao-usuarios.css">
 </head>
 <!--
   Gestão de Usuários (consolidação de acessos, primeira subetapa visível): o
@@ -220,7 +223,7 @@
   e CSV sobre o conjunto real; as demais ações só avisam. Sem js/db-api.js,
   sem js/main.js, sem dados nem localStorage do protótipo.
 -->
-<body>
+<body class="reports-visual gestao-usuarios-visual">
 
 <div id="telaSessao" style="position:fixed;inset:0;z-index:10000;background:var(--surface);
      display:flex;align-items:center;justify-content:center;padding:20px">
@@ -774,23 +777,41 @@
   }
 
   async function aplicarAcesso(controle) {
+    var areaVisual = controle.closest('[data-alvo-acessos]');
+    var visualIndividual = areaVisual && areaVisual.getAttribute('data-alvo-acessos').indexOf('usuario:') === 0;
+    var ligado = controle.checked === true;
+    // O atributo foi definido pelo render com o estado efetivo do servidor.
+    // Mantém esse estado durante o PUT, sem perder o valor solicitado acima.
+    var confirmado = controle.hasAttribute('checked');
+    if (visualIndividual) controle.checked = confirmado;
     if (!permissoesAberta || enviando) return;
     var id = permissoesAberta.id;
     var doGrupo = permissoesAberta.grupo === true;
-    var ligado = controle.checked === true;
     enviando = true;
     controle.disabled = true;
-    var r = await (doGrupo
-      ? P.acoes.definirAcessoDoGrupo(id, controle.getAttribute('data-acesso'), ligado)
-      : P.acoes.definirAcesso(id, controle.getAttribute('data-acesso'), ligado));
+    var rotuloVisual = visualIndividual ? controle.closest('.switch') : null;
+    if (rotuloVisual) rotuloVisual.setAttribute('aria-busy', 'true');
+    var r;
+    try {
+      r = await (doGrupo
+        ? P.acoes.definirAcessoDoGrupo(id, controle.getAttribute('data-acesso'), ligado)
+        : P.acoes.definirAcesso(id, controle.getAttribute('data-acesso'), ligado));
+    } finally {
+      if (rotuloVisual) rotuloVisual.removeAttribute('aria-busy');
+    }
     enviando = false;
     if (encerrada || !permissoesAberta || permissoesAberta.id !== id) return;
     if (r.ok) {
       // O interruptor mostra o resultado efetivo que o servidor devolveu, não o que foi pedido.
       var linha = controle.closest('.prow');
       var nova = P.render.linhaAcesso(document, r.dados.acesso, true);
+      var manterFoco = visualIndividual && document.activeElement === controle;
+      if (visualIndividual && (r.dados.acesso.ligado === true) !== confirmado) {
+        nova.querySelector('.t').setAttribute('data-transicao-permissao', r.dados.acesso.ligado === true ? 'on' : 'off');
+      }
       linha.parentNode.insertBefore(nova, linha);
       linha.parentNode.removeChild(linha);
+      if (manterFoco) nova.querySelector('input[data-acesso]').focus({ preventScroll: true });
       // Os avisos informativos acompanham a resposta do PUT (o servidor os recalcula).
       var areaAvisos = document.getElementById('avisoDependencias');
       if (areaAvisos) P.render.avisos(document, areaAvisos, r.dados.avisos, doGrupo);

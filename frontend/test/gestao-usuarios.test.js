@@ -430,7 +430,7 @@ describe('Gestão de Usuários — integração estática (menu, autoridade, scr
   test('moldura padrão: tema no head depois do CSS, tela de sessão, menu lateral completo e scripts da fundação, sem db-api.js nem main.js', () => {
     const head = html.split('</head>')[0];
     assert.match(head, /<link rel="stylesheet" href="\.\.\/css\/main\.css">\s*<script src="\.\.\/js\/tema\.js"><\/script>/);
-    assert.match(html, /<title>Gestão de Usuários — Gestão de EPIs<\/title>/);
+    assert.match(html, /<title>Gestão de EPI<\/title>/);
     assert.match(html, /id="telaSessao"/);
     assert.match(html, /<a href="\.\.\/portal\/inicio\.html">/);
     assert.deepEqual(scriptsDe(html).filter((s) => s.src).map((s) => s.src), ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/grupos-acesso.js', '../js/usuarios.js', '../js/gestao-usuarios.js', '../js/permissoes-usuario.js']);
@@ -1178,6 +1178,118 @@ describe('Gestão de Usuários — Configurar permissões (ON/OFF)', () => {
     assert.equal(pg.texto('hintPermissoes'), PU.TEXTOS.MASTER_FIXO);
     assert.equal(pg.textoDoDom().includes('texto do servidor'), false);
     assert.equal(pg.consulta('[data-acesso="dashboard"]')[0].checked, false, 'voltou ao estado real');
+  });
+
+  test('visual: mantém o estado confirmado e sinaliza salvamento até o PUT responder; só então anima e preserva o foco', async () => {
+    let liberar;
+    const pg = await abrirPerm({
+      'PUT /administracao/usuarios/4/acessos/dashboard': () => new Promise((resolve) => { liberar = resolve; }),
+    });
+    const entrada = pg.consulta('[data-acesso="dashboard"]')[0];
+    assert.equal(entrada.getAttribute('type'), 'checkbox');
+    assert.equal(entrada.getAttribute('role'), 'switch');
+    assert.equal(entrada.getAttribute('aria-label'), 'Dashboard');
+    assert.equal(entrada.parentElement.querySelector('.t').getAttribute('data-transicao-permissao'), null, 'sem animação de entrada');
+    entrada.focus();
+    entrada.checked = true;
+    await entrada.disparar('change');
+    await pg.esperar();
+    assert.equal(entrada.checked, false, 'a semântica e a posição continuam no OFF confirmado');
+    assert.equal(entrada.disabled, true);
+    assert.equal(entrada.parentElement.getAttribute('aria-busy'), 'true');
+    const put = pg.chamadas.find((c) => c.metodo === 'PUT');
+    assert.deepEqual(put.corpo, { ligado: true }, 'o pedido conserva o estado solicitado');
+    liberar({ status: 200, corpo: { status: 'ok', acesso: { ...ACESSOS.toggles[0], ligado: true } } });
+    await pg.esperar();
+    await pg.esperar();
+    const nova = pg.consulta('[data-acesso="dashboard"]')[0];
+    assert.equal(nova.checked, true);
+    assert.equal(nova.disabled, false);
+    assert.equal(nova.parentElement.getAttribute('aria-busy'), null);
+    assert.equal(nova.parentElement.querySelector('.t').getAttribute('data-transicao-permissao'), 'on');
+    assert.equal(pg.documento.activeElement, nova, 'continua operável por teclado após a troca da linha');
+  });
+
+  test('visual: desliga somente após a confirmação e usa a direção OFF, sem inverter a posição lógica', async () => {
+    let liberar;
+    const pg = await abrirPerm({
+      'PUT /administracao/usuarios/4/acessos/gestaoGhe': () => new Promise((resolve) => { liberar = resolve; }),
+    });
+    const entrada = pg.consulta('[data-acesso="gestaoGhe"]')[0];
+    entrada.checked = false;
+    await entrada.disparar('change');
+    await pg.esperar();
+    assert.equal(entrada.checked, true, 'o ON confirmado permanece durante o salvamento');
+    liberar({ status: 200, corpo: { status: 'ok', acesso: { ...ACESSOS.toggles[1], ligado: false } } });
+    await pg.esperar();
+    await pg.esperar();
+    const nova = pg.consulta('[data-acesso="gestaoGhe"]')[0];
+    assert.equal(nova.checked, false);
+    assert.equal(nova.parentElement.querySelector('.t').getAttribute('data-transicao-permissao'), 'off');
+    assert.deepEqual(pg.chamadas.find((c) => c.metodo === 'PUT').corpo, { ligado: false });
+  });
+
+  test('visual: resposta efetiva diferente do solicitado não anima nem mostra um acesso que o backend não confirmou', async () => {
+    const pg = await abrirPerm({
+      'PUT /administracao/usuarios/4/acessos/dashboard': { status: 200, corpo: { status: 'ok', acesso: { ...ACESSOS.toggles[0], ligado: false } } },
+    });
+    await alternar(pg, 'dashboard', true);
+    const entrada = pg.consulta('[data-acesso="dashboard"]')[0];
+    assert.equal(entrada.checked, false);
+    assert.equal(entrada.disabled, false);
+    assert.equal(entrada.parentElement.querySelector('.t').getAttribute('data-transicao-permissao'), null);
+    assert.deepEqual(pg.chamadas.find((c) => c.metodo === 'PUT').corpo, { ligado: true });
+  });
+
+  test('visual: outra tentativa durante o salvamento não muda o estado confirmado nem inicia outro PUT', async () => {
+    let liberar;
+    const pg = await abrirPerm({
+      'PUT /administracao/usuarios/4/acessos/dashboard': () => new Promise((resolve) => { liberar = resolve; }),
+    });
+    const primeiro = pg.consulta('[data-acesso="dashboard"]')[0];
+    primeiro.checked = true;
+    await primeiro.disparar('change');
+    await pg.esperar();
+    const outro = pg.consulta('[data-acesso="gestaoGhe"]')[0];
+    outro.checked = false;
+    await outro.disparar('change');
+    await pg.esperar();
+    assert.equal(outro.checked, true);
+    assert.equal(pg.chamadas.filter((c) => c.metodo === 'PUT').length, 1);
+    outro.focus();
+    liberar({ status: 200, corpo: { status: 'ok', acesso: { ...ACESSOS.toggles[0], ligado: true } } });
+    await pg.esperar();
+    await pg.esperar();
+    assert.equal(pg.documento.activeElement, outro, 'a resposta não rouba o foco de outro controle');
+  });
+
+  test('visual: erro ao desligar relê o ON efetivo, sem animação de sucesso', async () => {
+    const pg = await abrirPerm({
+      'PUT /administracao/usuarios/4/acessos/gestaoGhe': () => erro(403, 'PERMISSOES_INDIVIDUAIS_SOMENTE_MASTER'),
+    });
+    await alternar(pg, 'gestaoGhe', false);
+    const entrada = pg.consulta('[data-acesso="gestaoGhe"]')[0];
+    assert.equal(entrada.checked, true);
+    assert.equal(entrada.disabled, false);
+    assert.equal(entrada.parentElement.querySelector('.t').getAttribute('data-transicao-permissao'), null);
+    assert.equal(pg.texto('hintPermissoes'), PU.TEXTOS.SOMENTE_MASTER);
+  });
+
+  test('visual: se o PUT e a releitura falharem, mantém o último estado confirmado e o bloqueio existente, sem loading infinito', async () => {
+    let leituras = 0;
+    const pg = await abrirPerm({
+      'GET /administracao/usuarios/4/acessos': () => (++leituras === 1 ? comAcessos() : erro(500, 'ERRO_INTERNO')),
+      'PUT /administracao/usuarios/4/acessos/dashboard': () => { throw new Error('rede indisponível'); },
+    });
+    await alternar(pg, 'dashboard', true);
+    const entrada = pg.consulta('[data-acesso="dashboard"]')[0];
+    assert.equal(entrada.checked, false);
+    assert.equal(entrada.disabled, true, 'preserva o bloqueio quando não foi possível reler');
+    assert.equal(entrada.parentElement.getAttribute('aria-busy'), null);
+    assert.equal(entrada.parentElement.querySelector('.t').getAttribute('data-transicao-permissao'), null);
+    assert.equal(leituras, 2);
+    assert.equal(pg.chamadas.filter((c) => c.metodo === 'PUT').length, 1);
+    assert.equal(pg.texto('hintPermissoes'), PU.TEXTOS.FALHA_ALTERAR);
   });
 });
 

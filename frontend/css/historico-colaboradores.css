@@ -1,0 +1,71 @@
+/* Histórico de Colaboradores: acabamento compartilhado em reports.css.
+   Os scripts mantêm a seleção, a exibição condicional, a paginação e a exportação. */
+body.employee-history-visual #employeeHistoryView{display:grid;gap:20px;min-width:0}
+body.employee-history-visual .page-actions{margin-bottom:0}
+/* Superfície externa de 28px = blocos internos de 16px + recuo de 12px. */
+body.employee-history-visual .card{padding:12px;margin-bottom:0}
+body.employee-history-visual .card-header{padding:12px;margin-bottom:12px}
+body.employee-history-visual .card-icon{background:var(--primary-container);color:var(--primary)}
+body.employee-history-visual .filters-grid{grid-template-columns:minmax(0,1fr) auto;margin-bottom:0}
+body.employee-history-visual .field{min-width:0}
+body.employee-history-visual .input{width:100%;min-width:0;max-width:100%}
+body.employee-history-visual .input[readonly]{background:var(--surface-container-high);color:var(--on-surface)}
+body.employee-history-visual .form-grid{padding:12px;gap:16px}
+body.employee-history-visual .filters-actions{align-items:center;gap:10px}
+body.employee-history-visual .card > .filters-actions{padding:0 12px 12px}
+body.employee-history-visual .card > .helper{padding:0 12px;line-height:1.7;overflow-wrap:anywhere}
+body.employee-history-visual .table-wrap{min-width:0;overflow-x:auto}
+body.employee-history-visual .history-summary{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:0}
+body.employee-history-visual .history-card{
+  --history-accent:var(--primary);
+  padding:20px;border-radius:20px;border:1px solid var(--reports-border);border-top:3px solid var(--history-accent);
+  background:var(--reports-glass);box-shadow:var(--reports-depth);min-width:0;
+}
+body.employee-history-visual .history-card:nth-child(2){--history-accent:var(--secondary)}
+body.employee-history-visual .history-card:nth-child(3){--history-accent:var(--tertiary)}
+body.employee-history-visual .history-card:nth-child(4){--history-accent:var(--success)}
+body.employee-history-visual .history-card span{font-size:13px;line-height:1.6}
+body.employee-history-visual .history-card strong{font-size:28px;font-weight:600;line-height:1.35;color:var(--on-surface);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+body.employee-history-visual #hkpiUltima{font-size:22px}
+/* Registros sólidos dentro dos painéis de vidro: evita blur sobre blur. */
+body.employee-history-visual .timeline-list{gap:12px;min-width:0}
+body.employee-history-visual .timeline-item{grid-template-columns:140px minmax(0,1fr);padding:16px;border-radius:16px;background:var(--surface-container);border-color:var(--outline);gap:16px}
+body.employee-history-visual .timeline-date{font-size:13px;line-height:1.6;font-variant-numeric:tabular-nums}
+body.employee-history-visual .timeline-content{min-width:0;overflow-wrap:anywhere}
+body.employee-history-visual .timeline-content strong{font-size:15px;line-height:1.5}
+body.employee-history-visual .timeline-content span{font-size:13px;line-height:1.7}
+body.employee-history-visual .timeline-content [data-item-id]{padding-top:12px;border-top:1px solid var(--outline-variant)}
+body.employee-history-visual .timeline-list > .helper{padding:12px;line-height:1.7}
+@supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  @media(forced-colors:none){
+    html:not([data-display]):not([data-a11y]) body.employee-history-visual .history-card{
+      background:linear-gradient(135deg,color-mix(in srgb,var(--history-accent) 8%,transparent),transparent 70%),var(--reports-glass);
+      backdrop-filter:blur(22px) saturate(150%);-webkit-backdrop-filter:blur(22px) saturate(150%);
+    }
+  }
+}
+html[data-display] body.employee-history-visual .history-card,
+html[data-a11y] body.employee-history-visual .history-card{border:2px solid var(--outline);background:var(--surface-container);box-shadow:none}
+html[data-a11y="lowvision"] body.employee-history-visual .history-card span,
+html[data-a11y="lowvision"] body.employee-history-visual .timeline-date,
+html[data-a11y="lowvision"] body.employee-history-visual .timeline-content span,
+html[data-a11y="lowvision"] body.employee-history-visual .helper{font-size:15px}
+html[data-a11y="lowvision"] body.employee-history-visual .history-card strong{font-size:32px}
+@media(max-width:1100px){
+  body.employee-history-visual .history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:900px){
+  body.employee-history-visual .timeline-item{grid-template-columns:minmax(0,1fr);gap:8px}
+}
+@media(max-width:640px){
+  body.employee-history-visual .filters-grid{grid-template-columns:minmax(0,1fr)}
+  body.employee-history-visual .filters-grid .field{grid-column:1 / -1!important}
+  body.employee-history-visual .filters-actions button{flex:1}
+}
+@media(max-width:560px){
+  body.employee-history-visual .history-summary{grid-template-columns:minmax(0,1fr)}
+}
+@media(forced-colors:active){
+  body.employee-history-visual .history-card,
+  body.employee-history-visual .timeline-item{background:Canvas;border:1px solid CanvasText;box-shadow:none}
+}

@@ -1,0 +1,85 @@
+/* Início do Portal: acabamento isolado, sobre os tokens de portal.css.
+   Preserva o tema do sistema existente, a classe .oculto e os links
+   controlados por permissões. Não afeta login, empresas nem troca de senha.
+   Geometria: painel de 36px = cartão interno de 12px + recuo de 24px. */
+body.inicio-visual{min-height:100vh;line-height:1.6}
+body.inicio-visual .topo{max-width:1320px;margin:24px auto 0;width:calc(100% - 48px);padding:20px 24px;gap:20px;border:1px solid var(--borda);border-radius:28px;background:var(--cartao);color:var(--texto);box-shadow:0 8px 24px rgba(20,40,70,.07)}
+body.inicio-visual .identificacao{flex:1 1 240px;min-width:0}
+body.inicio-visual .identificacao strong{font-size:19px;line-height:1.4;letter-spacing:-.3px;overflow-wrap:anywhere}
+body.inicio-visual .identificacao span{display:block;margin-top:6px;font-size:12px;color:var(--suave);overflow-wrap:anywhere}
+body.inicio-visual .topo nav{flex:1 1 520px;justify-content:flex-end;gap:8px;align-items:center}
+body.inicio-visual .topo nav a,
+body.inicio-visual .topo nav button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 14px;border:1px solid var(--borda);border-radius:12px;background:var(--fundo-suave);color:var(--primaria);font-size:13px;font-weight:600;line-height:1.5;text-align:center;white-space:normal}
+body.inicio-visual #botao-sair{color:var(--erro)}
+body.inicio-visual .topo nav button:disabled{opacity:.55;cursor:not-allowed}
+body.inicio-visual .conteudo{max-width:1368px;padding:24px;min-width:0}
+body.inicio-visual .bloco{padding:24px;margin-bottom:24px;border:1px solid var(--borda);border-radius:36px;box-shadow:0 8px 24px rgba(20,40,70,.07)}
+body.inicio-visual .bloco h2{font-size:21px;font-weight:650;line-height:1.4;letter-spacing:-.4px;margin:0 0 10px}
+body.inicio-visual .bloco p{font-size:14px;line-height:1.7;color:var(--suave);max-width:940px;margin:8px 0;overflow-wrap:anywhere}
+body.inicio-visual .inicio-contexto{display:grid;grid-template-columns:1.5fr .8fr 1.2fr;gap:12px 24px}
+body.inicio-visual .inicio-contexto h2{grid-column:1/-1;font-size:28px;margin-bottom:0;color:var(--texto)}
+body.inicio-visual .inicio-contexto p{min-width:0;margin:0}
+body.inicio-visual .inicio-contexto strong{font-weight:600;color:var(--texto)}
+body.inicio-visual .modulos{grid-template-columns:repeat(auto-fit,minmax(min(100%,235px),1fr));gap:12px;margin-top:24px;min-width:0}
+body.inicio-visual .modulos a{position:relative;display:flex;align-items:center;min-width:0;min-height:88px;padding:20px 44px 20px 20px;border:1px solid var(--borda);border-radius:12px;background:var(--fundo-suave);color:var(--texto);font-size:14px;font-weight:600;line-height:1.5;overflow-wrap:anywhere;transition:border-color .18s ease,box-shadow .18s ease,background-color .18s ease}
+/* Seta decorativa, sem adicionar conteúdo ao nome acessível do link. */
+body.inicio-visual .modulos a::after{content:"";position:absolute;right:22px;top:calc(50% - 4px);width:7px;height:7px;border:solid var(--primaria);border-width:0 2px 2px 0;transform:rotate(-45deg)}
+body.inicio-visual .modulos > div{min-width:0;padding:20px;border:1px dashed var(--borda);border-radius:12px;line-height:1.6;overflow-wrap:anywhere}
+body.inicio-visual .etiqueta{padding:4px 10px;border-radius:8px;font-size:12px;line-height:1.5;margin-top:8px}
+body.inicio-visual .mensagem{font-size:14px;line-height:1.7;overflow-wrap:anywhere}
+body.inicio-visual .mensagem.erro,
+body.inicio-visual .mensagem.info{padding:16px 20px;border-radius:16px;border:1px solid var(--borda)}
+body.inicio-visual #modulos-mensagem{padding:12px 16px;border:1px solid var(--borda);border-radius:12px;background:var(--info-fundo);color:var(--texto)}
+body.inicio-visual #carregando{font-size:14px;color:var(--suave)}
+body.inicio-visual :focus-visible{outline:3px solid var(--primaria);outline-offset:4px}
+@media(hover:hover){
+  body.inicio-visual .modulos a:hover{border-color:var(--primaria);box-shadow:0 8px 20px rgba(20,40,70,.09)}
+  body.inicio-visual .topo nav a:hover,
+  body.inicio-visual .topo nav button:hover:not(:disabled){border-color:var(--primaria)}
+}
+/* Mesmo acabamento de vidro das telas internas, com a paleta já existente
+   no Portal. Sem suporte, valem as superfícies sólidas acima. */
+@supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  body.inicio-visual{background:radial-gradient(ellipse at 85% 12%,color-mix(in srgb,var(--primaria) 16%,transparent),transparent 48%),radial-gradient(ellipse at 10% 70%,color-mix(in srgb,var(--primaria) 9%,transparent),transparent 48%),var(--fundo);background-attachment:fixed}
+  body.inicio-visual .topo,
+  body.inicio-visual .bloco{background:linear-gradient(135deg,rgba(255,255,255,.34),transparent 58%),color-mix(in srgb,var(--cartao) 54%,transparent);border-color:color-mix(in srgb,var(--borda) 45%,rgba(255,255,255,.5));backdrop-filter:blur(22px) saturate(150%);-webkit-backdrop-filter:blur(22px) saturate(150%);box-shadow:0 1px 0 rgba(255,255,255,.85) inset,0 8px 24px rgba(20,40,70,.07)}
+  /* Os cartões internos recebem reflexo e transparência sem multiplicar
+     o blur por todos os módulos. O desfoque fica no painel externo. */
+  body.inicio-visual .modulos a{background:linear-gradient(135deg,rgba(255,255,255,.3),transparent 70%),color-mix(in srgb,var(--primaria) 3%,color-mix(in srgb,var(--cartao) 28%,transparent));box-shadow:0 1px 0 rgba(255,255,255,.6) inset}
+  @media(prefers-color-scheme:dark){
+    body.inicio-visual .topo,
+    body.inicio-visual .bloco{background:linear-gradient(135deg,rgba(255,255,255,.09),transparent 58%),color-mix(in srgb,var(--cartao) 62%,transparent);border-color:color-mix(in srgb,var(--borda) 70%,rgba(255,255,255,.22));box-shadow:0 1px 0 rgba(255,255,255,.2) inset,0 10px 28px rgba(0,0,0,.18)}
+    body.inicio-visual .modulos a{background:linear-gradient(135deg,rgba(255,255,255,.06),transparent 70%),color-mix(in srgb,var(--cartao) 35%,transparent);box-shadow:0 1px 0 rgba(255,255,255,.12) inset}
+  }
+}
+@media(max-width:960px){
+  body.inicio-visual .topo nav{justify-content:flex-start;flex-basis:100%}
+  body.inicio-visual .inicio-contexto{grid-template-columns:minmax(0,1fr)}
+}
+@media(max-width:600px){
+  body.inicio-visual .topo{width:calc(100% - 24px);margin-top:12px;padding:20px;border-radius:24px;gap:16px}
+  body.inicio-visual .conteudo{padding:16px 12px}
+  body.inicio-visual .bloco{padding:20px;border-radius:32px;margin-bottom:16px}
+  body.inicio-visual .bloco h2{font-size:20px}
+  body.inicio-visual .inicio-contexto h2{font-size:25px}
+  body.inicio-visual .topo nav a,
+  body.inicio-visual .topo nav button{flex:1 1 140px}
+  body.inicio-visual .modulos{margin-top:20px}
+  body.inicio-visual .modulos a{min-height:72px}
+}
+@media(prefers-reduced-motion:reduce){
+  body.inicio-visual *,body.inicio-visual *::before,body.inicio-visual *::after{transition:none!important;animation:none!important;scroll-behavior:auto!important}
+}
+@media(prefers-contrast:more){
+  body.inicio-visual{background:var(--fundo)}
+  body.inicio-visual .topo,
+  body.inicio-visual .bloco,
+  body.inicio-visual .modulos a{background:var(--cartao);border:2px solid var(--texto);box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
+}
+@media(forced-colors:active){
+  body.inicio-visual{background:Canvas;color:CanvasText}
+  body.inicio-visual .topo,body.inicio-visual .bloco,
+  body.inicio-visual .modulos a,body.inicio-visual .modulos > div,
+  body.inicio-visual .topo nav a,body.inicio-visual .topo nav button{background:Canvas;color:CanvasText;border:1px solid CanvasText;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
+  body.inicio-visual :focus-visible{outline-color:Highlight}
+}

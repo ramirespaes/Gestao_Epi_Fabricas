@@ -1,0 +1,205 @@
+/* Gestão de Usuários: acabamento compartilhado em reports.css.
+   A paleta local passa a acompanhar EpiTema; ações e controles mantêm os scripts originais. */
+body.gestao-usuarios-visual .gu{
+  --bg:var(--surface);--bg2:var(--surface-container-highest);--panel:var(--surface-container);--panel2:var(--surface-container-high);
+  --line:var(--outline);--ink:var(--on-surface);--muted:var(--on-surface-variant);
+  --accent:var(--primary);--on-accent:var(--on-primary);--danger:var(--error);--on-danger:var(--on-primary);--ok:var(--success);
+  --head:var(--surface-container-high);--container:var(--primary-container);--on-container:var(--on-primary-container);
+  --elev1:var(--reports-depth);--elev3:var(--shadow-lg);
+  background:transparent;font-family:var(--font-plain);min-width:0;
+}
+body.gestao-usuarios-visual .gu .page{padding:0}
+body.gestao-usuarios-visual .gu .appbar{padding:16px 20px;border:1px solid var(--reports-border);border-radius:20px;background:var(--reports-glass);box-shadow:var(--reports-depth);margin-bottom:20px;flex-wrap:wrap}
+body.gestao-usuarios-visual .gu .ph{padding:28px;border:1px solid var(--reports-border);border-radius:28px;background:var(--reports-glass);box-shadow:var(--reports-depth);align-items:center;gap:12px;margin-bottom:20px;position:relative;z-index:2}
+body.gestao-usuarios-visual .gu .ph h1{font-size:30px;font-weight:600;line-height:1.25;font-family:var(--font-brand)}
+body.gestao-usuarios-visual .gu .ph p{line-height:1.65;font-size:14px}
+body.gestao-usuarios-visual .gu .toolbar{padding:12px;border-radius:24px;border:1px solid var(--reports-border);background:var(--reports-glass);box-shadow:var(--reports-depth);gap:10px;align-items:center;margin-bottom:20px;position:relative;z-index:1}
+/* O cabeçalho fica acima da toolbar para seus menus não serem cobertos pelo vidro. */
+body.gestao-usuarios-visual .gu .btn{height:auto;min-height:44px;padding:10px 16px;border-radius:12px;line-height:1.5;white-space:normal;justify-content:center}
+body.gestao-usuarios-visual .gu .btn.icon{width:44px;min-width:44px;padding:0}
+body.gestao-usuarios-visual .gu .btn:hover:not(:disabled){border-color:var(--accent)}
+body.gestao-usuarios-visual .gu .btn:disabled{cursor:not-allowed;box-shadow:none}
+body.gestao-usuarios-visual .gu .search{border-radius:12px;min-width:0;min-height:44px}
+body.gestao-usuarios-visual .gu .search input{min-width:0;width:100%;color:var(--ink)}
+body.gestao-usuarios-visual .gu .search:focus-within{border-color:var(--accent)}
+/* Segmento: botões de 12px + recuo de 4px = moldura de 16px.
+   Menus: itens de 12px + padding de 8px = moldura de 20px. */
+body.gestao-usuarios-visual .gu .seg{padding:4px;border-radius:16px;gap:4px;overflow:visible;background:var(--panel)}
+body.gestao-usuarios-visual .gu .seg button{border-radius:12px;min-width:44px;min-height:44px;padding:10px}
+body.gestao-usuarios-visual .gu .dd-menu{padding:8px;border-radius:20px;background:var(--panel);box-shadow:var(--elev3)}
+body.gestao-usuarios-visual .gu .dd-menu button{border-radius:12px;min-height:44px;line-height:1.5}
+body.gestao-usuarios-visual .gu .tablewrap{border-radius:20px;background:var(--reports-glass);border-color:var(--reports-border);max-width:100%;min-width:0;box-shadow:var(--reports-depth)}
+body.gestao-usuarios-visual .gu thead th{line-height:1.5;padding:14px;color:var(--muted)}
+body.gestao-usuarios-visual .gu tbody td{line-height:1.6}
+body.gestao-usuarios-visual .gu .cards{grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr));gap:16px}
+body.gestao-usuarios-visual .gu .cards .card{padding:20px;border-radius:28px;background:var(--surface-container);border:1px solid var(--reports-border);box-shadow:var(--reports-depth);min-width:0}
+/* Cartões de usuários: o mesmo vidro dos indicadores do Dashboard, com o
+   acento do tema. Sem suporte, ou em modo assistivo, mantém a superfície sólida.
+   Os reflexos são fundos CSS: não cobrem o texto nem o botão de ações. */
+@supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  @media(forced-colors:none){
+    html:not([data-display]):not([data-a11y]) body.gestao-usuarios-visual .gu .cards .card{
+      background:linear-gradient(135deg,rgba(255,255,255,.34),transparent 58%),
+        color-mix(in srgb,var(--primary) 9%,color-mix(in srgb,var(--surface-container) 28%,transparent));
+      border-color:color-mix(in srgb,var(--primary) 24%,rgba(255,255,255,.5));
+      backdrop-filter:blur(22px) saturate(150%);-webkit-backdrop-filter:blur(22px) saturate(150%);
+      box-shadow:0 1px 0 rgba(255,255,255,.85) inset,0 -1px 0 rgba(255,255,255,.12) inset,0 8px 24px rgba(20,40,70,.07);
+    }
+    html[data-theme="dark"]:not([data-display]):not([data-a11y]) body.gestao-usuarios-visual .gu .cards .card{
+      background:linear-gradient(135deg,rgba(255,255,255,.11),transparent 58%),
+        color-mix(in srgb,var(--primary) 10%,color-mix(in srgb,var(--surface-container) 26%,transparent));
+      border-color:color-mix(in srgb,var(--primary) 26%,rgba(255,255,255,.2));
+      box-shadow:0 1px 0 rgba(255,255,255,.24) inset,0 -1px 0 rgba(255,255,255,.025) inset,0 10px 28px rgba(0,0,0,.18);
+    }
+  }
+}
+html[data-display] body.gestao-usuarios-visual .gu .cards .card,
+html[data-a11y] body.gestao-usuarios-visual .gu .cards .card{border:2px solid var(--line);box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
+@media(forced-colors:active){
+  body.gestao-usuarios-visual .gu .cards .card{background:Canvas!important;border:1px solid CanvasText!important;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
+}
+body.gestao-usuarios-visual .gu .cards .card h3{margin-right:48px;line-height:1.5;overflow-wrap:anywhere}
+body.gestao-usuarios-visual .gu .card .meta{overflow-wrap:anywhere;line-height:1.7}
+body.gestao-usuarios-visual .gu .kebab{min-width:44px;min-height:44px;border-radius:12px}
+/* Base sólida dos modais: raio 32px = controles de 12px + recuo lateral de 20px.
+   Larguras, rolagem, posicionamento e interruptores continuam os da página original. */
+body.gestao-usuarios-visual .gu .modal{border-radius:32px;background:var(--panel);border-color:var(--line)}
+body.gestao-usuarios-visual .gu .mh{gap:16px}
+body.gestao-usuarios-visual .gu .mh h2{line-height:1.4}
+body.gestao-usuarios-visual .gu .mf{flex-wrap:wrap;gap:12px}
+body.gestao-usuarios-visual .gu .grid{gap:16px;min-width:0}
+body.gestao-usuarios-visual .gu .grid > .f{min-width:0}
+body.gestao-usuarios-visual .gu .in{height:46px;border-radius:12px;min-width:0;max-width:100%;background:var(--panel2)}
+body.gestao-usuarios-visual .gu textarea.in{height:auto;min-height:160px;padding:12px}
+body.gestao-usuarios-visual .gu .in:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--container)}
+body.gestao-usuarios-visual .gu .in.bad{border-color:var(--danger);box-shadow:0 0 0 1px var(--danger)}
+body.gestao-usuarios-visual .gu .suffix .in{border-radius:12px 0 0 12px}
+body.gestao-usuarios-visual .gu .suffix span{border-radius:0 12px 12px 0}
+/* Guia rápido: tipografia local; a superfície de todos os modais vem
+   do padrão compartilhado de main.css. */
+body.gestao-usuarios-visual .gu .guia-rapido{color:var(--on-surface);font-size:15px;line-height:1.75!important;overflow-wrap:anywhere}
+html[data-a11y="lowvision"] body.gestao-usuarios-visual .gu .guia-rapido{font-size:18px}
+/* Cabeçalho e rodapé dos modais existentes. As superfícies da janela e dos
+   campos são compartilhadas em main.css, inclusive para Novo usuário. */
+@supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  @media(forced-colors:none){
+    html:not([data-display]):not([data-a11y]) body.gestao-usuarios-visual .gu .modal .f{color:var(--ink)}
+    html:not([data-display]):not([data-a11y]) body.gestao-usuarios-visual .gu .modal > .mh{
+      background:color-mix(in srgb,var(--surface) 22%,transparent);border-radius:31px 31px 0 0;
+    }
+    html:not([data-display]):not([data-a11y]) body.gestao-usuarios-visual .gu .modal > .mf{
+      background:color-mix(in srgb,var(--surface) 22%,transparent);border-radius:0 0 31px 31px;
+    }
+  }
+}
+body.gestao-usuarios-visual .gu .prow{gap:16px;line-height:1.6}
+body.gestao-usuarios-visual .gu .prow .lbl{min-width:0;overflow-wrap:anywhere}
+body.gestao-usuarios-visual .gu .prow .switch{flex-shrink:0}
+body.gestao-usuarios-visual .gu .hint{line-height:1.7;overflow-wrap:anywhere}
+body.gestao-usuarios-visual .gu .tag{line-height:1.6}
+/* A lista mantém as ações e a ordem originais; o texto e os botões podem
+   quebrar linha sem ampliar o modal em telas pequenas. */
+body.gestao-usuarios-visual .gu #listaGrupos .prow{flex-wrap:wrap;gap:12px;padding:18px 0}
+body.gestao-usuarios-visual .gu #listaGrupos .prow:first-child{padding-top:0}
+body.gestao-usuarios-visual .gu #listaGrupos .prow:last-child{border-bottom:0;padding-bottom:0}
+body.gestao-usuarios-visual .gu #listaGrupos .lbl{flex:1 1 220px}
+body.gestao-usuarios-visual .gu #listaGrupos .lbl small{line-height:1.6;margin-top:6px}
+body.gestao-usuarios-visual .gu #listaGrupos .prow > span:last-child{margin-left:auto;max-width:100%}
+body.gestao-usuarios-visual .gu #hintGrupos{padding:0 20px}
+@media(max-width:560px){
+  body.gestao-usuarios-visual .gu #listaGrupos .prow > span:last-child{width:100%}
+  body.gestao-usuarios-visual .gu #listaGrupos .prow .btn{flex:1 1 auto}
+}
+/* Todos os checkboxes desenhados como switches recebem o verde compartilhado
+   no modo padrão, sem alterar geometria nem confirmação dos demais fluxos. */
+@media(forced-colors:none){
+  html:not([data-display]):not([data-a11y]) body.gestao-usuarios-visual .gu .switch input:checked + .t{background:var(--switch-on)}
+}
+/* Switch existente: permissões individuais e vínculo SST de Novo usuário.
+   Mantém 51×31px, indicador 27px, OFF à esquerda e ON à direita (+20px).
+   Grupos e outros formulários mantêm suas animações e estado OFF anteriores. */
+body.gestao-usuarios-visual .gu :is([data-alvo-acessos^="usuario:"], #fUser[data-modo="novo"]) .switch{min-height:44px}
+body.gestao-usuarios-visual .gu :is([data-alvo-acessos^="usuario:"], #fUser[data-modo="novo"]) .switch .t{
+  --permissao-on:var(--switch-on);--permissao-off:#cc342e;
+  background:var(--permissao-off);box-shadow:inset 0 0 0 1px var(--line);
+  transition:background-color 280ms ease;
+}
+@supports (color:color-mix(in srgb,red,black)){
+  body.gestao-usuarios-visual .gu :is([data-alvo-acessos^="usuario:"], #fUser[data-modo="novo"]) .switch .t{
+    --permissao-off:color-mix(in srgb,var(--error) 80%,black);
+  }
+}
+body.gestao-usuarios-visual .gu :is([data-alvo-acessos^="usuario:"], #fUser[data-modo="novo"]) .switch .t::after{
+  background:#fff;transform:translateX(0);transform-origin:center;
+  transition:transform 280ms ease;
+}
+body.gestao-usuarios-visual .gu :is([data-alvo-acessos^="usuario:"], #fUser[data-modo="novo"]) .switch input:checked + .t{background:var(--permissao-on)}
+body.gestao-usuarios-visual .gu :is([data-alvo-acessos^="usuario:"], #fUser[data-modo="novo"]) .switch input:checked + .t::after{transform:translateX(20px)}
+body.gestao-usuarios-visual .gu :is([data-alvo-acessos^="usuario:"], #fUser[data-modo="novo"]) .switch:has(input:disabled){cursor:not-allowed}
+body.gestao-usuarios-visual .gu :is([data-alvo-acessos^="usuario:"], #fUser[data-modo="novo"]) .switch input:disabled + .t{opacity:.55;filter:saturate(.5)}
+body.gestao-usuarios-visual .gu :is([data-alvo-acessos^="usuario:"], #fUser[data-modo="novo"]) .switch[aria-busy="true"]{cursor:progress}
+body.gestao-usuarios-visual .gu :is([data-alvo-acessos^="usuario:"], #fUser[data-modo="novo"]) .switch[aria-busy="true"] .t{opacity:.75;filter:none}
+/* A página recria a linha com o resultado confirmado. As animações abaixo
+   preservam a passagem do estado anterior, sem animar a carga inicial do modal. */
+body.gestao-usuarios-visual .gu [data-alvo-acessos^="usuario:"] .t[data-transicao-permissao="on"]{animation:sw-permissao-cor-on 280ms ease both}
+body.gestao-usuarios-visual .gu [data-alvo-acessos^="usuario:"] .t[data-transicao-permissao="off"]{animation:sw-permissao-cor-off 280ms ease both}
+body.gestao-usuarios-visual .gu [data-alvo-acessos^="usuario:"] .t[data-transicao-permissao="on"]::after{animation:sw-permissao-indicador-on 280ms ease both}
+body.gestao-usuarios-visual .gu [data-alvo-acessos^="usuario:"] .t[data-transicao-permissao="off"]::after{animation:sw-permissao-indicador-off 280ms ease both}
+@keyframes sw-permissao-indicador-on{
+  0%{transform:translateX(0) scale(1)}
+  40%{transform:translateX(8px) scale(1.16,.92)}
+  75%{transform:translateX(19px) scale(1.03,.98)}
+  100%{transform:translateX(20px) scale(1)}
+}
+@keyframes sw-permissao-indicador-off{
+  0%{transform:translateX(20px) scale(1)}
+  40%{transform:translateX(12px) scale(1.16,.92)}
+  75%{transform:translateX(1px) scale(1.03,.98)}
+  100%{transform:translateX(0) scale(1)}
+}
+@keyframes sw-permissao-cor-on{from{background-color:var(--permissao-off)}to{background-color:var(--permissao-on)}}
+@keyframes sw-permissao-cor-off{from{background-color:var(--permissao-on)}to{background-color:var(--permissao-off)}}
+@media(prefers-reduced-motion:reduce){
+  body.gestao-usuarios-visual .gu :is([data-alvo-acessos^="usuario:"], #fUser[data-modo="novo"]) .switch .t,
+  body.gestao-usuarios-visual .gu :is([data-alvo-acessos^="usuario:"], #fUser[data-modo="novo"]) .switch .t::after{animation:none!important;transition:none!important}
+}
+@media(forced-colors:active){
+  body.gestao-usuarios-visual .gu :is([data-alvo-acessos^="usuario:"], #fUser[data-modo="novo"]) .switch .t{background:CanvasText;box-shadow:none;outline:1px solid CanvasText;animation:none}
+  body.gestao-usuarios-visual .gu :is([data-alvo-acessos^="usuario:"], #fUser[data-modo="novo"]) .switch input:checked + .t{background:Highlight}
+  body.gestao-usuarios-visual .gu :is([data-alvo-acessos^="usuario:"], #fUser[data-modo="novo"]) .switch .t::after{background:Canvas;animation:none}
+}
+/* Não aplica blur à .gu ou .page: menus e overlays fixed mantêm seu referencial.
+   O vidro dos formulários e da lista de grupos fica no modal, sem filhos fixed. */
+@supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  @media(forced-colors:none){
+    html:not([data-display]):not([data-a11y]) body.gestao-usuarios-visual .gu .appbar,
+    html:not([data-display]):not([data-a11y]) body.gestao-usuarios-visual .gu .ph,
+    html:not([data-display]):not([data-a11y]) body.gestao-usuarios-visual .gu .toolbar,
+    html:not([data-display]):not([data-a11y]) body.gestao-usuarios-visual .gu .tablewrap{backdrop-filter:blur(22px) saturate(150%);-webkit-backdrop-filter:blur(22px) saturate(150%)}
+  }
+}
+html[data-display] body.gestao-usuarios-visual .gu .appbar,
+html[data-display] body.gestao-usuarios-visual .gu .ph,
+html[data-display] body.gestao-usuarios-visual .gu .toolbar,
+html[data-display] body.gestao-usuarios-visual .gu .tablewrap,
+html[data-a11y] body.gestao-usuarios-visual .gu .appbar,
+html[data-a11y] body.gestao-usuarios-visual .gu .ph,
+html[data-a11y] body.gestao-usuarios-visual .gu .toolbar,
+html[data-a11y] body.gestao-usuarios-visual .gu .tablewrap{border:2px solid var(--line);box-shadow:none}
+html[data-a11y="lowvision"] body.gestao-usuarios-visual .gu .btn{min-height:48px;font-size:16px}
+html[data-a11y="lowvision"] body.gestao-usuarios-visual .gu .in{height:52px;font-size:16px;border-width:2px}
+html[data-a11y="lowvision"] body.gestao-usuarios-visual .gu .hint,
+html[data-a11y="lowvision"] body.gestao-usuarios-visual .gu .tag,
+html[data-a11y="lowvision"] body.gestao-usuarios-visual .gu .f{font-size:15px}
+@media(max-width:720px){
+  body.gestao-usuarios-visual .gu .ph{padding:20px}
+  body.gestao-usuarios-visual .gu .ph h1{font-size:24px}
+}
+@media(forced-colors:active){
+  body.gestao-usuarios-visual .gu .appbar,
+  body.gestao-usuarios-visual .gu .ph,
+  body.gestao-usuarios-visual .gu .toolbar,
+  body.gestao-usuarios-visual .gu .tablewrap,
+  body.gestao-usuarios-visual .gu .modal,
+  body.gestao-usuarios-visual .gu .dd-menu{background:Canvas;border-color:CanvasText;box-shadow:none}
+}

@@ -133,7 +133,7 @@ describe('migration 071 — descrição de "Outros" e tipos de óculos de prote�
   test('manifesto: 89 migrations, 000 a 087 e 089; a 045 e a 058 continuam idênticas ao manifesto; a 071 só acrescenta a sua entrada', () => {
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO, 'checksums.json'), 'utf8'));
     const arquivos = fs.readdirSync(DIRETORIO).filter((n) => /^\d{3}_.*\.sql$/.test(n)).sort();
-    assert.equal(arquivos.length, 89);
+    assert.equal(arquivos.length, 90);
     const inicio = arquivos.indexOf(ARQUIVO_071);
     assert.notEqual(inicio, -1);
     assert.deepEqual(arquivos.slice(inicio, inicio + 17), [
@@ -156,7 +156,8 @@ describe('migration 071 — descrição de "Outros" e tipos de óculos de prote�
       '087_insert_acoes_atendimento_token.sql',
     ]);
     assert.equal(arquivos[inicio + 17], '089_token_dispositivos_queda_suspeita.sql');
-    assert.equal(arquivos.length, inicio + 18, 'a 089 é a última');
+    assert.equal(arquivos[inicio + 18], '090_create_biblioteca_imagens_material.sql');
+    assert.equal(arquivos.length, inicio + 19, 'a 090 é a última');
     assert.deepEqual(Object.keys(manifesto.migrations).sort(), arquivos);
     for (const nome of arquivos) {
       const sha = crypto.createHash('sha256').update(fs.readFileSync(path.join(DIRETORIO, nome))).digest('hex');

@@ -28,6 +28,13 @@ const { JSON_LIMITE, JSON_LIMITE_IMPORTACAO_GHE } = require('../config/http');
  * (parserJsonImportacaoGhe). Para isso o parserJson isenta EXATAMENTE `POST /api/grupos-homogeneos/importacao/preview` e
  * `POST /api/grupos-homogeneos/importacao/confirmar` (comparação de igualdade, nunca prefixo; qualquer variação de caminho
  * cai no limite de 32 KiB), e a PRÓPRIA ROTA aplica o parser de 512 KiB depois da sessão e da permissão. Assim um corpo grande nunca é lido antes de autenticar e autorizar. exigirJson (tipo e codificação) vale para todos.
+ *
+ * EXCEÇÃO DE TIPO (uma, e só esta; Biblioteca de Imagens, Unidade 5C-2): `POST /api/imagens-material/empresa` recebe a IMAGEM em binário, não JSON.
+ * Para esse método e esse caminho COMPLETO (igualdade: nunca prefixo, nunca barra final, nunca outra caixa, nunca outro método; a consulta não conta),
+ * exigirJson troca a exigência de `application/json` pela de `image/*`: qualquer outro tipo, JSON inclusive, continua 415 TIPO_CONTEUDO_NAO_SUPORTADO.
+ * O 32 KiB do JSON não se aplica a esse corpo, e o parserJson não o lê (só interpreta application/json). A sessão, a permissão, os limites de taxa e o
+ * teto de 2 MiB (413 PAYLOAD_MUITO_GRANDE) são da PRÓPRIA ROTA, aplicados antes de o corpo ser lido. O formato real da imagem é decidido pelos bytes,
+ * nunca pelo cabeçalho.
  */
 
 const METODOS_COM_CORPO = new Set(['POST', 'PUT', 'PATCH']);
@@ -66,9 +73,24 @@ function parametrosPermitidos(contentType) {
   return nome === 'charset' && valor === 'utf-8';
 }
 
+const ROTA_DE_ENVIO_DE_IMAGEM = Object.freeze({ metodo: 'POST', caminho: '/api/imagens-material/empresa' });
+
+// O caminho COMPLETO como chegou (originalUrl sem a consulta, sem decodificar), esteja a política montada em /api (app.js) ou na raiz (app de teste).
+// Um objeto sem originalUrl (os testes unitários chamam exigirJson com requisições montadas à mão) nunca é o caminho do envio.
+const caminhoRecebido = (req) => (typeof req.originalUrl === 'string' ? req.originalUrl.split('?', 1)[0] : '');
+const ehEnvioDeImagem = (req) => req.method === ROTA_DE_ENVIO_DE_IMAGEM.metodo && caminhoRecebido(req) === ROTA_DE_ENVIO_DE_IMAGEM.caminho;
+
 function exigirJson(req, res, next) {
   if (!METODOS_COM_CORPO.has(req.method) || !temCorpo(req)) {
     next();
+    return;
+  }
+  if (ehEnvioDeImagem(req)) {
+    if (req.is('image/*')) {
+      next();
+      return;
+    }
+    next(new HttpError(415, 'TIPO_CONTEUDO_NAO_SUPORTADO', 'Content-Type deve ser image/png, image/jpeg ou image/webp'));
     return;
   }
   if (!req.is('application/json')) {
@@ -101,4 +123,4 @@ function parserJson(req, res, next) {
   parserJsonPadrao(req, res, next);
 }
 
-module.exports = { exigirJson, parserJson, parserJsonImportacaoGhe, ROTAS_COM_LIMITE_PROPRIO };
+module.exports = { exigirJson, parserJson, parserJsonImportacaoGhe, ROTAS_COM_LIMITE_PROPRIO, ROTA_DE_ENVIO_DE_IMAGEM };

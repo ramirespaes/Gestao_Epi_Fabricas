@@ -22,7 +22,7 @@
    * de novo lá.
    */
 
-  var LIMITES = { itens: 20, tracos: 64, pontos: 1500, coordenada: 10000, busca: 100, justificativa: 500, limitePagina: 20 };
+  var LIMITES = { itens: 20, tracos: 64, pontos: 1500, coordenada: 10000, busca: 100, justificativa: 500, limitePagina: 15 };
   var MOTIVOS = [
     { codigo: 'ADMISSAO', rotulo: 'Admissão' },
     { codigo: 'SUBSTITUICAO_PRAZO', rotulo: 'Substituição por prazo' },

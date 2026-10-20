@@ -23,7 +23,7 @@
    */
 
   var CAMINHO = '/estoque/itens-disponiveis';
-  var LIMITE_PAGINA = 50;
+  var LIMITE_PAGINA = 15;
   var LIMITE_POR_PAGINA_EXPORTACAO = 100; // máximo aceito pela API
   var PAGINAS_MAXIMAS_EXPORTACAO = 100;
   // Teto de itens exportáveis (100 páginas × 100). Acima disso a exportação é

@@ -2,8 +2,9 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" sizes="any" href="../favicon.svg">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Aprovação da Segurança do Trabalho — Gestão de EPIs</title>
+  <title>Gestão de EPI</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
   <link rel="stylesheet" href="../css/main.css">
   <script src="../js/tema.js"></script>
@@ -63,6 +64,8 @@
     @media (max-width: 1100px){.aprovacao-grid{grid-template-columns:minmax(0,1fr)}}
     @media (max-width: 560px){.detalhe-pedido{grid-template-columns:1fr}.detalhe-pedido dd{margin-bottom:6px}.acoes-analise{width:100%}.acoes-analise button{flex:1}}
   </style>
+  <link rel="stylesheet" href="../css/reports.css">
+  <link rel="stylesheet" href="../css/aprovacao-sst.css">
 </head>
 <!--
   Aprovação da Segurança do Trabalho (Bloco 12; fundação na 12G-1, fluxo na 12G-3).
@@ -74,7 +77,7 @@
   estão em js/aprovacao-sst.js, sobre as rotas da 12F (fila, detalhe e
   decisão); o servidor decide tudo de novo, inclusive a separação de funções.
 -->
-<body>
+<body class="reports-visual aprovacao-sst-visual">
 
 <!-- ══ VERIFICAÇÃO DA SESSÃO ══ Sem login próprio: usa a sessão empresarial
      criada pelo Portal do Cliente, confirmada no servidor por

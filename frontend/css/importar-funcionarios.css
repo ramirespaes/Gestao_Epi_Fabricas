@@ -1,0 +1,71 @@
+/* Importar Funcionários: acabamento compartilhado em reports.css.
+   Preserva as etapas, a leitura local, as conferências, as validações e o envio em lotes. */
+body.importar-funcionarios-visual #importEmployeesView{display:grid;gap:20px;min-width:0}
+body.importar-funcionarios-visual .page-actions{margin-bottom:0}
+/* Painéis de 28px = blocos internos/tabelas de 16px + recuo de 12px. */
+body.importar-funcionarios-visual .card{padding:12px;min-width:0}
+body.importar-funcionarios-visual .card-header{padding:12px;margin-bottom:12px}
+body.importar-funcionarios-visual .card-title{overflow-wrap:anywhere}
+body.importar-funcionarios-visual #importUploadCard .card-icon{background:var(--primary-container)!important;color:var(--primary)!important}
+body.importar-funcionarios-visual #importPreviewCard .card-icon,
+body.importar-funcionarios-visual #importResultCard .card-icon{background:var(--success-container)!important;color:var(--success)!important}
+body.importar-funcionarios-visual .import-dropzone{border-radius:16px;border-color:var(--outline);padding:40px 20px;background:var(--surface-container);gap:12px;line-height:1.6}
+body.importar-funcionarios-visual .import-dropzone:hover,
+body.importar-funcionarios-visual .import-dropzone.drag-over{background:var(--primary-container);border-color:var(--primary)}
+body.importar-funcionarios-visual .import-drop-title{font-weight:600}
+body.importar-funcionarios-visual #importUploadCard > .notice{background:var(--primary-container)!important;border-color:var(--outline)!important;color:var(--on-surface)!important;line-height:1.7}
+/* Reaproveita os mesmos contêineres e checkboxes: só substitui o acabamento inline. */
+body.importar-funcionarios-visual #importPreviewCard > div:has(#lgpdConsentImport),
+body.importar-funcionarios-visual #blocoConfirmacaoAmbiguos{padding:12px!important;border:1px solid var(--outline)!important;border-radius:16px!important;background:var(--surface-container-high)!important;line-height:1.7}
+body.importar-funcionarios-visual #importPreviewCard > div:has(#lgpdConsentImport) label,
+body.importar-funcionarios-visual #blocoConfirmacaoAmbiguos label{line-height:1.7}
+body.importar-funcionarios-visual .import-summary,
+body.importar-funcionarios-visual .import-result-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr));gap:12px;margin-top:16px}
+body.importar-funcionarios-visual .import-stat{
+  --import-accent:var(--primary);--import-fill:var(--surface-container-high);
+  padding:16px;border-radius:16px;border:1px solid var(--outline);border-top:3px solid var(--import-accent);background:var(--import-fill);min-width:0;
+}
+body.importar-funcionarios-visual .import-stat.ok{--import-accent:var(--success);--import-fill:var(--success-container)}
+body.importar-funcionarios-visual .import-stat.warn{--import-accent:var(--warning);--import-fill:var(--warning-container)}
+body.importar-funcionarios-visual .import-stat.err{--import-accent:var(--error);--import-fill:var(--error-container)}
+body.importar-funcionarios-visual .import-stat span{font-size:13px;line-height:1.6}
+body.importar-funcionarios-visual .import-stat strong{font-size:28px;font-weight:600;line-height:1.3;font-variant-numeric:tabular-nums;color:var(--on-surface);overflow-wrap:anywhere}
+body.importar-funcionarios-visual .table-wrap{min-width:0;overflow-x:auto}
+body.importar-funcionarios-visual .import-divergencias{min-width:0;width:100%;table-layout:fixed}
+body.importar-funcionarios-visual .import-divergencias th,
+body.importar-funcionarios-visual .import-divergencias td{padding:10px;overflow-wrap:anywhere;font-size:12px;line-height:1.6}
+body.importar-funcionarios-visual .import-ghe-planilha{margin-bottom:8px;line-height:1.6;overflow-wrap:anywhere}
+body.importar-funcionarios-visual .import-ghe-select{height:auto;min-height:46px;max-width:100%;padding:10px 12px;border:1px solid var(--outline);border-radius:12px;background:var(--surface-container);color:var(--on-surface);font:inherit}
+body.importar-funcionarios-visual .import-error-list{border-radius:16px;border-color:var(--outline);background:var(--warning-container);padding:16px}
+body.importar-funcionarios-visual .import-error-list strong{color:var(--on-surface);font-size:14px;line-height:1.6}
+body.importar-funcionarios-visual .import-error-item{padding:10px 0;border-color:var(--outline-variant);font-size:13px;line-height:1.7;overflow-wrap:anywhere}
+body.importar-funcionarios-visual .import-row-ok{background:var(--success-container)}
+body.importar-funcionarios-visual .import-row-warn{background:var(--warning-container)}
+body.importar-funcionarios-visual .import-row-err{background:var(--error-container)}
+body.importar-funcionarios-visual .import-row-badge{padding:4px 10px;font-size:12px;font-weight:600;line-height:1.5;border:1px solid var(--outline);color:var(--on-surface)}
+body.importar-funcionarios-visual .import-row-badge.ok{background:var(--success-container);border-color:var(--success);color:var(--on-surface)}
+body.importar-funcionarios-visual .import-row-badge.warn{background:var(--warning-container);border-color:var(--warning);color:var(--on-surface)}
+body.importar-funcionarios-visual .import-row-badge.err{background:var(--error-container);border-color:var(--error);color:var(--on-surface)}
+html[data-display] body.importar-funcionarios-visual .import-error-item .material-symbols-outlined,
+html[data-a11y] body.importar-funcionarios-visual .import-error-item .material-symbols-outlined{color:var(--on-surface)!important}
+html[data-display] body.importar-funcionarios-visual #aviso .notice,
+html[data-a11y] body.importar-funcionarios-visual #aviso .notice{color:var(--on-surface)!important;border-color:var(--outline)!important}
+html[data-a11y="lowvision"] body.importar-funcionarios-visual .import-stat span,
+html[data-a11y="lowvision"] body.importar-funcionarios-visual .import-row-badge,
+html[data-a11y="lowvision"] body.importar-funcionarios-visual .import-error-item,
+html[data-a11y="lowvision"] body.importar-funcionarios-visual .import-divergencias th,
+html[data-a11y="lowvision"] body.importar-funcionarios-visual .import-divergencias td{font-size:15px}
+html[data-a11y="lowvision"] body.importar-funcionarios-visual .import-ghe-select{min-height:52px;font-size:16px;border-width:2px}
+@media(max-width:720px){
+  body.importar-funcionarios-visual .card{padding:12px}
+  body.importar-funcionarios-visual .import-dropzone{padding:28px 16px}
+}
+@media(forced-colors:active){
+  body.importar-funcionarios-visual .import-dropzone,
+  body.importar-funcionarios-visual .import-stat,
+  body.importar-funcionarios-visual .import-error-list,
+  body.importar-funcionarios-visual .import-row-badge{background:Canvas;border-color:CanvasText;color:CanvasText}
+  body.importar-funcionarios-visual #importUploadCard > .notice,
+  body.importar-funcionarios-visual #importPreviewCard > div:has(#lgpdConsentImport),
+  body.importar-funcionarios-visual #blocoConfirmacaoAmbiguos{background:Canvas!important;border-color:CanvasText!important;color:CanvasText!important}
+}

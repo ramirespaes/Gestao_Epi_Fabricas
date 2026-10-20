@@ -312,7 +312,7 @@ describe('inspeção estática', () => {
   });
 
   test('nome, subtítulo e menu: "Validade de estoque", lotes, CA, vencimentos e bloqueios', () => {
-    assert.match(html, /<title>Validade de estoque — Gestão de EPIs<\/title>/);
+    assert.match(html, /<title>Gestão de EPI<\/title>/);
     assert.match(html, /<h2[^>]*>Validade de estoque<\/h2>/);
     assert.match(html, /Acompanhe, lote a lote, o CA e a validade de cada entrada, o que vence em breve, o que está bloqueado e dê baixa no que não pode mais ser entregue\./);
     assert.match(html, /<a class="active" href="javascript:void\(0\)" data-pagina="stockValidity" style="display:none"><div class="nav-icon red">event_busy<\/div>Validade de estoque<\/a>/);

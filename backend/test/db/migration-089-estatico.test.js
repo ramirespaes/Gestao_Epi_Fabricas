@@ -24,8 +24,9 @@ describe('migration 089 — estático', () => {
   test('o arquivo existe com o nome aprovado e vem logo depois da 087', () => {
     assert.equal(fs.existsSync(path.join(DIRETORIO, ARQUIVO)), true);
     const arquivos = arquivosSql();
-    assert.equal(arquivos.at(-1), ARQUIVO);
-    assert.match(arquivos.at(-2), /^087_.+\.sql$/);
+    const posicao = arquivos.indexOf(ARQUIVO);
+    assert.ok(posicao > 0, 'a 089 está entre as migrations');
+    assert.match(arquivos[posicao - 1], /^087_.+\.sql$/); // a 090 (Biblioteca de Imagens) vem depois da 089
   });
 
   test('o manifesto tem exatamente uma entrada da 089, igual ao SHA-256 dos bytes do arquivo', () => {

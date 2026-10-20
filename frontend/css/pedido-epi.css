@@ -1,0 +1,81 @@
+/* Pedido de EPI: acabamento compartilhado em reports.css.
+   Mantém os campos dinâmicos, as permissões e todas as ações nos scripts existentes. */
+body.pedido-epi-visual #requestView{display:grid;gap:20px;min-width:0}
+body.pedido-epi-visual .page-actions{margin-bottom:0}
+body.pedido-epi-visual .lgpd-layout{gap:20px}
+body.pedido-epi-visual .lgpd-col,
+body.pedido-epi-visual .stack{gap:20px;min-width:0}
+/* O conteúdo continua limitado pelos campos e colunas; libera sombras e foco nas bordas. */
+body.pedido-epi-visual .lgpd-col{overflow:visible}
+body.pedido-epi-visual .card{padding:12px;margin-bottom:0}
+body.pedido-epi-visual .card-header{padding:12px;margin-bottom:12px}
+body.pedido-epi-visual .card-icon{background:var(--primary-container);color:var(--primary)}
+body.pedido-epi-visual .field{min-width:0;gap:8px}
+body.pedido-epi-visual .input,
+body.pedido-epi-visual .select{max-width:100%;min-width:0}
+body.pedido-epi-visual #formBuscaTrabalhador{padding:12px;gap:16px}
+body.pedido-epi-visual #formBuscaTrabalhador .input,
+body.pedido-epi-visual #filtroStatusPedidos{width:100%}
+/* Formulário: moldura de 36px = item de 24px + recuo de 12px.
+   Item de 24px = controle de 12px + padding de 12px. */
+body.pedido-epi-visual #cardNovaSolicitacao{border-radius:36px}
+body.pedido-epi-visual .form-grid.item-pedido{padding:12px;border-radius:24px;border:1px solid var(--outline);background:var(--surface-container);gap:16px}
+body.pedido-epi-visual .item-titulo{font-size:13px;line-height:1.6;color:var(--on-surface)}
+body.pedido-epi-visual .rotulo-campo,
+body.pedido-epi-visual .campo-erro,
+body.pedido-epi-visual .dica{line-height:1.7}
+body.pedido-epi-visual .dica{font-size:13px}
+body.pedido-epi-visual .item-pedido .input,
+body.pedido-epi-visual .item-pedido .select{background:var(--surface-container-high)}
+body.pedido-epi-visual .input[aria-invalid="true"],
+body.pedido-epi-visual .select[aria-invalid="true"]{border-color:var(--error);box-shadow:0 0 0 1px var(--error)}
+body.pedido-epi-visual .request-item{padding:16px;border-radius:16px;background:var(--surface-container);border-color:var(--outline);min-width:0;gap:12px;flex-wrap:wrap}
+body.pedido-epi-visual .request-meta{flex:1 1 180px;min-width:0;overflow-wrap:anywhere}
+body.pedido-epi-visual .request-meta strong{font-size:15px;line-height:1.5}
+body.pedido-epi-visual .request-meta span{font-size:13px;line-height:1.65}
+body.pedido-epi-visual .trabalhador-opcao:hover:not(:disabled),
+body.pedido-epi-visual .pedido-linha:hover:not(:disabled){border-color:var(--primary);background:var(--primary-container)}
+body.pedido-epi-visual .pedido-linhas,
+body.pedido-epi-visual .trabalhador-opcoes{gap:12px}
+body.pedido-epi-visual .pedido-linhas .request-item + .request-item{margin-top:0}
+body.pedido-epi-visual .request-status[data-status]{--pedido-borda:var(--outline);border:1px solid var(--pedido-borda);line-height:1.5;max-width:100%;overflow-wrap:anywhere}
+body.pedido-epi-visual .request-status[data-status="PENDENTE"]{--pedido-borda:var(--warning)}
+body.pedido-epi-visual .request-status[data-status="APROVADA"],
+body.pedido-epi-visual .request-status[data-status="APROVADA_PARCIAL"],
+body.pedido-epi-visual .request-status[data-status="ENTREGUE"]{--pedido-borda:var(--success)}
+body.pedido-epi-visual .request-status[data-status="REPROVADA"]{--pedido-borda:var(--error)}
+body.pedido-epi-visual .detalhe-pedido{padding:12px;line-height:1.7;gap:8px 16px;grid-template-columns:minmax(0,max-content) minmax(0,1fr)}
+body.pedido-epi-visual .detalhe-pedido dt,
+body.pedido-epi-visual .detalhe-pedido dd{overflow-wrap:anywhere;min-width:0}
+body.pedido-epi-visual .detalhe-subtitulo{padding:0 12px;font-size:15px;line-height:1.6}
+body.pedido-epi-visual .footer-actions{padding-top:16px;border-top:1px solid var(--outline-variant)}
+body.pedido-epi-visual #confirmacaoCancelamento{padding:12px;border:1px solid var(--outline);border-radius:24px;background:var(--surface-container)}
+body.pedido-epi-visual .mini-btn,
+body.pedido-epi-visual .remove-epi-btn{height:auto;min-height:44px;padding:10px 14px;border-radius:12px;font-size:13px;line-height:1.5;white-space:normal}
+body.pedido-epi-visual .mini-btn:hover:not(:disabled){border-color:var(--primary);background:var(--primary-container)}
+body.pedido-epi-visual .remove-epi-btn:hover:not(:disabled){border-color:var(--error);background:var(--error-container)}
+body.pedido-epi-visual .materiais-pendentes{border:1px solid var(--outline);border-radius:16px;line-height:1.7}
+body.pedido-epi-visual .paginacao{padding:16px 12px 4px;line-height:1.6}
+html[data-display] body.pedido-epi-visual .request-status[data-status],
+html[data-a11y] body.pedido-epi-visual .request-status[data-status]{color:var(--on-surface)}
+html[data-a11y="lowvision"] body.pedido-epi-visual .request-meta span,
+html[data-a11y="lowvision"] body.pedido-epi-visual .dica,
+html[data-a11y="lowvision"] body.pedido-epi-visual .campo-erro,
+html[data-a11y="lowvision"] body.pedido-epi-visual .item-titulo,
+html[data-a11y="lowvision"] body.pedido-epi-visual .detalhe-pedido,
+html[data-a11y="lowvision"] body.pedido-epi-visual .request-status{font-size:15px}
+html[data-a11y="lowvision"] body.pedido-epi-visual .mini-btn,
+html[data-a11y="lowvision"] body.pedido-epi-visual .remove-epi-btn{min-height:48px;font-size:16px}
+@media(max-width:720px){
+  body.pedido-epi-visual .card{padding:12px}
+  body.pedido-epi-visual #formBuscaTrabalhador .field{padding-top:0!important}
+}
+@media(max-width:560px){
+  body.pedido-epi-visual .detalhe-pedido{grid-template-columns:minmax(0,1fr)}
+  body.pedido-epi-visual .footer-actions button{flex:1}
+}
+@media(forced-colors:active){
+  body.pedido-epi-visual .request-item,
+  body.pedido-epi-visual .form-grid.item-pedido,
+  body.pedido-epi-visual #confirmacaoCancelamento{background:Canvas;border-color:CanvasText}
+}

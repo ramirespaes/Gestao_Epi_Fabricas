@@ -4,6 +4,7 @@ const { HttpError } = require('../errors/HttpError');
 const { hashTokenSessao, tokenSessaoTemFormatoValido } = require('../security/token');
 const atendimentoRepo = require('../repositories/token-atendimento.repository');
 const catalogoRepo = require('../repositories/token-catalogo.repository');
+const { normalizarIdGrande } = require('../utils/identificador-grande');
 
 /**
  * Atendimento Token — catálogo de materiais físicos autorizados para o funcionário do atendimento vigente (Etapa E).
@@ -18,11 +19,26 @@ const catalogoRepo = require('../repositories/token-catalogo.repository');
  *
  * SELEÇÃO (ver repositories/sql/catalogo-token.js): material da empresa, ativo, com `exige_tamanho` classificado, autorizado pelo GHE ATUAL
  * do funcionário (vínculo direto, ou por tipo ATIVO) e, se exige tamanho, com ao menos um tamanho cadastrado. Saldo nunca filtra nem
- * aparece. Tipo genérico nunca é item. A imagem não tem fonte real ainda: a ausência é representada explicitamente.
+ * aparece. Tipo genérico nunca é item.
+ *
+ * IMAGEM (Biblioteca de Imagens, Unidade 3 G4): a MESMA imagem vinculada ao material no cadastro (colunas de `materiais`, migration 090),
+ * que o repositório já devolve resolvida para uma imagem válida e ATIVA (`imagem_origem`, `imagem_id`, `imagem_versao`). Contrato:
+ * `{ disponivel: true, origem: 'EMPRESA' | 'PADRAO', id: <texto decimal do BIGINT>, versao }`; sem imagem vinculada, ou com a imagem
+ * inativa ou um dado incompleto, o estado explícito `SEM_IMAGEM`. Sem caminho, URL, chave de armazenamento, nome ou hash: o acesso ao
+ * arquivo é de outra etapa. A imagem nunca filtra nem autoriza material.
  */
 
 const ESTADOS = Object.freeze({ OK: 'OK', SEM_GHE: 'SEM_GHE', GHE_INATIVO: 'GHE_INATIVO', SEM_MATERIAIS: 'SEM_MATERIAIS' });
 const SEM_IMAGEM = Object.freeze({ disponivel: false });
+const ORIGENS_DE_IMAGEM = Object.freeze(['EMPRESA', 'PADRAO']);
+
+/** Só com os três dados coerentes (origem conhecida, id decimal canônico, versão ≥ 1); qualquer lacuna é o fallback. */
+function imagemDoCatalogo(m) {
+  const id = normalizarIdGrande(m.imagem_id);
+  const versao = Number(m.imagem_versao);
+  if (!ORIGENS_DE_IMAGEM.includes(m.imagem_origem) || id === null || !Number.isInteger(versao) || versao < 1) return SEM_IMAGEM;
+  return { disponivel: true, origem: m.imagem_origem, id, versao };
+}
 
 const atendimentoInvalido = () => HttpError.unauthorized('ATENDIMENTO_INVALIDO', 'Atendimento inválido ou expirado');
 
@@ -52,7 +68,7 @@ const material = (m) => ({
   tipo: m.tipo === null ? null : { id: m.tipo_material_id, nome: m.tipo },
   exigeTamanho: m.exige_tamanho,
   tamanhos: m.exige_tamanho ? m.tamanhos : [],
-  imagem: SEM_IMAGEM,
+  imagem: imagemDoCatalogo(m),
 });
 
 /**

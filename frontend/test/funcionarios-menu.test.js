@@ -156,7 +156,13 @@ describe('funcionarios.html — moldura padrão de navegação', () => {
     assert.equal(miolo[1].split(FILTRO).length - 1, 1, 'o filtro de Situação aparece uma vez');
     assert.equal(miolo[1].split(OLHO_ABRE).length - 1, 1, 'o invólucro do CPF aparece uma vez');
     assert.equal(miolo[1].split(OLHO_FECHA).length - 1, 1, 'o olho aparece uma vez');
-    const semAcrescimos = miolo[1].replace(FILTRO, '').replace(OLHO_ABRE, '              ').replace(OLHO_FECHA, '');
+    // E a paginação local do refinamento visual: o contador ganha role/aria-live e a barra de páginas entra logo depois dele.
+    const CONTADOR_APROVADO = '<div class="count" id="count"></div>';
+    const CONTADOR_COM_STATUS = '<div class="count" id="count" role="status" aria-live="polite"></div>';
+    const PAGINACAO = '\n      <nav id="paginacaoColaboradores" class="paginacao-colaboradores" aria-label="Páginas de colaboradores" hidden>\n        <button id="paginaColaboradoresAnterior" class="btn btn-outlined" type="button" aria-controls="tbody">Anterior</button>\n        <div id="paginasColaboradores" class="paginas-colaboradores"></div>\n        <button id="paginaColaboradoresProxima" class="btn btn-outlined" type="button" aria-controls="tbody">Próxima</button>\n        <span id="paginaColaboradoresResumo" class="count"></span>\n      </nav>';
+    assert.equal(miolo[1].split(CONTADOR_COM_STATUS).length - 1, 1, 'o contador com status aparece uma vez');
+    assert.equal(miolo[1].split(PAGINACAO).length - 1, 1, 'a barra de páginas aparece uma vez');
+    const semAcrescimos = miolo[1].replace(FILTRO, '').replace(OLHO_ABRE, '              ').replace(OLHO_FECHA, '').replace(CONTADOR_COM_STATUS, CONTADOR_APROVADO).replace(PAGINACAO, '');
     assert.equal(sha(semAcrescimos), MIOLO_SHA);
     const principal = html.slice(html.indexOf('<main class="content">'), html.indexOf('</main>'));
     for (const id of ['estadoPagina', 'conteudoProtegido', 'toasts']) assert.ok(principal.includes(`id="${id}"`), `#${id} dentro de main.content`);

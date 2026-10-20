@@ -156,9 +156,9 @@ describe('nomenclatura visual: Cadastro de Colaboradores', () => {
     assert.ok(inicio.includes('data-pagina="employeeHistory" style="display:none">Histórico de funcionários</a>'));
   });
 
-  test('título, cabeçalho, botão e modais da página usam a nomenclatura nova', async () => {
+  test('aba "Gestão de EPI"; cabeçalho, botão e modais usam a nomenclatura nova', async () => {
     const html = semComentarios(ler(ARQUIVO));
-    assert.match(html, /<title>Cadastro de Colaboradores — Gestão de EPIs<\/title>/);
+    assert.match(html, /<title>Gestão de EPI<\/title>/);
     assert.match(html, /<h1>Cadastro de Colaboradores<\/h1>/);
     assert.match(html, /colaboradores/i);
     const pg = await abrir();

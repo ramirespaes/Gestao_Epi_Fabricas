@@ -1,0 +1,87 @@
+/* Gestão de GHE: adaptações visuais do acabamento compartilhado em reports.css.
+   Preserva os nós do editor inline e todos os controles e estados existentes. */
+body.ghe-visual #employeeGroupsView{display:grid;gap:20px;min-width:0}
+body.ghe-visual .page-actions{margin-bottom:0}
+body.ghe-visual .filters-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr))}
+body.ghe-visual .filters-grid .field{min-width:0}
+body.ghe-visual .input,body.ghe-visual .select{max-width:100%;min-width:0}
+body.ghe-visual .filters-grid .input,body.ghe-visual .filters-grid .select{width:100%}
+body.ghe-visual .filters-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:end;justify-content:flex-end}
+/* Riscos começa com uma linha e cresce para baixo, sem deslocar os demais
+   campos para cima. Sem field-sizing, permanece o redimensionamento manual. */
+body.ghe-visual #formGrupo .filters-grid{align-items:start}
+body.ghe-visual #gheRiscos{field-sizing:content;height:auto;min-height:46px;max-height:240px;padding:11px 12px;line-height:22px;resize:vertical;overflow-y:auto}
+html[data-a11y="lowvision"] body.ghe-visual #gheRiscos{height:auto!important;min-height:52px;line-height:26px}
+@media(min-width:721px){
+  body.ghe-visual #formGrupo .filters-actions{align-self:start;padding-top:26px}
+}
+body.ghe-visual .table-wrap{min-width:0;overflow-x:auto}
+/* Só a lista principal: a matriz e o editor mantêm suas próprias tabelas. */
+body.ghe-visual table:has(>#gruposCorpo){min-width:0;table-layout:fixed}
+body.ghe-visual table:has(>#gruposCorpo)>thead th:nth-child(1){width:100px}
+body.ghe-visual table:has(>#gruposCorpo)>thead th:nth-child(3){width:100px}
+body.ghe-visual table:has(>#gruposCorpo)>thead th:nth-child(4){width:350px}
+body.ghe-visual #gruposCorpo>tr:not(.linha-epis-ghe)>td{overflow-wrap:anywhere}
+body.ghe-visual #gruposCorpo>tr:not(.linha-epis-ghe)>td>.inline-actions{gap:6px;flex-direction:row;align-items:center}
+body.ghe-visual #gruposCorpo>tr:not(.linha-epis-ghe)>td>.inline-actions>.outlined-btn[data-acao]{min-height:44px;padding:8px 10px;border-radius:10px;gap:6px;font-size:13px;line-height:1.4;white-space:nowrap}
+body.ghe-visual #gruposCorpo>tr:not(.linha-epis-ghe)>td>.inline-actions>.outlined-btn[data-acao]>.material-symbols-outlined{font-size:18px;flex:none}
+body.ghe-visual #gruposCorpo>tr:not(.linha-epis-ghe)>td>.inline-actions>.outlined-btn[data-acao="selecionar"]{background:var(--primary-container);color:var(--on-primary-container);border-color:var(--outline)}
+body.ghe-visual #gruposCorpo>tr:not(.linha-epis-ghe)>td>.inline-actions>.outlined-btn[data-acao="editar"]{background:var(--surface-container-high);color:var(--on-surface);border-color:var(--outline)}
+body.ghe-visual #gruposCorpo>tr:not(.linha-epis-ghe)>td>.inline-actions>.outlined-btn[data-acao="inativar"]{background:var(--error-container);color:var(--on-surface);border-color:var(--outline)}
+body.ghe-visual #gruposCorpo>tr:not(.linha-epis-ghe)>td>.inline-actions>.outlined-btn[data-acao="inativar"]>.material-symbols-outlined{color:var(--error)}
+body.ghe-visual #gruposCorpo>tr:not(.linha-epis-ghe)>td>.inline-actions>.outlined-btn[data-acao="reativar"]{background:var(--success-container);color:var(--on-surface);border-color:var(--outline)}
+@media(hover:hover){
+  body.ghe-visual #gruposCorpo>tr:not(.linha-epis-ghe)>td>.inline-actions>.outlined-btn[data-acao]:not(:disabled):not([aria-disabled="true"]):hover{border-color:currentColor;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+}
+body.ghe-visual #gruposCorpo > tr.selecionado > td{background:var(--primary-container)}
+body.ghe-visual #gruposCorpo > .linha-epis-ghe > td{padding:12px;background:var(--surface)}
+/* O editor inserido na tabela usa fundo sólido: evita duas camadas de blur.
+   Seu raio de 28px acompanha a tabela interna de 16px e o recuo de 12px. */
+body.ghe-visual #painelEpisGhe{padding:12px;border-radius:28px;background:var(--surface-container);box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
+body.ghe-visual #painelEpisGhe .card-header{padding:12px;margin-bottom:12px}
+body.ghe-visual #tiposGhe{line-height:1.6;overflow-wrap:anywhere}
+body.ghe-visual .inline-actions{gap:8px}
+body.ghe-visual .mini-btn{min-height:36px;height:auto;padding:7px 12px;border-radius:10px;line-height:1.5}
+body.ghe-visual #formGrupo h3,body.ghe-visual #painelImportacaoGhe h3{line-height:1.5}
+body.ghe-visual #painelImportacaoGhe p{line-height:1.6}
+body.ghe-visual #matrizResumo{line-height:1.6}
+html[data-a11y="lowvision"] body.ghe-visual .mini-btn{min-height:44px;font-size:15px}
+html[data-a11y="lowvision"] body.ghe-visual #gruposCorpo>tr:not(.linha-epis-ghe)>td>.inline-actions>.outlined-btn[data-acao]{min-height:48px;font-size:15px}
+html[data-a11y="lowvision"] body.ghe-visual #matrizResumo{font-size:16px!important}
+body.ghe-visual .paginacao-ghe{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding-top:16px}
+body.ghe-visual .paginacao-ghe[hidden]{display:none}
+body.ghe-visual .paginas-ghe{display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+body.ghe-visual .paginas-ghe .outlined-btn{min-width:44px;padding:8px 12px}
+body.ghe-visual .paginas-ghe [aria-current="page"]{background:var(--primary-container);color:var(--on-primary-container);border-color:var(--primary);font-weight:700}
+body.ghe-visual #paginaGheResumo{flex:1 1 220px;font-size:13px;line-height:1.6;color:var(--on-surface-variant)}
+@media(min-width:1101px){
+  body.ghe-visual #gruposCorpo>tr:not(.linha-epis-ghe)>td>.inline-actions{flex-wrap:nowrap}
+  body.ghe-visual #gruposCorpo>tr:not(.linha-epis-ghe)>td>.inline-actions>.outlined-btn{flex:none}
+}
+/* Evita esconder Situação/Ações à direita: cada GHE passa a ocupar um bloco.
+   Cabeçalhos continuam disponíveis para leitores de tela. Os nós e handlers
+   dos botões e do editor inline não são substituídos. */
+@media(max-width:1100px){
+  body.ghe-visual .table-wrap:has(>table>#gruposCorpo){border-radius:28px}
+  body.ghe-visual table:has(>#gruposCorpo){display:block}
+  body.ghe-visual table:has(>#gruposCorpo)>thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  body.ghe-visual #gruposCorpo{display:grid;gap:12px;padding:12px}
+  body.ghe-visual #gruposCorpo>tr:not(.linha-epis-ghe){display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 12px;min-width:0;padding:12px;border:1px solid var(--outline-variant);border-radius:16px;background:var(--surface-container)}
+  body.ghe-visual #gruposCorpo>tr:not(.linha-epis-ghe)>td{display:block;min-width:0;padding:0;border:0}
+  body.ghe-visual #gruposCorpo>tr.selecionado{background:var(--primary-container);border-color:var(--primary)}
+  body.ghe-visual #gruposCorpo>tr.selecionado>td{background:transparent}
+  body.ghe-visual #gruposCorpo>tr:not(.linha-epis-ghe)>td:nth-child(1){grid-area:1/1;font-size:12px;font-weight:600;color:var(--on-surface-variant)}
+  body.ghe-visual #gruposCorpo>tr:not(.linha-epis-ghe)>td:nth-child(2){grid-area:2/1/3/-1;font-weight:600}
+  body.ghe-visual #gruposCorpo>tr:not(.linha-epis-ghe)>td:nth-child(3){grid-area:1/2}
+  body.ghe-visual #gruposCorpo>tr:not(.linha-epis-ghe)>td:nth-child(4){grid-area:3/1/4/-1;margin-top:4px;padding-top:12px;border-top:1px solid var(--outline-variant)}
+  body.ghe-visual #gruposCorpo>tr:not(.linha-epis-ghe)>td[colspan]{grid-column:1/-1}
+  body.ghe-visual #gruposCorpo>tr:not(.linha-epis-ghe)>td>.inline-actions{align-items:stretch;flex-wrap:wrap}
+  body.ghe-visual #gruposCorpo>tr:not(.linha-epis-ghe)>td>.inline-actions>.outlined-btn{flex:1 1 84px;min-width:0;white-space:normal}
+  body.ghe-visual #gruposCorpo>.linha-epis-ghe{display:block;min-width:0}
+  body.ghe-visual #gruposCorpo>.linha-epis-ghe>td{display:block;min-width:0}
+}
+@media(max-width:560px){
+  body.ghe-visual .inline-actions{flex-direction:column;align-items:stretch}
+  body.ghe-visual #gruposCorpo > .linha-epis-ghe > td{padding:8px}
+  body.ghe-visual .filters-actions button{flex:1}
+}

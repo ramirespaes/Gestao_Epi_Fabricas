@@ -2,8 +2,9 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" sizes="any" href="../favicon.svg">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gestão de GHE — Gestão de EPIs</title>
+  <title>Gestão de EPI</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
   <link rel="stylesheet" href="../css/main.css">
   <script src="../js/tema.js"></script>
@@ -12,8 +13,12 @@
     .nav a.nav-pendente{cursor:default;opacity:.55}
     .nav a.nav-pendente:hover{background:transparent}
     tr.selecionado td{background:rgba(0,122,255,0.06)}
+    #gruposCorpo > .linha-epis-ghe > td{padding:12px;background:var(--surface)}
+    #gruposCorpo .linha-epis-ghe .table-wrap{max-width:100%;overflow-x:auto}
     .nav-etiqueta{margin-left:auto;font-size:10px;font-weight:500;color:var(--on-surface-variant);border:1px solid var(--outline);border-radius:99px;padding:1px 7px;white-space:nowrap}
   </style>
+  <link rel="stylesheet" href="../css/reports.css">
+  <link rel="stylesheet" href="../css/ghe.css">
 </head>
 <!--
   GHE e EPIs (Bloco 9, Etapa C, Parte C5) — página nova (decisão D10).
@@ -23,7 +28,7 @@
   (C1, recurso employeeGroups) e /api/grupos-homogeneos[/:id/materiais].
   Sem js/db-api.js, sem js/main.js, sem dados de exemplo.
 -->
-<body>
+<body class="reports-visual ghe-visual">
 
 <!-- ══ VERIFICAÇÃO DA SESSÃO ══ (Etapa C, Parte C0) Esta página não tem
      login próprio: usa a sessão empresarial criada pelo Portal do Cliente
@@ -215,7 +220,7 @@
               </div>
               <div class="field">
                 <label for="gheRiscos">Riscos</label>
-                <textarea id="gheRiscos" class="input" rows="2" maxlength="2000"></textarea>
+                <textarea id="gheRiscos" class="input" rows="1" maxlength="2000"></textarea>
               </div>
               <div class="filters-actions">
                 <button id="botaoCancelarGrupo" class="outlined-btn" type="button">Cancelar</button>
@@ -237,9 +242,16 @@
               <tbody id="gruposCorpo"></tbody>
             </table>
           </div>
+          <nav id="paginacaoGhe" class="paginacao-ghe" aria-label="Páginas de GHEs" hidden>
+            <button id="paginaGheAnterior" class="outlined-btn" type="button" aria-controls="gruposCorpo" disabled>Anterior</button>
+            <div id="paginasGhe" class="paginas-ghe"></div>
+            <button id="paginaGheProxima" class="outlined-btn" type="button" aria-controls="gruposCorpo" disabled>Próxima</button>
+            <span id="paginaGheResumo" role="status" aria-live="polite"></span>
+          </nav>
         </section>
 
-        <section id="painelEpisGhe" class="card">
+        <div id="painelEpisGheOrigem" hidden>
+        <section id="painelEpisGhe" class="card" tabindex="-1" aria-labelledby="tiposTitulo">
           <div class="card-header">
             <div class="card-title">
               <div class="card-icon">rule</div>
@@ -267,6 +279,7 @@
             </table>
           </div>
         </section>
+        </div>
 
         <section class="card">
           <div class="card-header">
@@ -326,6 +339,8 @@
   var $ = function (id) { return document.getElementById(id); };
   var G = EpiGruposHomogeneos;
   var I = EpiImportacaoGhe;
+  // O editor é um único nó: preserva controles e ouvintes ao mudar de posição.
+  var painelEpisGhe = $('painelEpisGhe');
 
   // Mesmo endereço do Portal do Cliente (portal/config.js).
   EpiHttp.configurar({ baseUrl: window.SAFEWORK_PORTAL_API_BASE_URL });
@@ -333,6 +348,10 @@
   var podeEditar = false;
   var podeCriar = false;
   var grupos = [];
+  var LIMITE_PAGINA_GHE = 10;
+  var paginaGrupos = 1;
+  var totalGrupos = 0;
+  var carregandoGrupos = false;
   var selecionado = null;
   var editando = null;      // id do GHE em edição; null = novo
   var editandoComCodigo = false; // o GHE em edição já tem código: o campo não pode ficar vazio (a API não remove código)
@@ -384,26 +403,83 @@
     return false;
   }
 
+  function recolherPainelEpis() {
+    $('painelEpisGheOrigem').appendChild(painelEpisGhe);
+  }
+
   function desenharGrupos() {
+    // Retira o editor antes de substituir as linhas, para não perder seus nós.
+    recolherPainelEpis();
     $('gruposCorpo').innerHTML = grupos.length
       ? G.render.linhasGrupos(grupos, { podeEditar: podeEditar, selecionado: selecionado })
       : G.render.estado(G.mensagens.vazioGrupos, 4);
+    var destino = selecionado === null ? null : $('episGhePosicao' + selecionado);
+    if (destino) destino.appendChild(painelEpisGhe);
   }
 
-  async function carregarGrupos() {
+  function atualizarPaginacaoGrupos() {
+    var paginas = Math.max(1, Math.ceil(totalGrupos / LIMITE_PAGINA_GHE));
+    $('paginacaoGhe').hidden = totalGrupos === 0;
+    $('paginaGheAnterior').disabled = carregandoGrupos || paginaGrupos <= 1;
+    $('paginaGheProxima').disabled = carregandoGrupos || paginaGrupos >= paginas;
+    if (!totalGrupos) { $('paginasGhe').innerHTML = ''; $('paginaGheResumo').textContent = ''; return; }
+    var numeros = [1, paginas];
+    for (var n = Math.max(1, paginaGrupos - 2); n <= Math.min(paginas, paginaGrupos + 2); n += 1) numeros.push(n);
+    numeros.sort(function (a, b) { return a - b; });
+    var anterior = 0;
+    var html = '';
+    numeros.forEach(function (numero) {
+      if (numero === anterior) return;
+      if (anterior && numero - anterior > 1) html += '<span aria-hidden="true">…</span>';
+      html += '<button id="paginaGhe' + numero + '" class="outlined-btn" type="button" data-pagina="' + numero
+        + '" aria-controls="gruposCorpo" aria-label="Página ' + numero + '"'
+        + (numero === paginaGrupos ? ' aria-current="page"' : '')
+        + (carregandoGrupos ? ' disabled' : '') + '>' + numero + '</button>';
+      anterior = numero;
+    });
+    $('paginasGhe').innerHTML = html;
+    var inicio = (paginaGrupos - 1) * LIMITE_PAGINA_GHE + 1;
+    var fim = Math.min(totalGrupos, inicio + grupos.length - 1);
+    $('paginaGheResumo').textContent = carregandoGrupos ? 'Carregando GHEs…'
+      : inicio + '–' + fim + ' de ' + totalGrupos + ' GHEs · Página ' + paginaGrupos + ' de ' + paginas;
+  }
+
+  async function carregarGrupos(paginaDestino) {
     if (encerrada) return;
+    var destino = paginaDestino || paginaGrupos;
+    recolherPainelEpis();
     var minha = ++consultaGrupos;
+    carregandoGrupos = true;
+    atualizarPaginacaoGrupos();
     $('gruposCorpo').innerHTML = G.render.estado('Carregando…', 4);
-    var r = await G.acoes.listarGrupos();
+    var r = await G.acoes.listarGrupos({ pagina: destino, limite: LIMITE_PAGINA_GHE });
     if (encerrada || minha !== consultaGrupos) return;
+    carregandoGrupos = false;
     if (!r.ok) {
       if (falhou(r)) return;
       grupos = [];
+      totalGrupos = 0;
+      atualizarPaginacaoGrupos();
       $('gruposCorpo').innerHTML = G.render.estado(G.mensagens.erro(r), 4);
       return;
     }
     grupos = r.dados.grupos || [];
+    totalGrupos = Number.isInteger(r.dados.total) && r.dados.total >= 0 ? r.dados.total : grupos.length;
+    var ultima = Math.max(1, Math.ceil(totalGrupos / LIMITE_PAGINA_GHE));
+    if (destino > ultima) return carregarGrupos(ultima);
+    paginaGrupos = destino;
     desenharGrupos();
+    atualizarPaginacaoGrupos();
+  }
+
+  function mudarPaginaGrupos(destino) {
+    if (encerrada || carregandoGrupos || !Number.isInteger(destino) || destino < 1
+      || destino > Math.ceil(totalGrupos / LIMITE_PAGINA_GHE) || destino === paginaGrupos) return undefined;
+    return carregarGrupos(destino).then(function () {
+      if (encerrada || $('paginacaoGhe').hidden) return;
+      var atual = $('paginaGhe' + paginaGrupos);
+      if (atual && typeof atual.focus === 'function') atual.focus({ preventScroll: true });
+    });
   }
 
   function atualizarResumo() {
@@ -606,6 +682,13 @@
     await carregarMatriz(); // o que vale é o estado persistido
   }
 
+  $('paginaGheAnterior').addEventListener('click', function () { return mudarPaginaGrupos(paginaGrupos - 1); });
+  $('paginaGheProxima').addEventListener('click', function () { return mudarPaginaGrupos(paginaGrupos + 1); });
+  $('paginasGhe').addEventListener('click', function (evento) {
+    var alvo = evento.target && evento.target.closest ? evento.target.closest('[data-pagina]') : null;
+    return alvo ? mudarPaginaGrupos(Number(alvo.getAttribute('data-pagina'))) : undefined;
+  });
+
   $('gruposCorpo').addEventListener('click', function (evento) {
     var alvo = evento.target && evento.target.closest ? evento.target.closest('[data-acao]') : null;
     if (!alvo) return undefined;
@@ -615,11 +698,9 @@
       selecionado = id;
       mostrarAviso('', null);
       desenharGrupos();
-      // Os dois blocos são independentes: a falha de um não impede o outro. A rolagem é uma só, quando o bloco principal já está na tela.
-      return carregarTipos().then(function (desenhou) {
-        if (desenhou) rolarAte('painelEpisGhe');
-        return carregarMatriz();
-      });
+      // Abre junto ao grupo, sem deslocar a página; as duas consultas continuam independentes.
+      painelEpisGhe.focus({ preventScroll: true });
+      return carregarTipos().then(function () { return carregarMatriz(); });
     }
     if (!podeEditar) return undefined;
     if (acao === 'editar') { abrirFormulario(grupos.find(function (g) { return g.id === id; }) || null, { rolar: true }); return undefined; }
@@ -817,6 +898,7 @@
 
   // O GHE selecionado não é mais confiável depois de uma importação: fecha a área de EPIs e deixa nova escolha.
   function fecharAreaDoGhe() {
+    recolherPainelEpis();
     consultaMatriz += 1;
     consultaTipos += 1;
     selecionado = null;
@@ -884,6 +966,7 @@
   $('botaoDescartarMatriz').addEventListener('click', function () { mostrarAviso('', null); return carregarMatriz(); });
 
   function encerrarTela() {
+    recolherPainelEpis();
     encerrada = true;
     consultaGrupos += 1;
     consultaMatriz += 1;
@@ -891,6 +974,10 @@
     tiposDoServidor = [];
     escolhas = {};
     grupos = [];
+    totalGrupos = 0;
+    paginaGrupos = 1;
+    carregandoGrupos = false;
+    atualizarPaginacaoGrupos();
     selecionado = null;
     persistidos = [];
     marcados = [];

@@ -46,6 +46,10 @@ function servidor(responder) {
 beforeEach(() => servidor(resposta(200, listaGrupos([grupo()]))));
 
 describe('acoes: somente endpoints reais; empresa e ator nunca saem do navegador', () => {
+  test('a lista aceita a paginação já oferecida pela API, sem alterar o padrão dos outros consumidores', async () => {
+    await modulo().acoes.listarGrupos({ pagina: 3, limite: 10 });
+    assert.deepEqual(chamadas.map((c) => c.caminho), ['/api/grupos-homogeneos?pagina=3&limite=10']);
+  });
   test('GHE: listar, criar, alterar, inativar e reativar', async () => {
     const { acoes } = modulo();
     await acoes.listarGrupos();
@@ -212,11 +216,18 @@ function montarPagina(responder, { acesso = ACESSO_EDITAR } = {}) {
   const mapa = {};
   const el = (id) => (mapa[id] = mapa[id] || {
     id, value: '', innerHTML: '', textContent: '', disabled: false, hidden: false, style: {}, listeners: {},
+    appendChild(no) { no.parentNode = this; return no; },
     addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
-    focus() {},
+    focus(opcoes) { this.ultimoFoco = opcoes; },
   });
   const sandbox = {
-    document: { getElementById: el, querySelectorAll: () => [] },
+    document: {
+      getElementById(id) {
+        if (id.startsWith('episGhePosicao') && !el('gruposCorpo').innerHTML.includes('id="' + id + '"')) return null;
+        return el(id);
+      },
+      querySelectorAll: () => [],
+    },
     window: { SAFEWORK_PORTAL_API_BASE_URL: BASE, confirm: () => true },
     EpiHttp, EpiGruposHomogeneos: modulo(), EpiImportacaoGhe: require('../js/importacao-ghe'), // eslint-disable-line global-require
     EpiPermissoes: { prepararPagina: async () => acesso },
@@ -235,7 +246,9 @@ function montarPagina(responder, { acesso = ACESSO_EDITAR } = {}) {
     for (const fn of (el('matrizCorpo').listeners.change || [])) await fn({ target: alvo({ 'data-material-id': String(materialId), checked }) });
     await esperar();
   };
-  return { el, sandbox, esperar, clicar, acaoGrupo, marcar };
+  const paginaSemEsperar = (numero) => Promise.all((el('paginasGhe').listeners.click || []).map((fn) => fn({ target: alvo({ 'data-pagina': String(numero) }) })));
+  const pagina = async (numero) => { await paginaSemEsperar(numero); await esperar(); };
+  return { el, sandbox, esperar, clicar, acaoGrupo, marcar, pagina, paginaSemEsperar };
 }
 
 /** Servidor em memória com o mesmo contrato da API (estado persistido real). */
@@ -263,7 +276,7 @@ describe('página (DOM simulado)', () => {
     const pg = montarPagina(resposta(200, listaGrupos([grupo(), grupo({ id: 6, nome: 'Pintores' })])));
     assert.match(pg.el('gruposCorpo').innerHTML, /Carregando/);
     await pg.esperar();
-    assert.deepEqual(chamadas.map((c) => c.caminho), ['/api/grupos-homogeneos?pagina=1&limite=100']);
+    assert.deepEqual(chamadas.map((c) => c.caminho), ['/api/grupos-homogeneos?pagina=1&limite=10']);
     assert.equal((pg.el('gruposCorpo').innerHTML.match(/<tr[ >]/g) || []).length, 2);
     assert.match(pg.el('gruposCorpo').innerHTML, /Pintores/);
   });
@@ -376,5 +389,141 @@ describe('página (DOM simulado)', () => {
     await pg.acaoGrupo('selecionar', 5);
     assert.match(pg.el('matrizCorpo').innerHTML, /data-material-id="11" disabled/);
     assert.equal(pg.el('botaoSalvarMatriz').hidden, true);
+  });
+});
+
+// Exercita a página real com respostas paginadas, sem banco nem HTTP externo.
+describe('paginação de GHE: 10 por página', () => {
+  function paginado(total = 25, interceptar = () => null) {
+    const estado = { grupos: Array.from({ length: total }, (_, i) => grupo({ id: i + 1, codigo: 'GHE-' + (i + 1), nome: 'Grupo ' + (i + 1) })) };
+    const responder = (u, o) => {
+      const extra = interceptar(u, o);
+      if (extra) return extra;
+      if (u.pathname === '/api/grupos-homogeneos') {
+        const pagina = Number(u.searchParams.get('pagina'));
+        const limite = Number(u.searchParams.get('limite'));
+        return resposta(200, { status: 'ok', total: estado.grupos.length, pagina, limite, grupos: estado.grupos.slice((pagina - 1) * limite, pagina * limite) });
+      }
+      if (u.pathname.endsWith('/tipos-material')) return resposta(200, { status: 'ok', grupo: { id: 5, nome: 'Grupo 5', ativo: true }, tipos: [] });
+      if (u.pathname.endsWith('/materiais')) return resposta(200, matriz([material()]));
+      return resposta(200, { status: 'ok', grupo: grupo() });
+    };
+    return { estado, responder };
+  }
+  const idsNaTela = (pg) => [...pg.el('gruposCorpo').innerHTML.matchAll(/data-acao="selecionar" data-id="(\d+)"/g)].map((m) => Number(m[1]));
+
+  test('primeira, próxima, número, última e anterior; total acima do antigo limite de 100 permanece acessível', async () => {
+    const pg = montarPagina(paginado(125).responder);
+    await pg.esperar();
+    assert.deepEqual(idsNaTela(pg), [1,2,3,4,5,6,7,8,9,10]);
+    assert.equal(pg.el('paginaGheAnterior').disabled, true);
+    assert.equal(pg.el('paginacaoGhe').hidden, false);
+    assert.match(pg.el('paginaGheResumo').textContent, /1–10 de 125 GHEs/);
+    await pg.clicar('paginaGheProxima');
+    assert.deepEqual(idsNaTela(pg), [11,12,13,14,15,16,17,18,19,20]);
+    await pg.pagina(13);
+    assert.deepEqual(idsNaTela(pg), [121,122,123,124,125]);
+    assert.match(pg.el('paginasGhe').innerHTML, /data-pagina="13"[^>]*aria-current="page"/);
+    assert.equal(pg.el('paginaGheProxima').disabled, true);
+    assert.match(pg.el('paginaGheResumo').textContent, /121–125 de 125 GHEs · Página 13 de 13/);
+    assert.equal(pg.el('paginaGhe13').ultimoFoco.preventScroll, true);
+    await pg.clicar('paginaGheAnterior');
+    assert.deepEqual(idsNaTela(pg), [111,112,113,114,115,116,117,118,119,120]);
+    assert.ok(chamadas.every((c) => c.metodo === 'GET' && /limite=10$/.test(c.caminho)));
+  });
+
+  test('trocar a página preserva o nó do editor e a seleção pendente; voltar não refaz consultas nem grava vínculos', async () => {
+    const pg = montarPagina(paginado().responder);
+    await pg.esperar();
+    await pg.acaoGrupo('selecionar', 5);
+    await pg.marcar(11, true);
+    const painel = pg.el('painelEpisGhe');
+    const resumo = pg.el('matrizResumo').textContent;
+    const inicio = chamadas.length;
+    await pg.pagina(2);
+    assert.equal(painel.parentNode.id, 'painelEpisGheOrigem');
+    assert.equal(pg.el('matrizResumo').textContent, resumo);
+    await pg.pagina(1);
+    assert.equal(pg.el('painelEpisGhe'), painel);
+    assert.equal(painel.parentNode.id, 'episGhePosicao5');
+    assert.equal(pg.el('matrizResumo').textContent, resumo);
+    assert.deepEqual(chamadas.slice(inicio).map((c) => c.caminho), ['/api/grupos-homogeneos?pagina=2&limite=10', '/api/grupos-homogeneos?pagina=1&limite=10']);
+  });
+
+  test('Editar em outra página mantém o ID e recarrega a mesma página após salvar', async () => {
+    const pg = montarPagina(paginado().responder);
+    await pg.esperar();
+    await pg.pagina(2);
+    await pg.acaoGrupo('editar', 14);
+    assert.equal(pg.el('gheNome').value, 'Grupo 14');
+    pg.el('gheNome').value = 'Nome atualizado';
+    await pg.clicar('botaoSalvarGrupo');
+    assert.ok(chamadas.some((c) => c.metodo === 'PATCH' && c.caminho === '/api/grupos-homogeneos/14' && c.corpo.nome === 'Nome atualizado'));
+    assert.equal(chamadas.at(-1).caminho, '/api/grupos-homogeneos?pagina=2&limite=10');
+    assert.equal(idsNaTela(pg)[0], 11);
+  });
+
+  test('loading bloqueia novas trocas e falha limpa a lista, sem reapresentar dados antigos', async () => {
+    let liberar;
+    const espera = new Promise((r) => { liberar = r; });
+    const pg = montarPagina(paginado(25, (u) => u.searchParams.get('pagina') === '2' ? espera : null).responder);
+    await pg.esperar();
+    const mudanca = pg.paginaSemEsperar(2);
+    assert.equal(pg.el('paginaGheAnterior').disabled, true);
+    assert.equal(pg.el('paginaGheProxima').disabled, true);
+    assert.match(pg.el('gruposCorpo').innerHTML, /Carregando/);
+    const antes = chamadas.length;
+    await pg.pagina(3);
+    assert.equal(chamadas.length, antes);
+    liberar(resposta(503, { status: 'error' }));
+    await mudanca;
+    await pg.esperar();
+    assert.deepEqual(idsNaTela(pg), []);
+    assert.equal(pg.el('paginacaoGhe').hidden, true);
+    assert.doesNotMatch(pg.el('gruposCorpo').innerHTML, /Carregando/);
+  });
+
+  test('sessão encerrada durante a consulta não permite repintar a lista nem a paginação', async () => {
+    let liberar;
+    const espera = new Promise((r) => { liberar = r; });
+    const srv = paginado(25, (u) => u.searchParams.get('pagina') === '2' ? espera : null);
+    const pg = montarPagina(srv.responder);
+    await pg.esperar();
+    const mudanca = pg.paginaSemEsperar(2);
+    pg.sandbox.opcoesMontar.aoEncerrar();
+    liberar(resposta(200, { status: 'ok', total: 25, grupos: srv.estado.grupos.slice(10,20), pagina: 2, limite: 10 }));
+    await mudanca;
+    assert.equal(pg.el('gruposCorpo').innerHTML, '');
+    assert.equal(pg.el('paginacaoGhe').hidden, true);
+    assert.equal(pg.el('paginasGhe').innerHTML, '');
+  });
+
+  test('lista reduzida volta para uma página válida; vazio desabilita e esconde a navegação', async () => {
+    const srv = paginado();
+    const pg = montarPagina(srv.responder);
+    await pg.esperar();
+    srv.estado.grupos = srv.estado.grupos.slice(0, 8);
+    await pg.pagina(3);
+    assert.equal(idsNaTela(pg).length, 8);
+    assert.match(pg.el('paginaGheResumo').textContent, /Página 1 de 1/);
+    assert.equal(pg.el('paginaGheAnterior').disabled, true);
+    assert.equal(pg.el('paginaGheProxima').disabled, true);
+    const vazio = montarPagina(paginado(0).responder);
+    await vazio.esperar();
+    assert.equal(vazio.el('paginacaoGhe').hidden, true);
+    assert.match(vazio.el('gruposCorpo').innerHTML, /Nenhum GHE cadastrado/);
+  });
+
+  test('somente leitura continua sem Editar/Inativar em qualquer página', async () => {
+    const pg = montarPagina(paginado().responder, { acesso: ACESSO_LEITURA });
+    await pg.esperar();
+    await pg.pagina(2);
+    assert.equal(idsNaTela(pg).length, 10);
+    assert.doesNotMatch(pg.el('gruposCorpo').innerHTML, /data-acao="(editar|inativar|reativar)"/);
+    assert.equal(pg.el('botaoNovoGrupo').hidden, true);
+    const antes = chamadas.length;
+    await pg.pagina(0);
+    await pg.pagina(999);
+    assert.equal(chamadas.length, antes);
   });
 });

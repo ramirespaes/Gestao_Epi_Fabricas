@@ -109,9 +109,9 @@ const contexto = () => ({
 });
 const lista = (itens) => ({ status: 200, corpo: { status: 'ok', itens, total: itens.length, pagina: 1, limite: 20 } });
 
-function abrir({ rotas = {}, transformar = null, ...perm } = {}) {
+function abrir({ rotas = {}, transformar = null, hash = '', search = '', ...perm } = {}) {
   return abrirPagina(ARQUIVO, {
-    transformar,
+    transformar, hash, search,
     rotas: {
       'GET /auth/me': { status: 200, corpo: contexto() },
       'GET /auth/global/me': { status: 200, corpo: { status: 'ok', empresas: [{ id: 3 }] } },
@@ -410,5 +410,44 @@ describe('Relatório — Auditoria — página (DOM simulado, sessão e permiss�
     const P = require('../js/permissoes-efetivas'); // eslint-disable-line global-require
     assert.equal(P.podeAbrir({ ...permissoes({ auditoria: true }) }, 'reports'), true);
     assert.equal(P.podeAbrir({ ...permissoes({ auditoria: false }) }, 'reports'), false);
+  });
+});
+
+
+describe('Relatórios — manter a aba após recarregar', () => {
+  test('selecionar Auditoria registra a aba na URL sem navegação e preserva a query', async () => {
+    const pg = await pronta({ materiais: true, search: '?origem=teste' });
+    await pg.consulta('.report-tab[data-recurso="reportsAudit"]')[0].disparar('click');
+    await pg.esperar();
+    assert.equal(pg.location.hash, '#reportAudit');
+    assert.equal(pg.location.search, '?origem=teste');
+    assert.deepEqual(pg.navegacoes, []);
+    assert.equal(pg.historico.at(-1).metodo, 'replaceState');
+  });
+
+  test('reabrir a mesma URL restaura Auditoria sem consultar Estoque', async () => {
+    const anterior = await pronta({ materiais: true });
+    await anterior.consulta('.report-tab[data-recurso="reportsAudit"]')[0].disparar('click');
+    const recarregada = await pronta({ materiais: true, hash: anterior.location.hash });
+    assert.equal(recarregada.consulta('.report-tab.active')[0].getAttribute('data-secao'), 'reportAudit');
+    assert.equal(recarregada.visivel('reportAudit'), true);
+    assert.equal(recarregada.visivel('reportStock'), false);
+    assert.equal(consultas(recarregada, 'estoque').length, 0);
+    assert.equal(consultas(recarregada, 'auditoria/log').length, 1);
+  });
+
+  test('aba sem permissão na URL volta à primeira permitida e não consulta Auditoria', async () => {
+    const pg = await pronta({ materiais: true, auditoria: false, hash: '#reportAudit' });
+    assert.equal(pg.consulta('.report-tab.active')[0].getAttribute('data-secao'), 'reportStock');
+    assert.equal(pg.location.hash, '#reportStock');
+    assert.equal(consultas(pg, 'auditoria/log').length, 0);
+    assert.equal(consultas(pg, 'auditoria/indicadores').length, 0);
+  });
+
+  test('fragmento desconhecido usa a primeira permitida sem injetar o valor no DOM', async () => {
+    const pg = await pronta({ materiais: true, hash: '#<script>naoExecutar()</script>' });
+    assert.equal(pg.consulta('.report-tab.active')[0].getAttribute('data-secao'), 'reportStock');
+    assert.equal(pg.location.hash, '#reportStock');
+    assert.equal(pg.textoDoDom().includes('naoExecutar'), false);
   });
 });

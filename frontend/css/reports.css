@@ -1,0 +1,103 @@
+/* Visual exclusivo de Relatórios, com os tokens do tema existente.
+   Painéis de 28px; filtros de 16px + recuo de 12px; controles de 12px. */
+body.reports-visual{--reports-glass:var(--surface-container);
+  --reports-border:var(--outline-variant);
+  --reports-depth:0 8px 24px rgba(20,40,70,.07),0 1px 0 rgba(255,255,255,.7) inset;
+  background:var(--surface);}
+html[data-theme="dark"] body.reports-visual{--reports-depth:0 10px 28px rgba(0,0,0,.18),0 1px 0 rgba(255,255,255,.16) inset}
+body.reports-visual .content{padding:28px 32px 48px;max-width:1800px}
+body.reports-visual #reportsView{min-width:0}
+body.reports-visual .page-actions{padding:28px;border-radius:28px;border:1px solid var(--reports-border);background:var(--reports-glass);box-shadow:var(--reports-depth);align-items:center}
+body.reports-visual .page-actions h2{font-size:30px!important;font-weight:600!important;line-height:1.25!important}
+body.reports-visual .page-actions p{line-height:1.65;max-width:760px}
+body.reports-visual .report-tabs{gap:8px;margin:20px 0;padding:8px;border:1px solid var(--reports-border);border-radius:20px;background:var(--reports-glass);width:fit-content;max-width:100%}
+body.reports-visual .report-tab{height:auto;min-height:44px;padding:10px 16px;border-radius:12px;border-color:transparent;background:transparent;font-size:13px;line-height:1.5}
+body.reports-visual .report-tab.active{background:var(--primary-container);color:var(--on-primary-container);border-color:var(--outline)}
+body.reports-visual .report-tab[data-secao="reportFiscal"]{color:var(--error)!important;background:var(--error-container)!important;border-color:var(--outline-variant)!important}
+body.reports-visual .report-tab:hover{border-color:var(--primary)}
+body.reports-visual .report-subview.active{display:grid;gap:20px}
+body.reports-visual .grid{gap:20px;min-width:0}
+body.reports-visual .grid>*{min-width:0}
+body.reports-visual .card{padding:24px;border-radius:28px;background:var(--reports-glass);border:1px solid var(--reports-border);box-shadow:var(--reports-depth);min-width:0}
+body.reports-visual .card-header{gap:16px;flex-wrap:wrap;align-items:start;margin-bottom:22px}
+body.reports-visual .card-title{min-width:0;flex:1 1 260px}
+body.reports-visual .card-title h2{font-weight:600;line-height:1.4}
+body.reports-visual .card-title p{line-height:1.6;max-width:780px}
+body.reports-visual .card-icon{flex:none;border-radius:12px;width:42px;height:42px}
+body.reports-visual .stats{grid-template-columns:repeat(auto-fit,minmax(min(100%,135px),1fr));gap:12px}
+body.reports-visual .stat{--reports-accent:var(--primary);padding:18px;border-radius:18px;border:1px solid var(--outline);background:var(--surface-container);line-height:1.5;min-width:0}
+body.reports-visual .stat:nth-child(2){--reports-accent:var(--success)}
+body.reports-visual .stat:nth-child(3){--reports-accent:var(--warning)}
+body.reports-visual #reportAudit .stat:nth-child(1){--reports-accent:var(--warning)}
+body.reports-visual #reportAudit .stat:nth-child(2),
+body.reports-visual #reportAudit .stat:nth-child(4){--reports-accent:var(--error)}
+body.reports-visual #reportAudit .stat:nth-child(3){--reports-accent:var(--primary)}
+body.reports-visual .stat strong{font-weight:600;line-height:1.2;color:var(--on-surface)!important;font-variant-numeric:tabular-nums;font-size:30px}
+body.reports-visual .filters-grid{padding:12px;border-radius:16px;background:var(--surface);border:1px solid var(--outline-variant);gap:14px}
+body.reports-visual .filters-grid .field{gap:8px}
+body.reports-visual .field label{line-height:1.5;font-weight:600}
+body.reports-visual .input,
+body.reports-visual .select{height:46px;border-radius:12px;border:1px solid var(--outline);background:var(--surface-container);color:var(--on-surface)}
+body.reports-visual textarea.input{height:auto;min-height:90px;padding:12px;resize:vertical}
+body.reports-visual .filled-btn,
+body.reports-visual .outlined-btn,
+body.reports-visual .tonal-btn{height:auto;min-height:44px;border-radius:12px;padding:10px 16px;line-height:1.5;justify-content:center;white-space:normal}
+body.reports-visual button:disabled{opacity:.5;cursor:not-allowed}
+body.reports-visual .table-wrap{border-radius:16px;background:var(--surface-container);border:1px solid var(--outline);max-width:100%}
+body.reports-visual thead th{padding:16px;font-size:11px;line-height:1.5;background:var(--surface-container-high)}
+body.reports-visual tbody td{padding:16px;line-height:1.6}
+body.reports-visual .paginacao-entregas{padding-top:16px;flex-wrap:wrap;line-height:1.5}
+body.reports-visual .notice{border-radius:16px;background:var(--warning-container);color:var(--on-surface);border-color:var(--outline);line-height:1.7}
+body.reports-visual #alertasEstoque{color:var(--on-surface-variant);font-size:13px;line-height:1.7;min-height:105px}
+body.reports-visual #fiscEscopos{display:flex;gap:12px;flex-wrap:wrap}
+body.reports-visual #fiscEscopos label{display:flex;align-items:center;gap:6px;font-size:14px;min-height:44px}
+body.reports-visual :focus-visible{outline:3px solid var(--primary)!important;outline-offset:4px!important}
+@supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+@media(forced-colors:none){
+html:not([data-display]):not([data-a11y]) body.reports-visual{--reports-glass:color-mix(in srgb,var(--surface-container) 54%,transparent);
+    --reports-border:color-mix(in srgb,var(--outline) 35%,rgba(255,255,255,.5));
+    background:radial-gradient(ellipse at 85% 14%,color-mix(in srgb,var(--primary) 20%,transparent),transparent 48%),radial-gradient(ellipse at 15% 65%,color-mix(in srgb,var(--secondary) 13%,transparent),transparent 48%),var(--surface);
+    background-attachment:fixed;}
+html:not([data-display]):not([data-a11y]) body.reports-visual .card,
+html:not([data-display]):not([data-a11y]) body.reports-visual .page-actions,
+html:not([data-display]):not([data-a11y]) body.reports-visual .report-tabs{backdrop-filter:blur(22px) saturate(150%);-webkit-backdrop-filter:blur(22px) saturate(150%)}
+html:not([data-display]):not([data-a11y]) body.reports-visual .stat{background:linear-gradient(135deg,rgba(255,255,255,.34),transparent 58%),color-mix(in srgb,var(--reports-accent) 9%,color-mix(in srgb,var(--surface-container) 28%,transparent));
+    border-color:color-mix(in srgb,var(--reports-accent) 24%,rgba(255,255,255,.5));
+    backdrop-filter:blur(22px) saturate(150%);-webkit-backdrop-filter:blur(22px) saturate(150%);
+    box-shadow:0 1px 0 rgba(255,255,255,.85) inset,0 8px 24px rgba(20,40,70,.07);}
+html[data-theme="dark"]:not([data-display]):not([data-a11y]) body.reports-visual .stat{background:linear-gradient(135deg,rgba(255,255,255,.11),transparent 58%),color-mix(in srgb,var(--reports-accent) 10%,color-mix(in srgb,var(--surface-container) 26%,transparent));
+    border-color:color-mix(in srgb,var(--reports-accent) 26%,rgba(255,255,255,.2));
+    box-shadow:0 1px 0 rgba(255,255,255,.24) inset,0 10px 28px rgba(0,0,0,.18);}
+}
+}
+html[data-display] body.reports-visual,
+html[data-a11y] body.reports-visual{--reports-depth:none}
+html[data-display] body.reports-visual .card,
+html[data-a11y] body.reports-visual .card,
+html[data-display] body.reports-visual .stat,
+html[data-a11y] body.reports-visual .stat{border:2px solid var(--outline)}
+html[data-theme="dark"][data-a11y="lowvision"] body.reports-visual,
+html[data-theme="dark"][data-a11y="monochrome"] body.reports-visual{--on-surface:#fff;--on-surface-variant:#e0e0e0;--surface:#101012;--surface-container:#202023;--surface-container-high:#303034;--outline:#aaa;--outline-variant:#777;--primary:#b3d2ff;--primary-container:#283b56;--on-primary-container:#d6e7ff}
+html[data-a11y="lowvision"] body.reports-visual .stat span{font-size:15px}
+@media(max-width:1024px){
+body.reports-visual .content{padding-top:20px!important}
+}
+@media(max-width:720px){
+body.reports-visual .content{padding:16px 12px 20px!important}
+body.reports-visual .card,
+body.reports-visual .page-actions{padding:20px}
+body.reports-visual .report-tabs{width:100%}
+body.reports-visual .report-tab{flex:1 1 145px}
+}
+@media(prefers-reduced-motion:reduce){
+body.reports-visual *,
+body.reports-visual *::before,
+body.reports-visual *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+}
+@media(forced-colors:active){
+body.reports-visual .card,
+body.reports-visual .stat,
+body.reports-visual .page-actions,
+body.reports-visual .report-tabs{background:Canvas!important;border:1px solid CanvasText!important;box-shadow:none}
+body.reports-visual :focus-visible{outline-color:Highlight!important}
+}

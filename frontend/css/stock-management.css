@@ -1,0 +1,157 @@
+/* Gestão de estoque: acabamento de Relatórios, sem alterar os fluxos.
+   Tokens de superfície, tema, campos e pop-ups continuam compartilhados.
+   Painéis: raio 28px; blocos internos: 16px; controles: 12px. */
+body.stock-management-visual #materialsView{min-width:0}
+body.stock-management-visual #materialsView>.grid{grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);align-items:start}
+body.stock-management-visual #materialsView .stack,
+body.stock-management-visual #materialsView .form-grid,
+body.stock-management-visual #materialsView .field,
+body.stock-management-visual #materialsView .card-title>div{min-width:0}
+body.stock-management-visual #materialsView .stack{gap:20px}
+body.stock-management-visual #materialsView .card{container-type:inline-size}
+body.stock-management-visual #materialsView .form-grid{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}
+body.stock-management-visual #materialsView .card-title h2{font-size:18px}
+body.stock-management-visual #materialsView .helper{line-height:1.65;overflow-wrap:anywhere}
+body.stock-management-visual #materialsView :is(.input,.select){width:100%;min-width:0;max-width:100%}
+body.stock-management-visual #materialsView input[type="file"]{height:auto;min-height:46px;padding:10px;white-space:normal}
+body.stock-management-visual #materialsView .footer-actions{flex-wrap:wrap;gap:10px;padding-top:18px}
+body.stock-management-visual #materialsView .footer-actions button{max-width:100%}
+
+/* Ícone em coluna própria: campo e ação começam na mesma linha vertical.
+   O display do botão continua sendo controlado pelo fluxo existente. */
+body.stock-management-visual #materialsView .field>div:has(>#gradeMaterial){display:grid!important;grid-template-columns:24px minmax(0,1fr);align-items:center;gap:10px 8px!important}
+body.stock-management-visual #pictogramaMaterialAtual{grid-column:1;grid-row:1}
+body.stock-management-visual #gradeMaterial{grid-column:2;grid-row:1}
+body.stock-management-visual #botaoEditarMaterial{grid-column:2;grid-row:2;justify-self:stretch;min-width:0;min-height:46px}
+body.stock-management-visual #materialsView .field>div:has(>#pictogramaMaterialAtual[hidden]){grid-template-columns:minmax(0,1fr)}
+body.stock-management-visual #materialsView .field>div:has(>#pictogramaMaterialAtual[hidden])>:is(#gradeMaterial,#botaoEditarMaterial){grid-column:1}
+@container (min-width:640px){
+  body.stock-management-visual #materialsView .field>div:has(>#gradeMaterial){grid-template-columns:24px minmax(0,1fr) auto}
+  body.stock-management-visual #botaoEditarMaterial{grid-column:3;grid-row:1}
+  body.stock-management-visual #materialsView .field>div:has(>#pictogramaMaterialAtual[hidden]){grid-template-columns:minmax(0,1fr) auto}
+  body.stock-management-visual #materialsView .field>div:has(>#pictogramaMaterialAtual[hidden])>#botaoEditarMaterial{grid-column:2}
+}
+html[data-a11y="lowvision"] body.stock-management-visual #botaoEditarMaterial{min-height:52px}
+
+/* Contornos internos mais suaves; o padding de 12px envolve campos de 12px
+   de raio dentro de um bloco de 24px (raio interno + recuo). */
+body.stock-management-visual #materialsView :is(#blocoEntradaInicial,#validityFields){padding:12px;border:1px solid var(--outline-variant);border-radius:24px;background:var(--surface-container)}
+body.stock-management-visual #materialsView :is(#blocoEntradaEstoque,#blocoBaixaEstoque,#blocoMinimos,#blocoNovoTipo){border-top-color:var(--outline-variant)!important;padding-top:20px!important}
+body.stock-management-visual #campoImagemMaterial .bi-imagem-linha{border-radius:20px;border-color:var(--outline-variant);background:var(--surface-container);padding:12px;gap:12px}
+body.stock-management-visual #campoImagemMaterial .bi-previa{border-radius:8px}
+body.stock-management-visual #campoImagemMaterial .bi-imagem-acoes .outlined-btn{height:auto;min-height:44px}
+body.stock-management-visual #campoImagemMaterial .bi-link{min-height:28px;line-height:1.5;white-space:normal;text-align:left}
+
+/* Os saldos mantêm seus significados e cores, com contraste no tema atual. */
+body.stock-management-visual #materialsView div:has(>#saldoFisico),
+body.stock-management-visual #materialsView div:has(>#saldoBloqueado),
+body.stock-management-visual #materialsView div:has(>#saldoDisponivel){min-width:0;padding:14px 10px!important;border:1px solid var(--outline-variant);border-radius:16px!important;line-height:1.5;background:var(--surface-container-high)!important}
+body.stock-management-visual #materialsView div:has(>#saldoBloqueado){background:var(--error-container)!important}
+body.stock-management-visual #materialsView div:has(>#saldoDisponivel){background:var(--success-container)!important}
+body.stock-management-visual #materialsView :is(#saldoFisico,#saldoBloqueado,#saldoDisponivel){font-size:26px!important;font-weight:600;font-variant-numeric:tabular-nums;color:var(--on-surface)!important;line-height:1.4}
+
+/* A largura mínima pertence à tabela, nunca ao painel ou à página. */
+body.stock-management-visual #materialsView .table-wrap{min-width:0;max-width:100%;overflow:auto;overscroll-behavior-x:contain;scrollbar-gutter:stable}
+body.stock-management-visual #materialsView table{min-width:600px}
+body.stock-management-visual #materialsView table:has(>#lotesCorpo){min-width:540px}
+body.stock-management-visual #materialsView table:has(>#minimosCorpo){min-width:520px}
+body.stock-management-visual #materialsView :is(th,td){overflow-wrap:anywhere}
+/* CA, datas, situação e cabeçalhos não se partem no meio das palavras. */
+body.stock-management-visual #materialsView table:has(>#lotesCorpo) :is(th,td){white-space:nowrap;overflow-wrap:normal;word-break:normal}
+body.stock-management-visual #materialsView td :is(.outlined-btn,.filled-btn){min-height:44px}
+body.stock-management-visual .paginacao-catalogo{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding-top:16px}
+body.stock-management-visual .paginacao-catalogo[hidden],
+body.stock-management-visual .paginacao-catalogo button[hidden]{display:none}
+body.stock-management-visual .catalogo-paginas{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}
+body.stock-management-visual .catalogo-paginas button{min-width:44px;padding:10px 12px}
+body.stock-management-visual .catalogo-paginas [aria-current="page"]{background:var(--primary-container);color:var(--on-primary-container);border-color:var(--primary)}
+body.stock-management-visual #catalogoResumo{flex:1 1 100%;margin:0}
+
+/* O catálogo se adapta à largura do próprio painel, inclusive quando ele
+   está na coluna lateral de uma tela grande. A tabela e suas ações são as
+   mesmas; apenas a disposição visual muda, sem duplicar registros. */
+body.stock-management-visual #cardCatalogoTipos{container-name:catalogo-tipos}
+body.stock-management-visual #materialsView #cardCatalogoTipos table{min-width:660px}
+body.stock-management-visual #materialsView #cardCatalogoTipos th,
+body.stock-management-visual #materialsView #cardCatalogoTipos td{overflow-wrap:normal;word-break:normal}
+body.stock-management-visual #materialsView #catalogoCorpo td:nth-child(3){overflow-wrap:anywhere}
+/* Origem preservada nos dados; o marcador não precisa aparecer na lista. */
+body.stock-management-visual #materialsView #catalogoCorpo td:nth-child(3)>small{display:none}
+body.stock-management-visual #materialsView #cardCatalogoTipos th:first-child,
+body.stock-management-visual #materialsView #cardCatalogoTipos th:nth-child(4),
+body.stock-management-visual #materialsView #catalogoCorpo .badge,
+body.stock-management-visual #materialsView #catalogoCorpo button{white-space:nowrap}
+body.stock-management-visual #materialsView #catalogoCorpo button{min-width:104px;flex-shrink:0}
+@container catalogo-tipos (max-width:680px){
+  body.stock-management-visual #materialsView #cardCatalogoTipos .table-wrap{border:0;border-radius:0;background:transparent;overflow:visible;scrollbar-gutter:auto}
+  body.stock-management-visual #materialsView #cardCatalogoTipos table{display:block;min-width:0;width:100%}
+  /* Cabeçalhos continuam disponíveis para leitores de tela. */
+  body.stock-management-visual #materialsView #cardCatalogoTipos thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  /* Três faixas compactas: grupo + proteção; nome; situação + ação.
+     As células originais permanecem no DOM e os cabeçalhos não são removidos. */
+  body.stock-management-visual #materialsView #catalogoCorpo{display:grid;gap:8px}
+  body.stock-management-visual #materialsView #catalogoCorpo>tr{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:'grupo protecao protecao' 'tipo tipo tipo' 'situacao situacao acao';gap:4px 8px;align-items:center;min-width:0;padding:12px;border:1px solid var(--outline-variant);border-radius:16px;background:var(--reports-glass)}
+  body.stock-management-visual #materialsView #catalogoCorpo>tr>td{display:block;min-width:0;padding:0;border:0;line-height:1.45}
+  body.stock-management-visual #materialsView #catalogoCorpo>tr>td:nth-child(1):not([colspan]){grid-area:grupo;align-self:start;font-size:13px;font-weight:600;color:var(--on-surface-variant);white-space:nowrap}
+  body.stock-management-visual #materialsView #catalogoCorpo>tr>td:nth-child(1):not([colspan])::after{content:' ·';margin-left:4px}
+  body.stock-management-visual #materialsView #catalogoCorpo>tr>td:nth-child(2){grid-area:protecao;align-self:start;font-size:13px;color:var(--on-surface-variant)}
+  body.stock-management-visual #materialsView #catalogoCorpo>tr>td:nth-child(3){grid-area:tipo;font-size:15px;font-weight:600}
+  body.stock-management-visual #materialsView #catalogoCorpo>tr>td:nth-child(4){grid-area:situacao}
+  body.stock-management-visual #materialsView #catalogoCorpo>tr>td:nth-child(4)::before{content:'Status: ';font-size:12px;color:var(--on-surface-variant)}
+  body.stock-management-visual #materialsView #catalogoCorpo .badge{max-width:100%}
+  body.stock-management-visual #materialsView #catalogoCorpo>tr>td:last-child:not([colspan]){grid-area:acao;display:flex;justify-content:flex-end;margin:0;padding:0;border:0}
+  body.stock-management-visual #materialsView #catalogoCorpo>tr>td:last-child:empty{display:none}
+  body.stock-management-visual #materialsView #catalogoCorpo>tr:has(>td[colspan]){display:block}
+  body.stock-management-visual #materialsView #catalogoCorpo>tr>td[colspan]{display:block;padding:20px 4px;text-align:center}
+  html[data-a11y="lowvision"] body.stock-management-visual #materialsView #catalogoCorpo>tr>td{padding:0!important}
+  html[data-a11y="lowvision"] body.stock-management-visual #materialsView #catalogoCorpo>tr>td:nth-child(4)::before{font-size:15px}
+  html[data-a11y="lowvision"] body.stock-management-visual #materialsView #catalogoCorpo button{min-height:48px;font-size:16px}
+}
+/* Com espaço, a ação ocupa a lateral do nome e do status, sem aumentar
+   a altura da última faixa. No celular estreito permanece abaixo do nome. */
+@container catalogo-tipos (min-width:431px) and (max-width:680px){
+  body.stock-management-visual #materialsView #catalogoCorpo>tr{grid-template-areas:'grupo protecao protecao' 'tipo tipo acao' 'situacao situacao acao';column-gap:12px}
+  body.stock-management-visual #materialsView #catalogoCorpo>tr>td:last-child:not([colspan]){align-self:center}
+}
+@media(forced-colors:active){
+  body.stock-management-visual #materialsView #catalogoCorpo>tr{background:Canvas;border-color:CanvasText}
+}
+
+/* A biblioteca já usa o pop-up de vidro central de main.css; preserva suas
+   áreas de imagem, rolagem, seleção, envio e gerenciamento. */
+body.stock-management-visual #modalImagemMaterial :is(.bi-busca,.bi-modal-titulo,.bi-barra){min-width:0}
+body.stock-management-visual #modalImagemMaterial .bi-busca{flex-basis:200px}
+body.stock-management-visual #modalImagemMaterial :is(.bi-item,.bi-soltar){border-radius:18px}
+body.stock-management-visual #modalImagemMaterial .bi-item{padding:8px}
+body.stock-management-visual #modalImagemMaterial .bi-item-img{border-radius:10px}
+body.stock-management-visual #modalImagemMaterial .bi-barra .outlined-btn{min-height:44px}
+
+@container (max-width:460px){
+  body.stock-management-visual #materialsView .form-grid{grid-template-columns:minmax(0,1fr)}
+  body.stock-management-visual #materialsView .field.full{grid-column:1/-1}
+}
+@media(max-width:1250px){
+  body.stock-management-visual #materialsView>.grid{grid-template-columns:minmax(0,1fr)}
+}
+@media(max-width:560px){
+  body.stock-management-visual #materialsView .form-grid{grid-template-columns:minmax(0,1fr)}
+  body.stock-management-visual #materialsView .footer-actions button{flex:1 1 140px}
+}
+/* Os modos assistivos continuam sólidos e não recebem reflexos novos. */
+html[data-display] body.stock-management-visual #materialsView .page-actions,
+html[data-a11y] body.stock-management-visual #materialsView .page-actions{box-shadow:none;border:2px solid var(--outline)}
+html[data-a11y="lowvision"] body.stock-management-visual #materialsView :is(#saldoFisico,#saldoBloqueado,#saldoDisponivel){font-size:30px!important}
+@media(prefers-contrast:more){
+  body.stock-management-visual{--reports-glass:var(--surface-container);--reports-border:var(--outline);--reports-depth:none}
+  body.stock-management-visual #materialsView :is(.card,.page-actions){backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+}
+@supports not (color:color-mix(in srgb,white,transparent)){
+  body.stock-management-visual{--reports-glass:var(--surface-container);--reports-border:var(--outline-variant)}
+}
+@media(forced-colors:active){
+  body.stock-management-visual #materialsView :is(#blocoEntradaInicial,#validityFields),
+  body.stock-management-visual #materialsView div:has(>#saldoFisico),
+  body.stock-management-visual #materialsView div:has(>#saldoBloqueado),
+  body.stock-management-visual #materialsView div:has(>#saldoDisponivel){background:Canvas!important;border-color:CanvasText}
+  body.stock-management-visual #materialsView :is(#saldoFisico,#saldoBloqueado,#saldoDisponivel){color:CanvasText!important}
+}

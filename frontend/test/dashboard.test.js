@@ -178,21 +178,23 @@ describe('inspeção estática: pages/dashboard.html', () => {
     for (const ficticio of ['152', '312', '+12 este mês', 'Produção</option>', 'Manutenção</option>', 'boas-vindas@empresa.com']) assert.equal(html.includes(ficticio), false, ficticio);
   });
 
-  test('treze cards: onze reais (a 12D-3 acrescentou saldo livre, comprometido e necessidade, e ligou "Pendências sem estoque"; a 12G-6, os três das solicitações) e dois em integração; componentes sem backend em integração', () => {
+  test('dezoito cards: onze com ligação existente e sete em integração; os cinco novos ficam depois de Funcionários ativos', () => {
     for (const prefixo of Object.values(CARTOES)) {
       for (const sufixo of ['Valor', 'Meta']) assert.ok(ids.includes(`${prefixo}${sufixo}`), `falta #${prefixo}${sufixo}`);
     }
-    assert.equal((html.match(/<article class="kpi-card/g) || []).length, 13);
+    assert.equal((html.match(/<article class="kpi-card/g) || []).length, 18);
     for (const titulo of ['EPIs entregues', 'Próximo do vencimento de uso', 'Itens disponíveis', 'Saldo livre', 'Saldo comprometido', 'CA vencido', 'Solicitações aguardando SST', 'Solicitações aguardando estoque', 'Disponíveis para entrega', 'Pendências sem estoque', 'Necessidade de reposição', 'Estoque abaixo do mínimo', 'Funcionários ativos']) {
       assert.match(html, new RegExp(`<div class="kpi-title">${titulo}</div>`));
     }
     // "Pendências sem estoque" mostra a demanda sem cobertura; "EPIs entregues" continua fora (Bloco 13).
     assert.match(html, /<div class="kpi-title">Pendências sem estoque<\/div>[\s\S]*?id="kpiSemCoberturaValor"/);
     assert.match(html, /<div class="kpi-title">EPIs entregues<\/div>[\s\S]*?<div class="kpi-value">—<\/div>\s*<div class="kpi-meta">em integração<\/div>/);
-    assert.equal((html.match(/<div class="kpi-meta">em integração<\/div>/g) || []).length, 2, 'só EPIs entregues e Próximo do vencimento de uso seguem em integração');
+    assert.equal((html.match(/<div class="kpi-meta"(?: id="[^"]+")?>em integração<\/div>/g) || []).length, 7, 'dois cards anteriores e cinco novos aguardam integração');
+    const titulos = [...html.matchAll(/<div class="kpi-title">([^<]+)<\/div>/g)].map((m) => m[1]);
+    assert.deepEqual(titulos.slice(titulos.indexOf('Funcionários ativos') + 1), ['Solicitações aguardando entrega', 'Alertas enviados hoje', 'EPIs vencidos em uso', 'Funcionários com EPI pendente', 'Atendimento Token online/offline']);
     assert.ok((html.match(/em integração/g) || []).length >= 8, 'cards, gráficos, alertas, prévia de e-mails e tabela sem backend');
-    assert.match(html, /<select id="dashSetor" class="select" disabled>\s*<option>Todos<\/option>\s*<\/select>/);
-    assert.match(html, /<select id="dashStatus" class="select" disabled>\s*<option>Todos<\/option>\s*<\/select>/);
+    assert.equal(html.includes('id="dashSetor"'), false, 'filtro em integração removido do Dashboard');
+    assert.equal(html.includes('id="dashStatus"'), false, 'filtro em integração removido do Dashboard');
   });
 
   test('menu: Dashboard ativo; páginas integradas por permissão; o Portal e as páginas integradas oferecem o Dashboard', () => {
@@ -210,7 +212,7 @@ describe('inspeção estática: pages/dashboard.html', () => {
 const CONTEXTO = { empresa: { id: 3, nome: 'Empresa Demonstração SafeWork' }, usuario: { id: 7, nome: 'Pessoa Teste', email: 'p@exemplo-cliente.com.br', perfil: 'MASTER' } };
 const ACESSO = { permissoes: { recursos: { dashboard: { visualizar: true, criar: false, editar: false, excluir: false } }, acoes: {}, administracao: {} }, podeAlterar: false };
 
-function montarPagina(responder, { acesso = ACESSO } = {}) {
+function montarPagina(responder, { acesso = ACESSO, agora = '2026-10-19T01:30:00.000Z' } = {}) {
   servidor(responder);
   const html = ler('pages/dashboard.html');
   const script = html.slice(html.lastIndexOf('<script>') + '<script>'.length, html.lastIndexOf('</script>'));
@@ -227,6 +229,7 @@ function montarPagina(responder, { acesso = ACESSO } = {}) {
     EpiPermissoes: { prepararPagina: async () => acesso },
     EpiSessaoEmpresarial: { montar: async (o) => { sandbox.opcoesMontar = o; return CONTEXTO; }, sessaoEncerrada() { sandbox.encerrada = true; } },
     console, Promise, String, Number, Object, JSON,
+    Date: class extends Date { constructor(...args) { super(...(args.length ? args : [agora])); } },
   };
   vm.runInNewContext(script, sandbox);
   const esperar = async () => { for (let i = 0; i < 40; i += 1) await new Promise((r) => setImmediate(r)); };
@@ -245,6 +248,8 @@ describe('página (DOM simulado)', () => {
     assert.equal(pg.el('kpiCaVencidoMeta').textContent, '3 a vencer em 60 dias');
     assert.equal(pg.el('kpiFuncionariosValor').textContent, '48');
     assert.equal(pg.el('dashboardWelcomeUser').textContent, 'Olá, Pessoa Teste.');
+    assert.match(ler('pages/dashboard.html'), /<h2 id="dashboardWelcomeTitle">Dashboard principal<\/h2>/);
+    assert.equal(pg.el('dashboardCurrentDate').textContent, 'domingo, 18 de outubro de 2026', 'a data segue Brasília, mesmo quando já é o dia seguinte em UTC');
   });
 
   test('os cartões da 12D-3 recebem cada um o seu indicador: livre, comprometido, sem cobertura e necessidade', async () => {

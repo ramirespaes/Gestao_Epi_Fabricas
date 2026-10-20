@@ -47,8 +47,10 @@
 
   // ─── Ações ─────────────────────────────────────────────────────────
   var acoes = {
-    listarGrupos: function () {
-      return http().requisitar('GET', CAMINHO + '?pagina=1&limite=' + LIMITE_GRUPOS);
+    listarGrupos: function (opcoes) {
+      var p = opcoes || {};
+      return http().requisitar('GET', CAMINHO + '?pagina=' + encodeURIComponent(p.pagina || 1)
+        + '&limite=' + encodeURIComponent(p.limite || LIMITE_GRUPOS));
     },
     criarGrupo: function (dados) {
       return http().requisitar('POST', CAMINHO, { corpo: corpoDoGrupo(dados) });
@@ -192,7 +194,10 @@
         }
         return (g.id === o.selecionado ? '<tr class="selecionado">' : '<tr>')
           + celula(g.codigo) + '<td>' + escaparHtml(g.nome) + '</td>' + '<td>' + situacao(g.ativo) + '</td>'
-          + '<td><div class="inline-actions">' + acoesHtml + '</div></td></tr>';
+          + '<td><div class="inline-actions">' + acoesHtml + '</div></td></tr>'
+          + (g.id === o.selecionado
+            ? '<tr class="linha-epis-ghe"><td colspan="4"><div id="episGhePosicao' + escaparHtml(g.id) + '"></div></td></tr>'
+            : '');
       }).join('');
     },
     linhasMatriz: function (materiais, marcados, opcoes) {

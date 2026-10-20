@@ -1,22 +1,9 @@
 'use strict';
 
 /**
- * Gestão de GHE — ajuste de usabilidade: rolagem automática ao abrir "Editar" e "EPIs" (RED).
- *
- * Problema (validação manual): o formulário de edição e o painel "EPIs do GHE" abrem fora da área visível e a pessoa precisa
- * rolar a página à mão. Contrato:
- *   - Editar: depois de o formulário estar aberto e preenchido, a página rola até o INÍCIO de #formGrupo.
- *   - EPIs:   depois de o bloco principal ("EPIs do GHE") estar renderizado, a página rola até o INÍCIO de #painelEpisGhe
- *             (a seção que contém #tiposTitulo e #tiposCorpo). Uma rolagem por clique, mesmo com o bloco de materiais
- *             carregando depois.
- *   - Parâmetros: scrollIntoView({ behavior: 'smooth', block: 'start' }) (o mesmo padrão de pages/epi-ficha.html).
- *   - Só essas duas ações rolam. Novo GHE, salvar, cancelar, inativar, reativar, importar, vínculos e matriz não rolam.
- *   - Resposta velha (outro GHE aberto depois), sessão encerrada e navegador sem scrollIntoView não rolam nem quebram.
- *   - O foco do formulário continua indo para o campo certo, mas SEM disputar a rolagem suave: a rolagem é pedida antes e o
- *     foco usa preventScroll (focus() puro rola de forma instantânea e interrompe a rolagem suave).
- *
- * Nada de backend, banco, regras de GHE, vínculos, importação ou RBAC muda. Este arquivo é novo; nenhum teste existente foi
- * alterado.
+ * Gestão de GHE: Editar GHE mantém a rolagem para o formulário.
+ * EPIs abre o mesmo painel logo abaixo do grupo selecionado, sem rolagem.
+ * Consultas, permissões, vínculos e proteção contra respostas antigas permanecem.
  */
 
 const { describe, test, beforeEach } = require('node:test');
@@ -125,6 +112,7 @@ function montarPagina(responder, { acessoDaPagina = ACESSO_TOTAL, comScroll = tr
     if (mapa[id]) return mapa[id];
     const novo = {
       id, value: '', innerHTML: '', textContent: '', disabled: false, hidden: undefined, style: {}, listeners: {}, files: [],
+      appendChild(no) { no.parentNode = this; return no; },
       addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
       focus(opcoes) { focos.push({ id, opcoes }); },
       click() {},
@@ -253,88 +241,62 @@ describe('Editar: abre o formulário e rola até o início dele', () => {
   });
 });
 
-describe('EPIs: abre o painel "EPIs do GHE" e rola até o início dele', () => {
-  test('um pedido de rolagem para #painelEpisGhe, com smooth/start, feito DEPOIS de o bloco principal estar renderizado', async () => {
-    const pg = montarPagina(servidorPadrao());
-    await pg.iniciar();
-    assert.equal(pg.rolagens.length, 0, 'abrir a página não rola');
-    await pg.acaoGrupo('selecionar', 5);
-    const r = umaRolagem(pg, 'painelEpisGhe', 'EPIs do GHE-002');
-    assert.equal(r.estado.gheSelecionadoNaLista, true, 'o GHE já estava marcado na lista');
-    assert.match(r.estado.tiposGhe, /GHE-002/, 'a identificação do GHE já estava no painel');
-    assert.match(r.estado.tiposCorpo, /data-tipo-id/, 'as linhas de tipos já estavam desenhadas');
-    assert.match(semTags(r.estado.tiposCorpo), /Capacete/);
-  });
-
-  test('exatamente uma rolagem por clique, mesmo com o bloco de materiais carregando depois', async () => {
+describe('EPIs: abre junto ao grupo selecionado sem rolar', () => {
+  test('abre o painel no destino do grupo e mantém as duas consultas', async () => {
     const pg = montarPagina(servidorPadrao());
     await pg.iniciar();
     await pg.acaoGrupo('selecionar', 5);
-    umaRolagem(pg, 'painelEpisGhe', 'EPIs do GHE-002');
-    assert.ok(chamadas.some((c) => c.metodo === 'GET' && c.caminho === '/api/grupos-homogeneos/5/materiais'), 'o bloco de materiais carregou');
-    assert.equal(pg.rolagens.length, 1, 'carregar os materiais não adiciona outra rolagem');
-  });
-
-  test('o comportamento existente do EPIs continua: lê os tipos e os materiais, seleciona o GHE e mostra os dois blocos', async () => {
-    const pg = montarPagina(servidorPadrao());
-    await pg.iniciar();
-    await pg.acaoGrupo('selecionar', 5);
-    assert.ok(chamadas.some((c) => c.metodo === 'GET' && c.caminho === '/api/grupos-homogeneos/5/tipos-material'));
-    assert.ok(chamadas.some((c) => c.metodo === 'GET' && c.caminho === '/api/grupos-homogeneos/5/materiais'));
+    assert.equal(pg.rolagens.length, 0);
+    assert.equal(pg.el('painelEpisGhe').parentNode.id, 'episGhePosicao5');
     assert.match(pg.el('tiposGhe').textContent, /GHE-002/);
     assert.match(pg.el('tiposCorpo').innerHTML, /data-tipo-id="21"/);
     assert.match(pg.el('matrizCorpo').innerHTML, /data-material-id="11"/);
-    assert.match(pg.el('gruposCorpo').innerHTML, /class="selecionado"/);
+    const foco = pg.focos.find((f) => f.id === 'painelEpisGhe');
+    assert.deepEqual({ ...foco.opcoes }, { preventScroll: true });
   });
 
-  test('o painel rola também para quem só visualiza (EPIs é uma ação de leitura)', async () => {
-    const pg = montarPagina(servidorPadrao(), { acessoDaPagina: acesso({ criar: false, editar: false }) });
+  test('trocar ou reabrir o GHE move o mesmo painel e não rola', async () => {
+    const pg = montarPagina(servidorPadrao());
+    await pg.iniciar();
+    const painel = pg.el('painelEpisGhe');
+    for (const id of [5, 5, 6]) {
+      await pg.acaoGrupo('selecionar', id);
+      assert.equal(pg.el('painelEpisGhe'), painel);
+      assert.equal(painel.parentNode.id, 'episGhePosicao' + id);
+    }
+    assert.equal(pg.rolagens.length, 0);
+  });
+
+  test('somente leitura e erro de consulta também não rolam', async () => {
+    const pg = montarPagina(servidorPadrao({ intercepta: (metodo, caminho) => (/\/tipos-material$/.test(caminho) && metodo === 'GET' ? erroApi(500, 'ERRO_INTERNO') : null) }), { acessoDaPagina: acesso({ criar: false, editar: false }) });
     await pg.iniciar();
     await pg.acaoGrupo('selecionar', 5);
-    umaRolagem(pg, 'painelEpisGhe', 'EPIs do GHE-002 (somente leitura)');
+    assert.equal(pg.el('painelEpisGhe').parentNode.id, 'episGhePosicao5');
+    assert.match(semTags(pg.el('tiposCorpo').innerHTML), /Não foi possível/);
+    assert.equal(pg.rolagens.length, 0);
   });
 
-  test('falha ao ler os tipos (500): a mensagem aparece dentro do painel e a rolagem acontece uma vez', async () => {
-    const pg = montarPagina(servidorPadrao({ intercepta: (metodo, caminho) => (/\/tipos-material$/.test(caminho) && metodo === 'GET' ? erroApi(500, 'ERRO_INTERNO') : null) }));
+  test('resposta antiga não troca o painel do GHE mais recente', async () => {
+    let liberar;
+    const porta = new Promise((r) => { liberar = r; });
+    const padrao = servidorPadrao();
+    const pg = montarPagina((u, o) => (o.method === 'GET' && u.pathname === '/api/grupos-homogeneos/5/tipos-material' ? porta.then(() => padrao(u, o)) : padrao(u, o)));
     await pg.iniciar();
-    await pg.acaoGrupo('selecionar', 5);
-    const r = umaRolagem(pg, 'painelEpisGhe', 'EPIs com erro de leitura');
-    assert.match(semTags(r.estado.tiposCorpo), /Não foi possível/);
+    const primeira = pg.acaoGrupoSemEsperar('selecionar', 5);
+    await pg.esperar();
+    await pg.acaoGrupo('selecionar', 6);
+    liberar(); await primeira; await pg.esperar();
+    assert.equal(pg.el('painelEpisGhe').parentNode.id, 'episGhePosicao6');
+    assert.match(pg.el('tiposGhe').textContent, /GHE-003/);
+    assert.equal(pg.rolagens.length, 0);
   });
 
-  test('sessão encerrada (401) ao ler os tipos: volta ao Portal e não rola', async () => {
+  test('401 encerra a sessão, recolhe o editor e não rola', async () => {
     const pg = montarPagina(servidorPadrao({ intercepta: (metodo, caminho) => (/\/tipos-material$/.test(caminho) && metodo === 'GET' ? erroApi(401, 'SESSAO_INVALIDA') : null) }));
     await pg.iniciar();
     await pg.acaoGrupo('selecionar', 5);
     assert.equal(pg.sandbox.encerrada, true);
     assert.equal(pg.rolagens.length, 0);
-  });
-
-  test('resposta velha não rola: abrir outro GHE antes de a primeira leitura terminar rola uma vez, para o GHE novo', async () => {
-    let liberar;
-    const porta = new Promise((r) => { liberar = r; });
-    const pg = montarPagina(servidorPadrao());
-    // a primeira leitura de tipos do GHE 5 fica presa; o servidor responde a ela só depois (a página já foi montada com o servidor padrão)
-    const padrao = servidorPadrao();
-    servidor((u, o) => (o.method === 'GET' && u.pathname === '/api/grupos-homogeneos/5/tipos-material' ? porta.then(() => padrao(u, o)) : padrao(u, o)));
-    await pg.iniciar();
-    const primeira = pg.acaoGrupoSemEsperar('selecionar', 5);
-    await pg.esperar();
-    await pg.acaoGrupo('selecionar', 6);
-    liberar();
-    await primeira;
-    await pg.esperar();
-    const r = umaRolagem(pg, 'painelEpisGhe', 'dois GHE abertos em sequência');
-    assert.match(r.estado.tiposGhe, /GHE-003/, 'a rolagem aconteceu com o GHE mais recente na tela');
-  });
-
-  test('cada clique em EPIs é um pedido de rolagem (reabrir o mesmo GHE ou trocar de GHE rola de novo)', async () => {
-    const pg = montarPagina(servidorPadrao());
-    await pg.iniciar();
-    await pg.acaoGrupo('selecionar', 5);
-    await pg.acaoGrupo('selecionar', 5);
-    await pg.acaoGrupo('selecionar', 6);
-    assert.deepEqual(pg.rolagens.map((r) => r.id), ['painelEpisGhe', 'painelEpisGhe', 'painelEpisGhe']);
   });
 });
 
@@ -369,7 +331,7 @@ describe('as outras ações NÃO rolam a página', () => {
     const pg = montarPagina(servidorPadrao());
     await pg.iniciar();
     await pg.acaoGrupo('selecionar', 5);
-    umaRolagem(pg, 'painelEpisGhe', 'abrir EPIs');
+    assert.equal(pg.rolagens.length, 0, 'abrir EPIs não rola');
     await pg.escolherTipo(22, 'NAO_OBRIGATORIO');
     await pg.acaoTipo('vincular-tipo', 22);
     await pg.escolherTipo(21, 'NAO_OBRIGATORIO');
@@ -379,7 +341,7 @@ describe('as outras ações NÃO rolam a página', () => {
     await pg.clicar('botaoSalvarMatriz');
     await pg.marcarMaterial(11, false);
     await pg.clicar('botaoDescartarMatriz');
-    assert.equal(pg.rolagens.length, 1, `rolagens indevidas: ${JSON.stringify(pg.rolagens.map((r) => r.id))}`);
+    assert.equal(pg.rolagens.length, 0, `rolagens indevidas: ${JSON.stringify(pg.rolagens.map((r) => r.id))}`);
   });
 });
 
@@ -394,5 +356,86 @@ describe('navegador sem scrollIntoView', () => {
     assert.match(pg.el('tiposCorpo').innerHTML, /data-tipo-id="21"/);
     assert.match(pg.el('matrizCorpo').innerHTML, /data-material-id="11"/);
     assert.equal(pg.rolagens.length, 0);
+  });
+});
+
+// Estrutura com parser DOM: comprova posição, identidade dos nós e preservação
+// durante o redesenho da lista, além dos testes de fluxo com elementos instrumentados.
+async function montarEstrutura() {
+  const { abrirPagina } = require('./helpers/dom-pagina');
+  const html = ler('pages/employee-groups.html');
+  const doc = abrirPagina('pages/employee-groups.html', {
+    html: html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, ''),
+  }).documento;
+  // O helper compartilhado só registra innerHTML. Aqui o parser existente
+  // materializa os corpos de tabela para exercitar a movimentação dos nós.
+  for (const id of ['gruposCorpo', 'tiposCorpo', 'matrizCorpo']) {
+    const corpo = doc.getElementById(id);
+    let bruto = '';
+    Object.defineProperty(corpo, 'innerHTML', {
+      get() { return bruto; },
+      set(valor) {
+        bruto = String(valor);
+        const fragmento = abrirPagina('pages/employee-groups.html', {
+          html: '<table><tbody id="fragmento">' + bruto + '</tbody></table>',
+        }).documento.getElementById('fragmento');
+        corpo.replaceChildren(...fragmento.children);
+      },
+    });
+  }
+  servidor(servidorPadrao());
+  let opcoesSessao;
+  const sandbox = {
+    document: doc,
+    window: { SAFEWORK_PORTAL_API_BASE_URL: BASE, confirm: () => true },
+    EpiHttp,
+    EpiGruposHomogeneos: require('../js/grupos-homogeneos'),
+    EpiImportacaoGhe: require('../js/importacao-ghe'),
+    EpiPermissoes: { prepararPagina: async () => ACESSO_TOTAL },
+    EpiSessaoEmpresarial: { montar: async (o) => { opcoesSessao = o; return CONTEXTO; }, sessaoEncerrada() { opcoesSessao.aoEncerrar(); } },
+    console, setTimeout, Promise, String, Number, Array, Object, JSON, Uint8Array,
+  };
+  vm.runInNewContext(html.slice(html.lastIndexOf('<script>') + 8, html.lastIndexOf('</script>')), sandbox);
+  const esperar = async () => { for (let i = 0; i < 40; i += 1) await new Promise((r) => setImmediate(r)); };
+  await esperar();
+  return { doc, esperar, encerrar: () => opcoesSessao.aoEncerrar() };
+}
+
+describe('EPIs inline — estrutura do DOM', () => {
+  test('o editor fica imediatamente depois da linha selecionada e antes do próximo GHE', async () => {
+    const { doc, esperar } = await montarEstrutura();
+    const painel = doc.getElementById('painelEpisGhe');
+    const corpo = doc.getElementById('gruposCorpo');
+    assert.equal(painel.parentNode.id, 'painelEpisGheOrigem');
+    await corpo.querySelector('[data-acao="selecionar"][data-id="5"]').click();
+    await esperar();
+    assert.equal(doc.getElementById('episGhePosicao5').children[0], painel);
+    const indice = corpo.children.findIndex((n) => n.classList.contains('selecionado'));
+    assert.equal(corpo.children[indice + 1].classList.contains('linha-epis-ghe'), true);
+    assert.equal(corpo.children[indice + 1].children[0].getAttribute('colspan'), '4');
+    assert.equal(corpo.children[indice + 2].querySelector('[data-acao="selecionar"]').getAttribute('data-id'), '6');
+    assert.equal(doc.querySelectorAll('#painelEpisGhe').length, 1);
+  });
+
+  test('troca de grupo e recarga da lista preservam painel e controles; logout recolhe o editor', async () => {
+    const { doc, esperar, encerrar } = await montarEstrutura();
+    const painel = doc.getElementById('painelEpisGhe');
+    const tipos = doc.getElementById('tiposCorpo');
+    for (const id of [5, 6]) {
+      await doc.querySelector('[data-acao="selecionar"][data-id="' + id + '"]').click();
+      await esperar();
+      assert.equal(doc.getElementById('painelEpisGhe'), painel);
+      assert.equal(doc.getElementById('tiposCorpo'), tipos);
+      assert.equal(painel.parentNode.id, 'episGhePosicao' + id);
+    }
+    await doc.querySelector('[data-acao="inativar"][data-id="5"]').click();
+    await esperar();
+    assert.equal(doc.getElementById('painelEpisGhe'), painel);
+    assert.equal(painel.parentNode.id, 'episGhePosicao6');
+    assert.equal(tipos.querySelectorAll('[data-tipo-id]').length > 0, true);
+    encerrar();
+    assert.equal(painel.parentNode.id, 'painelEpisGheOrigem');
+    assert.equal(doc.getElementById('painelEpisGheOrigem').hidden, true);
+    assert.equal(tipos.innerHTML, '');
   });
 });

@@ -18,6 +18,7 @@ const { autorizacaoConsultaRoutes } = require('./routes/autorizacao-consulta.rou
 const { delegacaoDestinatariosRoutes } = require('./routes/delegacao-destinatarios.routes');
 const { materialRoutes } = require('./routes/material.routes');
 const { tipoMaterialRoutes } = require('./routes/tipo-material.routes');
+const { imagemMaterialRoutes } = require('./routes/imagem-material.routes');
 const { estoqueRoutes } = require('./routes/estoque.routes');
 const { itensDisponiveisRoutes } = require('./routes/itens-disponiveis.routes');
 const { grupoHomogeneoExposicaoRoutes } = require('./routes/grupo-homogeneo-exposicao.routes');
@@ -52,7 +53,8 @@ const { exigirJson, parserJson } = require('./middleware/conteudo');
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 const { verificarOrigem, verificarOrigemPlataforma } = require('./middleware/origem');
 const { verificarHostPlataforma } = require('./middleware/host-plataforma');
-const { limitadorGeral, limitadorPlataformaGeral } = require('./middleware/rate-limit');
+const { limitadorGeral, limitadorPlataformaGeral, criarLimitador } = require('./middleware/rate-limit');
+const { lerConfiguracao: lerConfiguracaoImagens } = require('./config/imagens');
 
 const app = express();
 
@@ -198,8 +200,13 @@ app.use(
 // tokenSolicitacoesRoutes (Etapa G): consulta, após a identificação, das solicitações em aberto do funcionário do atendimento atual (somente leitura).
 // tokenCentralRoutes (Etapa H): Central Administrativa (sessão administrativa): visão geral, estado da ativação, prévia do catálogo e redes autorizadas.
 const NAO_EH_TABLET = (req) => !/^\/atendimento-token\/tablet(\/|$)/.test(req.path);
-const limitadorGeralSalvoTablet = (req, res, next) => (NAO_EH_TABLET(req) ? limitadorGeral(req, res, next) : next());
-app.use('/api', corsApi, semCache, verificarOrigem, limitadorGeralSalvoTablet, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, recuperacaoSenhaPortalRoutes, trocaSenhaGlobalRoutes, contaRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, tipoMaterialRoutes, estoqueRoutes, itensDisponiveisRoutes, grupoHomogeneoExposicaoRoutes, gheMaterialRoutes, gheTipoMaterialRoutes, gheImportacaoRoutes, funcionarioRoutes, dashboardRoutes, usuarioAdministracaoRoutes, conviteUsuarioRoutes, entregaEpiRoutes, solicitacaoEpiRoutes, vinculoSstRoutes, alertaEstoqueRoutes, relatorioRoutes, tokenDispositivoRoutes, tokenAtivacaoRoutes, tokenTabletRoutes, tokenHeartbeatRoutes, tokenAtendimentoRoutes, tokenCatalogoRoutes, tokenPedidoRoutes, tokenSolicitacoesRoutes, tokenCentralRoutes);
+// Entrega de imagens (Biblioteca de Imagens, 5A-1): GET e HEAD de /imagens-material/:origem/:id/:variante têm limitador PRÓPRIO por IP, antes da
+// sessão, e não consomem o geral (uma grade de miniaturas o estouraria). Não é isenção de taxa; os demais métodos e rotas seguem no geral.
+const EH_ENTREGA_IMAGEM = (req) => (req.method === 'GET' || req.method === 'HEAD') && /^\/imagens-material\/(?:empresa|padrao)\/[^/]+\/(?:miniatura|exibicao)$/.test(req.path);
+const limitadorEntregaImagens = criarLimitador({ limite: lerConfiguracaoImagens(process.env).entregasPorMinutoIp, janelaSegundos: 60 });
+const limitadorDaEntrega = (req, res, next) => (EH_ENTREGA_IMAGEM(req) ? limitadorEntregaImagens(req, res, next) : next());
+const limitadorGeralSalvoTablet = (req, res, next) => (NAO_EH_TABLET(req) && !EH_ENTREGA_IMAGEM(req) ? limitadorGeral(req, res, next) : next());
+app.use('/api', corsApi, semCache, verificarOrigem, limitadorDaEntrega, limitadorGeralSalvoTablet, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, recuperacaoSenhaPortalRoutes, trocaSenhaGlobalRoutes, contaRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, tipoMaterialRoutes, imagemMaterialRoutes, estoqueRoutes, itensDisponiveisRoutes, grupoHomogeneoExposicaoRoutes, gheMaterialRoutes, gheTipoMaterialRoutes, gheImportacaoRoutes, funcionarioRoutes, dashboardRoutes, usuarioAdministracaoRoutes, conviteUsuarioRoutes, entregaEpiRoutes, solicitacaoEpiRoutes, vinculoSstRoutes, alertaEstoqueRoutes, relatorioRoutes, tokenDispositivoRoutes, tokenAtivacaoRoutes, tokenTabletRoutes, tokenHeartbeatRoutes, tokenAtendimentoRoutes, tokenCatalogoRoutes, tokenPedidoRoutes, tokenSolicitacoesRoutes, tokenCentralRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

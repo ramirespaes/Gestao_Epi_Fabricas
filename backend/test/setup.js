@@ -9,6 +9,10 @@ const crypto = require('node:crypto');
 process.env.NODE_ENV = 'test';
 process.env.LOGIN_COOLDOWN_HMAC_SECRET = crypto.randomBytes(32).toString('hex');
 
+// Sob --experimental-test-coverage o runner põe NODE_V8_COVERAGE no ambiente de cada processo de teste (o V8 já leu o diretório na partida). O Node copia essa variável
+// para o env de todo filho criado por spawn: um env congelado vira TypeError e uma lista exata de variáveis reprova. Os filhos dos testes não coletam cobertura.
+delete process.env.NODE_V8_COVERAGE;
+
 // Chave do MFA no mesmo regime: só em memória, nova a cada rodada. Descarto
 // qualquer MFA_TOTP_KEY_V* herdado para a suíte não depender do .env local.
 for (const nome of Object.keys(process.env)) {

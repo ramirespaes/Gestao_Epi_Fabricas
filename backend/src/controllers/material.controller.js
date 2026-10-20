@@ -31,6 +31,8 @@ function criarMaterialController({ pool: poolInjetado }) {
         categoria, codigoInterno, descricao, tamanhos, categoriaDescricao, grupoProtecao, grupoProtecaoDescricao, tipoMaterialId,
       } = req.validado.body;
 
+      const corpo = req.validado.body;
+
       const material = await materialService.criar(poolInjetado, {
         empresaId: req.empresa.id,
         atorId: req.usuario.id,
@@ -51,6 +53,8 @@ function criarMaterialController({ pool: poolInjetado }) {
         grupoProtecao: grupoProtecao ?? null,
         grupoProtecaoDescricao: grupoProtecaoDescricao ?? null,
         tipoMaterialId: tipoMaterialId ?? null,
+        // Imagem: só quando veio no corpo (inclusive null), para o serviço distinguir "ausente" de "null" — mesmo mecanismo de alterar().
+        ...(Object.hasOwn(corpo, 'imagem') ? { imagem: corpo.imagem } : {}),
         ip: req.ip,
         dispositivo: req.headers['user-agent'],
       });
@@ -113,6 +117,8 @@ function criarMaterialController({ pool: poolInjetado }) {
         ...(Object.hasOwn(corpo, 'grupoProtecao') ? { grupoProtecao: corpo.grupoProtecao, grupoProtecaoInformado: true } : {}),
         ...(Object.hasOwn(corpo, 'grupoProtecaoDescricao') ? { grupoProtecaoDescricao: corpo.grupoProtecaoDescricao, grupoProtecaoDescricaoInformado: true } : {}),
         ...(Object.hasOwn(corpo, 'tipoMaterialId') ? { tipoMaterialId: corpo.tipoMaterialId, tipoMaterialIdInformado: true } : {}),
+        // Imagem: ausente = não mexer; null = remover; objeto = associar (o serviço decide). Nunca vira null por omissão.
+        ...(Object.hasOwn(corpo, 'imagem') ? { imagem: corpo.imagem } : {}),
         ip: req.ip,
         dispositivo: req.headers['user-agent'],
       });

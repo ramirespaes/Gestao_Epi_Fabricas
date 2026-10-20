@@ -45,7 +45,7 @@ const item = (extra = {}) => {
   if (!Object.hasOwn(extra, 'grupo')) i.grupo = i.categoria;
   return i;
 };
-const pagina = (itens, extra = {}) => ({ status: 'ok', itens, total: itens.length, pagina: 1, limite: 50, filtros: { categorias: ['EPI'], tipos: ['Sapatão / Botina'], tamanhos: ['40'] }, ...extra });
+const pagina = (itens, extra = {}) => ({ status: 'ok', itens, total: itens.length, pagina: 1, limite: 15, filtros: { categorias: ['EPI'], tipos: ['Sapatão / Botina'], tamanhos: ['40'] }, ...extra });
 
 let chamadas;
 function servidor(responder) {
@@ -67,14 +67,14 @@ describe('acoes: GET /estoque/itens-disponiveis', () => {
   test('sem filtros: só página e limite; nunca empresaId', async () => {
     const r = await modulo().acoes.listar({});
     assert.equal(r.ok, true);
-    assert.deepEqual(chamadas.map((c) => c.caminho), ['/api/estoque/itens-disponiveis?pagina=1&limite=50']);
+    assert.deepEqual(chamadas.map((c) => c.caminho), ['/api/estoque/itens-disponiveis?pagina=1&limite=15']);
   });
 
   test('com filtros: só os preenchidos, codificados; valores "Todos" (vazios) são omitidos', async () => {
     await modulo().acoes.listar({ categoria: 'EPI', tipo: 'Sapatão / Botina', tamanho: 'Único', validade: 'expiring', pagina: 2, limite: 20 });
     assert.equal(chamadas[0].caminho, '/api/estoque/itens-disponiveis?categoria=EPI&tipo=Sapat%C3%A3o%20%2F%20Botina&tamanho=%C3%9Anico&validade=expiring&pagina=2&limite=20');
     await modulo().acoes.listar({ categoria: '', tipo: '', tamanho: '', validade: '' });
-    assert.equal(chamadas[1].caminho, '/api/estoque/itens-disponiveis?pagina=1&limite=50');
+    assert.equal(chamadas[1].caminho, '/api/estoque/itens-disponiveis?pagina=1&limite=15');
     assert.equal(chamadas.some((c) => /empresaId|usuarioId/.test(c.caminho)), false);
   });
 
@@ -82,7 +82,7 @@ describe('acoes: GET /estoque/itens-disponiveis', () => {
     await modulo().acoes.listar({ categoria: 'EPI', busca: '  Botina 50% ', situacao: 'ABAIXO_MINIMO', somenteComNecessidade: true, pagina: 2, limite: 20 });
     assert.equal(chamadas[0].caminho, '/api/estoque/itens-disponiveis?categoria=EPI&busca=Botina%2050%25&situacao=ABAIXO_MINIMO&somenteComNecessidade=true&pagina=2&limite=20');
     await modulo().acoes.listar({ busca: '', situacao: '', somenteComNecessidade: false });
-    assert.equal(chamadas[1].caminho, '/api/estoque/itens-disponiveis?pagina=1&limite=50', 'vazio, "Todas" e falso são omitidos');
+    assert.equal(chamadas[1].caminho, '/api/estoque/itens-disponiveis?pagina=1&limite=15', 'vazio, "Todas" e falso são omitidos');
   });
 
   test('situação só vai se for uma das quatro do servidor; qualquer outro valor é descartado antes da rede', async () => {
@@ -347,7 +347,7 @@ describe('inspeção estática: pages/available-items.html integrada, interface 
     assert.deepEqual(links.map((m) => m[1]).sort(), ['autorizacoes-individuais', 'availableItems', 'config', 'dashboard', 'deliveredItems', 'employeeGroups', 'employeeHistory', 'epiFicha', 'funcionarios', 'gestaoUsuarios', 'grupo-permissoes', 'grupo-usuarios', 'grupos-acesso', 'importEmployees', 'materials', 'newUser', 'operations', 'reports', 'request', 'stockRequests', 'stockValidity', 'supervisorApproval', 'userAdmin']);
     for (const m of links) assert.match(m[0], /style="display:none"/);
     assert.match(html, /<a class="active" href="javascript:void\(0\)" data-pagina="availableItems"/);
-    const hrefs = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]).filter((h) => !h.startsWith('http') && !h.startsWith('../css/') && h !== 'javascript:void(0)');
+    const hrefs = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]).filter((h) => !h.startsWith('http') && !h.startsWith('../css/') && h !== '../favicon.svg' && h !== 'javascript:void(0)');
     const permitidos = new Set(['reports.html', 'materials.html', 'stock-validity.html', 'operations.html', 'dashboard.html', 'delivered-items.html', 'employee-groups.html', 'epi-ficha.html', 'funcionarios.html', 'employee-history.html', 'import-employees.html', 'request.html', 'supervisor-approval.html', 'stock-requests.html', 'grupos-acesso.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'autorizacoes-individuais.html', 'new-user.html', 'user-admin.html', 'gestao-usuarios.html', 'config.html', '../portal/index.html', '../portal/inicio.html']);
     for (const h of hrefs) assert.ok(permitidos.has(h), h);
     // 20 na C3; a C4 integrou Histórico e Importar Funcionários (D9): restam 18; Configurações integrada: restam 8 pendentes.
@@ -402,7 +402,7 @@ describe('página (DOM simulado)', () => {
   test('ao abrir: consulta sem filtros, preenche as opções reais dos filtros e a tabela; paginação atualizada', async () => {
     const pg = montarPagina(resposta(200, pagina([item(), item({ tamanho: '41', saldo: 0, disponivel: 0, fisicoUtilizavel: 0, saldoLivre: 0 })], { total: 2, filtros: { categorias: ['EPI', 'Uniforme'], tipos: ['Luva'], tamanhos: ['40', '41'] } })));
     await pg.esperar();
-    assert.deepEqual(chamadas.map((c) => c.caminho), ['/api/estoque/itens-disponiveis?pagina=1&limite=50']);
+    assert.deepEqual(chamadas.map((c) => c.caminho), ['/api/estoque/itens-disponiveis?pagina=1&limite=15']);
     assert.equal(pg.el('availableCategory').innerHTML, '<option value="">Todas</option><option value="EPI">EPI</option><option value="Uniforme">Uniforme</option>');
     assert.equal(pg.el('availableType').innerHTML, '<option value="">Todos</option><option value="Luva">Luva</option>');
     assert.equal(pg.el('availableSize').innerHTML, '<option value="">Todos</option><option value="40">40</option><option value="41">41</option>');
@@ -418,10 +418,10 @@ describe('página (DOM simulado)', () => {
     Object.assign(pg.el('availableCategory'), { value: 'EPI' }); Object.assign(pg.el('availableType'), { value: 'Luva' });
     Object.assign(pg.el('availableSize'), { value: 'M' }); Object.assign(pg.el('deliveredStatus'), { value: 'expired' });
     await pg.clicar('botaoFiltrar');
-    assert.equal(chamadas.at(-1).caminho, '/api/estoque/itens-disponiveis?categoria=EPI&tipo=Luva&tamanho=M&validade=expired&pagina=1&limite=50');
+    assert.equal(chamadas.at(-1).caminho, '/api/estoque/itens-disponiveis?categoria=EPI&tipo=Luva&tamanho=M&validade=expired&pagina=1&limite=15');
     await pg.clicar('botaoLimpar');
     assert.deepEqual(['availableCategory', 'availableType', 'availableSize', 'deliveredStatus'].map((id) => pg.el(id).value), ['', '', '', '']);
-    assert.equal(chamadas.at(-1).caminho, '/api/estoque/itens-disponiveis?pagina=1&limite=50');
+    assert.equal(chamadas.at(-1).caminho, '/api/estoque/itens-disponiveis?pagina=1&limite=15');
   });
 
   test('filtros da 12D-3: busca, situação e somente com necessidade vão ao servidor; Limpar zera os três (a caixa desmarca)', async () => {
@@ -431,12 +431,12 @@ describe('página (DOM simulado)', () => {
     Object.assign(pg.el('availableSituation'), { value: 'SEM_COBERTURA' });
     Object.assign(pg.el('availableNeed'), { checked: true });
     await pg.clicar('botaoFiltrar');
-    assert.equal(chamadas.at(-1).caminho, '/api/estoque/itens-disponiveis?busca=botina&situacao=SEM_COBERTURA&somenteComNecessidade=true&pagina=1&limite=50');
+    assert.equal(chamadas.at(-1).caminho, '/api/estoque/itens-disponiveis?busca=botina&situacao=SEM_COBERTURA&somenteComNecessidade=true&pagina=1&limite=15');
     await pg.clicar('paginaProxima');
     assert.match(chamadas.at(-1).caminho, /busca=botina&situacao=SEM_COBERTURA&somenteComNecessidade=true&pagina=2/, 'a página seguinte mantém os filtros novos');
     await pg.clicar('botaoLimpar');
     assert.deepEqual([pg.el('availableSearch').value, pg.el('availableSituation').value, pg.el('availableNeed').checked], ['', '', false]);
-    assert.equal(chamadas.at(-1).caminho, '/api/estoque/itens-disponiveis?pagina=1&limite=50');
+    assert.equal(chamadas.at(-1).caminho, '/api/estoque/itens-disponiveis?pagina=1&limite=15');
   });
 
   test('vazio com os filtros novos sugere Limpar; a situação e a necessidade contam como filtro aplicado', async () => {
@@ -456,16 +456,30 @@ describe('página (DOM simulado)', () => {
     assert.equal(semMarcacao(c.status), 'Sem cobertura Abaixo do mínimo');
   });
 
-  test('paginação: Próxima e Anterior mantêm os filtros aplicados', async () => {
-    const pg = montarPagina((u) => resposta(200, pagina([item()], { total: 120, pagina: Number(u.searchParams.get('pagina')), limite: 50 })));
+  test('paginação de 15 registros mantém filtros e mostra a última página incompleta', async () => {
+    const todos = Array.from({ length: 31 }, (_, i) => item({ materialId: i + 1, material: 'Material ' + (i + 1) }));
+    const pg = montarPagina((u) => {
+      const p = Number(u.searchParams.get('pagina')), l = Number(u.searchParams.get('limite'));
+      return resposta(200, pagina(todos.slice((p - 1) * l, p * l), { total: todos.length, pagina: p, limite: l }));
+    });
     await pg.esperar();
-    Object.assign(pg.el('availableCategory'), { value: 'EPI' });
+    const linhas = () => (pg.el('itensDisponiveisCorpo').innerHTML.match(/<tr>/g) || []).length;
+    assert.equal(linhas(), 15);
+    assert.equal(pg.el('paginacaoTexto').textContent, 'Itens 1–15 de 31 · página 1 de 3');
+    assert.deepEqual([pg.el('paginaAnterior').disabled, pg.el('paginaProxima').disabled], [true, false]);
+    pg.el('availableCategory').value = 'EPI';
     await pg.clicar('botaoFiltrar');
     await pg.clicar('paginaProxima');
-    assert.equal(chamadas.at(-1).caminho, '/api/estoque/itens-disponiveis?categoria=EPI&pagina=2&limite=50');
-    assert.equal(pg.el('paginacaoTexto').textContent, 'Itens 51–51 de 120 · página 2 de 3');
+    assert.equal(chamadas.at(-1).caminho, '/api/estoque/itens-disponiveis?categoria=EPI&pagina=2&limite=15');
+    assert.equal(linhas(), 15);
+    assert.equal(pg.el('paginacaoTexto').textContent, 'Itens 16–30 de 31 · página 2 de 3');
+    await pg.clicar('paginaProxima');
+    assert.equal(linhas(), 1);
+    assert.equal(pg.el('paginacaoTexto').textContent, 'Itens 31–31 de 31 · página 3 de 3');
+    assert.deepEqual([pg.el('paginaAnterior').disabled, pg.el('paginaProxima').disabled], [false, true]);
     await pg.clicar('paginaAnterior');
-    assert.equal(chamadas.at(-1).caminho, '/api/estoque/itens-disponiveis?categoria=EPI&pagina=1&limite=50');
+    assert.equal(chamadas.at(-1).caminho, '/api/estoque/itens-disponiveis?categoria=EPI&pagina=2&limite=15');
+    assert.equal(linhas(), 15);
   });
 
   test('estado vazio real (sem linhas fictícias) e vazio com filtros', async () => {
@@ -579,7 +593,7 @@ describe('ajuste 1 — uma resposta antiga nunca substitui a consulta mais recen
     await pg.esperar();
     assert.match(pg.el('itensDisponiveisCorpo').innerHTML, /PAGINA 3/);
     assert.doesNotMatch(pg.el('itensDisponiveisCorpo').innerHTML, /PAGINA 2/);
-    assert.match(pg.el('paginacaoTexto').textContent, /página 3 de 4/);
+    assert.match(pg.el('paginacaoTexto').textContent, /página 3 de 14/);
   });
 
   test('duas consultas com respostas fora de ordem: nem a tabela, nem os filtros, nem a paginação voltam ao estado antigo', async () => {

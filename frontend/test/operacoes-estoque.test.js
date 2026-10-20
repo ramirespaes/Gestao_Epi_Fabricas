@@ -59,7 +59,7 @@ const OPERACOES = [
   operacao({ operacaoId: '29', tipo: 'BAIXA', quantidade: 1, motivo: 'OUTRO', justificativa: 'Doação para treinamento', criadoEm: '2026-09-10T03:00:00.000Z' }),
   operacao({ operacaoId: '2', tipo: 'SALDO_INICIAL', quantidade: 10, responsavel: null, tamanho: null, caNumero: null, caValidade: null, criadoEm: '2026-09-01T12:00:00.000Z' }),
 ];
-const listagem = (extra = {}) => ({ status: 'ok', operacoes: OPERACOES, total: 4, pagina: 1, limite: 50, paginas: 1, ...extra });
+const listagem = (extra = {}) => ({ status: 'ok', operacoes: OPERACOES, total: 4, pagina: 1, limite: 15, paginas: 1, ...extra });
 
 // Marcações de um trecho de HTML e nomes de atributo, com os valores entre aspas neutralizados.
 const marcacoes = (html) => [...String(html).matchAll(/<\s*([a-zA-Z][\w-]*)([^>]*)>/g)].map((m) => ({ nome: m[1].toLowerCase(), atributos: m[2] }));
@@ -81,9 +81,9 @@ describe('módulo: consulta, textos e HTML', () => {
     await O.acoes.listar({ tipo: 'TRANSFERENCIA', de: '01/09/2026', ate: "2026-09-30' OR 1=1", busca: '   ', pagina: 0 });
     await O.acoes.listar({ tipo: 'SALDO_INICIAL' });
     assert.deepEqual(chamadas.map((c) => c.caminho), [
-      '/api/estoque/operacoes?tipo=BAIXA&de=2026-09-01&ate=2026-09-30&busca=botina%20%26%2050%25&pagina=2&limite=50',
-      '/api/estoque/operacoes?pagina=1&limite=50',
-      '/api/estoque/operacoes?tipo=SALDO_INICIAL&pagina=1&limite=50',
+      '/api/estoque/operacoes?tipo=BAIXA&de=2026-09-01&ate=2026-09-30&busca=botina%20%26%2050%25&pagina=2&limite=15',
+      '/api/estoque/operacoes?pagina=1&limite=15',
+      '/api/estoque/operacoes?tipo=SALDO_INICIAL&pagina=1&limite=15',
     ]);
     assert.ok(chamadas.every((c) => c.metodo === 'GET'));
     assert.equal(chamadas.some((c) => /empresa|ordem|order/i.test(c.caminho)), false);
@@ -99,10 +99,10 @@ describe('módulo: consulta, textos e HTML', () => {
     await O.acoes.listar({ tipo: 'ENTREGA', origem: 'SOLICITACAO', de: '2026-09-01', busca: 'botina', pagina: 3 });
     await O.acoes.listar({ origem: 'SOLICITACAO' });
     assert.deepEqual(chamadas.map((c) => c.caminho), [
-      '/api/estoque/operacoes?tipo=ENTREGA&pagina=1&limite=50',
-      '/api/estoque/operacoes?tipo=ENTREGA&origem=DIRETA&pagina=1&limite=50',
-      '/api/estoque/operacoes?tipo=ENTREGA&origem=SOLICITACAO&de=2026-09-01&busca=botina&pagina=3&limite=50',
-      '/api/estoque/operacoes?origem=SOLICITACAO&pagina=1&limite=50',
+      '/api/estoque/operacoes?tipo=ENTREGA&pagina=1&limite=15',
+      '/api/estoque/operacoes?tipo=ENTREGA&origem=DIRETA&pagina=1&limite=15',
+      '/api/estoque/operacoes?tipo=ENTREGA&origem=SOLICITACAO&de=2026-09-01&busca=botina&pagina=3&limite=15',
+      '/api/estoque/operacoes?origem=SOLICITACAO&pagina=1&limite=15',
     ]);
     assert.deepEqual(O.ORIGENS, [['', 'Todas'], ['DIRETA', 'Direta'], ['SOLICITACAO', 'Solicitação']]);
   });
@@ -293,7 +293,7 @@ describe('página (DOM simulado)', () => {
     const pg = montarPagina();
     await pg.esperar();
     assert.equal(pg.sandbox.opcoesPagina.pagina, 'operations');
-    assert.deepEqual(leituras(), ['/api/estoque/operacoes?pagina=1&limite=50']);
+    assert.deepEqual(leituras(), ['/api/estoque/operacoes?pagina=1&limite=15']);
     assert.ok(chamadas.every((c) => c.metodo === 'GET'));
     assert.match(pg.el('operacoesCorpo').innerHTML, /Saldo inicial/);
     assert.equal(pg.el('paginacaoTexto').textContent, 'Operações 1–4 de 4 · página 1 de 1');
@@ -313,9 +313,9 @@ describe('página (DOM simulado)', () => {
     Object.assign(pg.el('filtroAte'), { value: '2026-09-30' });
     Object.assign(pg.el('filtroBusca'), { value: '  38271 ' });
     await pg.disparar('botaoFiltrar');
-    assert.equal(leituras().at(-1), '/api/estoque/operacoes?tipo=BAIXA&de=2026-09-01&ate=2026-09-30&busca=38271&pagina=1&limite=50');
+    assert.equal(leituras().at(-1), '/api/estoque/operacoes?tipo=BAIXA&de=2026-09-01&ate=2026-09-30&busca=38271&pagina=1&limite=15');
     await pg.disparar('botaoLimparFiltros');
-    assert.equal(leituras().at(-1), '/api/estoque/operacoes?pagina=1&limite=50');
+    assert.equal(leituras().at(-1), '/api/estoque/operacoes?pagina=1&limite=15');
     assert.deepEqual(['filtroTipo', 'filtroDe', 'filtroAte', 'filtroBusca'].map((id) => pg.el(id).value), ['', '', '', '']);
   });
 
@@ -325,12 +325,12 @@ describe('página (DOM simulado)', () => {
     Object.assign(pg.el('filtroTipo'), { value: 'ENTREGA' });
     Object.assign(pg.el('filtroOrigem'), { value: 'SOLICITACAO' });
     await pg.disparar('botaoFiltrar');
-    assert.equal(leituras().at(-1), '/api/estoque/operacoes?tipo=ENTREGA&origem=SOLICITACAO&pagina=1&limite=50');
+    assert.equal(leituras().at(-1), '/api/estoque/operacoes?tipo=ENTREGA&origem=SOLICITACAO&pagina=1&limite=15');
     await pg.disparar('paginaProxima');
-    assert.equal(leituras().at(-1), '/api/estoque/operacoes?tipo=ENTREGA&origem=SOLICITACAO&pagina=2&limite=50');
+    assert.equal(leituras().at(-1), '/api/estoque/operacoes?tipo=ENTREGA&origem=SOLICITACAO&pagina=2&limite=15');
     await pg.disparar('botaoLimparFiltros');
     assert.deepEqual(['filtroTipo', 'filtroOrigem', 'filtroDe', 'filtroAte', 'filtroBusca'].map((id) => pg.el(id).value), ['', '', '', '', '']);
-    assert.equal(leituras().at(-1), '/api/estoque/operacoes?pagina=1&limite=50');
+    assert.equal(leituras().at(-1), '/api/estoque/operacoes?pagina=1&limite=15');
   });
 
   test('12D-3: a origem só vale sem tipo ou com ENTREGA; com outro tipo o campo zera e fica desabilitado, e volta ao escolher ENTREGA', async () => {
@@ -340,13 +340,13 @@ describe('página (DOM simulado)', () => {
     Object.assign(pg.el('filtroTipo'), { value: 'BAIXA' });
     await pg.disparar('filtroTipo', 'change');
     assert.deepEqual([pg.el('filtroOrigem').value, pg.el('filtroOrigem').disabled], ['', true]);
-    assert.equal(leituras().at(-1), '/api/estoque/operacoes?tipo=BAIXA&pagina=1&limite=50');
+    assert.equal(leituras().at(-1), '/api/estoque/operacoes?tipo=BAIXA&pagina=1&limite=15');
     Object.assign(pg.el('filtroTipo'), { value: 'ENTREGA' });
     await pg.disparar('filtroTipo', 'change');
     assert.equal(pg.el('filtroOrigem').disabled, false);
     Object.assign(pg.el('filtroOrigem'), { value: 'DIRETA' });
     await pg.disparar('filtroOrigem', 'change');
-    assert.equal(leituras().at(-1), '/api/estoque/operacoes?tipo=ENTREGA&origem=DIRETA&pagina=1&limite=50');
+    assert.equal(leituras().at(-1), '/api/estoque/operacoes?tipo=ENTREGA&origem=DIRETA&pagina=1&limite=15');
   });
 
   test('12D-3: a tabela da página mostra a entrega com a origem e, quando o servidor liberou, a ficha e o trabalhador; o filtro de origem conta como filtro no vazio', async () => {
@@ -377,14 +377,30 @@ describe('página (DOM simulado)', () => {
     assert.match(pg.el('aviso').innerHTML, /período/i);
   });
 
-  test('paginação: próxima e anterior pedem a página certa', async () => {
-    const pg = montarPagina({ responder: (m, u) => resposta(200, listagem({ total: 120, paginas: 3, pagina: Number(u.searchParams.get('pagina')) })) });
+  test('paginação de 15 operações mantém filtros e termina com a página incompleta', async () => {
+    const todas = Array.from({ length: 31 }, (_, i) => operacao({ operacaoId: String(i + 1) }));
+    const pg = montarPagina({ responder: (m, u) => {
+      const p = Number(u.searchParams.get('pagina')), limite = Number(u.searchParams.get('limite'));
+      return resposta(200, listagem({ operacoes: todas.slice((p - 1) * limite, p * limite), total: todas.length, pagina: p, limite, paginas: Math.ceil(todas.length / limite) }));
+    } });
     await pg.esperar();
-    assert.equal(pg.el('paginaProxima').disabled, false);
+    assert.equal(linhas(pg.el('operacoesCorpo').innerHTML).length, 15);
+    assert.equal(pg.el('paginacaoTexto').textContent, 'Operações 1–15 de 31 · página 1 de 3');
+    assert.deepEqual([pg.el('paginaAnterior').disabled, pg.el('paginaProxima').disabled], [true, false]);
+    pg.el('filtroTipo').value = 'ENTRADA';
+    await pg.disparar('botaoFiltrar');
     await pg.disparar('paginaProxima');
-    assert.equal(leituras().at(-1), '/api/estoque/operacoes?pagina=2&limite=50');
+    assert.equal(leituras().at(-1), '/api/estoque/operacoes?tipo=ENTRADA&pagina=2&limite=15');
+    assert.equal(linhas(pg.el('operacoesCorpo').innerHTML).length, 15);
+    assert.equal(pg.el('paginacaoTexto').textContent, 'Operações 16–30 de 31 · página 2 de 3');
+    await pg.disparar('paginaProxima');
+    assert.equal(linhas(pg.el('operacoesCorpo').innerHTML).length, 1);
+    assert.equal(pg.el('paginacaoTexto').textContent, 'Operações 31–31 de 31 · página 3 de 3');
+    assert.deepEqual([pg.el('paginaAnterior').disabled, pg.el('paginaProxima').disabled], [false, true]);
     await pg.disparar('paginaAnterior');
-    assert.equal(leituras().at(-1), '/api/estoque/operacoes?pagina=1&limite=50');
+    assert.equal(leituras().at(-1), '/api/estoque/operacoes?tipo=ENTRADA&pagina=2&limite=15');
+    assert.equal(linhas(pg.el('operacoesCorpo').innerHTML).length, 15);
+    assert.ok(chamadas.every((c) => c.metodo === 'GET'));
   });
 
   test('falha na consulta: mensagem própria no aviso e tabela sem dados', async () => {
@@ -420,8 +436,8 @@ describe('inspeção estática', () => {
     assert.match(modulo, /requisitar\('GET', CAMINHO/);
   });
 
-  test('nome único "Operações de estoque" no título, no cabeçalho e no menu; o nome antigo saiu', () => {
-    assert.match(html, /<title>Operações de estoque — Gestão de EPIs<\/title>/);
+  test('aba "Gestão de EPI"; nome "Operações de estoque" no cabeçalho e no menu; o nome antigo saiu', () => {
+    assert.match(html, /<title>Gestão de EPI<\/title>/);
     assert.match(html, /<h2>Operações de estoque<\/h2>/);
     assert.ok(html.includes(`<p>${SUBTITULO}</p>`));
     assert.match(html, /<a class="active" href="javascript:void\(0\)" data-pagina="operations" style="display:none"><div class="nav-icon gray">receipt_long<\/div>Operações de estoque<\/a>/);

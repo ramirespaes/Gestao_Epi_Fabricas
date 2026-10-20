@@ -2,8 +2,9 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" sizes="any" href="../favicon.svg">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Entregas por solicitação — Gestão de EPIs</title>
+  <title>Gestão de EPI</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
   <link rel="stylesheet" href="../css/main.css">
   <script src="../js/tema.js"></script>
@@ -79,6 +80,8 @@
     @media (max-width: 1100px){.entregas-grid{grid-template-columns:minmax(0,1fr)}}
     @media (max-width: 560px){.detalhe-pedido{grid-template-columns:1fr}.detalhe-pedido dd{margin-bottom:6px}.entrega-lote{grid-template-columns:1fr}.acoes-painel button,.acoes-detalhe button{flex:1 1 auto}}
   </style>
+  <link rel="stylesheet" href="../css/reports.css">
+  <link rel="stylesheet" href="../css/entregas-solicitacao.css">
 </head>
 <!--
   Entregas por solicitação (Bloco 12; fundação na 12G-1, fluxo na 12G-4).
@@ -92,7 +95,7 @@
   alerta manual de falta de estoque do pedido aberto, em js/alerta-falta-estoque.js;
   SMS e compra vinculada seguem fora (decisão D3).
 -->
-<body>
+<body class="reports-visual entregas-solicitacao-visual">
 
 <!-- ══ VERIFICAÇÃO DA SESSÃO ══ Sem login próprio: usa a sessão empresarial
      criada pelo Portal do Cliente, confirmada no servidor por
