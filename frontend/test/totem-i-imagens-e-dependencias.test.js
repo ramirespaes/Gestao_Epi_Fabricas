@@ -31,7 +31,12 @@ describe('[IMG] uso seguro do placeholder atual', () => {
 
   test('[IMG-03] nada de upload, fotos embutidas, URLs de imagem ou armazenamento paralelo de fotografias', () => {
     const { semComentarios, html } = H.corpus();
-    assert.ok(!/type="file"|FileReader|FormData|createObjectURL|<canvas/i.test(`${semComentarios}\n${html}`), 'upload ou captura de imagem');
+    assert.ok(!/type="file"|FileReader|FormData|<canvas/i.test(`${semComentarios}\n${html}`), 'upload ou captura de imagem');
+    // GREEN-2C (20/10/2026): `createObjectURL` deixou de ser proibido em geral; só serve para apresentar a fotografia recebida da API (Blob da resposta do fetch).
+    // Antes: proibido em qualquer ponto. A liberação das URLs é coberta pelos testes de comportamento de totem-imagens.test.js, não por presença de texto.
+    const usos = semComentarios.match(/createObjectURL\s*\(\s*[^)]*\)/g) || [];
+    assert.ok(usos.every((u) => /^createObjectURL\s*\(\s*res\.blob\s*\)$/.test(u)), `createObjectURL só com o Blob da resposta de imagem: ${usos}`);
+    assert.ok(!/createObjectURL/i.test(html), 'createObjectURL fora dos scripts do Totem');
     assert.ok(!/data:image\//i.test(`${semComentarios}\n${html}`), 'imagem embutida');
     assert.ok(!/https?:\/\/[^\s"')]+\.(png|jpe?g|webp|gif)/i.test(`${semComentarios}\n${html}`), 'URL de imagem fixa');
   });

@@ -128,3 +128,44 @@ describe('K7 — modelo.previaIdentificar', () => {
     assert.equal(typeof T.modelo.previa, 'function');
   });
 });
+
+// IMG-PRÉVIA-01 (20/10/2026): o modelo deixa de descartar a referência da fotografia e passa a preservá-la, validada como no Totem funcional.
+describe('IMG-PRÉVIA — modelo.previaIdentificar preserva a referência validada da fotografia', () => {
+  const imagemDe = (imagem, semCampo = false) => {
+    const r = RESPOSTA();
+    if (semCampo) delete r.previa.catalogo.materiais[0].imagem; else r.previa.catalogo.materiais[0].imagem = imagem;
+    return T.modelo.previaIdentificar(r).catalogo.materiais[0].imagem;
+  };
+
+  test('referência válida é preservada só com os quatro campos; o id BIGINT segue como texto e URL externa ou campo extra nunca passam', () => {
+    exigirModelo();
+    assert.deepEqual(imagemDe({ disponivel: true, origem: 'PADRAO', id: '9007199254740993', versao: 3, url: 'https://externo.invalido/x.png', extra: 1 }), { disponivel: true, origem: 'PADRAO', id: '9007199254740993', versao: 3 });
+    assert.deepEqual(imagemDe({ disponivel: true, origem: 'EMPRESA', id: '9223372036854775807', versao: 2147483647 }), { disponivel: true, origem: 'EMPRESA', id: '9223372036854775807', versao: 2147483647 });
+    assert.equal(JSON.stringify(imagemDe({ disponivel: true, origem: 'EMPRESA', id: '5', versao: 1, url: 'https://externo.invalido/x.png' })).includes('externo'), false);
+  });
+
+  test('referência inválida, ausente ou com forma errada vira { disponivel: false }', () => {
+    exigirModelo();
+    const invalidas = [
+      { disponivel: false }, { disponivel: true }, { disponivel: 'true', origem: 'EMPRESA', id: '5', versao: 1 },
+      { disponivel: true, origem: 'OUTRA', id: '5', versao: 1 }, { disponivel: true, origem: 'empresa', id: '5', versao: 1 },
+      { disponivel: true, origem: 'EMPRESA', id: 5, versao: 1 }, { disponivel: true, origem: 'EMPRESA', id: '007', versao: 1 },
+      { disponivel: true, origem: 'EMPRESA', id: '0', versao: 1 }, { disponivel: true, origem: 'EMPRESA', id: '9223372036854775808', versao: 1 },
+      { disponivel: true, origem: 'EMPRESA', id: '5/../9', versao: 1 }, { disponivel: true, origem: 'EMPRESA', id: '5', versao: 0 },
+      { disponivel: true, origem: 'EMPRESA', id: '5', versao: '3' }, { disponivel: true, origem: 'EMPRESA', id: '5', versao: 1.5 },
+      { disponivel: true, origem: 'EMPRESA', id: '5', versao: 2147483648 }, { disponivel: true, url: 'https://externo.invalido/foto.png' },
+      null, 'texto', 7, [],
+    ];
+    for (const invalida of invalidas) assert.deepEqual(imagemDe(invalida), { disponivel: false }, JSON.stringify(invalida));
+    assert.deepEqual(imagemDe(undefined, true), { disponivel: false });
+  });
+
+  test('o restante do material continua igual (nome, tipo, tamanhos) e nada além da lista passa adiante', () => {
+    exigirModelo();
+    const r = RESPOSTA();
+    r.previa.catalogo.materiais[0].imagem = { disponivel: true, origem: 'PADRAO', id: '12', versao: 2 };
+    const m = T.modelo.previaIdentificar(r).catalogo.materiais[0];
+    assert.deepEqual({ ...m, imagem: undefined }, { ...MATERIAL, imagem: undefined });
+    assert.deepEqual(Object.keys(m).sort(), ['categoria', 'exigeTamanho', 'grupoProtecao', 'id', 'imagem', 'nome', 'tamanhos', 'tipo', 'unidade']);
+  });
+});

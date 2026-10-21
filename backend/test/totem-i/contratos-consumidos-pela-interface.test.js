@@ -160,15 +160,27 @@ describe('[BE] Imagens — o contrato atual do catálogo', () => {
   // então a proibição de "nenhuma rota de imagem ou upload" passou a valer onde ela protege de verdade — o namespace do TABLET (Atendimento Token) —
   // e, fora dele, só duas rotas administrativas podem falar de imagem. Não é inócuo: um arquivo `token-*.routes.js` com imagem/upload, ou qualquer
   // OUTRO arquivo de rota com imagem/upload/multer, reprova o teste; o controle positivo prova que a expressão enxerga a rota de imagem.
-  test('[BE-40] o catálogo do tablet mantém o estado explícito SEM_IMAGEM e o namespace do TABLET (Atendimento Token) não tem rota de imagem nem upload; fora dele só as rotas administrativas autorizadas falam de imagem', () => {
+  test('[BE-40] o catálogo do tablet mantém o estado explícito SEM_IMAGEM e o namespace do TABLET (Atendimento Token) só tem a rota autorizada de entrega de imagem e nenhum upload; fora dele só as rotas administrativas autorizadas falam de imagem', () => {
     assert.match(fonte('services/token-catalogo.service.js'), /SEM_IMAGEM = Object\.freeze\(\{ disponivel: false \}\)/);
     const arquivos = listar(path.join(SRC, 'routes')).filter((f) => f.endsWith('.routes.js'));
     const menciona = (f) => /imagem|upload|multer/i.test(fs.readFileSync(f, 'utf8'));
     const nome = (f) => path.basename(f);
     const doTablet = arquivos.filter((f) => /token-[a-z-]+\.routes\.js$/.test(f));
     assert.ok(doTablet.length >= 9, `leu as rotas do Atendimento Token (${doTablet.length})`);
-    assert.deepEqual(doTablet.filter(menciona).map(nome), [], 'nenhuma rota de imagem ou upload sob o Atendimento Token');
-    const AUTORIZADAS = ['imagem-material.routes.js', 'material.routes.js'];
+    // Única rota de imagem do tablet (entrega da imagem de um material do catálogo do atendimento): nome exato. Qualquer outra rota de imagem sob o
+    // Atendimento Token continua proibida, e upload/multer é proibido em TODAS as rotas do tablet, a autorizada inclusive. Inventário estático: as
+    // provas de comportamento (autenticação, autorização pelo catálogo, isolamento) são dos testes TIAR e TIA e este teste não as substitui.
+    const IMAGEM_DO_TABLET = 'token-imagem.routes.js';
+    assert.deepEqual(doTablet.filter(menciona).map(nome), [IMAGEM_DO_TABLET], 'sob o Atendimento Token só a rota de entrega de imagem do tablet fala de imagem');
+    assert.deepEqual(doTablet.filter((f) => /upload|multer/i.test(fs.readFileSync(f, 'utf8'))).map(nome), [], 'nenhum upload sob o Atendimento Token');
+    const rotaDaImagem = fs.readFileSync(path.join(SRC, 'routes', IMAGEM_DO_TABLET), 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+    const registros = [...rotaDaImagem.matchAll(/\brouter\s*\.\s*(\w+)\s*\(/g)].map((m) => m[1].toLowerCase());
+    assert.deepEqual(registros, ['get'], 'a rota de imagem do tablet registra um único GET (o HEAD é atendido pelo Express); nenhum head, options, post, put, patch, delete, all, use ou route');
+    assert.match(rotaDaImagem, /tabletService\s*\.\s*autenticar\s*\([^;]*?rotacionar\s*:\s*false/, 'autentica a credencial do TABLET, sem rotação');
+    assert.doesNotMatch(rotaDaImagem, /criarExigirSessao|exigirSessao|autenticacao-plataforma|require\(\s*['"]\.\.\/middleware\/autenticacao['"]\s*\)/, 'nenhuma sessão administrativa no tablet');
+    assert.match(rotaDaImagem, /validar\s*\([^;]*?\)\s*,\s*exigirDispositivo\s*,\s*porDispositivo\s*,\s*controller\s*\.\s*obter/, 'valida os parâmetros antes de autenticar, depois limita por tablet');
+    assert.match(rotaDaImagem, /criarLimitador\s*\(\s*\{[^}]*chave\s*:\s*chavePorDispositivo/, 'limitador próprio por dispositivo');
+    const AUTORIZADAS = ['imagem-material.routes.js', 'material.routes.js', IMAGEM_DO_TABLET];
     const mencionam = arquivos.filter(menciona).map(nome);
     assert.deepEqual(mencionam.filter((n) => !AUTORIZADAS.includes(n)), [], 'só as rotas administrativas autorizadas (biblioteca e materiais) falam de imagem, upload ou multer');
     assert.ok(mencionam.includes('imagem-material.routes.js'), 'controle positivo: a expressão enxerga a rota administrativa de imagem');

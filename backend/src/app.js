@@ -40,6 +40,7 @@ const { tokenTabletRoutes } = require('./routes/token-tablet.routes');
 const { tokenHeartbeatRoutes } = require('./routes/token-heartbeat.routes');
 const { tokenAtendimentoRoutes } = require('./routes/token-atendimento.routes');
 const { tokenCatalogoRoutes } = require('./routes/token-catalogo.routes');
+const { tokenImagemRoutes } = require('./routes/token-imagem.routes');
 const { tokenPedidoRoutes } = require('./routes/token-pedido.routes');
 const { tokenSolicitacoesRoutes } = require('./routes/token-solicitacoes.routes');
 const { tokenCentralRoutes } = require('./routes/token-central.routes');
@@ -196,6 +197,7 @@ app.use(
 // tokenHeartbeatRoutes (Ciclo 2, K3): batida de presença do tablet (POST, credencial do tablet, corpo e query vazios), sob o mesmo prefixo e a mesma regra.
 // tokenAtendimentoRoutes (Etapa D): identificação e atendimento temporário do funcionário no tablet, sob o mesmo prefixo e a mesma regra.
 // tokenCatalogoRoutes (Etapa E): catálogo (somente leitura) de materiais do atendimento, sob o mesmo prefixo.
+// tokenImagemRoutes (imagens do material no tablet): GET/HEAD da imagem de um material do catálogo do atendimento, credencial do tablet sem rotação, limitadores próprios, sob o mesmo prefixo.
 // tokenPedidoRoutes (Etapa F): finalização do pedido do funcionário identificado (solicitação AUTOATENDIMENTO) e consulta do resultado, sob o mesmo prefixo.
 // tokenSolicitacoesRoutes (Etapa G): consulta, após a identificação, das solicitações em aberto do funcionário do atendimento atual (somente leitura).
 // tokenCentralRoutes (Etapa H): Central Administrativa (sessão administrativa): visão geral, estado da ativação, prévia do catálogo e redes autorizadas.
@@ -206,7 +208,7 @@ const EH_ENTREGA_IMAGEM = (req) => (req.method === 'GET' || req.method === 'HEAD
 const limitadorEntregaImagens = criarLimitador({ limite: lerConfiguracaoImagens(process.env).entregasPorMinutoIp, janelaSegundos: 60 });
 const limitadorDaEntrega = (req, res, next) => (EH_ENTREGA_IMAGEM(req) ? limitadorEntregaImagens(req, res, next) : next());
 const limitadorGeralSalvoTablet = (req, res, next) => (NAO_EH_TABLET(req) && !EH_ENTREGA_IMAGEM(req) ? limitadorGeral(req, res, next) : next());
-app.use('/api', corsApi, semCache, verificarOrigem, limitadorDaEntrega, limitadorGeralSalvoTablet, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, recuperacaoSenhaPortalRoutes, trocaSenhaGlobalRoutes, contaRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, tipoMaterialRoutes, imagemMaterialRoutes, estoqueRoutes, itensDisponiveisRoutes, grupoHomogeneoExposicaoRoutes, gheMaterialRoutes, gheTipoMaterialRoutes, gheImportacaoRoutes, funcionarioRoutes, dashboardRoutes, usuarioAdministracaoRoutes, conviteUsuarioRoutes, entregaEpiRoutes, solicitacaoEpiRoutes, vinculoSstRoutes, alertaEstoqueRoutes, relatorioRoutes, tokenDispositivoRoutes, tokenAtivacaoRoutes, tokenTabletRoutes, tokenHeartbeatRoutes, tokenAtendimentoRoutes, tokenCatalogoRoutes, tokenPedidoRoutes, tokenSolicitacoesRoutes, tokenCentralRoutes);
+app.use('/api', corsApi, semCache, verificarOrigem, limitadorDaEntrega, limitadorGeralSalvoTablet, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, recuperacaoSenhaPortalRoutes, trocaSenhaGlobalRoutes, contaRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, tipoMaterialRoutes, imagemMaterialRoutes, estoqueRoutes, itensDisponiveisRoutes, grupoHomogeneoExposicaoRoutes, gheMaterialRoutes, gheTipoMaterialRoutes, gheImportacaoRoutes, funcionarioRoutes, dashboardRoutes, usuarioAdministracaoRoutes, conviteUsuarioRoutes, entregaEpiRoutes, solicitacaoEpiRoutes, vinculoSstRoutes, alertaEstoqueRoutes, relatorioRoutes, tokenDispositivoRoutes, tokenAtivacaoRoutes, tokenTabletRoutes, tokenHeartbeatRoutes, tokenAtendimentoRoutes, tokenCatalogoRoutes, tokenImagemRoutes, tokenPedidoRoutes, tokenSolicitacoesRoutes, tokenCentralRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

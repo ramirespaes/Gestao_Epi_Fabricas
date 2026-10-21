@@ -125,6 +125,17 @@
   function inteiroPositivo(v) { return inteiro(v) && v > 0; }
   function tamanhoEmPontos(s) { return Array.from(s).length; }
 
+  // Referência da fotografia do catálogo (mesmo contrato do Totem): só os quatro campos; o id BIGINT segue como texto canônico.
+  // Qualquer outra forma (inclusive URL fornecida pelo servidor) vira "sem fotografia".
+  var ID_IMAGEM_MAXIMO = '9223372036854775807';
+  var ORIGENS_IMAGEM = ['EMPRESA', 'PADRAO'];
+  function imagemDoCatalogo(i) {
+    if (!ehObjeto(i) || i.disponivel !== true || ORIGENS_IMAGEM.indexOf(i.origem) === -1) return { disponivel: false };
+    if (typeof i.id !== 'string' || !/^[1-9][0-9]{0,18}$/.test(i.id) || (i.id.length === 19 && i.id > ID_IMAGEM_MAXIMO)) return { disponivel: false };
+    if (!inteiro(i.versao) || i.versao < 1 || i.versao > 2147483647) return { disponivel: false };
+    return { disponivel: true, origem: i.origem, id: i.id, versao: i.versao };
+  }
+
   function exigirId(id, nome) {
     if (!inteiroPositivo(id)) throw new TypeError(nome + ' inválido');
   }
@@ -366,7 +377,7 @@
           tipo = { id: m.tipo.id, nome: m.tipo.nome };
         }
         materiais.push({
-          id: m.id, nome: m.nome, unidade: unidade, categoria: categoria, grupoProtecao: protecao, tipo: tipo, exigeTamanho: m.exigeTamanho, tamanhos: m.tamanhos.slice(), imagem: { disponivel: false },
+          id: m.id, nome: m.nome, unidade: unidade, categoria: categoria, grupoProtecao: protecao, tipo: tipo, exigeTamanho: m.exigeTamanho, tamanhos: m.tamanhos.slice(), imagem: imagemDoCatalogo(m.imagem),
         });
       }
       return { primeiroNome: nome, ghe: ghe, catalogo: { estado: c.estado, total: c.total, materiais: materiais } };

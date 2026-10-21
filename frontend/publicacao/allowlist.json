@@ -107,6 +107,7 @@
     "totem/boot.js",
     "totem/index.html",
     "totem/previa-adaptador.js",
+    "totem/previa-imagens-demo.js",
     "totem/previa.html",
     "totem/totem.css",
     "totem/totem.js",

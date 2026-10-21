@@ -22,6 +22,14 @@
   var CANAL_PREVIA = 'safework-previa-totem';
   var ID_CONSULTA = /^[A-Za-z0-9-]{8,64}$/;
   var CONTROLE_TEXTO = /[\u0000-\u001f\u007f-\u009f]/;
+  // Fotografias da Consulta Real (ponte autenticada). Limites provisórios de carregamento: política da Central, não requisito do backend.
+  var ID_IMAGEM = /^[1-9][0-9]{0,18}$/;
+  var ID_IMAGEM_MAXIMO = '9223372036854775807';
+  var IMAGEM_SIMULTANEAS = 4;
+  var IMAGEM_TEMPO_LIMITE_MS = 15000;
+  var IMAGEM_BYTES_MAXIMOS = 4 * 1024 * 1024;
+  var IMAGEM_ESPERA_PADRAO_S = 30;
+  var IMAGEM_ESPERA_MAXIMA_S = 120;
 
   var TEXTOS = {
     PREVIA_AVISO: 'Prévia administrativa, somente leitura: mostra o que o tablet exibiria para o funcionário escolhido. Não abre atendimento, não cria pedido, reserva nem entrega e não é o atendimento real.',
@@ -82,6 +90,7 @@
       busca: [],
       modoPrevia: 'demo',
       ponte: { gen: 0, frame: null, ouvinte: null, emAndamento: false },
+      imagens: imagensVazias(),
     };
     // A caixa da prévia é uma só: vai para dentro do item do funcionário escolhido e volta ao seu lugar de origem (`caixaPai`) ao fechar.
     var caixaPai = null;
@@ -257,6 +266,7 @@
     }
 
     function desligarPonte() {
+      descartarImagens();
       if (estado.ponte.ouvinte) janela.removeEventListener('message', estado.ponte.ouvinte);
       estado.ponte.ouvinte = null;
       estado.ponte.frame = null;
@@ -272,12 +282,140 @@
         && typeof m.valor === 'string' && m.valor.length > 0 && Array.from(m.valor).length <= 30 && !CONTROLE_TEXTO.test(m.valor);
     }
 
-    function responderAoQuadro(f, id, extra) {
+    function responderAoQuadro(f, id, extra, tipo) {
       if (estado.ponte.frame !== f || !f.contentWindow) return;
-      var m = { canal: CANAL_PREVIA, versao: 1, tipo: 'RESULTADO', id: id };
+      var m = { canal: CANAL_PREVIA, versao: 1, tipo: tipo || 'RESULTADO', id: id };
       Object.keys(extra).forEach(function (k) { m[k] = extra[k]; });
       // A origem do iframe é opaca: o destino é a janela exata deste iframe, não uma origem.
       f.contentWindow.postMessage(m, '*');
+    }
+
+    // ─── Fotografias da Consulta Real ─────────────────────────────────
+    // O iframe não tem rede nem credencial: pede a foto por mensagem e ESTA tela, com a sessão empresarial, busca na rota existente da Biblioteca
+    // de Imagens e devolve só o resultado e o blob. Só vale imagem (origem, id, versão) que veio no catálogo da consulta atual; a lista é descartada
+    // ao identificar outra pessoa, trocar de modo, sair da aba ou encerrar. Erro da Biblioteca nunca vira erro de tablet: o iframe recebe um resultado
+    // próprio (SEM_ACESSO, NAO_ENCONTRADA, LIMITE, INDISPONIVEL) e mantém o placeholder; 401 usa o encerramento de sessão desta página.
+    function imagensVazias() {
+      return { permitidas: Object.create(null), emVoo: Object.create(null), total: 0, pausado: false, espera: 0, relogioPausa: null, semAcesso: false };
+    }
+
+    function descartarImagens() {
+      var im = estado.imagens;
+      estado.imagens = imagensVazias();
+      if (im.relogioPausa !== null) janela.clearTimeout(im.relogioPausa);
+      Object.keys(im.emVoo).forEach(function (id) {
+        var r = im.emVoo[id];
+        if (r.relogio !== null) janela.clearTimeout(r.relogio);
+        if (r.controle !== null) r.controle.abort();
+      });
+    }
+
+    function autorizarImagens(materiais) {
+      var im = estado.imagens;
+      materiais.forEach(function (m) {
+        var i = m.imagem;
+        if (i && i.disponivel === true) im.permitidas[i.origem + ':' + i.id + ':' + i.versao] = true;
+      });
+    }
+
+    function mensagemDeImagemValida(m) {
+      return objetoSimples(m) && mesmasChaves(m, ['canal', 'id', 'imagemId', 'origem', 'tipo', 'variante', 'versao', 'versaoImagem'])
+        && m.canal === CANAL_PREVIA && m.versao === 1 && m.tipo === 'IMAGEM'
+        && typeof m.id === 'string' && ID_CONSULTA.test(m.id)
+        && (m.origem === 'EMPRESA' || m.origem === 'PADRAO')
+        && typeof m.imagemId === 'string' && ID_IMAGEM.test(m.imagemId) && (m.imagemId.length < 19 || m.imagemId <= ID_IMAGEM_MAXIMO)
+        && Number.isInteger(m.versaoImagem) && m.versaoImagem >= 1 && m.versaoImagem <= 2147483647
+        && (m.variante === 'miniatura' || m.variante === 'exibicao');
+    }
+
+    function mensagemDeCancelamentoValida(m) {
+      return objetoSimples(m) && mesmasChaves(m, ['canal', 'id', 'tipo', 'versao'])
+        && m.canal === CANAL_PREVIA && m.versao === 1 && m.tipo === 'IMAGEM_CANCELAR' && typeof m.id === 'string' && ID_CONSULTA.test(m.id);
+    }
+
+    function responderImagem(f, id, resultado, extra) {
+      var dados = { resultado: resultado };
+      if (resultado === 'OK') dados.blob = extra.blob;
+      if (resultado === 'LIMITE') dados.espera = extra.espera;
+      responderAoQuadro(f, id, dados, 'IMAGEM_RESULTADO');
+    }
+
+    function pausarImagens(im, segundos) {
+      im.pausado = true;
+      im.espera = segundos;
+      if (im.relogioPausa !== null) janela.clearTimeout(im.relogioPausa);
+      im.relogioPausa = janela.setTimeout(function () { im.pausado = false; im.relogioPausa = null; }, segundos * 1000);
+    }
+
+    function esperaDaResposta(r) {
+      var s = parseInt(r.headers && typeof r.headers.get === 'function' ? r.headers.get('Retry-After') : null, 10);
+      return Math.min(Math.max(isNaN(s) ? IMAGEM_ESPERA_PADRAO_S : s, 1), IMAGEM_ESPERA_MAXIMA_S);
+    }
+
+    function lerFotografia(r) {
+      if (r.status === 200) {
+        var tipo = r.headers && typeof r.headers.get === 'function' ? r.headers.get('Content-Type') : null;
+        if (!/^image\/webp(;|$)/i.test(tipo || '')) return { resultado: 'INDISPONIVEL' };
+        return r.blob().then(function (b) {
+          return b && typeof b.size === 'number' && b.size > 0 && b.size <= IMAGEM_BYTES_MAXIMOS ? { resultado: 'OK', blob: b } : { resultado: 'INDISPONIVEL' };
+        });
+      }
+      if (r.status === 401) return { resultado: 'SESSAO' };
+      if (r.status === 403) return { resultado: 'SEM_ACESSO' };
+      if (r.status === 404) return { resultado: 'NAO_ENCONTRADA' };
+      if (r.status === 429) return { resultado: 'LIMITE', espera: esperaDaResposta(r) };
+      return { resultado: 'INDISPONIVEL' };
+    }
+
+    function buscarFotografia(f, gen, im, m) {
+      var http = global.EpiHttp;
+      var base = http && typeof http.configurar === 'function' ? http.configurar().baseUrl : null;
+      if (typeof base !== 'string' || typeof janela.fetch !== 'function') { responderImagem(f, m.id, 'INDISPONIVEL'); return; }
+      var controle = typeof janela.AbortController === 'function' ? new janela.AbortController() : null;
+      var registro = { controle: controle, relogio: null };
+      im.emVoo[m.id] = registro;
+      im.total += 1;
+      function finalizar(res) {
+        if (!Object.prototype.hasOwnProperty.call(im.emVoo, m.id)) return;
+        delete im.emVoo[m.id];
+        im.total -= 1;
+        if (registro.relogio !== null) janela.clearTimeout(registro.relogio);
+        if (im !== estado.imagens || estado.encerrada || gen !== estado.ponte.gen) return;
+        if (res.resultado === 'SESSAO') { sessaoExpirou(); return; }
+        if (res.resultado === 'SEM_ACESSO') im.semAcesso = true;
+        if (res.resultado === 'LIMITE') pausarImagens(im, res.espera);
+        responderImagem(f, m.id, res.resultado, res);
+      }
+      registro.relogio = janela.setTimeout(function () {
+        finalizar({ resultado: 'INDISPONIVEL' });
+        if (controle !== null) controle.abort();
+      }, IMAGEM_TEMPO_LIMITE_MS);
+      var url = base + '/imagens-material/' + (m.origem === 'EMPRESA' ? 'empresa' : 'padrao') + '/' + m.imagemId + '/' + m.variante + '?v=' + m.versaoImagem;
+      var opcoes = { method: 'GET', credentials: 'include', headers: { Accept: 'image/webp' } };
+      if (controle !== null) opcoes.signal = controle.signal;
+      var chamada;
+      try { chamada = janela.fetch(url, opcoes); } catch (e) { chamada = Promise.reject(e); }
+      chamada.then(lerFotografia).then(finalizar, function () { finalizar({ resultado: 'INDISPONIVEL' }); });
+    }
+
+    function atenderImagem(f, gen, m) {
+      var im = estado.imagens;
+      if (Object.prototype.hasOwnProperty.call(im.emVoo, m.id)) return;
+      if (im.permitidas[m.origem + ':' + m.imagemId + ':' + m.versaoImagem] !== true) { responderImagem(f, m.id, 'NAO_ENCONTRADA'); return; }
+      if (im.semAcesso) { responderImagem(f, m.id, 'SEM_ACESSO'); return; }
+      if (im.pausado) { responderImagem(f, m.id, 'LIMITE', { espera: im.espera }); return; }
+      if (im.total >= IMAGEM_SIMULTANEAS) { responderImagem(f, m.id, 'LIMITE', { espera: 1 }); return; }
+      buscarFotografia(f, gen, im, m);
+    }
+
+    function cancelarImagem(id) {
+      var im = estado.imagens;
+      if (!Object.prototype.hasOwnProperty.call(im.emVoo, id)) return;
+      var r = im.emVoo[id];
+      delete im.emVoo[id];
+      im.total -= 1;
+      if (r.relogio !== null) janela.clearTimeout(r.relogio);
+      if (r.controle !== null) r.controle.abort();
     }
 
     function mostrarCartao(d) {
@@ -309,7 +447,10 @@
       var f = estado.ponte.frame;
       if (!f || !f.contentWindow || !ev || ev.source !== f.contentWindow || ev.origin !== 'null') return;
       var m = ev.data;
+      if (mensagemDeImagemValida(m)) { atenderImagem(f, gen, m); return; }
+      if (mensagemDeCancelamentoValida(m)) { cancelarImagem(m.id); return; }
       if (!mensagemDeIdentificacaoValida(m) || estado.ponte.emAndamento) return;
+      descartarImagens();
       estado.ponte.emAndamento = true;
       var id = m.id;
       var r;
@@ -326,6 +467,7 @@
         var d = T.modelo.previaIdentificar(r.dados);
         if (d !== null) {
           mostrarCartao(d);
+          autorizarImagens(d.catalogo.materiais);
           responderAoQuadro(f, id, { resultado: 'OK', primeiroNome: d.primeiroNome, catalogo: d.catalogo });
           return;
         }

@@ -2209,3 +2209,359 @@ describe('K7 A1/A2 — modos monocromático e alto contraste da Central', () => 
     assert.equal(new Set(cartoes.map((c) => c.querySelector('i').getAttribute('data-icone'))).size, 5, 'o significado continua nos ícones e nos títulos');
   });
 });
+
+// ───────────────────────── IMG-PRÉVIA-01 — fotografias na Consulta Real (ponte autenticada da Central) ─────────────────────────
+// A Central usa a sessão empresarial e a rota existente GET /imagens-material/:origem/:id/:variante?v=; o iframe (origem opaca) só recebe bytes
+// pela ponte. Estes testes trocam o fetch DA PÁGINA por um que intercepta só a rota de imagens (o resto segue para o servidor falso).
+
+describe('IMG-PRÉVIA — fotografias na Consulta Real da Central', () => {
+  const CANAL = 'safework-previa-totem';
+  const ROTA = 'POST /atendimento-token/previa/identificar';
+  const IMG = (origem, id, versao) => ({ disponivel: true, origem, id, versao });
+  const MAT = (id, nome, imagem) => ({ id, nome, unidade: 'PAR', categoria: 'EPI', grupoProtecao: 'Proteção dos pés', tipo: { id: 1, nome: 'Botina' }, exigeTamanho: false, tamanhos: [], imagem });
+  const CATALOGO_A = [
+    MAT(41, 'Com foto padrão', IMG('PADRAO', '9007199254740993', 3)),
+    MAT(42, 'Com foto empresa', IMG('EMPRESA', '7', 1)),
+    MAT(43, 'Sem foto', { disponivel: false }),
+    MAT(44, 'Foto inválida', { disponivel: true, origem: 'OUTRA', id: '5', versao: 1 }),
+  ];
+  const CATALOGO_B = [MAT(51, 'Só do outro funcionário', IMG('PADRAO', '99', 1))];
+  const respostaDe = (materiais, nome = 'Dora') => ({
+    status: 'ok',
+    previa: { funcionario: { primeiroNome: nome }, ghe: { codigo: 'GHE-102', descricao: 'Soldagem', ativo: true }, catalogo: { estado: 'OK', total: materiais.length, materiais } },
+  });
+  const identificarMsg = (extra = {}) => ({ canal: CANAL, versao: 1, tipo: 'IDENTIFICAR', id: 'consulta-0001', tipoId: 'MATRICULA', valor: 'MX-4242', ...extra });
+  const pedidoImg = (extra = {}) => ({ canal: CANAL, versao: 1, tipo: 'IMAGEM', id: 'img-00000001', origem: 'PADRAO', imagemId: '9007199254740993', versaoImagem: 3, variante: 'miniatura', ...extra });
+  const cancelarImg = (id) => ({ canal: CANAL, versao: 1, tipo: 'IMAGEM_CANCELAR', id });
+  const filhaBruta = () => { const enviadas = []; return { enviadas, postMessage(m, alvo) { enviadas.push({ m, alvo }); } }; };
+  const doQuadro = (pg, filha, data, extra = {}) => pg.eventoDaJanela('message', { data, source: filha, origin: 'null', ...extra });
+  const resultados = (filha) => filha.enviadas.map((e) => e.m).filter((m) => m.tipo === 'IMAGEM_RESULTADO');
+  const ultimo = (filha) => resultados(filha).at(-1);
+  const CHAVES_BASE = ['canal', 'id', 'resultado', 'tipo', 'versao'];
+
+  // fetch da página: intercepta só /imagens-material/. `E.modo(chamada)` decide a resposta (padrão: 200 WebP de 8 bytes).
+  function instalarFetch(pg) {
+    const original = pg.janela.fetch;
+    const E = { chamadas: [], emVoo: 0, maxEmVoo: 0, segurados: [], modo: null };
+    const resposta = (status, cabecalhos, corpoJson, tamanho = 8) => ({
+      status, ok: status >= 200 && status < 300,
+      headers: { get: (n) => { const k = Object.keys(cabecalhos).find((x) => x.toLowerCase() === String(n).toLowerCase()); return k === undefined ? null : String(cabecalhos[k]); } },
+      blob: async () => ({ size: tamanho, type: 'image/webp', tag: `T${E.chamadas.length}` }),
+      text: async () => (corpoJson === null ? '' : JSON.stringify(corpoJson)),
+    });
+    pg.janela.fetch = function (destino, opcoes) {
+      const alvo = String(destino);
+      if (!alvo.includes('/imagens-material/')) return original.call(pg.janela, destino, opcoes);
+      const m = /\/imagens-material\/(empresa|padrao)\/([^/?#]+)\/(miniatura|exibicao)(?:\?(.*))?$/.exec(alvo);
+      const c = { url: alvo, origem: m && m[1], id: m && m[2], variante: m && m[3], consulta: m && m[4], metodo: opcoes && opcoes.method, credentials: opcoes && opcoes.credentials,
+        cabecalhos: { ...((opcoes && opcoes.headers) || {}) }, corpo: opcoes && opcoes.body, abortada: false };
+      E.chamadas.push(c);
+      E.emVoo += 1; E.maxEmVoo = Math.max(E.maxEmVoo, E.emVoo);
+      const sinal = opcoes && opcoes.signal;
+      return new Promise((resolver, rejeitar) => {
+        let fim = false;
+        const terminar = (fn) => { if (fim) return; fim = true; E.emVoo -= 1; fn(); };
+        if (sinal && sinal.addEventListener) sinal.addEventListener('abort', () => { c.abortada = true; terminar(() => rejeitar(Object.assign(new Error('abortado'), { name: 'AbortError' }))); });
+        const r = E.modo ? E.modo(c) : {};
+        const entregar = () => {
+          if (r.rede) return terminar(() => rejeitar(new Error('falha de rede simulada')));
+          const status = r.status || 200;
+          const cab = status === 200 ? { 'Content-Type': r.tipo || 'image/webp', ...(r.cabecalhos || {}) } : { ...(r.cabecalhos || {}) };
+          return terminar(() => resolver(resposta(status, cab, status === 200 ? null : { status: 'error', codigo: r.codigo || 'ERRO', message: 'x' }, r.tamanho === undefined ? 8 : r.tamanho)));
+        };
+        if (r.segurar) E.segurados.push(() => { if (!fim) entregar(); });
+        else Promise.resolve().then(entregar);
+      });
+    };
+    E.liberarTodos = () => E.segurados.splice(0).forEach((f) => f());
+    return E;
+  }
+
+  async function abrirImg({ materiais = CATALOGO_A, depois = null, perm = TUDO } = {}) {
+    let n = 0;
+    const r = await abrir({ perm, base: { forcar: { [ROTA]: () => { n += 1; return { status: 200, corpo: respostaDe(n === 1 ? materiais : (depois || CATALOGO_B), n === 1 ? 'Dora' : 'Eva') }; } } } });
+    r.pg.janela.AbortController = globalThis.AbortController;
+    const E = instalarFetch(r.pg);
+    await aba(r.pg, 'visualizarTotem');
+    await r.pg.marcar('modoPreviaReal');
+    const filha = filhaBruta();
+    quadroDaPrevia(r.pg)[0].contentWindow = filha;
+    return { ...r, E, filha };
+  }
+  async function consultar(ctx, extra = {}) { await doQuadro(ctx.pg, ctx.filha, identificarMsg(extra)); await ctx.pg.esperar(); }
+  async function pedir(ctx, extra = {}) { await doQuadro(ctx.pg, ctx.filha, pedidoImg(extra)); await ctx.pg.esperar(); }
+
+  test('IMG-P1 — o catálogo entregue ao iframe preserva as referências válidas (id BIGINT como texto) e troca as inválidas por { disponivel: false }', async () => {
+    const ctx = await abrirImg();
+    await consultar(ctx);
+    const msg = ctx.filha.enviadas[0].m;
+    assert.equal(msg.resultado, 'OK');
+    // A mensagem nasce no contexto da página: a cópia JSON traz os mesmos valores para este contexto (prototypes diferentes quebram o deepStrictEqual).
+    assert.deepEqual(JSON.parse(JSON.stringify(msg.catalogo.materiais.map((m) => m.imagem))), [IMG('PADRAO', '9007199254740993', 3), IMG('EMPRESA', '7', 1), { disponivel: false }, { disponivel: false }]);
+  });
+
+  test('IMG-P2 — miniatura e exibição de uma imagem do catálogo: um GET pela rota existente, com a sessão, e o iframe recebe só o resultado e o blob', async () => {
+    const ctx = await abrirImg();
+    await consultar(ctx);
+    await pedir(ctx);
+    assert.equal(ctx.E.chamadas.length, 1);
+    const c = ctx.E.chamadas[0];
+    assert.ok(c.url.endsWith('/imagens-material/padrao/9007199254740993/miniatura?v=3'), c.url);
+    assert.deepEqual([c.metodo, c.credentials, c.corpo], ['GET', 'include', undefined]);
+    assert.deepEqual(Object.keys(c.cabecalhos), ['Accept']);
+    assert.equal(c.cabecalhos.Accept, 'image/webp');
+    const r = ultimo(ctx.filha);
+    assert.deepEqual(Object.keys(r).sort(), ['blob', ...CHAVES_BASE]);
+    assert.deepEqual([r.canal, r.versao, r.tipo, r.id, r.resultado, r.blob.size], [CANAL, 1, 'IMAGEM_RESULTADO', 'img-00000001', 'OK', 8]);
+    assert.equal(ctx.filha.enviadas.at(-1).alvo, '*');
+    await pedir(ctx, { id: 'img-00000002', origem: 'EMPRESA', imagemId: '7', versaoImagem: 1, variante: 'exibicao' });
+    assert.ok(ctx.E.chamadas[1].url.endsWith('/imagens-material/empresa/7/exibicao?v=1'), ctx.E.chamadas[1].url);
+    assert.equal(ultimo(ctx.filha).resultado, 'OK');
+  });
+
+  test('IMG-P3 — imagem que não está no catálogo da consulta atual é recusada SEM chamar a API: id, origem, versão e antes de qualquer consulta', async () => {
+    const ctx = await abrirImg();
+    await pedir(ctx, { id: 'img-00000009' });
+    assert.equal(ctx.E.chamadas.length, 0, 'antes de identificar não há catálogo autorizado');
+    assert.equal(ultimo(ctx.filha).resultado, 'NAO_ENCONTRADA');
+    await consultar(ctx);
+    const negados = [
+      { imagemId: '999' }, { origem: 'EMPRESA' }, { imagemId: '7' }, { versaoImagem: 4 }, { versaoImagem: 2 },
+      { origem: 'EMPRESA', imagemId: '7', versaoImagem: 2 }, { imagemId: '9007199254740992' }, { imagemId: '5', origem: 'EMPRESA', versaoImagem: 1 },
+    ];
+    for (const [i, extra] of negados.entries()) {
+      await pedir(ctx, { id: `img-1000000${i}`, ...extra });
+      const r = ultimo(ctx.filha);
+      assert.equal(r.resultado, 'NAO_ENCONTRADA', JSON.stringify(extra));
+      assert.deepEqual(Object.keys(r).sort(), CHAVES_BASE);
+    }
+    assert.equal(ctx.E.chamadas.length, 0, 'nenhuma chamada para imagem fora do catálogo');
+  });
+
+  test('IMG-P4 — mensagem malformada, de outra fonte ou origem, ou com variante inválida é IGNORADA: nenhuma chamada e nenhuma resposta', async () => {
+    const ctx = await abrirImg();
+    await consultar(ctx);
+    const antes = ctx.filha.enviadas.length;
+    const casos = [
+      ['variante original', pedidoImg({ variante: 'original' })], ['variante maiúscula', pedidoImg({ variante: 'MINIATURA' })], ['chave extra', { ...pedidoImg(), url: 'https://x.invalido/a.png' }],
+      ['chave ausente', (() => { const m = pedidoImg(); delete m.variante; return m; })()], ['id curto', pedidoImg({ id: 'x' })], ['id com barra', pedidoImg({ id: 'img/0000001' })],
+      ['versaoImagem texto', pedidoImg({ versaoImagem: '3' })], ['imagemId número', pedidoImg({ imagemId: 9007199254740993 })], ['origem minúscula', pedidoImg({ origem: 'padrao' })],
+      ['canal errado', pedidoImg({ canal: 'outro' })], ['versão do protocolo', pedidoImg({ versao: 2 })], ['tipo desconhecido', pedidoImg({ tipo: 'BUSCAR' })],
+      ['não é objeto', 'texto'], ['array', []], ['nulo', null],
+    ];
+    for (const [nome, data] of casos) { await doQuadro(ctx.pg, ctx.filha, data); await ctx.pg.esperar(); assert.equal(ctx.E.chamadas.length, 0, nome); }
+    await doQuadro(ctx.pg, filhaBruta(), pedidoImg());
+    await doQuadro(ctx.pg, ctx.filha, pedidoImg(), { origin: 'https://outra.origem' });
+    await doQuadro(ctx.pg, ctx.filha, pedidoImg(), { source: undefined });
+    await ctx.pg.esperar();
+    assert.equal(ctx.E.chamadas.length, 0);
+    assert.equal(ctx.filha.enviadas.length, antes, 'nenhuma resposta a mensagem inválida');
+  });
+
+  test('IMG-P5 — pedido duplicado enquanto o primeiro está em andamento (mesmo id) é ignorado: uma só chamada', async () => {
+    const ctx = await abrirImg();
+    ctx.E.modo = () => ({ segurar: true });
+    await consultar(ctx);
+    await pedir(ctx); await pedir(ctx);
+    assert.equal(ctx.E.chamadas.length, 1);
+    ctx.E.liberarTodos(); await ctx.pg.esperar();
+    assert.equal(resultados(ctx.filha).length, 1);
+  });
+
+  test('IMG-P6 — trocar de funcionário invalida a lista autorizada, aborta o que estava em voo e descarta a resposta atrasada; nada da consulta anterior vaza', async () => {
+    const ctx = await abrirImg();
+    ctx.E.modo = () => ({ segurar: true });
+    await consultar(ctx);
+    await pedir(ctx);
+    assert.equal(ctx.E.emVoo, 1);
+    await consultar(ctx, { id: 'consulta-0002' });
+    assert.equal(ctx.E.chamadas[0].abortada, true, 'a chamada pendente da consulta anterior foi abortada');
+    assert.equal(ctx.E.emVoo, 0);
+    ctx.E.liberarTodos(); await ctx.pg.esperar();
+    assert.equal(resultados(ctx.filha).length, 0, 'resposta atrasada nunca é entregue');
+    ctx.E.modo = null;
+    await pedir(ctx, { id: 'img-20000001' });
+    assert.equal(ultimo(ctx.filha).resultado, 'NAO_ENCONTRADA', 'a imagem do funcionário anterior não está no novo catálogo');
+    assert.equal(ctx.E.chamadas.length, 1);
+    await pedir(ctx, { id: 'img-20000002', imagemId: '99', versaoImagem: 1 });
+    assert.equal(ultimo(ctx.filha).resultado, 'OK', 'a imagem do catálogo novo é atendida');
+  });
+
+  test('IMG-P7 — durante a identificação do próximo funcionário a lista antiga já está invalidada (a nova só vale depois da resposta)', async () => {
+    const ctx = await abrirImg();
+    await consultar(ctx);
+    ctx.s.forcar[ROTA] = () => new Promise(() => {});
+    const novo = doQuadro(ctx.pg, ctx.filha, identificarMsg({ id: 'consulta-0002' }));
+    void novo;
+    await ctx.pg.esperar();
+    await pedir(ctx);
+    assert.equal(ctx.E.chamadas.length, 0);
+    assert.equal(ultimo(ctx.filha).resultado, 'NAO_ENCONTRADA');
+  });
+
+  test('IMG-P8 — cancelar pelo iframe aborta a chamada e nada chega depois; cancelar id desconhecido não faz nada', async () => {
+    const ctx = await abrirImg();
+    ctx.E.modo = () => ({ segurar: true });
+    await consultar(ctx);
+    await pedir(ctx);
+    await doQuadro(ctx.pg, ctx.filha, cancelarImg('img-99999999')); await ctx.pg.esperar();
+    assert.equal(ctx.E.chamadas[0].abortada, false);
+    await doQuadro(ctx.pg, ctx.filha, cancelarImg('img-00000001')); await ctx.pg.esperar();
+    assert.equal(ctx.E.chamadas[0].abortada, true);
+    ctx.E.liberarTodos(); await ctx.pg.esperar();
+    assert.equal(resultados(ctx.filha).length, 0);
+  });
+
+  test('IMG-P9 — sair da aba, voltar à demonstração ou encerrar a sessão aborta as chamadas e descarta as respostas atrasadas', async () => {
+    for (const acao of ['sair', 'demonstracao', 'reiniciar', 'encerrar']) {
+      const ctx = await abrirImg();
+      ctx.E.modo = () => ({ segurar: true });
+      await consultar(ctx);
+      await pedir(ctx);
+      assert.equal(ctx.E.emVoo, 1, acao);
+      if (acao === 'sair') await aba(ctx.pg, 'historico');
+      if (acao === 'demonstracao') await ctx.pg.marcar('modoPreviaDemo');
+      if (acao === 'reiniciar') await ctx.pg.clicar('botaoReiniciarPrevia');
+      if (acao === 'encerrar') ctx.pg.janela.__tela.encerrar();
+      assert.equal(ctx.E.chamadas[0].abortada, true, `${acao}: abortada`);
+      ctx.E.liberarTodos(); await ctx.pg.esperar();
+      assert.equal(resultados(ctx.filha).length, 0, `${acao}: nada entregue ao iframe descartado`);
+      await pedir(ctx, { id: 'img-30000001' });
+      assert.equal(ctx.E.chamadas.length, 1, `${acao}: mensagem de iframe descartado é ignorada`);
+    }
+  });
+
+  test('IMG-P10 — sessão empresarial expirada (401): a Central usa o mecanismo existente e nada é liberado ao iframe', async () => {
+    const ctx = await abrirImg();
+    ctx.E.modo = () => ({ status: 401, codigo: 'SESSAO_INVALIDA' });
+    await consultar(ctx);
+    await pedir(ctx);
+    assert.equal(ctx.pg.visivel('conteudoProtegido'), false);
+    assert.equal(resultados(ctx.filha).length, 0);
+  });
+
+  test('IMG-P11 — sem permissão de leitura da Biblioteca (403): SEM_ACESSO, nunca um erro de tablet; as demais imagens da consulta nem chegam à API', async () => {
+    const ctx = await abrirImg();
+    ctx.E.modo = () => ({ status: 403, codigo: 'PERMISSAO_NEGADA' });
+    await consultar(ctx);
+    await pedir(ctx);
+    assert.equal(ultimo(ctx.filha).resultado, 'SEM_ACESSO');
+    assert.deepEqual(Object.keys(ultimo(ctx.filha)).sort(), CHAVES_BASE);
+    await pedir(ctx, { id: 'img-00000002', origem: 'EMPRESA', imagemId: '7', versaoImagem: 1 });
+    assert.equal(ultimo(ctx.filha).resultado, 'SEM_ACESSO');
+    assert.equal(ctx.E.chamadas.length, 1, 'depois do primeiro 403 não se insiste na API');
+    assert.equal(ctx.pg.visivel('conteudoProtegido'), true, 'a página não é derrubada');
+    await consultar(ctx, { id: 'consulta-0002' });
+    ctx.E.modo = null;
+    await pedir(ctx, { id: 'img-00000003', imagemId: '99', versaoImagem: 1 });
+    assert.equal(ultimo(ctx.filha).resultado, 'OK', 'uma nova consulta tenta de novo');
+  });
+
+  test('IMG-P12 — 404, 5xx, falha de rede, tipo diferente de WebP e tamanho inválido: mapeamento seguro e sem derrubar a página', async () => {
+    const mapa = [
+      [{ status: 404, codigo: 'IMAGEM_NAO_ENCONTRADA' }, 'NAO_ENCONTRADA'], [{ status: 500, codigo: 'ERRO_INTERNO' }, 'INDISPONIVEL'], [{ status: 503, codigo: 'IMAGENS_INDISPONIVEL' }, 'INDISPONIVEL'],
+      [{ rede: true }, 'INDISPONIVEL'], [{ tipo: 'image/png' }, 'INDISPONIVEL'], [{ tipo: 'text/html' }, 'INDISPONIVEL'], [{ tamanho: 0 }, 'INDISPONIVEL'], [{ tamanho: 4 * 1024 * 1024 + 1 }, 'INDISPONIVEL'],
+      [{ status: 400, codigo: 'VALIDACAO' }, 'INDISPONIVEL'],
+    ];
+    for (const [regra, esperado] of mapa) {
+      const ctx = await abrirImg();
+      ctx.E.modo = () => regra;
+      await consultar(ctx);
+      await pedir(ctx);
+      const r = ultimo(ctx.filha);
+      assert.equal(r.resultado, esperado, JSON.stringify(regra));
+      assert.deepEqual(Object.keys(r).sort(), CHAVES_BASE, JSON.stringify(regra));
+      assert.equal(ctx.pg.visivel('conteudoProtegido'), true);
+    }
+    const ok = await abrirImg();
+    ok.E.modo = () => ({ tamanho: 4 * 1024 * 1024 });
+    await consultar(ok); await pedir(ok);
+    assert.equal(ultimo(ok.filha).resultado, 'OK', 'exatamente no limite ainda vale');
+  });
+
+  test('IMG-P13 — 429 respeita o Retry-After (padrão 30 s, máximo 120 s): LIMITE com a espera, nada novo sai durante a pausa e depois ela termina', async () => {
+    for (const [cab, esperado] of [['7', 7], [undefined, 30], ['999', 120], ['abc', 30], ['0', 1]]) {
+      const ctx = await abrirImg();
+      ctx.E.modo = () => ({ status: 429, codigo: 'LIMITE_REQUISICOES_EXCEDIDO', cabecalhos: cab === undefined ? {} : { 'Retry-After': cab } });
+      await consultar(ctx);
+      await pedir(ctx);
+      assert.deepEqual([ultimo(ctx.filha).resultado, ultimo(ctx.filha).espera], ['LIMITE', esperado], String(cab));
+      assert.deepEqual(Object.keys(ultimo(ctx.filha)).sort(), [...CHAVES_BASE, 'espera'].sort());
+      await pedir(ctx, { id: 'img-00000002', origem: 'EMPRESA', imagemId: '7', versaoImagem: 1 });
+      assert.equal(ultimo(ctx.filha).resultado, 'LIMITE', 'durante a pausa nada sai');
+      assert.equal(ctx.E.chamadas.length, 1);
+      ctx.E.modo = null;
+      await ctx.pg.avancar(esperado * 1000);
+      await pedir(ctx, { id: 'img-00000003', origem: 'EMPRESA', imagemId: '7', versaoImagem: 1 });
+      assert.equal(ultimo(ctx.filha).resultado, 'OK', 'depois do prazo volta a atender');
+      assert.equal(ctx.pg.visivel('conteudoProtegido'), true);
+    }
+  });
+
+  test('IMG-P14 — no máximo 4 chamadas simultâneas: as excedentes recebem LIMITE (espera 1 s) sem chegar à API', async () => {
+    const materiais = Array.from({ length: 6 }, (_, i) => MAT(60 + i, `Item ${i}`, IMG('PADRAO', String(500 + i), 1)));
+    const ctx = await abrirImg({ materiais });
+    ctx.E.modo = () => ({ segurar: true });
+    await consultar(ctx);
+    for (let i = 0; i < 6; i += 1) await pedir(ctx, { id: `img-4000000${i}`, imagemId: String(500 + i), versaoImagem: 1 });
+    assert.equal(ctx.E.chamadas.length, 4);
+    assert.ok(ctx.E.maxEmVoo <= 4);
+    const limites = resultados(ctx.filha).filter((r) => r.resultado === 'LIMITE');
+    assert.equal(limites.length, 2);
+    assert.ok(limites.every((r) => r.espera === 1));
+    ctx.E.liberarTodos(); await ctx.pg.esperar();
+    assert.equal(resultados(ctx.filha).filter((r) => r.resultado === 'OK').length, 4);
+  });
+
+  test('IMG-P15 — chamada sem resposta é abortada no tempo limite (15 s) e vira INDISPONIVEL', async () => {
+    const ctx = await abrirImg();
+    ctx.E.modo = () => ({ segurar: true });
+    await consultar(ctx);
+    await pedir(ctx);
+    await ctx.pg.avancar(14000);
+    assert.equal(ctx.E.chamadas[0].abortada, false);
+    await ctx.pg.avancar(15000);
+    assert.equal(ctx.E.chamadas[0].abortada, true);
+    assert.equal(ultimo(ctx.filha).resultado, 'INDISPONIVEL');
+  });
+
+  test('IMG-P16 — a demonstração não tem ponte: pedido de imagem do iframe é ignorado, não há ouvinte nem chamada à Biblioteca', async () => {
+    const r = await abrir();
+    r.pg.janela.AbortController = globalThis.AbortController;
+    const E = instalarFetch(r.pg);
+    await aba(r.pg, 'visualizarTotem');
+    const filha = filhaBruta();
+    quadroDaPrevia(r.pg)[0].contentWindow = filha;
+    assert.equal(r.pg.ouvintesDaJanela('message'), 0);
+    await doQuadro(r.pg, filha, pedidoImg()); await r.pg.esperar();
+    assert.equal(E.chamadas.length, 0);
+    assert.equal(filha.enviadas.length, 0);
+  });
+
+  test('IMG-P17 — o isolamento do iframe e a ponte única continuam: sandbox só com scripts, sem allow-same-origin, um único ouvinte, nenhuma credencial na mensagem', async () => {
+    const ctx = await abrirImg();
+    const q = quadroDaPrevia(ctx.pg)[0];
+    assert.equal(q.getAttribute('sandbox'), 'allow-scripts');
+    assert.equal(q.getAttribute('allow'), null);
+    assert.equal(ctx.pg.ouvintesDaJanela('message'), 1);
+    await consultar(ctx);
+    // A página já grava sua preferência de tema e limpa a sessão antiga: o que importa é que o pedido de foto não acrescenta nada.
+    const antes = JSON.stringify([ctx.pg.storage, ctx.pg.cookiesEscritos, ctx.pg.consoleChamadas, ctx.pg.historico, ctx.pg.navegacoes]);
+    await pedir(ctx);
+    await pedir(ctx, { id: 'img-00000002', variante: 'exibicao' });
+    assert.equal(ctx.E.chamadas.length, 2);
+    const texto = JSON.stringify(ctx.filha.enviadas.map((e) => ({ ...e.m, blob: undefined })));
+    assert.doesNotMatch(texto, /cookie|authorization|token|gepi_sessao|set-cookie/i);
+    assert.equal(JSON.stringify([ctx.pg.storage, ctx.pg.cookiesEscritos, ctx.pg.consoleChamadas, ctx.pg.historico, ctx.pg.navegacoes]), antes);
+  });
+
+  test('IMG-P18 — a identificação, o GHE, o cartão e o catálogo da Consulta Real continuam como antes', async () => {
+    const ctx = await abrirImg();
+    await consultar(ctx);
+    const cartao = ctx.pg.el('cartaoConsultaReal').textContent.replace(/\s+/g, ' ');
+    for (const esperado of ['Dora', 'GHE-102', 'Soldagem', 'Ativo', 'Com foto padrão', 'Sem foto']) assert.match(cartao, new RegExp(esperado));
+    assert.equal(ctx.pg.el('crTotal').textContent.trim(), '4');
+    assert.deepEqual(Object.keys(ctx.filha.enviadas[0].m).sort(), ['canal', 'catalogo', 'id', 'primeiroNome', 'resultado', 'tipo', 'versao']);
+    assert.equal(ctx.filha.enviadas[0].m.primeiroNome, 'Dora');
+  });
+});

@@ -103,9 +103,10 @@ async function ativar(pool, { codigo, ip = null, agente = null }) {
 
 /**
  * Autentica a credencial apresentada. Devolve { dispositivo: { id, empresaId, nome, unidade, setor, localInstalacao },
- * novaCredencial } (novaCredencial só quando esta requisição rotacionou).
+ * novaCredencial } (novaCredencial só quando esta requisição rotacionou). Com `rotacionar: false` a credencial é autenticada pelas mesmas regras
+ * (credencial, empresa, expiração, carência, rede e eventos), mas nunca é rotacionada e `novaCredencial` é sempre null; o padrão é rotacionar.
  */
-async function autenticar(pool, { credencial, ip = null }) {
+async function autenticar(pool, { credencial, ip = null, rotacionar = true }) {
   if (!tokenSessaoTemFormatoValido(credencial)) throw naoAutorizado();
   const credencialHash = hashTokenSessao(credencial);
   const criterios = {
@@ -123,7 +124,7 @@ async function autenticar(pool, { credencial, ip = null }) {
   if (!(await redeRepo.ipFixoAutorizado(pool, linha.empresa_id, ip))) throw await recusarPorRede(pool, linha.empresa_id, linha.id);
 
   let novaCredencial = null;
-  if (linha.atual === true && linha.rotacao_devida === true) {
+  if (rotacionar !== false && linha.atual === true && linha.rotacao_devida === true) {
     const candidata = gerarTokenSessao();
     const ganhou = await emTransacao(pool, async (client) => {
       const rotacionou = await credencialRepo.rotacionar(client, {
