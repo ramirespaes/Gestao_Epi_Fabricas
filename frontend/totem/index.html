@@ -6,7 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="theme-color" content="#1a3a6b">
+  <meta name="theme-color" content="#1F7563" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#101c18" media="(prefers-color-scheme: dark)">
   <meta name="referrer" content="no-referrer">
   <script src="boot.js"></script>
   <title>Gestão de EPI</title>
@@ -56,7 +57,7 @@
   <!-- TABLET NÃO AUTORIZADO -->
   <section class="tela" id="telaNaoAutorizado">
     <div class="acesso">
-      <div class="ico" style="background:rgba(255,59,48,.12);color:var(--error)"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-bloqueio"/></svg></div>
+      <div class="ico" style="background:var(--error-soft);color:var(--error)"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-bloqueio"/></svg></div>
       <p class="msg-grande">Este tablet não está autorizado. Procure a administração do sistema.</p>
     </div>
   </section>
@@ -64,7 +65,7 @@
   <!-- TABLET FORA DA REDE AUTORIZADA -->
   <section class="tela" id="telaRede">
     <div class="acesso">
-      <div class="ico" style="background:rgba(255,59,48,.12);color:var(--error)"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-bloqueio"/></svg></div>
+      <div class="ico" style="background:var(--error-soft);color:var(--error)"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-bloqueio"/></svg></div>
       <p class="msg-grande">Este tablet está fora da rede autorizada. Procure a administração do sistema.</p>
     </div>
   </section>
@@ -185,7 +186,7 @@
   <!-- ENVIO INCERTO — o resultado do envio não foi confirmado -->
   <section class="tela" id="telaIncerto">
     <div class="acesso">
-      <div class="ico" style="background:rgba(178,106,0,.16);color:var(--warn)"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-relogio"/></svg></div>
+      <div class="ico" style="background:var(--warn-soft);color:var(--warn)"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-relogio"/></svg></div>
       <h1>Não conseguimos confirmar o envio do seu pedido.</h1>
       <p class="msg" id="msgProcessando" hidden></p>
       <button type="button" class="btn btn-filled" id="btnVerificar">Verificar</button>
@@ -196,7 +197,7 @@
   <!-- TELA 4 — confirmação (neutra: só o que o servidor confirmou) -->
   <section class="tela" id="telaConfirma">
     <div class="acesso" style="margin-top:4vh">
-      <div class="ico" style="background:rgba(26,127,55,.14);color:var(--ok)"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-ok"/></svg></div>
+      <div class="ico" style="background:var(--ok-soft);color:var(--ok)"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-ok"/></svg></div>
       <h1>Solicitação enviada com sucesso.</h1>
       <p>Seu pedido foi registrado e será analisado pela Segurança do Trabalho.</p>
       <button type="button" class="btn btn-filled" id="btnConcluir"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-sair"/></svg>Concluir e sair</button>

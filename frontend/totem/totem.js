@@ -103,6 +103,16 @@
   // para os tablets não baterem juntos; o servidor dá o tablet como sem comunicação depois de 180 s sem contato.
   var HEARTBEAT_INTERVALO_MS = 60000;
   var HEARTBEAT_JITTER = 0.1;
+  // Fotografias dos EPIs. Limites PROVISÓRIOS de carregamento (política do cliente, não requisito do backend): a rota de imagens tem
+  // contadores próprios de 240 por minuto por tablet e 600 por minuto por IP; 300 ms entre inícios dá no máximo ~200 por minuto.
+  var IMAGENS_SIMULTANEAS = 4;
+  var IMAGENS_ESPACAMENTO_MS = 300;
+  var IMAGEM_TEMPO_LIMITE_MS = 15000;
+  var IMAGEM_TENTATIVAS = 3;
+  var IMAGEM_ESPERA_REPETICAO_MS = 2000;
+  var IMAGEM_BYTES_MAXIMOS = 4 * 1024 * 1024;
+  var ID_IMAGEM_MAXIMO = '9223372036854775807';
+  var ORIGENS_IMAGEM = { EMPRESA: 'empresa', PADRAO: 'padrao' };
 
   var estado = {
     tipo: null,
@@ -133,6 +143,9 @@
   // Batida de presença do tablet: independente do atendimento do funcionário (não tem geração, não entra na barreira e sobrevive à
   // troca de sessão); só o bloqueio do tablet a para. `vida` muda a cada parada: a resposta de uma batida enviada numa vida anterior é antiga.
   var heartbeat = { ativo: false, emVoo: false, timer: null, vida: 0 };
+
+  // Fotografias da sessão atual (cache, fila e requisições em voo): tudo em memória e descartado com a geração.
+  var imagens = novasImagens();
 
   // Código de ativação: sai do fechamento do boot.js uma única vez e vive só aqui, até ser descartado.
   var ativacao = { codigo: window.TotemAtivacao.tomar(), situacao: window.TotemAtivacao.estado(), enviando: false, prazo: null };
@@ -201,6 +214,7 @@
     estado.geracao += 1;
     clearTimeout(estado.renovacao.timer);
     estado.renovacao = novaRenovacao();
+    descartarImagens();
   }
 
   function limparErro() {
@@ -561,6 +575,215 @@
     });
   }
 
+  /* ═══ Fotografias dos EPIs ═══
+     O catálogo traz `imagem: { disponivel, origem, id, versao }`; só a referência estritamente válida vira requisição (o id BIGINT
+     segue como TEXTO). A fotografia é buscada por fetch autenticado (cookies do tablet e do atendimento), vira Blob e URL de objeto
+     e ocupa o espaço `.prod-img` / `#detImg`; sem imagem ou com qualquer falha, o placeholder aprovado permanece. As requisições
+     NÃO entram na barreira do atendimento (a rota não define nem remove cookie), nunca renovam a sessão e são abortadas, com as
+     URLs de objeto revogadas, quando a geração muda (Sair, expiração, bloqueio, novo funcionário). */
+  function novasImagens() {
+    return { cache: Object.create(null), fila: [], emVoo: 0, ativas: [], inicio: -Infinity, pausaAte: 0, timer: null, repeticoes: [], urls: [], observador: null, visiveis: new Map() };
+  }
+
+  function referenciaDaImagem(m) {
+    var i = m.imagem;
+    if (typeof i !== 'object' || i === null || Array.isArray(i) || i.disponivel !== true) return null;
+    if (typeof i.origem !== 'string' || !Object.prototype.hasOwnProperty.call(ORIGENS_IMAGEM, i.origem)) return null;
+    if (typeof i.id !== 'string' || !/^[1-9][0-9]{0,18}$/.test(i.id) || (i.id.length === 19 && i.id > ID_IMAGEM_MAXIMO)) return null;
+    if (!Number.isInteger(i.versao) || i.versao < 1 || i.versao > 2147483647) return null;
+    return { rota: ORIGENS_IMAGEM[i.origem], id: i.id, versao: i.versao };
+  }
+
+  function descartarImagens() {
+    var im = imagens;
+    imagens = novasImagens();
+    clearTimeout(im.timer);
+    im.repeticoes.forEach(function (t) { clearTimeout(t); });
+    if (im.observador !== null) im.observador.disconnect();
+    im.ativas.splice(0).forEach(function (c) { c.abort(); });
+    im.urls.splice(0).forEach(function (u) { URL.revokeObjectURL(u); });
+  }
+
+  /* Pede a fotografia de um material. `aoPronto(url, entrada)` é chamado quando (ou se) ela chegar; `alta` passa à frente da fila.
+     Falha definitiva (404, resposta inválida) fica registrada e não é repetida na sessão. */
+  function pedirImagem(m, variante, alta, aoPronto) {
+    var ref = referenciaDaImagem(m);
+    if (ref === null) return;
+    var chave = ref.rota + ':' + ref.id + ':' + variante + ':' + ref.versao;
+    var e = imagens.cache[chave];
+    if (e === undefined) {
+      e = imagens.cache[chave] = { chave: chave, ref: ref, variante: variante, situacao: 'fila', tentativas: 0, url: null, ouvintes: [aoPronto], definitivo: false };
+      enfileirarImagem(e, alta);
+      return;
+    }
+    if (e.situacao === 'pronta') { aoPronto(e.url, e); return; }
+    if (e.situacao === 'falha') {
+      if (e.definitivo || !alta) return;
+      e.tentativas = 0;
+      e.ouvintes = [aoPronto];
+      enfileirarImagem(e, true);
+      return;
+    }
+    e.ouvintes.push(aoPronto);
+    if (alta && e.situacao === 'fila') enfileirarImagem(e, true);
+  }
+
+  function enfileirarImagem(e, alta) {
+    var i = imagens.fila.indexOf(e);
+    if (i !== -1) imagens.fila.splice(i, 1);
+    e.situacao = 'fila';
+    if (alta) imagens.fila.unshift(e);
+    else imagens.fila.push(e);
+    bombearImagens();
+  }
+
+  /* Respeita o limite de requisições simultâneas, o espaçamento entre inícios e a pausa imposta por um 429. */
+  function bombearImagens() {
+    clearTimeout(imagens.timer);
+    imagens.timer = null;
+    while (imagens.fila.length > 0 && imagens.emVoo < IMAGENS_SIMULTANEAS) {
+      var agora = Date.now();
+      var espera = Math.max(imagens.pausaAte - agora, imagens.inicio + IMAGENS_ESPACAMENTO_MS - agora);
+      if (espera > 0) { imagens.timer = setTimeout(bombearImagens, espera); return; }
+      iniciarImagem(imagens.fila.shift());
+    }
+  }
+
+  function lerRespostaDaImagem(r) {
+    if (r.status === 200) {
+      if (!/^image\/webp(;|$)/i.test(r.headers.get('Content-Type') || '')) return Promise.resolve({ tipo: 'invalida' });
+      return r.blob().then(function (b) {
+        return b && b.size > 0 && b.size <= IMAGEM_BYTES_MAXIMOS ? { tipo: 'ok', blob: b } : { tipo: 'invalida' };
+      });
+    }
+    var espera = parseInt(r.headers.get('Retry-After'), 10);
+    function erro(codigo) { return { tipo: 'http', status: r.status, codigo: codigo, corpo: null, espera: isNaN(espera) ? null : espera }; }
+    return r.text().then(function (texto) {
+      var dados = null;
+      try { dados = texto === '' ? null : JSON.parse(texto); } catch (x) { dados = null; }
+      return erro(dados && typeof dados.codigo === 'string' ? dados.codigo : null);
+    }, function () { return erro(null); });
+  }
+
+  function iniciarImagem(e) {
+    var im = imagens;
+    var controle = new AbortController();
+    var limite = setTimeout(function () { controle.abort(); }, IMAGEM_TEMPO_LIMITE_MS);
+    e.situacao = 'voo';
+    e.tentativas += 1;
+    im.inicio = Date.now();
+    im.emVoo += 1;
+    im.ativas.push(controle);
+    var url = API_BASE + TABLET + '/atendimento/imagens/' + e.ref.rota + '/' + e.ref.id + '/' + e.variante + '?v=' + e.ref.versao;
+    function terminar(res) {
+      clearTimeout(limite);
+      im.emVoo -= 1;
+      var i = im.ativas.indexOf(controle);
+      if (i !== -1) im.ativas.splice(i, 1);
+      if (im !== imagens) return; // geração encerrada: a resposta é descartada
+      aoTerminarImagem(e, res);
+      bombearImagens();
+    }
+    var requisicao = typeof API_BASE === 'string'
+      ? fetch(url, { method: 'GET', credentials: 'include', headers: { Accept: 'image/webp' }, signal: controle.signal })
+      : Promise.reject(new Error('sem API'));
+    requisicao.then(lerRespostaDaImagem).then(terminar, function () { terminar({ tipo: 'falha' }); });
+  }
+
+  function aoTerminarImagem(e, res) {
+    if (res.tipo === 'ok') {
+      var url = null;
+      try { url = URL.createObjectURL(res.blob); } catch (x) { url = null; }
+      if (url === null) { falharImagem(e, true); return; }
+      imagens.urls.push(url);
+      e.url = url;
+      e.situacao = 'pronta';
+      var ouvintes = e.ouvintes;
+      e.ouvintes = [];
+      ouvintes.forEach(function (fn) { try { fn(url, e); } catch (x) { /* um destino com falha não impede os demais */ } });
+      return;
+    }
+    if (res.tipo === 'http') {
+      if (res.status === 401 || res.status === 403) { perdaDeAutorizacao({ tipo: 'resposta', status: res.status, codigo: res.codigo, corpo: null, espera: res.espera }); return; }
+      if (res.status === 429) {
+        var segundos = Math.min(Math.max(res.espera === null ? ESPERA_PADRAO_S : res.espera, 1), ESPERA_MAXIMA_S);
+        imagens.pausaAte = Date.now() + segundos * 1000;
+        e.tentativas -= 1; // o limite do servidor não consome as tentativas da imagem
+        enfileirarImagem(e, true);
+        return;
+      }
+      if (res.status < 500) { falharImagem(e, true); return; }
+    }
+    if (res.tipo === 'invalida') { falharImagem(e, true); return; }
+    repetirImagem(e);
+  }
+
+  function repetirImagem(e) {
+    if (e.tentativas >= IMAGEM_TENTATIVAS) { falharImagem(e, false); return; }
+    var im = imagens;
+    e.situacao = 'espera';
+    var t = setTimeout(function () {
+      var i = im.repeticoes.indexOf(t);
+      if (i !== -1) im.repeticoes.splice(i, 1);
+      enfileirarImagem(e, false);
+    }, IMAGEM_ESPERA_REPETICAO_MS * e.tentativas);
+    im.repeticoes.push(t);
+  }
+
+  function falharImagem(e, definitivo) {
+    e.situacao = 'falha';
+    e.definitivo = definitivo;
+    e.ouvintes = [];
+  }
+
+  /* Troca o placeholder pela fotografia; se o navegador não conseguir decodificá-la, o placeholder volta e a imagem não é mais usada. */
+  function aplicarImagem(destino, url, nome, e) {
+    var vazio = destino.querySelector('.vazio');
+    if (vazio === null) return;
+    var foto = document.createElement('img');
+    foto.setAttribute('alt', nome);
+    foto.setAttribute('src', url);
+    foto.addEventListener('error', function () {
+      if (foto.parentNode !== destino) return;
+      var novo = document.createElement('div');
+      novo.className = 'vazio';
+      destino.insertBefore(novo, foto);
+      destino.removeChild(foto);
+      if (imagens.cache[e.chave] === e && e.situacao === 'pronta') {
+        var i = imagens.urls.indexOf(e.url);
+        if (i !== -1) { imagens.urls.splice(i, 1); URL.revokeObjectURL(e.url); }
+        e.url = null;
+        falharImagem(e, true);
+      }
+    });
+    destino.insertBefore(foto, vazio);
+    destino.removeChild(vazio);
+  }
+
+  /* Miniatura do cartão. Com IntersectionObserver só as visíveis (com folga) entram na fila; sem ele, todas entram na ordem da grade. */
+  function carregarMiniatura(destino, m) {
+    pedirImagem(m, 'miniatura', false, function (url, e) { aplicarImagem(destino, url, m.nome, e); });
+  }
+
+  function observarMiniatura(destino, m) {
+    if (referenciaDaImagem(m) === null) return;
+    if (typeof IntersectionObserver !== 'function') { carregarMiniatura(destino, m); return; }
+    var im = imagens;
+    if (im.observador === null) {
+      im.observador = new IntersectionObserver(function (entradas) {
+        entradas.forEach(function (x) {
+          var carregar = im.visiveis.get(x.target);
+          if (!x.isIntersecting || carregar === undefined) return;
+          im.visiveis.delete(x.target);
+          im.observador.unobserve(x.target);
+          carregar();
+        });
+      }, { rootMargin: '200px' });
+    }
+    im.visiveis.set(destino, function () { carregarMiniatura(destino, m); });
+    im.observador.observe(destino);
+  }
+
   /* ═══ Consulta das solicitações (Etapa G) e catálogo (Etapa E) ═══ */
   function itemAberto(x) {
     return x && Number.isInteger(x.materialId) && x.materialId > 0 && typeof x.nome === 'string' && x.nome !== '' && x.nome.length <= LIMITE_NOME
@@ -657,6 +880,7 @@
       cartao.appendChild(tipo);
       cartao.addEventListener('click', function () { atividade(); abrirProduto(m); });
       grade.appendChild(cartao);
+      observarMiniatura(imagem, m);
     });
     $('subtituloProdutos').hidden = estado.catalogo.length === 0;
   }
@@ -754,6 +978,7 @@
     var vazio = document.createElement('div');
     vazio.className = 'vazio';
     imagem.appendChild(vazio);
+    pedirImagem(m, 'exibicao', true, function (url, e) { if (estado.produto === m) aplicarImagem($('detImg'), url, m.nome, e); });
     $('detNome').textContent = m.nome;
     $('detTipo').textContent = tipoDe(m);
     renderTamanhos();

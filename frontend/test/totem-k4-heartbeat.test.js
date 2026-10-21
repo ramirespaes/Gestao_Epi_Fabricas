@@ -423,8 +423,10 @@ describe('[K4-E] regras de implementação e HTML aprovado intacto', () => {
   test('[K4-18] o HTML aprovado, o CSS e o boot do Totem não foram alterados pelo K4 (SHA-256 anteriores ao K4)', () => {
     const sha = (nome) => crypto.createHash('sha256').update(fs.readFileSync(path.join(RAIZ_TOTEM, nome))).digest('hex');
     // index.html: Etapa I mais o favicon e o título do refinamento visual de 18/10/2026 (pino atualizado na consolidação de 19/10/2026).
-    assert.equal(sha('index.html'), 'e41495afa9e0e7f5b1d0b104080180821c42a7c909b5f5d7667ca213cf7ee181');
-    assert.equal(sha('totem.css'), '9c6b3665fe47ad88543e8f59053b082544816943d5753c41980625f4b379e3ac');
+    // VISUAL-03A (20/10/2026): identidade verde aprovada por Ramires. Pinos ANTERIORES (histórico): index.html e41495afa9e0e7f5b1d0b104080180821c42a7c909b5f5d7667ca213cf7ee181;
+    // totem.css 9c6b3665fe47ad88543e8f59053b082544816943d5753c41980625f4b379e3ac.
+    assert.equal(sha('index.html'), '6ec5236ec6673c581332468b2cb2f7b64df8467f260030b9a47b5387a78bd286');
+    assert.equal(sha('totem.css'), '3caa1760e92f1c5feddcb211ab09c082f16db2dc4a0eb182f3f02e609d4ebe50');
     assert.equal(sha('boot.js'), '583454fe94c2ed73776fd77b4560eb70c59dd708ad582b2a61ff4878104d6899');
   });
 });
