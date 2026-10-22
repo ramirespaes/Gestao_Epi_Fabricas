@@ -169,9 +169,10 @@ describe('segurança: innerHTML só com texto fixo ou HTML escapado', () => {
     for (const origem of lista) assert.ok(ORIGENS_GESTAO.some((re) => re.test(origem)), origem);
   });
 
-  test('Dashboard: só o aviso usa innerHTML, com o texto escapado; nome e empresa vão por textContent', () => {
+  test('Dashboard: só o aviso e a prévia do estoque abaixo do mínimo usam innerHTML, com o texto escapado; nome e empresa vão por textContent', () => {
     for (const origem of atribuicoes('pages/dashboard.html')) {
-      assert.match(origem, /^(''|'<div class="notice" style="' \+ cor \+ '">' \+ D\.render\.escaparHtml\(texto\) \+ '<\/div>')$/, origem);
+      // 12I: a prévia do cartão "Estoque abaixo do mínimo" só entra pelo render escapado de js/dashboard.js (htmlPreviaAbaixoMinimo escapa cada célula).
+      assert.match(origem, /^(''|'<div class="notice" style="' \+ cor \+ '">' \+ D\.render\.escaparHtml\(texto\) \+ '<\/div>'|D\.render\.htmlPreviaAbaixoMinimo\(previa\))$/, origem);
     }
     const sessao = semComentarios(ler('js/sessao-empresarial.js'));
     assert.match(sessao, /el\.usuario\.textContent = /);

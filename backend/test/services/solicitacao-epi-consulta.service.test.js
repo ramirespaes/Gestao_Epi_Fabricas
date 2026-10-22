@@ -232,8 +232,8 @@ describe('leitura em retrato único e montagem das linhas', () => {
     const { solicitacoes } = await funcao('listarEntregaveis')(pool, {
       empresaId: EMPRESA, funcionarioId: 30, pagina: 2, limite: 10, hoje: HOJE,
     });
-    assert.deepEqual(chamadas.listas[0].slice(1), [pool.client, EMPRESA, { funcionarioId: 30, pagina: 2, limite: 10 }]);
-    assert.deepEqual(chamadas.contagens[0].slice(1), [pool.client, EMPRESA, { funcionarioId: 30 }]);
+    assert.deepEqual(chamadas.listas[0].slice(1), [pool.client, EMPRESA, { funcionarioId: 30, solicitacaoIds: null, pagina: 2, limite: 10 }]);
+    assert.deepEqual(chamadas.contagens[0].slice(1), [pool.client, EMPRESA, { funcionarioId: 30, solicitacaoIds: null }]);
     assert.deepEqual(solicitacoes.map((s) => [s.id, s.situacaoOperacional]), [[30, 'PRONTA_PARA_ENTREGA'], [18, 'AGUARDANDO_ESTOQUE']]);
   });
 
@@ -276,8 +276,8 @@ describe('listarEncerraveis — a lista mínima de quem encerra (12G-0)', () => 
     const r = await funcao('listarEncerraveis')(pool, {
       empresaId: EMPRESA, funcionarioId: 30, pagina: 2, limite: 5,
     });
-    assert.deepEqual(lista.mock.calls[0].arguments.slice(1), [EMPRESA, { funcionarioId: 30, pagina: 2, limite: 5 }]);
-    assert.deepEqual(conta.mock.calls[0].arguments.slice(1), [EMPRESA, { funcionarioId: 30 }]);
+    assert.deepEqual(lista.mock.calls[0].arguments.slice(1), [EMPRESA, { funcionarioId: 30, solicitacaoIds: null, pagina: 2, limite: 5 }]);
+    assert.deepEqual(conta.mock.calls[0].arguments.slice(1), [EMPRESA, { funcionarioId: 30, solicitacaoIds: null }]);
     assert.deepEqual(itens.mock.calls[0].arguments.slice(1), [EMPRESA, [17]]);
     assert.equal(cobertura.mock.calls.length, 0, 'a lista de quem encerra não calcula cobertura');
     assert.deepEqual(r, {

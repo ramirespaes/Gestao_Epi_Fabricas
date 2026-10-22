@@ -168,10 +168,10 @@ describe('parâmetros', () => {
     await funcao('contarEntregaveis')(executor, EMPRESA, {});
     await funcao('contarEntregaveis')(executor, EMPRESA, { funcionarioId: 5 });
     assert.deepEqual(executor.chamadas.map((c) => c.valores), [
-      [EMPRESA, null, 20, 0],
-      [EMPRESA, 5, 20, 20],
-      [EMPRESA, null],
-      [EMPRESA, 5],
+      [EMPRESA, null, null, 20, 0], // 12I: o terceiro parâmetro é o filtro opcional por ids (nulo = sem filtro)
+      [EMPRESA, 5, null, 20, 20],
+      [EMPRESA, null, null],
+      [EMPRESA, 5, null],
     ]);
   });
 });
@@ -246,7 +246,7 @@ describe('SQL', () => {
     const sql = e.chamadas[0].texto;
     assert.match(sql, /s\.status IN \('APROVADA', 'APROVADA_PARCIAL'\)/);
     assert.match(sql, /\$2::int IS NULL OR s\.funcionario_id = \$2::int/);
-    assert.match(sql, /ORDER BY s\.decidida_em, s\.id\s+LIMIT \$3 OFFSET \$4/);
+    assert.match(sql, /ORDER BY s\.decidida_em, s\.id\s+LIMIT \$4 OFFSET \$5/);
   });
 
   test('as contagens usam o mesmo filtro da lista', async () => {

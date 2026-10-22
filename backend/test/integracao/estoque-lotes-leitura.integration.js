@@ -229,6 +229,7 @@ describe('leitura do estoque por lote (PostgreSQL real, data operacional control
     assert.deepEqual(a.itensDisponiveis, { permitido: true, valor: 47 });
     // Botina 41 (4 < 10), Botina 42 esgotada (0) e Óculos (físico 20, bloqueado 15, disponível 5 < 10).
     assert.deepEqual(a.estoqueAbaixoMinimo, { permitido: true, valor: 3 });
+    assert.equal(Object.hasOwn(a.estoqueAbaixoMinimo, 'previa'), false, '12I: o indicador não expõe prévia');
     // Botina 40 vencida, Óculos vencido e o lote com saldo do material inativo (E9: estoque físico não some ao
     // inativar); não contam o lote zerado, o sem CA, o que dispensa CA, o que vence hoje e o material sem estoque
     // com CA legado vencido. O disponível continua só de material ativo.

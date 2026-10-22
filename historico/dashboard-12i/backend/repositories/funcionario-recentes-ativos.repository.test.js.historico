@@ -1,0 +1,56 @@
+'use strict';
+
+const { describe, test } = require('node:test');
+const assert = require('node:assert/strict');
+const { exigirModulo } = require('../helpers/exigir-modulo');
+
+/**
+ * 12I, Task 04 — os funcionários ATIVOS cadastrados mais recentemente (RED), sem PostgreSQL real. "Ativo" é o `ativo` oficial (a mesma
+ * coluna da contagem do card; desde a 084 gerada de situacao = 'ATIVO'); "mais recente" é a data de CADASTRO (`criado_em`), nunca a
+ * admissão; desempate estável por id. Só nome, matrícula e setor saem (nunca CPF); a empresa e o limite são parâmetros.
+ */
+
+const repo = () => exigirModulo('src/repositories/funcionario.repository');
+const EMPRESA = 42;
+function executorFalso(rows = []) {
+  const chamadas = [];
+  return { chamadas, query: async (texto, valores) => { chamadas.push({ texto, valores }); return { rows, rowCount: rows.length }; } };
+}
+
+describe('funcionarioRepo.listarRecentesAtivos (Task 04)', () => {
+  test('ordena pelo cadastro (criado_em) do mais novo ao mais antigo, com id como desempate, só ativos da empresa, limite parametrizado', async () => {
+    const ex = executorFalso();
+    await repo().listarRecentesAtivos(ex, EMPRESA, { limite: 5 });
+    const { texto, valores } = ex.chamadas[0];
+    assert.match(texto, /WHERE\s+empresa_id\s*=\s*\$1\s+AND\s+ativo/i);
+    assert.match(texto, /ORDER BY\s+criado_em\s+DESC,\s*id\s+DESC/i);
+    assert.match(texto, /LIMIT\s+\$2/i);
+    assert.equal(/data_admissao/i.test(texto), false, 'admissão não define a ordem');
+    assert.deepEqual(valores, [EMPRESA, 5]);
+  });
+
+  test('colunas explícitas: id, nome, matrícula e setor; nunca CPF, nascimento, telefone nem SELECT *', async () => {
+    const ex = executorFalso();
+    await repo().listarRecentesAtivos(ex, EMPRESA, { limite: 5 });
+    const { texto } = ex.chamadas[0];
+    assert.equal(/\*/.test(texto), false);
+    for (const proibido of ['cpf', 'data_nascimento', 'telefone', 'cracha']) assert.equal(texto.includes(proibido), false, proibido);
+    for (const coluna of ['id', 'nome', 'matricula', 'setor']) assert.match(texto, new RegExp(`\\b${coluna}\\b`));
+  });
+
+  test('mapeia para { id, nome, matricula, setor }, preservando a matrícula e o setor ausentes como null', async () => {
+    const ex = executorFalso([{ id: 3, nome: 'Ana', matricula: 'M-1', setor: 'Fundição', extra: 'x' }, { id: 2, nome: 'Bruno', matricula: null, setor: null }]);
+    assert.deepEqual(await repo().listarRecentesAtivos(ex, EMPRESA, { limite: 5 }), [
+      { id: 3, nome: 'Ana', matricula: 'M-1', setor: 'Fundição' },
+      { id: 2, nome: 'Bruno', matricula: null, setor: null },
+    ]);
+  });
+
+  test('valida empresa e limite antes de consultar', async () => {
+    const ex = executorFalso();
+    for (const [empresa, opcoes] of [[0, { limite: 5 }], ['1', { limite: 5 }], [EMPRESA, { limite: 0 }], [EMPRESA, { limite: 101 }], [EMPRESA, {}], [EMPRESA, { limite: 1.5 }]]) {
+      await assert.rejects(() => repo().listarRecentesAtivos(ex, empresa, opcoes), TypeError);
+    }
+    assert.equal(ex.chamadas.length, 0);
+  });
+});

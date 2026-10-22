@@ -1,0 +1,412 @@
+'use strict';
+
+const { describe, test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+
+const EpiHttp = require('../js/api-http');
+
+/**
+ * 12I, Task 01 — apresentação da prévia de "Estoque abaixo do mínimo" (RED): ao passar o mouse (ou por foco visível de teclado), o
+ * PRÓPRIO cartão é ampliado e vai para o primeiro plano, SOBRE a grade: os outros cartões não mudam de tamanho nem de lugar (um espaço
+ * reservado do mesmo tamanho segura a célula). Sem popover separado, sem botão: qualquer clique no cartão (inclusive na área ampliada)
+ * navega para a Análise de estoque filtrada. A posição se ajusta ao espaço da tela; Esc dispensa; sem hover, o toque navega direto.
+ */
+
+const BASE = 'http://localhost:3000/api';
+const RAIZ = path.join(__dirname, '..');
+const ler = (rel) => fs.readFileSync(path.join(RAIZ, rel), 'utf8');
+const modulo = () => require('../js/dashboard'); // eslint-disable-line global-require
+const resposta = (status, corpo) => ({ status, ok: status >= 200 && status < 300, text: async () => (corpo === undefined ? '' : JSON.stringify(corpo)) });
+const item = (n, extra = {}) => ({ materialId: n, material: `Material ${n}`, tamanho: 'M', saldoLivre: 3, estoqueMinimo: 10, deficit: 7, ...extra });
+
+// ═══════════════════════════════════════════════════════════════════
+// Posicionamento puro da ampliação
+// ═══════════════════════════════════════════════════════════════════
+describe('layout.posicionarAmpliacao', () => {
+  const f = () => {
+    const layout = modulo().layout;
+    assert.ok(layout && typeof layout.posicionarAmpliacao === 'function', 'EpiDashboard.layout.posicionarAmpliacao ainda não existe');
+    return layout.posicionarAmpliacao;
+  };
+  const JANELA = { largura: 1440, altura: 900 };
+  const entrada = (cartao, conteudo, janela = JANELA) => ({ cartao, janela, alturaConteudo: conteudo });
+
+  test('no meio da tela: o cartão cresce em largura (30%, no mínimo 360), centrado e levemente acima, com a altura do conteúdo', () => {
+    assert.deepEqual(f()(entrada({ left: 500, top: 300, width: 280, height: 217 }, 480)), { left: 458, top: 292, width: 364, altura: 480, limitada: false });
+  });
+
+  test('cartão estreito ganha ao menos 360 px; nunca fica menor que o cartão original', () => {
+    assert.equal(f()(entrada({ left: 500, top: 300, width: 200, height: 217 }, 300)).width, 360);
+    assert.ok(f()(entrada({ left: 100, top: 100, width: 600, height: 217 }, 300)).width >= 600);
+  });
+
+  test('borda direita: desloca para a esquerda para não cortar (margem de 12 px)', () => {
+    const r = f()(entrada({ left: 1160, top: 300, width: 280, height: 217 }, 480));
+    assert.equal(r.left, 1064);
+    assert.ok(r.left + r.width <= 1440 - 12);
+  });
+
+  test('borda esquerda: desloca para a direita (margem de 12 px)', () => {
+    assert.equal(f()(entrada({ left: 5, top: 300, width: 280, height: 217 }, 480)).left, 12);
+  });
+
+  test('borda inferior: sobe o cartão ampliado para caber, sem cortar o fim', () => {
+    const r = f()(entrada({ left: 500, top: 700, width: 280, height: 217 }, 480));
+    assert.equal(r.top, 408);
+    assert.ok(r.top + r.altura <= 900 - 12);
+  });
+
+  test('borda superior: nunca acima da margem', () => {
+    assert.equal(f()(entrada({ left: 500, top: 5, width: 280, height: 217 }, 480)).top, 12);
+  });
+
+  test('conteúdo maior que a janela: a altura é limitada e o cartão passa a rolar por dentro (limitada), preso às margens', () => {
+    const r = f()(entrada({ left: 500, top: 300, width: 280, height: 217 }, 1200, { largura: 1440, altura: 800 }));
+    assert.deepEqual([r.altura, r.top, r.limitada], [776, 12, true]);
+  });
+
+  test('janela estreita (celular): a largura cabe na janela com as margens', () => {
+    const r = f()(entrada({ left: 20, top: 400, width: 350, height: 217 }, 460, { largura: 390, altura: 844 }));
+    assert.deepEqual([r.left, r.width], [12, 366]);
+  });
+
+  test('conteúdo menor que o cartão: a altura não encolhe', () => {
+    assert.equal(f()(entrada({ left: 500, top: 300, width: 280, height: 217 }, 100)).altura, 217);
+  });
+
+  test('qualquer posição fica dentro da janela e só devolve inteiros', () => {
+    for (const left of [0, 5, 300, 700, 1000, 1160, 1300]) {
+      for (const top of [0, 5, 300, 600, 700, 850]) {
+        for (const conteudo of [100, 480, 700, 2000]) {
+          const r = f()(entrada({ left: left + 0.4, top: top + 0.6, width: 280.5, height: 217.2 }, conteudo + 0.3));
+          assert.ok(Object.values({ l: r.left, t: r.top, w: r.width, a: r.altura }).every(Number.isInteger), JSON.stringify(r));
+          assert.ok(r.left >= 12 && r.left + r.width <= 1440 - 12, `horizontal ${JSON.stringify(r)}`);
+          assert.ok(r.top >= 12 && r.top + r.altura <= 900 - 12, `vertical ${JSON.stringify(r)}`);
+        }
+      }
+    }
+  });
+
+  test('entrada inválida é erro de programação', () => {
+    const g = f();
+    for (const ruim of [undefined, {}, entrada(undefined, 100), entrada({ left: NaN, top: 0, width: 280, height: 217 }, 100), entrada({ left: 0, top: 0, width: -1, height: 217 }, 100),
+      entrada({ left: 0, top: 0, width: 280, height: 217 }, -5), entrada({ left: 0, top: 0, width: 280, height: 217 }, 100, { largura: 0, altura: 900 })]) {
+      assert.throws(() => g(ruim), TypeError, JSON.stringify(ruim));
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Estrutura e CSS
+// ═══════════════════════════════════════════════════════════════════
+describe('estrutura e CSS: o próprio cartão vai para o primeiro plano, sem popover e sem botão', () => {
+  const html = ler('pages/dashboard.html');
+  const css = html.slice(0, html.indexOf('</style>'));
+  const regra = (seletor) => {
+    const escapado = seletor.replace(/[.[\]()*+?^$|\\]/g, '\\$&');
+    const m = css.match(new RegExp(`(?:^|\\n|\\})\\s*${escapado}\\s*\\{([^}]*)\\}`));
+    return m ? m[1] : null;
+  };
+  const artigo = (html.match(/<article class="kpi-card warning" id="cardAbaixoMinimo"[^>]*>[\s\S]*?<\/article>/) || [''])[0];
+
+  test('não existe botão de expansão nem texto de botão', () => {
+    assert.equal(/<button\b/.test(artigo), false);
+    assert.equal(html.includes('Ver prévia dos itens'), false);
+    assert.equal(html.includes('botaoPreviaAbaixoMinimo'), false);
+  });
+
+  test('o link cobre o cartão inteiro (link esticado), então qualquer clique nele, ampliado ou não, navega', () => {
+    const base = regra('.kpi-link-total::after');
+    assert.notEqual(base, null, 'regra do link esticado ausente');
+    assert.match(base, /position\s*:\s*absolute/);
+    assert.match(base, /inset\s*:\s*0/);
+    assert.match(base, /content\s*:\s*""/);
+  });
+
+  test('ampliado: o próprio <article> vira camada fixa acima de tudo, opaca, com sombra, sem transform e sem margem', () => {
+    const r = regra('.kpi-card[data-ampliado="true"]');
+    assert.notEqual(r, null, 'regra do cartão ampliado ausente');
+    assert.match(r, /position\s*:\s*fixed/);
+    const z = Number((r.match(/z-index\s*:\s*(\d+)/) || [])[1]);
+    assert.ok(z >= 1000, `z-index ${z} precisa ficar acima dos outros cartões e do menu`);
+    assert.match(r, /box-shadow\s*:/);
+    assert.match(r, /transform\s*:\s*none\s*!important/);
+    assert.match(r, /margin\s*:\s*0/);
+    assert.match(r, /background[^;]*!important/, 'fundo opaco, para os cartões de trás não aparecerem por baixo do texto');
+  });
+
+  test('o espaço reservado mantém a célula da grade (invisível, sem eventos próprios de layout) e a altura é limitada com rolagem interna só se preciso', () => {
+    const reserva = regra('.kpi-reserva');
+    assert.notEqual(reserva, null, 'regra .kpi-reserva ausente');
+    assert.match(reserva, /visibility\s*:\s*hidden/);
+    assert.match(regra('.kpi-card[data-limitada="true"]') || '', /overflow-y\s*:\s*auto/);
+  });
+
+  test('a prévia fica no fluxo do próprio cartão: oculta por padrão e visível só com o cartão ampliado; sem position absolute de popover', () => {
+    const base = regra('.kpi-previa');
+    assert.match(base, /display\s*:\s*none/);
+    assert.equal(/position\s*:\s*absolute|z-index|box-shadow|width\s*:\s*380px/.test(base), false);
+    assert.match(css, /\.kpi-card\[data-ampliado="true"\]\s+\.kpi-previa\s*\{[^}]*display\s*:\s*block/);
+    assert.equal(/\.kpi-card:hover\s+\.kpi-previa|:focus-visible\)\s+\.kpi-previa|data-aberta/.test(css), false, 'nada de CSS que expanda dentro da grade');
+  });
+
+  test('a estrutura continua: link do card inteiro, depois a prévia, dentro do <article> (que é o que fica ampliado)', () => {
+    const iLink = artigo.indexOf('id="linkAbaixoMinimo"');
+    const iPrevia = artigo.indexOf('id="previaAbaixoMinimo"');
+    assert.ok(iLink > 0 && iPrevia > iLink);
+    assert.match(artigo, /^<article class="kpi-card warning" id="cardAbaixoMinimo" style="display:none">/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Página em DOM simulado
+// ═══════════════════════════════════════════════════════════════════
+const CONTEXTO = { empresa: { id: 3, nome: 'Empresa Demonstração SafeWork' }, usuario: { id: 7, nome: 'Pessoa Teste', email: 'p@exemplo-cliente.com.br', perfil: 'MASTER' } };
+const ACESSO = { permissoes: { recursos: { dashboard: { visualizar: true, criar: false, editar: false, excluir: false } }, acoes: {}, administracao: {} }, podeAlterar: false };
+const RETANGULO = { left: 900, top: 300, width: 280, height: 217 };
+const ALTURA_NATURAL = 480;
+const JANELA = { largura: 1440, altura: 900 };
+
+function montarPagina(corpoDaResposta, { hover = true, janela = JANELA, retangulo = RETANGULO } = {}) {
+  EpiHttp.configurar({ baseUrl: BASE, fetch: async () => corpoDaResposta });
+  const html = ler('pages/dashboard.html');
+  const script = html.slice(html.lastIndexOf('<script>') + '<script>'.length, html.lastIndexOf('</script>'));
+  const grade = { filhos: [], insertBefore(novo) { this.filhos.push(novo); novo.parentNode = this; }, removeChild(x) { this.filhos = this.filhos.filter((c) => c !== x); x.parentNode = null; } };
+  const reservas = [];
+  const novoElemento = (id) => ({
+    id, innerHTML: '', textContent: '', style: {}, listeners: {}, atributos: {}, focado: false, className: '', parentNode: null,
+    addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
+    setAttribute(k, v) { this.atributos[k] = String(v); }, removeAttribute(k) { delete this.atributos[k]; }, focus() { this.focado = true; },
+    contains(outro) { return !!outro && (outro === this || outro.dentroDoCartao === true); },
+    remove() { if (this.parentNode) this.parentNode.removeChild(this); },
+  });
+  const mapa = {};
+  const el = (id) => (mapa[id] = mapa[id] || novoElemento(id));
+  const card = el('cardAbaixoMinimo');
+  card.parentNode = grade;
+  card.getBoundingClientRect = () => ({ ...retangulo, right: retangulo.left + retangulo.width, bottom: retangulo.top + retangulo.height });
+  Object.defineProperty(card, 'offsetHeight', { get: () => ALTURA_NATURAL });
+  const timers = [];
+  const documento = {
+    getElementById: el, querySelectorAll: () => [], listeners: {},
+    addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
+    createElement: () => { const n = novoElemento('reserva'); reservas.push(n); return n; },
+  };
+  const janelaFalsa = {
+    SAFEWORK_PORTAL_API_BASE_URL: BASE, innerWidth: janela.largura, innerHeight: janela.altura, listeners: {},
+    matchMedia: (q) => ({ matches: q.includes('hover: hover') ? hover : false }),
+    addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
+  };
+  const sandbox = {
+    document: documento, window: janelaFalsa, EpiHttp, EpiDashboard: modulo(),
+    EpiPermissoes: { prepararPagina: async () => ACESSO },
+    EpiSessaoEmpresarial: { montar: async (o) => { sandbox.opcoesMontar = o; return CONTEXTO; }, sessaoEncerrada() { sandbox.encerrada = true; } },
+    console, Promise, String, Number, Object, JSON, Math,
+    setTimeout: (fn) => { timers.push(fn); return timers.length; }, clearTimeout: (id) => { if (id) timers[id - 1] = null; },
+    Date: class extends Date { constructor(...args) { super(...(args.length ? args : ['2026-10-19T12:00:00.000Z'])); } },
+  };
+  vm.runInNewContext(script, sandbox);
+  const esperar = async () => { for (let i = 0; i < 40; i += 1) await new Promise((r) => setImmediate(r)); };
+  const disparar = async (id, tipo, ev = {}) => { for (const fn of (el(id).listeners[tipo] || [])) await fn({ preventDefault() {}, stopPropagation() {}, ...ev }); };
+  const noDocumento = async (tipo, ev = {}) => { for (const fn of (documento.listeners[tipo] || [])) await fn({ preventDefault() {}, stopPropagation() {}, ...ev }); };
+  const naJanela = async (tipo, ev = {}) => { for (const fn of (janelaFalsa.listeners[tipo] || [])) await fn({ preventDefault() {}, stopPropagation() {}, ...ev }); };
+  const avancar = () => { const fila = timers.splice(0); for (const fn of fila) if (fn) fn(); };
+  const naReserva = async (tipo, ev = {}) => { for (const fn of (reservas.at(-1).listeners[tipo] || [])) await fn({ preventDefault() {}, stopPropagation() {}, ...ev }); };
+  return { el, card, grade, reservas, esperar, disparar, noDocumento, naJanela, avancar, naReserva, sandbox };
+}
+
+const comPrevia = (n) => resposta(200, { status: 'ok', indicadores: { estoqueAbaixoMinimo: { permitido: true, valor: n, previa: { total: n, itens: Array.from({ length: Math.min(n, 5) }, (_, i) => item(i + 1)) } } } });
+const semPermissao = () => resposta(200, { status: 'ok', indicadores: { estoqueAbaixoMinimo: { permitido: false } } });
+const ampliado = (pg) => pg.card.atributos['data-ampliado'] === 'true';
+const esperado = () => modulo().layout.posicionarAmpliacao({ cartao: RETANGULO, janela: JANELA, alturaConteudo: ALTURA_NATURAL });
+const teclado = { target: { matches: (s) => s === ':focus-visible' } };
+
+describe('página: hover amplia o próprio cartão, sobre a grade', () => {
+  test('mouseenter: o cartão fica ampliado, fixo na posição calculada, e uma reserva do mesmo tamanho ocupa a célula da grade', async () => {
+    const pg = montarPagina(comPrevia(9));
+    await pg.esperar();
+    assert.equal(ampliado(pg), false);
+    await pg.disparar('cardAbaixoMinimo', 'mouseenter');
+    assert.equal(ampliado(pg), true);
+    const e = esperado();
+    assert.deepEqual([pg.card.style.left, pg.card.style.top, pg.card.style.width], [`${e.left}px`, `${e.top}px`, `${e.width}px`]);
+    assert.equal(pg.reservas.length, 1, 'uma reserva');
+    assert.equal(pg.reservas[0].className, 'kpi-reserva');
+    assert.equal(pg.reservas[0].style.height, `${RETANGULO.height}px`, 'a reserva mantém a altura original da célula');
+    assert.ok(pg.grade.filhos.includes(pg.reservas[0]), 'a reserva entra na grade, no lugar do cartão');
+    assert.notEqual(pg.el('previaAbaixoMinimo').innerHTML, '');
+  });
+
+  test('os outros cartões não são tocados: nada além do próprio cartão e da reserva é alterado', async () => {
+    const pg = montarPagina(comPrevia(9));
+    await pg.esperar();
+    await pg.disparar('cardAbaixoMinimo', 'mouseenter');
+    for (const id of ['kpiSaldoLivreValor', 'kpiDisponiveisValor', 'kpiNecessidadeValor']) {
+      assert.deepEqual(pg.el(id).style, {}, `${id}: sem estilo novo`);
+      assert.deepEqual(pg.el(id).atributos, {}, `${id}: sem atributo novo`);
+    }
+  });
+
+  test('mouseleave: volta ao tamanho e à posição originais (atributos e estilos limpos, reserva removida) depois de uma pequena espera', async () => {
+    const pg = montarPagina(comPrevia(9));
+    await pg.esperar();
+    await pg.disparar('cardAbaixoMinimo', 'mouseenter');
+    await pg.disparar('cardAbaixoMinimo', 'mouseleave', { relatedTarget: null });
+    assert.equal(ampliado(pg), true, 'a espera evita piscar: ainda ampliado até o tempo passar');
+    pg.avancar();
+    assert.equal(ampliado(pg), false);
+    assert.deepEqual([pg.card.style.left, pg.card.style.top, pg.card.style.width, pg.card.style.height], [undefined, undefined, undefined, undefined].map((_, i) => ['', '', '', ''][i]));
+    assert.equal(pg.grade.filhos.includes(pg.reservas[0]), false, 'a reserva sai');
+  });
+
+  test('sem piscar: sair e voltar durante a espera mantém o cartão ampliado (o recolhimento é cancelado)', async () => {
+    const pg = montarPagina(comPrevia(9));
+    await pg.esperar();
+    await pg.disparar('cardAbaixoMinimo', 'mouseenter');
+    await pg.disparar('cardAbaixoMinimo', 'mouseleave', { relatedTarget: null });
+    await pg.disparar('cardAbaixoMinimo', 'mouseenter');
+    pg.avancar();
+    assert.equal(ampliado(pg), true);
+    assert.equal(pg.reservas.length, 1, 'nenhuma segunda ampliação, nenhuma reserva repetida');
+  });
+
+  test('sair do cartão para a reserva (a célula original) não recolhe; sair da reserva para fora recolhe', async () => {
+    const pg = montarPagina(comPrevia(9));
+    await pg.esperar();
+    await pg.disparar('cardAbaixoMinimo', 'mouseenter');
+    await pg.disparar('cardAbaixoMinimo', 'mouseleave', { relatedTarget: pg.reservas[0] });
+    await pg.naReserva('mouseenter');
+    pg.avancar();
+    assert.equal(ampliado(pg), true, 'o ponteiro ainda está na área original');
+    await pg.naReserva('mouseleave', { relatedTarget: null });
+    pg.avancar();
+    assert.equal(ampliado(pg), false);
+  });
+
+  test('o cartão ampliado respeita os limites da janela: posição vinda do cálculo, mesmo perto da borda inferior direita', async () => {
+    const pg = montarPagina(comPrevia(9), { retangulo: { left: 1160, top: 700, width: 280, height: 217 } });
+    await pg.esperar();
+    await pg.disparar('cardAbaixoMinimo', 'mouseenter');
+    const e = modulo().layout.posicionarAmpliacao({ cartao: { left: 1160, top: 700, width: 280, height: 217 }, janela: JANELA, alturaConteudo: ALTURA_NATURAL });
+    assert.deepEqual([pg.card.style.left, pg.card.style.top], [`${e.left}px`, `${e.top}px`]);
+    assert.ok(e.left + e.width <= 1428 && e.top + e.altura <= 888);
+  });
+
+  test('sem hover real (toque): o cartão não amplia; o link do card inteiro continua apontando para a listagem', async () => {
+    const pg = montarPagina(comPrevia(9), { hover: false });
+    await pg.esperar();
+    await pg.disparar('cardAbaixoMinimo', 'mouseenter');
+    assert.equal(ampliado(pg), false);
+    assert.equal(pg.reservas.length, 0);
+    assert.equal(pg.el('linkAbaixoMinimo').atributos.href, 'available-items.html?situacao=ABAIXO_MINIMO');
+  });
+
+  test('rolagem e redimensionamento recolhem a ampliação (a posição calculada deixaria de valer)', async () => {
+    for (const evento of ['scroll', 'resize']) {
+      const pg = montarPagina(comPrevia(9));
+      await pg.esperar();
+      await pg.disparar('cardAbaixoMinimo', 'mouseenter');
+      await pg.naJanela(evento);
+      assert.equal(ampliado(pg), false, evento);
+    }
+  });
+});
+
+describe('página: teclado, Esc e permissões', () => {
+  test('foco visível de teclado amplia o cartão; foco do mouse não; sair do cartão com o foco recolhe', async () => {
+    const mouse = montarPagina(comPrevia(9));
+    await mouse.esperar();
+    await mouse.disparar('cardAbaixoMinimo', 'focusin', { target: { matches: () => false } });
+    assert.equal(ampliado(mouse), false);
+    const tec = montarPagina(comPrevia(9));
+    await tec.esperar();
+    await tec.disparar('cardAbaixoMinimo', 'focusin', teclado);
+    assert.equal(ampliado(tec), true);
+    await tec.disparar('cardAbaixoMinimo', 'focusout', { relatedTarget: { dentroDoCartao: true } });
+    assert.equal(ampliado(tec), true, 'o foco continua dentro do cartão');
+    await tec.disparar('cardAbaixoMinimo', 'focusout', { relatedTarget: { dentroDoCartao: false } });
+    assert.equal(ampliado(tec), false);
+  });
+
+  test('a rolagem causada pelo próprio foco de teclado (levar o cartão à vista) não recolhe; a rolagem seguinte do usuário recolhe', async () => {
+    const pg = montarPagina(comPrevia(9));
+    await pg.esperar();
+    await pg.disparar('cardAbaixoMinimo', 'focusin', teclado);
+    await pg.naJanela('scroll');
+    assert.equal(ampliado(pg), true, 'o scroll do foco chega depois do focusin e não pode fechar o cartão');
+    pg.avancar();
+    await pg.naJanela('scroll');
+    assert.equal(ampliado(pg), false, 'passada a janela do foco, rolar recolhe como antes');
+  });
+
+  test('Esc dispensa a ampliação (hover ou foco) sem mover o foco; vale a tecla antiga "Esc"; só volta depois de o ponteiro sair e entrar', async () => {
+    for (const key of ['Escape', 'Esc']) {
+      const pg = montarPagina(comPrevia(9));
+      await pg.esperar();
+      await pg.disparar('cardAbaixoMinimo', 'mouseenter');
+      await pg.noDocumento('keydown', { key });
+      assert.equal(ampliado(pg), false, key);
+      for (const id of ['linkAbaixoMinimo', 'previaAbaixoMinimo', 'cardAbaixoMinimo']) assert.equal(pg.el(id).focado, false, `${id}: o Esc não move o foco`);
+      await pg.disparar('cardAbaixoMinimo', 'mouseenter');
+      assert.equal(ampliado(pg), false, 'ainda dispensada enquanto o ponteiro não saiu');
+      await pg.disparar('cardAbaixoMinimo', 'mouseleave', { relatedTarget: null });
+      pg.avancar();
+      await pg.disparar('cardAbaixoMinimo', 'mouseenter');
+      assert.equal(ampliado(pg), true, 'depois de sair e entrar, amplia de novo');
+    }
+  });
+
+  test('Esc também funciona com o foco de teclado dentro do cartão', async () => {
+    const pg = montarPagina(comPrevia(9));
+    await pg.esperar();
+    await pg.disparar('cardAbaixoMinimo', 'focusin', teclado);
+    await pg.disparar('cardAbaixoMinimo', 'keydown', { key: 'Escape' });
+    assert.equal(ampliado(pg), false);
+  });
+
+  test('Esc sem ampliação não faz nada (a próxima ampliação não fica bloqueada); outras teclas não recolhem', async () => {
+    const pg = montarPagina(comPrevia(9));
+    await pg.esperar();
+    await pg.noDocumento('keydown', { key: 'Escape' });
+    await pg.disparar('cardAbaixoMinimo', 'mouseenter');
+    assert.equal(ampliado(pg), true);
+    for (const key of ['Tab', 'Enter', ' ', 'ArrowDown', 'a', 'Shift']) await pg.noDocumento('keydown', { key });
+    assert.equal(ampliado(pg), true);
+  });
+
+  test('sem permissão o cartão fica oculto e hover, foco e Esc não fazem nada (nenhuma reserva, nenhuma ampliação)', async () => {
+    const pg = montarPagina(semPermissao());
+    await pg.esperar();
+    assert.equal(pg.card.style.display, 'none');
+    await pg.disparar('cardAbaixoMinimo', 'mouseenter');
+    await pg.disparar('cardAbaixoMinimo', 'focusin', teclado);
+    await pg.noDocumento('keydown', { key: 'Escape' });
+    assert.equal(ampliado(pg), false);
+    assert.equal(pg.reservas.length, 0);
+  });
+
+  test('ao encerrar a sessão com o cartão ampliado, ele recolhe, a reserva sai e link e prévia são limpos', async () => {
+    const pg = montarPagina(comPrevia(9));
+    await pg.esperar();
+    await pg.disparar('cardAbaixoMinimo', 'mouseenter');
+    assert.equal(ampliado(pg), true);
+    pg.sandbox.opcoesMontar.aoEncerrar();
+    assert.equal(ampliado(pg), false);
+    assert.equal(pg.grade.filhos.includes(pg.reservas[0]), false);
+    assert.equal(pg.card.style.display, 'none');
+    assert.equal(Object.hasOwn(pg.el('linkAbaixoMinimo').atributos, 'href'), false);
+    assert.equal(pg.el('previaAbaixoMinimo').innerHTML, '');
+    await pg.disparar('cardAbaixoMinimo', 'mouseenter');
+    assert.equal(ampliado(pg), false, 'nada fica armado depois do encerramento');
+  });
+
+  test('nenhum controle da página referencia o botão removido', async () => {
+    const pg = montarPagina(comPrevia(9));
+    await pg.esperar();
+    assert.equal(Object.hasOwn(pg.el('linkAbaixoMinimo').atributos, 'aria-expanded'), false);
+    assert.equal(ler('pages/dashboard.html').includes('botaoPreviaAbaixoMinimo'), false);
+  });
+});

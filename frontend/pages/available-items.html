@@ -415,6 +415,10 @@
       aviso: function (mensagem) { mostrarAviso(mensagem, 'erro'); },
     }).then(function (acesso) {
       if (!acesso) return undefined;
+      // Atalhos do Dashboard (?situacao=... e ?somenteComNecessidade=true): os filtros já valem na primeira consulta e aparecem nos campos.
+      var doAtalho = Itens.filtrosDaUrl(window.location && window.location.search);
+      if (doAtalho.situacao) { aplicados.situacao = doAtalho.situacao; $(FILTROS.situacao).value = doAtalho.situacao; }
+      if (doAtalho.somenteComNecessidade) { aplicados.somenteComNecessidade = true; $(CAIXA_NECESSIDADE).checked = true; }
       return carregar();
     });
   });

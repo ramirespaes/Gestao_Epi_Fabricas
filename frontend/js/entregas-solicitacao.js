@@ -185,6 +185,32 @@
     return iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4);
   }
 
+  // 12I (cartões do Dashboard): a lista pode abrir já filtrada pela cobertura. Só os dois valores conhecidos valem; quem só encerra só filtra
+  // pelas sem cobertura (a lista das encerráveis não revela disponibilidade). Qualquer outra coisa vira "sem filtro" e nunca vai ao servidor.
+  var COBERTURAS_DA_URL = ['COM_COBERTURA', 'SEM_COBERTURA', 'COBERTURA_COMPLETA'];
+  var TEXTO_FILTRO = {
+    COM_COBERTURA: 'Mostrando só as solicitações disponíveis para entrega (com algum item coberto pelo estoque).',
+    SEM_COBERTURA: 'Mostrando só as solicitações aguardando estoque (nenhum item coberto pelo estoque).',
+    COBERTURA_COMPLETA: 'Mostrando só as solicitações completamente disponíveis para entrega (todos os itens pendentes cobertos pelo estoque).',
+  };
+
+  function coberturaDaUrl(search) {
+    if (typeof search !== 'string') return null;
+    var partes = search.replace(/^\?/, '').split('&');
+    var valores = [];
+    for (var i = 0; i < partes.length; i += 1) {
+      var par = partes[i].split('=');
+      if (par[0] === 'cobertura') valores.push(par.slice(1).join('='));
+    }
+    return valores.length === 1 && COBERTURAS_DA_URL.indexOf(valores[0]) !== -1 ? valores[0] : null;
+  }
+
+  function coberturaPermitida(cobertura, capacidades) {
+    if (COBERTURAS_DA_URL.indexOf(cobertura) === -1) return null;
+    if (capacidades && capacidades.entregar === true) return cobertura;
+    return cobertura === 'SEM_COBERTURA' ? cobertura : null;
+  }
+
   /**
    * @param {{capacidades: object, aoSessaoEncerrada: Function, aoMudarDetalhe?: Function, documento?: object}} o
    */
@@ -193,7 +219,7 @@
     var $ = function (id) { return doc.getElementById(id); };
     var cap = o.capacidades;
     var encerrada = false;
-    var lista = { pagina: 1, seq: 0 };
+    var lista = { pagina: 1, seq: 0, cobertura: coberturaPermitida(o.cobertura, o.capacidades) };
     var det = { id: null, dados: null, seq: 0 };
     var seqEntrega = 0;
     var ent = novaEntrega();
@@ -261,6 +287,13 @@
       return no('li', {}, [botao]);
     }
 
+    function mostrarFiltro() {
+      var caixa = $('filtroLista');
+      if (!caixa) return;
+      caixa.style.display = lista.cobertura ? '' : 'none';
+      $('filtroListaTexto').textContent = lista.cobertura ? TEXTO_FILTRO[lista.cobertura] : '';
+    }
+
     function carregarLista() {
       if (encerrada) return Promise.resolve();
       var seq = ++lista.seq;
@@ -268,6 +301,8 @@
       E().mostrar(caixa, E().TIPOS.CARREGANDO, 'Carregando as solicitações…');
       paginacao('—', false, false);
       var filtro = { pagina: lista.pagina, limite: LIMITE_LISTA };
+      if (lista.cobertura) filtro.cobertura = lista.cobertura;
+      mostrarFiltro();
       var pedido = cap.entregar === true ? S().acoes.entregaveis(filtro) : S().acoes.encerraveis(filtro);
       return pedido.then(function (r) {
         if (encerrada || seq !== lista.seq) return undefined;
@@ -283,7 +318,7 @@
         }
         paginacao('Página ' + lista.pagina + ' de ' + paginas + ' · ' + plural(r.dados.total, 'solicitação', 'solicitações'), lista.pagina > 1, lista.pagina < paginas);
         if (r.dados.solicitacoes.length === 0) {
-          E().mostrar(caixa, E().TIPOS.VAZIO, 'Não há solicitações aprovadas aguardando entrega.');
+          E().mostrar(caixa, E().TIPOS.VAZIO, lista.cobertura ? 'Nenhuma solicitação nesta situação.' : 'Não há solicitações aprovadas aguardando entrega.');
           return undefined;
         }
         caixa.textContent = '';
@@ -769,6 +804,14 @@
 
     function ligar() {
       $('botaoAtualizarLista').addEventListener('click', function () { aviso($('avisoLista'), null); return carregarLista(); });
+      if ($('botaoRemoverFiltro')) {
+        $('botaoRemoverFiltro').addEventListener('click', function () {
+          lista.cobertura = null;
+          lista.pagina = 1;
+          aviso($('avisoLista'), null);
+          return carregarLista();
+        });
+      }
       $('listaAnterior').addEventListener('click', function () { lista.pagina = Math.max(1, lista.pagina - 1); return carregarLista(); });
       $('listaProxima').addEventListener('click', function () { lista.pagina += 1; return carregarLista(); });
       $('botaoFecharDetalhe').addEventListener('click', function () {
@@ -843,6 +886,7 @@
       justificativaDoEncerramento: justificativaDoEncerramento,
     },
     criarTela: criarTela,
+    coberturaDaUrl: coberturaDaUrl,
     TEXTOS: TEXTOS,
     ROTULO_SITUACAO: ROTULO_SITUACAO,
     LIMITE_LISTA: LIMITE_LISTA,

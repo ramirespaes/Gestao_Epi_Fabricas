@@ -885,6 +885,13 @@
       var primeira = null;
       var selecionada = null;
       var secaoSolicitada = window.location.hash.slice(1);
+      // 12I: o cartão "EPIs entregues" do Dashboard abre esta aba já com o mês corrente (?de=&ate=). Só vale para ela e só com datas válidas.
+      var periodoDaUrl = R.modelo.periodoDaUrl(window.location.search);
+      if (periodoDaUrl && secaoSolicitada === 'reportDelivered') {
+        $('f-episEntregues-de').value = periodoDaUrl.de;
+        $('f-episEntregues-ate').value = periodoDaUrl.ate;
+        estado.episEntregues.filtro = lerFiltro('episEntregues');
+      }
       Array.prototype.forEach.call(document.querySelectorAll('.report-tab[data-recurso]'), function (b) {
         var pode = EpiPermissoes.recurso(permissoes, b.getAttribute('data-recurso'), 'visualizar');
         b.style.display = pode ? '' : 'none';

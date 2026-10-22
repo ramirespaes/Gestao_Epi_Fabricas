@@ -40,6 +40,10 @@ const SOLICITACOES_NEGADAS = {
   disponiveisParaEntrega: { permitido: false },
 };
 
+// 12I: "EPIs entregues" (unidades do mês) e "Próximo do vencimento de uso" exigem epiFicha.visualizar, que nenhum usuário deste mundo tem (a prova com
+// permissão e dados está em dashboard-relatorios-12i.integration.js).
+const EPIS_NEGADOS = { episEntregues: { permitido: false }, proximoVencimentoUso: { permitido: false } };
+
 const HOJE = '2026-09-30';
 const RELOGIO = () => new Date('2026-09-30T15:00:00Z');
 const SENHA = 'senha-correta-do-teste-bloco9-c6-2026';
@@ -184,6 +188,7 @@ describe('GET /api/dashboard/indicadores com PostgreSQL real', () => {
       caVencido: { permitido: true, valor: 2, aVencer: 2, diasAlerta: 60 },
       funcionariosAtivos: { permitido: true, valor: 2 },
       ...SOLICITACOES_NEGADAS,
+      ...EPIS_NEGADOS,
     });
   });
 
@@ -200,6 +205,7 @@ describe('GET /api/dashboard/indicadores com PostgreSQL real', () => {
       caVencido: { permitido: false },
       funcionariosAtivos: { permitido: false },
       ...SOLICITACOES_NEGADAS,
+      ...EPIS_NEGADOS,
     });
   });
 
@@ -216,6 +222,7 @@ describe('GET /api/dashboard/indicadores com PostgreSQL real', () => {
       caVencido: { permitido: false },
       funcionariosAtivos: { permitido: false },
       ...SOLICITACOES_NEGADAS,
+      ...EPIS_NEGADOS,
     });
   });
 
@@ -232,6 +239,7 @@ describe('GET /api/dashboard/indicadores com PostgreSQL real', () => {
       caVencido: { permitido: true, valor: 1, aVencer: 0, diasAlerta: 60 },
       funcionariosAtivos: { permitido: true, valor: 1 },
       ...SOLICITACOES_NEGADAS,
+      ...EPIS_NEGADOS,
     });
   });
 

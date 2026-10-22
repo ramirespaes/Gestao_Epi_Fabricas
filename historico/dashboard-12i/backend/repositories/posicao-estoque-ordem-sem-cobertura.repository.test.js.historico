@@ -1,0 +1,57 @@
+'use strict';
+
+const { describe, test } = require('node:test');
+const assert = require('node:assert/strict');
+const { exigirModulo } = require('../helpers/exigir-modulo');
+
+/**
+ * 12I, Task 03 — ordenação opt-in SEM_COBERTURA_DESC de `listarPosicoes` (RED), sem PostgreSQL real: maior demanda aprovada sem cobertura
+ * primeiro. SQL fixo, o mesmo número de parâmetros da consulta padrão, desempate pela ordem padrão. As demais ordens não mudam. A ordem
+ * efetiva é provada em banco real em dashboard-previas-necessidade-sem-cobertura.integration.js.
+ */
+
+const repo = () => exigirModulo('src/repositories/posicao-estoque.repository');
+const EMPRESA = 42;
+const base = (extra = {}) => ({ hoje: '2026-10-02', diasAlerta: 60, pagina: 1, limite: 5, ...extra });
+const linha = { total: 1, material_id: 1, nome: 'Luva', tamanho_chave: 'M', unidade: 'par', saldo: '1', bloqueado: '0', fisico_utilizavel: '1', demanda_pendente: '3', comprometido: '1', saldo_livre: '0', sem_cobertura: '2', minimo_efetivo: '0', minimo_origem: 'PADRAO', abaixo_do_minimo: false, deficit: '0', necessidade: '2', ca_validade: null, validade: 'ok' };
+function executorFalso() {
+  const chamadas = [];
+  return { chamadas, query: async (texto, valores) => { chamadas.push({ texto, valores }); return { rows: [linha], rowCount: 1 }; } };
+}
+
+describe('listarPosicoes — ordem opt-in SEM_COBERTURA_DESC (Task 03)', () => {
+  test('SQL fixo ordena pela quantidade sem cobertura e desempata pela ordem padrão; o valor do chamador não vira SQL nem parâmetro', async () => {
+    const ex = executorFalso();
+    await repo().listarPosicoes(ex, EMPRESA, base({ ordem: 'SEM_COBERTURA_DESC', situacao: 'SEM_COBERTURA' }));
+    const padrao = executorFalso();
+    await repo().listarPosicoes(padrao, EMPRESA, base({ situacao: 'SEM_COBERTURA' }));
+    assert.match(ex.chamadas[0].texto, /sem_cobertura\s+DESC,\s*lower\(nome\),\s*material_id,\s*tamanho_chave/i);
+    assert.match(ex.chamadas[0].texto, /pagina\.sem_cobertura\s+DESC,\s*lower\(pagina\.nome\)/i);
+    assert.equal(ex.chamadas[0].texto.includes('SEM_COBERTURA_DESC'), false);
+    assert.equal(ex.chamadas[0].valores.includes('SEM_COBERTURA_DESC'), false);
+    assert.equal(ex.chamadas[0].valores.length, padrao.chamadas[0].valores.length);
+    assert.ok(ex.chamadas[0].valores.includes('SEM_COBERTURA'), 'a situação continua parâmetro');
+    assert.notEqual(ex.chamadas[0].texto, padrao.chamadas[0].texto);
+  });
+
+  test('as quatro ordens geram textos distintos e a padrão, a DEFICIT_DESC e a NECESSIDADE_DESC continuam como estavam', async () => {
+    const textos = {};
+    for (const ordem of [null, 'DEFICIT_DESC', 'NECESSIDADE_DESC', 'SEM_COBERTURA_DESC']) {
+      const ex = executorFalso();
+      await repo().listarPosicoes(ex, EMPRESA, base({ ordem }));
+      textos[String(ordem)] = ex.chamadas[0].texto;
+    }
+    assert.equal(new Set(Object.values(textos)).size, 4);
+    assert.match(textos.null, /ORDER BY lower\(nome\),\s*material_id,\s*tamanho_chave/);
+    assert.match(textos.DEFICIT_DESC, /deficit\s+DESC,\s*lower\(nome\)/i);
+    assert.match(textos.NECESSIDADE_DESC, /necessidade\s+DESC,\s*lower\(nome\)/i);
+  });
+
+  test('ordem desconhecida continua sendo erro de programação, antes de consultar', async () => {
+    const ex = executorFalso();
+    for (const ruim of ['sem_cobertura_desc', 'SEM_COBERTURA_ASC', 'SEM_COBERTURA', 'semCobertura', '', 7, true, {}]) {
+      await assert.rejects(() => repo().listarPosicoes(ex, EMPRESA, base({ ordem: ruim })), (e) => e instanceof TypeError && /ordena/i.test(e.message), String(ruim));
+    }
+    assert.equal(ex.chamadas.length, 0);
+  });
+});

@@ -19,6 +19,9 @@
     .kpi-link:not([href]){cursor:default}
     .kpi-link:hover .kpi-meta,.kpi-link:focus-visible .kpi-meta{text-decoration:underline}
     .kpi-link:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+    /* 12I: o link (.kpi-link-total) cobre o cartão inteiro, então qualquer clique (título, número, ícone ou espaço vazio) navega. O movimento do hover
+       e o vidro fosco ficam em css/dashboard.css. */
+    .kpi-link-total::after{content:"";position:absolute;inset:0;border-radius:inherit}
     /* Conta: nome e empresa no canto superior direito; a empresa abre Trocar de empresa e Sair */
     .conta-usuario{position:absolute;top:16px;right:18px;z-index:2;display:flex;flex-direction:column;align-items:flex-end;gap:2px}
     .conta-botao{display:flex;flex-direction:column;align-items:flex-end;gap:2px;border:none;background:transparent;padding:6px 8px;border-radius:10px;font:inherit;text-align:right;cursor:pointer}
@@ -38,11 +41,8 @@
 
   Página ORIGINAL ligada ao backend real, com a interface preservada:
   sessão empresarial do Portal (C0), permissões efetivas (C1, recurso
-  dashboard) e GET /api/dashboard/indicadores. Oito indicadores reais
-  (itens disponíveis, saldo livre, comprometido, sem cobertura, necessidade
-  de reposição, estoque abaixo do mínimo pelo saldo livre, CA vencido/a
-  vencer, funcionários ativos), todos medidos pelo servidor; os demais
-  componentes ficam "—" / "em integração".
+  dashboard) e GET /api/dashboard/indicadores. Indicadores e gráficos reais medidos pelo servidor. Componentes ainda sem
+  fonte oficial permanecem "—" / "em integração".
   Sem js/db-api.js, sem js/main.js, sem números fixos nem dados de exemplo.
 -->
 <body class="dashboard-visual">
@@ -157,45 +157,55 @@
         <div id="aviso" role="status" aria-live="polite" style="display:none;margin:18px 0"></div>
 
         <section class="kpi-row">
-          <article class="kpi-card primary">
-            <div class="kpi-head">
-              <div class="kpi-title">EPIs entregues</div>
-              <div class="kpi-icon">local_shipping</div>
-            </div>
-            <div class="kpi-value">—</div>
-            <div class="kpi-meta">em integração</div>
+          <article class="kpi-card primary" id="cardEpisEntregues" style="display:none">
+            <a id="linkEpisEntregues" class="kpi-link kpi-link-total">
+              <div class="kpi-head">
+                <div class="kpi-title">EPIs entregues</div>
+                <div class="kpi-icon">local_shipping</div>
+              </div>
+              <div class="kpi-value" id="kpiEpisEntreguesValor">—</div>
+              <div class="kpi-meta" id="kpiEpisEntreguesMeta">Unidades entregues no mês</div>
+            </a>
           </article>
-          <article class="kpi-card warning">
-            <div class="kpi-head">
-              <div class="kpi-title">Próximo do vencimento de uso</div>
-              <div class="kpi-icon">warning</div>
-            </div>
-            <div class="kpi-value">—</div>
-            <div class="kpi-meta">em integração</div>
+          <article class="kpi-card warning" id="cardProximoVencimentoUso" style="display:none">
+            <a id="linkProximoVencimentoUso" class="kpi-link kpi-link-total">
+              <div class="kpi-head">
+                <div class="kpi-title">Próximo do vencimento de uso</div>
+                <div class="kpi-icon">warning</div>
+              </div>
+              <div class="kpi-value" id="kpiProximoVencimentoValor">—</div>
+              <div class="kpi-meta" id="kpiProximoVencimentoMeta">Itens com prazo de uso vencendo em até 30 dias</div>
+            </a>
           </article>
-          <article class="kpi-card success">
-            <div class="kpi-head">
-              <div class="kpi-title">Itens disponíveis</div>
-              <div class="kpi-icon">inventory</div>
-            </div>
-            <div class="kpi-value" id="kpiDisponiveisValor">—</div>
-            <div class="kpi-meta" id="kpiDisponiveisMeta">Físico utilizável em estoque</div>
+          <article class="kpi-card success" id="cardItensDisponiveis">
+            <a id="linkItensDisponiveis" class="kpi-link kpi-link-total">
+              <div class="kpi-head">
+                <div class="kpi-title">Itens disponíveis</div>
+                <div class="kpi-icon">inventory</div>
+              </div>
+              <div class="kpi-value" id="kpiDisponiveisValor">—</div>
+              <div class="kpi-meta" id="kpiDisponiveisMeta">Físico utilizável em estoque</div>
+            </a>
           </article>
-          <article class="kpi-card success">
-            <div class="kpi-head">
-              <div class="kpi-title">Saldo livre</div>
-              <div class="kpi-icon">lock_open</div>
-            </div>
-            <div class="kpi-value" id="kpiSaldoLivreValor">—</div>
-            <div class="kpi-meta" id="kpiSaldoLivreMeta">Físico utilizável menos o comprometido</div>
+          <article class="kpi-card success" id="cardSaldoLivre">
+            <a id="linkSaldoLivre" class="kpi-link kpi-link-total">
+              <div class="kpi-head">
+                <div class="kpi-title">Saldo livre</div>
+                <div class="kpi-icon">lock_open</div>
+              </div>
+              <div class="kpi-value" id="kpiSaldoLivreValor">—</div>
+              <div class="kpi-meta" id="kpiSaldoLivreMeta">Físico utilizável menos o comprometido</div>
+            </a>
           </article>
-          <article class="kpi-card primary">
-            <div class="kpi-head">
-              <div class="kpi-title">Saldo comprometido</div>
-              <div class="kpi-icon">lock_clock</div>
-            </div>
-            <div class="kpi-value" id="kpiComprometidoValor">—</div>
-            <div class="kpi-meta" id="kpiComprometidoMeta">Reservado a solicitações aprovadas</div>
+          <article class="kpi-card primary" id="cardComprometido">
+            <a id="linkComprometido" class="kpi-link kpi-link-total">
+              <div class="kpi-head">
+                <div class="kpi-title">Saldo comprometido</div>
+                <div class="kpi-icon">lock_clock</div>
+              </div>
+              <div class="kpi-value" id="kpiComprometidoValor">—</div>
+              <div class="kpi-meta" id="kpiComprometidoMeta">Reservado a solicitações aprovadas</div>
+            </a>
           </article>
           <article class="kpi-card danger">
             <div class="kpi-head">
@@ -209,72 +219,78 @@
               <div class="kpi-meta" id="kpiCaVencidoMeta">Validade do CA</div>
             </a>
           </article>
-          <article class="kpi-card primary">
-            <div class="kpi-head">
-              <div class="kpi-title">Solicitações aguardando SST</div>
-              <div class="kpi-icon">fact_check</div>
-            </div>
-            <div class="kpi-value" id="kpiAguardandoSstValor">—</div>
-            <div class="kpi-meta" id="kpiAguardandoSstMeta">Pedidos aguardando a decisão da Segurança do Trabalho</div>
+          <article class="kpi-card primary" id="cardAguardandoSst" style="display:none">
+            <a id="linkAguardandoSst" class="kpi-link kpi-link-total">
+              <div class="kpi-head">
+                <div class="kpi-title">Solicitações aguardando aprovação</div>
+                <div class="kpi-icon">fact_check</div>
+              </div>
+              <div class="kpi-value" id="kpiAguardandoSstValor">—</div>
+              <div class="kpi-meta" id="kpiAguardandoSstMeta">Pedidos aguardando a decisão da Segurança do Trabalho</div>
+            </a>
           </article>
-          <article class="kpi-card primary">
-            <div class="kpi-head">
-              <div class="kpi-title">Solicitações aguardando estoque</div>
-              <div class="kpi-icon">pending_actions</div>
-            </div>
-            <div class="kpi-value" id="kpiAguardandoEstoqueValor">—</div>
-            <div class="kpi-meta" id="kpiAguardandoEstoqueMeta">Pedidos aprovados sem nenhum item coberto pelo estoque</div>
+          <article class="kpi-card primary" id="cardAguardandoEstoque" style="display:none">
+            <a id="linkAguardandoEstoque" class="kpi-link kpi-link-total">
+              <div class="kpi-head">
+                <div class="kpi-title">Solicitações aguardando estoque</div>
+                <div class="kpi-icon">pending_actions</div>
+              </div>
+              <div class="kpi-value" id="kpiAguardandoEstoqueValor">—</div>
+              <div class="kpi-meta" id="kpiAguardandoEstoqueMeta">Pedidos aprovados sem nenhum item coberto pelo estoque</div>
+            </a>
           </article>
-          <article class="kpi-card success">
-            <div class="kpi-head">
-              <div class="kpi-title">Disponíveis para entrega</div>
-              <div class="kpi-icon">playlist_add_check_circle</div>
-            </div>
-            <div class="kpi-value" id="kpiDisponiveisEntregaValor">—</div>
-            <div class="kpi-meta" id="kpiDisponiveisEntregaMeta">Pedidos com algum item já coberto pelo estoque</div>
+          <article class="kpi-card success" id="cardDisponiveisEntrega" style="display:none">
+            <a id="linkDisponiveisEntrega" class="kpi-link kpi-link-total">
+              <div class="kpi-head">
+                <div class="kpi-title">Disponíveis para entrega</div>
+                <div class="kpi-icon">playlist_add_check_circle</div>
+              </div>
+              <div class="kpi-value" id="kpiDisponiveisEntregaValor">—</div>
+              <div class="kpi-meta" id="kpiDisponiveisEntregaMeta">Pedidos com algum item já coberto pelo estoque</div>
+            </a>
           </article>
-          <article class="kpi-card warning">
-            <div class="kpi-head">
-              <div class="kpi-title">Pendências sem estoque</div>
-              <div class="kpi-icon">notifications_active</div>
-            </div>
-            <div class="kpi-value" id="kpiSemCoberturaValor">—</div>
-            <div class="kpi-meta" id="kpiSemCoberturaMeta">Aprovado sem estoque para cobrir</div>
+          <article class="kpi-card warning" id="cardSemCobertura" style="display:none">
+            <a id="linkSemCobertura" class="kpi-link kpi-link-total">
+              <div class="kpi-head">
+                <div class="kpi-title">Pendências sem estoque</div>
+                <div class="kpi-icon">notifications_active</div>
+              </div>
+              <div class="kpi-value" id="kpiSemCoberturaValor">—</div>
+              <div class="kpi-meta" id="kpiSemCoberturaMeta">Aprovado sem estoque para cobrir</div>
+            </a>
           </article>
-          <article class="kpi-card warning">
-            <div class="kpi-head">
-              <div class="kpi-title">Necessidade de reposição</div>
-              <div class="kpi-icon">add_shopping_cart</div>
-            </div>
-            <div class="kpi-value" id="kpiNecessidadeValor">—</div>
-            <div class="kpi-meta" id="kpiNecessidadeMeta">Sem cobertura mais déficit do mínimo</div>
+          <article class="kpi-card warning" id="cardNecessidade" style="display:none">
+            <a id="linkNecessidade" class="kpi-link kpi-link-total">
+              <div class="kpi-head">
+                <div class="kpi-title">Necessidade de reposição</div>
+                <div class="kpi-icon">add_shopping_cart</div>
+              </div>
+              <div class="kpi-value" id="kpiNecessidadeValor">—</div>
+              <div class="kpi-meta" id="kpiNecessidadeMeta">Sem cobertura mais déficit do mínimo</div>
+            </a>
           </article>
-          <article class="kpi-card warning">
-            <div class="kpi-head">
-              <div class="kpi-title">Estoque abaixo do mínimo</div>
-              <div class="kpi-icon">production_quantity_limits</div>
-            </div>
-            <div class="kpi-value" id="kpiAbaixoMinimoValor">—</div>
-            <div class="kpi-meta" id="kpiAbaixoMinimoMeta">Itens (material × tamanho) abaixo do mínimo pelo saldo livre</div>
+          <article class="kpi-card warning" id="cardAbaixoMinimo" style="display:none">
+            <a id="linkAbaixoMinimo" class="kpi-link kpi-link-total">
+              <div class="kpi-head">
+                <div class="kpi-title">Estoque abaixo do mínimo</div>
+                <div class="kpi-icon">production_quantity_limits</div>
+              </div>
+              <div class="kpi-value" id="kpiAbaixoMinimoValor">—</div>
+              <div class="kpi-meta" id="kpiAbaixoMinimoMeta">Itens (material × tamanho) abaixo do mínimo pelo saldo livre</div>
+            </a>
           </article>
-          <article class="kpi-card primary">
-            <div class="kpi-head">
-              <div class="kpi-title">Funcionários ativos</div>
-              <div class="kpi-icon">badge</div>
-            </div>
-            <div class="kpi-value" id="kpiFuncionariosValor">—</div>
-            <div class="kpi-meta" id="kpiFuncionariosMeta">Funcionários ativos cadastrados</div>
+          <article class="kpi-card primary" id="cardFuncionarios" style="display:none">
+            <a id="linkFuncionarios" class="kpi-link kpi-link-total">
+              <div class="kpi-head">
+                <div class="kpi-title">Funcionários ativos</div>
+                <div class="kpi-icon">badge</div>
+              </div>
+              <div class="kpi-value" id="kpiFuncionariosValor">—</div>
+              <div class="kpi-meta" id="kpiFuncionariosMeta">Funcionários ativos cadastrados</div>
+            </a>
           </article>
-          <!-- Preparação visual: os cinco indicadores abaixo ainda não têm
+          <!-- Preparação visual: os dois indicadores abaixo ainda não têm
                ligação com a API. Os valores não são calculados nesta página. -->
-          <article class="kpi-card primary">
-            <div class="kpi-head">
-              <div class="kpi-title">Solicitações aguardando entrega</div>
-              <div class="kpi-icon" aria-hidden="true">pending_actions</div>
-            </div>
-            <div class="kpi-value" id="kpiAguardandoEntregaValor">—</div>
-            <div class="kpi-meta" id="kpiAguardandoEntregaMeta">em integração</div>
-          </article>
           <article class="kpi-card success">
             <div class="kpi-head">
               <div class="kpi-title">Alertas enviados hoje</div>
@@ -282,22 +298,6 @@
             </div>
             <div class="kpi-value" id="kpiAlertasHojeValor">—</div>
             <div class="kpi-meta" id="kpiAlertasHojeMeta">em integração</div>
-          </article>
-          <article class="kpi-card danger">
-            <div class="kpi-head">
-              <div class="kpi-title">EPIs vencidos em uso</div>
-              <div class="kpi-icon" aria-hidden="true">event_busy</div>
-            </div>
-            <div class="kpi-value" id="kpiEpisVencidosUsoValor">—</div>
-            <div class="kpi-meta" id="kpiEpisVencidosUsoMeta">em integração</div>
-          </article>
-          <article class="kpi-card warning">
-            <div class="kpi-head">
-              <div class="kpi-title">Funcionários com EPI pendente</div>
-              <div class="kpi-icon" aria-hidden="true">assignment_late</div>
-            </div>
-            <div class="kpi-value" id="kpiFuncionariosEpiPendenteValor">—</div>
-            <div class="kpi-meta" id="kpiFuncionariosEpiPendenteMeta">em integração</div>
           </article>
           <article class="kpi-card primary">
             <div class="kpi-head">
@@ -311,13 +311,25 @@
         </section>
 
         <section class="chart-grid">
-          <section class="chart-shell">
-            <div class="chart-title"><span class="material-symbols-outlined">pie_chart</span>Distribuição por setor</div>
-            <p class="estado-integracao">— em integração</p>
+          <section class="chart-shell gr-painel" aria-labelledby="tituloSetores">
+            <div class="chart-head">
+              <div class="chart-title" id="tituloSetores"><span class="material-symbols-outlined">bar_chart</span>Distribuição por setor</div>
+              <select id="periodoSetores" class="gr-periodo" aria-label="Período da distribuição por setor">
+                <option value="MES">Mês</option><option value="SEIS_MESES">6 meses</option><option value="ANO">1 ano</option>
+              </select>
+            </div>
+            <p class="gr-resumo" id="resumoSetores"></p>
+            <div class="gr-grafico" id="graficoSetores"></div>
           </section>
-          <section class="chart-shell">
-            <div class="chart-title"><span class="material-symbols-outlined">bar_chart</span>Status de EPIs</div>
-            <p class="estado-integracao">— em integração</p>
+          <section class="chart-shell gr-painel" aria-labelledby="tituloEntregas">
+            <div class="chart-head">
+              <div class="chart-title" id="tituloEntregas"><span class="material-symbols-outlined">stacked_bar_chart</span>Status de EPIs — produtos que mais saem</div>
+              <select id="periodoEntregas" class="gr-periodo" aria-label="Período dos produtos que mais saem">
+                <option value="MES">Mês</option><option value="SEIS_MESES">6 meses</option><option value="ANO">1 ano</option>
+              </select>
+            </div>
+            <p class="gr-resumo" id="resumoEntregas"></p>
+            <div class="gr-grafico" id="graficoEntregas"></div>
           </section>
         </section>
 
@@ -326,7 +338,7 @@
             <div class="card-title">
               <div class="card-icon">priority_high</div>
               <div>
-                <h2>KPIs de prioridade e alertas automáticos</h2>
+                <h2>Prioridades e alertas automáticos</h2>
                 <p>Monitoramento de trocas imediatas, próximos vencimentos e notificações para responsáveis.</p>
               </div>
             </div>
@@ -342,7 +354,7 @@
               <strong id="kpiProximoVencimento">—</strong>
             </div>
             <div class="alert-kpi-card">
-              <span>E-mails para responsáveis (em integração)</span>
+              <span>E-mails enviados hoje (em integração)</span>
               <strong id="kpiEmailsResponsaveis">—</strong>
             </div>
           </div>
@@ -411,6 +423,7 @@
 <script src="../js/permissoes-efetivas.js"></script>
 <script src="../js/pagina-base.js"></script>
 <script src="../js/dashboard.js"></script>
+<script src="../js/dashboard-graficos.js"></script>
 <script>
 /*
   Ligação com o DOM — deliberadamente fina. Consulta, regras de exibição e
@@ -425,7 +438,7 @@
   var CARDS = {
     disponiveis: 'kpiDisponiveis', saldoLivre: 'kpiSaldoLivre', comprometido: 'kpiComprometido', caVencido: 'kpiCaVencido',
     semCobertura: 'kpiSemCobertura', necessidade: 'kpiNecessidade', abaixoMinimo: 'kpiAbaixoMinimo', funcionarios: 'kpiFuncionarios',
-    aguardandoSst: 'kpiAguardandoSst', aguardandoEstoque: 'kpiAguardandoEstoque', disponiveisEntrega: 'kpiDisponiveisEntrega',
+    aguardandoSst: 'kpiAguardandoSst', aguardandoEstoque: 'kpiAguardandoEstoque', disponiveisEntrega: 'kpiDisponiveisEntrega', episEntregues: 'kpiEpisEntregues', proximoVencimento: 'kpiProximoVencimento',
   };
   // Atalhos do cartão de CA para a Validade de estoque. Só ganham destino quando
   // o servidor liberou o indicador, que segue a mesma permissão da Validade.
@@ -467,7 +480,63 @@
     });
   }
 
+  // 12I: cartões com destino. Cada um é um link para a tela correspondente, já filtrada (D.destinos). O link só ganha href quando o servidor
+  // liberou o número (permitido === true); sem permissão (permitido === false) os cartões das Tasks 01 a 06 (`ocultavel`) somem por inteiro,
+  // e os demais seguem mostrando "— sem permissão", sem link. Erro de carga, zero ou indicador ausente mantêm o cartão. Os ocultáveis nascem
+  // ocultos (também no HTML), para não piscar durante o carregamento. Nenhum ouvinte: o movimento do hover é só CSS.
+  var CARTOES = {
+    estoqueAbaixoMinimo: { card: 'cardAbaixoMinimo', link: 'linkAbaixoMinimo', destino: D.destinos.abaixoMinimo, ocultavel: true },
+    necessidadeReposicao: { card: 'cardNecessidade', link: 'linkNecessidade', destino: D.destinos.necessidade, ocultavel: true },
+    semCobertura: { card: 'cardSemCobertura', link: 'linkSemCobertura', destino: D.destinos.semCobertura, ocultavel: true },
+    funcionariosAtivos: { card: 'cardFuncionarios', link: 'linkFuncionarios', destino: D.destinos.funcionarios, ocultavel: true },
+    disponiveisParaEntrega: { card: 'cardDisponiveisEntrega', link: 'linkDisponiveisEntrega', destino: D.destinos.disponiveisEntrega, ocultavel: true },
+    solicitacoesAguardandoEstoque: { card: 'cardAguardandoEstoque', link: 'linkAguardandoEstoque', destino: D.destinos.aguardandoEstoque, ocultavel: true },
+    itensDisponiveis: { card: 'cardItensDisponiveis', link: 'linkItensDisponiveis', destino: D.destinos.itensDisponiveis, ocultavel: false },
+    saldoLivre: { card: 'cardSaldoLivre', link: 'linkSaldoLivre', destino: D.destinos.saldoLivre, ocultavel: false },
+    comprometido: { card: 'cardComprometido', link: 'linkComprometido', destino: D.destinos.comprometido, ocultavel: false },
+    solicitacoesAguardandoSst: { card: 'cardAguardandoSst', link: 'linkAguardandoSst', destino: D.destinos.aguardandoSst, ocultavel: true },
+    episEntregues: { card: 'cardEpisEntregues', link: 'linkEpisEntregues', destino: D.destinos.episEntregues, ocultavel: true },
+    proximoVencimentoUso: { card: 'cardProximoVencimentoUso', link: 'linkProximoVencimentoUso', destino: D.destinos.proximoVencimentoUso, ocultavel: true },
+  };
+  function ligarCartoes(indicadores) {
+    Object.keys(CARTOES).forEach(function (chave) {
+      var c = CARTOES[chave];
+      var ind = indicadores ? indicadores[chave] : undefined;
+      var destino = c.destino(ind);
+      if (c.ocultavel) $(c.card).style.display = D.render.visivelCartao(ind) ? '' : 'none';
+      if (destino) $(c.link).setAttribute('href', destino);
+      else $(c.link).removeAttribute('href');
+    });
+  }
+  function esvaziarCartoes() {
+    Object.keys(CARTOES).forEach(function (chave) {
+      var c = CARTOES[chave];
+      if (c.ocultavel) $(c.card).style.display = 'none';
+      $(c.link).removeAttribute('href');
+    });
+  }
+
+  esvaziarCartoes();
   todos(D.render.CARREGANDO);
+
+  // 12I: os dois gráficos, cada um com o seu período (Mês por padrão) e a sua consulta; trocar um período recarrega só aquele gráfico.
+  var GR = typeof EpiDashboardGraficos !== 'undefined' ? EpiDashboardGraficos : null;
+  var graficos = [];
+  if (GR) {
+    var sessaoExpirou = function () { EpiSessaoEmpresarial.sessaoEncerrada(); };
+    graficos.push(GR.painel(document, {
+      select: $('periodoSetores'), container: $('graficoSetores'), resumo: $('resumoSetores'),
+      consultar: GR.acoes.setores, modelo: GR.modelo.setores, resumir: GR.mensagens.resumoSetores, vazio: GR.mensagens.VAZIO_SETORES,
+      desenhar: function (m) { GR.renderizar.setores(document, $('graficoSetores'), m); }, aoNaoAutenticado: sessaoExpirou,
+    }));
+    graficos.push(GR.painel(document, {
+      select: $('periodoEntregas'), container: $('graficoEntregas'), resumo: $('resumoEntregas'),
+      consultar: GR.acoes.episEntregues, modelo: GR.modelo.episEntregues, resumir: GR.mensagens.resumoEntregas, vazio: GR.mensagens.VAZIO_ENTREGAS,
+      desenhar: function (m) { GR.renderizar.episEntregues(document, { grafico: $('graficoEntregas') }, m); }, aoNaoAutenticado: sessaoExpirou,
+    }));
+    $('periodoSetores').value = GR.PADRAO;
+    $('periodoEntregas').value = GR.PADRAO;
+  }
 
   async function carregar() {
     if (encerrada) return;
@@ -478,13 +547,16 @@
       if (D.mensagens.exigeNovoLogin(r)) { EpiSessaoEmpresarial.sessaoEncerrada(); return; }
       todos({ valor: '—', meta: 'indisponível' }); // falha nunca vira número
       ligarAtalhosValidade(false);
+      ligarCartoes(null);
       mostrarAviso(D.mensagens.erro(r), 'erro');
       return;
     }
     var indicadores = r.dados && r.dados.indicadores;
     pintar(D.render.cards(indicadores));
     ligarAtalhosValidade(!!(indicadores && indicadores.caVencido && indicadores.caVencido.permitido === true));
+    ligarCartoes(indicadores);
   }
+  function carregarGraficos() { graficos.forEach(function (g) { g.carregar(); }); }
 
   // Só reposiciona o mesmo bloco visual; IDs, dados da sessão e ouvintes continuam intactos.
   function posicionarContaNoCabecalho() {
@@ -522,6 +594,8 @@
     consultaAtual += 1; // invalida qualquer resposta pendente
     todos(VAZIO);
     ligarAtalhosValidade(false);
+    esvaziarCartoes();
+    graficos.forEach(function (g) { g.encerrar(); });
     $('dashboardWelcomeUser').textContent = '';
     mostrarAviso('', null);
   }
@@ -562,6 +636,7 @@
       aviso: function (mensagem) { mostrarAviso(mensagem, 'erro'); },
     }).then(function (acesso) {
       if (!acesso) { todos(VAZIO); return undefined; }
+      carregarGraficos();
       return carregar();
     });
   });

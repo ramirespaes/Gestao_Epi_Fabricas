@@ -1,0 +1,149 @@
+'use strict';
+
+const { describe, test } = require('node:test');
+const assert = require('node:assert/strict');
+
+const servico = require('../../src/services/dashboard.service');
+const autorizacao = require('../../src/middleware/autorizacao');
+const loteRepo = require('../../src/repositories/estoque-lote.repository');
+const posicaoRepo = require('../../src/repositories/posicao-estoque.repository');
+const funcionarioRepo = require('../../src/repositories/funcionario.repository');
+const consultaRepo = require('../../src/repositories/solicitacao-epi-consulta.repository');
+const coberturaRepo = require('../../src/repositories/solicitacao-epi-cobertura.repository');
+
+/**
+ * 12I, Tasks 04, 05 e 06 — prévias de "Funcionários ativos", "Disponíveis para entrega" e "Solicitações aguardando estoque" (RED), sem
+ * PostgreSQL real. Cada indicador ganha `previa` (até cinco registros) lida no MESMO instantâneo READ ONLY REPEATABLE READ da sua contagem,
+ * pela MESMA regra (nenhuma segunda lógica de disponibilidade), com a permissão que já liberava o número; sem permissão, `{ permitido: false }`
+ * e nenhuma consulta. As integrações em banco real estão em dashboard-previas-funcionarios-solicitacoes.integration.js.
+ */
+
+const CONTEXTO = { empresaId: 42, usuarioId: 7, perfil: 'USUARIO', hoje: '2026-10-04' };
+const NEGADO = { permitido: false };
+
+const funcionario = (extra = {}) => ({ id: 5, nome: 'Ana Souza', matricula: 'M-100', setor: 'Fundição', ...extra });
+const solicitacao = (extra = {}) => ({
+  solicitacaoId: 9, numero: 31, criadaEm: new Date('2026-10-03T10:00:00Z'), trabalhadorNome: 'Bruno Lima', trabalhadorMatricula: 'M-7',
+  itensPendentes: 3, itensCobertos: 2, quantidadePendente: 9, quantidadeCoberta: 5, ...extra,
+});
+
+function simular(t, { recursos = {}, acoes = {}, funcionarios = { itens: [], total: 0 }, porCobertura = {} } = {}) {
+  const permissoesRecurso = { availableItems: true, stockValidity: true, employeeHistory: true, ...recursos };
+  const chamadas = { recentes: [], contar: [], listarCobertura: [], conexoes: 0, sql: [] };
+  t.mock.method(autorizacao, 'avaliarPermissaoRecurso', async (_p, _c, recurso) => ({ visualizar: permissoesRecurso[recurso] === true }));
+  t.mock.method(autorizacao, 'avaliarPermissaoAcao', async (_p, _c, acao) => acoes[acao] === true);
+  t.mock.method(posicaoRepo, 'resumirPosicoes', async () => ({ fisicoUtilizavel: 1, paresAbaixoDoMinimo: 0, saldoLivre: 1, comprometido: 0, semCobertura: 0, necessidade: 0 }));
+  t.mock.method(posicaoRepo, 'listarPosicoes', async () => ({ itens: [], total: 0 }));
+  t.mock.method(loteRepo, 'resumirIndicadores', async () => ({ caVencido: 0, caAVencer: 0 }));
+  t.mock.method(funcionarioRepo, 'contarPorEmpresa', async (executor, empresaId, filtro) => { chamadas.contar.push([executor, empresaId, filtro]); return funcionarios.total; });
+  t.mock.method(funcionarioRepo, 'listarRecentesAtivos', async (executor, empresaId, opcoes) => { chamadas.recentes.push([executor, empresaId, opcoes]); return funcionarios.itens; });
+  t.mock.method(consultaRepo, 'contarFila', async () => 0);
+  t.mock.method(coberturaRepo, 'contarSolicitacoesPorCobertura', async () => ({ comCobertura: porCobertura.com?.total ?? 0, semCobertura: porCobertura.sem?.total ?? 0 }));
+  t.mock.method(coberturaRepo, 'listarSolicitacoesPorCobertura', async (executor, empresaId, opcoes) => {
+    chamadas.listarCobertura.push([executor, empresaId, opcoes]);
+    return (opcoes.comCobertura ? porCobertura.com : porCobertura.sem) || { total: 0, itens: [] };
+  });
+  const cliente = { query: async (sql) => { chamadas.sql.push(sql); return { rows: [] }; }, release() {} };
+  const pool = { connect: async () => { chamadas.conexoes += 1; return cliente; }, query: async () => { throw new Error('use o cliente do instantâneo'); } };
+  return { chamadas, pool, cliente };
+}
+
+describe('Task 04 — funcionários ativos: prévia dos cinco cadastrados mais recentemente', () => {
+  test('valor continua a contagem de ativos; a prévia traz id, nome, matrícula e setor e o total de ativos', async (t) => {
+    const { pool } = simular(t, { funcionarios: { itens: [funcionario(), funcionario({ id: 4, nome: 'Caio', matricula: null, setor: null })], total: 17 } });
+    const r = await servico.consultar(pool, CONTEXTO);
+    assert.equal(r.funcionariosAtivos.permitido, true);
+    assert.equal(r.funcionariosAtivos.valor, 17);
+    assert.equal(r.funcionariosAtivos.previa.total, 17);
+    assert.deepEqual(r.funcionariosAtivos.previa.itens, [funcionario(), funcionario({ id: 4, nome: 'Caio', matricula: null, setor: null })]);
+  });
+
+  test('a contagem (ativos) e a lista (cinco) saem do MESMO cliente de um instantâneo READ ONLY REPEATABLE READ', async (t) => {
+    const { pool, cliente, chamadas } = simular(t, { funcionarios: { itens: [], total: 0 } });
+    await servico.consultar(pool, CONTEXTO);
+    assert.deepEqual(chamadas.contar[0].slice(1), [42, { ativo: true }]);
+    assert.deepEqual(chamadas.recentes[0].slice(1), [42, { limite: 5 }]);
+    assert.equal(chamadas.contar[0][0], cliente);
+    assert.equal(chamadas.recentes[0][0], cliente);
+    assert.ok(chamadas.sql.includes('BEGIN READ ONLY ISOLATION LEVEL REPEATABLE READ'));
+  });
+
+  test('cada item só leva id, nome, matrícula e setor (nunca CPF ou outro campo do repositório)', async (t) => {
+    const { pool } = simular(t, { funcionarios: { itens: [{ ...funcionario(), cpf: '12345678901', telefone: '1' }], total: 1 } });
+    const { itens } = (await servico.consultar(pool, CONTEXTO)).funcionariosAtivos.previa;
+    assert.deepEqual(Object.keys(itens[0]).sort(), ['id', 'matricula', 'nome', 'setor']);
+  });
+
+  test('sem employeeHistory: { permitido: false }, sem previa e nenhuma consulta de funcionário', async (t) => {
+    const { pool, chamadas } = simular(t, { recursos: { employeeHistory: false } });
+    const r = await servico.consultar(pool, CONTEXTO);
+    assert.deepEqual(r.funcionariosAtivos, NEGADO);
+    assert.equal(chamadas.contar.length + chamadas.recentes.length, 0);
+  });
+
+  test('zero ativos: permitido, valor 0 e prévia vazia (não negado)', async (t) => {
+    const { pool } = simular(t);
+    const r = await servico.consultar(pool, CONTEXTO);
+    assert.deepEqual(r.funcionariosAtivos, { permitido: true, valor: 0, previa: { total: 0, itens: [] } });
+  });
+});
+
+describe('Task 05 — disponíveis para entrega: prévia das solicitações com algum item coberto', () => {
+  test('valor continua a contagem por cobertura; a prévia vem da MESMA cobertura (comCobertura true), limite 5, data operacional da sessão, mesmo cliente', async (t) => {
+    const { pool, cliente, chamadas } = simular(t, { acoes: { REALIZAR_ENTREGA: true }, porCobertura: { com: { total: 8, itens: [solicitacao()] } } });
+    const r = await servico.consultar(pool, CONTEXTO);
+    assert.equal(r.disponiveisParaEntrega.valor, 8);
+    assert.equal(r.disponiveisParaEntrega.previa.total, 8);
+    const c = chamadas.listarCobertura.filter((x) => x[2].comCobertura === true);
+    assert.equal(c.length, 1);
+    assert.deepEqual(c[0].slice(1), [42, { hoje: '2026-10-04', comCobertura: true, limite: 5 }]);
+    assert.equal(c[0][0], cliente);
+  });
+
+  test('o item da prévia leva só pedido, trabalhador (nome e matrícula) e quantidades', async (t) => {
+    const { pool } = simular(t, { acoes: { REALIZAR_ENTREGA: true }, porCobertura: { com: { total: 1, itens: [{ ...solicitacao(), cpf: 'x' }] } } });
+    const { itens } = (await servico.consultar(pool, CONTEXTO)).disponiveisParaEntrega.previa;
+    assert.deepEqual(itens[0], {
+      solicitacaoId: 9, numero: 31, trabalhadorNome: 'Bruno Lima', trabalhadorMatricula: 'M-7', itensPendentes: 3, itensCobertos: 2, quantidadePendente: 9, quantidadeCoberta: 5,
+    });
+  });
+
+  test('sem REALIZAR_ENTREGA: negado, sem previa e sem consulta de cobertura da prévia', async (t) => {
+    const { pool, chamadas } = simular(t, { acoes: { ENCERRAR_SOLICITACAO: true } });
+    const r = await servico.consultar(pool, CONTEXTO);
+    assert.deepEqual(r.disponiveisParaEntrega, NEGADO);
+    assert.equal(chamadas.listarCobertura.filter((x) => x[2].comCobertura === true).length, 0);
+  });
+});
+
+describe('Task 06 — solicitações aguardando estoque: prévia das sem nenhum item coberto', () => {
+  test('valor continua a contagem; a prévia vem da MESMA cobertura (comCobertura false), limite 5', async (t) => {
+    const { pool, chamadas } = simular(t, { acoes: { REALIZAR_ENTREGA: true }, porCobertura: { sem: { total: 4, itens: [solicitacao({ itensCobertos: 0, quantidadeCoberta: 0 })] } } });
+    const r = await servico.consultar(pool, CONTEXTO);
+    assert.equal(r.solicitacoesAguardandoEstoque.valor, 4);
+    assert.equal(r.solicitacoesAguardandoEstoque.previa.total, 4);
+    assert.equal(r.solicitacoesAguardandoEstoque.previa.itens[0].itensCobertos, 0);
+    const c = chamadas.listarCobertura.filter((x) => x[2].comCobertura === false);
+    assert.deepEqual(c[0].slice(1), [42, { hoje: '2026-10-04', comCobertura: false, limite: 5 }]);
+  });
+
+  test('é liberada por REALIZAR_ENTREGA OU ENCERRAR_SOLICITACAO; quem só encerra vê aguardando estoque e NÃO vê disponíveis', async (t) => {
+    const { pool } = simular(t, { acoes: { ENCERRAR_SOLICITACAO: true }, porCobertura: { sem: { total: 1, itens: [solicitacao({ itensCobertos: 0, quantidadeCoberta: 0 })] } } });
+    const r = await servico.consultar(pool, CONTEXTO);
+    assert.equal(r.solicitacoesAguardandoEstoque.permitido, true);
+    assert.equal(r.solicitacoesAguardandoEstoque.previa.itens.length, 1);
+    assert.deepEqual(r.disponiveisParaEntrega, NEGADO);
+  });
+
+  test('sem nenhuma das duas ações: negado, sem previa; as duas populações continuam distintas (nenhum item aparece nas duas)', async (t) => {
+    const { pool } = simular(t, { acoes: {} });
+    const r = await servico.consultar(pool, CONTEXTO);
+    assert.deepEqual([r.solicitacoesAguardandoEstoque, r.disponiveisParaEntrega], [NEGADO, NEGADO]);
+  });
+
+  test('as demais contagens não mudam e aguardando SST não ganha prévia', async (t) => {
+    const { pool } = simular(t, { acoes: { APROVAR_SOLICITACAO: true } });
+    const r = await servico.consultar(pool, CONTEXTO);
+    assert.deepEqual(r.solicitacoesAguardandoSst, { permitido: true, valor: 0 });
+  });
+});

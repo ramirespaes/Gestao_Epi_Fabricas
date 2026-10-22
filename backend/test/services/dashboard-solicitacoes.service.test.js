@@ -10,6 +10,7 @@ const posicaoRepo = require('../../src/repositories/posicao-estoque.repository')
 const funcionarioRepo = require('../../src/repositories/funcionario.repository');
 const consultaRepo = require('../../src/repositories/solicitacao-epi-consulta.repository');
 const coberturaRepo = require('../../src/repositories/solicitacao-epi-cobertura.repository');
+const relatorioSvc = require('../../src/services/relatorio.service');
 
 /**
  * 12G-6 — três indicadores derivados das solicitações no Dashboard, sem
@@ -42,9 +43,13 @@ function simular(t, { acoes = {}, contagens = { fila: 5, comCobertura: 2, semCob
   t.mock.method(loteRepo, 'resumirIndicadores', async () => ({ caVencido: 0, caAVencer: 0 }));
   t.mock.method(funcionarioRepo, 'contarPorEmpresa', async () => 9);
   t.mock.method(consultaRepo, 'contarFila', async (executor, empresaId) => { chamadas.fila.push([executor, empresaId]); return contagens.fila; });
+  // 12I: o total da listagem de Entregas por solicitação (entregáveis ou encerráveis) é testado em dashboard-aguardando-entrega.service.test.js.
+  // As contagens dos relatórios (EPIs entregues e próximo do vencimento) têm testes próprios.
+  t.mock.method(relatorioSvc, 'unidadesEntregues', async () => 0);
+  t.mock.method(relatorioSvc, 'contarProximoVencimento', async () => 0);
   t.mock.method(coberturaRepo, 'contarSolicitacoesPorCobertura', async (executor, empresaId, ref) => {
     chamadas.porCobertura.push([executor, empresaId, ref]);
-    return { comCobertura: contagens.comCobertura, semCobertura: contagens.semCobertura };
+    return { comCobertura: contagens.comCobertura, semCobertura: contagens.semCobertura, coberturaCompleta: contagens.comCobertura };
   });
   const cliente = {
     query: async (sql) => { chamadas.sql.push(sql); return { rows: [] }; },
@@ -61,6 +66,7 @@ describe('dashboard — indicadores das solicitações (12G-6)', () => {
     assert.deepEqual(r.solicitacoesAguardandoSst, { permitido: true, valor: 5 });
     assert.deepEqual(r.solicitacoesAguardandoEstoque, { permitido: true, valor: 3 });
     assert.deepEqual(r.disponiveisParaEntrega, { permitido: true, valor: 2 });
+    // Uma conexão: a transação das solicitações (todas as contagens no mesmo cliente), devolvida.
     assert.equal(chamadas.conexoes, 1);
     assert.equal(chamadas.liberadas, 1);
     assert.match(chamadas.sql[0], /^BEGIN READ ONLY ISOLATION LEVEL REPEATABLE READ$/);
@@ -73,10 +79,11 @@ describe('dashboard — indicadores das solicitações (12G-6)', () => {
     assert.deepEqual(chamadas.porCobertura[0][2], { hoje: '2026-10-04' });
   });
 
-  test('não existe mais o indicador "aguardando entrega" (aprovadas com ou sem cobertura)', async (t) => {
-    const { pool } = simular(t, { acoes: { REALIZAR_ENTREGA: true } });
+  test('não existe indicador de "aguardando entrega": "aguardando aprovação" é o solicitacoesAguardandoSst (a fila PENDENTE)', async (t) => {
+    const { pool } = simular(t, { acoes: { REALIZAR_ENTREGA: true, APROVAR_SOLICITACAO: true } });
     const r = await servico.consultar(pool, CONTEXTO);
     assert.equal('solicitacoesAguardandoEntrega' in r, false);
+    assert.deepEqual(r.solicitacoesAguardandoSst, { permitido: true, valor: 5 });
   });
 
   test('a ação é avaliada com o contexto da sessão: empresa, usuário e perfil', async (t) => {
@@ -89,6 +96,7 @@ describe('dashboard — indicadores das solicitações (12G-6)', () => {
     const { chamadas, pool } = simular(t);
     const r = await servico.consultar(pool, CONTEXTO);
     for (const chave of NOVOS) assert.deepEqual(r[chave], NEGADO, chave);
+    // Sem nenhuma ação, as solicitações não abrem conexão e nenhuma contagem roda.
     assert.deepEqual([chamadas.conexoes, chamadas.fila.length, chamadas.porCobertura.length], [0, 0, 0]);
     assert.deepEqual(r.semCobertura, { permitido: true, valor: 3 }, 'Pendências sem estoque continua com a sua fonte');
   });
@@ -125,7 +133,8 @@ describe('dashboard — indicadores das solicitações (12G-6)', () => {
   test('zero de verdade é um número permitido, diferente de negado', async (t) => {
     const { pool } = simular(t, { acoes: { APROVAR_SOLICITACAO: true, REALIZAR_ENTREGA: true }, contagens: { fila: 0, comCobertura: 0, semCobertura: 0 } });
     const r = await servico.consultar(pool, CONTEXTO);
-    for (const chave of NOVOS) assert.deepEqual(r[chave], { permitido: true, valor: 0 }, chave);
+    assert.deepEqual(r.solicitacoesAguardandoSst, { permitido: true, valor: 0 });
+    for (const chave of ['solicitacoesAguardandoEstoque', 'disponiveisParaEntrega']) assert.deepEqual(r[chave], { permitido: true, valor: 0 }, chave);
   });
 
   test('erro na leitura: ROLLBACK e o cliente é devolvido', async (t) => {

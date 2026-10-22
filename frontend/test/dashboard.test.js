@@ -25,13 +25,15 @@ const resposta = (status, corpo) => ({ status, ok: status >= 200 && status < 300
 
 // Contrato do servidor (12D-2 e 12G-6): onze indicadores, cada um { permitido, valor } ou { permitido: false }.
 const CHAVES_DO_CONTRATO = [
-  'caVencido', 'comprometido', 'disponiveisParaEntrega', 'estoqueAbaixoMinimo', 'funcionariosAtivos', 'itensDisponiveis', 'necessidadeReposicao', 'saldoLivre', 'semCobertura',
-  'solicitacoesAguardandoEstoque', 'solicitacoesAguardandoSst',
+  'caVencido', 'comprometido', 'disponiveisParaEntrega', 'episEntregues', 'estoqueAbaixoMinimo', 'funcionariosAtivos', 'itensDisponiveis', 'necessidadeReposicao',
+  'proximoVencimentoUso', 'saldoLivre', 'semCobertura', 'solicitacoesAguardandoEstoque', 'solicitacoesAguardandoSst',
 ];
 const TUDO = {
   solicitacoesAguardandoSst: { permitido: true, valor: 4 },
   solicitacoesAguardandoEstoque: { permitido: true, valor: 6 },
   disponiveisParaEntrega: { permitido: true, valor: 2 },
+  episEntregues: { permitido: true, valor: 31, de: '2026-10-01', ate: '2026-10-31' },
+  proximoVencimentoUso: { permitido: true, valor: 8 },
   itensDisponiveis: { permitido: true, valor: 1234 },
   estoqueAbaixoMinimo: { permitido: true, valor: 2 },
   saldoLivre: { permitido: true, valor: 1100 },
@@ -46,6 +48,7 @@ const NADA = Object.fromEntries(CHAVES_DO_CONTRATO.map((k) => [k, { permitido: f
 const CARTOES = {
   disponiveis: 'kpiDisponiveis', saldoLivre: 'kpiSaldoLivre', comprometido: 'kpiComprometido', caVencido: 'kpiCaVencido', semCobertura: 'kpiSemCobertura', necessidade: 'kpiNecessidade', abaixoMinimo: 'kpiAbaixoMinimo', funcionarios: 'kpiFuncionarios',
   aguardandoSst: 'kpiAguardandoSst', aguardandoEstoque: 'kpiAguardandoEstoque', disponiveisEntrega: 'kpiDisponiveisEntrega',
+  episEntregues: 'kpiEpisEntregues', proximoVencimento: 'kpiProximoVencimento',
 };
 
 let chamadas;
@@ -85,6 +88,8 @@ describe('acoes e render', () => {
       aguardandoSst: { valor: '4', meta: 'Pedidos aguardando a decisão da Segurança do Trabalho' },
       aguardandoEstoque: { valor: '6', meta: 'Pedidos aprovados sem nenhum item coberto pelo estoque' },
       disponiveisEntrega: { valor: '2', meta: 'Pedidos com algum item já coberto pelo estoque' },
+      episEntregues: { valor: '31', meta: 'Unidades entregues no mês' },
+      proximoVencimento: { valor: '8', meta: 'Itens com prazo de uso vencendo em até 30 dias' },
     });
     const sem = render.cards(NADA);
     for (const c of Object.values(sem)) assert.deepEqual(c, { valor: '—', meta: 'sem permissão' });
@@ -124,7 +129,7 @@ describe('acoes e render', () => {
     assert.deepEqual([c.disponiveis.valor, c.comprometido.valor, c.saldoLivre.valor, c.semCobertura.valor, c.necessidade.valor], ['10', '3', '5', '0', '40']);
   });
 
-  test('o contrato não renomeado por acidente: os cartões leem exatamente os onze indicadores do servidor e nenhum outro', () => {
+  test('o contrato não renomeado por acidente: os cartões leem exatamente os treze indicadores do servidor e nenhum outro', () => {
     const lidas = new Set();
     const espiao = new Proxy({}, {
       get(_alvo, nome) { if (typeof nome === 'string') lidas.add(nome); return TUDO[nome]; },
@@ -165,7 +170,7 @@ describe('inspeção estática: pages/dashboard.html', () => {
       assert.equal(proibido.test(semMenuMovel), false, `dashboard.html contém ${proibido}`);
     }
     const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
-    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/dashboard.js']);
+    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/dashboard.js', '../js/dashboard-graficos.js']); // 12I: os gráficos
     assert.match(codigo, /EpiSessaoEmpresarial\.montar\(/);
     assert.match(codigo, /EpiPermissoes\.prepararPagina\(\{\s*pagina: 'dashboard'/);
     for (const id of ['telaSessao', 'telaSessaoMensagem', 'telaSessaoPortal', 'contaNome', 'contaEmpresa', 'botaoEmpresa', 'menuEmpresa', 'botaoSair', 'botaoTrocarEmpresa', 'aviso', 'dashboardWelcomeUser']) assert.ok(ids.includes(id), id);
@@ -178,20 +183,20 @@ describe('inspeção estática: pages/dashboard.html', () => {
     for (const ficticio of ['152', '312', '+12 este mês', 'Produção</option>', 'Manutenção</option>', 'boas-vindas@empresa.com']) assert.equal(html.includes(ficticio), false, ficticio);
   });
 
-  test('dezoito cards: onze com ligação existente e sete em integração; os cinco novos ficam depois de Funcionários ativos', () => {
+  test('quinze cards (12I): os dois cards em integração e o de "aguardando entrega" foram retirados; EPIs entregues e Próximo do vencimento são reais', () => {
     for (const prefixo of Object.values(CARTOES)) {
       for (const sufixo of ['Valor', 'Meta']) assert.ok(ids.includes(`${prefixo}${sufixo}`), `falta #${prefixo}${sufixo}`);
     }
-    assert.equal((html.match(/<article class="kpi-card/g) || []).length, 18);
-    for (const titulo of ['EPIs entregues', 'Próximo do vencimento de uso', 'Itens disponíveis', 'Saldo livre', 'Saldo comprometido', 'CA vencido', 'Solicitações aguardando SST', 'Solicitações aguardando estoque', 'Disponíveis para entrega', 'Pendências sem estoque', 'Necessidade de reposição', 'Estoque abaixo do mínimo', 'Funcionários ativos']) {
+    assert.equal((html.match(/<article class="kpi-card/g) || []).length, 15);
+    for (const titulo of ['EPIs entregues', 'Próximo do vencimento de uso', 'Itens disponíveis', 'Saldo livre', 'Saldo comprometido', 'CA vencido', 'Solicitações aguardando aprovação', 'Solicitações aguardando estoque', 'Disponíveis para entrega', 'Pendências sem estoque', 'Necessidade de reposição', 'Estoque abaixo do mínimo', 'Funcionários ativos']) {
       assert.match(html, new RegExp(`<div class="kpi-title">${titulo}</div>`));
     }
     // "Pendências sem estoque" mostra a demanda sem cobertura; "EPIs entregues" continua fora (Bloco 13).
     assert.match(html, /<div class="kpi-title">Pendências sem estoque<\/div>[\s\S]*?id="kpiSemCoberturaValor"/);
-    assert.match(html, /<div class="kpi-title">EPIs entregues<\/div>[\s\S]*?<div class="kpi-value">—<\/div>\s*<div class="kpi-meta">em integração<\/div>/);
-    assert.equal((html.match(/<div class="kpi-meta"(?: id="[^"]+")?>em integração<\/div>/g) || []).length, 7, 'dois cards anteriores e cinco novos aguardam integração');
+    assert.match(html, /<div class="kpi-title">EPIs entregues<\/div>[\s\S]*?id="kpiEpisEntreguesValor"/);
+    assert.equal((html.match(/<div class="kpi-meta"(?: id="[^"]+")?>em integração<\/div>/g) || []).length, 2, 'só Alertas enviados hoje e Atendimento Token seguem em integração');
     const titulos = [...html.matchAll(/<div class="kpi-title">([^<]+)<\/div>/g)].map((m) => m[1]);
-    assert.deepEqual(titulos.slice(titulos.indexOf('Funcionários ativos') + 1), ['Solicitações aguardando entrega', 'Alertas enviados hoje', 'EPIs vencidos em uso', 'Funcionários com EPI pendente', 'Atendimento Token online/offline']);
+    assert.deepEqual(titulos.slice(titulos.indexOf('Funcionários ativos') + 1), ['Alertas enviados hoje', 'Atendimento Token online/offline']);
     assert.ok((html.match(/em integração/g) || []).length >= 8, 'cards, gráficos, alertas, prévia de e-mails e tabela sem backend');
     assert.equal(html.includes('id="dashSetor"'), false, 'filtro em integração removido do Dashboard');
     assert.equal(html.includes('id="dashStatus"'), false, 'filtro em integração removido do Dashboard');

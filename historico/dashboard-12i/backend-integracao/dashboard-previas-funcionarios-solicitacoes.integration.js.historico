@@ -1,0 +1,238 @@
+'use strict';
+
+const { describe, test, before, after } = require('node:test');
+const assert = require('node:assert/strict');
+const request = require('supertest');
+
+const { montarAmbiente12f } = require('./helpers/ambiente-http-12f');
+const { sessaoDeTeste, CABECALHO } = require('./helpers/ambiente-http-12d2');
+const { chaveNova, vincularMaterialAoGhe } = require('./helpers/solicitacao-epi-servico');
+const { criarAppTeste } = require('../helpers/app-teste');
+const { criarDashboardController } = require('../../src/controllers/dashboard.controller');
+const { criarDashboardRoutes } = require('../../src/routes/dashboard.routes');
+const solicitacaoSvc = require('../../src/services/solicitacao-epi.service');
+
+/**
+ * 12I, Tasks 04, 05 e 06 — prévias de "Funcionários ativos", "Disponíveis para entrega" e "Solicitações aguardando estoque" contra
+ * PostgreSQL real, com a prova de que a listagem de destino (filtro `cobertura` de /entregaveis e /encerraveis) é a MESMA população do
+ * indicador. Mundo (empresa A): aguardando estoque = A1, A2, A3 (nenhum item coberto, uma delas com um item reprovado); disponíveis = D1
+ * (cobertura parcial 1 de 3), D2 (item coberto e outro sem estoque) e D3 (totalmente coberta); fora das duas: uma ENTREGUE-like não
+ * existe aqui, uma pendente (aguarda a SST) e uma de trabalhador INATIVO (suspensa).
+ */
+
+const ROTA = '/api/dashboard/indicadores';
+const NEGADO = { permitido: false };
+
+describe('12I Tasks 04-06 — prévias do Dashboard (PostgreSQL real)', () => {
+  let env;
+  let pool;
+  let d;
+  let f;
+  let app;
+  const u = {};
+  const ids = { aguardando: [], disponiveis: [] }; // em ordem de criação
+
+  const indicadores = async (usuarioId) => {
+    const r = await request(app).get(ROTA).set(CABECALHO, String(usuarioId));
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    return r.body.indicadores;
+  };
+  async function decidida(itens, funcionarioId = d.trabalhador) {
+    const criada = await solicitacaoSvc.criarSolicitacao(pool, {
+      empresaId: d.empresaA, atorId: d.solicitante, funcionarioId, chaveIdempotencia: chaveNova(),
+      itens: itens.map(({ materialId, quantidade }) => ({ materialId, tamanho: '40', quantidade, motivo: 'ADMISSAO' })),
+    });
+    const decisoes = criada.itens.map((item, i) => (itens[i].decisao === 'REPROVADO'
+      ? { itemId: item.id, decisao: 'REPROVADO', justificativa: 'Não previsto (fictício)' }
+      : { itemId: item.id, decisao: 'APROVADO' }));
+    await solicitacaoSvc.decidirSolicitacao(pool, {
+      empresaId: d.empresaA, atorId: d.sst1, solicitacaoId: criada.solicitacao.id, decisoes, hoje: f.HOJE,
+    });
+    return criada.solicitacao.id;
+  }
+  const semEstoque = async (quantidade = 2, itens = []) => decidida([{ materialId: await f.material(), quantidade }, ...itens]);
+
+  before(async () => {
+    env = await montarAmbiente12f();
+    ({ pool, d, f } = env);
+    app = criarAppTeste((a) => {
+      a.use('/api', criarDashboardRoutes({ controller: criarDashboardController({ pool }), exigirSessao: sessaoDeTeste(pool), pool }));
+    });
+    const painel = { dashboard: ['visualizar'], availableItems: ['visualizar'] };
+    u.entrega = await env.usuarioCom(d.empresaA, { recursos: painel, acoes: ['REALIZAR_ENTREGA'] });
+    u.encerra = await env.usuarioCom(d.empresaA, { recursos: painel, acoes: ['ENCERRAR_SOLICITACAO'], sst: true });
+    u.semAcao = await env.usuarioCom(d.empresaA, { recursos: painel });
+    u.entregaB = await env.usuarioCom(d.empresaB, { recursos: painel, acoes: ['REALIZAR_ENTREGA'] });
+    u.rh = await env.usuarioCom(d.empresaA, { recursos: { dashboard: ['visualizar'], employeeHistory: ['visualizar'] } });
+    u.rhB = await env.usuarioCom(d.empresaB, { recursos: { dashboard: ['visualizar'], employeeHistory: ['visualizar'] } });
+
+    ids.aguardando.push(await semEstoque(3)); // A1
+    const m2 = await f.material();
+    await f.estoque(m2, 1);
+    ids.disponiveis.push(await decidida([{ materialId: m2, quantidade: 3 }])); // D1: cobertura parcial
+    ids.aguardando.push(await semEstoque(2, [{ materialId: await f.material(), quantidade: 1, decisao: 'REPROVADO' }])); // A2: item reprovado não conta
+    const m3 = await f.material();
+    await f.estoque(m3, 1);
+    ids.disponiveis.push(await decidida([{ materialId: m3, quantidade: 1 }, { materialId: await f.material(), quantidade: 4 }])); // D2: um item coberto e outro sem estoque
+    const m4 = await f.material();
+    await f.estoque(m4, 9);
+    ids.disponiveis.push(await decidida([{ materialId: m4, quantidade: 2 }])); // D3: totalmente coberta
+    ids.aguardando.push(await semEstoque(5)); // A3
+    // Fora: PENDENTE (aguarda a SST) e a de trabalhador inativo (suspensa).
+    await solicitacaoSvc.criarSolicitacao(pool, {
+      empresaId: d.empresaA, atorId: d.solicitante, funcionarioId: d.trabalhador, itens: [{ materialId: await f.material(), tamanho: '40', quantidade: 1, motivo: 'ADMISSAO' }], chaveIdempotencia: chaveNova(),
+    });
+    const inativo = await d.novoTrabalhador(d.empresaA, { gheId: d.gheA });
+    await decidida([{ materialId: await f.material(), quantidade: 1 }], inativo);
+    await pool.query("UPDATE funcionarios SET situacao = 'INATIVO' WHERE id = $1", [inativo]);
+    // Empresa B: uma aprovada sem estoque (não pode aparecer na A).
+    await vincularMaterialAoGhe(pool, d.empresaB, d.gheB, d.botinaB);
+    await solicitacaoSvc.criarSolicitacao(pool, {
+      empresaId: d.empresaB, atorId: d.usuarioB, funcionarioId: d.trabalhadorB, itens: [{ materialId: d.botinaB, tamanho: '40', quantidade: 1, motivo: 'ADMISSAO' }], chaveIdempotencia: chaveNova(),
+    }).then(async (criada) => solicitacaoSvc.decidirSolicitacao(pool, {
+      empresaId: d.empresaB, atorId: d.sstB, solicitacaoId: criada.solicitacao.id, decisoes: [{ itemId: criada.itens[0].id, decisao: 'APROVADO' }], hoje: f.HOJE,
+    }));
+  });
+  after(async () => { if (env) await env.encerrar(); });
+
+  describe('Task 06 — aguardando estoque', () => {
+    test('valor e prévia saem da mesma população (3), da criação mais recente à mais antiga, com os campos do cartão', async () => {
+      const i = (await indicadores(u.entrega)).solicitacoesAguardandoEstoque;
+      assert.equal(i.valor, 3);
+      assert.equal(i.previa.total, 3);
+      assert.deepEqual(i.previa.itens.map((x) => x.solicitacaoId), [...ids.aguardando].reverse());
+      for (const x of i.previa.itens) {
+        assert.deepEqual(Object.keys(x).sort(), ['itensCobertos', 'itensPendentes', 'numero', 'quantidadeCoberta', 'quantidadePendente', 'solicitacaoId', 'trabalhadorMatricula', 'trabalhadorNome']);
+        assert.equal(x.itensCobertos, 0);
+        assert.equal(x.quantidadeCoberta, 0);
+      }
+      const a2 = i.previa.itens.find((x) => x.solicitacaoId === ids.aguardando[1]);
+      const { rows: [aprovado] } = await pool.query("SELECT count(*)::int AS itens, sum(quantidade_aprovada)::int AS quantidade FROM solicitacoes_epi_itens WHERE solicitacao_id = $1 AND decisao = 'APROVADO'", [ids.aguardando[1]]);
+      assert.deepEqual([a2.itensPendentes, a2.quantidadePendente], [aprovado.itens, aprovado.quantidade], 'só o item aprovado conta; o reprovado não entra nos pendentes');
+      assert.equal(a2.itensPendentes, 1);
+    });
+
+    test('quem só encerra também vê a prévia de aguardando estoque e não recebe a de disponíveis', async () => {
+      const i = await indicadores(u.encerra);
+      assert.equal(i.solicitacoesAguardandoEstoque.previa.total, 3);
+      assert.deepEqual(i.disponiveisParaEntrega, NEGADO);
+    });
+
+    test('sem as ações: negado, sem previa e sem nenhum dado de pedido no corpo', async () => {
+      const i = await indicadores(u.semAcao);
+      assert.deepEqual([i.solicitacoesAguardandoEstoque, i.disponiveisParaEntrega], [NEGADO, NEGADO]);
+    });
+  });
+
+  describe('Task 05 — disponíveis para entrega', () => {
+    test('valor e prévia saem da mesma população (3: cobertura parcial, pedido misto e totalmente coberto), mais recentes primeiro', async () => {
+      const i = (await indicadores(u.entrega)).disponiveisParaEntrega;
+      assert.equal(i.valor, 3);
+      assert.equal(i.previa.total, 3);
+      assert.deepEqual(i.previa.itens.map((x) => x.solicitacaoId), [...ids.disponiveis].reverse());
+      const por = Object.fromEntries(i.previa.itens.map((x) => [x.solicitacaoId, x]));
+      assert.deepEqual([por[ids.disponiveis[0]].itensPendentes, por[ids.disponiveis[0]].itensCobertos, por[ids.disponiveis[0]].quantidadePendente, por[ids.disponiveis[0]].quantidadeCoberta], [1, 1, 3, 1], 'D1: cobertura parcial 1 de 3');
+      assert.deepEqual([por[ids.disponiveis[1]].itensPendentes, por[ids.disponiveis[1]].itensCobertos, por[ids.disponiveis[1]].quantidadePendente, por[ids.disponiveis[1]].quantidadeCoberta], [2, 1, 5, 1], 'D2: um item coberto e outro sem estoque');
+      assert.deepEqual([por[ids.disponiveis[2]].itensPendentes, por[ids.disponiveis[2]].itensCobertos, por[ids.disponiveis[2]].quantidadeCoberta], [1, 1, 2], 'D3: totalmente coberto');
+    });
+
+    test('as duas populações são disjuntas e a suspensa (trabalhador inativo) e a PENDENTE não estão em nenhuma', async () => {
+      const i = await indicadores(u.entrega);
+      const a = new Set(i.solicitacoesAguardandoEstoque.previa.itens.map((x) => x.solicitacaoId));
+      const b = new Set(i.disponiveisParaEntrega.previa.itens.map((x) => x.solicitacaoId));
+      assert.equal([...a].some((x) => b.has(x)), false);
+      assert.equal(a.size + b.size, 6);
+    });
+
+    test('a lista de destino (filtro cobertura) é a MESMA população do indicador, na ordem da fila, e o total bate', async () => {
+      const dash = await indicadores(u.entrega);
+      for (const [cobertura, chave] of [['COM_COBERTURA', 'disponiveisParaEntrega'], ['SEM_COBERTURA', 'solicitacoesAguardandoEstoque']]) {
+        const r = await env.como(u.entrega).get(`/api/solicitacoes-epi/entregaveis?cobertura=${cobertura}&limite=100`);
+        assert.equal(r.status, 200, JSON.stringify(r.body));
+        assert.equal(r.body.total, dash[chave].valor, cobertura);
+        assert.deepEqual(r.body.solicitacoes.map((s) => s.id).sort((x, y) => x - y), dash[chave].previa.itens.map((x) => x.solicitacaoId).sort((x, y) => x - y), cobertura);
+      }
+      const todas = await env.como(u.entrega).get('/api/solicitacoes-epi/entregaveis?limite=100');
+      assert.ok(todas.body.total > 6, 'sem filtro a lista continua completa (inclui a suspensa)');
+    });
+
+    test('quem só encerra filtra as encerráveis só por SEM_COBERTURA (COM_COBERTURA é 400) e o total bate com o cartão', async () => {
+      const ok = await env.como(u.encerra).get('/api/solicitacoes-epi/encerraveis?cobertura=SEM_COBERTURA&limite=100');
+      assert.equal(ok.status, 200, JSON.stringify(ok.body));
+      assert.equal(ok.body.total, 3);
+      assert.equal((await env.como(u.encerra).get('/api/solicitacoes-epi/encerraveis?cobertura=COM_COBERTURA')).status, 400);
+      assert.equal((await env.como(u.encerra).get('/api/solicitacoes-epi/entregaveis?cobertura=COM_COBERTURA')).status, 403, 'sem REALIZAR_ENTREGA não abre a lista de entregáveis');
+    });
+
+    test('isolamento: a empresa B vê só o que é dela e o filtro nunca cruza empresas', async () => {
+      const b = await indicadores(u.entregaB);
+      assert.equal(b.solicitacoesAguardandoEstoque.valor, 1);
+      assert.equal(b.solicitacoesAguardandoEstoque.previa.itens[0].trabalhadorNome !== undefined, true);
+      assert.deepEqual(b.disponiveisParaEntrega.previa, { total: 0, itens: [] });
+      const lista = await env.como(u.entregaB).get('/api/solicitacoes-epi/entregaveis?cobertura=SEM_COBERTURA&limite=100');
+      assert.equal(lista.body.total, 1);
+      assert.equal(lista.body.solicitacoes.every((s) => !ids.aguardando.includes(s.id)), true);
+    });
+  });
+
+  describe('mais de cinco: a prévia traz cinco e o total completo', () => {
+    test('com oito aguardando estoque: valor 8, total 8, cinco itens, os mais recentes; a lista completa traz os oito', async () => {
+      const novas = [];
+      for (let n = 0; n < 5; n += 1) novas.push(await semEstoque(1));
+      const i = (await indicadores(u.entrega)).solicitacoesAguardandoEstoque;
+      assert.equal(i.valor, 8);
+      assert.equal(i.previa.total, 8);
+      assert.deepEqual(i.previa.itens.map((x) => x.solicitacaoId), [...novas].reverse());
+      const lista = await env.como(u.entrega).get('/api/solicitacoes-epi/entregaveis?cobertura=SEM_COBERTURA&limite=100');
+      assert.equal(lista.body.total, 8);
+    });
+  });
+
+  describe('Task 04 — funcionários ativos', () => {
+    const criar = async (empresaId, nome, { criadoEm, admissao, situacao = 'ATIVO', setor = 'Setor X' }) => {
+      const id = await d.novoTrabalhador(empresaId, { gheId: empresaId === d.empresaA ? d.gheA : d.gheB });
+      await pool.query('UPDATE funcionarios SET nome = $2, setor = $3, criado_em = $4, data_admissao = $5 WHERE id = $1', [id, nome, setor, criadoEm, admissao]);
+      if (situacao !== 'ATIVO') await pool.query('UPDATE funcionarios SET situacao = $2 WHERE id = $1', [id, situacao]);
+      return id;
+    };
+    before(async () => {
+      // O cadastro mais recente tem a admissão mais ANTIGA: a ordem é a do cadastro, nunca a da admissão.
+      await criar(d.empresaA, 'Zé Antigo Cadastrado', { criadoEm: '2031-01-01T10:00:00Z', admissao: '2020-01-01' });
+      await criar(d.empresaA, 'Bia Média', { criadoEm: '2031-01-02T10:00:00Z', admissao: '2029-01-01' });
+      await criar(d.empresaA, 'Caio Recente', { criadoEm: '2031-01-03T10:00:00Z', admissao: '2019-01-01' });
+      await criar(d.empresaA, 'Dani Inativa', { criadoEm: '2031-01-09T10:00:00Z', admissao: '2030-01-01', situacao: 'INATIVO' });
+      await criar(d.empresaA, 'Edu Afastado', { criadoEm: '2031-01-08T10:00:00Z', admissao: '2030-01-01', situacao: 'AFASTADO' });
+      await criar(d.empresaA, 'Fabi Mesmo Instante A', { criadoEm: '2031-01-04T10:00:00Z', admissao: '2018-01-01' });
+      await criar(d.empresaA, 'Gabi Mesmo Instante B', { criadoEm: '2031-01-04T10:00:00Z', admissao: '2018-01-01' });
+      await criar(d.empresaB, 'Hugo da Empresa B', { criadoEm: '2031-02-01T10:00:00Z', admissao: '2018-01-01' });
+    });
+
+    test('o valor é a contagem de ativos da empresa e a prévia traz os cinco CADASTRADOS mais recentemente (ativos), com desempate por id, sem inativo, afastado nem outra empresa', async () => {
+      const i = (await indicadores(u.rh)).funcionariosAtivos;
+      const { rows: [{ n }] } = await pool.query('SELECT count(*)::int AS n FROM funcionarios WHERE empresa_id = $1 AND ativo', [d.empresaA]);
+      assert.equal(i.valor, n);
+      assert.equal(i.previa.total, n);
+      assert.deepEqual(i.previa.itens.map((x) => x.nome), ['Gabi Mesmo Instante B', 'Fabi Mesmo Instante A', 'Caio Recente', 'Bia Média', 'Zé Antigo Cadastrado']);
+      for (const x of i.previa.itens) {
+        assert.deepEqual(Object.keys(x).sort(), ['id', 'matricula', 'nome', 'setor']);
+        assert.equal(x.setor, 'Setor X');
+        assert.match(x.matricula, /^T-\d+$/);
+      }
+      assert.equal(JSON.stringify(i).includes('Hugo'), false);
+      assert.equal(JSON.stringify(i).includes('Dani Inativa'), false);
+      assert.equal(JSON.stringify(i).includes('Edu Afastado'), false);
+    });
+
+    test('nenhum CPF ou dado pessoal sai no corpo do Dashboard', async () => {
+      const r = await request(app).get(ROTA).set(CABECALHO, String(u.rh));
+      assert.equal(/cpf|telefone|nascimento/i.test(JSON.stringify(r.body)), false);
+    });
+
+    test('empresa B vê só os seus; quem não tem employeeHistory recebe negado', async () => {
+      const b = (await indicadores(u.rhB)).funcionariosAtivos;
+      assert.equal(b.previa.itens.some((x) => x.nome === 'Hugo da Empresa B'), true);
+      assert.equal(b.previa.itens.some((x) => x.nome.includes('Instante')), false);
+      assert.deepEqual((await indicadores(u.semAcao)).funcionariosAtivos, NEGADO);
+    });
+  });
+});

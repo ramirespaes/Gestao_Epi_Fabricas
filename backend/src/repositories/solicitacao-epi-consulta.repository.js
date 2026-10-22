@@ -25,7 +25,8 @@ const ORIGEM = `FROM solicitacoes_epi s
 const FILTRO_MINHAS = `s.empresa_id = $1 AND s.solicitante_usuario_id = $2 AND ($3::text IS NULL OR s.status = $3::text)`;
 const FILTRO_FILA = `s.empresa_id = $1 AND s.status = 'PENDENTE'`;
 const FILTRO_ENTREGAVEIS = `s.empresa_id = $1 AND s.status IN ('APROVADA', 'APROVADA_PARCIAL')
-        AND ($2::int IS NULL OR s.funcionario_id = $2::int)`;
+        AND ($2::int IS NULL OR s.funcionario_id = $2::int)
+        AND ($3::int[] IS NULL OR s.id = ANY($3::int[]))`;
 
 function exigirId(valor, nome) {
   if (!Number.isInteger(valor) || valor <= 0) {
@@ -109,26 +110,38 @@ async function contarFila(executor, empresaId) {
   return contar(executor, FILTRO_FILA, [empresaId]);
 }
 
-/** Solicitações APROVADA e APROVADA_PARCIAL, na ordem da fila de cobertura (aprovação mais antiga primeiro); trabalhador opcional. */
-async function listarEntregaveis(executor, empresaId, { funcionarioId = null, pagina, limite }) {
+function exigirIdsOpcionais(ids) {
+  if (ids === null) return;
+  if (!Array.isArray(ids)) throw new TypeError('lista de solicitações inválida');
+  for (const id of ids) exigirId(id, 'identificador de solicitação');
+}
+
+/**
+ * Solicitações APROVADA e APROVADA_PARCIAL, na ordem da fila de cobertura (aprovação mais antiga primeiro); trabalhador opcional.
+ * `solicitacaoIds` (12I) restringe a um conjunto decidido pelo serviço (o filtro por cobertura); lista vazia não deixa passar nada, e
+ * `null` é "sem filtro". A ordem não muda.
+ */
+async function listarEntregaveis(executor, empresaId, { funcionarioId = null, solicitacaoIds = null, pagina, limite }) {
   exigirId(empresaId, 'identificador de empresa');
   if (funcionarioId !== null) exigirId(funcionarioId, 'identificador de funcionário');
+  exigirIdsOpcionais(solicitacaoIds);
   exigirPagina(pagina, limite);
   const { rows } = await executor.query(
     `SELECT ${COLUNAS}
        ${ORIGEM}
       WHERE ${FILTRO_ENTREGAVEIS}
       ORDER BY s.decidida_em, s.id
-      LIMIT $3 OFFSET $4`,
-    [empresaId, funcionarioId, limite, (pagina - 1) * limite],
+      LIMIT $4 OFFSET $5`,
+    [empresaId, funcionarioId, solicitacaoIds, limite, (pagina - 1) * limite],
   );
   return rows.map(mapear);
 }
 
-async function contarEntregaveis(executor, empresaId, { funcionarioId = null } = {}) {
+async function contarEntregaveis(executor, empresaId, { funcionarioId = null, solicitacaoIds = null } = {}) {
   exigirId(empresaId, 'identificador de empresa');
   if (funcionarioId !== null) exigirId(funcionarioId, 'identificador de funcionário');
-  return contar(executor, FILTRO_ENTREGAVEIS, [empresaId, funcionarioId]);
+  exigirIdsOpcionais(solicitacaoIds);
+  return contar(executor, FILTRO_ENTREGAVEIS, [empresaId, funcionarioId, solicitacaoIds]);
 }
 
 // As encerráveis (12G-0) são as mesmas APROVADA e APROVADA_PARCIAL dos entregáveis: mesmo filtro, mesma ordem, mesmo

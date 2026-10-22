@@ -70,4 +70,13 @@ const vencidos = (pool, { empresaId, ...f }) => listarEntregas(pool, empresaId, 
 const entregues = (pool, { empresaId, ...f }) => listarEntregas(pool, empresaId, f, { min: null, max: null },
   { ordem: 'dataEntrega', direcao: 'desc' }, (i) => i);
 
-module.exports = { estoque, proximoVencimento, vencidos, entregues, statusProximo };
+// Contagens do Dashboard (12I): pelos MESMOS repositório e filtros dos relatórios, sem regra paralela.
+/** Soma das unidades entregues no período (data operacional de São Paulo): a aba "EPIs entregues". */
+const unidadesEntregues = (pool, { empresaId, de, ate }) => entregasRepo.somarQuantidade(pool, empresaId, filtrosDeEntregas({ de, ate }, { min: null, max: null }));
+
+/** Total da aba "Prazo de uso — próximo do vencimento" na janela padrão (0 a DIAS_PROXIMO_VENCIMENTO dias), sem filtro de texto. */
+const contarProximoVencimento = (pool, { empresaId }) => entregasRepo.contar(pool, empresaId, filtrosDeEntregas({}, { min: 0, max: consulta.DIAS_PROXIMO_VENCIMENTO }));
+
+module.exports = {
+  estoque, proximoVencimento, vencidos, entregues, statusProximo, unidadesEntregues, contarProximoVencimento, filtrosDeEntregas,
+};

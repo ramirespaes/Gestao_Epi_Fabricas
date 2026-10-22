@@ -154,11 +154,27 @@ async function listarCoberturaDasSolicitacoes(executor, empresaId, { hoje, solic
   return rows.map(mapearCobertura);
 }
 
+// Por solicitação da fila, medidas na MESMA cobertura FIFO (SQL_COBERTURA_DE_UMA): a maior cobertura de um item, se TODOS os itens da fila estão
+// cobertos (coberta = pendente) e quantos itens ela tem na fila. O LATERAL conta os itens ainda pendentes da solicitação SEM o filtro de
+// trabalhador e material ativos: um item pendente fora da fila é um item suspenso (trabalhador ou EPI inativo), que não pode ser entregue agora.
+const ITEM_PENDENTE = { item: 'ip', solicitacao: 'sp', funcionario: 'fp', material: 'mp', entregue: 'ep' };
+const POR_SOLICITACAO = `(SELECT c.solicitacao_id, max(c.coberta) AS maior_coberta, bool_and(c.coberta = c.pendente) AS todos_cobertos, count(*)::int AS itens_na_fila
+          FROM (${SQL_COBERTURA_DE_UMA}) c GROUP BY c.solicitacao_id) t
+       JOIN LATERAL (
+         SELECT count(*)::int AS n
+           FROM solicitacoes_epi_itens ip
+           JOIN solicitacoes_epi sp ON sp.empresa_id = ip.empresa_id AND sp.id = ip.solicitacao_id
+           ${sqlPosicao.entregueDoItem(ITEM_PENDENTE)}
+          WHERE ip.empresa_id = $1 AND ip.solicitacao_id = t.solicitacao_id AND ip.decisao = 'APROVADO'
+            AND ${sqlPosicao.statusAtendiveis(ITEM_PENDENTE)} AND ${sqlPosicao.itemComPendente(ITEM_PENDENTE)}
+       ) p ON true`;
+const COMPLETA = 't.todos_cobertos AND t.itens_na_fila = p.n';
+
 /**
- * As solicitações da fila (aprovadas, com pendente, de trabalhador e material
- * ativos), em duas populações exclusivas medidas agora (Dashboard da 12G-6):
- * com algum item coberto e sem nenhum item coberto. A solicitação toda
- * suspensa não está na fila e não entra em nenhuma das duas.
+ * As solicitações da fila (aprovadas, com pendente, de trabalhador e material ativos), em três populações medidas agora (Dashboard):
+ * com algum item coberto (parcial inclusive), sem nenhum item coberto e com cobertura COMPLETA (12I: todos os itens ainda pendentes cobertos
+ * e nenhum item pendente suspenso). As duas primeiras são exclusivas; a completa é um subconjunto da primeira. A solicitação toda suspensa
+ * não está na fila e não entra em nenhuma.
  */
 async function contarSolicitacoesPorCobertura(executor, empresaId, { hoje } = {}) {
   exigirId(empresaId, 'identificador de empresa');
@@ -166,11 +182,45 @@ async function contarSolicitacoesPorCobertura(executor, empresaId, { hoje } = {}
 
   const { rows } = await executor.query(
     `SELECT count(*) FILTER (WHERE t.maior_coberta > 0)::int AS com_cobertura,
-            count(*) FILTER (WHERE t.maior_coberta = 0)::int AS sem_cobertura
-       FROM (SELECT c.solicitacao_id, max(c.coberta) AS maior_coberta FROM (${SQL_COBERTURA_DE_UMA}) c GROUP BY c.solicitacao_id) t`,
+            count(*) FILTER (WHERE t.maior_coberta = 0)::int AS sem_cobertura,
+            count(*) FILTER (WHERE ${COMPLETA})::int AS cobertura_completa
+       FROM ${POR_SOLICITACAO}`,
     [empresaId, hoje, null],
   );
-  return { comCobertura: rows[0].com_cobertura, semCobertura: rows[0].sem_cobertura };
+  return { comCobertura: rows[0].com_cobertura, semCobertura: rows[0].sem_cobertura, coberturaCompleta: rows[0].cobertura_completa };
+}
+
+function exigirComCobertura(valor) {
+  if (typeof valor !== 'boolean') throw new TypeError('comCobertura inválido');
+}
+
+// Os ids das solicitações da fila com algum item coberto agora (`comCobertura: true`) ou sem nenhum item coberto (`false`): as MESMAS
+// populações de `contarSolicitacoesPorCobertura`, na mesma cobertura FIFO. Filtro das listas de entregáveis e encerráveis (12I): o total da
+// lista de destino é o do cartão do Dashboard. Sem ordem de exibição própria.
+async function idsDeSolicitacoesPorCobertura(executor, empresaId, { hoje, comCobertura } = {}) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirDataOperacional(hoje);
+  exigirComCobertura(comCobertura);
+  const { rows } = await executor.query(
+    `SELECT t.solicitacao_id
+       FROM ${POR_SOLICITACAO}
+      WHERE (t.maior_coberta > 0) = $4::boolean`,
+    [empresaId, hoje, null, comCobertura],
+  );
+  return rows.map((l) => l.solicitacao_id);
+}
+
+// Os ids dos pedidos COMPLETAMENTE disponíveis (12I): a mesma população de `coberturaCompleta`. Filtro COBERTURA_COMPLETA da lista de entregáveis.
+async function idsDeSolicitacoesCoberturaCompleta(executor, empresaId, { hoje } = {}) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirDataOperacional(hoje);
+  const { rows } = await executor.query(
+    `SELECT t.solicitacao_id
+       FROM ${POR_SOLICITACAO}
+      WHERE ${COMPLETA}`,
+    [empresaId, hoje, null],
+  );
+  return rows.map((l) => l.solicitacao_id);
 }
 
 /**
@@ -273,5 +323,5 @@ async function lerPosicoes(executor, empresaId, pares, { hoje } = {}) {
 }
 
 module.exports = {
-  listarCobertura, listarCoberturaDasSolicitacoes, listarCoberturaDoPar, contarSolicitacoesPorCobertura, resumirCoberturaPorPar, lerPosicoes,
+  listarCobertura, listarCoberturaDasSolicitacoes, listarCoberturaDoPar, contarSolicitacoesPorCobertura, idsDeSolicitacoesPorCobertura, idsDeSolicitacoesCoberturaCompleta, resumirCoberturaPorPar, lerPosicoes,
 };

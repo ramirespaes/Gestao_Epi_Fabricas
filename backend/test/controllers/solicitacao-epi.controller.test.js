@@ -56,8 +56,8 @@ describe('solicitacao-epi.controller', () => {
     await c.entregaveis(requisicao({ query: { funcionarioId: 42, pagina: 1, limite: 20 } }), respostaFalsa());
     await c.entregaveis(requisicao({ query: { pagina: 1, limite: 20 } }), respostaFalsa());
     assert.deepEqual(chamadas, [
-      { empresaId: 3, funcionarioId: 42, pagina: 1, limite: 20, hoje: '2026-10-03' },
-      { empresaId: 3, funcionarioId: null, pagina: 1, limite: 20, hoje: '2026-10-03' },
+      { empresaId: 3, funcionarioId: 42, cobertura: null, pagina: 1, limite: 20, hoje: '2026-10-03' },
+      { empresaId: 3, funcionarioId: null, cobertura: null, pagina: 1, limite: 20, hoje: '2026-10-03' },
     ]);
   });
 
@@ -232,14 +232,24 @@ describe('solicitacao-epi.controller — contexto da criação e encerráveis (1
     const chamadas = [];
     assert.equal(typeof consulta.listarEncerraveis, 'function', 'função ainda não implementada: listarEncerraveis');
     t.mock.method(consulta, 'listarEncerraveis', async (_pool, dados) => { chamadas.push(dados); return pagina; });
-    const c = controller();
+    const c = controller({ relogio: RELOGIO });
     const res = respostaFalsa();
     await c.encerraveis(requisicao({ query: { funcionarioId: 42, pagina: 2, limite: 10 } }), res);
     await c.encerraveis(requisicao({ query: { pagina: 1, limite: 20 } }), respostaFalsa());
     assert.deepEqual(chamadas, [
-      { empresaId: 3, funcionarioId: 42, pagina: 2, limite: 10 },
-      { empresaId: 3, funcionarioId: null, pagina: 1, limite: 20 },
+      { empresaId: 3, funcionarioId: 42, cobertura: null, pagina: 2, limite: 10, hoje: '2026-10-03' },
+      { empresaId: 3, funcionarioId: null, cobertura: null, pagina: 1, limite: 20, hoje: '2026-10-03' },
     ]);
     assert.deepEqual([res.statusCode, res.corpo], [200, { status: 'ok', ...pagina }]);
+  });
+
+  test('12I: o filtro cobertura validado chega ao serviço nas duas listas (null sem filtro)', async (t) => {
+    const chamadas = [];
+    t.mock.method(consulta, 'listarEntregaveis', async (_p, dados) => { chamadas.push(['e', dados.cobertura]); return pagina; });
+    t.mock.method(consulta, 'listarEncerraveis', async (_p, dados) => { chamadas.push(['n', dados.cobertura]); return pagina; });
+    const c = controller({ relogio: RELOGIO });
+    await c.entregaveis(requisicao({ query: { cobertura: 'COM_COBERTURA', pagina: 1, limite: 20 } }), respostaFalsa());
+    await c.encerraveis(requisicao({ query: { cobertura: 'SEM_COBERTURA', pagina: 1, limite: 20 } }), respostaFalsa());
+    assert.deepEqual(chamadas, [['e', 'COM_COBERTURA'], ['n', 'SEM_COBERTURA']]);
   });
 });

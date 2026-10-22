@@ -557,6 +557,26 @@
 
   var modelo = {
     periodoInvertido: function (de, ate) { return dataPermitida(de) && dataPermitida(ate) && de > ate; },
+    /**
+     * O período que o cartão "EPIs entregues" do Dashboard leva na URL (?de=AAAA-MM-DD&ate=AAAA-MM-DD): só um par de datas de calendário
+     * válidas, uma de cada, em ordem. Qualquer outra coisa (ausente, repetida, inválida, invertida) vira nulo e nunca vai ao servidor.
+     */
+    periodoDaUrl: function (search) {
+      if (typeof search !== 'string') return null;
+      var valores = { de: [], ate: [] };
+      search.replace(/^\?/, '').split('&').forEach(function (parte) {
+        var par = parte.split('=');
+        if (valores[par[0]]) valores[par[0]].push(par.slice(1).join('='));
+      });
+      if (valores.de.length !== 1 || valores.ate.length !== 1) return null;
+      var de = valores.de[0];
+      var ate = valores.ate[0];
+      function existe(v) { return dataPermitida(v) && new Date(v + 'T00:00:00Z').toISOString().slice(0, 10) === v; }
+      try {
+        if (!existe(de) || !existe(ate) || de > ate) return null;
+      } catch (erro) { return null; }
+      return { de: de, ate: ate };
+    },
     /** Filtro como a tela o usa: só valores válidos para cada campo da aba. */
     normalizar: function (id, bruto) {
       var a = aba(id);

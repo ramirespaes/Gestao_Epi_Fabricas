@@ -1,0 +1,168 @@
+'use strict';
+
+const { describe, test } = require('node:test');
+const assert = require('node:assert/strict');
+
+const servico = require('../../src/services/dashboard.service');
+const autorizacao = require('../../src/middleware/autorizacao');
+const loteRepo = require('../../src/repositories/estoque-lote.repository');
+const posicaoRepo = require('../../src/repositories/posicao-estoque.repository');
+const funcionarioRepo = require('../../src/repositories/funcionario.repository');
+
+/**
+ * 12I, Task 01 — prévia do indicador "Estoque abaixo do mínimo" (RED), sem
+ * PostgreSQL real. O indicador ganha o campo `previa` (até cinco combinações
+ * material × tamanho, maior déficit primeiro), tirado da MESMA posição
+ * (`listarPosicoes`, situação ABAIXO_MINIMO, ordenação opt-in DEFICIT_DESC) e
+ * medido no MESMO instantâneo da contagem (uma transação READ ONLY
+ * REPEATABLE READ). O número `valor` continua o de `resumirPosicoes`.
+ */
+
+const CONTEXTO = { empresaId: 42, usuarioId: 7, perfil: 'USUARIO', hoje: '2026-10-02' };
+const RESUMO = {
+  pares: 6, fisicoUtilizavel: 40, demandaPendente: 12, comprometido: 10, saldoLivre: 30, semCobertura: 2, paresAbaixoDoMinimo: 3, deficit: 9, necessidade: 11,
+};
+
+// Item como a posição o devolve (mapearItem): com campos que a prévia NÃO deve repassar.
+const itemDaPosicao = (extra = {}) => ({
+  materialId: 11, material: 'Luva de raspa', codigoInterno: 'EPI-011', categoria: 'EPI', grupo: 'EPI', tipo: 'Luva', tamanho: 'M', unidade: 'par',
+  saldo: 9, bloqueado: 1, fisicoUtilizavel: 8, demandaPendente: 2, comprometido: 2, saldoLivre: 3, semCobertura: 0, estoqueMinimo: 10, minimoOrigem: 'PROPRIO',
+  abaixoDoMinimo: true, deficit: 7, necessidade: 7, caValidade: '2027-01-31', validade: 'ok', ...extra,
+});
+
+const CAMPOS_DA_PREVIA = ['deficit', 'estoqueMinimo', 'material', 'materialId', 'saldoLivre', 'tamanho'];
+
+function clienteFalso() {
+  const cliente = {
+    consultas: [], liberado: 0,
+    query: async (texto) => { cliente.consultas.push(String(texto)); return { rows: [], rowCount: 0 }; },
+    release() { cliente.liberado += 1; },
+  };
+  return cliente;
+}
+
+// A posição só pode ser lida pelo cliente da transação; qualquer outra via falha o teste.
+function poolFalso(cliente) {
+  return {
+    connect: async () => cliente,
+    query: async () => { throw new Error('a posição não pode ser lida fora da transação do instantâneo'); },
+  };
+}
+
+function simular(t, { fontes = {}, resumo = RESUMO, itens = [itemDaPosicao()], total = 3, falhaNaLista = null } = {}) {
+  const permissoes = { availableItems: true, stockValidity: true, employeeHistory: false, ...fontes };
+  const chamadas = { resumir: [], listar: [] };
+  t.mock.method(autorizacao, 'avaliarPermissaoRecurso', async (_p, _ctx, recurso) => ({ visualizar: permissoes[recurso] === true }));
+  t.mock.method(autorizacao, 'avaliarPermissaoAcao', async () => false);
+  t.mock.method(posicaoRepo, 'resumirPosicoes', async (executor, empresaId, ref) => { chamadas.resumir.push({ executor, empresaId, ref }); return resumo; });
+  t.mock.method(posicaoRepo, 'listarPosicoes', async (executor, empresaId, opcoes) => {
+    chamadas.listar.push({ executor, empresaId, opcoes });
+    if (falhaNaLista) throw falhaNaLista;
+    return { itens, total };
+  });
+  t.mock.method(loteRepo, 'resumirIndicadores', async () => ({ caVencido: 4, caAVencer: 5 }));
+  t.mock.method(funcionarioRepo, 'contarPorEmpresa', async () => 17);
+  return chamadas;
+}
+
+describe('dashboard.service — prévia de "Estoque abaixo do mínimo" (12I, Task 01)', () => {
+  test('o número do card não muda e a prévia vem junto, com total igual ao valor', async (t) => {
+    simular(t);
+    const cliente = clienteFalso();
+    const r = await servico.consultar(poolFalso(cliente), CONTEXTO);
+    assert.equal(r.estoqueAbaixoMinimo.permitido, true);
+    assert.equal(r.estoqueAbaixoMinimo.valor, 3, 'valor continua o de resumirPosicoes');
+    assert.ok(r.estoqueAbaixoMinimo.previa, 'o indicador precisa do campo previa');
+    assert.equal(r.estoqueAbaixoMinimo.previa.total, r.estoqueAbaixoMinimo.valor);
+  });
+
+  test('reutiliza listarPosicoes: situação ABAIXO_MINIMO, página 1, limite 5, ordenação opt-in DEFICIT_DESC, empresa e data da sessão', async (t) => {
+    const chamadas = simular(t);
+    await servico.consultar(poolFalso(clienteFalso()), CONTEXTO);
+    const doAbaixoDoMinimo = chamadas.listar.filter((c) => c.opcoes.ordem === 'DEFICIT_DESC');
+    assert.equal(doAbaixoDoMinimo.length, 1, 'uma única consulta de lista para este cartão');
+    const { empresaId, opcoes } = doAbaixoDoMinimo[0];
+    assert.equal(empresaId, 42, 'a empresa vem só da sessão');
+    assert.equal(opcoes.hoje, '2026-10-02');
+    assert.equal(opcoes.diasAlerta, 60);
+    assert.equal(opcoes.pagina, 1);
+    assert.equal(opcoes.limite, 5);
+    assert.equal(opcoes.situacao, 'ABAIXO_MINIMO');
+    assert.equal(opcoes.ordem, 'DEFICIT_DESC');
+  });
+
+  test('cada item da prévia tem exatamente nome, tamanho, saldo livre, mínimo e déficit (mais o id), sem repassar os demais campos da posição', async (t) => {
+    simular(t, { itens: [itemDaPosicao(), itemDaPosicao({ materialId: 12, material: 'Botina', tamanho: null, saldoLivre: 0, estoqueMinimo: 4, deficit: 4 })], total: 2, resumo: { ...RESUMO, paresAbaixoDoMinimo: 2 } });
+    const r = await servico.consultar(poolFalso(clienteFalso()), CONTEXTO);
+    const { itens } = r.estoqueAbaixoMinimo.previa;
+    assert.equal(itens.length, 2);
+    for (const item of itens) assert.deepEqual(Object.keys(item).sort(), CAMPOS_DA_PREVIA);
+    assert.deepEqual(itens[0], { materialId: 11, material: 'Luva de raspa', tamanho: 'M', saldoLivre: 3, estoqueMinimo: 10, deficit: 7 });
+    assert.deepEqual(itens[1], { materialId: 12, material: 'Botina', tamanho: null, saldoLivre: 0, estoqueMinimo: 4, deficit: 4 });
+  });
+
+  test('a ordem recebida da posição é preservada: o serviço não reordena nem recalcula déficit ou mínimo', async (t) => {
+    simular(t, {
+      itens: [
+        itemDaPosicao({ materialId: 1, material: 'Zeta', saldoLivre: 1, estoqueMinimo: 9, deficit: 99 }),
+        itemDaPosicao({ materialId: 2, material: 'Alfa', saldoLivre: 8, estoqueMinimo: 9, deficit: 1 }),
+      ],
+      total: 2,
+      resumo: { ...RESUMO, paresAbaixoDoMinimo: 2 },
+    });
+    const { itens } = (await servico.consultar(poolFalso(clienteFalso()), CONTEXTO)).estoqueAbaixoMinimo.previa;
+    assert.deepEqual(itens.map((i) => [i.material, i.deficit]), [['Zeta', 99], ['Alfa', 1]], 'o déficit é o do servidor, mesmo incoerente com saldo e mínimo');
+  });
+
+  test('mais de cinco no total: a prévia traz no máximo cinco e o total completo, para a tela avisar da listagem completa', async (t) => {
+    const cinco = [1, 2, 3, 4, 5].map((n) => itemDaPosicao({ materialId: n, material: `Item ${n}`, deficit: 10 - n }));
+    simular(t, { itens: cinco, total: 12, resumo: { ...RESUMO, paresAbaixoDoMinimo: 12 } });
+    const r = await servico.consultar(poolFalso(clienteFalso()), CONTEXTO);
+    assert.equal(r.estoqueAbaixoMinimo.valor, 12);
+    assert.equal(r.estoqueAbaixoMinimo.previa.itens.length, 5);
+    assert.equal(r.estoqueAbaixoMinimo.previa.total, 12);
+  });
+
+  test('nenhum item abaixo do mínimo: valor 0 permitido e prévia vazia, não negada', async (t) => {
+    simular(t, { itens: [], total: 0, resumo: { ...RESUMO, paresAbaixoDoMinimo: 0 } });
+    const r = await servico.consultar(poolFalso(clienteFalso()), CONTEXTO);
+    assert.deepEqual(r.estoqueAbaixoMinimo, { permitido: true, valor: 0, previa: { total: 0, itens: [] } });
+  });
+
+  test('sem availableItems: o indicador é só { permitido: false }, sem campo previa, e nem a transação nem a lista são abertas', async (t) => {
+    const chamadas = simular(t, { fontes: { availableItems: false } });
+    const cliente = clienteFalso();
+    const pool = poolFalso(cliente);
+    let conexoes = 0;
+    const conectar = pool.connect;
+    pool.connect = async () => { conexoes += 1; return conectar(); };
+    const r = await servico.consultar(pool, CONTEXTO);
+    assert.deepEqual(r.estoqueAbaixoMinimo, { permitido: false });
+    assert.equal(Object.hasOwn(r.estoqueAbaixoMinimo, 'previa'), false);
+    assert.equal(chamadas.listar.length, 0);
+    assert.equal(chamadas.resumir.length, 0);
+    assert.equal(conexoes, 0);
+    assert.ok(!JSON.stringify(r).includes('Luva de raspa'), 'nenhum dado de estoque vaza');
+  });
+
+  describe('consistência entre a contagem e a prévia (mesmo instantâneo)', () => {
+    test('resumirPosicoes e listarPosicoes leem pelo MESMO cliente, dentro de BEGIN READ ONLY ISOLATION LEVEL REPEATABLE READ ... COMMIT', async (t) => {
+      const chamadas = simular(t);
+      const cliente = clienteFalso();
+      await servico.consultar(poolFalso(cliente), CONTEXTO);
+      assert.equal(chamadas.resumir[0].executor, cliente, 'a contagem lê pelo cliente da transação');
+      assert.equal(chamadas.listar[0].executor, cliente, 'a prévia lê pelo mesmo cliente');
+      assert.match(cliente.consultas[0], /^BEGIN READ ONLY ISOLATION LEVEL REPEATABLE READ$/);
+      assert.equal(cliente.consultas.at(-1), 'COMMIT');
+      assert.equal(cliente.liberado, 1, 'o cliente volta ao pool');
+    });
+
+    test('falha ao listar: ROLLBACK, cliente devolvido e o erro original propagado (nenhum número parcial)', async (t) => {
+      simular(t, { falhaNaLista: new Error('falha simulada da lista') });
+      const cliente = clienteFalso();
+      await assert.rejects(() => servico.consultar(poolFalso(cliente), CONTEXTO), /falha simulada da lista/);
+      assert.equal(cliente.consultas.at(-1), 'ROLLBACK');
+      assert.equal(cliente.liberado, 1);
+    });
+  });
+});

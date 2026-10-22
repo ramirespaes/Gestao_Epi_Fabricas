@@ -38,9 +38,11 @@ function criarSolicitacaoEpiController({ pool: poolInjetado, relogio = () => new
     },
 
     async entregaveis(req, res) {
-      const { funcionarioId, pagina, limite } = req.validado.query;
+      const {
+        funcionarioId, cobertura, pagina, limite,
+      } = req.validado.query;
       const resultado = await consulta.listarEntregaveis(poolInjetado, {
-        empresaId: req.empresa.id, funcionarioId: funcionarioId ?? null, pagina, limite, hoje: hoje(),
+        empresaId: req.empresa.id, funcionarioId: funcionarioId ?? null, cobertura: cobertura ?? null, pagina, limite, hoje: hoje(),
       });
       res.status(200).json({ status: 'ok', ...resultado });
     },
@@ -70,9 +72,11 @@ function criarSolicitacaoEpiController({ pool: poolInjetado, relogio = () => new
     },
 
     async encerraveis(req, res) {
-      const { funcionarioId, pagina, limite } = req.validado.query;
+      const {
+        funcionarioId, cobertura, pagina, limite,
+      } = req.validado.query;
       const resultado = await consulta.listarEncerraveis(poolInjetado, {
-        empresaId: req.empresa.id, funcionarioId: funcionarioId ?? null, pagina, limite,
+        empresaId: req.empresa.id, funcionarioId: funcionarioId ?? null, cobertura: cobertura ?? null, pagina, limite, hoje: hoje(),
       });
       res.status(200).json({ status: 'ok', ...resultado });
     },

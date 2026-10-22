@@ -25,7 +25,7 @@ const modulo = () => require('../js/dashboard'); // eslint-disable-line global-r
 const resposta = (status, corpo) => ({ status, ok: status >= 200 && status < 300, text: async () => (corpo === undefined ? '' : JSON.stringify(corpo)) });
 
 const NOVOS = {
-  aguardandoSst: ['solicitacoesAguardandoSst', 'kpiAguardandoSst', 'Solicitações aguardando SST', 'Pedidos aguardando a decisão da Segurança do Trabalho'],
+  aguardandoSst: ['solicitacoesAguardandoSst', 'kpiAguardandoSst', 'Solicitações aguardando aprovação', 'Pedidos aguardando a decisão da Segurança do Trabalho'],
   aguardandoEstoque: ['solicitacoesAguardandoEstoque', 'kpiAguardandoEstoque', 'Solicitações aguardando estoque', 'Pedidos aprovados sem nenhum item coberto pelo estoque'],
   disponiveisEntrega: ['disponiveisParaEntrega', 'kpiDisponiveisEntrega', 'Disponíveis para entrega', 'Pedidos com algum item já coberto pelo estoque'],
 };
@@ -41,7 +41,7 @@ describe('render dos três indicadores das solicitações', () => {
     const c = modulo().render.cards(INDICADORES);
     assert.deepEqual(c.aguardandoSst, { valor: '3', meta: NOVOS.aguardandoSst[3] });
     assert.deepEqual(c.aguardandoEstoque, { valor: '1.250', meta: NOVOS.aguardandoEstoque[3] });
-    assert.equal('aguardandoEntrega' in c, false, 'o cartão antigo não existe mais');
+    // 12I: "aguardando entrega" voltou como a população da listagem de Entregas por solicitação (testado em dashboard-cartoes-clicaveis.test.js).
     assert.deepEqual(c.disponiveisEntrega, { valor: '0', meta: NOVOS.disponiveisEntrega[3] });
     assert.deepEqual(c.semCobertura, { valor: '9', meta: 'Aprovado sem estoque para cobrir' }, 'Pendências sem estoque continua igual');
   });
@@ -64,13 +64,15 @@ describe('render dos três indicadores das solicitações', () => {
 describe('pages/dashboard.html', () => {
   const html = ler('pages/dashboard.html');
 
-  test('três cartões novos com título, valor e explicação próprios; nascem "—"; sem link nem atalho novo', () => {
-    for (const [, id, titulo, meta] of Object.values(NOVOS)) {
-      const cartao = html.match(new RegExp(`<article class="kpi-card[^"]*">\\s*<div class="kpi-head">\\s*<div class="kpi-title">${titulo}</div>[\\s\\S]*?</article>`));
+  // 12I: os três cartões das solicitações são links do cartão inteiro para a tela correspondente (o comportamento está em
+  // dashboard-cartoes-clicaveis.test.js); aqui só título, número inicial e explicação, que não mudam.
+  test('três cartões com título, valor e explicação próprios; nascem "—"; cada um envolvido pelo link do cartão inteiro', () => {
+    for (const [, [, id, titulo, meta]] of Object.entries(NOVOS).map((e) => [e[0], e[1]])) {
+      const cartao = html.match(new RegExp(`<article class="kpi-card[^"]*"[^>]*>\\s*<a id="link[A-Za-z]+" class="kpi-link kpi-link-total">\\s*<div class="kpi-head">\\s*<div class="kpi-title">${titulo}</div>[\\s\\S]*?</article>`));
       assert.ok(cartao, titulo);
       assert.match(cartao[0], new RegExp(`<div class="kpi-value" id="${id}Valor">—</div>`));
       assert.match(cartao[0], new RegExp(`<div class="kpi-meta" id="${id}Meta">${meta}</div>`));
-      assert.equal(/<a\b|href=|onclick/.test(cartao[0]), false, `${titulo}: sem atalho novo`);
+      assert.equal(/\shref=|onclick/.test(cartao[0]), false, `${titulo}: o href só vem do script`);
     }
   });
 

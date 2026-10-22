@@ -1,6 +1,7 @@
 'use strict';
 
 const dashboardService = require('../services/dashboard.service');
+const graficosService = require('../services/dashboard-graficos.service');
 const { dataOperacional } = require('../utils/data-operacional');
 const { pool } = require('../config/database');
 
@@ -17,6 +18,19 @@ function criarDashboardController({ pool: poolInjetado, relogio = () => new Date
         empresaId: req.empresa.id, usuarioId: req.usuario.id, perfil: req.usuario.perfil, hoje: dataOperacional(relogio()),
       });
       res.status(200).json({ status: 'ok', indicadores });
+    },
+    // 12I — gráficos: o período vem da consulta validada; o serviço decide cada gráfico pela permissão da fonte.
+    async graficoSetores(req, res) {
+      const grafico = await graficosService.setores(poolInjetado, {
+        empresaId: req.empresa.id, usuarioId: req.usuario.id, perfil: req.usuario.perfil, hoje: dataOperacional(relogio()), periodo: req.validado.query.periodo,
+      });
+      res.status(200).json({ status: 'ok', grafico });
+    },
+    async graficoEpisEntregues(req, res) {
+      const grafico = await graficosService.episEntregues(poolInjetado, {
+        empresaId: req.empresa.id, usuarioId: req.usuario.id, perfil: req.usuario.perfil, hoje: dataOperacional(relogio()), periodo: req.validado.query.periodo,
+      });
+      res.status(200).json({ status: 'ok', grafico });
     },
   };
 }

@@ -55,6 +55,34 @@
   function texto(v) { return v === null || v === undefined ? '' : String(v); }
   function situacaoValida(v) { return SITUACOES.some(function (s) { return s[0] !== '' && s[0] === v; }); }
 
+  /** Situação vinda da URL (?situacao=...), como no atalho do Dashboard: só um valor da lista; qualquer outra coisa é "sem filtro" (''). */
+  function filtroDaUrl(busca) {
+    if (typeof busca !== 'string') return '';
+    var valor;
+    try {
+      valor = new URLSearchParams(busca).get('situacao');
+    } catch (e) {
+      return '';
+    }
+    return situacaoValida(valor) ? valor : '';
+  }
+
+  /**
+   * Os filtros que os atalhos do Dashboard levam na URL: `situacao` (só valor conhecido) e `somenteComNecessidade` (só o valor exato
+   * "true"). Qualquer outra coisa é "sem filtro".
+   */
+  function filtrosDaUrl(busca) {
+    var vazio = { situacao: '', somenteComNecessidade: false };
+    if (typeof busca !== 'string') return vazio;
+    var necessidade;
+    try {
+      necessidade = new URLSearchParams(busca).get('somenteComNecessidade');
+    } catch (e) {
+      return vazio;
+    }
+    return { situacao: filtroDaUrl(busca), somenteComNecessidade: necessidade === 'true' };
+  }
+
   // ─── Ações ─────────────────────────────────────────────────────────
   function montarQuery(filtro) {
     var f = filtro || {};
@@ -245,7 +273,9 @@
     },
   };
 
-  global.EpiItensDisponiveis = { acoes: acoes, render: render, mensagens: mensagens, csv: csv, LIMITE_PAGINA: LIMITE_PAGINA, SITUACOES: SITUACOES };
+  global.EpiItensDisponiveis = {
+    acoes: acoes, render: render, mensagens: mensagens, csv: csv, LIMITE_PAGINA: LIMITE_PAGINA, SITUACOES: SITUACOES, filtroDaUrl: filtroDaUrl, filtrosDaUrl: filtrosDaUrl,
+  };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = global.EpiItensDisponiveis;
 })(typeof window !== 'undefined' ? window : globalThis);

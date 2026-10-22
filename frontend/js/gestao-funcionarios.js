@@ -399,6 +399,19 @@
   }
 
   // ─── Tela ──────────────────────────────────────────────────────────
+  // 12I (cartão "Funcionários ativos" do Dashboard): a listagem pode abrir já filtrada por situação. Só as três situações do cadastro valem;
+  // ausente, repetida ou desconhecida vira "Todos". O filtro continua local, sobre o mesmo conjunto real.
+  function situacaoDaUrl(search) {
+    if (typeof search !== 'string') return null;
+    var partes = search.replace(/^\?/, '').split('&');
+    var valores = [];
+    for (var i = 0; i < partes.length; i += 1) {
+      var par = partes[i].split('=');
+      if (par[0] === 'situacao') valores.push(par.slice(1).join('='));
+    }
+    return valores.length === 1 && ROTULOS_SITUACAO[valores[0]] ? valores[0] : null;
+  }
+
   function criarTela(opcoes) {
     var o = opcoes || {};
     var doc = o.documento || global.document;
@@ -782,6 +795,7 @@
     return {
       iniciar: async function () {
         ligar();
+        if (ROTULOS_SITUACAO[o.situacao] && $('fSituacaoFiltro')) $('fSituacaoFiltro').value = o.situacao;
         var olhoCpf = $('btnCpfOlho');
         if (!cap.editar && olhoCpf && olhoCpf.remove) olhoCpf.remove();
         var novo = $('btnNovo');
@@ -797,6 +811,7 @@
 
   global.EpiGestaoFuncionarios = {
     acoes: acoes, modelo: modelo, visao: visao, formulario: formulario, erros: erros, capacidades: capacidades, criarTela: criarTela,
+    situacaoDaUrl: situacaoDaUrl,
     TEXTOS: TEXTOS, ACOES_SITUACAO: ACOES_SITUACAO, ROTULOS_SITUACAO: ROTULOS_SITUACAO,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = global.EpiGestaoFuncionarios;

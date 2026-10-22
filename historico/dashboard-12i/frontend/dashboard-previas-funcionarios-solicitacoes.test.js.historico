@@ -1,0 +1,175 @@
+'use strict';
+
+const { describe, test } = require('node:test');
+const assert = require('node:assert/strict');
+
+const modulo = () => require('../js/dashboard'); // eslint-disable-line global-require
+
+/**
+ * 12I, Tasks 04, 05 e 06 — o conteúdo das prévias de "Funcionários ativos", "Disponíveis para entrega" e "Solicitações aguardando estoque"
+ * (RED), só o módulo (sem DOM). O comportamento comum de ampliação está em dashboard-cartoes-ampliaveis.test.js. Os números e a ordem são
+ * os do servidor; nada é recalculado, ordenado ou inferido aqui (a situação "em parte" só lê as duas quantidades que o servidor mediu).
+ */
+
+const func = (n, extra = {}) => ({ id: n, nome: `Funcionário ${n}`, matricula: `M-${n}`, setor: 'Fundição', ...extra });
+const sol = (n, extra = {}) => ({
+  solicitacaoId: n, numero: 100 + n, trabalhadorNome: `Trabalhador ${n}`, trabalhadorMatricula: `T-${n}`, itensPendentes: 3, itensCobertos: 2, quantidadePendente: 9, quantidadeCoberta: 5, ...extra,
+});
+const ind = (itens, total = itens.length, valor = total) => ({ permitido: true, valor, previa: { total, itens } });
+
+describe('Task 04 — prévia dos funcionários ativos', () => {
+  test('cada item mostra nome, matrícula e setor como vieram, na ordem recebida; até cinco; mais de cinco avisa da listagem completa', () => {
+    const D = modulo();
+    assert.equal(typeof D.render.previaFuncionarios, 'function', 'render.previaFuncionarios ainda não existe');
+    const p = D.render.previaFuncionarios(ind([1, 2, 3, 4, 5, 6, 7].map((n) => func(n)), 40));
+    assert.equal(p.itens.length, 5);
+    assert.deepEqual(p.itens.map((i) => i.nome), ['Funcionário 1', 'Funcionário 2', 'Funcionário 3', 'Funcionário 4', 'Funcionário 5']);
+    assert.equal(p.itens[0].matricula, 'M-1');
+    assert.equal(p.itens[0].setor, 'Fundição');
+    assert.equal(p.haMais, true);
+    assert.equal(p.total, '40');
+    assert.equal(p.avisoMais, 'Há outros funcionários ativos na listagem completa.');
+  });
+
+  test('matrícula ou setor ausentes (null) têm texto próprio, sem inventar valor', () => {
+    const D = modulo();
+    const p = D.render.previaFuncionarios(ind([func(1, { matricula: null, setor: null })]));
+    assert.equal(p.itens[0].matricula, 'Sem matrícula');
+    assert.equal(p.itens[0].setor, 'Setor não informado');
+  });
+
+  test('sem permissão, ausente ou malformado: nenhuma prévia', () => {
+    const f = modulo().render.previaFuncionarios;
+    for (const ruim of [{ permitido: false }, undefined, null, { permitido: true, valor: 1 }, { permitido: true, valor: 1, previa: 'x' },
+      { permitido: true, valor: 1, previa: { total: 1, itens: [{ ...func(1), nome: 5 }] } }, { permitido: true, valor: 1, previa: { total: 1, itens: [{ ...func(1), matricula: 7 }] } },
+      { permitido: true, valor: 1, previa: { total: 1, itens: [{ ...func(1), setor: {} }] } }, { permitido: true, valor: 1, previa: { total: -1, itens: [] } }, { permitido: true, valor: 1, previa: { total: 1, itens: [{ ...func(1), nome: '' }] } }]) {
+      assert.equal(f(ruim), null, JSON.stringify(ruim));
+    }
+  });
+
+  test('o HTML é uma lista escapada, uma linha por funcionário, sem CPF; vazio e aviso têm texto próprio', () => {
+    const D = modulo();
+    const html = D.render.htmlPreviaFuncionarios;
+    assert.equal(typeof html, 'function', 'render.htmlPreviaFuncionarios ainda não existe');
+    const out = html(D.render.previaFuncionarios(ind([func(1), func(2)])));
+    assert.match(out, /<ul class="kpi-previa-lista">/);
+    assert.equal((out.match(/<li\b/g) || []).length, 2);
+    assert.match(out, /Matrícula M-1/);
+    assert.match(out, /Fundição/);
+    assert.equal(/cpf/i.test(out), false);
+    const xss = html(D.render.previaFuncionarios(ind([func(1, { nome: '<img src=x onerror=1>', setor: '<b>x</b>' })])));
+    assert.equal(xss.includes('<img'), false);
+    assert.equal(xss.includes('<b>'), false);
+    assert.match(html(D.render.previaFuncionarios(ind([], 0))), /Nenhum funcionário ativo cadastrado\./);
+    assert.match(html(D.render.previaFuncionarios(ind([func(1)], 9))), /Há outros funcionários ativos na listagem completa\./);
+    assert.equal(html(D.render.previaFuncionarios({ permitido: false })), '');
+  });
+
+  test('o destino é a listagem de funcionários já filtrada por ativos; sem permissão, nenhum', () => {
+    const d = modulo().destinos.funcionarios;
+    assert.equal(typeof d, 'function');
+    assert.equal(d({ permitido: true, valor: 0 }), 'funcionarios.html?situacao=ATIVO');
+    for (const sem of [{ permitido: false }, undefined, null, {}, { permitido: true, valor: -1 }]) assert.equal(d(sem), null);
+  });
+
+  test('o número do cartão continua como estava', () => {
+    assert.equal(modulo().render.cards({ funcionariosAtivos: ind([func(1)], 17) }).funcionarios.valor, '17');
+  });
+});
+
+const GRUPOS = [
+  {
+    nome: 'Task 05 — disponíveis para entrega', previa: 'previaDisponiveisEntrega', html: 'htmlPreviaDisponiveisEntrega', destinoFn: 'disponiveisEntrega', destino: 'stock-requests.html?cobertura=COM_COBERTURA',
+    vazio: 'Nenhuma solicitação disponível para entrega.', mais: 'Há outras solicitações disponíveis para entrega na listagem completa.', chave: 'disponiveisParaEntrega', cartao: 'disponiveisEntrega',
+  },
+  {
+    nome: 'Task 06 — solicitações aguardando estoque', previa: 'previaAguardandoEstoque', html: 'htmlPreviaAguardandoEstoque', destinoFn: 'aguardandoEstoque', destino: 'stock-requests.html?cobertura=SEM_COBERTURA',
+    vazio: 'Nenhuma solicitação aguardando estoque.', mais: 'Há outras solicitações aguardando estoque na listagem completa.', chave: 'solicitacoesAguardandoEstoque', cartao: 'aguardandoEstoque',
+  },
+];
+
+for (const g of GRUPOS) {
+  describe(`${g.nome}: prévia das solicitações`, () => {
+    test('cada item identifica o pedido, o trabalhador (nome e matrícula) e as quantidades do servidor, na ordem recebida; até cinco', () => {
+      const D = modulo();
+      assert.equal(typeof D.render[g.previa], 'function', `render.${g.previa} ainda não existe`);
+      const p = D.render[g.previa](ind([1, 2, 3, 4, 5, 6].map((n) => sol(n)), 12));
+      assert.equal(p.itens.length, 5);
+      assert.deepEqual(p.itens.map((i) => i.pedido), ['Pedido nº 101', 'Pedido nº 102', 'Pedido nº 103', 'Pedido nº 104', 'Pedido nº 105']);
+      assert.equal(p.itens[0].trabalhador, 'Trabalhador 1');
+      assert.equal(p.itens[0].matricula, 'T-1');
+      assert.equal(p.haMais, true);
+      assert.equal(p.avisoMais, g.mais);
+    });
+
+    test('trabalhador sem matrícula: texto próprio; nenhum número é recalculado', () => {
+      const D = modulo();
+      const p = D.render[g.previa](ind([sol(1, { trabalhadorMatricula: null, itensPendentes: 7, quantidadePendente: 1500, quantidadeCoberta: 0, itensCobertos: 0 })]));
+      assert.equal(p.itens[0].matricula, 'Sem matrícula');
+      assert.equal(p.itens[0].quantidadePendente, '1.500');
+      assert.equal(p.itens[0].itensPendentes, '7');
+    });
+
+    test('sem permissão, ausente ou malformado: nenhuma prévia', () => {
+      const f = modulo().render[g.previa];
+      for (const ruim of [{ permitido: false }, undefined, null, { permitido: true, valor: 1 }, { permitido: true, valor: 1, previa: { total: 1, itens: [{ ...sol(1), numero: '12' }] } },
+        { permitido: true, valor: 1, previa: { total: 1, itens: [{ ...sol(1), trabalhadorNome: null }] } }, { permitido: true, valor: 1, previa: { total: 1, itens: [{ ...sol(1), quantidadeCoberta: -1 }] } },
+        { permitido: true, valor: 1, previa: { total: 1, itens: [{ ...sol(1), trabalhadorMatricula: 3 }] } }, { permitido: true, valor: 1, previa: { total: 'x', itens: [] } }]) {
+        assert.equal(f(ruim), null, JSON.stringify(ruim));
+      }
+    });
+
+    test('o HTML é uma lista escapada, uma linha por pedido, sem CPF nem observação; vazio e aviso têm texto próprio', () => {
+      const D = modulo();
+      const html = D.render[g.html];
+      assert.equal(typeof html, 'function', `render.${g.html} ainda não existe`);
+      const out = html(D.render[g.previa](ind([sol(1), sol(2), sol(3)])));
+      assert.match(out, /<ul class="kpi-previa-lista">/);
+      assert.equal((out.match(/<li\b/g) || []).length, 3);
+      assert.match(out, /Pedido nº 101/);
+      assert.match(out, /Trabalhador 1/);
+      assert.equal(/<table|<td\b|cpf/i.test(out), false);
+      const xss = html(D.render[g.previa](ind([sol(1, { trabalhadorNome: '<img src=x onerror=1>' })])));
+      assert.equal(xss.includes('<img'), false);
+      assert.match(xss, /&lt;img/);
+      assert.match(html(D.render[g.previa](ind([], 0))), new RegExp(g.vazio.replace(/[.]/g, '\\.')));
+      assert.match(html(D.render[g.previa](ind([sol(1)], 9))), new RegExp(g.mais.replace(/[.]/g, '\\.')));
+      assert.equal(html(D.render[g.previa]({ permitido: false })), '');
+    });
+
+    test('o destino é Entregas por solicitação já filtrada pela cobertura do cartão; sem permissão, nenhum', () => {
+      const d = modulo().destinos[g.destinoFn];
+      assert.equal(typeof d, 'function');
+      assert.equal(d({ permitido: true, valor: 0 }), g.destino);
+      for (const sem of [{ permitido: false }, undefined, null, {}]) assert.equal(d(sem), null);
+    });
+
+    test('o número do cartão continua como estava', () => {
+      assert.equal(modulo().render.cards({ [g.chave]: ind([sol(1)], 4, 4) })[g.cartao === 'disponiveisEntrega' ? 'disponiveisEntrega' : 'aguardandoEstoque'].valor, '4');
+    });
+  });
+}
+
+describe('situação e quantidades de cada pedido (só texto do que o servidor mediu)', () => {
+  test('Disponíveis: totalmente coberto = "Disponível para entrega"; cobertura menor que o pendente = "Disponível em parte", com itens e unidades cobertos', () => {
+    const D = modulo();
+    const html = D.render.htmlPreviaDisponiveisEntrega(D.render.previaDisponiveisEntrega(ind([
+      sol(1, { itensPendentes: 2, itensCobertos: 2, quantidadePendente: 4, quantidadeCoberta: 4 }),
+      sol(2, { itensPendentes: 3, itensCobertos: 1, quantidadePendente: 9, quantidadeCoberta: 2 }),
+    ])));
+    assert.match(html, /Disponível para entrega/);
+    assert.match(html, /Disponível em parte/);
+    assert.match(html, /Itens com estoque 1 de 3/);
+    assert.match(html, /Unidades 2 de 9/);
+    assert.match(html, /Unidades 4 de 4/);
+  });
+
+  test('Aguardando estoque: "Aguardando estoque" com itens e unidades pendentes, sem falar de cobertura parcial', () => {
+    const D = modulo();
+    const html = D.render.htmlPreviaAguardandoEstoque(D.render.previaAguardandoEstoque(ind([sol(1, { itensPendentes: 2, itensCobertos: 0, quantidadePendente: 5, quantidadeCoberta: 0 })])));
+    assert.match(html, /Aguardando estoque/);
+    assert.match(html, /Itens pendentes 2/);
+    assert.match(html, /Unidades pendentes 5/);
+    assert.equal(/Disponível|em parte/.test(html), false, 'as duas populações não se misturam no texto');
+  });
+});

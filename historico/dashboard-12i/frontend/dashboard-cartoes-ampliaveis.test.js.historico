@@ -1,0 +1,433 @@
+'use strict';
+
+const { describe, test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+
+const EpiHttp = require('../js/api-http');
+
+/**
+ * 12I, Tasks 02 e 03 — cartões do Dashboard que reutilizam o padrão aprovado na Task 01 (RED): o PRÓPRIO cartão é ampliado em primeiro plano
+ * ao passar o mouse (ou por foco visível de teclado), com os cinco itens de maior relevância, enquanto os vizinhos ficam imóveis; o link
+ * cobre o cartão inteiro; sem permissão o cartão fica oculto; Esc dispensa; sem hover (toque) o toque navega direto. Um controlador só
+ * (EpiDashboard.ampliacao.criar) serve todos os cartões: aqui cada cartão entra na tabela CARTOES.
+ */
+
+const BASE = 'http://localhost:3000/api';
+const RAIZ = path.join(__dirname, '..');
+const ler = (rel) => fs.readFileSync(path.join(RAIZ, rel), 'utf8');
+const modulo = () => require('../js/dashboard'); // eslint-disable-line global-require
+const resposta = (status, corpo) => ({ status, ok: status >= 200 && status < 300, text: async () => (corpo === undefined ? '' : JSON.stringify(corpo)) });
+
+const itemNecessidade = (n, extra = {}) => ({ materialId: n, material: `Material ${n}`, tamanho: 'M', saldoLivre: 3, semCobertura: 2, deficit: 7, necessidade: 9, ...extra });
+const itemSemCobertura = (n, extra = {}) => ({ materialId: n, material: `Material ${n}`, tamanho: 'M', fisicoUtilizavel: 2, demandaPendente: 6, semCobertura: 4, ...extra });
+
+// Cada cartão: ids da página, indicador, destino e como o servidor entrega a prévia.
+const CARTOES = [
+  {
+    nome: 'Necessidade de reposição', chave: 'necessidadeReposicao', card: 'cardNecessidade', link: 'linkNecessidade', previa: 'previaNecessidade', valorId: 'kpiNecessidadeValor',
+    destino: 'available-items.html?somenteComNecessidade=true', titulo: 'Necessidade de reposição', icone: 'add_shopping_cart',
+    item: itemNecessidade, indicador: (n, total = n) => ({ permitido: true, valor: 23, previa: { total, itens: Array.from({ length: Math.min(n, 5) }, (_, i) => itemNecessidade(i + 1)) } }),
+    funcaoPrevia: 'previaNecessidade', funcaoHtml: 'htmlPreviaNecessidade', textoVazio: 'Nenhum item com necessidade de reposição.', textoMais: 'Há outros itens com necessidade de reposição na listagem completa.',
+    destinoFn: 'necessidade', chaveDoCartao: 'necessidade', valorTexto: '23', campoInteiro: 'saldoLivre', incoerente: { necessidade: 99, semCobertura: 1, deficit: 1, saldoLivre: 0 },
+  },
+  {
+    nome: 'Pendências sem estoque', chave: 'semCobertura', card: 'cardSemCobertura', link: 'linkSemCobertura', previa: 'previaSemCobertura', valorId: 'kpiSemCoberturaValor',
+    destino: 'available-items.html?situacao=SEM_COBERTURA', titulo: 'Pendências sem estoque', icone: 'notifications_active',
+    item: itemSemCobertura, indicador: (n, total = n) => ({ permitido: true, valor: 14, previa: { total, itens: Array.from({ length: Math.min(n, 5) }, (_, i) => itemSemCobertura(i + 1)) } }),
+    funcaoPrevia: 'previaSemCobertura', funcaoHtml: 'htmlPreviaSemCobertura', textoVazio: 'Nenhum item aprovado sem cobertura.', textoMais: 'Há outros itens sem cobertura na listagem completa.',
+    destinoFn: 'semCobertura', chaveDoCartao: 'semCobertura', valorTexto: '14', campoInteiro: 'fisicoUtilizavel', incoerente: { semCobertura: 99, demandaPendente: 1, fisicoUtilizavel: 0 },
+  },
+];
+
+const itemFuncionario = (n, extra = {}) => ({ id: n, nome: `Funcionário ${n}`, matricula: `M-${n}`, setor: 'Fundição', ...extra });
+const itemSolicitacao = (n, extra = {}) => ({
+  solicitacaoId: n, numero: 100 + n, trabalhadorNome: `Trabalhador ${n}`, trabalhadorMatricula: `T-${n}`, itensPendentes: 2, itensCobertos: 1, quantidadePendente: 6, quantidadeCoberta: 2, ...extra,
+});
+const previaDe = (item) => (n, total = n) => ({ total, itens: Array.from({ length: Math.min(n, 5) }, (_, i) => item(i + 1)) });
+
+// 12I, Tasks 04 a 06: os três cartões seguintes entram na MESMA tabela (soPagina: o conteúdo da prévia é testado em
+// dashboard-previas-funcionarios-solicitacoes.test.js; aqui, o comportamento comum de ampliação, visibilidade, teclado e toque).
+CARTOES.push(
+  {
+    nome: 'Funcionários ativos', chave: 'funcionariosAtivos', card: 'cardFuncionarios', link: 'linkFuncionarios', previa: 'previaFuncionarios', valorId: 'kpiFuncionariosValor',
+    destino: 'funcionarios.html?situacao=ATIVO', titulo: 'Funcionários ativos', icone: 'badge', classe: 'primary', soPagina: true,
+    indicador: (n, total = n) => ({ permitido: true, valor: 17, previa: previaDe(itemFuncionario)(n, total) }),
+  },
+  {
+    nome: 'Disponíveis para entrega', chave: 'disponiveisParaEntrega', card: 'cardDisponiveisEntrega', link: 'linkDisponiveisEntrega', previa: 'previaDisponiveisEntrega', valorId: 'kpiDisponiveisEntregaValor',
+    destino: 'stock-requests.html?cobertura=COM_COBERTURA', titulo: 'Disponíveis para entrega', icone: 'playlist_add_check_circle', classe: 'success', soPagina: true,
+    indicador: (n, total = n) => ({ permitido: true, valor: 8, previa: previaDe(itemSolicitacao)(n, total) }),
+  },
+  {
+    nome: 'Solicitações aguardando estoque', chave: 'solicitacoesAguardandoEstoque', card: 'cardAguardandoEstoque', link: 'linkAguardandoEstoque', previa: 'previaAguardandoEstoque', valorId: 'kpiAguardandoEstoqueValor',
+    destino: 'stock-requests.html?cobertura=SEM_COBERTURA', titulo: 'Solicitações aguardando estoque', icone: 'pending_actions', classe: 'primary', soPagina: true,
+    indicador: (n, total = n) => ({ permitido: true, valor: 4, previa: previaDe(itemSolicitacao)(n, total) }),
+  },
+);
+
+// ═══════════════════════════════════════════════════════════════════
+// Módulo: controlador comum e visibilidade
+// ═══════════════════════════════════════════════════════════════════
+describe('módulo: controlador comum dos cartões ampliáveis', () => {
+  test('EpiDashboard.ampliacao.criar existe e devolve { ligar, esvaziar }', () => {
+    const D = modulo();
+    assert.ok(D.ampliacao && typeof D.ampliacao.criar === 'function', 'EpiDashboard.ampliacao.criar ainda não existe');
+  });
+
+  test('render.visivelCartao: só a negação explícita esconde; zero, ausente, malformado e erro mantêm o cartão', () => {
+    const f = modulo().render.visivelCartao;
+    assert.equal(typeof f, 'function', 'render.visivelCartao ainda não existe');
+    assert.equal(f({ permitido: false }), false);
+    for (const visivel of [{ permitido: true, valor: 0 }, { permitido: true, valor: 3 }, undefined, null, {}, { permitido: true, valor: -1 }, { permitido: 'false' }]) assert.equal(f(visivel), true, JSON.stringify(visivel));
+  });
+});
+
+for (const c of CARTOES.filter((x) => !x.soPagina)) {
+  describe(`módulo — ${c.nome}: prévia, texto e destino`, () => {
+    const D = () => modulo();
+
+    test('cada item mostra os números do servidor, na ordem recebida, com milhar; tamanho nulo é "Tamanho único"', () => {
+      const p = D().render[c.funcaoPrevia];
+      assert.equal(typeof p, 'function', `render.${c.funcaoPrevia} ainda não existe`);
+      const r = p({ permitido: true, valor: 23, previa: { total: 2, itens: [c.item(1, { material: 'Luva de raspa', tamanho: 'G' }), c.item(2, { tamanho: null })] } });
+      assert.equal(r.itens.length, 2);
+      assert.equal(r.itens[0].nome, 'Luva de raspa');
+      assert.equal(r.itens[0].tamanho, 'G');
+      assert.equal(r.itens[1].tamanho, 'Tamanho único');
+      assert.equal(r.haMais, false);
+    });
+
+    test('até cinco; mais de cinco no total avisa da listagem completa; o navegador não recalcula nenhum número', () => {
+      const p = D().render[c.funcaoPrevia];
+      const muitos = p({ permitido: true, valor: 23, previa: { total: 12, itens: [1, 2, 3, 4, 5, 6, 7].map((n) => c.item(n)) } });
+      assert.equal(muitos.itens.length, 5);
+      assert.equal(muitos.haMais, true);
+      assert.equal(muitos.avisoMais, c.textoMais);
+      const incoerente = p({ permitido: true, valor: 1, previa: { total: 1, itens: [c.item(1, c.incoerente)] } });
+      assert.equal(Object.values(incoerente.itens[0]).includes('99'), true, 'o número do servidor aparece como veio, mesmo incoerente');
+    });
+
+    test('sem permissão, ausente ou malformado: nenhuma prévia (null)', () => {
+      const p = D().render[c.funcaoPrevia];
+      for (const ruim of [{ permitido: false }, undefined, null, { permitido: true, valor: 2 }, { permitido: true, valor: 2, previa: 'x' }, { permitido: true, valor: 2, previa: { total: 1, itens: [{ ...c.item(1), material: 5 }] } },
+        { permitido: true, valor: 2, previa: { total: -1, itens: [] } }, { permitido: true, valor: 2, previa: { total: 1, itens: [c.item(1, { [c.campoInteiro]: '3' })] } }]) {
+        assert.equal(p(ruim), null, JSON.stringify(ruim));
+      }
+    });
+
+    test('o conteúdo é uma lista escapada, uma linha por produto; vazio e aviso têm texto próprio', () => {
+      const html = D().render[c.funcaoHtml];
+      const prev = D().render[c.funcaoPrevia];
+      assert.equal(typeof html, 'function', `render.${c.funcaoHtml} ainda não existe`);
+      const out = html(prev(c.indicador(3)));
+      assert.match(out, /<ul class="kpi-previa-lista">/);
+      assert.equal((out.match(/<li\b/g) || []).length, 3);
+      assert.equal(/<table|<td\b/.test(out), false);
+      const xss = html(prev({ permitido: true, valor: 1, previa: { total: 1, itens: [c.item(1, { material: '<img src=x onerror=1>' })] } }));
+      assert.equal(xss.includes('<img'), false);
+      assert.match(xss, /&lt;img/);
+      assert.match(html(prev({ permitido: true, valor: 0, previa: { total: 0, itens: [] } })), new RegExp(c.textoVazio.replace(/[.]/g, '\\.')));
+      assert.match(html(prev(c.indicador(5, 12))), new RegExp(c.textoMais.replace(/[.]/g, '\\.')));
+      assert.equal(html(prev({ permitido: false })), '');
+    });
+
+    test('o destino é a Análise de estoque com o filtro do cartão; sem permissão, nenhum destino', () => {
+      const d = D().destinos[c.destinoFn];
+      assert.equal(typeof d, 'function');
+      assert.equal(d({ permitido: true, valor: 0 }), c.destino, 'mesmo com zero quem vê a fonte pode abrir a listagem');
+      for (const sem of [{ permitido: false }, undefined, null, {}]) assert.equal(d(sem), null);
+    });
+
+    test('o número do cartão continua como estava, com ou sem prévia', () => {
+      const r = D().render.cards({ [c.chave]: c.indicador(2) });
+      assert.equal(r[c.chaveDoCartao].valor, c.valorTexto);
+    });
+  });
+}
+
+describe('módulo: o texto da prévia da necessidade separa a necessidade total do déficit do mínimo', () => {
+  test('cada linha mostra "Necessidade N = sem cobertura S + déficit do mínimo D" e o saldo livre', () => {
+    const D = modulo();
+    const html = D.render.htmlPreviaNecessidade(D.render.previaNecessidade({ permitido: true, valor: 9, previa: { total: 1, itens: [itemNecessidade(1, { saldoLivre: 3, semCobertura: 2, deficit: 7, necessidade: 9 })] } }));
+    assert.match(html, /Livre 3\b/);
+    assert.match(html, /Necessidade 9\b/);
+    assert.match(html, /sem cobertura 2\b/);
+    assert.match(html, /déficit do mínimo 7\b/);
+    assert.match(html, /Tam\. M/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Estrutura e CSS da página
+// ═══════════════════════════════════════════════════════════════════
+describe('estrutura e CSS: o padrão aprovado é genérico e serve a todos os cartões', () => {
+  const html = ler('pages/dashboard.html');
+  const css = html.slice(0, html.indexOf('</style>'));
+  const regra = (seletor) => {
+    const escapado = seletor.replace(/[.[\]()*+?^$|\\]/g, '\\$&');
+    const m = css.match(new RegExp(`(?:^|\\n|\\})\\s*${escapado}\\s*\\{([^}]*)\\}`));
+    return m ? m[1] : null;
+  };
+
+  test('o link esticado e a camada ampliada são regras genéricas (não presas a um id)', () => {
+    assert.match(regra('.kpi-link-total::after') || '', /position\s*:\s*absolute[^}]*inset\s*:\s*0|inset\s*:\s*0[^}]*position\s*:\s*absolute/);
+    const r = regra('.kpi-card[data-ampliado="true"]') || '';
+    assert.match(r, /position\s*:\s*fixed/);
+    assert.ok(Number((r.match(/z-index\s*:\s*(\d+)/) || [])[1]) >= 1000);
+    assert.match(r, /transform\s*:\s*none\s*!important/);
+    assert.match(r, /box-shadow\s*:[^;]*!important/, 'a sombra do hover do Dashboard não pode vencer a da camada ampliada');
+    assert.match(r, /background[^;]*!important/);
+    assert.match(regra('.kpi-card[data-limitada="true"]') || '', /overflow-y\s*:\s*auto/);
+    assert.match(css, /\.kpi-card\[data-ampliado="true"\]\s+\.kpi-previa\s*\{[^}]*display\s*:\s*block/);
+    assert.notEqual(regra('.kpi-reserva'), null);
+    assert.equal(/#card[A-Za-z]+\[data-ampliado/.test(css), false, 'nada preso a um cartão só');
+  });
+
+  test('só os links dos cartões ampliáveis são esticados: o link do CA vencido não ganha a camada', () => {
+    assert.equal(/id="linkCaVencidos"[^>]*kpi-link-total/.test(html), false);
+    assert.equal(/id="linkCaAVencer"[^>]*kpi-link-total/.test(html), false);
+  });
+
+  for (const c of CARTOES) {
+    test(`${c.nome}: <article id="${c.card}"> nasce oculto, o link do card inteiro envolve título, ícone, número e texto, e a prévia vem depois, dentro do cartão`, () => {
+      const artigo = (html.match(new RegExp(`<article class="kpi-card ${c.classe || 'warning'}" id="${c.card}" style="display:none">[\\s\\S]*?</article>`)) || [''])[0];
+      assert.notEqual(artigo, '', `o <article id="${c.card}"> precisa existir (a classe de cor do cartão preservada)`);
+      const ancora = (artigo.match(/<a\b[^>]*>([\s\S]*?)<\/a>/) || [])[1] || '';
+      assert.match(artigo, new RegExp(`<a\\b[^>]*\\bid="${c.link}"[^>]*\\bclass="kpi-link kpi-link-total"|<a\\b[^>]*\\bclass="kpi-link kpi-link-total"[^>]*\\bid="${c.link}"`));
+      for (const trecho of [c.titulo, c.icone, `id="${c.valorId}"`, `id="${c.valorId.replace('Valor', 'Meta')}"`]) assert.ok(ancora.includes(trecho), `${trecho} dentro do link`);
+      assert.match(artigo, new RegExp(`<div id="${c.previa}" class="kpi-previa"`));
+      assert.equal(artigo.indexOf(`id="${c.previa}"`) > artigo.indexOf('</a>'), true, 'a prévia fica depois do link');
+      assert.equal(/<button\b/.test(artigo), false);
+    });
+  }
+
+  test('continuam 18 cartões e cada id de cartão aparece uma vez', () => {
+    assert.equal((html.match(/<article class="kpi-card/g) || []).length, 18);
+    for (const c of CARTOES) assert.equal((html.match(new RegExp(`id="${c.card}"`, 'g')) || []).length, 1);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Página em DOM simulado
+// ═══════════════════════════════════════════════════════════════════
+const CONTEXTO = { empresa: { id: 3, nome: 'Empresa Demonstração SafeWork' }, usuario: { id: 7, nome: 'Pessoa Teste', email: 'p@exemplo-cliente.com.br', perfil: 'MASTER' } };
+const ACESSO = { permissoes: { recursos: { dashboard: { visualizar: true, criar: false, editar: false, excluir: false } }, acoes: {}, administracao: {} }, podeAlterar: false };
+const RETANGULO = { left: 900, top: 300, width: 280, height: 217 };
+const ALTURA_NATURAL = 480;
+const JANELA = { largura: 1440, altura: 900 };
+const IDS_DOS_CARTOES = ['cardAbaixoMinimo', 'cardNecessidade', 'cardSemCobertura', 'cardFuncionarios', 'cardDisponiveisEntrega', 'cardAguardandoEstoque'];
+
+function montarPagina(corpoDaResposta, { hover = true, janela = JANELA } = {}) {
+  EpiHttp.configurar({ baseUrl: BASE, fetch: async () => corpoDaResposta });
+  const html = ler('pages/dashboard.html');
+  const script = html.slice(html.lastIndexOf('<script>') + '<script>'.length, html.lastIndexOf('</script>'));
+  const grade = { filhos: [], insertBefore(novo) { this.filhos.push(novo); novo.parentNode = this; }, removeChild(x) { this.filhos = this.filhos.filter((c) => c !== x); x.parentNode = null; } };
+  const reservas = [];
+  const novoElemento = (id) => ({
+    id, innerHTML: '', textContent: '', style: {}, listeners: {}, atributos: {}, focado: false, className: '', parentNode: null,
+    addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
+    setAttribute(k, v) { this.atributos[k] = String(v); }, removeAttribute(k) { delete this.atributos[k]; }, focus() { this.focado = true; },
+    contains(outro) { return !!outro && (outro === this || outro.dentroDoCartao === true); },
+    remove() { if (this.parentNode) this.parentNode.removeChild(this); },
+  });
+  const mapa = {};
+  const el = (id) => (mapa[id] = mapa[id] || novoElemento(id));
+  for (const id of IDS_DOS_CARTOES) {
+    const card = el(id);
+    card.parentNode = grade;
+    card.getBoundingClientRect = () => ({ ...RETANGULO, right: RETANGULO.left + RETANGULO.width, bottom: RETANGULO.top + RETANGULO.height });
+    Object.defineProperty(card, 'offsetHeight', { get: () => ALTURA_NATURAL });
+  }
+  const timers = [];
+  const documento = {
+    getElementById: el, querySelectorAll: () => [], listeners: {},
+    addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
+    createElement: () => { const n = novoElemento('reserva'); reservas.push(n); return n; },
+  };
+  const janelaFalsa = {
+    SAFEWORK_PORTAL_API_BASE_URL: BASE, innerWidth: janela.largura, innerHeight: janela.altura, listeners: {},
+    matchMedia: (q) => ({ matches: q.includes('hover: hover') ? hover : false }),
+    addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
+  };
+  const sandbox = {
+    document: documento, window: janelaFalsa, EpiHttp, EpiDashboard: modulo(),
+    EpiPermissoes: { prepararPagina: async () => ACESSO },
+    EpiSessaoEmpresarial: { montar: async (o) => { sandbox.opcoesMontar = o; return CONTEXTO; }, sessaoEncerrada() { sandbox.encerrada = true; } },
+    console, Promise, String, Number, Object, JSON, Math,
+    setTimeout: (fn) => { timers.push(fn); return timers.length; }, clearTimeout: (id) => { if (id) timers[id - 1] = null; },
+    Date: class extends Date { constructor(...args) { super(...(args.length ? args : ['2026-10-19T12:00:00.000Z'])); } },
+  };
+  vm.runInNewContext(script, sandbox);
+  const esperar = async () => { for (let i = 0; i < 40; i += 1) await new Promise((r) => setImmediate(r)); };
+  const disparar = async (id, tipo, ev = {}) => { for (const fn of (el(id).listeners[tipo] || [])) await fn({ preventDefault() {}, stopPropagation() {}, ...ev }); };
+  const noDocumento = async (tipo, ev = {}) => { for (const fn of (documento.listeners[tipo] || [])) await fn({ preventDefault() {}, stopPropagation() {}, ...ev }); };
+  const naJanela = async (tipo, ev = {}) => { for (const fn of (janelaFalsa.listeners[tipo] || [])) await fn({ preventDefault() {}, stopPropagation() {}, ...ev }); };
+  const avancar = () => { const fila = timers.splice(0); for (const fn of fila) if (fn) fn(); };
+  const naReserva = async (tipo, ev = {}) => { for (const fn of (reservas.at(-1).listeners[tipo] || [])) await fn({ preventDefault() {}, stopPropagation() {}, ...ev }); };
+  return { el, grade, reservas, esperar, disparar, noDocumento, naJanela, avancar, naReserva, sandbox };
+}
+
+const corpo = (chave, indicador) => resposta(200, { status: 'ok', indicadores: { saldoLivre: { permitido: true, valor: 7 }, ...(indicador === undefined ? {} : { [chave]: indicador }) } });
+const teclado = { target: { matches: (s) => s === ':focus-visible' } };
+const esperado = () => modulo().layout.posicionarAmpliacao({ cartao: RETANGULO, janela: JANELA, alturaConteudo: ALTURA_NATURAL });
+
+for (const c of CARTOES) {
+  const ampliado = (pg) => pg.el(c.card).atributos['data-ampliado'] === 'true';
+
+  describe(`página — ${c.nome}: o próprio cartão é ampliado em primeiro plano`, () => {
+    test('nasce oculto; com permissão aparece (inclusive com zero) com link para a listagem filtrada e a prévia pronta', async () => {
+      let liberar; const segurada = new Promise((r) => { liberar = r; });
+      EpiHttp.configurar({ baseUrl: BASE, fetch: async () => segurada });
+      const pg = montarPagina(segurada);
+      await pg.esperar();
+      assert.equal(pg.el(c.card).style.display, 'none');
+      liberar(resposta(200, { status: 'ok', indicadores: { [c.chave]: c.indicador(3) } }));
+      await pg.esperar();
+      assert.equal(pg.el(c.card).style.display, '');
+      assert.equal(pg.el(c.link).atributos.href, c.destino);
+      assert.match(pg.el(c.previa).innerHTML, /<li\b/);
+      const zero = montarPagina(corpo(c.chave, { permitido: true, valor: 0, previa: { total: 0, itens: [] } }));
+      await zero.esperar();
+      assert.equal(zero.el(c.card).style.display, '');
+      assert.equal(zero.el(c.link).atributos.href, c.destino);
+    });
+
+    test('sem permissão o cartão inteiro fica oculto, sem link nem prévia, e hover, foco e Esc não fazem nada', async () => {
+      const pg = montarPagina(corpo(c.chave, { permitido: false }));
+      await pg.esperar();
+      assert.equal(pg.el(c.card).style.display, 'none');
+      assert.equal(Object.hasOwn(pg.el(c.link).atributos, 'href'), false);
+      assert.equal(pg.el(c.previa).innerHTML, '');
+      await pg.disparar(c.card, 'mouseenter');
+      await pg.disparar(c.card, 'focusin', teclado);
+      await pg.noDocumento('keydown', { key: 'Escape' });
+      assert.equal(ampliado(pg), false);
+      assert.equal(pg.reservas.length, 0);
+    });
+
+    test('erro de carga não é falta de permissão: o cartão aparece como "indisponível", sem link nem prévia', async () => {
+      for (const falha of [resposta(503, { status: 'erro', codigo: 'INDISPONIVEL' }), resposta(200, { status: 'ok', indicadores: {} }), corpo(c.chave, { permitido: true, valor: -1 })]) {
+        const pg = montarPagina(falha);
+        await pg.esperar();
+        assert.equal(pg.el(c.card).style.display, '');
+        assert.equal(pg.el(c.valorId).textContent, '—');
+        assert.equal(Object.hasOwn(pg.el(c.link).atributos, 'href'), false);
+        assert.equal(pg.el(c.previa).innerHTML, '');
+      }
+    });
+
+    test('mouseenter amplia o próprio cartão, fixo na posição calculada, com uma reserva do tamanho da célula; os outros cartões não são tocados', async () => {
+      const pg = montarPagina(corpo(c.chave, c.indicador(9)));
+      await pg.esperar();
+      await pg.disparar(c.card, 'mouseenter');
+      assert.equal(ampliado(pg), true);
+      const e = esperado();
+      assert.deepEqual([pg.el(c.card).style.left, pg.el(c.card).style.top, pg.el(c.card).style.width], [`${e.left}px`, `${e.top}px`, `${e.width}px`]);
+      assert.equal(pg.reservas.length, 1);
+      assert.equal(pg.reservas[0].style.height, `${RETANGULO.height}px`);
+      for (const outro of IDS_DOS_CARTOES.filter((id) => id !== c.card)) assert.equal(pg.el(outro).atributos['data-ampliado'], undefined, `${outro} não amplia`);
+      for (const id of ['kpiSaldoLivreValor', 'kpiDisponiveisValor']) assert.deepEqual(pg.el(id).atributos, {});
+    });
+
+    test('mouseleave recolhe depois da espera; sair e voltar não pisca; ir para a reserva não recolhe; rolagem e resize recolhem', async () => {
+      const pg = montarPagina(corpo(c.chave, c.indicador(9)));
+      await pg.esperar();
+      await pg.disparar(c.card, 'mouseenter');
+      await pg.disparar(c.card, 'mouseleave', { relatedTarget: null });
+      assert.equal(ampliado(pg), true);
+      await pg.disparar(c.card, 'mouseenter');
+      pg.avancar();
+      assert.equal(ampliado(pg), true, 'cancelado ao voltar');
+      await pg.disparar(c.card, 'mouseleave', { relatedTarget: pg.reservas[0] });
+      await pg.naReserva('mouseenter');
+      pg.avancar();
+      assert.equal(ampliado(pg), true);
+      await pg.naReserva('mouseleave', { relatedTarget: null });
+      pg.avancar();
+      assert.equal(ampliado(pg), false);
+      assert.equal(pg.grade.filhos.includes(pg.reservas[0]), false);
+      assert.deepEqual([pg.el(c.card).style.left, pg.el(c.card).style.top, pg.el(c.card).style.width, pg.el(c.card).style.height], ['', '', '', '']);
+      for (const evento of ['scroll', 'resize']) {
+        const outro = montarPagina(corpo(c.chave, c.indicador(9)));
+        await outro.esperar();
+        await outro.disparar(c.card, 'mouseenter');
+        await outro.naJanela(evento);
+        assert.equal(outro.el(c.card).atributos['data-ampliado'] === 'true', false, evento);
+      }
+    });
+
+    test('sem hover real (toque) não amplia, e o link do card inteiro leva à listagem filtrada', async () => {
+      const pg = montarPagina(corpo(c.chave, c.indicador(9)), { hover: false });
+      await pg.esperar();
+      await pg.disparar(c.card, 'mouseenter');
+      assert.equal(ampliado(pg), false);
+      assert.equal(pg.reservas.length, 0);
+      assert.equal(pg.el(c.link).atributos.href, c.destino);
+    });
+
+    test('teclado: foco visível amplia, foco do mouse não, sair do cartão recolhe; Esc (e "Esc") dispensa sem mover o foco e só volta depois de sair e entrar', async () => {
+      const mouse = montarPagina(corpo(c.chave, c.indicador(9)));
+      await mouse.esperar();
+      await mouse.disparar(c.card, 'focusin', { target: { matches: () => false } });
+      assert.equal(ampliado(mouse), false);
+      const tec = montarPagina(corpo(c.chave, c.indicador(9)));
+      await tec.esperar();
+      await tec.disparar(c.card, 'focusin', teclado);
+      assert.equal(ampliado(tec), true);
+      await tec.disparar(c.card, 'focusout', { relatedTarget: { dentroDoCartao: false } });
+      assert.equal(ampliado(tec), false);
+      for (const key of ['Escape', 'Esc']) {
+        const pg = montarPagina(corpo(c.chave, c.indicador(9)));
+        await pg.esperar();
+        await pg.disparar(c.card, 'mouseenter');
+        await pg.noDocumento('keydown', { key });
+        assert.equal(ampliado(pg), false, key);
+        for (const id of [c.link, c.previa, c.card]) assert.equal(pg.el(id).focado, false);
+        await pg.disparar(c.card, 'mouseenter');
+        assert.equal(ampliado(pg), false, 'ainda dispensada');
+        await pg.disparar(c.card, 'mouseleave', { relatedTarget: null });
+        pg.avancar();
+        await pg.disparar(c.card, 'mouseenter');
+        assert.equal(ampliado(pg), true);
+      }
+    });
+
+    test('ao encerrar a sessão com o cartão ampliado ele recolhe, a reserva sai e tudo é limpo e desarmado', async () => {
+      const pg = montarPagina(corpo(c.chave, c.indicador(9)));
+      await pg.esperar();
+      await pg.disparar(c.card, 'mouseenter');
+      pg.sandbox.opcoesMontar.aoEncerrar();
+      assert.equal(ampliado(pg), false);
+      assert.equal(pg.grade.filhos.includes(pg.reservas[0]), false);
+      assert.equal(pg.el(c.card).style.display, 'none');
+      assert.equal(Object.hasOwn(pg.el(c.link).atributos, 'href'), false);
+      assert.equal(pg.el(c.previa).innerHTML, '');
+      await pg.disparar(c.card, 'mouseenter');
+      assert.equal(ampliado(pg), false);
+    });
+  });
+}
+
+describe('módulo: o texto da prévia de "Pendências sem estoque" mostra a quantidade sem cobertura e de onde ela vem', () => {
+  test('cada linha mostra tamanho, demanda aprovada, físico utilizável e a quantidade sem cobertura, como o servidor mediu', () => {
+    const D = modulo();
+    assert.equal(typeof D.render.htmlPreviaSemCobertura, 'function', 'render.htmlPreviaSemCobertura ainda não existe');
+    const html = D.render.htmlPreviaSemCobertura(D.render.previaSemCobertura({ permitido: true, valor: 4, previa: { total: 1, itens: [itemSemCobertura(1, { fisicoUtilizavel: 2, demandaPendente: 6, semCobertura: 4 })] } }));
+    assert.match(html, /Tam\. M/);
+    assert.match(html, /Demanda 6\b/);
+    assert.match(html, /Físico 2\b/);
+    assert.match(html, /Sem cobertura 4\b/);
+    assert.equal(/Necessidade|déficit/i.test(html), false, 'nada de necessidade total nem déficit do mínimo neste cartão');
+  });
+
+  test('tamanho único e milhar', () => {
+    const D = modulo();
+    const html = D.render.htmlPreviaSemCobertura(D.render.previaSemCobertura({ permitido: true, valor: 1, previa: { total: 1, itens: [itemSemCobertura(1, { tamanho: null, demandaPendente: 1500, fisicoUtilizavel: 0, semCobertura: 1500 })] } }));
+    assert.match(html, /Tamanho único/);
+    assert.match(html, /Demanda 1\.500\b/);
+    assert.match(html, /Sem cobertura 1\.500\b/);
+  });
+});

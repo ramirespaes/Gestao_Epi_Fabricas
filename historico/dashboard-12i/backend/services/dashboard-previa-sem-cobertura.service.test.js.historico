@@ -1,0 +1,110 @@
+'use strict';
+
+const { describe, test } = require('node:test');
+const assert = require('node:assert/strict');
+
+const servico = require('../../src/services/dashboard.service');
+const autorizacao = require('../../src/middleware/autorizacao');
+const loteRepo = require('../../src/repositories/estoque-lote.repository');
+const posicaoRepo = require('../../src/repositories/posicao-estoque.repository');
+const funcionarioRepo = require('../../src/repositories/funcionario.repository');
+
+/**
+ * 12I, Task 03 — prévia do indicador "Pendências sem estoque" (RED), sem PostgreSQL real. O indicador `semCobertura` ganha `previa` (até
+ * cinco combinações material × tamanho com demanda aprovada sem cobertura, maior quantidade primeiro), da MESMA posição e no MESMO
+ * instantâneo READ ONLY REPEATABLE READ das demais leituras do estoque, mantendo `valor` e as regras de permissão.
+ */
+
+const CONTEXTO = { empresaId: 42, usuarioId: 7, perfil: 'USUARIO', hoje: '2026-10-02' };
+const RESUMO = { pares: 9, fisicoUtilizavel: 40, demandaPendente: 12, comprometido: 10, saldoLivre: 30, semCobertura: 14, paresAbaixoDoMinimo: 3, deficit: 9, necessidade: 23 };
+
+const item = (extra = {}) => ({
+  materialId: 11, material: 'Luva de raspa', codigoInterno: 'EPI-011', categoria: 'EPI', grupo: 'EPI', tipo: 'Luva', tamanho: 'M', unidade: 'par',
+  saldo: 9, bloqueado: 1, fisicoUtilizavel: 2, demandaPendente: 6, comprometido: 2, saldoLivre: 0, semCobertura: 4, estoqueMinimo: 10, minimoOrigem: 'PROPRIO',
+  abaixoDoMinimo: true, deficit: 10, necessidade: 14, caValidade: '2027-01-31', validade: 'ok', ...extra,
+});
+
+function clienteFalso() {
+  const cliente = { consultas: [], liberado: 0, query: async (t) => { cliente.consultas.push(String(t)); return { rows: [], rowCount: 0 }; }, release() { cliente.liberado += 1; } };
+  return cliente;
+}
+const poolFalso = (cliente) => ({ connect: async () => cliente, query: async () => { throw new Error('a posição só pode ser lida pelo cliente do instantâneo'); } });
+
+function simular(t, { fontes = {}, listas = {} } = {}) {
+  const permissoes = { availableItems: true, stockValidity: true, employeeHistory: false, ...fontes };
+  const chamadas = { resumir: [], listar: [] };
+  t.mock.method(autorizacao, 'avaliarPermissaoRecurso', async (_p, _c, recurso) => ({ visualizar: permissoes[recurso] === true }));
+  t.mock.method(autorizacao, 'avaliarPermissaoAcao', async () => false);
+  t.mock.method(posicaoRepo, 'resumirPosicoes', async (executor, empresaId, ref) => { chamadas.resumir.push({ executor, empresaId, ref }); return RESUMO; });
+  t.mock.method(posicaoRepo, 'listarPosicoes', async (executor, empresaId, opcoes) => {
+    chamadas.listar.push({ executor, empresaId, opcoes });
+    const resposta = listas[opcoes.ordem] || { itens: [], total: 0 };
+    if (resposta instanceof Error) throw resposta;
+    return resposta;
+  });
+  t.mock.method(loteRepo, 'resumirIndicadores', async () => ({ caVencido: 4, caAVencer: 5 }));
+  t.mock.method(funcionarioRepo, 'contarPorEmpresa', async () => 17);
+  return chamadas;
+}
+const chamadaDe = (chamadas, ordem) => chamadas.listar.filter((c) => c.opcoes.ordem === ordem);
+
+describe('dashboard.service — prévia de "Pendências sem estoque" (Task 03)', () => {
+  test('o valor continua o da posição (soma sem cobertura) e a prévia traz o total de combinações sem cobertura', async (t) => {
+    simular(t, { listas: { SEM_COBERTURA_DESC: { itens: [item()], total: 7 } } });
+    const r = await servico.consultar(poolFalso(clienteFalso()), CONTEXTO);
+    assert.equal(r.semCobertura.permitido, true);
+    assert.equal(r.semCobertura.valor, 14);
+    assert.equal(r.semCobertura.previa.total, 7);
+  });
+
+  test('reutiliza listarPosicoes: situação SEM_COBERTURA, página 1, limite 5, ordem SEM_COBERTURA_DESC, pelo mesmo cliente', async (t) => {
+    const chamadas = simular(t);
+    const cliente = clienteFalso();
+    await servico.consultar(poolFalso(cliente), CONTEXTO);
+    const c = chamadaDe(chamadas, 'SEM_COBERTURA_DESC');
+    assert.equal(c.length, 1);
+    assert.equal(c[0].empresaId, 42);
+    assert.deepEqual([c[0].opcoes.situacao, c[0].opcoes.pagina, c[0].opcoes.limite], ['SEM_COBERTURA', 1, 5]);
+    assert.equal(c[0].executor, cliente);
+  });
+
+  test('cada item leva só id, material, tamanho, físico utilizável, demanda aprovada e quantidade sem cobertura', async (t) => {
+    simular(t, { listas: { SEM_COBERTURA_DESC: { itens: [item({ fisicoUtilizavel: 2, demandaPendente: 6, semCobertura: 4 })], total: 1 } } });
+    const { itens } = (await servico.consultar(poolFalso(clienteFalso()), CONTEXTO)).semCobertura.previa;
+    assert.deepEqual(Object.keys(itens[0]).sort(), ['demandaPendente', 'fisicoUtilizavel', 'material', 'materialId', 'semCobertura', 'tamanho']);
+    assert.deepEqual(itens[0], { materialId: 11, material: 'Luva de raspa', tamanho: 'M', fisicoUtilizavel: 2, demandaPendente: 6, semCobertura: 4 });
+  });
+
+  test('a ordem da posição é preservada: o serviço não reordena nem recalcula a quantidade sem cobertura', async (t) => {
+    simular(t, { listas: { SEM_COBERTURA_DESC: { itens: [item({ materialId: 1, material: 'Zeta', semCobertura: 99 }), item({ materialId: 2, material: 'Alfa', semCobertura: 1 })], total: 2 } } });
+    const { itens } = (await servico.consultar(poolFalso(clienteFalso()), CONTEXTO)).semCobertura.previa;
+    assert.deepEqual(itens.map((i) => [i.material, i.semCobertura]), [['Zeta', 99], ['Alfa', 1]]);
+  });
+
+  test('sem availableItems: só { permitido: false } e sem previa', async (t) => {
+    simular(t, { fontes: { availableItems: false } });
+    assert.deepEqual((await servico.consultar(poolFalso(clienteFalso()), CONTEXTO)).semCobertura, { permitido: false });
+  });
+});
+
+describe('dashboard.service — as três prévias dividem um instantâneo só', () => {
+  test('contagem e as três listas leem pelo MESMO cliente, numa transação READ ONLY REPEATABLE READ: BEGIN, quatro leituras, COMMIT', async (t) => {
+    const chamadas = simular(t);
+    const cliente = clienteFalso();
+    await servico.consultar(poolFalso(cliente), CONTEXTO);
+    assert.equal(chamadas.resumir[0].executor, cliente);
+    assert.deepEqual(chamadas.listar.map((c) => c.opcoes.ordem).sort(), ['DEFICIT_DESC', 'NECESSIDADE_DESC', 'SEM_COBERTURA_DESC']);
+    for (const c of chamadas.listar) assert.equal(c.executor, cliente);
+    assert.match(cliente.consultas[0], /^BEGIN READ ONLY ISOLATION LEVEL REPEATABLE READ$/);
+    assert.equal(cliente.consultas.at(-1), 'COMMIT');
+    assert.equal(cliente.liberado, 1);
+  });
+
+  test('falha na lista sem cobertura: ROLLBACK, cliente devolvido, erro original propagado e nenhum número parcial', async (t) => {
+    simular(t, { listas: { SEM_COBERTURA_DESC: new Error('falha simulada da terceira lista') } });
+    const cliente = clienteFalso();
+    await assert.rejects(() => servico.consultar(poolFalso(cliente), CONTEXTO), /falha simulada da terceira lista/);
+    assert.equal(cliente.consultas.at(-1), 'ROLLBACK');
+    assert.equal(cliente.liberado, 1);
+  });
+});

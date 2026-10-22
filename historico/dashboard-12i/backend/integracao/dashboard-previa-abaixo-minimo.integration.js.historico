@@ -1,0 +1,80 @@
+'use strict';
+
+const { describe, test, before, after } = require('node:test');
+const assert = require('node:assert/strict');
+const { montarAmbiente } = require('./helpers/ambiente-http-12d2');
+
+/**
+ * 12I, Task 01 — prévia do indicador "Estoque abaixo do mínimo" contra
+ * PostgreSQL real. Sete combinações abaixo do mínimo (déficits 9, 5, 4, 3, 2,
+ * 2 e 1): a prévia traz as cinco de maior déficit, com desempate por nome; a
+ * contagem e a prévia saem da MESMA posição de Itens Disponíveis, e a ordenação
+ * padrão da lista não muda. Outra empresa não vê nada.
+ */
+
+describe('dashboard — prévia de estoque abaixo do mínimo (PostgreSQL real)', () => {
+  let amb;
+  let master;
+  let masterB;
+  const q = (sql, params) => amb.pool.query(sql, params);
+  const indicador = async (quem) => {
+    const r = await quem.get('/api/dashboard/indicadores');
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    return r.body.indicadores.estoqueAbaixoMinimo;
+  };
+
+  before(async () => {
+    amb = await montarAmbiente();
+    master = amb.como(amb.d.master);
+    masterB = amb.como(amb.d.masterB);
+    // [nome, mínimo, estoque] → saldo livre = estoque, déficit = mínimo − estoque.
+    const abaixo = [['Omega', 10, 1], ['Bravo', 7, 2], ['Sigma', 6, 2], ['Tau', 5, 2], ['Zeta', 5, 3], ['Alfa', 5, 3], ['Kappa', 5, 4]];
+    for (const [nome, minimo, estoque] of abaixo) {
+      const id = await amb.f.material();
+      await q('UPDATE materiais SET nome = $2, estoque_minimo = $3 WHERE id = $1', [id, nome, minimo]);
+      await amb.f.estoque(id, estoque);
+    }
+    const folgado = await amb.f.material();
+    await q('UPDATE materiais SET nome = $2, estoque_minimo = 2 WHERE id = $1', [folgado, 'Folgado']);
+    await amb.f.estoque(folgado, 10);
+  });
+  after(async () => { if (amb) await amb.encerrar(); });
+
+  test('o número do card continua 7 e a prévia traz as CINCO de maior déficit, com desempate determinístico (nome)', async () => {
+    const i = await indicador(master);
+    assert.equal(i.permitido, true);
+    assert.equal(i.valor, 7);
+    assert.equal(i.previa.total, 7);
+    assert.deepEqual(i.previa.itens.map((x) => x.material), ['Omega', 'Bravo', 'Sigma', 'Tau', 'Alfa'], 'Alfa antes de Zeta no empate de déficit 2; Zeta e Kappa ficam de fora');
+    assert.deepEqual(i.previa.itens.map((x) => x.deficit), [9, 5, 4, 3, 2]);
+    assert.deepEqual(Object.keys(i.previa.itens[0]).sort(), ['deficit', 'estoqueMinimo', 'material', 'materialId', 'saldoLivre', 'tamanho']);
+    assert.deepEqual(
+      [i.previa.itens[0].tamanho, i.previa.itens[0].saldoLivre, i.previa.itens[0].estoqueMinimo, i.previa.itens[0].deficit],
+      ['40', 1, 10, 9],
+    );
+  });
+
+  test('a contagem, a prévia e o filtro ABAIXO_MINIMO de Itens Disponíveis são a mesma definição, com os mesmos números por item', async () => {
+    const i = await indicador(master);
+    const lista = (await master.get('/api/estoque/itens-disponiveis?situacao=ABAIXO_MINIMO&limite=100')).body;
+    assert.equal(lista.total, i.valor);
+    assert.equal(i.previa.total, lista.total);
+    for (const p of i.previa.itens) {
+      const igual = lista.itens.find((x) => x.materialId === p.materialId && x.tamanho === p.tamanho);
+      assert.ok(igual, `${p.material} precisa existir no filtro`);
+      assert.deepEqual([p.saldoLivre, p.estoqueMinimo, p.deficit], [igual.saldoLivre, igual.estoqueMinimo, igual.deficit]);
+    }
+  });
+
+  test('a ordenação padrão de Itens Disponíveis NÃO mudou: segue por nome, material e tamanho', async () => {
+    const itens = (await master.get('/api/estoque/itens-disponiveis?situacao=ABAIXO_MINIMO&limite=100')).body.itens;
+    assert.deepEqual(itens.map((x) => x.material), ['Alfa', 'Bravo', 'Kappa', 'Omega', 'Sigma', 'Tau', 'Zeta']);
+  });
+
+  test('isolamento: outra empresa tem 0 e prévia vazia, e nenhum nome da empresa A aparece', async () => {
+    const i = await indicador(masterB);
+    assert.deepEqual(i, { permitido: true, valor: 0, previa: { total: 0, itens: [] } });
+    assert.ok(!JSON.stringify(i).includes('Omega'));
+  });
+
+});

@@ -44,9 +44,14 @@ const minhas = {
 
 const fila = { query: z.strictObject({ ...paginacaoQuery }) };
 
+// 12I (Dashboard): o filtro por cobertura usa a MESMA população dos cartões "Disponíveis para entrega" (COM_COBERTURA) e "Solicitações
+// aguardando estoque" (SEM_COBERTURA). Quem só encerra (ENCERRAR_SOLICITACAO) só filtra pelas sem cobertura: nada de disponibilidade.
+const COBERTURAS = Object.freeze(['COM_COBERTURA', 'SEM_COBERTURA', 'COBERTURA_COMPLETA']);
+
 const entregaveis = {
   query: z.strictObject({
     funcionarioId: inteiroQuery(1, LIMITES.ID_MAXIMO).optional(),
+    cobertura: z.enum(COBERTURAS).optional(),
     ...paginacaoQuery,
   }),
 };
@@ -74,6 +79,7 @@ const contextoMateriais = {
 const encerraveis = {
   query: z.strictObject({
     funcionarioId: inteiroQuery(1, LIMITES.ID_MAXIMO).optional(),
+    cobertura: z.literal('SEM_COBERTURA').optional(),
     ...paginacaoQuery,
   }),
 };

@@ -4,6 +4,7 @@ const autorizacao = require('../middleware/autorizacao');
 const loteRepo = require('../repositories/estoque-lote.repository');
 const posicaoRepo = require('../repositories/posicao-estoque.repository');
 const funcionarioRepo = require('../repositories/funcionario.repository');
+const relatorioSvc = require('./relatorio.service');
 const consultaRepo = require('../repositories/solicitacao-epi-consulta.repository');
 const coberturaRepo = require('../repositories/solicitacao-epi-cobertura.repository');
 const { DIAS_ALERTA_VALIDADE_CA } = require('../schemas/itens-disponiveis.schema');
@@ -39,7 +40,7 @@ const { exigirDataOperacional } = require('../utils/data-operacional');
  * instantâneo. Nada é gravado.
  */
 
-const FONTES = Object.freeze({ estoque: 'availableItems', validade: 'stockValidity', funcionarios: 'employeeHistory' });
+const FONTES = Object.freeze({ estoque: 'availableItems', validade: 'stockValidity', funcionarios: 'employeeHistory', entregas: 'epiFicha' });
 const ACOES = Object.freeze({
   aguardandoSst: Object.freeze(['APROVAR_SOLICITACAO']),
   aguardandoEstoque: Object.freeze(['REALIZAR_ENTREGA', 'ENCERRAR_SOLICITACAO']),
@@ -96,9 +97,19 @@ async function contarSolicitacoes(pool, contexto, hoje) {
     return {
       sst: fila,
       estoque: estoque ? porCobertura.semCobertura : null,
-      disponiveis: disponiveis ? porCobertura.comCobertura : null,
+      // 12I: "disponíveis para entrega" = só os pedidos COMPLETAMENTE disponíveis (todos os itens pendentes cobertos, nenhum suspenso).
+      disponiveis: disponiveis ? porCobertura.coberturaCompleta : null,
     };
   });
+}
+
+// "EPIs entregues" e "Próximo do vencimento de uso" (12I): as contagens saem do serviço dos relatórios (mesma fonte e mesmos filtros das abas
+// "EPIs entregues" e "Prazo de uso — próximo do vencimento"). O mês é o da data operacional (São Paulo), do dia 1 ao último dia.
+function periodoDoMes(hoje) {
+  const [ano, mes] = hoje.split('-').map(Number);
+  const ultimo = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+  const base = `${String(ano).padStart(4, '0')}-${String(mes).padStart(2, '0')}`;
+  return { de: `${base}-01`, ate: `${base}-${String(ultimo).padStart(2, '0')}` };
 }
 
 const numeroOuNegado = (valor) => (valor === null ? { ...NEGADO } : { permitido: true, valor });
@@ -119,11 +130,15 @@ async function consultar(pool, { empresaId, usuarioId, perfil, hoje }) {
   ]);
 
   // Cada agregação só roda se o usuário vê a sua fonte; o estoque sai da posição, a validade dos lotes.
-  const [posicao, ca, ativos, solicitacoes] = await Promise.all([
+  const entregas = await podeVer(pool, contexto, FONTES.entregas);
+  const periodo = periodoDoMes(hoje);
+  const [posicao, ca, ativos, solicitacoes, unidades, proximo] = await Promise.all([
     estoque ? posicaoRepo.resumirPosicoes(pool, empresaId, { hoje }) : null,
     validade ? loteRepo.resumirIndicadores(pool, empresaId, { hoje, diasAlerta: DIAS_ALERTA_VALIDADE_CA }) : null,
     funcionarios ? funcionarioRepo.contarPorEmpresa(pool, empresaId, { ativo: true }) : null,
     contarSolicitacoes(pool, contexto, hoje),
+    entregas ? relatorioSvc.unidadesEntregues(pool, { empresaId, ...periodo }) : null,
+    entregas ? relatorioSvc.contarProximoVencimento(pool, { empresaId }) : null,
   ]);
   const deEstoque = (valor) => (estoque ? { permitido: true, valor } : { ...NEGADO });
 
@@ -141,6 +156,8 @@ async function consultar(pool, { empresaId, usuarioId, perfil, hoje }) {
     solicitacoesAguardandoSst: numeroOuNegado(solicitacoes.sst),
     solicitacoesAguardandoEstoque: numeroOuNegado(solicitacoes.estoque),
     disponiveisParaEntrega: numeroOuNegado(solicitacoes.disponiveis),
+    episEntregues: entregas ? { permitido: true, valor: unidades, ...periodo } : { ...NEGADO },
+    proximoVencimentoUso: entregas ? { permitido: true, valor: proximo } : { ...NEGADO },
   };
 }
 

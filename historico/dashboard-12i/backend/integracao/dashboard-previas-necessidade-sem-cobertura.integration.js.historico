@@ -1,0 +1,150 @@
+'use strict';
+
+const { describe, test, before, after } = require('node:test');
+const assert = require('node:assert/strict');
+const { montarAmbiente } = require('./helpers/ambiente-http-12d2');
+
+/**
+ * 12I, Tasks 02 e 03 — prévias de "Necessidade de reposição" e "Pendências sem estoque" contra PostgreSQL real. Posição semeada (cada
+ * material tem um tamanho, '40'; U = físico utilizável, D = demanda aprovada, mín = mínimo):
+ *   Alfa U0 D10 mín0 → sem cobertura 10, déficit 0, necessidade 10      Beta  U5 D8 mín6 → sem cobertura 3, déficit 6, necessidade 9
+ *   Gama U2 D5  mín0 → 3, 0, 3                                          Delta U0 D7 mín0 → 7, 0, 7
+ *   Epsilon U1 D6 mín0 → 5, 0, 5        Zeta U0 D4 mín0 → 4, 0, 4        Eta U3 D4 mín0 → 1, 0, 1       Teta U3 D3 mín0 → coberto (fora)
+ *   Iota U20 mín50 → 0, 30, 30          Kappa U1 mín12 → 0, 11, 11
+ * Necessidade (soma 80, 9 combinações): Iota 30, Kappa 11, Alfa 10, Beta 9, Delta 7 | Epsilon 5, Zeta 4, Gama 3, Eta 1.
+ * Sem cobertura (soma 33, 7 combinações): Alfa 10, Delta 7, Epsilon 5, Zeta 4, Beta 3 (desempata com Gama pelo nome) | Gama 3, Eta 1.
+ */
+
+describe('dashboard — prévias de necessidade e de sem cobertura (PostgreSQL real)', () => {
+  let amb;
+  let master;
+  let masterB;
+  const q = (sql, params) => amb.pool.query(sql, params);
+  const indicadores = async (quem) => {
+    const r = await quem.get('/api/dashboard/indicadores');
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    return r.body.indicadores;
+  };
+
+  before(async () => {
+    amb = await montarAmbiente();
+    master = amb.como(amb.d.master);
+    masterB = amb.como(amb.d.masterB);
+    // [nome, estoque, demanda aprovada, mínimo]
+    const posicao = [['Alfa', 0, 10, 0], ['Beta', 5, 8, 6], ['Gama', 2, 5, 0], ['Delta', 0, 7, 0], ['Epsilon', 1, 6, 0], ['Zeta', 0, 4, 0], ['Eta', 3, 4, 0], ['Teta', 3, 3, 0], ['Iota', 20, 0, 50], ['Kappa', 1, 0, 12]];
+    for (const [nome, estoque, demanda, minimo] of posicao) {
+      const id = await amb.f.material();
+      await q('UPDATE materiais SET nome = $2, estoque_minimo = $3 WHERE id = $1', [id, nome, minimo]);
+      if (estoque > 0) await amb.f.estoque(id, estoque);
+      if (demanda > 0) await amb.f.aprovada({ materialId: id, quantidade: demanda });
+    }
+  });
+  after(async () => { if (amb) await amb.encerrar(); });
+
+  describe('Task 02 — Necessidade de reposição', () => {
+    test('o número do card continua a soma da necessidade (80) e a prévia traz as CINCO maiores, com o total de combinações (9)', async () => {
+      const i = (await indicadores(master)).necessidadeReposicao;
+      assert.equal(i.permitido, true);
+      assert.equal(i.valor, 80);
+      assert.equal(i.previa.total, 9, 'combinações com necessidade, não unidades');
+      assert.deepEqual(i.previa.itens.map((x) => [x.material, x.necessidade]), [['Iota', 30], ['Kappa', 11], ['Alfa', 10], ['Beta', 9], ['Delta', 7]]);
+    });
+
+    test('cada item traz saldo livre, sem cobertura, déficit do mínimo e necessidade, e a necessidade total é sem cobertura + déficit (nunca só o déficit)', async () => {
+      const { itens } = (await indicadores(master)).necessidadeReposicao.previa;
+      for (const x of itens) {
+        assert.deepEqual(Object.keys(x).sort(), ['deficit', 'material', 'materialId', 'necessidade', 'saldoLivre', 'semCobertura', 'tamanho']);
+        assert.equal(x.necessidade, x.semCobertura + x.deficit, x.material);
+      }
+      const beta = itens.find((x) => x.material === 'Beta');
+      assert.deepEqual([beta.tamanho, beta.saldoLivre, beta.semCobertura, beta.deficit, beta.necessidade], ['40', 0, 3, 6, 9], 'Beta: necessidade 9 ≠ déficit 6');
+      const alfa = itens.find((x) => x.material === 'Alfa');
+      assert.deepEqual([alfa.semCobertura, alfa.deficit, alfa.necessidade], [10, 0, 10], 'Alfa: só sem cobertura');
+    });
+
+    test('a prévia, a lista "Somente com necessidade" e o card são a mesma definição, com os mesmos números por item', async () => {
+      const i = (await indicadores(master)).necessidadeReposicao;
+      const lista = (await master.get('/api/estoque/itens-disponiveis?somenteComNecessidade=true&limite=100')).body;
+      assert.equal(lista.total, i.previa.total);
+      assert.equal(lista.itens.reduce((s, x) => s + x.necessidade, 0), i.valor, 'a soma da lista é o número do card');
+      for (const p of i.previa.itens) {
+        const igual = lista.itens.find((x) => x.materialId === p.materialId && x.tamanho === p.tamanho);
+        assert.ok(igual, `${p.material} precisa estar na lista`);
+        assert.deepEqual([p.saldoLivre, p.semCobertura, p.deficit, p.necessidade], [igual.saldoLivre, igual.semCobertura, igual.deficit, igual.necessidade]);
+      }
+    });
+
+    test('a ordenação padrão de Itens Disponíveis NÃO mudou: segue por nome, material e tamanho', async () => {
+      const itens = (await master.get('/api/estoque/itens-disponiveis?somenteComNecessidade=true&limite=100')).body.itens;
+      assert.deepEqual(itens.map((x) => x.material), ['Alfa', 'Beta', 'Delta', 'Epsilon', 'Eta', 'Gama', 'Iota', 'Kappa', 'Zeta']);
+    });
+
+    test('isolamento: a empresa B tem 0 e prévia vazia, e nenhum material da A aparece', async () => {
+      const i = (await indicadores(masterB)).necessidadeReposicao;
+      assert.deepEqual(i, { permitido: true, valor: 0, previa: { total: 0, itens: [] } });
+    });
+
+    test('sem a permissão da fonte (availableItems) o indicador é só { permitido: false }, sem previa', async () => {
+      const so = amb.como(await amb.usuarioCom(amb.d.empresaA, { dashboard: ['visualizar'] }));
+      const i = await indicadores(so);
+      assert.deepEqual(i.necessidadeReposicao, { permitido: false });
+      assert.equal(JSON.stringify(i).includes('Iota'), false, 'nenhum material vaza');
+    });
+  });
+
+  describe('Task 03 — Pendências sem estoque', () => {
+    test('o número do card continua a soma da demanda sem cobertura (33) e a prévia traz as CINCO maiores, com o total de combinações (7)', async () => {
+      const i = (await indicadores(master)).semCobertura;
+      assert.equal(i.permitido, true);
+      assert.equal(i.valor, 33);
+      assert.equal(i.previa.total, 7, 'combinações sem cobertura, não unidades');
+      assert.deepEqual(i.previa.itens.map((x) => [x.material, x.semCobertura]), [['Alfa', 10], ['Delta', 7], ['Epsilon', 5], ['Zeta', 4], ['Beta', 3]]);
+    });
+
+    test('o desempate é determinístico: no empate de 3 unidades, Beta vem antes de Gama pelo nome', async () => {
+      const nomes = (await indicadores(master)).semCobertura.previa.itens.map((x) => x.material);
+      assert.equal(nomes.includes('Beta'), true);
+      assert.equal(nomes.includes('Gama'), false, 'Gama é o sexto e fica de fora');
+    });
+
+    test('cada item traz físico utilizável, demanda aprovada e quantidade sem cobertura; a quantidade sem cobertura é demanda − físico', async () => {
+      const { itens } = (await indicadores(master)).semCobertura.previa;
+      for (const x of itens) {
+        assert.deepEqual(Object.keys(x).sort(), ['demandaPendente', 'fisicoUtilizavel', 'material', 'materialId', 'semCobertura', 'tamanho']);
+        assert.equal(x.semCobertura, x.demandaPendente - x.fisicoUtilizavel, x.material);
+      }
+      const alfa = itens.find((x) => x.material === 'Alfa');
+      assert.deepEqual([alfa.tamanho, alfa.fisicoUtilizavel, alfa.demandaPendente, alfa.semCobertura], ['40', 0, 10, 10]);
+      const beta = itens.find((x) => x.material === 'Beta');
+      assert.deepEqual([beta.fisicoUtilizavel, beta.demandaPendente, beta.semCobertura], [5, 8, 3]);
+    });
+
+    test('a prévia, a lista "Sem cobertura" e o card são a mesma definição: mesmo total, soma igual ao card e os mesmos números por item', async () => {
+      const i = (await indicadores(master)).semCobertura;
+      const lista = (await master.get('/api/estoque/itens-disponiveis?situacao=SEM_COBERTURA&limite=100')).body;
+      assert.equal(lista.total, i.previa.total);
+      assert.equal(lista.itens.reduce((s, x) => s + x.semCobertura, 0), i.valor);
+      for (const p of i.previa.itens) {
+        const igual = lista.itens.find((x) => x.materialId === p.materialId && x.tamanho === p.tamanho);
+        assert.ok(igual, `${p.material} precisa estar na lista`);
+        assert.deepEqual([p.fisicoUtilizavel, p.semCobertura], [igual.fisicoUtilizavel, igual.semCobertura]);
+      }
+    });
+
+    test('o material coberto (Teta) e os só com déficit do mínimo (Iota, Kappa) ficam fora das pendências sem estoque', async () => {
+      const lista = (await master.get('/api/estoque/itens-disponiveis?situacao=SEM_COBERTURA&limite=100')).body.itens.map((x) => x.material);
+      for (const fora of ['Teta', 'Iota', 'Kappa']) assert.equal(lista.includes(fora), false, fora);
+    });
+
+    test('isolamento: a empresa B tem 0 e prévia vazia', async () => {
+      assert.deepEqual((await indicadores(masterB)).semCobertura, { permitido: true, valor: 0, previa: { total: 0, itens: [] } });
+    });
+
+    test('sem a permissão da fonte (availableItems) o indicador é só { permitido: false }, sem previa', async () => {
+      const so = amb.como(await amb.usuarioCom(amb.d.empresaA, { dashboard: ['visualizar'] }));
+      const i = await indicadores(so);
+      assert.deepEqual(i.semCobertura, { permitido: false });
+      assert.equal(JSON.stringify(i).includes('Alfa'), false);
+    });
+  });
+});

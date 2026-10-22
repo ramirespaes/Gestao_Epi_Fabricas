@@ -419,6 +419,7 @@
     if (!acesso) return undefined;
     tela = EpiGestaoFuncionarios.criarTela({
       capacidades: EpiGestaoFuncionarios.capacidades(acesso.permissoes),
+      situacao: EpiGestaoFuncionarios.situacaoDaUrl(window.location.search), // 12I: o cartão do Dashboard abre a listagem já filtrada por ativos
       aoSessaoEncerrada: function () {
         if (tela) tela.encerrar();
         EpiEstadoPagina.sessaoEncerrada({ conteudo: $('conteudoProtegido'), estado: $('estadoPagina') });
