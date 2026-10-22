@@ -29,9 +29,9 @@ const EpiMinimos = require('../../../frontend/js/estoque-minimos');
 
 const CHAVES_DO_ITEM = ['abaixoDoMinimo', 'bloqueado', 'caValidade', 'categoria', 'codigoInterno', 'comprometido', 'deficit', 'disponivel', 'estoqueMinimo', 'fisicoUtilizavel',
   'grupo', 'material', 'materialId', 'minimoOrigem', 'necessidade', 'saldo', 'saldoLivre', 'semCobertura', 'tamanho', 'tipo', 'unidade', 'validade'];
-// As oito fontes de recurso da 12D; a 12G-6 acrescentou três contagens de solicitações, liberadas por ação.
+// Oito fontes da 12D, três contagens por ação da 12G-6 e dois indicadores da 12I protegidos por epiFicha.visualizar.
 const CHAVES_DAS_FONTES = ['caVencido', 'comprometido', 'estoqueAbaixoMinimo', 'funcionariosAtivos', 'itensDisponiveis', 'necessidadeReposicao', 'saldoLivre', 'semCobertura'];
-const CHAVES_DO_DASHBOARD = [...CHAVES_DAS_FONTES, 'disponiveisParaEntrega', 'solicitacoesAguardandoEstoque', 'solicitacoesAguardandoSst'].sort();
+const CHAVES_DO_DASHBOARD = [...CHAVES_DAS_FONTES, 'disponiveisParaEntrega', 'solicitacoesAguardandoEstoque', 'solicitacoesAguardandoSst', 'episEntregues', 'proximoVencimentoUso'].sort();
 
 describe('12D-3 — módulos reais do frontend contra servidor e PostgreSQL reais', () => {
   let amb;
@@ -123,7 +123,7 @@ describe('12D-3 — módulos reais do frontend contra servidor e PostgreSQL reai
   });
 
   describe('Dashboard', () => {
-    test('os onze indicadores têm as chaves que a tela lê; os valores do cenário aparecem como o servidor mediu (deltas sobre o estado anterior)', async () => {
+    test('os treze indicadores têm as chaves que a tela lê; os valores do cenário aparecem como o servidor mediu (deltas sobre o estado anterior)', async () => {
       comoUsuario(amb.d.master);
       const antes = await cartoes();
       assert.deepEqual(Object.keys(antes.bruto).sort(), CHAVES_DO_DASHBOARD);
@@ -157,7 +157,48 @@ describe('12D-3 — módulos reais do frontend contra servidor e PostgreSQL reai
       comoUsuario(soEstoque);
       const parcial = await cartoes();
       for (const k of ['disponiveis', 'saldoLivre', 'comprometido', 'semCobertura', 'necessidade', 'abaixoMinimo']) assert.notEqual(parcial.cards[k].valor, '—', k);
-      for (const k of ['caVencido', 'funcionarios']) assert.deepEqual(parcial.cards[k], { valor: '—', meta: 'sem permissão' }, k);
+      for (const k of ['caVencido', 'funcionarios', 'episEntregues', 'proximoVencimento']) assert.deepEqual(parcial.cards[k], { valor: '—', meta: 'sem permissão' }, k);
+      for (const k of ['episEntregues', 'proximoVencimentoUso']) assert.deepEqual(parcial.bruto[k], { permitido: false }, k);
+    });
+
+    test('12I: epiFicha.visualizar libera unidades no mês e itens próximos do vencimento, sem liberar outras fontes', async () => {
+      const comFicha = await amb.usuarioCom(amb.d.empresaA, { dashboard: ['visualizar'], epiFicha: ['visualizar'] });
+      comoUsuario(comFicha);
+      const antes = await cartoes();
+      // Expectativas independentes da resposta: mês da data operacional da fixture, inclusive seu último dia.
+      const [ano, mes] = amb.f.HOJE.split('-').map(Number);
+      const prefixo = amb.f.HOJE.slice(0, 7);
+      const de = `${prefixo}-01`;
+      const ate = `${prefixo}-${String(new Date(Date.UTC(ano, mes, 0)).getUTCDate()).padStart(2, '0')}`;
+      assert.deepEqual(
+        [antes.bruto.episEntregues.permitido, antes.bruto.episEntregues.de, antes.bruto.episEntregues.ate],
+        [true, de, ate],
+      );
+      assert.equal(antes.bruto.proximoVencimentoUso.permitido, true);
+
+      const proximo = await amb.f.material({ prazo: 10 });
+      const distante = await amb.f.material({ prazo: 60 });
+      const loteProximo = await amb.f.estoque(proximo, 3);
+      const loteDistante = await amb.f.estoque(distante, 2);
+      await amb.f.direta([[proximo, loteProximo, 3], [distante, loteDistante, 2]]);
+      const depois = await cartoes();
+      assert.deepEqual(depois.bruto.episEntregues, { permitido: true, valor: antes.bruto.episEntregues.valor + 5, de, ate });
+      assert.deepEqual(depois.bruto.proximoVencimentoUso, { permitido: true, valor: antes.bruto.proximoVencimentoUso.valor + 1 });
+      assert.equal(numero(depois.cards.episEntregues) - numero(antes.cards.episEntregues), 5, 'unidades, não linhas de entrega');
+      assert.equal(numero(depois.cards.proximoVencimento) - numero(antes.cards.proximoVencimento), 1, 'um item a 10 dias; o de 60 dias fica fora');
+      for (const k of CHAVES_DAS_FONTES) assert.deepEqual(depois.bruto[k], { permitido: false }, k);
+
+      comoUsuario(amb.d.masterB);
+      const outraEmpresa = await cartoes();
+      assert.deepEqual(outraEmpresa.bruto.episEntregues, { permitido: true, valor: 0, de, ate });
+      assert.deepEqual(outraEmpresa.bruto.proximoVencimentoUso, { permitido: true, valor: 0 });
+    });
+
+    test('epiFicha.visualizar não substitui a permissão de entrada dashboard.visualizar', async () => {
+      const semDashboard = await amb.usuarioCom(amb.d.empresaA, { epiFicha: ['visualizar'] });
+      comoUsuario(semDashboard);
+      const r = await EpiDashboard.acoes.consultar();
+      assert.deepEqual([r.ok, r.status, r.codigo], [false, 403, 'PERMISSAO_NEGADA']);
     });
 
     test('sem sessão: 401 com a orientação de novo login', async () => {
