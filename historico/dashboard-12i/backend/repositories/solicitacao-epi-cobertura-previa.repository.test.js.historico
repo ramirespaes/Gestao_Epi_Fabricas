@@ -1,0 +1,97 @@
+'use strict';
+
+const { describe, test } = require('node:test');
+const assert = require('node:assert/strict');
+const { exigirModulo } = require('../helpers/exigir-modulo');
+
+/**
+ * 12I, Tasks 05 e 06 — as solicitações da fila com e sem cobertura, para a prévia do Dashboard e para o filtro das listas (RED), sem
+ * PostgreSQL real. A cobertura é a MESMA consulta FIFO que a contagem usa (nenhuma segunda regra); a ordem de EXIBIÇÃO é a criação mais
+ * recente (a prioridade operacional continua decidida_em, dentro da cobertura). A equivalência com a contagem em banco real está em
+ * dashboard-previas-solicitacoes.integration.js.
+ */
+
+const repo = () => exigirModulo('src/repositories/solicitacao-epi-cobertura.repository');
+const EMPRESA = 42;
+const HOJE = '2026-10-02';
+function executorFalso(rows = []) {
+  const chamadas = [];
+  return { chamadas, query: async (texto, valores) => { chamadas.push({ texto, valores }); return { rows, rowCount: rows.length }; } };
+}
+
+describe('listarSolicitacoesPorCobertura (prévia)', () => {
+  test('reutiliza a consulta de cobertura da contagem: mesmos fragmentos de fila, empresa, data operacional e sem filtro de solicitação', async () => {
+    const ex = executorFalso();
+    const contagem = executorFalso([{ com_cobertura: 0, sem_cobertura: 0 }]);
+    await repo().contarSolicitacoesPorCobertura(contagem, EMPRESA, { hoje: HOJE });
+    await repo().listarSolicitacoesPorCobertura(ex, EMPRESA, { hoje: HOJE, comCobertura: true, limite: 5 });
+    const fila = (t) => t.slice(t.indexOf('WITH fila AS'), t.indexOf('ORDER BY fl.decidida_em'));
+    assert.ok(fila(ex.chamadas[0].texto).length > 200, 'a fila de cobertura está embutida');
+    assert.equal(fila(ex.chamadas[0].texto), fila(contagem.chamadas[0].texto), 'o MESMO texto de cobertura da contagem');
+    assert.deepEqual(ex.chamadas[0].valores.slice(0, 3), [EMPRESA, HOJE, null]);
+  });
+
+  test('com cobertura = algum item coberto; sem cobertura = nenhum; a escolha é parâmetro booleano, nunca texto do chamador', async () => {
+    const com = executorFalso();
+    const sem = executorFalso();
+    await repo().listarSolicitacoesPorCobertura(com, EMPRESA, { hoje: HOJE, comCobertura: true, limite: 5 });
+    await repo().listarSolicitacoesPorCobertura(sem, EMPRESA, { hoje: HOJE, comCobertura: false, limite: 5 });
+    assert.equal(com.chamadas[0].texto, sem.chamadas[0].texto, 'o mesmo SQL fixo');
+    assert.match(com.chamadas[0].texto, /max\(c\.coberta\)/i);
+    assert.ok(com.chamadas[0].valores.includes(true));
+    assert.ok(sem.chamadas[0].valores.includes(false));
+  });
+
+  test('exibe da criação mais recente para a mais antiga, desempate por id; limite parametrizado', async () => {
+    const ex = executorFalso();
+    await repo().listarSolicitacoesPorCobertura(ex, EMPRESA, { hoje: HOJE, comCobertura: true, limite: 5 });
+    assert.match(ex.chamadas[0].texto, /ORDER BY\s+s\.criada_em\s+DESC,\s*s\.id\s+DESC\s+LIMIT/i);
+    assert.ok(ex.chamadas[0].valores.includes(5));
+  });
+
+  test('traz só identificação do pedido e do trabalhador (nome, matrícula) e as quantidades; nunca CPF, texto livre ou hashes', async () => {
+    const ex = executorFalso();
+    await repo().listarSolicitacoesPorCobertura(ex, EMPRESA, { hoje: HOJE, comCobertura: true, limite: 5 });
+    for (const proibido of ['cpf', 'observacao', 'justificativa', 'hash', 'chave_idempotencia']) assert.equal(ex.chamadas[0].texto.toLowerCase().includes(proibido), false, proibido);
+  });
+
+  test('mapeia as linhas e o total (todas as solicitações da população, não só as devolvidas)', async () => {
+    const ex = executorFalso([
+      { id: 9, numero: 12, criada_em: new Date('2026-10-01T10:00:00Z'), trabalhador_nome: 'Ana', trabalhador_matricula: 'M1', itens_pendentes: 3, itens_cobertos: 2, quantidade_pendente: '7', quantidade_coberta: '4', total: 8 },
+    ]);
+    const r = await repo().listarSolicitacoesPorCobertura(ex, EMPRESA, { hoje: HOJE, comCobertura: true, limite: 5 });
+    assert.equal(r.total, 8);
+    assert.deepEqual(r.itens, [{
+      solicitacaoId: 9, numero: 12, criadaEm: new Date('2026-10-01T10:00:00Z'), trabalhadorNome: 'Ana', trabalhadorMatricula: 'M1',
+      itensPendentes: 3, itensCobertos: 2, quantidadePendente: 7, quantidadeCoberta: 4,
+    }]);
+    assert.deepEqual(await repo().listarSolicitacoesPorCobertura(executorFalso(), EMPRESA, { hoje: HOJE, comCobertura: false, limite: 5 }), { total: 0, itens: [] });
+  });
+
+  test('valida empresa, data operacional, flag e limite antes de consultar', async () => {
+    const ex = executorFalso();
+    for (const opcoes of [{ hoje: 'x', comCobertura: true, limite: 5 }, { hoje: HOJE, comCobertura: 'sim', limite: 5 }, { hoje: HOJE, comCobertura: true, limite: 0 }, { hoje: HOJE, comCobertura: true, limite: 101 }, { hoje: HOJE, limite: 5 }]) {
+      await assert.rejects(() => repo().listarSolicitacoesPorCobertura(ex, EMPRESA, opcoes), TypeError);
+    }
+    await assert.rejects(() => repo().listarSolicitacoesPorCobertura(ex, 0, { hoje: HOJE, comCobertura: true, limite: 5 }), TypeError);
+    assert.equal(ex.chamadas.length, 0);
+  });
+});
+
+describe('idsDeSolicitacoesPorCobertura (filtro das listas)', () => {
+  test('usa a mesma cobertura e devolve só os ids, sem ordem de exibição própria', async () => {
+    const ex = executorFalso([{ solicitacao_id: 5 }, { solicitacao_id: 2 }]);
+    const ids = await repo().idsDeSolicitacoesPorCobertura(ex, EMPRESA, { hoje: HOJE, comCobertura: false });
+    assert.deepEqual(ids, [5, 2]);
+    assert.match(ex.chamadas[0].texto, /WITH fila AS/);
+    assert.deepEqual(ex.chamadas[0].valores.slice(0, 3), [EMPRESA, HOJE, null]);
+    assert.ok(ex.chamadas[0].valores.includes(false));
+  });
+
+  test('valida os argumentos', async () => {
+    const ex = executorFalso();
+    await assert.rejects(() => repo().idsDeSolicitacoesPorCobertura(ex, EMPRESA, { hoje: HOJE }), TypeError);
+    await assert.rejects(() => repo().idsDeSolicitacoesPorCobertura(ex, 0, { hoje: HOJE, comCobertura: true }), TypeError);
+    assert.equal(ex.chamadas.length, 0);
+  });
+});

@@ -59,6 +59,8 @@
     .campo-erro{color:var(--error);font-size:12px;margin:0}
     .campo-erro:empty{display:none}
     .dica{font-size:12px;color:var(--on-surface-variant);margin:0}
+    .filtro-lista{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;padding:10px 12px;border-radius:12px;background:var(--primary-container);font-size:13px;color:var(--on-surface)}
+    .filtro-lista .outlined-btn{flex:0 0 auto}
     .declaracao{background:var(--warning-container);border-radius:12px;padding:10px 12px;font-size:12px;line-height:1.6;color:var(--on-surface)}
     .modos{border:0;margin:0;padding:0;min-width:0}
     .modos legend{font-size:12px;font-weight:700;color:var(--on-surface-variant);margin-bottom:8px;padding:0}
@@ -214,6 +216,10 @@
               <button class="outlined-btn" id="botaoAtualizarLista" type="button">Atualizar</button>
             </div>
             <div id="avisoLista" class="aviso-area" style="display:none"></div>
+            <div id="filtroLista" class="filtro-lista" style="display:none">
+              <span id="filtroListaTexto" role="status"></span>
+              <button class="outlined-btn" id="botaoRemoverFiltro" type="button">Mostrar todas</button>
+            </div>
             <div id="listaEntregas"></div>
             <div class="paginacao">
               <button class="outlined-btn" id="listaAnterior" type="button" disabled>Anterior</button>
@@ -377,6 +383,7 @@
       capacidades: capacidades,
       aoSessaoEncerrada: aoSessaoEncerrada,
       aoMudarDetalhe: alerta.atualizar,
+      cobertura: EpiEntregasSolicitacao.coberturaDaUrl(window.location.search), // 12I: os cartões do Dashboard abrem a lista já filtrada
     });
     return tela.iniciar();
   });

@@ -1118,3 +1118,49 @@ describe('Cadastro de Colaboradores — 20 por página', () => {
     assert.equal(pg.el('paginaColaboradoresProxima').disabled, true);
   });
 });
+
+// ── 12I, Task 04: a listagem abre já filtrada por ativos, vinda do cartão "Funcionários ativos" do Dashboard ──
+describe('12I — situação inicial vinda da URL (cartão Funcionários ativos)', () => {
+  async function abrirComBusca(search) {
+    const m = mundo({});
+    const pg = abrirPagina(ARQUIVO, { rotas: m.rotas, search });
+    await pg.esperar();
+    await pg.esperar();
+    return pg;
+  }
+
+  test('situacaoDaUrl: só ATIVO, AFASTADO e INATIVO valem; ausente, repetida ou desconhecida vira nulo', () => {
+    const f = require('../js/gestao-funcionarios').situacaoDaUrl; // eslint-disable-line global-require
+    assert.equal(typeof f, 'function', 'EpiGestaoFuncionarios.situacaoDaUrl ainda não existe');
+    assert.equal(f('?situacao=ATIVO'), 'ATIVO');
+    assert.equal(f('situacao=INATIVO&x=1'), 'INATIVO');
+    assert.equal(f('?situacao=AFASTADO'), 'AFASTADO');
+    for (const ruim of ['', '?', '?situacao=', '?situacao=ativo', '?situacao=TODOS', '?situacao=ATIVO&situacao=INATIVO', '?outra=ATIVO', undefined, null, 7]) assert.equal(f(ruim), null, String(ruim));
+  });
+
+  test('com ?situacao=ATIVO o filtro de situação já vem selecionado e só os ativos aparecem na primeira pintura', async () => {
+    const pg = await abrirComBusca('?situacao=ATIVO');
+    assert.equal(pg.el('fSituacaoFiltro').value, 'ATIVO');
+    const nomes = tabela(pg).map((l) => l[0]);
+    assert.ok(nomes.length > 0);
+    assert.equal(linhas(pg).every((tr) => /Ativo/.test(tr.textContent)), true, 'só funcionários ativos');
+    assert.equal(nomes.some((n) => n.includes('João Pereira')), false, 'o afastado fica fora');
+  });
+
+  test('o usuário continua podendo trocar o filtro; sem situação na URL o filtro começa em "Todos"', async () => {
+    const pg = await abrirComBusca('?situacao=ATIVO');
+    pg.el('fSituacaoFiltro').value = '';
+    await pg.el('fSituacaoFiltro').disparar('change');
+    await pg.esperar();
+    assert.equal(tabela(pg).length, 4);
+    const sem = await abrirComBusca('');
+    assert.equal(sem.el('fSituacaoFiltro').value, '');
+    assert.equal(tabela(sem).length, 4);
+  });
+
+  test('valor desconhecido na URL é ignorado', async () => {
+    const pg = await abrirComBusca('?situacao=QUALQUER');
+    assert.equal(pg.el('fSituacaoFiltro').value, '');
+    assert.equal(tabela(pg).length, 4);
+  });
+});

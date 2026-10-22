@@ -1,0 +1,254 @@
+'use strict';
+
+const { describe, test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+
+const EpiHttp = require('../js/api-http');
+
+/**
+ * 12I, Task 01 — ajustes de revisão do cartão "Estoque abaixo do mínimo" (RED):
+ *  1. sem permissão (permitido === false) o cartão INTEIRO some, sem ocupar espaço no grid;
+ *  2. com permissão, mesmo com zero, o cartão fica visível;
+ *  3. erro de carga (HTTP, rede, indicador ausente ou malformado) NUNCA vira falta de permissão: o cartão
+ *     continua visível como "indisponível";
+ *  4. a prévia fecha com Esc (foco, teclado e toque preservados; botão fora do link).
+ */
+
+const BASE = 'http://localhost:3000/api';
+const RAIZ = path.join(__dirname, '..');
+const ler = (rel) => fs.readFileSync(path.join(RAIZ, rel), 'utf8');
+const modulo = () => require('../js/dashboard'); // eslint-disable-line global-require
+const resposta = (status, corpo) => ({ status, ok: status >= 200 && status < 300, text: async () => (corpo === undefined ? '' : JSON.stringify(corpo)) });
+const item = (n) => ({ materialId: n, material: `Material ${n}`, tamanho: 'M', saldoLivre: 2, estoqueMinimo: 10, deficit: 8 });
+const comPrevia = (n) => ({ permitido: true, valor: n, previa: { total: n, itens: Array.from({ length: Math.min(n, 5) }, (_, i) => item(i + 1)) } });
+
+describe('módulo: visibilidade do cartão', () => {
+  test('só o indicador explicitamente negado esconde o cartão; zero, ausente, malformado e erro mantêm o cartão', () => {
+    const f = modulo().render.visivelAbaixoMinimo;
+    assert.equal(typeof f, 'function', 'render.visivelAbaixoMinimo ainda não existe');
+    assert.equal(f({ permitido: false }), false);
+    for (const visivel of [{ permitido: true, valor: 0 }, comPrevia(3), { permitido: true, valor: 0, previa: { total: 0, itens: [] } },
+      undefined, null, {}, { permitido: true, valor: -1 }, { permitido: 'false' }, { permitido: 0 }, 'x']) {
+      assert.equal(f(visivel), true, JSON.stringify(visivel));
+    }
+  });
+});
+
+describe('inspeção estática: pages/dashboard.html', () => {
+  const html = ler('pages/dashboard.html');
+  const artigo = (html.match(/<article class="kpi-card warning"[^>]*>\s*<a\b[^>]*\bid="linkAbaixoMinimo"[\s\S]*?<\/article>/) || [''])[0];
+
+  test('o cartão tem id próprio (para ser escondido por inteiro), NASCE OCULTO e continua sendo um dos 18 cartões', () => {
+    assert.notEqual(artigo, '', 'o <article> do cartão precisa continuar com o link do card inteiro');
+    assert.match(artigo, /^<article class="kpi-card warning" id="cardAbaixoMinimo" style="display:none">/);
+    assert.equal((html.match(/<article class="kpi-card/g) || []).length, 18);
+    assert.equal((html.match(/id="cardAbaixoMinimo"/g) || []).length, 1);
+  });
+
+  test('o cartão não tem nenhum controle (botão) dentro: a ampliação é por hover e foco, e o card inteiro é o link', () => {
+    assert.equal(/<button\b/.test(artigo), false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Página em DOM simulado
+// ═══════════════════════════════════════════════════════════════════
+const CONTEXTO = { empresa: { id: 3, nome: 'Empresa Demonstração SafeWork' }, usuario: { id: 7, nome: 'Pessoa Teste', email: 'p@exemplo-cliente.com.br', perfil: 'MASTER' } };
+const ACESSO = { permissoes: { recursos: { dashboard: { visualizar: true, criar: false, editar: false, excluir: false } }, acoes: {}, administracao: {} }, podeAlterar: false };
+
+function servidor(responder) {
+  EpiHttp.configurar({
+    baseUrl: BASE,
+    fetch: async () => {
+      if (responder instanceof Error) throw responder;
+      return responder;
+    },
+  });
+}
+
+function montarPagina(responder) {
+  servidor(responder);
+  const html = ler('pages/dashboard.html');
+  const script = html.slice(html.lastIndexOf('<script>') + '<script>'.length, html.lastIndexOf('</script>'));
+  const mapa = {};
+  const el = (id) => (mapa[id] = mapa[id] || {
+    id, innerHTML: '', textContent: '', style: {}, listeners: {}, atributos: {}, focado: false,
+    addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
+    setAttribute(k, v) { this.atributos[k] = String(v); }, removeAttribute(k) { delete this.atributos[k]; }, focus() { this.focado = true; },
+    contains(outro) { return !!outro && outro.dentroDoCartao === true; },
+  });
+  // Tudo o que a página atribui a style.display do cartão, em ordem: prova que ele nunca ficou visível antes da resposta.
+  const historicoDisplay = [];
+  el('cardAbaixoMinimo').style = new Proxy({}, { set(alvo, chave, valor) { if (chave === 'display') historicoDisplay.push(valor); alvo[chave] = valor; return true; } });
+  const documento = {
+    getElementById: el, querySelectorAll: () => [], listeners: {},
+    addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
+  };
+  const sandbox = {
+    document: documento,
+    window: { SAFEWORK_PORTAL_API_BASE_URL: BASE },
+    EpiHttp, EpiDashboard: modulo(),
+    EpiPermissoes: { prepararPagina: async () => ACESSO },
+    EpiSessaoEmpresarial: { montar: async (o) => { sandbox.opcoesMontar = o; return CONTEXTO; }, sessaoEncerrada() { sandbox.encerrada = true; } },
+    console, Promise, String, Number, Object, JSON,
+    Date: class extends Date { constructor(...args) { super(...(args.length ? args : ['2026-10-19T12:00:00.000Z'])); } },
+  };
+  vm.runInNewContext(script, sandbox);
+  const esperar = async () => { for (let i = 0; i < 40; i += 1) await new Promise((r) => setImmediate(r)); };
+  const disparar = async (id, tipo, ev = {}) => { for (const fn of (el(id).listeners[tipo] || [])) await fn({ preventDefault() {}, stopPropagation() {}, ...ev }); };
+  const dispararNoDocumento = async (tipo, ev = {}) => { for (const fn of (documento.listeners[tipo] || [])) await fn({ preventDefault() {}, stopPropagation() {}, ...ev }); };
+  return { el, esperar, disparar, dispararNoDocumento, sandbox, historicoDisplay };
+}
+
+const corpo = (abaixo, extra = {}) => ({ status: 'ok', indicadores: { ...(abaixo === undefined ? {} : { estoqueAbaixoMinimo: abaixo }), saldoLivre: { permitido: true, valor: 7 }, ...extra } });
+const escondido = (pg) => pg.el('cardAbaixoMinimo').style.display === 'none';
+// "Visível" é um estado explícito: o display foi limpo ('') pela página, não apenas nunca escondido.
+const exibido = (pg) => pg.el('cardAbaixoMinimo').style.display === '';
+
+describe('página: o cartão some sem permissão e só sem permissão', () => {
+  test('permitido === false: o cartão inteiro é escondido (display none), sem link e sem prévia; os demais cartões seguem com os números', async () => {
+    const pg = montarPagina(resposta(200, corpo({ permitido: false })));
+    await pg.esperar();
+    assert.equal(escondido(pg), true, 'o cartão precisa sair do grid');
+    assert.equal(Object.hasOwn(pg.el('linkAbaixoMinimo').atributos, 'href'), false);
+    assert.equal(pg.el('previaAbaixoMinimo').innerHTML, '');
+    assert.equal(pg.el('kpiSaldoLivreValor').textContent, '7', 'os outros cartões não são afetados');
+  });
+
+  test('com permissão e valor zero: o cartão fica visível, com link e prévia vazia explicada', async () => {
+    const pg = montarPagina(resposta(200, corpo({ permitido: true, valor: 0, previa: { total: 0, itens: [] } })));
+    await pg.esperar();
+    assert.equal(exibido(pg), true, 'permitido true, mesmo com zero, exibe o cartão');
+    assert.equal(pg.el('kpiAbaixoMinimoValor').textContent, '0');
+    assert.equal(pg.el('linkAbaixoMinimo').atributos.href, 'available-items.html?situacao=ABAIXO_MINIMO');
+    assert.match(pg.el('previaAbaixoMinimo').innerHTML, /Nenhum item abaixo do mínimo/);
+  });
+
+  test('com permissão e itens: visível', async () => {
+    const pg = montarPagina(resposta(200, corpo(comPrevia(3))));
+    await pg.esperar();
+    assert.equal(exibido(pg), true);
+  });
+});
+
+describe('página: erro de carregamento não é falta de permissão', () => {
+  const casos = [
+    ['HTTP 503', () => resposta(503, { status: 'erro', codigo: 'INDISPONIVEL' })],
+    ['HTTP 500', () => resposta(500, { status: 'erro', codigo: 'ERRO_INTERNO' })],
+    ['HTTP 403 do próprio dashboard', () => resposta(403, { status: 'erro', codigo: 'PERMISSAO_NEGADA' })],
+    ['falha de rede', () => new TypeError('Failed to fetch')],
+  ];
+  for (const [nome, fazer] of casos) {
+    test(`${nome}: o cartão continua visível como "indisponível", nunca "sem permissão", sem link e sem prévia`, async () => {
+      const pg = montarPagina(fazer());
+      await pg.esperar();
+      assert.equal(exibido(pg), true, 'erro não é negação: o cartão aparece como indisponível');
+      assert.equal(pg.el('kpiAbaixoMinimoValor').textContent, '—');
+      assert.equal(pg.el('kpiAbaixoMinimoMeta').textContent, 'indisponível');
+      assert.equal(Object.hasOwn(pg.el('linkAbaixoMinimo').atributos, 'href'), false);
+      assert.equal(pg.el('previaAbaixoMinimo').innerHTML, '');
+    });
+  }
+
+  test('resposta 200 sem o indicador, ou com indicador malformado: visível como "indisponível"', async () => {
+    for (const abaixo of [undefined, { permitido: true, valor: -1 }, { permitido: true, valor: '3' }, {}]) {
+      const pg = montarPagina(resposta(200, corpo(abaixo)));
+      await pg.esperar();
+      assert.equal(exibido(pg), true, JSON.stringify(abaixo));
+      assert.equal(pg.el('kpiAbaixoMinimoMeta').textContent, 'indisponível', JSON.stringify(abaixo));
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Visibilidade inicial e encerramento da sessão
+// ═══════════════════════════════════════════════════════════════════
+// Resposta que só chega quando o teste manda: permite olhar a página ANTES da resposta da API.
+function respostaSegurada() {
+  let liberar;
+  const promessa = new Promise((resolver) => { liberar = resolver; });
+  return { promessa, liberar };
+}
+
+describe('página: o cartão nasce oculto, antes da resposta da API', () => {
+  test('com a resposta pendente, o cartão está oculto (display none) e sem link nem prévia', async () => {
+    const segurada = respostaSegurada();
+    const pg = montarPagina(segurada.promessa);
+    await pg.esperar();
+    assert.equal(escondido(pg), true, 'nada de piscar para quem pode não ter permissão');
+    assert.equal(Object.hasOwn(pg.el('linkAbaixoMinimo').atributos, 'href'), false);
+    assert.equal(pg.el('previaAbaixoMinimo').innerHTML, '');
+    segurada.liberar(resposta(200, corpo(comPrevia(2))));
+    await pg.esperar();
+    assert.equal(exibido(pg), true, 'com permissão, aparece quando a resposta chega');
+  });
+
+  test('sem permissão: o cartão NUNCA fica visível em nenhum momento (histórico de display só com "none")', async () => {
+    const segurada = respostaSegurada();
+    const pg = montarPagina(segurada.promessa);
+    await pg.esperar();
+    segurada.liberar(resposta(200, corpo({ permitido: false })));
+    await pg.esperar();
+    assert.ok(pg.historicoDisplay.length > 0, 'a página precisa definir o display do cartão por conta própria');
+    assert.deepEqual([...new Set(pg.historicoDisplay)], ['none']);
+  });
+
+  test('com permissão e valor zero: aparece só depois da resposta, e visível', async () => {
+    const segurada = respostaSegurada();
+    const pg = montarPagina(segurada.promessa);
+    await pg.esperar();
+    assert.equal(escondido(pg), true);
+    segurada.liberar(resposta(200, corpo({ permitido: true, valor: 0, previa: { total: 0, itens: [] } })));
+    await pg.esperar();
+    assert.equal(exibido(pg), true);
+    assert.equal(pg.historicoDisplay[0], 'none', 'o primeiro estado é oculto');
+    assert.equal(pg.historicoDisplay.at(-1), '');
+  });
+
+  test('erro de carga: depois de oculto, o cartão aparece como indisponível (erro não é negação), sem divulgar número, link nem prévia', async () => {
+    for (const falha of [resposta(503, { status: 'erro', codigo: 'INDISPONIVEL' }), new TypeError('Failed to fetch')]) {
+      const segurada = respostaSegurada();
+      const pg = montarPagina(segurada.promessa);
+      await pg.esperar();
+      assert.equal(escondido(pg), true);
+      if (falha instanceof Error) segurada.promessa.catch(() => {});
+      segurada.liberar(falha instanceof Error ? Promise.reject(falha) : falha);
+      await pg.esperar();
+      assert.equal(exibido(pg), true);
+      assert.equal(pg.el('kpiAbaixoMinimoValor').textContent, '—');
+      assert.equal(pg.el('kpiAbaixoMinimoMeta').textContent, 'indisponível');
+      assert.equal(Object.hasOwn(pg.el('linkAbaixoMinimo').atributos, 'href'), false);
+      assert.equal(pg.el('previaAbaixoMinimo').innerHTML, '');
+    }
+  });
+});
+
+describe('página: encerramento da sessão', () => {
+  test('ao encerrar a sessão o cartão é ocultado e link e prévia são limpos', async () => {
+    const pg = montarPagina(resposta(200, corpo(comPrevia(3))));
+    await pg.esperar();
+    assert.equal(exibido(pg), true, 'pré-condição: cartão visível');
+    assert.ok(pg.el('linkAbaixoMinimo').atributos.href, 'pré-condição: link');
+    assert.notEqual(pg.el('previaAbaixoMinimo').innerHTML, '', 'pré-condição: prévia');
+    assert.equal(typeof pg.sandbox.opcoesMontar.aoEncerrar, 'function');
+    pg.sandbox.opcoesMontar.aoEncerrar();
+    assert.equal(escondido(pg), true);
+    assert.equal(Object.hasOwn(pg.el('linkAbaixoMinimo').atributos, 'href'), false);
+    assert.equal(pg.el('previaAbaixoMinimo').innerHTML, '');
+  });
+
+  test('resposta que chega DEPOIS do encerramento não reabre o cartão nem recoloca link ou prévia', async () => {
+    const segurada = respostaSegurada();
+    const pg = montarPagina(segurada.promessa);
+    await pg.esperar();
+    pg.sandbox.opcoesMontar.aoEncerrar();
+    segurada.liberar(resposta(200, corpo(comPrevia(3))));
+    await pg.esperar();
+    assert.equal(escondido(pg), true);
+    assert.equal(Object.hasOwn(pg.el('linkAbaixoMinimo').atributos, 'href'), false);
+    assert.equal(pg.el('previaAbaixoMinimo').innerHTML, '');
+  });
+});

@@ -121,10 +121,10 @@ function servidor({
   return { s, rotas };
 }
 
-async function abrir(opcoes = {}) {
+async function abrir({ search = '', ...opcoes } = {}) {
   modulo();
   const { s, rotas } = servidor(opcoes);
-  const pg = abrirPagina(PAGINA, { rotas });
+  const pg = abrirPagina(PAGINA, { rotas, search });
   await pg.esperar();
   return { pg, s };
 }
@@ -695,4 +695,106 @@ describe('29. semântica, acessibilidade, segurança e visual', () => {
       assert.match(texto(pg, 'detalheAcoes'), /Nada disponível agora/);
     });
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// 12I, Tasks 05 e 06: a lista abre já filtrada pela cobertura do cartão do Dashboard.
+describe('12I — filtro por cobertura vindo da URL (cartões do Dashboard)', () => {
+  const consultaDe = (pg, chave) => new URL(chamadas(pg, chave)[0].url).search;
+
+  test('coberturaDaUrl: só os dois valores conhecidos; qualquer outra coisa, ausente ou repetida vira nulo', () => {
+    const f = modulo().coberturaDaUrl;
+    assert.equal(typeof f, 'function', 'EpiEntregasSolicitacao.coberturaDaUrl ainda não existe');
+    assert.equal(f('?cobertura=COM_COBERTURA'), 'COM_COBERTURA');
+    assert.equal(f('cobertura=SEM_COBERTURA&x=1'), 'SEM_COBERTURA');
+    for (const ruim of ['', '?', '?cobertura=', '?cobertura=TODAS', '?cobertura=com_cobertura', '?cobertura=COM_COBERTURA&cobertura=SEM_COBERTURA', '?outra=COM_COBERTURA', undefined, null, 5]) assert.equal(f(ruim), null, String(ruim));
+  });
+
+  test('quem entrega: COM_COBERTURA vai na primeira consulta dos entregáveis; a tela avisa o filtro e oferece "Mostrar todas"', async () => {
+    const { pg } = await abrir({ search: '?cobertura=COM_COBERTURA' });
+    assert.equal(chamadas(pg, 'GET /solicitacoes-epi/entregaveis').length, 1, 'uma única consulta, já filtrada');
+    assert.equal(consultaDe(pg, 'GET /solicitacoes-epi/entregaveis'), '?cobertura=COM_COBERTURA&pagina=1&limite=20');
+    assert.equal(pg.el('filtroLista').style.display === 'none', false);
+    assert.match(texto(pg, 'filtroListaTexto'), /disponíveis para entrega/i);
+    assert.equal(pg.el('botaoRemoverFiltro').textContent, 'Mostrar todas');
+  });
+
+  test('SEM_COBERTURA para quem entrega usa os entregáveis, com o aviso de "aguardando estoque"', async () => {
+    const { pg } = await abrir({ search: '?cobertura=SEM_COBERTURA' });
+    assert.equal(consultaDe(pg, 'GET /solicitacoes-epi/entregaveis'), '?cobertura=SEM_COBERTURA&pagina=1&limite=20');
+    assert.match(texto(pg, 'filtroListaTexto'), /aguardando estoque/i);
+  });
+
+  test('"Mostrar todas" remove o filtro, volta à página 1, relê a lista e some com o aviso', async () => {
+    const { pg } = await abrir({ search: '?cobertura=COM_COBERTURA' });
+    await pg.el('botaoRemoverFiltro').disparar('click');
+    await pg.esperar();
+    const c = chamadas(pg, 'GET /solicitacoes-epi/entregaveis');
+    assert.equal(c.length, 2);
+    assert.equal(new URL(c[1].url).search, '?pagina=1&limite=20');
+    assert.equal(pg.el('filtroLista').style.display, 'none');
+  });
+
+  test('sem filtro na URL: consulta como antes e nenhum aviso', async () => {
+    const { pg } = await abrir();
+    assert.equal(consultaDe(pg, 'GET /solicitacoes-epi/entregaveis'), '?pagina=1&limite=20');
+    assert.equal(pg.el('filtroLista').style.display, 'none');
+  });
+
+  test('valor desconhecido na URL é ignorado (nunca vai ao servidor)', async () => {
+    const { pg } = await abrir({ search: '?cobertura=QUALQUER' });
+    assert.equal(consultaDe(pg, 'GET /solicitacoes-epi/entregaveis'), '?pagina=1&limite=20');
+    assert.equal(pg.el('filtroLista').style.display, 'none');
+  });
+
+  test('quem só encerra: SEM_COBERTURA filtra as encerráveis; COM_COBERTURA é ignorada (essa lista não revela disponibilidade)', async () => {
+    const soEncerra = permissoes({ acoes: { ENCERRAR_SOLICITACAO: true } });
+    const sem = await abrir({ p: soEncerra, search: '?cobertura=SEM_COBERTURA' });
+    assert.equal(consultaDe(sem.pg, 'GET /solicitacoes-epi/encerraveis'), '?cobertura=SEM_COBERTURA&pagina=1&limite=20');
+    assert.equal(chamadas(sem.pg, 'GET /solicitacoes-epi/entregaveis').length, 0);
+    const com = await abrir({ p: soEncerra, search: '?cobertura=COM_COBERTURA' });
+    assert.equal(consultaDe(com.pg, 'GET /solicitacoes-epi/encerraveis'), '?pagina=1&limite=20');
+    assert.equal(com.pg.el('filtroLista').style.display, 'none');
+  });
+
+  test('lista filtrada vazia tem texto próprio; sem filtro vazio segue como antes', async () => {
+    const filtrada = await abrir({ lista: [], search: '?cobertura=COM_COBERTURA' });
+    assert.match(texto(filtrada.pg, 'listaEntregas'), /Nenhuma solicitação nesta situação\./);
+    const comum = await abrir({ lista: [] });
+    assert.match(texto(comum.pg, 'listaEntregas'), /Não há solicitações aprovadas aguardando entrega\./);
+  });
+
+  test('o filtro é só da lista: nenhum texto de estoque novo, e o detalhe e a entrega continuam os mesmos', async () => {
+    const { pg } = await abrir({ search: '?cobertura=COM_COBERTURA' });
+    await abrirDetalhe(pg);
+    assert.equal(chamadas(pg, 'GET /solicitacoes-epi/301').length, 1);
+    assert.equal(/cpf/i.test(pg.textoDoDom()), false);
+  });
+});
+
+describe('12I — COBERTURA_COMPLETA vinda da URL (cartão "Disponíveis para entrega")', () => {
+  const consultaDe = (pg, chave) => new URL(chamadas(pg, chave)[0].url).search;
+
+  test('coberturaDaUrl aceita COBERTURA_COMPLETA além dos outros dois valores', () => {
+    const f = modulo().coberturaDaUrl;
+    assert.equal(f('?cobertura=COBERTURA_COMPLETA'), 'COBERTURA_COMPLETA');
+    assert.equal(f('?cobertura=COMPLETA'), null);
+  });
+
+  test('quem entrega abre a lista dos entregáveis já filtrada pela cobertura completa, com o aviso próprio e "Mostrar todas"', async () => {
+    const { pg } = await abrir({ search: '?cobertura=COBERTURA_COMPLETA' });
+    assert.equal(chamadas(pg, 'GET /solicitacoes-epi/entregaveis').length, 1, 'uma única consulta, já filtrada');
+    assert.equal(consultaDe(pg, 'GET /solicitacoes-epi/entregaveis'), '?cobertura=COBERTURA_COMPLETA&pagina=1&limite=20');
+    assert.equal(pg.el('filtroLista').style.display === 'none', false);
+    assert.match(texto(pg, 'filtroListaTexto'), /completamente disponíveis/i);
+    await pg.el('botaoRemoverFiltro').disparar('click');
+    await pg.esperar();
+    assert.equal(new URL(chamadas(pg, 'GET /solicitacoes-epi/entregaveis')[1].url).search, '?pagina=1&limite=20');
+  });
+
+  test('quem só encerra ignora COBERTURA_COMPLETA (a lista das encerráveis não revela disponibilidade): consulta sem filtro e sem aviso', async () => {
+    const { pg } = await abrir({ p: permissoes({ acoes: { ENCERRAR_SOLICITACAO: true } }), search: '?cobertura=COBERTURA_COMPLETA' });
+    assert.equal(consultaDe(pg, 'GET /solicitacoes-epi/encerraveis'), '?pagina=1&limite=20');
+    assert.equal(pg.el('filtroLista').style.display, 'none');
+  });
 });

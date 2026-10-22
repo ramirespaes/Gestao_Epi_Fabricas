@@ -117,6 +117,14 @@
     return f;
   }
 
+  // 12I: o filtro por cobertura das listas de entregáveis (os dois valores) e de encerráveis (só os sem cobertura), os mesmos do servidor.
+  var COBERTURAS = ['COM_COBERTURA', 'SEM_COBERTURA', 'COBERTURA_COMPLETA'];
+  function coberturaOpcional(v, permitidas) {
+    if (v === undefined || v === null) return null;
+    if (permitidas.indexOf(v) === -1) throw new TypeError('cobertura inválida');
+    return v;
+  }
+
   function funcionarioOpcional(v) {
     if (v === undefined || v === null) return null;
     exigirId(v, 'identificador de funcionário');
@@ -154,15 +162,15 @@
     /** GET /solicitacoes-epi/entregaveis — ação REALIZAR_ENTREGA. */
     entregaveis: function (filtro) {
       var f = filtroDe(filtro);
-      exigirConhecidos(f, ['funcionarioId', 'pagina', 'limite']);
-      return http().requisitar('GET', BASE + '/entregaveis' + consulta([['funcionarioId', funcionarioOpcional(f.funcionarioId)]].concat(paginacao(f))));
+      exigirConhecidos(f, ['funcionarioId', 'cobertura', 'pagina', 'limite']);
+      return http().requisitar('GET', BASE + '/entregaveis' + consulta([['funcionarioId', funcionarioOpcional(f.funcionarioId)], ['cobertura', coberturaOpcional(f.cobertura, COBERTURAS)]].concat(paginacao(f))));
     },
 
     /** GET /solicitacoes-epi/encerraveis — ação ENCERRAR_SOLICITACAO (12G-0). */
     encerraveis: function (filtro) {
       var f = filtroDe(filtro);
-      exigirConhecidos(f, ['funcionarioId', 'pagina', 'limite']);
-      return http().requisitar('GET', BASE + '/encerraveis' + consulta([['funcionarioId', funcionarioOpcional(f.funcionarioId)]].concat(paginacao(f))));
+      exigirConhecidos(f, ['funcionarioId', 'cobertura', 'pagina', 'limite']);
+      return http().requisitar('GET', BASE + '/encerraveis' + consulta([['funcionarioId', funcionarioOpcional(f.funcionarioId)], ['cobertura', coberturaOpcional(f.cobertura, ['SEM_COBERTURA'])]].concat(paginacao(f))));
     },
 
     /** GET /solicitacoes-epi/:id — quem vê, e o quê, decide o servidor. */

@@ -148,6 +148,21 @@ async function listarFila(pool, { empresaId, pagina, limite }) {
   });
 }
 
+// 12I: o filtro por cobertura. O serviço não tem regra de cobertura própria: pede os ids da MESMA população da contagem do Dashboard ao
+// repositório de cobertura, no mesmo retrato único da lista, e os passa à lista e à contagem (null = sem filtro; [] = nenhum).
+const COBERTURAS = Object.freeze(['COM_COBERTURA', 'SEM_COBERTURA', 'COBERTURA_COMPLETA']);
+
+function exigirCobertura(cobertura, permitidas) {
+  if (cobertura !== null && !permitidas.includes(cobertura)) throw new TypeError('cobertura inválida');
+}
+
+async function idsDaCobertura(client, empresaId, cobertura, hoje) {
+  if (cobertura === null) return null;
+  // COBERTURA_COMPLETA (12I): só os pedidos com TODOS os itens pendentes cobertos e nenhum suspenso; COM_COBERTURA segue sendo "algum item coberto".
+  if (cobertura === 'COBERTURA_COMPLETA') return coberturaRepo.idsDeSolicitacoesCoberturaCompleta(client, empresaId, { hoje });
+  return coberturaRepo.idsDeSolicitacoesPorCobertura(client, empresaId, { hoje, comCobertura: cobertura === 'COM_COBERTURA' });
+}
+
 /**
  * As solicitações aprovadas (APROVADA e APROVADA_PARCIAL) que ainda podem ser
  * entregues, na ordem da fila de cobertura, com as quantidades aprovada,
@@ -155,16 +170,20 @@ async function listarFila(pool, { empresaId, pagina, limite }) {
  * na lista como SUSPENSA. `funcionarioId` opcional filtra por trabalhador.
  */
 async function listarEntregaveis(pool, {
-  empresaId, funcionarioId = null, pagina, limite, hoje,
+  empresaId, funcionarioId = null, cobertura = null, pagina, limite, hoje,
 }) {
   exigirId(empresaId, 'identificador de empresa');
   if (funcionarioId !== null) exigirId(funcionarioId, 'identificador de funcionário');
+  exigirCobertura(cobertura, COBERTURAS);
   exigirPaginacao(pagina, limite);
   const dataOperacionalAtual = exigirDataOpcional(hoje);
 
   return emLeitura(pool, async (client) => {
-    const linhas = await consultaRepo.listarEntregaveis(client, empresaId, { funcionarioId, pagina, limite });
-    const total = await consultaRepo.contarEntregaveis(client, empresaId, { funcionarioId });
+    const solicitacaoIds = await idsDaCobertura(client, empresaId, cobertura, dataOperacionalAtual);
+    const linhas = await consultaRepo.listarEntregaveis(client, empresaId, {
+      funcionarioId, solicitacaoIds, pagina, limite,
+    });
+    const total = await consultaRepo.contarEntregaveis(client, empresaId, { funcionarioId, solicitacaoIds });
     return { solicitacoes: await montarLinhas(client, empresaId, linhas, dataOperacionalAtual), total, pagina, limite };
   });
 }
@@ -242,15 +261,20 @@ async function buscarDetalhe(pool, {
  * opcional filtra por trabalhador.
  */
 async function listarEncerraveis(pool, {
-  empresaId, funcionarioId = null, pagina, limite,
+  empresaId, funcionarioId = null, cobertura = null, pagina, limite, hoje,
 }) {
   exigirId(empresaId, 'identificador de empresa');
   if (funcionarioId !== null) exigirId(funcionarioId, 'identificador de funcionário');
+  exigirCobertura(cobertura, ['SEM_COBERTURA']);
   exigirPaginacao(pagina, limite);
+  const dataOperacionalAtual = cobertura === null ? undefined : exigirDataOpcional(hoje);
 
   return emLeitura(pool, async (client) => {
-    const linhas = await consultaRepo.listarEncerraveis(client, empresaId, { funcionarioId, pagina, limite });
-    const total = await consultaRepo.contarEncerraveis(client, empresaId, { funcionarioId });
+    const solicitacaoIds = await idsDaCobertura(client, empresaId, cobertura, dataOperacionalAtual);
+    const linhas = await consultaRepo.listarEncerraveis(client, empresaId, {
+      funcionarioId, solicitacaoIds, pagina, limite,
+    });
+    const total = await consultaRepo.contarEncerraveis(client, empresaId, { funcionarioId, solicitacaoIds });
     const itensPorSolicitacao = linhas.length === 0
       ? new Map()
       : agruparPorSolicitacao(await itemRepo.listarPorSolicitacoesComEntregue(client, empresaId, linhas.map((l) => l.id)));

@@ -177,8 +177,10 @@ const ESTOQUE = {
 };
 const lista = (itens, extra = {}) => ({ status: 200, corpo: { status: 'ok', itens, total: itens.length, pagina: 1, limite: 20, ...extra } });
 
-function abrir({ materiais = true, ficha = true, rotas = {} } = {}) {
+function abrir({ materiais = true, ficha = true, rotas = {}, search = '', hash = '' } = {}) {
   return abrirPagina(ARQUIVO, {
+    search,
+    hash,
     rotas: {
       'GET /auth/me': { status: 200, corpo: contexto() },
       'GET /auth/global/me': { status: 200, corpo: { status: 'ok', empresas: [{ id: 3 }] } },
@@ -355,5 +357,50 @@ describe('Relatórios — página (DOM simulado, sessão e permissões reais)', 
     const P = require('../js/permissoes-efetivas'); // eslint-disable-line global-require
     assert.deepEqual(P.PAGINAS.reports, { abrir: [{ recurso: 'materials', operacao: 'visualizar' }, { recurso: 'epiFicha', operacao: 'visualizar' }, { recurso: 'reportsAudit', operacao: 'visualizar' }, { recurso: 'reportsFiscal', operacao: 'visualizar' }], abrirComQualquer: true, alterar: [] });
     assert.equal('Relatórios' in P.INSPECAO_PROTOTIPOS, false);
+  });
+});
+
+// ── 12I: o cartão "EPIs entregues" do Dashboard abre a aba já com o mês corrente (?de=&ate=) ─────────────────────────────
+describe('Relatórios — período vindo da URL (12I)', () => {
+  test('periodoDaUrl: só um par de datas válidas e em ordem; qualquer outra coisa vira nulo (nunca vai ao servidor)', () => {
+    const f = R.modelo.periodoDaUrl;
+    assert.equal(typeof f, 'function', 'R.modelo.periodoDaUrl ainda não existe');
+    assert.deepEqual(f('?de=2026-10-01&ate=2026-10-31'), { de: '2026-10-01', ate: '2026-10-31' });
+    assert.deepEqual(f('ate=2026-10-31&de=2026-10-01&x=1'), { de: '2026-10-01', ate: '2026-10-31' });
+    assert.deepEqual(f('?de=2026-10-15&ate=2026-10-15'), { de: '2026-10-15', ate: '2026-10-15' });
+    for (const ruim of ['', '?', '?de=2026-10-01', '?ate=2026-10-31', '?de=2026-10-31&ate=2026-10-01', '?de=2026-13-01&ate=2026-13-31', '?de=abc&ate=def', '?de=2026-10-01&de=2026-10-02&ate=2026-10-31', undefined, null, 7]) {
+      assert.equal(f(ruim), null, String(ruim));
+    }
+  });
+
+  test('com ?de&ate e #reportDelivered: a primeira consulta de EPIs entregues já vai com o período e os campos aparecem preenchidos', async () => {
+    const pg = await pronta({ search: '?de=2026-10-01&ate=2026-10-31', hash: '#reportDelivered' });
+    const c = consultas(pg, 'epis-entregues');
+    assert.equal(c.length, 1, 'uma única consulta, já filtrada');
+    const q = new URL(c[0].url).searchParams;
+    assert.deepEqual([q.get('de'), q.get('ate')], ['2026-10-01', '2026-10-31']);
+    assert.equal(pg.el('f-episEntregues-de').value, '2026-10-01');
+    assert.equal(pg.el('f-episEntregues-ate').value, '2026-10-31');
+    assert.equal(pg.consulta('.report-tab.active')[0].getAttribute('data-secao'), 'reportDelivered');
+    assert.equal(consultas(pg, 'estoque').length, 0);
+  });
+
+  test('"Limpar" desfaz o período como em qualquer filtro; sem parâmetros ou com par inválido a consulta vai sem período', async () => {
+    const pg = await pronta({ search: '?de=2026-10-01&ate=2026-10-31', hash: '#reportDelivered' });
+    await pg.consulta('#filtros-episEntregues [data-acao-relatorio="limpar"]')[0].disparar('click');
+    await pg.esperar();
+    const ultima = consultas(pg, 'epis-entregues').at(-1);
+    assert.equal(new URL(ultima.url).searchParams.has('de'), false);
+    for (const search of ['', '?de=2026-10-31&ate=2026-10-01', '?de=lixo&ate=2026-10-31']) {
+      const outra = await pronta({ search, hash: '#reportDelivered' });
+      const q = new URL(consultas(outra, 'epis-entregues')[0].url).searchParams;
+      assert.equal(q.has('de') || q.has('ate'), false, search);
+    }
+  });
+
+  test('o período da URL só vale para a aba EPIs entregues: as demais abas não o recebem', async () => {
+    const pg = await pronta({ search: '?de=2026-10-01&ate=2026-10-31', hash: '#reportUpcoming' });
+    const q = new URL(consultas(pg, 'proximo-vencimento')[0].url).searchParams;
+    assert.equal(q.has('de') || q.has('ate'), false);
   });
 });

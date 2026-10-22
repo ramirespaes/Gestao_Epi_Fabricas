@@ -29,6 +29,7 @@
     "js/autorizacoes-individuais.js",
     "js/catalogo-visual.js",
     "js/configuracoes.js",
+    "js/dashboard-graficos.js",
     "js/dashboard.js",
     "js/entregas-epi-historico.js",
     "js/entregas-solicitacao.js",

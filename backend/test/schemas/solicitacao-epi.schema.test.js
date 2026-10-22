@@ -329,3 +329,33 @@ describe('solicitacao-epi.schema — encerráveis (12G-0)', () => {
     }
   });
 });
+
+describe('solicitacao-epi.schema — filtro cobertura (12I, Tasks 05 e 06)', () => {
+  test('entregáveis aceita COM_COBERTURA e SEM_COBERTURA e nada mais; é opcional e combina com os demais filtros', () => {
+    const q = schema().entregaveis.query;
+    assert.equal(q.safeParse({}).data.cobertura, undefined);
+    assert.equal(q.safeParse({ cobertura: 'COM_COBERTURA' }).data.cobertura, 'COM_COBERTURA');
+    assert.deepEqual(q.safeParse({ cobertura: 'SEM_COBERTURA', funcionarioId: '4', pagina: '2' }).data, { cobertura: 'SEM_COBERTURA', funcionarioId: 4, pagina: 2, limite: 20 });
+    for (const ruim of ['', 'TODAS', 'sem_cobertura', 'true', '1']) assert.equal(q.safeParse({ cobertura: ruim }).success, false, ruim);
+  });
+
+  test('encerráveis aceita só SEM_COBERTURA (quem só encerra não filtra por disponibilidade)', () => {
+    const q = schema().encerraveis.query;
+    assert.equal(q.safeParse({ cobertura: 'SEM_COBERTURA' }).success, true);
+    assert.equal(q.safeParse({ cobertura: 'COM_COBERTURA' }).success, false);
+    assert.equal(q.safeParse({}).success, true);
+  });
+
+  test('as demais listas continuam recusando o filtro', () => {
+    for (const nome of ['minhas', 'fila']) assert.equal(schema()[nome].query.safeParse({ cobertura: 'SEM_COBERTURA' }).success, false, nome);
+  });
+});
+
+describe('solicitacao-epi.schema — COBERTURA_COMPLETA (12I)', () => {
+  test('entregáveis aceita COBERTURA_COMPLETA além de COM_COBERTURA e SEM_COBERTURA; encerráveis continua só com SEM_COBERTURA', () => {
+    assert.equal(schema().entregaveis.query.safeParse({ cobertura: 'COBERTURA_COMPLETA' }).data.cobertura, 'COBERTURA_COMPLETA');
+    assert.equal(schema().entregaveis.query.safeParse({ cobertura: 'COM_COBERTURA' }).success, true, 'a regra parcial continua válida para quem a usa');
+    assert.equal(schema().encerraveis.query.safeParse({ cobertura: 'COBERTURA_COMPLETA' }).success, false);
+    assert.equal(schema().entregaveis.query.safeParse({ cobertura: 'COMPLETA' }).success, false);
+  });
+});

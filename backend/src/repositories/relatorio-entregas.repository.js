@@ -46,4 +46,14 @@ async function contar(executor, empresaId, filtros) {
   return rows[0].total;
 }
 
-module.exports = { listar, contar, ORDENS: Object.freeze(Object.keys(COLUNAS_ORDEM)) };
+/**
+ * A soma das UNIDADES entregues (i.quantidade) pelo mesmo FROM e WHERE da lista e da contagem (12I, cartão "EPIs entregues" do Dashboard):
+ * a mesma população do relatório, trocando só o count(*) por sum. Sem entrega, 0.
+ */
+async function somarQuantidade(executor, empresaId, filtros) {
+  const { rows } = await executor.query(`SELECT coalesce(sum(i.quantidade), 0)::int AS total ${DE} ${FILTRO}`, parametros(empresaId, filtros));
+  return Number(rows[0].total ?? 0);
+}
+
+// DE, FILTRO e parametros são reutilizados pelos gráficos do Dashboard (12I): a mesma população, sem regra paralela.
+module.exports = { listar, contar, somarQuantidade, DE, FILTRO, parametros, ORDENS: Object.freeze(Object.keys(COLUNAS_ORDEM)) };

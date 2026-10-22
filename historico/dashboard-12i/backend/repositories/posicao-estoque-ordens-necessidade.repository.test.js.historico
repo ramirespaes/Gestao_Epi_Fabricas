@@ -1,0 +1,62 @@
+'use strict';
+
+const { describe, test } = require('node:test');
+const assert = require('node:assert/strict');
+const { exigirModulo } = require('../helpers/exigir-modulo');
+
+/**
+ * 12I, Task 02 — ordenação opt-in NECESSIDADE_DESC de `listarPosicoes` (RED), sem PostgreSQL real: maior necessidade de reposição (sem
+ * cobertura + déficit do mínimo) primeiro. SQL fixo, o mesmo número de parâmetros da consulta padrão, desempate pela ordem padrão. A
+ * ordenação padrão e a DEFICIT_DESC não mudam. A ordem efetiva é provada em banco real em
+ * dashboard-previas-necessidade-sem-cobertura.integration.js.
+ */
+
+const repo = () => exigirModulo('src/repositories/posicao-estoque.repository');
+const EMPRESA = 42;
+const base = (extra = {}) => ({ hoje: '2026-10-02', diasAlerta: 60, pagina: 1, limite: 5, ...extra });
+const linha = { total: 1, material_id: 1, nome: 'Luva', tamanho_chave: 'M', unidade: 'par', saldo: '1', bloqueado: '0', fisico_utilizavel: '1', demanda_pendente: '0', comprometido: '0', saldo_livre: '1', sem_cobertura: '0', minimo_efetivo: '5', minimo_origem: 'PADRAO', abaixo_do_minimo: true, deficit: '4', necessidade: '4', ca_validade: null, validade: 'ok' };
+function executorFalso() {
+  const chamadas = [];
+  return { chamadas, query: async (texto, valores) => { chamadas.push({ texto, valores }); return { rows: [linha], rowCount: 1 }; } };
+}
+
+describe('listarPosicoes — ordem opt-in NECESSIDADE_DESC (Task 02)', () => {
+  test('SQL fixo ordena pela necessidade e desempata pela ordem padrão; o valor do chamador não vira SQL nem parâmetro', async () => {
+    const ex = executorFalso();
+    await repo().listarPosicoes(ex, EMPRESA, base({ ordem: 'NECESSIDADE_DESC' }));
+    const padrao = executorFalso();
+    await repo().listarPosicoes(padrao, EMPRESA, base());
+    assert.match(ex.chamadas[0].texto, /necessidade\s+DESC,\s*lower\(nome\),\s*material_id,\s*tamanho_chave/i);
+    assert.match(ex.chamadas[0].texto, /pagina\.necessidade\s+DESC,\s*lower\(pagina\.nome\)/i);
+    assert.equal(ex.chamadas[0].texto.includes('NECESSIDADE_DESC'), false, 'o nome da ordem não é interpolado');
+    assert.equal(ex.chamadas[0].valores.includes('NECESSIDADE_DESC'), false, 'nem é parâmetro');
+    assert.equal(ex.chamadas[0].valores.length, padrao.chamadas[0].valores.length, 'mesmos parâmetros da consulta padrão');
+    assert.notEqual(ex.chamadas[0].texto, padrao.chamadas[0].texto);
+  });
+
+  test('a padrão, a DEFICIT_DESC e a NECESSIDADE_DESC geram textos distintos, e as duas primeiras continuam como estavam', async () => {
+    const textos = {};
+    for (const ordem of [null, 'DEFICIT_DESC', 'NECESSIDADE_DESC']) {
+      const ex = executorFalso();
+      await repo().listarPosicoes(ex, EMPRESA, base({ ordem }));
+      textos[String(ordem)] = ex.chamadas[0].texto;
+    }
+    assert.equal(new Set(Object.values(textos)).size, 3);
+    assert.match(textos.null, /ORDER BY lower\(nome\),\s*material_id,\s*tamanho_chave/);
+    assert.match(textos.DEFICIT_DESC, /deficit\s+DESC,\s*lower\(nome\)/i);
+  });
+
+  test('o filtro somenteComNecessidade combina com a ordem e chega como parâmetro', async () => {
+    const ex = executorFalso();
+    await repo().listarPosicoes(ex, EMPRESA, base({ ordem: 'NECESSIDADE_DESC', somenteComNecessidade: true }));
+    assert.ok(ex.chamadas[0].valores.includes(true), 'somenteComNecessidade');
+  });
+
+  test('ordem desconhecida continua sendo erro de programação, antes de consultar', async () => {
+    const ex = executorFalso();
+    for (const ruim of ['necessidade_desc', 'NECESSIDADE_ASC', 'necessidade', 'deficit', '', 7, true, {}]) {
+      await assert.rejects(() => repo().listarPosicoes(ex, EMPRESA, base({ ordem: ruim })), (e) => e instanceof TypeError && /ordena/i.test(e.message), String(ruim));
+    }
+    assert.equal(ex.chamadas.length, 0);
+  });
+});

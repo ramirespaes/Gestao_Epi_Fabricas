@@ -145,26 +145,22 @@ describe('12G-6 — Dashboard: aguardando SST, aguardando estoque e disponíveis
     assert.deepEqual(i.disponiveisParaEntrega, NEGADO);
   });
 
-  test('quem entrega: aguardando estoque = nenhum item coberto (APROVADA, APROVADA_PARCIAL, e a com um item suspenso e outro sem estoque); disponíveis = algum item coberto (parcial, entrega parcial, APROVADA_PARCIAL e o pedido misto)', async () => {
+  test('quem entrega: aguardando estoque = nenhum item coberto (APROVADA, APROVADA_PARCIAL, e a com um item suspenso e outro sem estoque); disponíveis (12I) = só a cobertura COMPLETA (a entrega parcial com o que falta coberto e a APROVADA_PARCIAL coberta; a cobertura parcial e o pedido misto ficam fora)', async () => {
     const i = await indicadores(u.entrega);
     assert.deepEqual(i.solicitacoesAguardandoEstoque, { permitido: true, valor: 3 });
-    assert.deepEqual(i.disponiveisParaEntrega, { permitido: true, valor: 4 });
+    assert.deepEqual(i.disponiveisParaEntrega, { permitido: true, valor: 2 });
     assert.deepEqual(i.solicitacoesAguardandoSst, NEGADO);
-    assert.equal('solicitacoesAguardandoEntrega' in i, false, 'o indicador antigo não existe mais');
+    assert.equal('solicitacoesAguardandoEntrega' in i, false, 'o indicador de "aguardando entrega" deixou de existir (12I)');
   });
 
-  test('populações exclusivas: o pedido com um item coberto e outro sem estoque entra só em disponíveis; somadas, as duas são as aprovadas com pendente na fila (a toda suspensa fica fora)', async () => {
+  test('o pedido com um item coberto e outro sem estoque (cobertura parcial) NÃO entra em disponíveis (12I: só a completa) nem em aguardando estoque', async () => {
     const antes = await indicadores(u.entrega);
     const mCoberto = await f.material();
     await f.estoque(mCoberto, 1);
     await decidida([{ materialId: mCoberto, quantidade: 1 }, { materialId: await f.material(), quantidade: 4 }]);
     const depois = await indicadores(u.entrega);
-    assert.equal(depois.disponiveisParaEntrega.valor, antes.disponiveisParaEntrega.valor + 1);
-    assert.equal(depois.solicitacoesAguardandoEstoque.valor, antes.solicitacoesAguardandoEstoque.valor, 'não entra em aguardando estoque');
-    const { rows: [{ n }] } = await pool.query(
-      "SELECT count(*)::int AS n FROM solicitacoes_epi WHERE empresa_id = $1 AND status IN ('APROVADA', 'APROVADA_PARCIAL')", [d.empresaA],
-    );
-    assert.equal(depois.disponiveisParaEntrega.valor + depois.solicitacoesAguardandoEstoque.valor, n - 1, 'todas as aprovadas, menos a toda suspensa');
+    assert.equal(depois.disponiveisParaEntrega.valor, antes.disponiveisParaEntrega.valor, 'parcial não é "disponível para entrega"');
+    assert.equal(depois.solicitacoesAguardandoEstoque.valor, antes.solicitacoesAguardandoEstoque.valor, 'e também não aguarda estoque: tem item coberto');
   });
 
   test('quem só encerra vê aguardando estoque, mas não disponíveis para entrega', async () => {

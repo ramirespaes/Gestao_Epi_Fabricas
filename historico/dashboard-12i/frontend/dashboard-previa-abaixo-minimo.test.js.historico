@@ -1,0 +1,240 @@
+'use strict';
+
+const { describe, test, beforeEach } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+
+const EpiHttp = require('../js/api-http');
+
+/**
+ * 12I, Task 01 — card "Estoque abaixo do mínimo" do Dashboard (RED): prévia de
+ * até cinco combinações material × tamanho (nome, tamanho, saldo livre,
+ * mínimo e déficit, todos como o SERVIDOR mediu), o card inteiro como
+ * ligação para a Análise de estoque já filtrada, prévia por hover, foco de
+ * teclado e toque, e nada disso sem a permissão da fonte. O navegador nunca
+ * calcula déficit nem mínimo.
+ */
+
+const BASE = 'http://localhost:3000/api';
+const RAIZ = path.join(__dirname, '..');
+const ler = (rel) => fs.readFileSync(path.join(RAIZ, rel), 'utf8');
+const modulo = () => require('../js/dashboard'); // eslint-disable-line global-require
+const resposta = (status, corpo) => ({ status, ok: status >= 200 && status < 300, text: async () => (corpo === undefined ? '' : JSON.stringify(corpo)) });
+
+const DESTINO = 'available-items.html?situacao=ABAIXO_MINIMO';
+const item = (n, extra = {}) => ({ materialId: n, material: `Material ${n}`, tamanho: 'M', saldoLivre: 2, estoqueMinimo: 10, deficit: 8, ...extra });
+const indicador = (itens, total = itens.length) => ({ permitido: true, valor: total, previa: { total, itens } });
+
+describe('módulo: render.previaAbaixoMinimo — o que o navegador mostra', () => {
+  test('cada item mostra nome, tamanho, saldo livre, mínimo e déficit exatamente como vieram, na ordem do servidor', () => {
+    const f = modulo().render.previaAbaixoMinimo;
+    assert.equal(typeof f, 'function', 'render.previaAbaixoMinimo ainda não existe');
+    const p = f(indicador([item(1, { material: 'Luva de raspa', tamanho: 'G', saldoLivre: 3, estoqueMinimo: 10, deficit: 7 }), item(2, { tamanho: null, saldoLivre: 0, estoqueMinimo: 1200, deficit: 1200 })]));
+    assert.deepEqual(p.itens, [
+      { nome: 'Luva de raspa', tamanho: 'G', saldoLivre: '3', minimo: '10', deficit: '7' },
+      { nome: 'Material 2', tamanho: 'Tamanho único', saldoLivre: '0', minimo: '1.200', deficit: '1.200' },
+    ]);
+  });
+
+  test('o déficit e o mínimo NUNCA são calculados no navegador: valem os números do servidor, mesmo que não fechem com o saldo', () => {
+    const p = modulo().render.previaAbaixoMinimo(indicador([item(1, { saldoLivre: 3, estoqueMinimo: 10, deficit: 99 })]));
+    assert.equal(p.itens[0].deficit, '99');
+    assert.equal(p.itens[0].minimo, '10');
+  });
+
+  test('até cinco itens: se o servidor mandar mais, só os cinco primeiros aparecem', () => {
+    const p = modulo().render.previaAbaixoMinimo(indicador([1, 2, 3, 4, 5, 6, 7].map((n) => item(n)), 7));
+    assert.deepEqual(p.itens.map((i) => i.nome), ['Material 1', 'Material 2', 'Material 3', 'Material 4', 'Material 5']);
+  });
+
+  test('mais de cinco no total: avisa que há outros na listagem completa; com cinco ou menos, não avisa', () => {
+    const f = modulo().render.previaAbaixoMinimo;
+    const muitos = f(indicador([1, 2, 3, 4, 5].map((n) => item(n)), 12));
+    assert.equal(muitos.haMais, true);
+    assert.equal(muitos.avisoMais, 'Há outros itens abaixo do mínimo na listagem completa.');
+    for (const quantos of [3, 5]) {
+      const poucos = f(indicador(Array.from({ length: quantos }, (_, n) => item(n + 1)), quantos));
+      assert.equal(poucos.haMais, false, `${quantos} itens`);
+      assert.equal(poucos.avisoMais, null);
+    }
+  });
+
+  test('lista vazia com permissão: prévia vazia (não nula), para a tela dizer que nada está abaixo do mínimo', () => {
+    const p = modulo().render.previaAbaixoMinimo(indicador([], 0));
+    assert.deepEqual(p.itens, []);
+    assert.equal(p.haMais, false);
+  });
+
+  test('sem permissão, ausente ou malformado: nenhuma prévia (null), nunca zero nem item inventado', () => {
+    const f = modulo().render.previaAbaixoMinimo;
+    for (const ruim of [{ permitido: false }, undefined, null, { permitido: true, valor: 2 }, { permitido: true, valor: 2, previa: 'x' }, { permitido: true, valor: 2, previa: { total: 2, itens: 'x' } }, { permitido: true, valor: 2, previa: { total: -1, itens: [] } }, { permitido: true, valor: 2, previa: { total: 1, itens: [item(1, { deficit: '8' })] } }]) {
+      assert.equal(f(ruim), null, JSON.stringify(ruim));
+    }
+  });
+
+  test('o número do card continua como estava, com ou sem prévia', () => {
+    const c = modulo().render.cards({ estoqueAbaixoMinimo: indicador([item(1)], 1234) });
+    assert.deepEqual(c.abaixoMinimo, { valor: '1.234', meta: 'Itens (material × tamanho) abaixo do mínimo pelo saldo livre' });
+    assert.deepEqual(modulo().render.cards({ estoqueAbaixoMinimo: { permitido: false } }).abaixoMinimo, { valor: '—', meta: 'sem permissão' });
+  });
+});
+
+describe('módulo: destino do card', () => {
+  test('com a fonte liberada o destino é a Análise de estoque filtrada; sem ela, nenhum destino', () => {
+    const d = modulo().destinos;
+    assert.ok(d && typeof d.abaixoMinimo === 'function', 'destinos.abaixoMinimo ainda não existe');
+    assert.equal(d.abaixoMinimo({ permitido: true, valor: 0 }), DESTINO, 'mesmo com zero, quem vê a fonte pode abrir a lista');
+    assert.equal(d.abaixoMinimo(indicador([item(1)])), DESTINO);
+    for (const sem of [{ permitido: false }, undefined, null, {}]) assert.equal(d.abaixoMinimo(sem), null, JSON.stringify(sem));
+  });
+});
+
+describe('inspeção estática: pages/dashboard.html — card inteiro, prévia por hover, foco e toque', () => {
+  const html = ler('pages/dashboard.html');
+  // O <article> abre com o <a> do card inteiro (que envolve o cabeçalho), então o link pode vir antes do kpi-head.
+  const card = (html.match(/<article class="kpi-card warning"(?: id="cardAbaixoMinimo")?(?: style="display:none")?>\s*(?:<a\b[^>]*>\s*)?<div class="kpi-head">\s*<div class="kpi-title">Estoque abaixo do mínimo<\/div>[\s\S]*?<\/article>/) || [''])[0];
+
+  test('o card tem o link do card inteiro (título, número e texto dentro do <a>) e preserva a identidade visual (classe warning, ícone, ids dos valores)', () => {
+    assert.notEqual(card, '', 'o card "Estoque abaixo do mínimo" precisa continuar na página');
+    assert.match(card, /<a\b[^>]*\bid="linkAbaixoMinimo"[^>]*>/);
+    const ancora = (card.match(/<a\b[^>]*\bid="linkAbaixoMinimo"[^>]*>([\s\S]*?)<\/a>/) || [])[1] || '';
+    for (const trecho of ['Estoque abaixo do mínimo', 'production_quantity_limits', 'id="kpiAbaixoMinimoValor"', 'id="kpiAbaixoMinimoMeta"']) {
+      assert.ok(ancora.includes(trecho), `${trecho} precisa estar DENTRO do link, para o card inteiro navegar`);
+    }
+    assert.match(card, /class="[^"]*\bkpi-link\b[^"]*"/, 'reaproveita o estilo kpi-link existente');
+    assert.match(card, /aria-describedby="previaAbaixoMinimo"/, 'a prévia descreve o link');
+  });
+
+  test('a prévia fica FORA do <a> (sem interativo dentro de interativo), é anunciada e nasce vazia e oculta até a resposta', () => {
+    assert.match(card, /<[a-z]+\b[^>]*\bid="previaAbaixoMinimo"[^>]*\bclass="[^"]*\bkpi-previa\b/);
+    const ancora = (card.match(/<a\b[^>]*\bid="linkAbaixoMinimo"[^>]*>[\s\S]*?<\/a>/) || [''])[0];
+    assert.equal(ancora.includes('previaAbaixoMinimo"') && ancora.includes('id="previaAbaixoMinimo"'), false);
+    const previa = (card.match(/<[a-z]+\b[^>]*\bid="previaAbaixoMinimo"[^>]*>([\s\S]*?)<\/(?:div|section|aside)>/) || [])[1];
+    assert.equal(previa === undefined ? '' : previa.trim(), '', 'nenhum dado fixo na página');
+    assert.match(card, /\brole="(?:region|tooltip|group)"/);
+    assert.match(card, /\baria-label="[^"]+"/);
+  });
+
+  test('não há botão de expansão: a ampliação não depende de clique (hover e foco visível, JS; no toque o card navega)', () => {
+    assert.equal(/<button\b[^>]*\bid="botaoPreviaAbaixoMinimo"/.test(html), false);
+    assert.equal(html.includes('Ver prévia dos itens'), false);
+    assert.equal(/aria-controls="previaAbaixoMinimo"/.test(html), false);
+  });
+
+  test('CSS: a prévia nasce oculta e só aparece com o cartão ampliado (data-ampliado), sem regra de hover ou foco que a abra dentro da grade', () => {
+    const css = html.slice(0, html.indexOf('</style>'));
+    assert.match(css, /\.kpi-previa\s*\{[^}]*display\s*:\s*none/);
+    assert.match(css, /\.kpi-card\[data-ampliado="true"\]\s+\.kpi-previa\s*\{[^}]*display\s*:\s*block/);
+    assert.equal(/\.kpi-card:hover\s+\.kpi-previa|\.kpi-card:has\(:focus-visible\)\s+\.kpi-previa|\.kpi-previa\[data-aberta/.test(css), false);
+  });
+
+  test('os cartões e textos existentes continuam: 18 cards e o título/ícone do card não mudaram', () => {
+    assert.equal((html.match(/<article class="kpi-card/g) || []).length, 18);
+    assert.match(card, /<div class="kpi-icon">production_quantity_limits<\/div>/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Página em DOM simulado: o script embutido de dashboard.html
+// ═══════════════════════════════════════════════════════════════════
+const CONTEXTO = { empresa: { id: 3, nome: 'Empresa Demonstração SafeWork' }, usuario: { id: 7, nome: 'Pessoa Teste', email: 'p@exemplo-cliente.com.br', perfil: 'MASTER' } };
+const ACESSO = { permissoes: { recursos: { dashboard: { visualizar: true, criar: false, editar: false, excluir: false } }, acoes: {}, administracao: {} }, podeAlterar: false };
+
+let chamadas;
+function servidor(responder) {
+  chamadas = [];
+  EpiHttp.configurar({
+    baseUrl: BASE,
+    fetch: async (url, opcoes) => {
+      const u = new URL(url);
+      chamadas.push(`${opcoes.method} ${u.pathname}${u.search}`);
+      return typeof responder === 'function' ? responder(u) : responder;
+    },
+  });
+}
+
+function montarPagina(responder) {
+  servidor(responder);
+  const html = ler('pages/dashboard.html');
+  const script = html.slice(html.lastIndexOf('<script>') + '<script>'.length, html.lastIndexOf('</script>'));
+  const mapa = {};
+  const el = (id) => (mapa[id] = mapa[id] || {
+    id, innerHTML: '', textContent: '', style: {}, listeners: {}, atributos: {}, focado: false,
+    addEventListener(ev, fn) { (this.listeners[ev] = this.listeners[ev] || []).push(fn); },
+    setAttribute(k, v) { this.atributos[k] = String(v); }, removeAttribute(k) { delete this.atributos[k]; }, focus() { this.focado = true; },
+  });
+  const sandbox = {
+    document: { getElementById: el, querySelectorAll: () => [] },
+    window: { SAFEWORK_PORTAL_API_BASE_URL: BASE },
+    EpiHttp, EpiDashboard: modulo(),
+    EpiPermissoes: { prepararPagina: async () => ACESSO },
+    EpiSessaoEmpresarial: { montar: async (o) => { sandbox.opcoesMontar = o; return CONTEXTO; }, sessaoEncerrada() { sandbox.encerrada = true; } },
+    console, Promise, String, Number, Object, JSON,
+    Date: class extends Date { constructor(...args) { super(...(args.length ? args : ['2026-10-19T12:00:00.000Z'])); } },
+  };
+  vm.runInNewContext(script, sandbox);
+  const esperar = async () => { for (let i = 0; i < 40; i += 1) await new Promise((r) => setImmediate(r)); };
+  const clicar = async (id) => { for (const fn of (el(id).listeners.click || [])) await fn({ preventDefault() {}, stopPropagation() {} }); await esperar(); };
+  return { el, esperar, clicar };
+}
+
+const corpo = (abaixo) => ({ status: 'ok', indicadores: { estoqueAbaixoMinimo: abaixo } });
+
+describe('página (DOM simulado): card "Estoque abaixo do mínimo"', () => {
+  beforeEach(() => servidor(resposta(200, corpo(indicador([item(1)])))));
+
+  test('com permissão: o link aponta para a Análise de estoque filtrada e a prévia mostra os cinco itens com os números do servidor, em uma só requisição', async () => {
+    const pg = montarPagina(resposta(200, corpo(indicador([1, 2, 3, 4, 5].map((n) => item(n, { material: `Luva ${n}`, deficit: 10 - n, saldoLivre: n, estoqueMinimo: 10 })), 9))));
+    await pg.esperar();
+    assert.deepEqual(chamadas, ['GET /api/dashboard/indicadores'], 'a prévia vem no próprio indicador: nenhuma segunda requisição');
+    assert.equal(pg.el('kpiAbaixoMinimoValor').textContent, '9');
+    assert.equal(pg.el('linkAbaixoMinimo').atributos.href, DESTINO);
+    const html = pg.el('previaAbaixoMinimo').innerHTML;
+    for (const trecho of ['Luva 1', 'Luva 5', 'M']) assert.ok(html.includes(trecho), trecho);
+    assert.equal((html.match(/Luva \d/g) || []).length, 5);
+    assert.match(html, /Há outros itens abaixo do mínimo na listagem completa\./);
+  });
+
+  test('os textos da prévia são escapados: nome com HTML nunca vira marcação', async () => {
+    const pg = montarPagina(resposta(200, corpo(indicador([item(1, { material: '<img src=x onerror=alert(1)>' })]))));
+    await pg.esperar();
+    const html = pg.el('previaAbaixoMinimo').innerHTML;
+    assert.equal(html.includes('<img'), false);
+    assert.match(html, /&lt;img/);
+  });
+
+  test('com até cinco no total, não há aviso de "outros"; com nenhum item, a prévia diz que nada está abaixo do mínimo', async () => {
+    const poucos = montarPagina(resposta(200, corpo(indicador([item(1), item(2)]))));
+    await poucos.esperar();
+    assert.doesNotMatch(poucos.el('previaAbaixoMinimo').innerHTML, /listagem completa/);
+    const vazio = montarPagina(resposta(200, corpo(indicador([], 0))));
+    await vazio.esperar();
+    assert.match(vazio.el('previaAbaixoMinimo').innerHTML, /Nenhum item abaixo do mínimo/);
+    assert.equal(vazio.el('linkAbaixoMinimo').atributos.href, DESTINO, 'quem vê a fonte pode abrir a listagem mesmo com zero');
+  });
+
+  test('sem availableItems.visualizar: "—" e "sem permissão", SEM link e SEM prévia (nada de estoque na página)', async () => {
+    const pg = montarPagina(resposta(200, corpo({ permitido: false })));
+    await pg.esperar();
+    assert.equal(pg.el('kpiAbaixoMinimoValor').textContent, '—');
+    assert.equal(pg.el('kpiAbaixoMinimoMeta').textContent, 'sem permissão');
+    assert.equal(Object.hasOwn(pg.el('linkAbaixoMinimo').atributos, 'href'), false, 'sem permissão não há href');
+    assert.equal(pg.el('previaAbaixoMinimo').innerHTML, '');
+  });
+
+  test('falha ao carregar os indicadores: sem link e sem prévia', async () => {
+    const pg = montarPagina(resposta(503, { status: 'erro', codigo: 'INDISPONIVEL' }));
+    await pg.esperar();
+    assert.equal(Object.hasOwn(pg.el('linkAbaixoMinimo').atributos, 'href'), false);
+    assert.equal(pg.el('previaAbaixoMinimo').innerHTML, '');
+  });
+
+  test('o número e a prévia não derivam um do outro no navegador: valor 9 com prévia de total 12 mostram cada um o que o servidor mandou', async () => {
+    const pg = montarPagina(resposta(200, corpo({ permitido: true, valor: 9, previa: { total: 12, itens: [item(1)] } })));
+    await pg.esperar();
+    assert.equal(pg.el('kpiAbaixoMinimoValor').textContent, '9');
+    assert.match(pg.el('previaAbaixoMinimo').innerHTML, /listagem completa/);
+  });
+});

@@ -1,0 +1,85 @@
+'use strict';
+
+const { describe, test } = require('node:test');
+const assert = require('node:assert/strict');
+
+const servico = require('../../src/services/dashboard.service');
+const autorizacao = require('../../src/middleware/autorizacao');
+const loteRepo = require('../../src/repositories/estoque-lote.repository');
+const posicaoRepo = require('../../src/repositories/posicao-estoque.repository');
+const funcionarioRepo = require('../../src/repositories/funcionario.repository');
+const consultaRepo = require('../../src/repositories/solicitacao-epi-consulta.repository');
+const coberturaRepo = require('../../src/repositories/solicitacao-epi-cobertura.repository');
+
+/**
+ * 12I — "Solicitações aguardando entrega": o total é o da listagem operacional de Entregas por solicitação, pela MESMA função de contagem da
+ * página (nada de cálculo paralelo): REALIZAR_ENTREGA conta como os entregáveis; quem só tem ENCERRAR_SOLICITACAO, como as encerráveis (a lista
+ * que essa pessoa vê). Mesma autoridade da página (REALIZAR_ENTREGA ou ENCERRAR_SOLICITACAO); sem ela, { permitido: false } e nenhuma contagem.
+ * Lido na mesma transação das demais contagens de solicitações.
+ */
+
+const CONTEXTO = { empresaId: 42, usuarioId: 7, perfil: 'USUARIO', hoje: '2026-10-04' };
+const NEGADO = { permitido: false };
+
+function simular(t, { acoes = {} } = {}) {
+  const chamadas = { entregaveis: [], encerraveis: [], sql: [], conexoes: 0 };
+  t.mock.method(autorizacao, 'avaliarPermissaoRecurso', async () => ({ visualizar: false }));
+  t.mock.method(autorizacao, 'avaliarPermissaoAcao', async (_p, _c, a) => acoes[a] === true);
+  t.mock.method(consultaRepo, 'contarFila', async () => 5);
+  t.mock.method(consultaRepo, 'contarEntregaveis', async (...a) => { chamadas.entregaveis.push(a); return 14; });
+  t.mock.method(consultaRepo, 'contarEncerraveis', async (...a) => { chamadas.encerraveis.push(a); return 14; });
+  t.mock.method(coberturaRepo, 'contarSolicitacoesPorCobertura', async () => ({ comCobertura: 2, semCobertura: 3 }));
+  t.mock.method(posicaoRepo, 'resumirPosicoes', async () => ({}));
+  t.mock.method(loteRepo, 'resumirIndicadores', async () => ({}));
+  t.mock.method(funcionarioRepo, 'contarPorEmpresa', async () => 0);
+  const cliente = { query: async (sql) => { chamadas.sql.push(sql); return { rows: [] }; }, release() {} };
+  return { chamadas, cliente, pool: { connect: async () => { chamadas.conexoes += 1; return cliente; } } };
+}
+
+describe('dashboard.service — solicitacoesAguardandoEntrega (12I)', () => {
+  test('quem entrega: o total é o dos entregáveis, com a empresa da sessão, pelo mesmo cliente e na mesma transação somente leitura', async (t) => {
+    const { pool, cliente, chamadas } = simular(t, { acoes: { REALIZAR_ENTREGA: true } });
+    const r = await servico.consultar(pool, CONTEXTO);
+    assert.deepEqual(r.solicitacoesAguardandoEntrega, { permitido: true, valor: 14 });
+    assert.equal(chamadas.entregaveis.length, 1);
+    assert.equal(chamadas.entregaveis[0][0], cliente);
+    assert.equal(chamadas.entregaveis[0][1], 42);
+    assert.equal(chamadas.encerraveis.length, 0);
+    assert.match(chamadas.sql[0], /^BEGIN READ ONLY ISOLATION LEVEL REPEATABLE READ$/);
+    assert.equal(chamadas.conexoes, 1, 'as contagens de solicitações dividem uma transação só');
+  });
+
+  test('quem só encerra: o total é o das encerráveis (a lista que essa pessoa vê na mesma página)', async (t) => {
+    const { pool, chamadas } = simular(t, { acoes: { ENCERRAR_SOLICITACAO: true } });
+    const r = await servico.consultar(pool, CONTEXTO);
+    assert.deepEqual(r.solicitacoesAguardandoEntrega, { permitido: true, valor: 14 });
+    assert.equal(chamadas.encerraveis.length, 1);
+    assert.equal(chamadas.entregaveis.length, 0);
+  });
+
+  test('quem tem as duas ações usa os entregáveis (a lista de quem entrega)', async (t) => {
+    const { pool, chamadas } = simular(t, { acoes: { REALIZAR_ENTREGA: true, ENCERRAR_SOLICITACAO: true } });
+    await servico.consultar(pool, CONTEXTO);
+    assert.equal(chamadas.entregaveis.length, 1);
+    assert.equal(chamadas.encerraveis.length, 0);
+  });
+
+  test('sem REALIZAR_ENTREGA nem ENCERRAR_SOLICITACAO: negado, e nenhuma contagem de entregáveis ou encerráveis roda (aprovar sozinho não basta)', async (t) => {
+    const { pool, chamadas } = simular(t, { acoes: { APROVAR_SOLICITACAO: true } });
+    const r = await servico.consultar(pool, CONTEXTO);
+    assert.deepEqual(r.solicitacoesAguardandoEntrega, NEGADO);
+    assert.equal(chamadas.entregaveis.length + chamadas.encerraveis.length, 0);
+  });
+
+  test('zero de verdade é número permitido; o MASTER sem a ação efetiva não recebe nada pelo nome do perfil', async (t) => {
+    const a = simular(t, { acoes: { REALIZAR_ENTREGA: true } });
+    consultaRepo.contarEntregaveis.mock.mockImplementation(async () => 0);
+    assert.deepEqual((await servico.consultar(a.pool, CONTEXTO)).solicitacoesAguardandoEntrega, { permitido: true, valor: 0 });
+  });
+
+  test('as demais contagens de solicitações não mudam (aguardando estoque e disponíveis continuam excluindo a suspensa)', async (t) => {
+    const { pool } = simular(t, { acoes: { REALIZAR_ENTREGA: true, APROVAR_SOLICITACAO: true } });
+    const r = await servico.consultar(pool, CONTEXTO);
+    assert.deepEqual([r.solicitacoesAguardandoSst, r.solicitacoesAguardandoEstoque, r.disponiveisParaEntrega], [{ permitido: true, valor: 5 }, { permitido: true, valor: 3 }, { permitido: true, valor: 2 }]);
+  });
+});
