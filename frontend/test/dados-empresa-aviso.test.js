@@ -6,47 +6,41 @@ const assert = require('node:assert/strict');
 const U = require('../js/permissoes-usuario');
 
 /**
- * Dados da Empresa (F2) — a mensagem do aviso DADOS_EMPRESA_SEM_CONSULTAR (calculado pelo servidor) na Gestão de Usuários:
- * Editar ligado sem Visualizar. A tela só traduz o código; o texto informa que o acesso não vale sem a leitura e nunca afirma
- * perda de acesso nem revoga nada. O catálogo de acessos continua vindo da API (nenhum toggle é conhecido pelo navegador).
+ * Dados da Empresa — controle único: o aviso DADOS_EMPRESA_SEM_CONSULTAR deixou de existir (Editar já não é um acesso separado de
+ * Visualizar). A tela não traduz esse código; se um servidor antigo o enviasse, `render.avisos` o ignora como qualquer código desconhecido.
  */
 const CODIGO = 'DADOS_EMPRESA_SEM_CONSULTAR';
 
-describe('aviso DADOS_EMPRESA_SEM_CONSULTAR na Gestão de Usuários', () => {
-  test('existe o texto do usuário e o do grupo, citando Dados da Empresa, Editar e Visualizar', () => {
+describe('Dados da Empresa — sem aviso de dependência na Gestão de Usuários', () => {
+  test('não há texto para o código antigo, nem no usuário nem no grupo', () => {
+    assert.equal(Object.hasOwn(U.TEXTOS.AVISOS, CODIGO), false);
+    assert.equal(Object.hasOwn(U.TEXTOS.AVISOS_GRUPO, CODIGO), false);
+  });
+
+  test('acesso parcial legado: texto próprio para usuário e grupo, sem afirmar revogação, e a linha ganha a indicação só quando desligada e parcial', () => {
     for (const textos of [U.TEXTOS.AVISOS, U.TEXTOS.AVISOS_GRUPO]) {
-      assert.equal(typeof textos[CODIGO], 'string');
-      assert.match(textos[CODIGO], /Dados da Empresa/);
-      assert.match(textos[CODIGO], /Editar/);
-      assert.match(textos[CODIGO], /Visualizar/);
-      assert.match(textos[CODIGO], /duas permiss/i, 'explica que a alteração exige as duas');
+      assert.match(textos.ACESSO_PARCIAL_LEGADO, /parcial legado/i);
+      assert.match(textos.ACESSO_PARCIAL_LEGADO, /Nada muda até alguém agir/);
     }
+    assert.match(U.TEXTOS.AVISOS_GRUPO.ACESSO_PARCIAL_LEGADO, /exceções individuais/);
+    const doc = {
+      createElement: (tag) => ({ tag, atributos: {}, filhos: [], setAttribute(k, v) { this.atributos[k] = v; }, appendChild(f) { this.filhos.push(f); return f; }, append(...fs) { fs.forEach((f) => this.filhos.push(f)); } }),
+      createTextNode: (t) => ({ texto: t }),
+    };
+    const marca = (t) => JSON.stringify(U.render.linhaAcesso(doc, t, true)).includes('data-parcial');
+    assert.equal(marca({ id: 'dadosEmpresa', rotulo: 'Dados da Empresa', ligado: false, parcial: true }), true);
+    assert.equal(marca({ id: 'dadosEmpresa', rotulo: 'Dados da Empresa', ligado: false }), false);
+    assert.equal(marca({ id: 'dadosEmpresa', rotulo: 'Dados da Empresa', ligado: true }), false);
   });
 
-  test('não afirma perda de acesso nem revogação (o aviso só informa)', () => {
-    for (const textos of [U.TEXTOS.AVISOS, U.TEXTOS.AVISOS_GRUPO]) {
-      assert.equal(/perde|perderam|perdem|revogad|removid/i.test(textos[CODIGO]), false);
-    }
-  });
-
-  test('o texto do grupo fala da CONFIGURAÇÃO do grupo; o do usuário, do acesso do usuário', () => {
-    assert.match(U.TEXTOS.AVISOS_GRUPO[CODIGO], /este grupo/i);
-    assert.equal(/este grupo/i.test(U.TEXTOS.AVISOS[CODIGO]), false);
-  });
-
-  test('render.avisos mostra o aviso quando o servidor o envia e ignora código desconhecido', () => {
+  test('render.avisos ignora o código antigo e não mostra nada', () => {
     const filhos = [];
     const doc = {
       createElement: (tag) => ({ tag, atributos: {}, filhos: [], setAttribute(k, v) { this.atributos[k] = v; }, appendChild(f) { this.filhos.push(f); return f; }, append(...fs) { fs.forEach((f) => this.filhos.push(f)); } }),
       createTextNode: (t) => ({ texto: t }),
     };
     const area = { style: {}, replaceChildren: (...itens) => { filhos.push(...itens); } };
-    try {
-      U.render.avisos(doc, area, [{ codigo: CODIGO }, { codigo: 'CODIGO_QUE_NAO_EXISTE' }], false);
-    } catch (erro) {
-      assert.fail(`render.avisos não pôde ser exercitado com um documento mínimo: ${erro.message}`);
-    }
-    assert.equal(filhos.length, 1);
-    assert.equal(area.style.display, '');
+    U.render.avisos(doc, area, [{ codigo: CODIGO }], false);
+    assert.equal(filhos.length, 0);
   });
 });

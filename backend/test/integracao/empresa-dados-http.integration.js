@@ -196,18 +196,59 @@ describe('Dados da Empresa — HTTP + RBAC + Painel (PostgreSQL real)', () => {
     assert.equal((await linha(g.empresas.A)).versao, antes.versao);
   });
 
-  test('ADMINISTRADOR com Visualizar ON e Editar OFF: lê, mas o PATCH é 403', async () => {
-    const u = await administrador([['dadosEmpresaVisualizar', true]]);
-    assert.equal((await get(u.cookie)).status, 200);
+  const camada = (u) => g.um('SELECT pode_visualizar, pode_editar FROM usuario_permissoes_recurso WHERE empresa_id = $1 AND usuario_id = $2 AND recurso = $3', [g.empresas.A, u.id, 'companyData']);
+  const legado = (u, visualizar, editar) => g.pool.query(
+    'INSERT INTO usuario_permissoes_recurso (empresa_id, usuario_id, recurso, pode_visualizar, pode_editar, concedido_por) VALUES ($1, $2, $3, $4, $5, $6)',
+    [g.empresas.A, u.id, 'companyData', visualizar, editar, masterA.usuarioId],
+  );
+
+  test('estado legado só com Visualizar: o controle aparece DESLIGADO, a leitura continua valendo e o PATCH segue 403; ligar concede as duas, sem revogar nada antes', async () => {
+    const u = await g.usuarioPronto(masterA, { tipoConta: 'ADMINISTRADOR' });
+    await legado(u, true, null);
+    const cookie = await cookieDe(u);
+    assert.equal((await get(cookie)).status, 200);
     const antes = await linha(g.empresas.A);
-    assert.equal((await patch(u.cookie, { versao: antes.versao, telefone: '1' })).status, 403);
-    assert.equal((await linha(g.empresas.A)).versao, antes.versao);
+    assert.equal((await patch(cookie, { versao: antes.versao, telefone: '1' })).status, 403);
+    const lista = (await g.request(g.app).get(`${ACESSOS}/${u.id}/acessos`).set('Cookie', g.cookie(masterA))).body.acessos;
+    const t = lista.toggles.find((x) => x.id === 'dadosEmpresa');
+    assert.deepEqual([t.ligado, t.parcial], [false, true], 'desligado, mas indicado como parcial');
+    assert.deepEqual(lista.avisos.find((a) => a.codigo === 'ACESSO_PARCIAL_LEGADO'), { codigo: 'ACESSO_PARCIAL_LEGADO', acessos: ['Dados da Empresa'] });
+    assert.deepEqual(await camada(u), { pode_visualizar: true, pode_editar: null }, 'listar não altera nada');
+    const r = await acesso(masterA, u.id, 'dadosEmpresa', true);
+    assert.equal(r.status, 200);
+    assert.equal(r.body.avisos.some((a) => a.codigo === 'ACESSO_PARCIAL_LEGADO'), false, 'regularizado: o aviso some');
+    assert.deepEqual(await camada(u), { pode_visualizar: true, pode_editar: true });
+    const aud = await g.todos("SELECT dados_anteriores, dados_novos FROM logs_auditoria WHERE empresa_id = $1 AND acao = 'USUARIO_ACESSO_ALTERADO' AND dados_novos->>'acesso' = 'dadosEmpresa' ORDER BY id DESC LIMIT 1", [g.empresas.A]);
+    assert.deepEqual([aud[0].dados_anteriores.parcial, aud[0].dados_anteriores.ligado, aud[0].dados_novos.ligado], [true, false, true]);
+    assert.equal((await patch(cookie, { versao: antes.versao, bairro: 'Legado' })).status, 200);
   });
 
-  test('ADMINISTRADOR com os dois ON: lê e edita; a auditoria registra o ator; Razão Social segue bloqueada', async () => {
-    const u = await administrador([['dadosEmpresaEditar', true]]);
+  test('estado legado só com Editar: nada vale (o PATCH exige as duas); desligar remove a sobra explicitamente e ligar concede as duas', async () => {
+    const u = await g.usuarioPronto(masterA, { tipoConta: 'ADMINISTRADOR' });
+    await legado(u, null, true);
+    const cookie = await cookieDe(u);
+    assert.equal((await get(cookie)).status, 403);
+    assert.equal((await acesso(masterA, u.id, 'dadosEmpresa', false)).status, 200);
+    assert.equal((await get(cookie)).status, 403);
+    const aud = await g.todos("SELECT dados_anteriores FROM logs_auditoria WHERE empresa_id = $1 AND acao = 'USUARIO_ACESSO_ALTERADO' AND dados_novos->>'acesso' = 'dadosEmpresa' ORDER BY id DESC LIMIT 1", [g.empresas.A]);
+    assert.equal(aud[0].dados_anteriores.parcial, true, 'regularizar o parcial desligando também é auditado');
+    assert.equal((await acesso(masterA, u.id, 'dadosEmpresa', true)).status, 200);
+    assert.equal((await get(cookie)).status, 200);
+  });
+
+  test('desligar com Visualizar bloqueado individualmente e Editar concedido: ficam as duas sem permissão (efetivo OFF)', async () => {
+    const u = await g.usuarioPronto(masterA, { tipoConta: 'ADMINISTRADOR' });
+    await legado(u, false, true);
+    const cookie = await cookieDe(u);
+    assert.equal((await get(cookie)).status, 403);
+    assert.equal((await acesso(masterA, u.id, 'dadosEmpresa', false)).status, 200);
+    assert.equal((await get(cookie)).status, 403);
+  });
+
+  test('ADMINISTRADOR com o controle ligado: lê e edita; a auditoria registra o ator; Razão Social segue bloqueada', async () => {
+    const u = await administrador([['dadosEmpresa', true]]);
     const lida = await get(u.cookie);
-    assert.equal(lida.status, 200, 'ligar Editar também concede a leitura (dependência do catálogo)');
+    assert.equal(lida.status, 200, 'ligar o controle concede leitura e edição');
     const r = await patch(u.cookie, { versao: lida.body.dados.versao, representanteNome: 'Quem Edita' });
     assert.equal(r.status, 200, JSON.stringify(r.body));
     const logs = await auditorias(g.empresas.A);
@@ -216,26 +257,18 @@ describe('Dados da Empresa — HTTP + RBAC + Painel (PostgreSQL real)', () => {
     assert.equal((await patch(u.cookie, { versao: r.body.dados.versao, cnpj: '11444777000161' })).status, 400);
   });
 
-  test('ADMINISTRADOR com Visualizar OFF e Editar ON: 403 na leitura E no PATCH (Editar não basta)', async () => {
-    const u = await administrador([['dadosEmpresaEditar', true], ['dadosEmpresaVisualizar', false]]);
-    const antes = await linha(g.empresas.A);
-    assert.equal((await get(u.cookie)).status, 403);
-    assert.equal((await patch(u.cookie, { versao: antes.versao, telefone: '999' })).status, 403);
-    assert.equal((await linha(g.empresas.A)).versao, antes.versao);
-  });
-
-  test('desligar Editar depois de ligado volta o PATCH a 403 na próxima requisição', async () => {
-    const u = await administrador([['dadosEmpresaEditar', true]]);
+  test('desligar o controle depois de ligado volta a leitura e o PATCH a 403 na próxima requisição', async () => {
+    const u = await administrador([['dadosEmpresa', true]]);
     const v = (await get(u.cookie)).body.dados.versao;
     assert.equal((await patch(u.cookie, { versao: v, bairro: 'Antes' })).status, 200);
-    assert.equal((await acesso(masterA, u.id, 'dadosEmpresaEditar', false)).status, 200);
+    assert.equal((await acesso(masterA, u.id, 'dadosEmpresa', false)).status, 200);
     assert.equal((await patch(u.cookie, { versao: v + 1, bairro: 'Depois' })).status, 403);
-    assert.equal((await get(u.cookie)).status, 200);
+    assert.equal((await get(u.cookie)).status, 403);
   });
 
   test('ADMINISTRADOR de outra empresa com toggles não alcança a empresa A', async () => {
     const uB = await g.usuarioPronto(masterB, { tipoConta: 'ADMINISTRADOR' });
-    for (const t of ['dadosEmpresaEditar']) assert.equal((await g.request(g.app).put(`${ACESSOS}/${uB.id}/acessos/${t}`).set('Cookie', g.cookie(masterB)).send({ ligado: true })).status, 200);
+    for (const t of ['dadosEmpresa']) assert.equal((await g.request(g.app).put(`${ACESSOS}/${uB.id}/acessos/${t}`).set('Cookie', g.cookie(masterB)).send({ ligado: true })).status, 200);
     const cookie = await cookieDe(uB);
     const lida = await get(cookie);
     assert.equal(lida.status, 200);

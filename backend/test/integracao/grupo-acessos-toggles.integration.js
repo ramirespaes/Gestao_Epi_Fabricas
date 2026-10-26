@@ -8,7 +8,7 @@ const { criarGrupoPermissaoController } = require('../../src/controllers/grupo-p
 const { criarGrupoPermissaoRoutes } = require('../../src/routes/grupo-permissao.routes');
 
 /** Permissões do GRUPO como acessos ON/OFF: reaproveitam grupo_permissoes_* e o serviço existente. */
-const IDS_GRUPO = ['dashboard', 'historicoFuncionarios', 'cadastrarFuncionario', 'editarFuncionario', 'fichaEpi', 'entregasSolicitacao', 'gestaoGhe', 'analiseEstoque', 'operacoesEstoque', 'cadastrarProduto', 'entradaLote', 'registrarBaixa', 'importacaoFuncionarios', 'exportarHistoricoFuncionarios', 'dadosEmpresaVisualizar', 'dadosEmpresaEditar', 'reportsAudit', 'reportsFiscal', 'tokenVisualizar', 'tokenCadastrar', 'tokenEditar', 'tokenRevogar', 'tokenGerarAtivacao', 'tokenPrevia'];
+const IDS_GRUPO = ['dashboard', 'historicoFuncionarios', 'cadastrarFuncionario', 'editarFuncionario', 'fichaEpi', 'entregasSolicitacao', 'gestaoGhe', 'analiseEstoque', 'operacoesEstoque', 'cadastrarProduto', 'entradaLote', 'registrarBaixa', 'importacaoFuncionarios', 'exportarHistoricoFuncionarios', 'dadosEmpresa', 'reportsAudit', 'reportsFiscal', 'tokenVisualizar', 'tokenCadastrar', 'tokenEditar', 'tokenRevogar', 'tokenGerarAtivacao', 'tokenPrevia'];
 
 describe('Gestão de Usuários — permissões do grupo ON/OFF (PostgreSQL real)', () => {
   let g;
@@ -93,6 +93,59 @@ describe('Gestão de Usuários — permissões do grupo ON/OFF (PostgreSQL real)
     assert.equal((await ligar(master, grupo, 'naoExiste', true)).status, 404);
     assert.equal((await g.request(g.app).put(`/api/grupos-acesso/${grupo}/acessos/dashboard`).set('Cookie', g.cookie(master)).send({ ligado: 'sim' })).status, 400);
     assert.equal((await g.request(g.app).get(`/api/grupos-acesso/${grupo}/acessos`)).status, 401);
+  });
+
+  const dadosEmpresaDe = async (u) => {
+    const c = (await efetivas(u)).recursos.companyData ?? {};
+    return { visualizar: c.visualizar === true, editar: c.editar === true };
+  };
+  const comGrupo = (grupo, flags) => g.pool.query(
+    'INSERT INTO grupo_permissoes_recurso (empresa_id, grupo_acesso_id, recurso, pode_visualizar, pode_editar) VALUES ($1, $2, $3, $4, $5)',
+    [g.empresas.A, grupo, 'companyData', flags[0], flags[1]],
+  );
+
+  test('Dados da Empresa — grupo parcial (legado): aparece DESLIGADO com indicação e aviso; desligar retira só a concessão do grupo, sem mexer no integrante; ligar concede as duas', async () => {
+    const grupo = await novoGrupo();
+    await comGrupo(grupo, [true, null]);
+    const u = await g.usuarioPronto(master, { grupoAcessoId: grupo, tipoConta: 'ADMINISTRADOR' });
+    const antes = (await lista(master, grupo)).body.acessos;
+    const t = antes.toggles.find((x) => x.id === 'dadosEmpresa');
+    assert.deepEqual([t.ligado, t.parcial], [false, true]);
+    assert.deepEqual(antes.avisos.find((a) => a.codigo === 'ACESSO_PARCIAL_LEGADO'), { codigo: 'ACESSO_PARCIAL_LEGADO', acessos: ['Dados da Empresa'] });
+    assert.equal((await dadosEmpresaDe(u)).visualizar, true, 'o grupo ainda concede a leitura ao integrante');
+    assert.equal((await ligar(master, grupo, 'dadosEmpresa', false)).status, 200);
+    const linha = await g.um("SELECT pode_visualizar, pode_editar FROM grupo_permissoes_recurso WHERE grupo_acesso_id = $1 AND recurso = 'companyData'", [grupo]);
+    assert.deepEqual(linha, { pode_visualizar: null, pode_editar: null }, 'retirada da concessão: nulos, nunca false');
+    assert.notEqual((await dadosEmpresaDe(u)).visualizar, true);
+    const depois = (await lista(master, grupo)).body.acessos;
+    assert.equal(depois.toggles.find((x) => x.id === 'dadosEmpresa').parcial, undefined);
+    assert.equal(depois.avisos.some((a) => a.codigo === 'ACESSO_PARCIAL_LEGADO'), false);
+    assert.equal((await ligar(master, grupo, 'dadosEmpresa', true)).body.acesso.ligado, true);
+    assert.deepEqual(await dadosEmpresaDe(u), { visualizar: true, editar: true });
+  });
+
+  test('Dados da Empresa — retirar a concessão do GRUPO não é revogar o USUÁRIO: exceção individual segue valendo; já desligar no usuário bloqueia mesmo com o grupo concedendo', async () => {
+    const grupo = await novoGrupo();
+    await ligar(master, grupo, 'dadosEmpresa', true);
+    const comExcecao = await g.usuarioPronto(master, { grupoAcessoId: grupo, tipoConta: 'ADMINISTRADOR' });
+    const semExcecao = await g.usuarioPronto(master, { grupoAcessoId: grupo, tipoConta: 'ADMINISTRADOR' });
+    await g.pool.query(
+      'INSERT INTO usuario_permissoes_recurso (empresa_id, usuario_id, recurso, pode_visualizar, pode_editar, concedido_por) VALUES ($1, $2, $3, true, true, $4)',
+      [g.empresas.A, comExcecao.id, 'companyData', master.usuarioId],
+    );
+    await ligar(master, grupo, 'dadosEmpresa', false);
+    assert.deepEqual(await dadosEmpresaDe(comExcecao), { visualizar: true, editar: true }, 'a exceção individual não é do grupo');
+    assert.notEqual((await dadosEmpresaDe(semExcecao)).visualizar, true);
+    await ligar(master, grupo, 'dadosEmpresa', true);
+    assert.deepEqual(await dadosEmpresaDe(semExcecao), { visualizar: true, editar: true });
+    const r = await g.request(g.app).put(`/api/administracao/usuarios/${semExcecao.id}/acessos/dadosEmpresa`).set('Cookie', g.cookie(master)).send({ ligado: false });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const efetivo = await dadosEmpresaDe(semExcecao);
+    assert.notEqual(efetivo.visualizar, true);
+    assert.notEqual(efetivo.editar, true);
+    const linha = await g.um("SELECT pode_visualizar, pode_editar FROM usuario_permissoes_recurso WHERE usuario_id = $1 AND recurso = 'companyData'", [semExcecao.id]);
+    assert.deepEqual(linha, { pode_visualizar: false, pode_editar: false }, 'revogação efetiva = bloqueio individual explícito sobre o grupo');
+    assert.equal(await estado(grupo, 'dadosEmpresa'), true, 'o grupo continua concedendo aos demais');
   });
 
   test('auditoria: a mudança entra na trilha existente do grupo, sem dados sensíveis', async () => {
