@@ -331,6 +331,15 @@ async function aplicarAcao(client, {
 const ERRO_TOGGLE = ['TOGGLE_NAO_ENCONTRADO', 'Acesso não encontrado'];
 const AVISO_DEPENDENCIA_REABILITADA = 'DEPENDENCIA_REABILITADA';
 
+/** Controle de várias operações (Dados da Empresa) com só parte delas efetiva: estado legado, mostrado como desligado mas ainda parcialmente válido. */
+const parcialDoToggle = (completo, regra) => {
+  if (regra.tipo !== 'RECURSO' || regra.operacoes.length < 2) return false;
+  const celula = completo.recursos.find((r) => r.recurso === regra.recurso);
+  if (celula === undefined) return false;
+  const efetivas = regra.operacoes.filter((op) => celula.operacoes[op]?.efetivo === true).length;
+  return efetivas > 0 && efetivas < regra.operacoes.length;
+};
+
 const efetivoDoToggle = (completo, regra) => {
   // Toggle de CONCESSÃO (decisão da SST): ligado = há concessão individual direta, com ou sem vínculo SST; o efeito final
   // continua exigindo o vínculo e é decidido pelo servidor.
@@ -353,6 +362,7 @@ function resumirToggles(completo, { autoridadeAdministrativa = null } = {}) {
       && t.regra.codigo === autoridade.ACOES_ADMINISTRATIVAS.USUARIOS;
     const base = {
       id: t.id, rotulo: t.rotulo, grupo: t.grupo, ligado: daAutoridade ? autoridadeAdministrativa : efetivoDoToggle(completo, t.regra), fixo,
+      ...(!fixo && parcialDoToggle(completo, t.regra) ? { parcial: true } : {}),
     };
     if (t.regra.concessao !== true || completo.acoes.find((a) => a.codigo === t.regra.codigo)?.exigeSst !== true) return base;
     // O vínculo SST do alvo vem junto, para a tela avisar que a permissão sozinha não basta.
@@ -460,9 +470,20 @@ async function configurarToggle(pool, {
     }
     const completo = await montar(client, ator, empresaId, alvo);
     const depois = efetivoDoToggle(completo, regra);
-    if (antes !== depois) {
+    const parcialAntes = parcialDoToggle(completoAntes, regra);
+    const parcialDepois = parcialDoToggle(completo, regra);
+    // Regularizar um estado parcial muda o acesso real mesmo quando o controle continua desligado: também é auditado.
+    if (antes !== depois || parcialAntes !== parcialDepois) {
       await auditar(client, {
-        empresaId, atorId: ator.id, alvoId: alvo.id, acao: ACAO_AUDITORIA.TOGGLE, ip, dispositivo, antes: { acesso: toggleId, ligado: antes }, depois: { acesso: toggleId, ligado: depois },
+        empresaId,
+        atorId: ator.id,
+        alvoId: alvo.id,
+        acao: ACAO_AUDITORIA.TOGGLE,
+        ip,
+        dispositivo,
+        antes: { acesso: toggleId, ligado: antes, ...(parcialAntes ? { parcial: true } : {}) },
+        depois: { acesso: toggleId, ligado: depois, ...(parcialDepois ? { parcial: true } : {}) },
+        ...(parcialAntes ? { contextoExtra: { causa: 'regularizacao_parcial' } } : {}),
       });
     }
     // Cada dependência que mudou de verdade vira um registro próprio, ligado à operação original (mesmo evento e mesmas chaves).

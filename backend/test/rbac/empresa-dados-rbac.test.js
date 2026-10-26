@@ -7,7 +7,6 @@ const path = require('node:path');
 
 const recursos = require('../../src/rbac/recursos');
 const { TOGGLES, GRUPOS, buscar } = require('../../src/rbac/toggles');
-const { descreverDependencia } = require('../../src/rbac/dependencias-acessos');
 const { RECURSO } = require('../../src/routes/empresa-dados.routes');
 
 describe('Dados da Empresa — recurso companyData no RBAC', () => {
@@ -20,13 +19,12 @@ describe('Dados da Empresa — recurso companyData no RBAC', () => {
     assert.ok(recursos.RECURSOS_COM_EFEITO.some((r) => r.recurso === 'companyData'));
   });
 
-  test('dois toggles no grupo ADMINISTRACAO; Editar depende da leitura e Visualizar não depende de nada', () => {
-    const ver = buscar('dadosEmpresaVisualizar');
-    const editar = buscar('dadosEmpresaEditar');
-    assert.deepEqual([ver.grupo, ver.regra, ver.dependencias], ['ADMINISTRACAO', { tipo: 'RECURSO', recurso: 'companyData', operacoes: ['visualizar'] }, undefined]);
-    assert.deepEqual([editar.grupo, editar.regra], ['ADMINISTRACAO', { tipo: 'RECURSO', recurso: 'companyData', operacoes: ['editar'] }]);
-    assert.equal(editar.dependencias.length, 1);
-    assert.deepEqual(descreverDependencia(editar.dependencias[0]), { chave: 'companyData.visualizar', toggleId: 'dadosEmpresaVisualizar', rotulo: 'Dados da Empresa: Dados da Empresa — Visualizar' });
+  test('um único toggle "Dados da Empresa" no grupo ADMINISTRACAO sobre visualizar + editar, sem dependência; os ids antigos não existem', () => {
+    const t = buscar('dadosEmpresa');
+    assert.deepEqual([t.rotulo, t.grupo, t.regra, t.dependencias], ['Dados da Empresa', 'ADMINISTRACAO', { tipo: 'RECURSO', recurso: 'companyData', operacoes: ['visualizar', 'editar'] }, undefined]);
+    assert.equal(TOGGLES.filter((x) => x.regra.tipo === 'RECURSO' && x.regra.recurso === 'companyData').length, 1);
+    assert.equal(buscar('dadosEmpresaVisualizar') ?? null, null);
+    assert.equal(buscar('dadosEmpresaEditar') ?? null, null);
     assert.ok(GRUPOS.includes('ADMINISTRACAO'));
   });
 

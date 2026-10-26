@@ -102,7 +102,7 @@ describe('Gestão de Usuários — aviso de Funcionários nas permissões do gru
   test('GA6 o aviso não muda o catálogo do grupo nem as demais respostas', async () => {
     const grupo = await novoGrupo();
     const a = await acessos(grupo);
-    assert.deepEqual(a.toggles.map((t) => t.id), ['dashboard', 'historicoFuncionarios', 'cadastrarFuncionario', 'editarFuncionario', 'fichaEpi', 'entregasSolicitacao', 'gestaoGhe', 'analiseEstoque', 'operacoesEstoque', 'cadastrarProduto', 'entradaLote', 'registrarBaixa', 'importacaoFuncionarios', 'exportarHistoricoFuncionarios', 'dadosEmpresaVisualizar', 'dadosEmpresaEditar', 'reportsAudit', 'reportsFiscal', 'tokenVisualizar', 'tokenCadastrar', 'tokenEditar', 'tokenRevogar', 'tokenGerarAtivacao', 'tokenPrevia']);
+    assert.deepEqual(a.toggles.map((t) => t.id), ['dashboard', 'historicoFuncionarios', 'cadastrarFuncionario', 'editarFuncionario', 'fichaEpi', 'entregasSolicitacao', 'gestaoGhe', 'analiseEstoque', 'operacoesEstoque', 'cadastrarProduto', 'entradaLote', 'registrarBaixa', 'importacaoFuncionarios', 'exportarHistoricoFuncionarios', 'dadosEmpresa', 'reportsAudit', 'reportsFiscal', 'tokenVisualizar', 'tokenCadastrar', 'tokenEditar', 'tokenRevogar', 'tokenGerarAtivacao', 'tokenPrevia']);
     assert.equal(a.grupo.id, grupo);
   });
 });

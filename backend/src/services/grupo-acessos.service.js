@@ -40,6 +40,15 @@ const ligadoNoGrupo = (regra, recursosDoGrupo, acoesDoGrupo) => {
   return linha !== undefined && regra.operacoes.every((op) => linha[FLAG[op]] === true);
 };
 
+/** O grupo concede só parte das operações de um controle de várias operações (estado legado): aparece desligado, mas concede uma. */
+const parcialNoGrupo = (regra, recursosDoGrupo) => {
+  if (regra.tipo !== 'RECURSO' || regra.operacoes.length < 2) return false;
+  const linha = recursosDoGrupo.find((r) => r.recurso === regra.recurso);
+  if (linha === undefined) return false;
+  const concedidas = regra.operacoes.filter((op) => linha[FLAG[op]] === true).length;
+  return concedidas > 0 && concedidas < regra.operacoes.length;
+};
+
 async function detalhar(pool, { empresaId, atorId, grupoId }) {
   const recursosDoGrupo = await grupoPermissaoService.listarRecursos(pool, { empresaId, atorId, grupoId });
   const acoesDoGrupo = await grupoPermissaoService.listarAcoes(pool, { empresaId, atorId, grupoId });
@@ -47,6 +56,7 @@ async function detalhar(pool, { empresaId, atorId, grupoId }) {
   if (grupo === null) throw HttpError.notFound('GRUPO_NAO_ENCONTRADO', 'Grupo não encontrado');
   const lista = (await acessosDisponiveis(pool)).map((t) => ({
     id: t.id, rotulo: t.rotulo, grupo: t.grupo, ligado: ligadoNoGrupo(t.regra, recursosDoGrupo, acoesDoGrupo),
+    ...(parcialNoGrupo(t.regra, recursosDoGrupo) ? { parcial: true } : {}),
   }));
   // Avisos sobre a CONFIGURAÇÃO do grupo (o que ele concede), não sobre o efeito nos integrantes.
   return { grupo: { id: grupo.id, nome: grupo.nome, ativo: grupo.ativo }, toggles: lista, avisos: avisosDosAcessos(lista) };

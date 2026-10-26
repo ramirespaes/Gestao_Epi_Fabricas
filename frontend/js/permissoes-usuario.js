@@ -42,6 +42,7 @@
     GRUPO_NAO_ENCONTRADO: 'Grupo não encontrado. A lista foi atualizada.',
     GRUPO_DICA: 'Vale para todos os integrantes do grupo enquanto ele estiver ativo. Ligado: o grupo concede o acesso. Desligado: o grupo não concede (o perfil e as exceções individuais continuam valendo).',
     // Avisos informativos calculados pelo servidor (`avisos: [{ codigo }]`): a tela só traduz o código; nada é revogado.
+    PARCIAL: 'Acesso parcial: só uma das duas permissões está ativa.',
     AVISOS: Object.freeze({
       FUNCIONARIOS_SEM_VISUALIZAR: 'Histórico de Funcionários está desligado, mas Cadastrar e/ou Editar Funcionário continuam concedidos: '
         + 'a página Cadastro de Colaboradores pode ficar inacessível pelo menu.',
@@ -51,8 +52,8 @@
         + 'as abas e os botões dessas funções podem não aparecer na Central.',
       PREVIA_SEM_HISTORICO_FUNCIONARIOS: 'Prévia do catálogo está ligada, mas Histórico de Funcionários está desligado. '
         + 'A prévia com um funcionário real exige as duas permissões: sem a leitura, a busca de funcionário não fica disponível.',
-      DADOS_EMPRESA_SEM_CONSULTAR: 'Dados da Empresa — Editar está ligado, mas Dados da Empresa — Visualizar está desligado. '
-        + 'Alterar os dados da empresa exige as duas permissões: sem a leitura, a página não abre e a alteração é recusada.',
+      ACESSO_PARCIAL_LEGADO: 'Acesso parcial legado: só uma das duas permissões está ativa para este usuário, então o controle aparece desligado mas parte do acesso continua valendo. '
+        + 'Ligar concede as duas; desligar remove a que sobra. Nada muda até alguém agir. Acessos: ',
       // Evento (só na resposta do PUT): o servidor lista o que foi reabilitado; a regra de autorização não mudou.
       DEPENDENCIA_REABILITADA: 'Esta alteração também reabilitou um acesso que estava bloqueado para este usuário: ',
     }),
@@ -68,9 +69,8 @@
       PREVIA_SEM_HISTORICO_FUNCIONARIOS: 'A configuração deste grupo concede a Prévia do catálogo, mas não concede o Histórico de Funcionários. '
         + 'A prévia com um funcionário real exige as duas permissões; para cada integrante, o resultado também depende do perfil e das '
         + 'exceções individuais.',
-      DADOS_EMPRESA_SEM_CONSULTAR: 'A configuração deste grupo concede Dados da Empresa — Editar, mas não concede Dados da Empresa — Visualizar. '
-        + 'Alterar os dados da empresa exige as duas permissões; para cada integrante, o resultado também depende do perfil e das '
-        + 'exceções individuais.',
+      ACESSO_PARCIAL_LEGADO: 'Acesso parcial legado: este grupo concede só uma das duas permissões, então o controle aparece desligado mas o grupo ainda concede parte do acesso. '
+        + 'Ligar faz o grupo conceder as duas; desligar retira a concessão do grupo (o perfil e as exceções individuais dos integrantes continuam valendo). Nada muda até alguém agir. Acessos: ',
       DEPENDENCIA_REABILITADA: 'Esta alteração também reabilitou, na configuração deste grupo, um acesso que estava negado: ',
     }),
     // Copiar permissões
@@ -218,7 +218,8 @@
       if (t.ligado === true) entrada.setAttribute('checked', '');
       return no(doc, 'div', { class: 'prow', 'data-linha-acesso': t.id }, [
         no(doc, 'span', { class: 'lbl' }, [t.rotulo, t.exigeVinculoSst === true ? no(doc, 'small', { 'data-aviso-sst': '' }, [
-          TEXTOS.EXIGE_SST + (t.ligado === true && t.vinculoSst !== true ? ' ' + TEXTOS.FALTA_SST : '')]) : null]),
+          TEXTOS.EXIGE_SST + (t.ligado === true && t.vinculoSst !== true ? ' ' + TEXTOS.FALTA_SST : '')]) : null,
+        t.parcial === true && t.ligado !== true ? no(doc, 'small', { 'data-parcial': '' }, [TEXTOS.PARCIAL]) : null]),
         no(doc, 'label', { class: 'switch' }, [entrada, no(doc, 'span', { class: 't' })]),
       ]);
     },
