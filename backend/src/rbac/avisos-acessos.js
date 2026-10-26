@@ -28,6 +28,11 @@ const TOKEN_DEPENDENTES = TOGGLES
   .map((t) => t.id);
 const TOKEN_PREVIA = idDa((t) => t.regra.tipo === 'ACAO' && t.regra.codigo === 'TOKEN_PREVIA_CATALOGO_REAL');
 
+// Dados da Empresa (F2): Editar ligado sem Visualizar. O PATCH do servidor exige as duas permissões, então o acesso não vale; só informa.
+const DADOS_EMPRESA_SEM_CONSULTAR = 'DADOS_EMPRESA_SEM_CONSULTAR';
+const DADOS_EMPRESA_LEITURA = idDa((t) => t.regra.tipo === 'RECURSO' && t.regra.recurso === 'companyData' && t.regra.operacoes.join() === 'visualizar');
+const DADOS_EMPRESA_EDICAO = idDa((t) => t.regra.tipo === 'RECURSO' && t.regra.recurso === 'companyData' && t.regra.operacoes.join() === 'editar');
+
 const LEITURA = TOGGLES.find((t) => t.regra.tipo === 'RECURSO' && t.regra.recurso === RECURSO_FUNCIONARIOS
   && t.regra.operacoes.length === 1 && t.regra.operacoes[0] === 'visualizar').id;
 const DEPENDENTES = TOGGLES
@@ -47,9 +52,13 @@ function avisosDosAcessos(acessos) {
     avisos.push({ codigo: TOKEN_SEM_CONSULTAR });
   }
   if (semLeituraFuncionarios && ligado.get(TOKEN_PREVIA) === true) avisos.push({ codigo: PREVIA_SEM_HISTORICO_FUNCIONARIOS });
+  if (ligado.has(DADOS_EMPRESA_LEITURA) && !ligado.get(DADOS_EMPRESA_LEITURA) && ligado.get(DADOS_EMPRESA_EDICAO) === true) {
+    avisos.push({ codigo: DADOS_EMPRESA_SEM_CONSULTAR });
+  }
   return avisos;
 }
 
 module.exports = {
   avisosDosAcessos, FUNCIONARIOS_SEM_VISUALIZAR, EXPORTAR_HISTORICO_SEM_VISUALIZAR, TOKEN_SEM_CONSULTAR, PREVIA_SEM_HISTORICO_FUNCIONARIOS,
+  DADOS_EMPRESA_SEM_CONSULTAR,
 };

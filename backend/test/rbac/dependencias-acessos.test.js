@@ -13,9 +13,9 @@ const { descreverDependencia } = require('../../src/rbac/dependencias-acessos');
 const comDependencia = TOGGLES.filter((t) => (t.dependencias ?? []).length > 0);
 
 describe('DEP1 — descritor das dependências', () => {
-  test('DEP1.1 os nove toggles com dependência são exatamente os de Funcionários, Estoque e Atendimento Token', () => {
+  test('DEP1.1 os dez toggles com dependência são exatamente os de Funcionários, Estoque, Atendimento Token e Dados da Empresa', () => {
     assert.deepEqual(comDependencia.map((t) => t.id).sort(), [
-      'cadastrarFuncionario', 'cadastrarProduto', 'editarFuncionario', 'entradaLote', 'registrarBaixa',
+      'cadastrarFuncionario', 'cadastrarProduto', 'dadosEmpresaEditar', 'editarFuncionario', 'entradaLote', 'registrarBaixa',
       'tokenCadastrar', 'tokenEditar', 'tokenGerarAtivacao', 'tokenRevogar',
     ].sort());
   });

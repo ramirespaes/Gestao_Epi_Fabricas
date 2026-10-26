@@ -73,6 +73,7 @@ describe('escopo do provisionamento do MASTER', () => {
         ['reportsAudit', ['visualizar']],
         ['reportsFiscal', ['visualizar']],
         ['atendimentoToken', ['visualizar', 'criar', 'editar']],
+        ['companyData', ['visualizar', 'editar']],
       ],
     );
     assert.deepEqual([...escopo.acoes], ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS', 'TOKEN_REVOGAR_DISPOSITIVO', 'TOKEN_GERAR_ATIVACAO', 'TOKEN_GERENCIAR_REDES', 'TOKEN_PREVIA_CATALOGO_REAL']);
@@ -87,7 +88,8 @@ describe('escopo do provisionamento do MASTER', () => {
       funcionarioRoutes.RECURSO, gheRoutes.RECURSO, itensDisponiveisRoutes.RECURSO, dashboardRoutes.RECURSO, entregaEpiRoutes.RECURSO_FICHA, solicitacaoRoutes.RECURSO_SOLICITACAO,
       'reportsAudit' /* 12K-D5: relatorio.routes.js (literal, como o teste de efeito real confere) */,
       'reportsFiscal' /* 12K-D6: relatorio.routes.js (literal) */,
-      tokenDispositivoRoutes.RECURSO /* Atendimento Token, Etapa B */]);
+      tokenDispositivoRoutes.RECURSO /* Atendimento Token, Etapa B */,
+      require('../../src/routes/empresa-dados.routes').RECURSO /* Dados da Empresa (F1) */]);
     const recursosDoEscopo = new Set(recursos.ESCOPO_PROVISIONAMENTO_MASTER.recursos.map((r) => r.recurso));
     assert.deepEqual([...recursosDoEscopo].sort(), [...recursosDasRotas].sort());
     assert.deepEqual([...recursos.ESCOPO_PROVISIONAMENTO_MASTER.acoes], [estoqueRoutes.ACAO_ENTRADA_ESTOQUE, estoqueRoutes.ACAO_BAIXA_ESTOQUE, entregaEpiRoutes.ACAO_REALIZAR_ENTREGA, 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS', tokenDispositivoRoutes.ACAO_REVOGAR_DISPOSITIVO, tokenAtivacaoRoutes.ACAO_GERAR_ATIVACAO, tokenCentralRoutes.ACAO_REDES, tokenCentralRoutes.ACAO_PREVIA]);
