@@ -92,20 +92,47 @@ describe('alterar / estado', () => {
     assert.equal(pool.chamadas.connect, 0);
   });
 
+  test('alterar sem versão esperada: 400 EMPRESA_VERSAO_OBRIGATORIA antes de abrir conexão, sem gravar nem auditar (nenhum caminho sem comparação-e-troca)', async (t) => {
+    const buscar = t.mock.method(empresaRepo, 'buscarDetalhesPorIdParaAtualizacao', async () => ({ ...empresaCriada, versao: 5 }));
+    const atualizar = t.mock.method(empresaRepo, 'atualizar', async () => ({ ...empresaCriada, nomeFantasia: 'N', versao: 6 }));
+    const audit = t.mock.method(auditoriaPlataformaRepo, 'registrar', async () => ({ id: '9' }));
+    const pool = poolFalso(clienteFalso());
+    const dados = { administradorId: 1, empresaId: 10, nomeFantasia: 'N', nomeFantasiaInformado: true };
+    for (const versaoEsperada of [undefined, null]) {
+      await assert.rejects(() => servico.alterar(pool, { ...dados, versaoEsperada }), (e) => e.status === 400 && e.codigo === 'EMPRESA_VERSAO_OBRIGATORIA');
+    }
+    assert.equal(pool.chamadas.connect, 0, 'nem conexão é aberta');
+    assert.deepEqual([buscar.mock.calls.length, atualizar.mock.calls.length, audit.mock.calls.length], [0, 0, 0]);
+  });
+
   test('alterar: coerência da IE avaliada sobre o estado resultante; auditoria com antes/depois', async (t) => {
     const cliente = clienteFalso();
-    t.mock.method(empresaRepo, 'buscarDetalhesPorIdParaAtualizacao', async () => ({ ...empresaCriada, situacaoInscricaoEstadual: 'CONTRIBUINTE', inscricaoEstadual: '123' }));
-    const atualizar = t.mock.method(empresaRepo, 'atualizar', async () => ({ ...empresaCriada, nomeFantasia: 'N' }));
+    t.mock.method(empresaRepo, 'buscarDetalhesPorIdParaAtualizacao', async () => ({ ...empresaCriada, situacaoInscricaoEstadual: 'CONTRIBUINTE', inscricaoEstadual: '123', versao: 5 }));
+    const atualizar = t.mock.method(empresaRepo, 'atualizar', async () => ({ ...empresaCriada, nomeFantasia: 'N', versao: 6 }));
     const audit = t.mock.method(auditoriaPlataformaRepo, 'registrar', async () => ({ id: '9' }));
 
     // Limpar a IE enquanto a situação persistida é CONTRIBUINTE -> 400 dentro da transação (ROLLBACK).
-    await assert.rejects(() => servico.alterar(poolFalso(cliente), { administradorId: 1, empresaId: 10, inscricaoEstadual: null, inscricaoEstadualInformado: true }), (e) => e.codigo === 'EMPRESA_IE_EXIGIDA');
+    await assert.rejects(() => servico.alterar(poolFalso(cliente), { administradorId: 1, empresaId: 10, versaoEsperada: 5, inscricaoEstadual: null, inscricaoEstadualInformado: true }), (e) => e.codigo === 'EMPRESA_IE_EXIGIDA');
     assert.equal(atualizar.mock.calls.length, 0);
 
-    await servico.alterar(poolFalso(clienteFalso()), { administradorId: 1, empresaId: 10, nomeFantasia: 'N', nomeFantasiaInformado: true });
+    await servico.alterar(poolFalso(clienteFalso()), { administradorId: 1, empresaId: 10, versaoEsperada: 5, nomeFantasia: 'N', nomeFantasiaInformado: true });
     assert.deepEqual(atualizar.mock.calls[0].arguments[2], { nomeFantasia: 'N', nomeFantasiaInformado: true });
     assert.equal(audit.mock.calls[0].arguments[1].acao, 'EMPRESA_ALTERADA');
     assert.equal(audit.mock.calls[0].arguments[1].dadosNovos.nomeFantasia, 'N');
+  });
+
+  test('alterar com versão (Painel): versão antiga é 409 EMPRESA_DADOS_DESATUALIZADOS sem gravar nem auditar; versão atual grava com a condição', async (t) => {
+    t.mock.method(empresaRepo, 'buscarDetalhesPorIdParaAtualizacao', async () => ({ ...empresaCriada, versao: 5 }));
+    const atualizar = t.mock.method(empresaRepo, 'atualizar', async () => ({ ...empresaCriada, nomeFantasia: 'N', versao: 6 }));
+    const audit = t.mock.method(auditoriaPlataformaRepo, 'registrar', async () => ({ id: '9' }));
+    const dados = { administradorId: 1, empresaId: 10, nomeFantasia: 'N', nomeFantasiaInformado: true };
+
+    await assert.rejects(() => servico.alterar(poolFalso(clienteFalso()), { ...dados, versaoEsperada: 4 }), (e) => e.status === 409 && e.codigo === 'EMPRESA_DADOS_DESATUALIZADOS');
+    assert.deepEqual([atualizar.mock.calls.length, audit.mock.calls.length], [0, 0]);
+
+    await servico.alterar(poolFalso(clienteFalso()), { ...dados, versaoEsperada: 5 });
+    assert.deepEqual(atualizar.mock.calls[0].arguments[3], { versaoEsperada: 5 });
+    assert.equal(audit.mock.calls.length, 1);
   });
 
   test('inativar já inativa: alterado=false sem auditoria; reativar audita EMPRESA_REATIVADA', async (t) => {

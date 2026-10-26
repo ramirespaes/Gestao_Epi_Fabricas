@@ -5,7 +5,8 @@ const empresaRepo = require('../repositories/empresa.repository');
 const auditoriaPlataformaRepo = require('../repositories/auditoria-plataforma.repository');
 const provisionamento = require('./provisionamento-permissoes.service');
 const tipoMaterialService = require('./tipo-material.service');
-const { normalizarCnpj, cnpjTemDigitosVerificadoresValidos, normalizarEmail } = require('../utils/normalizacao');
+const { normalizarCnpj, cnpjTemDigitosVerificadoresValidos } = require('../utils/normalizacao');
+const { SITUACOES_IE, normalizarOpcional, exigirCoerenciaIe } = require('../utils/empresa-campos');
 
 /**
  * Cadastro centralizado de empresas contratantes pelo Painel Privado
@@ -69,10 +70,6 @@ const ACAO = Object.freeze({
   REATIVADA: 'EMPRESA_REATIVADA',
 });
 
-const SITUACOES_IE = Object.freeze(['CONTRIBUINTE', 'ISENTO', 'NAO_CONTRIBUINTE']);
-const UF_FORMATO = /^[A-Z]{2}$/;
-const CEP_FORMATO = /^[0-9]{5}-?[0-9]{3}$/;
-
 const MSG = Object.freeze({
   RAZAO_SOCIAL: 'Razão social inválida',
   CNPJ: 'CNPJ inválido',
@@ -80,14 +77,14 @@ const MSG = Object.freeze({
   CNPJ_EM_USO: 'Já existe uma empresa cadastrada com este CNPJ',
   CNPJ_IMUTAVEL: 'cnpj não pode ser alterado após o cadastro',
   DADOS: 'Dados cadastrais da empresa inválidos',
-  IE_EXIGIDA: 'Situação CONTRIBUINTE exige o número da inscrição estadual',
   NAO_ENCONTRADA: 'Empresa não encontrada',
   SEM_ALTERACAO: 'Nenhum campo para alterar',
+  DESATUALIZADA: 'Os dados da empresa foram alterados por outra pessoa. Recarregue antes de salvar.',
+  VERSAO_OBRIGATORIA: 'Informe a versão carregada da empresa (versao): a alteração sem versão é recusada para não sobrescrever uma edição mais recente',
 });
 
 // Campos opcionais: [chave, tamanho máximo, normalizador]. Ordem irrelevante.
 const CAMPOS_OPCIONAIS = empresaRepo.CAMPOS_OPCIONAIS.map(([chave, , tamanho]) => [chave, tamanho]);
-const CAMPOS_EMAIL = new Set(['email', 'representanteEmail', 'financeiroEmail']);
 
 function exigirId(valor, nome) {
   if (!Number.isInteger(valor) || valor <= 0) {
@@ -120,50 +117,10 @@ function normalizarTexto(valor, tamanhoMaximo) {
   return aparado.length === 0 || Array.from(aparado).length > tamanhoMaximo ? null : aparado;
 }
 
-/**
- * Normaliza um campo opcional pela sua natureza. Devolve `null` para
- * ausência/vazio, o valor canônico quando válido, e `undefined` quando
- * INVÁLIDO (o chamador transforma em 400).
- */
-function normalizarOpcional(chave, valor, tamanhoMaximo) {
-  if (valor === null || valor === undefined) {
-    return null;
-  }
-  if (typeof valor !== 'string') {
-    throw new TypeError(`${chave} deve ser string ou null`);
-  }
-  const aparado = valor.trim();
-  if (aparado.length === 0) {
-    return null;
-  }
-  if (CAMPOS_EMAIL.has(chave)) {
-    return normalizarEmail(aparado) ?? undefined;
-  }
-  if (chave === 'uf') {
-    const uf = aparado.toUpperCase();
-    return UF_FORMATO.test(uf) ? uf : undefined;
-  }
-  if (chave === 'cep') {
-    return CEP_FORMATO.test(aparado) ? aparado.replace('-', '') : undefined;
-  }
-  if (chave === 'situacaoInscricaoEstadual') {
-    const situacao = aparado.toUpperCase();
-    return SITUACOES_IE.includes(situacao) ? situacao : undefined;
-  }
-  const texto = aparado.normalize('NFC');
-  return Array.from(texto).length > tamanhoMaximo ? undefined : texto;
-}
-
 /** CNPJ canônico com DV conferido, ou null. */
 function normalizarCnpjValido(cnpj) {
   const normalizado = normalizarCnpj(cnpj);
   return normalizado !== null && cnpjTemDigitosVerificadoresValidos(normalizado) ? normalizado : null;
-}
-
-function exigirCoerenciaIe(dados) {
-  if (dados.situacaoInscricaoEstadual === 'CONTRIBUINTE' && dados.inscricaoEstadual === null) {
-    throw HttpError.badRequest('EMPRESA_IE_EXIGIDA', MSG.IE_EXIGIDA);
-  }
 }
 
 function traduzirViolacao(erro) {
@@ -288,9 +245,14 @@ async function alterar(pool, dados) {
   if (Object.hasOwn(dados, 'cnpj')) {
     throw new TypeError(MSG.CNPJ_IMUTAVEL);
   }
-  const { administradorId, empresaId, razaoSocial, ip = null, dispositivo = null } = dados;
+  const { administradorId, empresaId, razaoSocial, versaoEsperada = null, ip = null, dispositivo = null } = dados;
   exigirId(administradorId, 'identificador de administrador');
   exigirId(empresaId, 'identificador de empresa');
+  // `versaoEsperada` é OBRIGATÓRIA: a alteração cadastral é sempre comparação-e-troca com a versão carregada (a recusa sem versão vem
+  // depois da validação dos campos, abaixo, e antes de qualquer conexão com o banco).
+  if (versaoEsperada !== null) {
+    exigirId(versaoEsperada, 'versão esperada');
+  }
 
   const alterarRazao = razaoSocial !== undefined;
   const razaoN = alterarRazao ? normalizarTexto(razaoSocial, empresaRepo.TAMANHOS.NOME) : null;
@@ -316,11 +278,17 @@ async function alterar(pool, dados) {
   if (!algumInformado) {
     throw HttpError.badRequest('EMPRESA_SEM_ALTERACAO', MSG.SEM_ALTERACAO);
   }
+  if (versaoEsperada === null) {
+    throw HttpError.badRequest('EMPRESA_VERSAO_OBRIGATORIA', MSG.VERSAO_OBRIGATORIA);
+  }
 
   return emTransacao(pool, async (client) => {
     const anterior = await empresaRepo.buscarDetalhesPorIdParaAtualizacao(client, empresaId);
     if (anterior === null) {
       throw HttpError.notFound('EMPRESA_NAO_ENCONTRADA', MSG.NAO_ENCONTRADA);
+    }
+    if (anterior.versao !== versaoEsperada) {
+      throw HttpError.conflict('EMPRESA_DADOS_DESATUALIZADOS', MSG.DESATUALIZADA);
     }
     // Coerência da IE avaliada sobre o estado RESULTANTE (o que muda + o que fica).
     exigirCoerenciaIe({
@@ -328,7 +296,10 @@ async function alterar(pool, dados) {
       inscricaoEstadual: campos.inscricaoEstadualInformado ? campos.inscricaoEstadual : anterior.inscricaoEstadual,
     });
 
-    const atualizada = await empresaRepo.atualizar(client, empresaId, { ...(alterarRazao ? { razaoSocial: razaoN } : {}), ...campos });
+    const atualizada = await empresaRepo.atualizar(client, empresaId, { ...(alterarRazao ? { razaoSocial: razaoN } : {}), ...campos }, { versaoEsperada });
+    if (atualizada === null) {
+      throw HttpError.conflict('EMPRESA_DADOS_DESATUALIZADOS', MSG.DESATUALIZADA);
+    }
 
     await auditoriaPlataformaRepo.registrar(client, {
       administradorId, empresaAfetadaId: empresaId, acao: ACAO.ALTERADA, referencia: String(empresaId), ip, dispositivo,

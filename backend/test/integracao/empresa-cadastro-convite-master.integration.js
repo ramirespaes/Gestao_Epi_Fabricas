@@ -248,19 +248,27 @@ describe('Pacote 3 — cadastro de empresas e convite do MASTER (HTTP + PostgreS
     });
 
     test('edição: altera campos, limpa campo com null explícito, preserva o que não foi informado; CNPJ é imutável (400 CAMPO_NAO_PERMITIDO); auditoria com antes/depois', async () => {
-      const r = await admin(request(app).patch(`/api/plataforma/empresas/${empresaA.id}`)).send({ nomeFantasia: 'Cobresul Metais', complemento: null, financeiroTelefone: '(54) 3333-9999' });
+      const lida = await admin(request(app).get(`/api/plataforma/empresas/${empresaA.id}`));
+      assert.equal(lida.status, 200, JSON.stringify(lida.body));
+      const versao = lida.body.empresa.versao;
+      assert.ok(Number.isInteger(versao) && versao >= 1, 'o detalhe da empresa traz a versão para a edição');
+      const r = await admin(request(app).patch(`/api/plataforma/empresas/${empresaA.id}`)).send({ versao, nomeFantasia: 'Cobresul Metais', complemento: null, financeiroTelefone: '(54) 3333-9999' });
       assert.equal(r.status, 200, JSON.stringify(r.body));
       assert.equal(r.body.empresa.nomeFantasia, 'Cobresul Metais');
       assert.equal(r.body.empresa.complemento, null, 'null explícito limpa');
       assert.equal(r.body.empresa.bairro, 'Distrito Industrial', 'não informado permanece');
       assert.equal(r.body.empresa.financeiro.telefone, '(54) 3333-9999');
 
-      const cnpj = await admin(request(app).patch(`/api/plataforma/empresas/${empresaA.id}`)).send({ cnpj: CNPJ_B });
+      const cnpj = await admin(request(app).patch(`/api/plataforma/empresas/${empresaA.id}`)).send({ versao: r.body.empresa.versao, cnpj: CNPJ_B });
       assert.equal(cnpj.status, 400);
       assert.ok(cnpj.body.detalhes.some((d) => d.codigo === 'CAMPO_NAO_PERMITIDO'));
 
-      const vazio = await admin(request(app).patch(`/api/plataforma/empresas/${empresaA.id}`)).send({});
+      const vazio = await admin(request(app).patch(`/api/plataforma/empresas/${empresaA.id}`)).send({ versao: r.body.empresa.versao });
       assert.deepEqual([vazio.status, vazio.body.codigo], [400, 'EMPRESA_SEM_ALTERACAO']);
+
+      const semVersao = await admin(request(app).patch(`/api/plataforma/empresas/${empresaA.id}`)).send({ nomeFantasia: 'Sem Versao Nao Grava' });
+      assert.equal(semVersao.status, 400, 'sem versão é recusado');
+      assert.equal((await admin(request(app).get(`/api/plataforma/empresas/${empresaA.id}`))).body.empresa.nomeFantasia, 'Cobresul Metais', 'e nada foi gravado');
 
       const { rows } = await contexto.pool.query("SELECT dados_anteriores, dados_novos FROM logs_auditoria_plataforma WHERE acao = 'EMPRESA_ALTERADA' AND empresa_afetada_id = $1", [empresaA.id]);
       assert.equal(rows.length, 1);

@@ -2,7 +2,7 @@
 
 const { z } = require('zod');
 const {
-  idParametro, booleanoQuery, paginacaoQuery, textoCurto, cnpjComDigitosVerificadores, email,
+  idParametro, idCorpo, booleanoQuery, paginacaoQuery, textoCurto, cnpjComDigitosVerificadores, email,
 } = require('./campos.schema');
 
 /**
@@ -92,11 +92,12 @@ const provisionamento = { params: paramsComId };
 const alterar = {
   params: paramsComId,
   // sem `cnpj`: imutável após o cadastro (ver cabeçalho)
-  body: z.strictObject({ razaoSocial: razaoSocial.optional(), ...opcionais }),
+  // `versao` é OBRIGATÓRIA: o Painel envia a versão carregada e a gravação é sempre comparação-e-troca (sem ela, 400 CAMPO_OBRIGATORIO).
+  body: z.strictObject({ razaoSocial: razaoSocial.optional(), versao: idCorpo, ...opcionais }),
 };
 
 const semCorpo = z.strictObject({});
 const inativar = { params: paramsComId, body: semCorpo };
 const reativar = { params: paramsComId, body: semCorpo };
 
-module.exports = { criar, listar, buscar, provisionamento, alterar, inativar, reativar, CAMPOS_OPCIONAIS, SITUACOES_IE };
+module.exports = { criar, listar, buscar, provisionamento, alterar, inativar, reativar, CAMPOS_OPCIONAIS, SITUACOES_IE, opcionais };

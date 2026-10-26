@@ -130,6 +130,7 @@ const PROJECAO_DETALHADA = `id, nome, nome_fantasia, cnpj, inscricao_estadual, s
   endereco, numero, complemento, bairro, cidade, uf, cep, telefone, email,
   representante_nome, representante_cargo, representante_email, representante_telefone,
   financeiro_nome, financeiro_email, financeiro_telefone,
+  email_sst, email_almoxarifado, versao,
   ativo, criado_em, atualizado_em`;
 
 // Campos OPCIONAIS editáveis pelo cadastro (todos nulos por padrão), na
@@ -155,6 +156,14 @@ const CAMPOS_OPCIONAIS = Object.freeze([
   ['financeiroNome', 'financeiro_nome', TAMANHOS.NOME_CONTATO],
   ['financeiroEmail', 'financeiro_email', TAMANHOS.EMAIL],
   ['financeiroTelefone', 'financeiro_telefone', TAMANHOS.TELEFONE],
+]);
+
+// Lista BRANCA do Portal (Dados da Empresa): os opcionais do cadastro mais os e-mails de SST e Almoxarifado, que o Painel Privado
+// não edita. Razão social (`nome`), CNPJ, `ativo` e `versao` não têm entrada aqui, de propósito.
+const CAMPOS_PORTAL = Object.freeze([
+  ...CAMPOS_OPCIONAIS,
+  ['emailSst', 'email_sst', TAMANHOS.EMAIL],
+  ['emailAlmoxarifado', 'email_almoxarifado', TAMANHOS.EMAIL],
 ]);
 
 function exigirTexto(valor, nome, tamanhoMaximo) {
@@ -200,6 +209,9 @@ const mapearDetalhado = (linha) => (linha === undefined ? null : {
   email: linha.email,
   representante: { nome: linha.representante_nome, cargo: linha.representante_cargo, email: linha.representante_email, telefone: linha.representante_telefone },
   financeiro: { nome: linha.financeiro_nome, email: linha.financeiro_email, telefone: linha.financeiro_telefone },
+  emailSst: linha.email_sst,
+  emailAlmoxarifado: linha.email_almoxarifado,
+  versao: linha.versao,
   ativo: linha.ativo,
   criadoEm: linha.criado_em,
   atualizadoEm: linha.atualizado_em,
@@ -300,7 +312,7 @@ async function contar(executor, { ativo = null, busca = null } = {}) {
  *
  * @returns {Promise<object|null>} empresa atualizada, ou null se não existe
  */
-async function atualizar(executor, id, campos = {}) {
+async function atualizar(executor, id, campos = {}, { versaoEsperada = null } = {}) {
   if (Object.hasOwn(campos, 'cnpj')) {
     throw new TypeError('cnpj não pode ser alterado após o cadastro');
   }
@@ -325,11 +337,59 @@ async function atualizar(executor, id, campos = {}) {
     sets.push(`${coluna} = CASE WHEN $${valores.length - 1}::boolean THEN $${valores.length} ELSE ${coluna} END`);
   }
 
+  let condicaoVersao = '';
+  if (versaoEsperada !== null) {
+    exigirVersao(versaoEsperada);
+    valores.push(versaoEsperada);
+    condicaoVersao = ` AND versao = $${valores.length}`;
+  }
+
   const { rows } = await executor.query(
-    `UPDATE empresas SET ${sets.join(', ')} WHERE id = $1 RETURNING ${PROJECAO_DETALHADA}`,
+    `UPDATE empresas SET ${sets.join(', ')} WHERE id = $1${condicaoVersao} RETURNING ${PROJECAO_DETALHADA}`,
     valores,
   );
 
+  return mapearDetalhado(rows[0]);
+}
+
+function exigirVersao(versao) {
+  if (!Number.isInteger(versao) || versao < 1) {
+    throw new TypeError('versão inválida');
+  }
+}
+
+/**
+ * Atualização do Portal (Dados da Empresa): comparação-e-troca atômica pela versão, no próprio UPDATE. `campos` mapeia chave
+ * camelCase -> valor já normalizado (null limpa) e SÓ aceita as chaves de CAMPOS_PORTAL; qualquer outra (razaoSocial, cnpj,
+ * nome, ativo, versao, empresa_id…) é TypeError antes de tocar o banco, e a consulta não tem as colunas `nome`/`cnpj`.
+ * A versão nova é do gatilho da 091 (o cliente não a define).
+ *
+ * @returns {Promise<object|null>} empresa atualizada, ou null quando a empresa não existe OU a versão esperada não é a atual
+ */
+async function atualizarDadosEmpresariais(executor, empresaId, campos, versaoEsperada) {
+  exigirIdentificador(empresaId);
+  exigirVersao(versaoEsperada);
+  const permitidos = new Map(CAMPOS_PORTAL.map(([chave, coluna, tamanho]) => [chave, { coluna, tamanho }]));
+  const chaves = Object.keys(campos);
+  if (chaves.length === 0) {
+    throw new TypeError('nenhum campo para atualizar');
+  }
+  const sets = [];
+  const valores = [empresaId, versaoEsperada];
+  for (const chave of chaves) {
+    const alvo = permitidos.get(chave);
+    if (alvo === undefined) {
+      throw new TypeError(`campo não editável: ${chave}`);
+    }
+    const valor = campos[chave];
+    exigirOpcional(chave, valor, alvo.tamanho);
+    valores.push(valor);
+    sets.push(`${alvo.coluna} = $${valores.length}`);
+  }
+  const { rows } = await executor.query(
+    `UPDATE empresas SET ${sets.join(', ')} WHERE id = $1 AND versao = $2 RETURNING ${PROJECAO_DETALHADA}`,
+    valores,
+  );
   return mapearDetalhado(rows[0]);
 }
 
@@ -359,6 +419,8 @@ module.exports = {
   contar,
   atualizar,
   atualizarEstado,
+  atualizarDadosEmpresariais,
   CAMPOS_OPCIONAIS,
+  CAMPOS_PORTAL,
   TAMANHOS,
 };

@@ -18,6 +18,7 @@ const { autorizacaoConsultaRoutes } = require('./routes/autorizacao-consulta.rou
 const { delegacaoDestinatariosRoutes } = require('./routes/delegacao-destinatarios.routes');
 const { materialRoutes } = require('./routes/material.routes');
 const { tipoMaterialRoutes } = require('./routes/tipo-material.routes');
+const { empresaDadosRoutes } = require('./routes/empresa-dados.routes');
 const { imagemMaterialRoutes } = require('./routes/imagem-material.routes');
 const { estoqueRoutes } = require('./routes/estoque.routes');
 const { itensDisponiveisRoutes } = require('./routes/itens-disponiveis.routes');
@@ -208,7 +209,7 @@ const EH_ENTREGA_IMAGEM = (req) => (req.method === 'GET' || req.method === 'HEAD
 const limitadorEntregaImagens = criarLimitador({ limite: lerConfiguracaoImagens(process.env).entregasPorMinutoIp, janelaSegundos: 60 });
 const limitadorDaEntrega = (req, res, next) => (EH_ENTREGA_IMAGEM(req) ? limitadorEntregaImagens(req, res, next) : next());
 const limitadorGeralSalvoTablet = (req, res, next) => (NAO_EH_TABLET(req) && !EH_ENTREGA_IMAGEM(req) ? limitadorGeral(req, res, next) : next());
-app.use('/api', corsApi, semCache, verificarOrigem, limitadorDaEntrega, limitadorGeralSalvoTablet, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, recuperacaoSenhaPortalRoutes, trocaSenhaGlobalRoutes, contaRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, tipoMaterialRoutes, imagemMaterialRoutes, estoqueRoutes, itensDisponiveisRoutes, grupoHomogeneoExposicaoRoutes, gheMaterialRoutes, gheTipoMaterialRoutes, gheImportacaoRoutes, funcionarioRoutes, dashboardRoutes, usuarioAdministracaoRoutes, conviteUsuarioRoutes, entregaEpiRoutes, solicitacaoEpiRoutes, vinculoSstRoutes, alertaEstoqueRoutes, relatorioRoutes, tokenDispositivoRoutes, tokenAtivacaoRoutes, tokenTabletRoutes, tokenHeartbeatRoutes, tokenAtendimentoRoutes, tokenCatalogoRoutes, tokenImagemRoutes, tokenPedidoRoutes, tokenSolicitacoesRoutes, tokenCentralRoutes);
+app.use('/api', corsApi, semCache, verificarOrigem, limitadorDaEntrega, limitadorGeralSalvoTablet, exigirJson, parserJson, healthRoutes, authRoutes, authGlobalRoutes, recuperacaoSenhaPortalRoutes, trocaSenhaGlobalRoutes, contaRoutes, grupoAcessoRoutes, grupoPermissaoRoutes, grupoUsuarioRoutes, autorizacaoIndividualRoutes, catalogoRoutes, usuarioConsultaRoutes, autorizacaoConsultaRoutes, delegacaoDestinatariosRoutes, materialRoutes, tipoMaterialRoutes, imagemMaterialRoutes, estoqueRoutes, itensDisponiveisRoutes, grupoHomogeneoExposicaoRoutes, gheMaterialRoutes, gheTipoMaterialRoutes, gheImportacaoRoutes, funcionarioRoutes, dashboardRoutes, usuarioAdministracaoRoutes, conviteUsuarioRoutes, entregaEpiRoutes, solicitacaoEpiRoutes, vinculoSstRoutes, alertaEstoqueRoutes, relatorioRoutes, tokenDispositivoRoutes, tokenAtivacaoRoutes, tokenTabletRoutes, tokenHeartbeatRoutes, tokenAtendimentoRoutes, tokenCatalogoRoutes, tokenImagemRoutes, tokenPedidoRoutes, tokenSolicitacoesRoutes, tokenCentralRoutes, empresaDadosRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
