@@ -39,6 +39,7 @@ const SENTINELAS = Object.freeze([
   { migration: '084_alter_funcionarios_add_situacao', tabela: 'funcionarios', coluna: 'situacao' },
   { migration: '086_create_atendimento_token', tabela: 'token_dispositivos', coluna: null },
   { migration: '089_token_dispositivos_queda_suspeita', tabela: 'token_dispositivos', coluna: 'queda_suspeita_desde' },
+  { migration: '091_alter_empresas_add_emails_sst_almoxarifado_versao', tabela: 'empresas', coluna: 'versao' },
 ]);
 
 function bancosPermitidos(env) {

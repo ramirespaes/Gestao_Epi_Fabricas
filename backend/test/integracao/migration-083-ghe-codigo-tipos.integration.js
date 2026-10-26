@@ -319,7 +319,7 @@ describe('migration 083 — código do GHE e GHE × tipo do catálogo', () => {
     exigir083();
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO, 'checksums.json'), 'utf8')).migrations;
     const arquivos = fs.readdirSync(DIRETORIO).filter((n) => /^\d{3}_.*\.sql$/.test(n)).sort();
-    assert.equal(arquivos.length, 90);
+    assert.equal(arquivos.length, 91);
     assert.deepEqual(Object.keys(manifesto).sort(), arquivos);
     const sha = (nome) => crypto.createHash('sha256').update(fs.readFileSync(path.join(DIRETORIO, nome))).digest('hex');
     for (const nome of arquivos) assert.equal(sha(nome), manifesto[nome], nome);
@@ -328,7 +328,7 @@ describe('migration 083 — código do GHE e GHE × tipo do catálogo', () => {
     const digest = crypto.createHash('sha256').update(`${antigas.map((n) => `${n}  ${sha(n)}`).join('\n')}\n`).digest('hex');
     assert.equal(digest, DIGEST_000_A_082, 'alguma migration 000–082 foi editada');
     const novas = arquivos.filter((n) => n.slice(0, 3) > '082');
-    assert.equal(novas.length, 7);
+    assert.equal(novas.length, 8);
     assert.match(novas[0], /^083_.+\.sql$/);
     assert.match(novas[1], /^084_.+\.sql$/);
     assert.match(novas[2], /^085_.+\.sql$/);
@@ -336,5 +336,6 @@ describe('migration 083 — código do GHE e GHE × tipo do catálogo', () => {
     assert.match(novas[4], /^087_.+\.sql$/);
     assert.match(novas[5], /^089_.+\.sql$/);
     assert.match(novas[6], /^090_.+\.sql$/);
+    assert.match(novas[7], /^091_.+\.sql$/);
   });
 });

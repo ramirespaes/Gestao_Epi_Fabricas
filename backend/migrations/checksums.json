@@ -90,6 +90,7 @@
     "086_create_atendimento_token.sql": "76121c8fb7ab76207a643d6ac0aff941e4bf1411a69915a405bd62f7008b97c7",
     "087_insert_acoes_atendimento_token.sql": "549ea559731d5ee94f78005ea76de33b91bbbc053ceb1bc29f0cd5d9e1d35031",
     "089_token_dispositivos_queda_suspeita.sql": "b223559b81999df482365e7771f073084938e187cb1e26bd656b63bd2bc34bf2",
-    "090_create_biblioteca_imagens_material.sql": "38bf19945ff017b708dc844adbf49a7ec2a95fb14238e9dfa66ee492c3861732"
+    "090_create_biblioteca_imagens_material.sql": "38bf19945ff017b708dc844adbf49a7ec2a95fb14238e9dfa66ee492c3861732",
+    "091_alter_empresas_add_emails_sst_almoxarifado_versao.sql": "36d425c1aeef95c9cd20bf50b2e15f00f2644bdf150ceba4151f0a78e75a55ba"
   }
 }
