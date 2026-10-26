@@ -48,7 +48,8 @@ function criarEmpresaCadastroController({ pool: poolInjetado }) {
 
     async alterar(req, res) {
       const c = req.validado.body;
-      let dados = { ...comContexto(req), empresaId: req.validado.params.id };
+      // A versão é obrigatória no schema; o serviço também a exige (defesa em profundidade).
+      let dados = { ...comContexto(req), empresaId: req.validado.params.id, versaoEsperada: c.versao };
       if (Object.hasOwn(c, 'razaoSocial')) {
         dados.razaoSocial = c.razaoSocial;
       }

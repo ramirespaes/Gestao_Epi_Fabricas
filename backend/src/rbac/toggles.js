@@ -23,6 +23,7 @@ const acao = (codigo, concessao = false, semBloqueio = false) => Object.freeze({
 const LEITURA_MATERIAIS = recurso('materials', ['visualizar']);
 const LEITURA_FUNCIONARIOS = recurso('employeeHistory', ['visualizar']);
 const LEITURA_TOKEN = recurso('atendimentoToken', ['visualizar']);
+const LEITURA_DADOS_EMPRESA = recurso('companyData', ['visualizar']);
 
 const TOGGLES = Object.freeze([
   { id: 'dashboard', rotulo: 'Dashboard', grupo: 'GERAL', regra: recurso('dashboard', ['visualizar']) },
@@ -55,6 +56,10 @@ const TOGGLES = Object.freeze([
   // não a concede. O acesso efetivo exige os dois, e o servidor decide (AUTODECISAO_PROIBIDA continua valendo).
   { id: 'aprovarSolicitacoes', rotulo: 'Aprovar solicitações de EPI', grupo: 'ADMINISTRACAO', regra: acao('APROVAR_SOLICITACAO', true) },
   { id: 'reprovarSolicitacoes', rotulo: 'Reprovar solicitações de EPI', grupo: 'ADMINISTRACAO', regra: acao('REPROVAR_SOLICITACAO', true) },
+  // Dados da Empresa: consultar e editar o cadastro da própria empresa. Editar exige Visualizar (no servidor, o PATCH passa pelas duas
+  // permissões; aqui, ligar Editar também liga a leitura). Razão social e CNPJ não são editáveis por nenhum dos dois.
+  { id: 'dadosEmpresaVisualizar', rotulo: 'Dados da Empresa — Visualizar', grupo: 'ADMINISTRACAO', regra: recurso('companyData', ['visualizar']) },
+  { id: 'dadosEmpresaEditar', rotulo: 'Dados da Empresa — Editar', grupo: 'ADMINISTRACAO', regra: recurso('companyData', ['editar']), dependencias: [LEITURA_DADOS_EMPRESA] },
   // 12K-D5: permissão própria do Relatório — Auditoria (indicadores, solicitações com entrega pendente, itens reprovados, CAs vencidos e trilha).
   // Independente de Ficha de EPI, Materiais e dos outros relatórios; a página Relatórios abre com ela.
   { id: 'reportsAudit', rotulo: 'Relatório — Auditoria', grupo: 'GERAL', regra: recurso('reportsAudit', ['visualizar']) },

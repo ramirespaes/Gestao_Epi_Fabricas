@@ -51,6 +51,8 @@
         + 'as abas e os botões dessas funções podem não aparecer na Central.',
       PREVIA_SEM_HISTORICO_FUNCIONARIOS: 'Prévia do catálogo está ligada, mas Histórico de Funcionários está desligado. '
         + 'A prévia com um funcionário real exige as duas permissões: sem a leitura, a busca de funcionário não fica disponível.',
+      DADOS_EMPRESA_SEM_CONSULTAR: 'Dados da Empresa — Editar está ligado, mas Dados da Empresa — Visualizar está desligado. '
+        + 'Alterar os dados da empresa exige as duas permissões: sem a leitura, a página não abre e a alteração é recusada.',
       // Evento (só na resposta do PUT): o servidor lista o que foi reabilitado; a regra de autorização não mudou.
       DEPENDENCIA_REABILITADA: 'Esta alteração também reabilitou um acesso que estava bloqueado para este usuário: ',
     }),
@@ -65,6 +67,9 @@
         + 'Integrantes que não recebam essa leitura pelo perfil ou por exceção individual podem não ver essas funções na Central.',
       PREVIA_SEM_HISTORICO_FUNCIONARIOS: 'A configuração deste grupo concede a Prévia do catálogo, mas não concede o Histórico de Funcionários. '
         + 'A prévia com um funcionário real exige as duas permissões; para cada integrante, o resultado também depende do perfil e das '
+        + 'exceções individuais.',
+      DADOS_EMPRESA_SEM_CONSULTAR: 'A configuração deste grupo concede Dados da Empresa — Editar, mas não concede Dados da Empresa — Visualizar. '
+        + 'Alterar os dados da empresa exige as duas permissões; para cada integrante, o resultado também depende do perfil e das '
         + 'exceções individuais.',
       DEPENDENCIA_REABILITADA: 'Esta alteração também reabilitou, na configuração deste grupo, um acesso que estava negado: ',
     }),

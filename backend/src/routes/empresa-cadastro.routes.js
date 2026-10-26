@@ -21,7 +21,7 @@ const { exigirSessaoPlataforma } = require('../middleware/autenticacao-plataform
  *   GET   /empresas
  *   GET   /empresas/:id
  *   GET   /empresas/:id/provisionamento   (situação das permissões do MASTER)
- *   PATCH /empresas/:id
+ *   PATCH /empresas/:id                   (corpo com `versao` OBRIGATÓRIA: comparação-e-troca; versão antiga = 409)
  *   POST  /empresas/:id/inativar
  *   POST  /empresas/:id/reativar
  */

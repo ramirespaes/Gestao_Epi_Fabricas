@@ -8,7 +8,7 @@ const { criarGrupoPermissaoController } = require('../../src/controllers/grupo-p
 const { criarGrupoPermissaoRoutes } = require('../../src/routes/grupo-permissao.routes');
 
 /** Permissões do GRUPO como acessos ON/OFF: reaproveitam grupo_permissoes_* e o serviço existente. */
-const IDS_GRUPO = ['dashboard', 'historicoFuncionarios', 'cadastrarFuncionario', 'editarFuncionario', 'fichaEpi', 'entregasSolicitacao', 'gestaoGhe', 'analiseEstoque', 'operacoesEstoque', 'cadastrarProduto', 'entradaLote', 'registrarBaixa', 'importacaoFuncionarios', 'exportarHistoricoFuncionarios', 'reportsAudit', 'reportsFiscal', 'tokenVisualizar', 'tokenCadastrar', 'tokenEditar', 'tokenRevogar', 'tokenGerarAtivacao', 'tokenPrevia'];
+const IDS_GRUPO = ['dashboard', 'historicoFuncionarios', 'cadastrarFuncionario', 'editarFuncionario', 'fichaEpi', 'entregasSolicitacao', 'gestaoGhe', 'analiseEstoque', 'operacoesEstoque', 'cadastrarProduto', 'entradaLote', 'registrarBaixa', 'importacaoFuncionarios', 'exportarHistoricoFuncionarios', 'dadosEmpresaVisualizar', 'dadosEmpresaEditar', 'reportsAudit', 'reportsFiscal', 'tokenVisualizar', 'tokenCadastrar', 'tokenEditar', 'tokenRevogar', 'tokenGerarAtivacao', 'tokenPrevia'];
 
 describe('Gestão de Usuários — permissões do grupo ON/OFF (PostgreSQL real)', () => {
   let g;

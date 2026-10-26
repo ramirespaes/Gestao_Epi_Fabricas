@@ -47,7 +47,10 @@ const RECURSOS_RELATORIOS = Object.freeze(['reportsAudit', 'reportsFiscal']);
 // Atendimento Token (Etapa B): administração dos tablets de autoatendimento.
 const RECURSOS_ATENDIMENTO_TOKEN = Object.freeze(['atendimentoToken']);
 
-const RECURSOS_CONHECIDOS = Object.freeze([...RECURSOS_LEGADOS, ...RECURSOS_BLOCO_9, ...RECURSOS_RELATORIOS, ...RECURSOS_ATENDIMENTO_TOKEN]);
+// Dados da Empresa (Portal): consulta e edição do cadastro da própria empresa (empresa-dados.routes.js).
+const RECURSOS_DADOS_EMPRESA = Object.freeze(['companyData']);
+
+const RECURSOS_CONHECIDOS = Object.freeze([...RECURSOS_LEGADOS, ...RECURSOS_BLOCO_9, ...RECURSOS_RELATORIOS, ...RECURSOS_ATENDIMENTO_TOKEN, ...RECURSOS_DADOS_EMPRESA]);
 
 // Operações que as rotas de produção exigem, por recurso:
 //   materials       -> material.routes.js (visualizar/criar/editar) e
@@ -87,6 +90,9 @@ const ESCOPO_PROVISIONAMENTO_MASTER = Object.freeze({
     // Atendimento Token (Etapa B): token-dispositivo.routes.js — consultar (visualizar), cadastrar (criar) e editar (editar).
     // Sem `excluir`: o tablet nunca é apagado, só revogado (ação abaixo).
     Object.freeze({ recurso: 'atendimentoToken', operacoes: Object.freeze(['visualizar', 'criar', 'editar']) }),
+    // Dados da Empresa: GET exige visualizar; PATCH exige visualizar E editar. Sem criar/excluir (a empresa nasce no Painel Privado).
+    // Razão social e CNPJ não são editáveis por nenhuma permissão.
+    Object.freeze({ recurso: 'companyData', operacoes: Object.freeze(['visualizar', 'editar']) }),
   ]),
   // estoque.routes.js: entradas e baixas por lote; entrega-epi.routes.js: entrega e seu contexto (migrations 003/017).
   // Pacote J (085): exportar o Histórico de Funcionários, avaliado com a leitura em exportacao-historico-autorizacao.service.js.
@@ -133,6 +139,7 @@ const ROTULOS_RECURSOS = Object.freeze({
   reportsAudit: 'Relatório — Auditoria',
   reportsFiscal: 'Relatório — Fiscalização',
   atendimentoToken: 'Atendimento Token',
+  companyData: 'Dados da Empresa',
 });
 for (const { recurso } of ESCOPO_PROVISIONAMENTO_MASTER.recursos) {
   if (typeof ROTULOS_RECURSOS[recurso] !== 'string') {

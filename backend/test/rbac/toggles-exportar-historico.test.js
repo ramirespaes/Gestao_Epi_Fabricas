@@ -76,7 +76,9 @@ describe('J1 — o toggle novo no catálogo', () => {
   test('J1.3 um único toggle novo; nenhum dos homologados mudou (id, grupo, regra e dependências); pendências intactas', () => {
     const ids = TOGGLES.map((t) => t.id);
     // Os sete do Atendimento Token entram na Etapa H (toggles-atendimento-token.test.js); aqui conta só o que é do pacote J.
-    assert.deepEqual(ids.filter((id) => !Object.hasOwn(ANTERIORES, id) && buscar(id).grupo !== 'ATENDIMENTO'), [TOGGLE]);
+    // Catálogo completo, sem exceção por identificador: fora os homologados e o grupo ATENDIMENTO, só podem existir o do pacote J e
+    // os dois de Dados da Empresa (F1; definição completa em empresa-dados-rbac.test.js). Qualquer outro toggle novo reprova aqui.
+    assert.deepEqual(ids.filter((id) => !Object.hasOwn(ANTERIORES, id) && buscar(id).grupo !== 'ATENDIMENTO'), [TOGGLE, 'dadosEmpresaVisualizar', 'dadosEmpresaEditar']);
     for (const [id, [grupo, regra, dependencias]] of Object.entries(ANTERIORES)) {
       const t = buscar(id);
       assert.ok(t, id);

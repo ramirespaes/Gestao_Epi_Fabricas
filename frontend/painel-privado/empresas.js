@@ -97,7 +97,14 @@
       });
     } else {
       var corpoEdicao = lerCorpo(CAMPOS_EDITAVEIS);
+      // Comparação-e-troca: a versão carregada vai junto; se os dados mudaram (Portal ou outro operador) o servidor responde 409 e nada é gravado.
+      corpoEdicao.versao = empresaAtual.versao;
       promessa = Http.requisitar('PATCH', '/empresas/' + empresaAtual.id, { corpo: corpoEdicao }).then(function (r) {
+        if (r.status === 409 && r.codigo === 'EMPRESA_DADOS_DESATUALIZADOS') {
+          mensagem('msg-form', 'Os dados desta empresa foram alterados depois que você os abriu. Nada foi salvo. Os dados atuais foram recarregados; confira e salve de novo.', 'erro');
+          abrirEmpresa(empresaAtual.id);
+          return;
+        }
         if (!tratar(r, 'msg-form')) return;
         mensagem('msg-form', 'Alterações salvas.', 'ok');
         carregarLista();

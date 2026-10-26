@@ -152,7 +152,7 @@ describe('migration 069 — agendamento (scheduler/outbox) do aviso de disponibi
   test('a 069 não edita nenhuma migration antiga e só acrescenta a sua entrada ao manifesto: 86 migrations, 000 a 085 (a 070 e a 071 são da 12G-8; a 072 e a 073 são das Configurações; a 074 é da Gestão de Usuários; a 075 a 077 são do usuário administrativo; a 078 e a 079 são das permissões e da auditoria; a 080 é da Fiscalização)', () => {
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO, 'checksums.json'), 'utf8'));
     const arquivos = fs.readdirSync(DIRETORIO).filter((n) => /^\d{3}_.*\.sql$/.test(n)).sort();
-    assert.equal(arquivos.length, 90);
+    assert.equal(arquivos.length, 91);
     const inicio = arquivos.findIndex((n) => n.startsWith('069_'));
     assert.deepEqual(
       arquivos.slice(inicio, inicio + 19).map((n) => n.slice(0, 3)),
@@ -160,7 +160,8 @@ describe('migration 069 — agendamento (scheduler/outbox) do aviso de disponibi
     );
     assert.equal(arquivos[inicio + 19].slice(0, 3), '089');
     assert.equal(arquivos[inicio + 20].slice(0, 3), '090');
-    assert.equal(arquivos.length, inicio + 21, 'a 090 é a última');
+    assert.equal(arquivos[inicio + 21].slice(0, 3), '091');
+    assert.equal(arquivos.length, inicio + 22, 'a 091 é a última');
     assert.deepEqual(Object.keys(manifesto.migrations).sort(), arquivos);
     for (const nome of arquivos) {
       const sha = crypto.createHash('sha256').update(fs.readFileSync(path.join(DIRETORIO, nome))).digest('hex');

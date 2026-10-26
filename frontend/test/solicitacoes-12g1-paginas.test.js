@@ -275,15 +275,15 @@ describe('menu, Portal e Permissões do Grupo', () => {
     }
   });
 
-  test('nenhuma das 24 páginas de menu completo usa os nomes antigos; os protótipos mantêm a navegação deles com os nomes novos', () => {
-    assert.equal(COM_MENU_COMPLETO.length, 24); // + atendimento-token.html (Etapa H)
+  test('nenhuma das 25 páginas de menu completo usa os nomes antigos; os protótipos mantêm a navegação deles com os nomes novos', () => {
+    assert.equal(COM_MENU_COMPLETO.length, 25); // + atendimento-token.html (Etapa H) + company-data.html (F2)
     for (const arquivo of COM_MENU_COMPLETO) {
       const rotulos = secao(ler(`pages/${arquivo}`), 'Solicitações').itens.map((i) => i.rotulo);
       // A Central do Atendimento Token (Etapa H) é a página própria do item: ela mostra o nome novo, como cada página integrada marca a si mesma.
       const primeiro = arquivo === CENTRAL_ATENDIMENTO_TOKEN ? 'Atendimento Token' : 'Autoatendimento (Totem)';
       assert.deepEqual(rotulos, [primeiro, 'Pedido de EPI', 'Aprovação da Segurança do Trabalho', 'Entregas por solicitação'], arquivo);
     }
-    for (const arquivo of COM_MENU_COMPLETO.filter((f) => !INTEGRADAS.includes(f) && f !== CENTRAL_ATENDIMENTO_TOKEN)) {
+    for (const arquivo of COM_MENU_COMPLETO.filter((f) => !INTEGRADAS.includes(f) && f !== CENTRAL_ATENDIMENTO_TOKEN && f !== 'company-data.html')) {
       const itens = secao(ler(`pages/${arquivo}`), 'Solicitações').itens;
       assert.match(itens.find((i) => i.rotulo === 'Aprovação da Segurança do Trabalho').html, /data-page="supervisorApproval"/, arquivo);
       assert.match(itens.find((i) => i.rotulo === 'Entregas por solicitação').html, /data-page="stockRequests"/, arquivo);
@@ -295,7 +295,7 @@ describe('menu, Portal e Permissões do Grupo', () => {
     const paginas = [...inicio.matchAll(/<a href="\.\.\/pages\/[^"]+" data-pagina="([^"]+)" style="display:none">/g)].map((m) => m[1]);
     assert.deepEqual(paginas, ['dashboard', 'reports', 'materials', 'stockValidity', 'availableItems', 'operations', 'employeeGroups', 'deliveredItems', 'epiFicha', 'funcionarios', 'employeeHistory',
       'request', 'supervisorApproval', 'stockRequests',
-      'grupos-acesso', 'grupo-permissoes', 'grupo-usuarios', 'autorizacoes-individuais', 'importEmployees', 'newUser', 'userAdmin', 'config']);
+      'grupos-acesso', 'grupo-permissoes', 'grupo-usuarios', 'autorizacoes-individuais', 'importEmployees', 'newUser', 'userAdmin', 'config', 'companyData']);
     assert.match(inicio, /<a href="\.\.\/pages\/request\.html" data-pagina="request" style="display:none">Pedido de EPI<\/a>/);
     assert.match(inicio, /<a href="\.\.\/pages\/supervisor-approval\.html" data-pagina="supervisorApproval" style="display:none">Aprovação da Segurança do Trabalho<\/a>/);
     assert.match(inicio, /<a href="\.\.\/pages\/stock-requests\.html" data-pagina="stockRequests" style="display:none">Entregas por solicitação<\/a>/);

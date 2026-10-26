@@ -457,7 +457,7 @@ describe('páginas (inspeção estática)', () => {
     // E10: na ordem do menu (fechamento-e10.test.js confere a ordem); 12G-1: as três páginas da solicitação.
     assert.deepEqual(links.map((m) => m[1]), ['dashboard', 'reports', 'materials', 'stockValidity', 'availableItems', 'operations', 'employeeGroups', 'deliveredItems', 'epiFicha', 'funcionarios', 'employeeHistory',
       'request', 'supervisorApproval', 'stockRequests',
-      'grupos-acesso', 'grupo-permissoes', 'grupo-usuarios', 'autorizacoes-individuais', 'importEmployees', 'newUser', 'userAdmin', 'config']);
+      'grupos-acesso', 'grupo-permissoes', 'grupo-usuarios', 'autorizacoes-individuais', 'importEmployees', 'newUser', 'userAdmin', 'config', 'companyData']);
     for (const m of links) assert.match(m[0], /style="display:none"/);
     assert.match(html, /<script src="\.\.\/js\/permissoes-efetivas\.js"><\/script>/);
     assert.match(ler('portal/inicio.js'), /EpiPermissoes\.carregar\(window\.EpiPermissoes\.esperadoDoContexto\(ctx\)\)/, 'o Portal confere empresa, usuário e perfil');
