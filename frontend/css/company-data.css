@@ -1,0 +1,62 @@
+/* Dados da Empresa (F2): camada visual local sobre main.css e EpiTema.
+   Referência aprovada: work/visual-previews/dados-da-empresa-abrir.html (Codex). A estrutura, os espaçamentos e os textos da prévia
+   foram mantidos; as cores vêm dos tokens do Portal, então tema claro/escuro e modos de acessibilidade seguem o que js/tema.js liga
+   no <html>. Tudo restrito a .cd para não vazar para a moldura. */
+.cd{--cd-perigo:#b3261e;--cd-perigo-hover:#8c1d18;--cd-perigo-texto:#ffffff;max-width:1200px;margin:0 auto;font-family:var(--font-plain);color:var(--on-surface)}
+html[data-theme="dark"] .cd{--cd-perigo:#ff8a80;--cd-perigo-hover:#ffa59d;--cd-perigo-texto:#3b0a07}
+.cd *{box-sizing:border-box}
+.cd .glass{background:var(--surface-container);border:1px solid var(--outline-variant);border-radius:26px;box-shadow:var(--shadow-lg);padding:28px;margin-bottom:20px;min-width:0}
+.cd .eyebrow{text-transform:uppercase;letter-spacing:2px;font-size:11px;font-weight:700;color:var(--on-surface-variant)}
+.cd h1{font-family:var(--font-brand);font-size:32px;letter-spacing:-1px;margin:7px 0 8px;line-height:1.2;font-weight:600}
+.cd h2{font-size:18px;margin:0;font-weight:600}
+.cd p{margin:7px 0;color:var(--on-surface-variant)}
+.cd .section-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:22px;flex-wrap:wrap}
+.cd .tag{font-size:11px;padding:5px 10px;background:var(--secondary-container);color:var(--on-surface);border-radius:30px;display:inline-flex;align-items:center;gap:6px}
+.cd .tag .material-symbols-outlined{font-size:14px}
+.cd .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px 24px}
+.cd .grid > *{min-width:0}
+.cd label{display:block;font-size:13px;color:var(--on-surface-variant);font-weight:600;overflow-wrap:anywhere}
+.cd input,.cd select{display:block;width:100%;min-width:0;margin-top:7px;border:1px solid var(--outline);background:var(--surface-container);padding:12px 14px;border-radius:13px;font:inherit;font-size:16px;color:var(--on-surface)}
+.cd input:focus-visible,.cd select:focus-visible,.cd button:focus-visible{outline:3px solid var(--primary);outline-offset:3px}
+.cd input[readonly],.cd select:disabled{background:var(--surface-container-high);color:var(--on-surface-variant)}
+.cd input[aria-invalid="true"]{border-color:var(--error)}
+.cd small{display:block;font-size:12px;color:var(--on-surface-variant);margin-top:7px;font-weight:400;overflow-wrap:anywhere}
+.cd .erro-campo{display:block;min-height:0;font-size:12px;color:var(--error);margin-top:5px;font-weight:500}
+.cd .erro-campo:empty{display:none}
+.cd .subheading{font-size:11px;letter-spacing:1.3px;color:var(--on-surface-variant);text-transform:uppercase;margin:24px 0 14px;font-weight:700}
+.cd .logo-row{display:flex;gap:24px;align-items:center}
+.cd .logo-row > div:last-child{min-width:0}
+.cd .logo-frame{width:116px;height:116px;flex-shrink:0;border:1px dashed var(--outline);border-radius:22px;background:var(--surface-container-high);display:grid;place-items:center;color:var(--on-surface-variant)}
+.cd .logo-frame .material-symbols-outlined{font-size:42px}
+.cd .actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:16px}
+.cd button{font:inherit;font-size:13px;font-weight:600;min-height:44px;padding:11px 17px;border:1px solid var(--outline);background:var(--surface-container);color:var(--on-surface);border-radius:12px;display:inline-flex;align-items:center;gap:7px;cursor:pointer}
+.cd button .material-symbols-outlined{font-size:18px}
+.cd button.primary{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
+.cd button:disabled{opacity:.45;cursor:not-allowed}
+/* Ação destrutiva (descartar alterações não salvas): cor de alerta com contraste ≥ 4,5:1 nos dois temas. */
+.cd button.perigo{background:var(--cd-perigo);border-color:var(--cd-perigo);color:var(--cd-perigo-texto)}
+.cd button.perigo:hover{background:var(--cd-perigo-hover);border-color:var(--cd-perigo-hover)}
+.cd button.perigo:focus-visible{outline:3px solid var(--cd-perigo);outline-offset:3px}
+.cd button.perigo:disabled{background:var(--cd-perigo);border-color:var(--cd-perigo);color:var(--cd-perigo-texto)}
+.cd .footer{display:flex;justify-content:space-between;gap:15px;align-items:center;flex-wrap:wrap}
+.cd .footer small{max-width:470px;margin:0}
+.cd #empStatus{font-size:13px;color:var(--on-surface-variant);margin-top:12px;min-height:18px}
+.cd .banner{border-radius:16px;padding:14px 16px;margin-bottom:20px;font-size:14px;border:1px solid var(--outline)}
+.cd .banner-erro{background:var(--error-container);color:var(--on-surface);border-color:var(--error)}
+.cd .banner-conflito{background:var(--warning-container);color:var(--on-surface);border-color:var(--warning)}
+.cd .banner-conflito .actions{margin-top:12px}
+.cd .confirmacao{margin-top:14px;padding:14px 16px;border:1px solid var(--outline);border-radius:14px;background:var(--surface-container)}
+.cd .confirmacao p{margin:0 0 10px;color:var(--on-surface)}
+.cd .banner-leitura{background:var(--primary-container);color:var(--on-surface)}
+.cd .protegidos{display:flex;gap:8px;align-items:flex-start;margin-top:18px}
+.cd .protegidos .material-symbols-outlined{font-size:18px;flex-shrink:0;color:var(--on-surface-variant)}
+.cd .protegidos small{margin:0}
+@media(max-width:600px){
+  .cd .glass{padding:20px;border-radius:21px}
+  .cd .grid{grid-template-columns:1fr}
+  .cd h1{font-size:27px}
+  .cd .logo-row{align-items:flex-start;gap:16px;flex-wrap:wrap}
+  .cd .logo-frame{width:80px;height:80px}
+  .cd .footer button{width:100%;justify-content:center}
+}
+@media(prefers-reduced-transparency:reduce){.cd .glass{backdrop-filter:none}}

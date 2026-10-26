@@ -220,8 +220,10 @@ describe('Permissões do Grupo sem controle decorativo', () => {
   const porId = Object.fromEntries(G.RECURSOS.map((r) => [r.id, r]));
   // Recursos do escopo do MASTER que esta tela NÃO edita, por decisão explícita: o Atendimento Token (Etapas B e C) é administrado
   // pelas próprias rotas do Token (recurso `atendimentoToken`, operações visualizar/criar/editar) e o MASTER o recebe pelo
-  // provisionamento. A lista é fechada: qualquer outro recurso novo do servidor continua exigindo uma linha nesta tela.
-  const FORA_DESTA_TELA = ['atendimentoToken'];
+  // provisionamento. Dados da Empresa (companyData, F2) tem seus dois acessos como toggles na Gestão de Usuários (por usuário e por
+  // grupo, montados da API) e o MASTER o recebe pelo provisionamento; esta tela legada (aposentada na interface) não o edita.
+  // A lista é fechada: qualquer outro recurso novo do servidor continua exigindo uma linha nesta tela.
+  const FORA_DESTA_TELA = ['atendimentoToken', 'companyData'];
 
   test('Validade e Operações de estoque oferecem só "Visualizar"; as outras operações aparecem como "não se aplica"', () => {
     for (const id of ['stockValidity', 'operations']) {

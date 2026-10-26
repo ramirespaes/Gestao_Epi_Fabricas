@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" type="image/svg+xml" sizes="any" href="../favicon.svg">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gestão de EPI</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+  <link rel="stylesheet" href="../css/main.css">
+  <script src="../js/tema.js"></script>
+  <style>
+    /* Itens do menu ainda não integrados ao backend (sem link) */
+    .nav a.nav-pendente{cursor:default;opacity:.55}
+    .nav a.nav-pendente:hover{background:transparent}
+  </style>
+  <link rel="stylesheet" href="../css/company-data.css">
+</head>
+<!--
+  Dados da Empresa (F2). Página INTEGRADA ao Portal Empresarial: sessão empresarial real e permissões efetivas
+  (companyData.visualizar abre; editar exige as duas), com os estados padrão de js/estado-pagina.js. Os dados vêm SÓ de
+  GET /api/empresa/dados (empresa da sessão) e vão por PATCH /api/empresa/dados com a versão carregada; razão social e CNPJ são
+  somente leitura e nunca enviados. Visual da referência aprovada (work/visual-previews/dados-da-empresa-abrir.html), com os
+  tokens do Portal. O logotipo é só a previsão visual da área (envio, armazenamento e exclusão são das fases F4/F5).
+  Nada vai para armazenamento do navegador e nenhum dado de empresa é fixo no HTML.
+-->
+<body class="reports-visual">
+
+<!-- Verificação da sessão: usa a sessão empresarial criada pelo Portal do Cliente, confirmada no servidor por js/sessao-empresarial.js. -->
+<div id="telaSessao" style="position:fixed;inset:0;z-index:10000;background:var(--surface);
+     display:flex;align-items:center;justify-content:center;padding:20px">
+  <div style="width:100%;max-width:400px;text-align:center">
+    <div style="width:64px;height:64px;border-radius:20px;background:#1a3a6b;
+                display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
+      <span class="material-symbols-outlined" style="font-size:32px;color:#fff">safety_check</span>
+    </div>
+    <h1 style="font-size:20px;font-weight:700;margin:0">Gestão de EPIs</h1>
+    <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">SafeWork Engenharia</p>
+    <p id="telaSessaoMensagem" role="status" aria-live="polite" style="font-size:13px;color:var(--on-surface-variant);margin-top:8px">Verificando sua sessão…</p>
+    <a id="telaSessaoPortal" href="../portal/index.html" class="filled-btn" style="display:none;margin-top:16px">
+      <span class="material-symbols-outlined">login</span>Ir para o Portal do Cliente
+    </a>
+  </div>
+</div>
+
+<div class="mobile-overlay" id="menuFundo"></div>
+<div class="mobile-topbar">
+    <div class="mobile-topbar-icon">safety_check</div>
+    <span class="mobile-topbar-title">Gestão de EPIs</span>
+  </div>
+  <button class="mobile-global-menu" id="menuCelular" type="button" aria-label="Abrir menu">
+    <svg width="20" height="14" viewBox="0 0 20 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <line x1="0" y1="1"  x2="20" y2="1"  stroke="#1C1C1E" stroke-width="1.8" stroke-linecap="round"/>
+      <line x1="0" y1="7"  x2="20" y2="7"  stroke="#1C1C1E" stroke-width="1.8" stroke-linecap="round"/>
+      <line x1="0" y1="13" x2="20" y2="13" stroke="#1C1C1E" stroke-width="1.8" stroke-linecap="round"/>
+    </svg>
+  </button>
+  <div class="layout">
+<aside class="sidebar">
+      <div class="brand">
+        <div class="brand-left">
+          <div class="brand-badge">security</div>
+          <div>
+            <div class="brand-title">Gestão de EPIs</div>
+            <div class="brand-sub" style="font-size:11px;color:var(--on-surface-variant);margin-top:2px;">v1.0</div>
+          </div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <div class="nav-section">Visão geral</div>
+        <a href="dashboard.html" data-pagina="dashboard" style="display:none"><div class="nav-icon blue">dashboard</div>Dashboard</a>
+        <a href="reports.html" data-pagina="reports" style="display:none"><div class="nav-icon indigo">analytics</div>Relatórios</a>
+        <div class="nav-section">Estoque</div>
+        <a href="materials.html" data-pagina="materials" style="display:none"><div class="nav-icon teal">inventory_2</div>Gestão de estoque</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon orange">shopping_cart</div>Compras / Entradas<span class="nav-etiqueta">Em integração</span></a>
+        <a href="stock-validity.html" data-pagina="stockValidity" style="display:none"><div class="nav-icon red">event_busy</div>Validade de estoque</a>
+        <a href="available-items.html" data-pagina="availableItems" style="display:none"><div class="nav-icon green">checklist</div>Análise de estoque</a>
+        <a href="operations.html" data-pagina="operations" style="display:none"><div class="nav-icon gray">receipt_long</div>Operações de estoque</a>
+        <a href="employee-groups.html" data-pagina="employeeGroups" style="display:none"><div class="nav-icon purple">group_work</div>Gestão de GHE</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor<span class="nav-etiqueta">Em integração</span></a>
+        <div class="nav-section">Entregas</div>
+        <a href="delivered-items.html" data-pagina="deliveredItems" style="display:none"><div class="nav-icon green">inventory</div>EPIs Entregues</a>
+        <a href="epi-ficha.html" data-pagina="epiFicha" style="display:none"><div class="nav-icon brown">description</div>Ficha de EPI</a>
+        <a href="funcionarios.html" data-pagina="funcionarios" style="display:none"><div class="nav-icon teal">people</div>Cadastro de Colaboradores</a>
+        <a href="employee-history.html" data-pagina="employeeHistory" style="display:none"><div class="nav-icon blue">history</div>Histórico de Funcionários</a>
+        <div class="nav-section">Solicitações</div>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">badge</div>Autoatendimento (Totem)<span class="nav-etiqueta">Em integração</span></a>
+        <a href="request.html" data-pagina="request" style="display:none"><div class="nav-icon blue">assignment</div>Pedido de EPI</a>
+        <a href="supervisor-approval.html" data-pagina="supervisorApproval" style="display:none"><div class="nav-icon orange">fact_check</div>Aprovação da Segurança do Trabalho</a>
+        <a href="stock-requests.html" data-pagina="stockRequests" style="display:none"><div class="nav-icon red">playlist_add_check_circle</div>Entregas por solicitação</a>
+        <div class="nav-section">Administração</div>
+        <a href="grupos-acesso.html" data-pagina="grupos-acesso" style="display:none"><div class="nav-icon indigo">groups</div>Grupos de Acesso</a>
+        <a href="grupo-permissoes.html" data-pagina="grupo-permissoes" style="display:none"><div class="nav-icon indigo">lock_person</div>Permissões do Grupo</a>
+        <a href="grupo-usuarios.html" data-pagina="grupo-usuarios" style="display:none"><div class="nav-icon indigo">group_add</div>Integrantes do Grupo</a>
+        <a href="autorizacoes-individuais.html" data-pagina="autorizacoes-individuais" style="display:none"><div class="nav-icon indigo">verified_user</div>Autorizações Individuais</a>
+        <a href="import-employees.html" data-pagina="importEmployees" style="display:none"><div class="nav-icon green">upload_file</div>Importar Funcionários</a>
+        <a href="new-user.html" data-pagina="newUser" style="display:none"><div class="nav-icon green">person_add</div>Novo Usuário</a>
+        <a href="user-admin.html" data-pagina="userAdmin" style="display:none"><div class="nav-icon indigo">group</div>Administração de Usuários</a>
+        <a href="gestao-usuarios.html" data-pagina="gestaoUsuarios" style="display:none"><div class="nav-icon indigo">manage_accounts</div>Gestão de Usuários</a>
+        <a href="config.html" data-pagina="config" style="display:none"><div class="nav-icon gray">settings</div>Configurações</a>
+        <a class="active" href="javascript:void(0)" data-pagina="companyData" style="display:none"><div class="nav-icon teal">apartment</div>Dados da Empresa</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon teal">support_agent</div>Suporte<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">mark_email_read</div>Gestão de E-mails<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon indigo">privacy_tip</div>Privacidade / LGPD<span class="nav-etiqueta">Em integração</span></a>
+        <a href="../portal/inicio.html"><div class="nav-icon blue">home</div>Início</a>
+      </nav>
+    </aside>
+
+    <main class="content">
+<div class="cd">
+  <div id="estadoPagina" style="display:none"></div>
+
+  <div id="conteudoProtegido" style="display:none">
+    <section class="glass">
+      <div class="eyebrow">SafeWork · Gestão de EPIs</div>
+      <h1>Dados da Empresa</h1>
+      <p>Identificação, contatos e identidade da sua empresa.</p>
+    </section>
+
+    <div id="empAviso" class="banner banner-erro" role="alert" style="display:none"></div>
+    <div id="empConflito" class="banner banner-conflito" role="alert" style="display:none">
+      <span id="empConflitoTexto"></span>
+      <div class="actions">
+        <button type="button" id="empRecarregar"><span class="material-symbols-outlined" aria-hidden="true">refresh</span> Carregar dados atualizados e substituir o formulário</button>
+      </div>
+      <div id="empConfirmarRecarga" class="confirmacao" role="alertdialog" aria-labelledby="empConfirmarTexto" style="display:none">
+        <p id="empConfirmarTexto"></p>
+        <div class="actions">
+          <button type="button" id="empConfirmarCancelar">Continuar editando</button>
+          <button type="button" id="empConfirmarOk" class="perigo">Descartar minhas alterações e carregar</button>
+        </div>
+      </div>
+    </div>
+    <div id="empLeitura" class="banner banner-leitura" role="status" style="display:none"></div>
+
+    <section class="glass">
+      <div class="section-head"><h2>Dados oficiais</h2><span class="tag"><span class="material-symbols-outlined" aria-hidden="true">lock</span> Razão social e CNPJ: somente leitura</span></div>
+      <div class="grid">
+        <label>Razão social<input id="emp-razaoSocial" readonly autocomplete="off"></label>
+        <label>CNPJ<input id="emp-cnpj" readonly autocomplete="off"></label>
+        <label>Nome fantasia<input id="emp-nomeFantasia" maxlength="150" autocomplete="off" aria-describedby="err-nomeFantasia"><span class="erro-campo" id="err-nomeFantasia" role="alert"></span></label>
+        <label>Inscrição estadual<input id="emp-inscricaoEstadual" maxlength="20" autocomplete="off" aria-describedby="err-inscricaoEstadual"><span class="erro-campo" id="err-inscricaoEstadual" role="alert"></span></label>
+        <label>Situação da inscrição estadual
+          <select id="emp-situacaoInscricaoEstadual" aria-describedby="err-situacaoInscricaoEstadual">
+            <option value="">Não informada</option>
+            <option value="CONTRIBUINTE">Contribuinte</option>
+            <option value="ISENTO">Isento</option>
+            <option value="NAO_CONTRIBUINTE">Não contribuinte</option>
+          </select><span class="erro-campo" id="err-situacaoInscricaoEstadual" role="alert"></span>
+        </label>
+      </div>
+      <div class="subheading">Endereço</div>
+      <div class="grid">
+        <label>Logradouro<input id="emp-endereco" maxlength="200" autocomplete="off" aria-describedby="err-endereco"><span class="erro-campo" id="err-endereco" role="alert"></span></label>
+        <label>Número<input id="emp-numero" maxlength="20" autocomplete="off" aria-describedby="err-numero"><span class="erro-campo" id="err-numero" role="alert"></span></label>
+        <label>Complemento<input id="emp-complemento" maxlength="100" autocomplete="off" aria-describedby="err-complemento"><span class="erro-campo" id="err-complemento" role="alert"></span></label>
+        <label>Bairro<input id="emp-bairro" maxlength="100" autocomplete="off" aria-describedby="err-bairro"><span class="erro-campo" id="err-bairro" role="alert"></span></label>
+        <label>Cidade<input id="emp-cidade" maxlength="100" autocomplete="off" aria-describedby="err-cidade"><span class="erro-campo" id="err-cidade" role="alert"></span></label>
+        <label>UF<input id="emp-uf" maxlength="2" autocomplete="off" aria-describedby="err-uf"><span class="erro-campo" id="err-uf" role="alert"></span></label>
+        <label>CEP<input id="emp-cep" maxlength="9" inputmode="numeric" autocomplete="off" aria-describedby="err-cep"><span class="erro-campo" id="err-cep" role="alert"></span></label>
+      </div>
+      <div class="protegidos" id="empProtegidos"><span class="material-symbols-outlined" aria-hidden="true">info</span><small>Razão social e CNPJ são mantidos pela SafeWork. Para solicitar a correção da razão social, procure o Suporte; o CNPJ identifica a empresa e não é alterado por esta tela.</small></div>
+    </section>
+
+    <section class="glass">
+      <div class="section-head"><h2>Contatos da empresa</h2><span class="tag">Informações complementares</span></div>
+      <div class="grid">
+        <label>E-mail institucional<input id="emp-email" type="email" maxlength="150" placeholder="contato@suaempresa.com.br" autocomplete="off" aria-describedby="err-email"><span class="erro-campo" id="err-email" role="alert"></span></label>
+        <label>Telefone geral<input id="emp-telefone" type="tel" maxlength="20" placeholder="(00) 0000-0000" autocomplete="off" aria-describedby="err-telefone"><span class="erro-campo" id="err-telefone" role="alert"></span></label>
+      </div>
+      <div class="subheading">Segurança e operação</div>
+      <div class="grid">
+        <label>E-mail do SST<input id="emp-emailSst" type="email" maxlength="150" placeholder="sst@suaempresa.com.br" autocomplete="off" aria-describedby="err-emailSst"><small>Segurança e Saúde no Trabalho · Contato para “Contatar SST”.</small><span class="erro-campo" id="err-emailSst" role="alert"></span></label>
+        <label>E-mail do Almoxarifado / Estoque<input id="emp-emailAlmoxarifado" type="email" maxlength="150" placeholder="almoxarifado@suaempresa.com.br" autocomplete="off" aria-describedby="err-emailAlmoxarifado"><small>Contato para “Solicitar apoio” ao Almoxarifado.</small><span class="erro-campo" id="err-emailAlmoxarifado" role="alert"></span></label>
+      </div>
+      <div class="subheading">Representante da empresa</div>
+      <div class="grid">
+        <label>Nome completo<input id="emp-representanteNome" maxlength="150" placeholder="Nome do representante" autocomplete="off" aria-describedby="err-representanteNome"><span class="erro-campo" id="err-representanteNome" role="alert"></span></label>
+        <label>Cargo / função<input id="emp-representanteCargo" maxlength="100" placeholder="Cargo ou função" autocomplete="off" aria-describedby="err-representanteCargo"><span class="erro-campo" id="err-representanteCargo" role="alert"></span></label>
+        <label>E-mail<input id="emp-representanteEmail" type="email" maxlength="150" placeholder="representante@suaempresa.com.br" autocomplete="off" aria-describedby="err-representanteEmail"><span class="erro-campo" id="err-representanteEmail" role="alert"></span></label>
+        <label>Telefone<input id="emp-representanteTelefone" type="tel" maxlength="20" placeholder="(00) 0000-0000" autocomplete="off" aria-describedby="err-representanteTelefone"><span class="erro-campo" id="err-representanteTelefone" role="alert"></span></label>
+      </div>
+      <div class="subheading">Contato financeiro</div>
+      <div class="grid">
+        <label>Responsável financeiro<input id="emp-financeiroNome" maxlength="150" placeholder="Nome do responsável" autocomplete="off" aria-describedby="err-financeiroNome"><span class="erro-campo" id="err-financeiroNome" role="alert"></span></label>
+        <label>E-mail financeiro<input id="emp-financeiroEmail" type="email" maxlength="150" placeholder="financeiro@suaempresa.com.br" autocomplete="off" aria-describedby="err-financeiroEmail"><span class="erro-campo" id="err-financeiroEmail" role="alert"></span></label>
+        <label>Telefone financeiro<input id="emp-financeiroTelefone" type="tel" maxlength="20" placeholder="(00) 0000-0000" autocomplete="off" aria-describedby="err-financeiroTelefone"><span class="erro-campo" id="err-financeiroTelefone" role="alert"></span></label>
+      </div>
+    </section>
+
+    <section class="glass" id="empLogoSecao">
+      <div class="section-head"><h2>Logotipo da empresa</h2><span class="tag">Opcional</span></div>
+      <div class="logo-row">
+        <div class="logo-frame" id="empLogo" role="img" aria-label="Ícone institucional padrão"><span class="material-symbols-outlined" aria-hidden="true">apartment</span></div>
+        <div>
+          <strong>A identidade da sua empresa</strong>
+          <p>Adicione um logotipo ou mantenha o ícone institucional.</p>
+          <small id="empLogoAviso"></small>
+          <div class="actions">
+            <button type="button" id="empLogoInserir" disabled><span class="material-symbols-outlined" aria-hidden="true">add_photo_alternate</span> Inserir logotipo</button>
+            <button type="button" id="empLogoRemover" disabled>Remover</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="glass">
+      <div class="footer">
+        <small>As alterações valem para toda a empresa. O logotipo é opcional.</small>
+        <button class="primary" id="empSalvar" type="button" disabled><span class="material-symbols-outlined" aria-hidden="true">check</span> Salvar alterações</button>
+      </div>
+      <div id="empStatus" role="status" aria-live="polite"></div>
+    </div>
+  </div>
+</div>
+    </main>
+  </div>
+
+<script src="../js/api-http.js"></script>
+<script src="../portal/config.js"></script>
+<script src="../js/sessao-empresarial.js"></script>
+<script src="../js/permissoes-efetivas.js"></script>
+<script src="../js/pagina-base.js"></script>
+<script src="../js/estado-pagina.js"></script>
+<script src="../js/dados-empresa.js"></script>
+<script>
+/*
+  Ligação com o DOM — deliberadamente fina. Sessão e permissões reais (js/estado-pagina.js); a tela, os contratos e as mensagens
+  vivem em js/dados-empresa.js (testado sem navegador).
+*/
+(function () {
+  'use strict';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var tela = null;
+
+  // Menu lateral no celular (sem manipulador inline).
+  $('menuCelular').addEventListener('click', function () { EpiPaginaBase.toggleSidebar(); });
+  $('menuFundo').addEventListener('click', function () { EpiPaginaBase.closeMobileMenu(); });
+
+  // Mesmo endereço do Portal do Cliente (portal/config.js).
+  EpiHttp.configurar({ baseUrl: window.SAFEWORK_PORTAL_API_BASE_URL });
+
+  EpiEstadoPagina.montarPaginaProtegida({
+    pagina: 'companyData',
+    elementos: {
+      tela: $('telaSessao'),
+      mensagem: $('telaSessaoMensagem'),
+      linkPortal: $('telaSessaoPortal'),
+      conteudo: $('conteudoProtegido'),
+      estado: $('estadoPagina'),
+      links: document.querySelectorAll('.nav a[data-pagina]'),
+    },
+    aoEncerrar: function () { if (tela) tela.encerrar(); },
+  }).then(function (acesso) {
+    if (!acesso) return undefined;
+    tela = EpiDadosEmpresa.criarTela({
+      capacidades: EpiDadosEmpresa.capacidades(acesso.permissoes),
+      aoSessaoEncerrada: function () {
+        if (tela) tela.encerrar();
+        EpiEstadoPagina.sessaoEncerrada({ conteudo: $('conteudoProtegido'), estado: $('estadoPagina') });
+      },
+    });
+    return tela.iniciar();
+  });
+})();
+</script>
+</body>
+</html>

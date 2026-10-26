@@ -41,7 +41,7 @@ describe('nomes: Gestão de estoque e Análise de estoque', () => {
       assert.ok(estoque.length >= 1 && estoque.every((r) => r === 'Gestão de estoque'), `${arquivo}: ${JSON.stringify(estoque)}`);
       assert.ok(analise.length >= 1 && analise.every((r) => r === 'Análise de estoque'), `${arquivo}: ${JSON.stringify(analise)}`);
     }
-    assert.equal(PAGINAS.length - MENU_ADMINISTRATIVO.length, 24); // + atendimento-token.html (Etapa H)
+    assert.equal(PAGINAS.length - MENU_ADMINISTRATIVO.length, 25); // + atendimento-token.html (Etapa H) + company-data.html (F2)
   });
 
   test('título e cabeçalho das duas páginas', () => {

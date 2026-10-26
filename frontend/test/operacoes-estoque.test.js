@@ -498,7 +498,7 @@ describe('permissão, menus, Portal e publicação', () => {
   });
 
   test('o mesmo nome em todo menu que tem o item, no Portal, no catálogo de permissões e na administração de usuários', () => {
-    assert.equal(NAO_ADMINISTRATIVAS.length, 24); // + atendimento-token.html (Etapa H)
+    assert.equal(NAO_ADMINISTRATIVAS.length, 25); // + atendimento-token.html (Etapa H) + company-data.html (F2)
     for (const arquivo of NAO_ADMINISTRATIVAS) {
       const rotulos = [...ler(`pages/${arquivo}`).matchAll(/<div class="nav-icon gray">receipt_long<\/div>([^<]*)</g)].map((m) => m[1]);
       assert.deepEqual(rotulos, [NOME], arquivo);

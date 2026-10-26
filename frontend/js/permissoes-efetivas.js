@@ -194,6 +194,13 @@
       abrirComQualquer: true,
       alterar: [],
     },
+    // Dados da Empresa (F2): consulta e edição do cadastro da PRÓPRIA empresa. Abre com companyData.visualizar; alterar exige
+    // editar (e a página só edita com as duas: o PATCH do servidor também exige visualizar E editar). Razão social e CNPJ não
+    // são editáveis por nenhuma permissão. O perfil não decide nada aqui.
+    companyData: {
+      abrir: [{ recurso: 'companyData', operacao: 'visualizar' }],
+      alterar: [{ recurso: 'companyData', operacao: 'editar' }],
+    },
   };
 
   var MENSAGENS = {
@@ -499,6 +506,57 @@
     });
   }
 
+  // Dados da Empresa (F2): o item "Dados da Empresa" entra na seção Administração, logo depois de "Configurações", SÓ para quem pode
+  // abrir a página pelas permissões efetivas (PAGINAS.companyData). É criado aqui, no ponto central da navegação: nenhuma das
+  // páginas homologadas foi editada. Páginas que já trazem o item de forma estática (a própria company-data.html) são tratadas por
+  // aplicarMenu pelo data-pagina e não recebem um segundo. Sem permissão, ou com a consulta falha, o item criado é escondido.
+  var HREF_DADOS_EMPRESA = 'company-data.html';
+  var ROTULO_DADOS_EMPRESA = 'Dados da Empresa';
+  var MARCA_DADOS_EMPRESA = 'data-dados-empresa';
+
+  function ajustarMenuDadosEmpresa(permissoes, raiz) {
+    if (!raiz || typeof raiz.querySelectorAll !== 'function') return;
+    var pode = podeAbrir(permissoes, 'companyData');
+    var configuracoes = null;
+    var estatico = null;
+    var criado = null;
+    Array.prototype.forEach.call(raiz.querySelectorAll('.nav a'), function (a) {
+      var pagina = a.getAttribute('data-pagina');
+      if (pagina === 'config') configuracoes = a;
+      if (pagina === 'companyData') {
+        if (a.getAttribute(MARCA_DADOS_EMPRESA) === 'true') criado = a;
+        else estatico = a;
+      }
+    });
+    if (estatico) return;
+    if (!pode) {
+      if (criado) {
+        criado.removeAttribute('href');
+        criado.style.display = 'none';
+      }
+      return;
+    }
+    if (criado) {
+      criado.setAttribute('href', HREF_DADOS_EMPRESA);
+      criado.style.display = '';
+      return;
+    }
+    if (!configuracoes || !configuracoes.parentNode || !configuracoes.ownerDocument) return;
+    var doc = configuracoes.ownerDocument;
+    var item = doc.createElement('a');
+    item.setAttribute('href', HREF_DADOS_EMPRESA);
+    item.setAttribute('data-pagina', 'companyData');
+    item.setAttribute(MARCA_DADOS_EMPRESA, 'true');
+    var icone = doc.createElement('div');
+    icone.className = 'nav-icon teal';
+    icone.textContent = 'apartment';
+    item.appendChild(icone);
+    item.appendChild(doc.createTextNode(ROTULO_DADOS_EMPRESA));
+    var irmaos = Array.prototype.slice.call(configuracoes.parentNode.childNodes);
+    var seguinte = irmaos[irmaos.indexOf(configuracoes) + 1];
+    configuracoes.parentNode.insertBefore(item, seguinte === undefined ? null : seguinte);
+  }
+
   /**
    * Empresa, usuário e perfil a partir do contexto que a página exibe
    * ({usuario, empresa} de EpiSessaoEmpresarial ou do Portal). Campos
@@ -529,6 +587,7 @@
       aplicarMenu(null, o.links);
       liberarInspecao(null, documento);
       ajustarMenuAtendimentoToken(null, documento);
+      ajustarMenuDadosEmpresa(null, documento);
       if (r.motivo === 'SEM_SESSAO' && global.EpiSessaoEmpresarial) {
         global.EpiSessaoEmpresarial.sessaoEncerrada();
         return null;
@@ -540,6 +599,7 @@
     aplicarMenu(r.permissoes, o.links);
     liberarInspecao(r.permissoes, documento);
     ajustarMenuAtendimentoToken(r.permissoes, documento);
+    ajustarMenuDadosEmpresa(r.permissoes, documento);
     if (!podeAbrir(r.permissoes, o.pagina)) {
       aviso(MENSAGENS.SEM_ACESSO);
       return null;
@@ -566,6 +626,7 @@
         aplicarMenu(null, links);
         liberarInspecao(null, documento);
         ajustarMenuAtendimentoToken(null, documento);
+        ajustarMenuDadosEmpresa(null, documento);
         if (r.motivo === 'SEM_SESSAO') {
           sessao.sessaoEncerrada();
           return { acao: 'encerrada' };
@@ -575,6 +636,7 @@
       aplicarMenu(r.permissoes, links);
       liberarInspecao(r.permissoes, documento);
       ajustarMenuAtendimentoToken(r.permissoes, documento);
+      ajustarMenuDadosEmpresa(r.permissoes, documento);
       return { acao: JSON.stringify(r.permissoes) === assinatura ? 'liberar' : 'recarregar' };
     });
   }
@@ -606,6 +668,7 @@
     NAVEGACAO_OCULTA_PENDENTES: NAVEGACAO_OCULTA_PENDENTES,
     liberarInspecao: liberarInspecao,
     ajustarMenuAtendimentoToken: ajustarMenuAtendimentoToken,
+    ajustarMenuDadosEmpresa: ajustarMenuDadosEmpresa,
     hrefDeInspecao: hrefDeInspecao,
     INSPECAO_PROTOTIPOS: INSPECAO_PROTOTIPOS,
     podeAbrir: podeAbrir,

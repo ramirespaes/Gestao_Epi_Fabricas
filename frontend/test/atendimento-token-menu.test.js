@@ -50,16 +50,16 @@ const itemDoToken = (pg) => pg.consulta('.nav a').find((a) => /Autoatendimento \
 const rotulo = (a) => a.childNodes.filter((n) => n.nodeType === 3).map((n) => n.textContent).join('').trim();
 
 describe('o item "Solicitações → Atendimento Token" nas páginas integradas', () => {
-  test('há 17 páginas integradas com o menu completo, e cada uma traz o item do Totem como "Em integração"', () => {
-    assert.equal(INTEGRADAS.length, 17);
+  test('há 18 páginas integradas com o menu completo (a 18ª é company-data.html, F2), e cada uma traz o item do Totem como "Em integração"', () => {
+    assert.equal(INTEGRADAS.length, 18);
     for (const f of INTEGRADAS) {
       const html = ler(`pages/${f}`);
       assert.match(html, /<a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">badge<\/div>Autoatendimento \(Totem\)<span class="nav-etiqueta">Em integração<\/span><\/a>/, f);
     }
   });
 
-  test('com permissão de abrir a Central: o item vira "Atendimento Token", aponta para atendimento-token.html e perde o "Em integração" (nas 16 páginas abertas por DOM)', async () => {
-    assert.equal(ABRIVEIS.length, 16);
+  test('com permissão de abrir a Central: o item vira "Atendimento Token", aponta para atendimento-token.html e perde o "Em integração" (nas 17 páginas abertas por DOM)', async () => {
+    assert.equal(ABRIVEIS.length, 17);
     for (const arquivo of ABRIVEIS) {
       const pg = await abrir(arquivo, permissoes({ recurso: { visualizar: true } }));
       const a = itemDoToken(pg);

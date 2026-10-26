@@ -218,7 +218,7 @@ describe('menus, Portal e Permissões do Grupo', () => {
   test('o Portal e o catálogo de permissões do grupo continuam coerentes com as páginas aposentadas (links ocultos, sem permissão por grupo)', () => {
     const inicio = ler('portal/inicio.html');
     const paginas = [...inicio.matchAll(/<a href="\.\.\/pages\/[^"]+" data-pagina="([^"]+)" style="display:none">/g)].map((m) => m[1]);
-    assert.deepEqual(paginas.slice(-4), ['importEmployees', 'newUser', 'userAdmin', 'config']);
+    assert.deepEqual(paginas.slice(-5), ['importEmployees', 'newUser', 'userAdmin', 'config', 'companyData']);
     const G = require('../js/grupo-permissoes'); // eslint-disable-line global-require
     for (const id of ['newUser', 'userAdmin']) {
       const r = G.RECURSOS.find((x) => x.id === id);
