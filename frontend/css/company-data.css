@@ -1,7 +1,5 @@
-/* Dados da Empresa (F2): camada visual local sobre main.css e EpiTema.
-   Referência aprovada: work/visual-previews/dados-da-empresa-abrir.html (Codex). A estrutura, os espaçamentos e os textos da prévia
-   foram mantidos; as cores vêm dos tokens do Portal, então tema claro/escuro e modos de acessibilidade seguem o que js/tema.js liga
-   no <html>. Tudo restrito a .cd para não vazar para a moldura. */
+/* Dados da Empresa usa o mesmo reports.css de Gestão de estoque.
+   Complementos locais preservam os campos, estados e contratos existentes. */
 .cd{--cd-perigo:#b3261e;--cd-perigo-hover:#8c1d18;--cd-perigo-texto:#ffffff;max-width:1200px;margin:0 auto;font-family:var(--font-plain);color:var(--on-surface)}
 html[data-theme="dark"] .cd{--cd-perigo:#ff8a80;--cd-perigo-hover:#ffa59d;--cd-perigo-texto:#3b0a07}
 .cd *{box-sizing:border-box}
@@ -60,3 +58,42 @@ html[data-theme="dark"] .cd{--cd-perigo:#ff8a80;--cd-perigo-hover:#ffa59d;--cd-p
   .cd .footer button{width:100%;justify-content:center}
 }
 @media(prefers-reduced-transparency:reduce){.cd .glass{backdrop-filter:none}}
+
+/* Mesmas superfícies, medidas e fontes dos cartões de Gestão de estoque. */
+body.company-data-visual .cd{max-width:none;margin:0;line-height:1.5}
+body.company-data-visual .cd .glass{background:var(--reports-glass);border-color:var(--reports-border);box-shadow:var(--reports-depth);border-radius:28px;padding:24px;margin-bottom:20px}
+body.company-data-visual .cd .company-hero{padding:28px;margin-bottom:20px}
+body.company-data-visual .cd .company-hero h1{font:600 30px/1.25 var(--font-brand);letter-spacing:-.6px;margin:8px 0}
+body.company-data-visual .cd .company-hero p{font-size:14px;line-height:1.65;margin-bottom:0}
+body.company-data-visual .cd .section-head{align-items:center;margin-bottom:22px;gap:16px}
+body.company-data-visual .cd .card-title{align-items:center;flex:1 1 220px;gap:12px}
+body.company-data-visual .cd .card-title h2{font:600 18px/1.4 var(--font-brand);letter-spacing:-.3px}
+body.company-data-visual .cd .grid{gap:20px;grid-template-columns:repeat(2,minmax(0,1fr))}
+body.company-data-visual .cd label{font-size:12px;font-weight:700;letter-spacing:.02em;line-height:1.5}
+body.company-data-visual .cd :is(input.input,select.select){height:46px;min-height:46px;padding:0 14px;border:1px solid var(--outline);border-radius:12px;font:400 14px var(--font-plain);margin-top:8px;background:var(--surface-container);color:var(--on-surface)}
+body.company-data-visual .cd input[readonly],body.company-data-visual .cd select:disabled{background:var(--surface-container-high);color:var(--on-surface-variant)}
+body.company-data-visual .cd input[aria-invalid="true"]{border-color:var(--error)}
+body.company-data-visual .cd .subheading{margin:26px 0 18px;padding-top:20px;border-top:1px solid var(--outline-variant);font-size:13px;letter-spacing:0;text-transform:none;color:var(--on-surface);font-weight:600}
+body.company-data-visual .cd small{line-height:1.65}
+body.company-data-visual .cd .protegidos{padding:14px;border-radius:16px;border:1px solid var(--outline-variant);background:var(--surface-container);margin-top:22px}
+body.company-data-visual .cd .logo-row{padding:12px;border:1px solid var(--outline-variant);border-radius:20px;background:var(--surface-container)}
+body.company-data-visual .cd .logo-frame{border-style:solid;border-color:var(--outline-variant);border-radius:12px;width:80px;height:80px;background:var(--surface-container)}
+body.company-data-visual .cd button{min-height:44px;border-radius:12px;font-size:14px;padding:10px 16px;line-height:1.5;white-space:normal;justify-content:center}
+body.company-data-visual .cd .banner{line-height:1.65;overflow-wrap:anywhere}
+@supports ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  html:not([data-display]):not([data-a11y]) body.company-data-visual .cd .glass{backdrop-filter:blur(22px) saturate(150%);-webkit-backdrop-filter:blur(22px) saturate(150%)}
+}
+html[data-display] body.company-data-visual .cd .glass,
+html[data-a11y] body.company-data-visual .cd .glass{border:2px solid var(--outline);backdrop-filter:none;-webkit-backdrop-filter:none}
+html[data-a11y="lowvision"] body.company-data-visual .cd label{font-size:16px}
+html[data-a11y="lowvision"] body.company-data-visual .cd :is(input.input,select.select){font-size:18px;min-height:52px;height:52px}
+@media(max-width:720px){
+  body.company-data-visual .cd .glass,body.company-data-visual .cd .company-hero{padding:20px}
+  body.company-data-visual .cd .grid{grid-template-columns:minmax(0,1fr)}
+  body.company-data-visual .cd .company-hero h1{font-size:28px}
+}
+@media(prefers-reduced-transparency:reduce),(prefers-contrast:more){
+  body.company-data-visual{background:var(--surface)!important;--reports-glass:var(--surface-container);--reports-border:var(--outline);--reports-depth:none}
+  body.company-data-visual .cd .glass{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+}
+@media(forced-colors:active){body.company-data-visual .cd .glass{background:Canvas;border-color:CanvasText;box-shadow:none}}

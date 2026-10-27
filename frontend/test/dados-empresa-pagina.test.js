@@ -76,7 +76,8 @@ describe('referência visual e estrutura', () => {
   test('a página versionada preserva os blocos e textos aprovados na referência visual (sempre executado: não depende de arquivo externo)', () => {
     assert.ok(fs.existsSync(path.join(RAIZ, ARQUIVO)), 'pages/company-data.html ainda não existe');
     const html = fs.readFileSync(path.join(RAIZ, ARQUIVO), 'utf8');
-    for (const texto of ['Dados da Empresa', 'Identificação, contatos e identidade da sua empresa.', 'Dados oficiais', 'Endereço', 'Contatos da empresa', 'Segurança e operação',
+    // Subtítulo do cabeçalho atualizado pelos ajustes visuais aprovados em 26/10/2026 (antes: "Identificação, contatos e identidade da sua empresa.").
+    for (const texto of ['Dados da Empresa', 'Consulte e atualize as informações da sua empresa.', 'Dados oficiais', 'Endereço', 'Contatos da empresa', 'Segurança e operação',
       'Representante da empresa', 'Contato financeiro', 'Logotipo da empresa', 'Salvar alterações', 'E-mail do SST', 'E-mail do Almoxarifado / Estoque']) {
       assert.ok(html.includes(texto), `faltou "${texto}"`);
     }
