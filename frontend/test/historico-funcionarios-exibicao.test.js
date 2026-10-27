@@ -139,7 +139,7 @@ describe('X1 — tela inicial: só a pesquisa', () => {
     const pg = await abrir();
     assert.deepEqual(areas(pg), OCULTAS);
     for (const id of ['historySearchValue', 'botaoConsultar', 'botaoLimparHistorico']) assert.ok(visivel(pg, id), `#${id} visível`);
-    assert.equal(pg.chamadas.some((c) => !c.caminho.startsWith('/auth/')), false);
+    assert.equal(pg.chamadas.some((c) => !c.caminho.startsWith('/auth/') && c.caminho !== '/suporte/notificacoes'), false); // a sondagem do menu não é da página
   });
 });
 

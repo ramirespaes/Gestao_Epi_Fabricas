@@ -69,6 +69,8 @@ async function pronta(opcoes = {}) {
   return Object.assign(pg, { estado: m.estado });
 }
 const postsDe = (pg, caminho) => pg.chamadas.filter((c) => c.metodo === 'POST' && c.caminho === caminho);
+// Temporizadores da conversa (10 s): a sondagem de fundo dos alertas do menu (30 s, suporte-notificacoes.js) fica de fora.
+const sondagensDaConversa = (pg) => pg.temporizadoresPendentes().filter((t) => t.nome !== 'sondagemNotificacoesSuporte');
 
 describe('condições para deixar de ser protótipo', () => {
   const html = () => lerArquivo(ARQUIVO);
@@ -294,7 +296,7 @@ describe('Conversa do chamado (bate-papo vinculado ao protocolo)', () => {
     assert.match(bolhas(pg)[0][1], /pode detalhar/);
     assert.equal(pg.texto('supDetSituacao'), 'Respondido');
     assert.equal(pg.el('supConversaTexto').disabled, false);
-    assert.equal(pg.temporizadoresPendentes().length, 1, 'uma sondagem agendada');
+    assert.equal(sondagensDaConversa(pg).length, 1, 'uma sondagem agendada');
   });
 
   test('enviar mensagem: corpo só com texto e chave UUID, bolha "Você" acrescentada, situação volta a Aberto, chave nova para a próxima; mensagem vazia não vai à rede', async () => {
@@ -346,13 +348,13 @@ describe('Conversa do chamado (bate-papo vinculado ao protocolo)', () => {
     assert.match(sondagens[0].url, /aposId=1/);
     assert.deepEqual(bolhas(pg).map((b) => b[0]), ['SAFEWORK', 'SAFEWORK']);
     assert.equal(pg.el('supConversaTexto').value, 'estou digitando');
-    assert.equal(pg.temporizadoresPendentes().length, 1, 'reagendada');
+    assert.equal(sondagensDaConversa(pg).length, 1, 'reagendada');
     await pg.avancar(10000);
     assert.match(pg.chamadas.filter((c) => c.chave === 'GET /suporte/chamados/11/mensagens').at(-1).url, /aposId=2/, 'a próxima parte da última recebida');
     const antes = pg.chamadas.length;
     await pg.el('supDetalheModal').querySelector('[data-fechar-modal]').disparar('click');
     await pg.esperar();
-    assert.equal(pg.temporizadoresPendentes().length, 0, 'fechar para a sondagem');
+    assert.equal(sondagensDaConversa(pg).length, 0, 'fechar para a sondagem');
     await pg.avancar(60000);
     assert.equal(pg.chamadas.filter((c) => c.chave === 'GET /suporte/chamados/11/mensagens').length, 2, 'nenhuma sondagem depois de fechar');
     assert.ok(pg.chamadas.slice(antes).some((c) => c.chave === 'GET /suporte/chamados'), 'a lista é relida ao fechar (não lidas vêm do servidor)');
@@ -368,7 +370,7 @@ describe('Conversa do chamado (bate-papo vinculado ao protocolo)', () => {
     await pg.esperar();
     await pg.avancar(10000);
     assert.match(pg.texto('supConversaMsg'), /Não foi possível buscar novas mensagens/);
-    assert.equal(pg.temporizadoresPendentes().length, 1, 'continua tentando');
+    assert.equal(sondagensDaConversa(pg).length, 1, 'continua tentando');
     let liberar;
     segurar = new Promise((r) => { liberar = r; });
     const promessa = pg.avancar(10000);
@@ -387,7 +389,7 @@ describe('Conversa do chamado (bate-papo vinculado ao protocolo)', () => {
     assert.equal(pg.el('supConversaTexto').disabled, true);
     assert.equal(pg.el('supConversaEnviar').disabled, true);
     assert.match(pg.texto('supConversaMsg'), /encerrado/);
-    assert.equal(pg.temporizadoresPendentes().length, 0, 'sem sondagem num chamado encerrado');
+    assert.equal(sondagensDaConversa(pg).length, 0, 'sem sondagem num chamado encerrado');
     const aberta = await conversaAberta({ situacao: 'ABERTO' });
     aberta.estado.situacao = 'ENCERRADO';
     await aberta.avancar(10000);

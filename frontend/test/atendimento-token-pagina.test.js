@@ -179,6 +179,8 @@ const semNovosRastros = (pg, marca) => {
 };
 const chamadasDe = (pg, chave) => pg.chamadas.filter((c) => c.chave === chave);
 const daCentral = (pg) => pg.chamadas.filter((c) => c.caminho.startsWith('/atendimento-token'));
+// Temporizadores da própria página: a sondagem de fundo dos alertas do Suporte (menu) fica de fora.
+const temporizadoresDaPagina = (pg) => pg.temporizadoresPendentes().filter((t) => t.nome !== 'sondagemNotificacoesSuporte');
 const botoes = (pg, seletor) => pg.consulta(seletor);
 const linha = (pg, corpo, id, atributo = 'data-dispositivo-id') => pg.consulta(`#${corpo} tr[${atributo}="${id}"]`)[0];
 const ABAS_DA_CENTRAL = ['visaoGeral', 'dispositivos', 'ativacao', 'monitoramento', 'previa', 'historico', 'visualizarTotem'];
@@ -645,7 +647,7 @@ describe('Ativação e QR', () => {
     assert.equal(pg.visivel('modalQr'), false);
     assert.equal(pg.consulta('#qrArea svg').length, 0);
     assert.equal(pg.janela.__tela._qrRetido(), false);
-    assert.equal(pg.temporizadoresPendentes().length, 0, 'sem temporizador do QR');
+    assert.equal(temporizadoresDaPagina(pg).length, 0, 'sem temporizador do QR');
 
     await gerar(pg);
     assert.equal(pg.janela.__tela._qrRetido(), true);
@@ -688,7 +690,7 @@ describe('Ativação e QR', () => {
     await aba(pg, 'ativacao');
     await escolher(pg, 2);
     await pg.clicar('botaoGerarAtivacao');
-    assert.ok(pg.temporizadoresPendentes().length >= 2);
+    assert.ok(temporizadoresDaPagina(pg).length >= 2);
     const leituras = chamadasDe(pg, 'GET /atendimento-token/dispositivos/2/ativacao').length;
     s.ativacoes[2] = { ...s.ativacoes[2], estado: 'EXPIRADA' };
     await pg.avancar();
@@ -697,7 +699,7 @@ describe('Ativação e QR', () => {
     assert.equal(pg.visivel('qrMensagem'), true);
     assert.match(pg.texto('qrMensagem'), /prazo do código terminou e ele foi descartado/);
     assert.equal(pg.visivel('botaoNovaAtivacaoQr'), true);
-    assert.equal(pg.temporizadoresPendentes().length, 0);
+    assert.equal(temporizadoresDaPagina(pg).length, 0);
     assert.equal(chamadasDe(pg, 'GET /atendimento-token/dispositivos/2/ativacao').length, leituras + 1);
     assert.match(pg.texto('ativacaoResumo'), /Expirada sem uso/);
     assert.equal(pg.textoDoDom().includes(SEGREDO), false);
@@ -1286,7 +1288,7 @@ describe('Monitoramento e Histórico (Etapa J)', () => {
       assert.equal(pg.consulta(`#painel-${nome} table, #painel-${nome} li, #painel-${nome} .stat, #painel-${nome} button`).length, 0);
     }
     assert.equal(daCentral(pg).length, 0);
-    assert.equal(pg.temporizadoresPendentes().length, 0, 'sem polling');
+    assert.equal(temporizadoresDaPagina(pg).length, 0, 'sem polling');
   });
 
   test('com todas as permissões, abrir as abas reservadas também não faz chamada nem cria temporizador', async () => {
@@ -1296,7 +1298,7 @@ describe('Monitoramento e Histórico (Etapa J)', () => {
     await aba(pg, 'historico');
     assert.equal(pg.chamadas.length, antes);
     assert.equal(/online|offline|heartbeat|alerta/i.test(pg.el('painel-monitoramento').textContent.replace(/sinal de vida/g, '')), true, 'o texto descreve o que virá');
-    assert.equal(pg.temporizadoresPendentes().length, 0);
+    assert.equal(temporizadoresDaPagina(pg).length, 0);
   });
 });
 

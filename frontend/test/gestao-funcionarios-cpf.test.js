@@ -88,7 +88,8 @@ const clicar = async (pg, id) => { await pg.el(id).disparar('click'); await pg.e
 const revelacoes = (pg) => pg.chamadas.filter((c) => c.chave === ROTA);
 const cpfNaTela = (pg) => [CPF, CPF_FORMATADO].some((f) => pg.textoDoDom().includes(f) || String(pg.el('fCpf').value).includes(f));
 const mascaradoNaTela = (pg) => pg.el('fCpf').value === '***.***.***-45' && !cpfNaTela(pg);
-const temporizadorDe30s = (pg) => pg.temporizadoresPendentes().filter((t) => t.ms >= 25000 && t.ms <= 35000);
+// Só o temporizador do CPF: a sondagem de fundo dos alertas do Suporte (também ~30 s) é identificada pelo nome e fica de fora.
+const temporizadorDe30s = (pg) => pg.temporizadoresPendentes().filter((t) => t.ms >= 25000 && t.ms <= 35000 && t.nome !== 'sondagemNotificacoesSuporte');
 const mensagens = (pg) => [...pg.consulta('.err').map((e) => e.textContent.trim()), pg.texto('toasts').trim()].filter(Boolean).join(' | ');
 
 describe('CPF na edição — ícone de olho: onde existe', () => {

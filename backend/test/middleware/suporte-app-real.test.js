@@ -18,7 +18,7 @@ const RAIZ = path.join(__dirname, '..', '..', 'src');
 
 describe('Suporte — composição no app real', () => {
   test('Portal: sem sessão, todas as rotas respondem 401 (nenhuma é pública)', async () => {
-    for (const [metodo, caminho] of [['get', '/api/suporte/canais'], ['get', '/api/suporte/chamados'], ['post', '/api/suporte/chamados'], ['get', '/api/suporte/chamados/1'], ['post', '/api/suporte/contatos/sst']]) {
+    for (const [metodo, caminho] of [['get', '/api/suporte/canais'], ['get', '/api/suporte/notificacoes'], ['get', '/api/suporte/chamados'], ['post', '/api/suporte/chamados'], ['get', '/api/suporte/chamados/1'], ['post', '/api/suporte/contatos/sst']]) {
       const r = await request(app)[metodo](caminho).set('Origin', ORIGEM).send(metodo === 'post' ? {} : undefined);
       assert.equal(r.status, 401, `${metodo} ${caminho}`);
     }

@@ -201,7 +201,7 @@ describe('página Configurações (inspeção estática)', () => {
   test('é página integrada: tema no <head>, scripts reais, sem db-api, main.js legado, CDN, login simulado nem seed', () => {
     const head = html.slice(0, html.indexOf('</head>'));
     assert.match(head, /<script src="\.\.\/js\/tema\.js"><\/script>/);
-    for (const script of ['../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/configuracoes.js']) {
+    for (const script of ['../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/suporte-notificacoes.js', '../js/pagina-base.js', '../js/configuracoes.js']) {
       assert.match(html, new RegExp(`<script src="${script.replace(/[./]/g, '\\$&')}"></script>`), script);
     }
     assert.doesNotMatch(codigo, /db-api\.js|js\/main\.js|inspecao-visual\.js|https?:\/\/cdn|xlsx|loginScreen|loginPanel|recoverPanel|biometric/i);

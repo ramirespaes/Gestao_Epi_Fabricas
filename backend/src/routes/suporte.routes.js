@@ -14,6 +14,7 @@ const { exigirSessao } = require('../middleware/autenticacao');
  *
  *   GET  /api/suporte/canais              (se o e-mail do Almoxarifado/SST está cadastrado; nunca o endereço)
  *   POST /api/suporte/chamados            (abrir chamado; idempotente pela chave)
+ *   GET  /api/suporte/notificacoes        (quantos dos meus chamados têm resposta não lida; só a contagem; nunca marca como lido)
  *   GET  /api/suporte/chamados            (meus chamados)
  *   GET  /api/suporte/chamados/:id        (meu chamado, mensagens da conversa e histórico; marca como lido)
  *   GET  /api/suporte/chamados/:id/mensagens?aposId=N  (só as mensagens mais novas; polling com a conversa aberta)
@@ -39,6 +40,7 @@ function criarSuporteRoutes({ controller, exigirSessao: exigirSessaoInjetado, li
 
   router.get('/suporte/canais', exigirSessaoInjetado, controller.canais);
   router.post('/suporte/chamados', exigirSessaoInjetado, ...chamados, validar({ body: schemas.criarChamado.body }), controller.abrirChamado);
+  router.get('/suporte/notificacoes', exigirSessaoInjetado, controller.notificacoes);
   router.get('/suporte/chamados', exigirSessaoInjetado, validar({ query: schemas.listarMeusChamados.query }), controller.listarChamados);
   router.get('/suporte/chamados/:id', exigirSessaoInjetado, validar({ params: schemas.buscarChamado.params }), controller.detalharChamado);
   // Conversa (093): leitura incremental (polling só com a janela aberta) e mensagem do solicitante, com cota própria.

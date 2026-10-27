@@ -44,9 +44,11 @@ describe('5B — caracterização: estrutura do formulário', () => {
 describe('5B — caracterização: a biblioteca de imagens só é consultada quando a pessoa pede', () => {
   test('ao carregar, a página faz as requisições de hoje e nenhuma à biblioteca de imagens', async () => {
     const { pg } = await H.abrir();
-    assert.deepEqual(pg.chamadas.map((c) => c.chave), ['GET /auth/me', 'GET /auth/global/me', 'GET /auth/permissoes', 'GET /materiais', 'GET /tipos-material']);
-    assert.match(pg.chamadas[3].url, /\/materiais\?ativo=true&pagina=1&limite=100$/);
-    assert.match(pg.chamadas[4].url, /\/tipos-material\?ativo=true&pagina=1&limite=5$/);
+    // GET /suporte/notificacoes é a sondagem de fundo do menu (alertas do Suporte), não uma consulta da página.
+    const daPagina = pg.chamadas.filter((c) => c.chave !== 'GET /suporte/notificacoes');
+    assert.deepEqual(daPagina.map((c) => c.chave), ['GET /auth/me', 'GET /auth/global/me', 'GET /auth/permissoes', 'GET /materiais', 'GET /tipos-material']);
+    assert.match(daPagina[3].url, /\/materiais\?ativo=true&pagina=1&limite=100$/);
+    assert.match(daPagina[4].url, /\/tipos-material\?ativo=true&pagina=1&limite=5$/);
   });
 
   test('mexer em nome, grupo e controle de tamanho não consulta a biblioteca de imagens', async () => {

@@ -433,7 +433,7 @@ describe('Gestão de Usuários — integração estática (menu, autoridade, scr
     assert.match(html, /<title>Gestão de EPI<\/title>/);
     assert.match(html, /id="telaSessao"/);
     assert.match(html, /<a href="\.\.\/portal\/inicio\.html">/);
-    assert.deepEqual(scriptsDe(html).filter((s) => s.src).map((s) => s.src), ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/grupos-acesso.js', '../js/usuarios.js', '../js/gestao-usuarios.js', '../js/permissoes-usuario.js']);
+    assert.deepEqual(scriptsDe(html).filter((s) => s.src).map((s) => s.src), ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/suporte-notificacoes.js', '../js/pagina-base.js', '../js/grupos-acesso.js', '../js/usuarios.js', '../js/gestao-usuarios.js', '../js/permissoes-usuario.js']);
     assert.equal(/db-api\.js|main\.js|<script[^>]+src=["']https?:/.test(semComentariosHtml(semComentarios(html))), false);
     assert.ok(html.includes(LINK_ATIVO));
     assert.ok(html.includes('<a href="user-admin.html" data-pagina="userAdmin" style="display:none">'), 'as seis telas antigas continuam no menu');

@@ -490,6 +490,8 @@
       var m = modelo.detalhe(r);
       if (m === null) { aviso(TEXTOS.FALHA_DETALHE); return; }
       aviso('');
+      // O servidor acabou de marcar a conversa como lida: o indicador do menu é reconsultado na hora.
+      if (global.EpiSuporteNotificacoes && typeof global.EpiSuporteNotificacoes.atualizarAgora === 'function') global.EpiSuporteNotificacoes.atualizarAgora();
       pararSondagem();
       conversa = { id: m.chamado.id, ultimoId: 0, timer: null, emVoo: false, situacao: null, vazio: null };
       definir('supDetProtocolo', m.chamado.protocolo);

@@ -302,7 +302,7 @@ describe('inspeção estática: pages/available-items.html integrada, interface 
     const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
     // 12D-3: a situação vem do servidor, então a regra local de js/materiais.js não é mais carregada aqui.
     // 12G-7: o catálogo visual vem antes do módulo que desenha a linha.
-    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/catalogo-visual.js', '../js/itens-disponiveis.js']);
+    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/suporte-notificacoes.js', '../js/pagina-base.js', '../js/catalogo-visual.js', '../js/itens-disponiveis.js']);
     assert.match(codigo, /EpiSessaoEmpresarial\.montar\(/);
     assert.match(codigo, /EpiPermissoes\.prepararPagina\(\{\s*pagina: 'availableItems'/);
     for (const id of ['telaSessao', 'telaSessaoMensagem', 'telaSessaoPortal', 'aviso']) assert.ok(ids.includes(id), id);

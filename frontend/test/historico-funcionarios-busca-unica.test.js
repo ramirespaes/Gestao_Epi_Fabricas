@@ -105,7 +105,7 @@ async function abrir(opcoes = {}) {
 // ── helpers de tela ────────────────────────────────────────────────
 const limpo = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 const aviso = (pg) => (pg.consulta('#aviso').length ? limpo(pg.el('aviso').textContent) : '');
-const daBusca = (pg) => pg.chamadas.filter((c) => !c.caminho.startsWith('/auth/'));
+const daBusca = (pg) => pg.chamadas.filter((c) => !c.caminho.startsWith('/auth/') && c.caminho !== '/suporte/notificacoes'); // a sondagem do menu não é busca
 const listagens = (pg) => pg.chamadas.filter((c) => c.metodo === 'GET' && c.caminho === '/funcionarios');
 const porCpf = (pg) => pg.chamadas.filter((c) => c.metodo === 'POST' && c.caminho === '/funcionarios/consulta-cpf');
 const detalhes = (pg) => pg.chamadas.filter((c) => c.metodo === 'GET' && /^\/funcionarios\/\d+$/.test(c.caminho)).map((c) => Number(c.caminho.split('/').pop()));

@@ -92,6 +92,22 @@ async function listarDoUsuario(executor, { empresaId, usuarioId, limite, desloca
   return { itens: rows.map(paraChamado), total: total.rows[0].n };
 }
 
+/**
+ * Quantos chamados do usuário têm resposta do suporte ainda não lida (a mesma regra de `nao_lidas` da listagem, sem paginação).
+ * Só a contagem: nenhum id, protocolo ou texto; nada é marcado como visto.
+ */
+async function contarChamadosComRespostaNaoLida(executor, { empresaId, usuarioId }) {
+  const { rows } = await executor.query(
+    `SELECT count(*)::int AS n
+       FROM suporte_chamados c
+      WHERE c.empresa_id = $1 AND c.usuario_id = $2
+        AND EXISTS (SELECT 1 FROM suporte_chamado_respostas r
+                     WHERE r.chamado_id = c.id AND r.autor_tipo = 'SAFEWORK' AND r.criado_em > COALESCE(c.solicitante_visto_em, '-infinity'))`,
+    [empresaId, usuarioId],
+  );
+  return rows[0].n;
+}
+
 async function buscarDoUsuario(executor, { empresaId, usuarioId, id }, { paraAtualizacao = false } = {}) {
   const { rows } = await executor.query(
     `SELECT ${COLUNAS_CHAMADO}, ${NAO_LIDAS_SOLICITANTE}
@@ -261,6 +277,7 @@ module.exports = {
   inserirChamado,
   buscarChamadoPorChave,
   listarDoUsuario,
+  contarChamadosComRespostaNaoLida,
   buscarDoUsuario,
   listarMensagens,
   inserirMensagem,

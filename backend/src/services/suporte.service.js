@@ -106,6 +106,14 @@ async function listarMeusChamados(pool, { empresaId, usuarioId, pagina, limite }
   return { itens, total, pagina, limite };
 }
 
+/** Indicador do menu: quantos chamados do usuário da sessão têm resposta do suporte não lida. Só lê; nunca marca como visto. */
+async function contarNotificacoes(pool, { empresaId, usuarioId }) {
+  exigirId(empresaId, 'identificador de empresa');
+  exigirId(usuarioId, 'identificador de usuário');
+  const chamadosNaoLidos = await repo.contarChamadosComRespostaNaoLida(pool, { empresaId, usuarioId });
+  return { chamadosNaoLidos };
+}
+
 /** Abrir o chamado é lê-lo: o lado do solicitante passa a "visto" e as mensagens do suporte deixam de contar como não lidas. */
 async function detalharMeuChamado(pool, { empresaId, usuarioId, id }) {
   exigirId(empresaId, 'identificador de empresa');
@@ -260,5 +268,5 @@ async function tentarEnviar(servicoEmail, {
 }
 
 module.exports = {
-  abrirChamado, listarMeusChamados, detalharMeuChamado, novasMensagensDoMeuChamado, enviarMensagem, consultarCanais, enviarContato, ACAO,
+  abrirChamado, listarMeusChamados, contarNotificacoes, detalharMeuChamado, novasMensagensDoMeuChamado, enviarMensagem, consultarCanais, enviarContato, ACAO,
 };

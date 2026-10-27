@@ -204,7 +204,7 @@ describe('Gestão de Funcionários — página e visual aprovado', () => {
     assert.ok(scripts.includes('../js/gestao-funcionarios.js'), JSON.stringify(scripts));
     assert.equal(scripts.at(-1), '../js/gestao-funcionarios.js', 'o módulo da página é o último');
     for (const proibido of ['../js/funcionarios.js', '../js/db-api.js', '../js/main.js', '../js/importacao-ghe.js']) assert.equal(scripts.includes(proibido), false, proibido);
-    for (const exigido of ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js']) assert.ok(scripts.includes(exigido), exigido);
+    for (const exigido of ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/suporte-notificacoes.js', '../js/pagina-base.js']) assert.ok(scripts.includes(exigido), exigido);
   });
 
   test('o protótipo aprovado usado como referência é o mesmo arquivo identificado (4 cópias idênticas, SHA-256 d052e4569a76…)', () => {

@@ -938,7 +938,8 @@ function abrirPagina(arquivoHtml, opcoes = {}) {
       return resultados;
     },
     ouvintesDaJanela: (tipo) => (eventosDaJanela[tipo] || []).length,
-    temporizadoresPendentes: () => temporizadores.map((t) => ({ id: t.id, ms: t.ms, repetir: Boolean(t.repetir) })),
+    /** `nome` é o nome da função agendada (vazio para anônimas): permite separar temporizadores de fundo (ex.: sondagemNotificacoesSuporte) dos da página. */
+    temporizadoresPendentes: () => temporizadores.map((t) => ({ id: t.id, ms: t.ms, repetir: Boolean(t.repetir), nome: (t.fn && t.fn.name) || '' })),
     /** Executa os temporizadores pendentes com atraso até `ms` (todos, se omitido), do menor para o maior. */
     async avancar(ms = Infinity) {
       const vencidos = temporizadores.filter((t) => t.ms <= ms).sort((a, b) => a.ms - b.ms || a.id - b.id);

@@ -170,7 +170,7 @@ describe('inspeção estática: pages/dashboard.html', () => {
       assert.equal(proibido.test(semMenuMovel), false, `dashboard.html contém ${proibido}`);
     }
     const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
-    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/dashboard.js', '../js/dashboard-graficos.js']); // 12I: os gráficos
+    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/suporte-notificacoes.js', '../js/pagina-base.js', '../js/dashboard.js', '../js/dashboard-graficos.js']); // 12I: os gráficos
     assert.match(codigo, /EpiSessaoEmpresarial\.montar\(/);
     assert.match(codigo, /EpiPermissoes\.prepararPagina\(\{\s*pagina: 'dashboard'/);
     for (const id of ['telaSessao', 'telaSessaoMensagem', 'telaSessaoPortal', 'contaNome', 'contaEmpresa', 'botaoEmpresa', 'menuEmpresa', 'botaoSair', 'botaoTrocarEmpresa', 'aviso', 'dashboardWelcomeUser']) assert.ok(ids.includes(id), id);

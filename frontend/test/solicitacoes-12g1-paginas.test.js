@@ -30,7 +30,7 @@ const NOVAS = {
   'supervisor-approval.html': { pagina: 'supervisorApproval', titulo: 'Aprovação da Segurança do Trabalho' },
   'stock-requests.html': { pagina: 'stockRequests', titulo: 'Entregas por solicitação' },
 };
-const SCRIPTS_FUNDACAO = ['../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/estado-pagina.js', '../js/solicitacoes-epi.js'];
+const SCRIPTS_FUNDACAO = ['../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/suporte-notificacoes.js', '../js/pagina-base.js', '../js/estado-pagina.js', '../js/solicitacoes-epi.js'];
 // 12G-2, 12G-3 e 12G-4: o Pedido de EPI, a Aprovação e as Entregas ficaram funcionais e carregam também a Ficha e a própria tela.
 const SCRIPTS = {
   'request.html': [...SCRIPTS_FUNDACAO, '../js/epi-ficha.js', '../js/pedido-epi.js'],

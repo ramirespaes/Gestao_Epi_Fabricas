@@ -368,7 +368,7 @@ describe('inspeção estática: pages/materials.html integrada, com a interface 
     // 12G-7: o catálogo visual desenha o pictograma do material escolhido.
     // 5B-2: o seletor da imagem do material (Biblioteca Padrão) é um módulo próprio, carregado depois do catálogo de tipos.
     // 5C-8a: o envio de imagens novas (binário) é outro módulo próprio, carregado logo depois do da seleção.
-    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/materiais.js', '../js/estoque-minimos.js', '../js/catalogo-visual.js', '../js/tipos-material.js', '../js/imagens-material.js', '../js/imagens-envio.js']);
+    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/suporte-notificacoes.js', '../js/pagina-base.js', '../js/materiais.js', '../js/estoque-minimos.js', '../js/catalogo-visual.js', '../js/tipos-material.js', '../js/imagens-material.js', '../js/imagens-envio.js']);
     assert.match(codigo, /EpiHttp\.configurar\(\{ baseUrl: window\.SAFEWORK_PORTAL_API_BASE_URL \}\)/);
     assert.match(codigo, /EpiSessaoEmpresarial\.montar\(/);
     assert.match(codigo, /EpiPermissoes\.prepararPagina\(\{\s*pagina: 'materials'/);

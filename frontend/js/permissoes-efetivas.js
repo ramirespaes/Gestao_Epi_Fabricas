@@ -542,6 +542,11 @@
         if (etiqueta.parentNode) etiqueta.parentNode.removeChild(etiqueta);
       });
     });
+    // Alertas de resposta do Suporte (js/suporte-notificacoes.js): seguem o mesmo ciclo do menu — começam só com sessão e
+    // permissões confirmadas, param e limpam sem elas. Página sem o módulo: nada acontece.
+    if (global.EpiSuporteNotificacoes && typeof global.EpiSuporteNotificacoes.sincronizar === 'function') {
+      global.EpiSuporteNotificacoes.sincronizar(valida ? permissoes : null, raiz);
+    }
   }
 
   // Dados da Empresa (F2): o item "Dados da Empresa" entra na seção Administração, logo depois de "Configurações", SÓ para quem pode

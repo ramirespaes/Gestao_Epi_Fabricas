@@ -182,7 +182,7 @@ describe('inspeção estática: pages/employee-groups.html e menus', () => {
       assert.equal(proibido.test(codigo), false, `employee-groups.html contém ${proibido}`);
     }
     const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
-    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../vendor/read-excel-file-9.3.10.min.js', '../js/importacao-ghe.js', '../js/tipos-material.js', '../js/grupos-homogeneos.js']);
+    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/suporte-notificacoes.js', '../js/pagina-base.js', '../vendor/read-excel-file-9.3.10.min.js', '../js/importacao-ghe.js', '../js/tipos-material.js', '../js/grupos-homogeneos.js']);
     assert.match(codigo, /EpiSessaoEmpresarial\.montar\(/);
     assert.match(codigo, /EpiPermissoes\.prepararPagina\(\{\s*pagina: 'employeeGroups'/);
     for (const id of ['telaSessao', 'telaSessaoMensagem', 'telaSessaoPortal', 'aviso',
