@@ -123,7 +123,7 @@
         <div class="page-actions">
           <div>
             <h2 style="font-family:var(--font-brand);font-size:22px;line-height:1.1;letter-spacing:-0.4px;font-weight:500">Configurações</h2>
-            <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Sua conta e suas preferências de aparência. Valem para você em qualquer empresa e em qualquer computador.</p>
+            <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Gerencie sua conta e personalize a aparência do sistema.</p>
           </div>
         </div>
 
@@ -140,13 +140,16 @@
                   <div class="card-icon">account_circle</div>
                   <div>
                     <h2>Minha Conta</h2>
-                    <p>Dados reais da conta autenticada. Nome, perfil e situação são alterados pela administração, não por aqui.</p>
                   </div>
                 </div>
               </div>
 
               <div class="account-summary">
-                <div class="account-avatar" id="contaIniciais">?</div>
+                <div class="account-avatar account-photo-pending" role="img" aria-label="Foto de perfil: em integração">
+                  <span id="contaIniciais" hidden>?</span>
+                  <span class="material-symbols-outlined" aria-hidden="true">add_a_photo</span>
+                  <span class="account-photo-status" aria-hidden="true">Em integração</span>
+                </div>
                 <div class="account-meta">
                   <h3 id="contaNome"></h3>
                   <p id="contaContato"></p>
@@ -177,13 +180,13 @@
                   <strong id="contaMatricula">—</strong>
                 </div>
               </div>
-              <p class="helper" style="margin-top:8px">CPF e matrícula vêm do cadastro do funcionário vinculado à sua conta e só mudam pelo fluxo administrativo.</p>
+              <p class="helper" style="margin-top:8px">O CPF não pode ser alterado após o cadastro. Para atualizar sua matrícula, entre em contato com o administrador.</p>
 
               <div class="form-grid" style="margin-top:18px">
                 <div class="field">
                   <label for="telefone">Telefone</label>
                   <input id="telefone" class="input" type="text" maxlength="20" autocomplete="tel" placeholder="Opcional">
-                  <div class="helper">Opcional, até 20 caracteres. Fica na sua identidade e vale em todas as empresas.</div>
+                  <div class="helper">Telefone para contato (opcional).</div>
                 </div>
               </div>
               <div class="footer-actions">
@@ -199,7 +202,7 @@
                   <div class="card-icon" style="background:rgba(0,122,255,0.10);color:#007AFF">alternate_email</div>
                   <div>
                     <h2>E-mail de acesso</h2>
-                    <p>Ao alterar, o novo e-mail passa a valer no próximo login, os outros acessos abertos são encerrados e um aviso é enviado ao endereço antigo. É preciso confirmar a senha atual.</p>
+                    <p>Use o novo e-mail no próximo login. As outras sessões serão encerradas e o endereço anterior receberá um aviso.</p>
                   </div>
                 </div>
               </div>
@@ -211,7 +214,7 @@
                 <div class="field">
                   <label for="senhaAtualEmail">Senha atual</label>
                   <input id="senhaAtualEmail" class="input" type="password" autocomplete="current-password">
-                  <div class="helper">Só para confirmar que é você. A senha nunca fica guardada no navegador.</div>
+                  <div class="helper">Confirme sua senha para autorizar a alteração.</div>
                 </div>
               </div>
               <div class="footer-actions">

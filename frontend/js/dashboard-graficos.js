@@ -153,6 +153,8 @@
     el.setAttribute('fill', 'none');
     el.setAttribute('stroke-width', '26');
   }
+  // Legenda dos setores: de início só os 10 com mais funcionários; o restante continua no DOM (oculto) e na rosca.
+  var LIMITE_LEGENDA = 10;
   var CORES_SETORES = ['#5599c9', '#55a78e', '#9280bf', '#63b7ba', '#c393b3', '#bca56c', '#7790c4', '#8eae83'];
   var coresPorSetor = Object.create(null);
   var proximoSetor = 0;
@@ -195,6 +197,16 @@
       var legenda = no(doc, 'ul', 'gr-rosca-legenda');
       legenda.setAttribute('aria-label', 'Setores, quantidades de funcionários e participação no total');
       var pares = [];
+      var expandida = false;
+      var alternar = null;
+      function mostrarLegenda() {
+        pares.forEach(function (p) { p.item.hidden = !expandida && p.posicao >= LIMITE_LEGENDA; });
+        legenda.classList.toggle('is-expandida', expandida);
+        if (alternar) {
+          alternar.setAttribute('aria-expanded', expandida ? 'true' : 'false');
+          alternar.textContent = expandida ? 'Mostrar menos' : 'Ver todos os setores (' + pares.length + ')';
+        }
+      }
       function destacar(indice) {
         composicao.classList.toggle('gr-rosca-em-destaque', indice >= 0);
         pares.forEach(function (p, i) {
@@ -249,14 +261,24 @@
         valores.appendChild(no(doc, 'span', 'gr-rosca-percentual', percentual));
         botao.appendChild(valores);
         item.appendChild(botao);
-        legenda.appendChild(item);
-        pares.push({ botao: botao, segmento: segmento });
+        pares.push({ botao: botao, segmento: segmento, item: item, quantidade: b.quantidade, indice: indice, posicao: 0 });
         botao.addEventListener('mouseenter', function () { destacar(indice); });
         botao.addEventListener('mouseleave', restaurar);
         botao.addEventListener('focus', function () { destacar(indice); });
         botao.addEventListener('blur', restaurar);
         botao.addEventListener('click', function () { destacar(indice); });
       });
+      // Legenda em ordem decrescente de funcionários (empate: ordem do servidor); a rosca mantém a ordem do servidor.
+      pares.slice().sort(function (a, b) { return b.quantidade - a.quantidade || a.indice - b.indice; })
+        .forEach(function (p, posicao) { p.posicao = posicao; legenda.appendChild(p.item); });
+      if (pares.length > LIMITE_LEGENDA) {
+        alternar = no(doc, 'button', 'gr-rosca-alternar');
+        alternar.setAttribute('type', 'button');
+        alternar.setAttribute('aria-controls', 'legendaSetores');
+        legenda.setAttribute('id', 'legendaSetores');
+        alternar.addEventListener('click', function () { expandida = !expandida; mostrarLegenda(); });
+      }
+      mostrarLegenda();
       // Reflexo decorativo sobre os arcos, sem reduzir nenhuma participação.
       var defs = svgNo(doc, 'defs');
       var gradiente = svgNo(doc, 'linearGradient');
@@ -282,7 +304,10 @@
       desenho.appendChild(svg);
       desenho.appendChild(centro);
       composicao.appendChild(desenho);
-      composicao.appendChild(legenda);
+      var lado = no(doc, 'div', 'gr-rosca-lado');
+      lado.appendChild(legenda);
+      if (alternar) lado.appendChild(alternar);
+      composicao.appendChild(lado);
       container.appendChild(composicao);
     },
     episEntregues: function (doc, el, m) {

@@ -13,6 +13,7 @@
     .nav a.nav-pendente{cursor:default;opacity:.55}
     .nav a.nav-pendente:hover{background:transparent}
   </style>
+  <link rel="stylesheet" href="../css/reports.css">
   <link rel="stylesheet" href="../css/company-data.css">
 </head>
 <!--
@@ -23,7 +24,7 @@
   tokens do Portal. O logotipo é só a previsão visual da área (envio, armazenamento e exclusão são das fases F4/F5).
   Nada vai para armazenamento do navegador e nenhum dado de empresa é fixo no HTML.
 -->
-<body class="reports-visual">
+<body class="reports-visual company-data-visual">
 
 <!-- Verificação da sessão: usa a sessão empresarial criada pelo Portal do Cliente, confirmada no servidor por js/sessao-empresarial.js. -->
 <div id="telaSessao" style="position:fixed;inset:0;z-index:10000;background:var(--surface);
@@ -111,10 +112,10 @@
   <div id="estadoPagina" style="display:none"></div>
 
   <div id="conteudoProtegido" style="display:none">
-    <section class="glass">
+    <section class="glass card company-hero">
       <div class="eyebrow">SafeWork · Gestão de EPIs</div>
       <h1>Dados da Empresa</h1>
-      <p>Identificação, contatos e identidade da sua empresa.</p>
+      <p>Consulte e atualize as informações da sua empresa.</p>
     </section>
 
     <div id="empAviso" class="banner banner-erro" role="alert" style="display:none"></div>
@@ -133,15 +134,15 @@
     </div>
     <div id="empLeitura" class="banner banner-leitura" role="status" style="display:none"></div>
 
-    <section class="glass">
-      <div class="section-head"><h2>Dados oficiais</h2><span class="tag"><span class="material-symbols-outlined" aria-hidden="true">lock</span> Razão social e CNPJ: somente leitura</span></div>
+    <section class="glass card">
+      <div class="section-head"><div class="card-title"><div class="card-icon" aria-hidden="true">apartment</div><div><h2>Dados oficiais</h2></div></div><span class="tag"><span class="material-symbols-outlined" aria-hidden="true">lock</span> Razão social e CNPJ: somente leitura</span></div>
       <div class="grid">
-        <label>Razão social<input id="emp-razaoSocial" readonly autocomplete="off"></label>
-        <label>CNPJ<input id="emp-cnpj" readonly autocomplete="off"></label>
-        <label>Nome fantasia<input id="emp-nomeFantasia" maxlength="150" autocomplete="off" aria-describedby="err-nomeFantasia"><span class="erro-campo" id="err-nomeFantasia" role="alert"></span></label>
-        <label>Inscrição estadual<input id="emp-inscricaoEstadual" maxlength="20" autocomplete="off" aria-describedby="err-inscricaoEstadual"><span class="erro-campo" id="err-inscricaoEstadual" role="alert"></span></label>
+        <label>Razão social<input class="input" id="emp-razaoSocial" readonly autocomplete="off"></label>
+        <label>CNPJ<input class="input" id="emp-cnpj" readonly autocomplete="off"></label>
+        <label>Nome fantasia<input class="input" id="emp-nomeFantasia" maxlength="150" autocomplete="off" aria-describedby="err-nomeFantasia"><span class="erro-campo" id="err-nomeFantasia" role="alert"></span></label>
+        <label>Inscrição estadual<input class="input" id="emp-inscricaoEstadual" maxlength="20" autocomplete="off" aria-describedby="err-inscricaoEstadual"><span class="erro-campo" id="err-inscricaoEstadual" role="alert"></span></label>
         <label>Situação da inscrição estadual
-          <select id="emp-situacaoInscricaoEstadual" aria-describedby="err-situacaoInscricaoEstadual">
+          <select class="select" id="emp-situacaoInscricaoEstadual" aria-describedby="err-situacaoInscricaoEstadual">
             <option value="">Não informada</option>
             <option value="CONTRIBUINTE">Contribuinte</option>
             <option value="ISENTO">Isento</option>
@@ -151,45 +152,45 @@
       </div>
       <div class="subheading">Endereço</div>
       <div class="grid">
-        <label>Logradouro<input id="emp-endereco" maxlength="200" autocomplete="off" aria-describedby="err-endereco"><span class="erro-campo" id="err-endereco" role="alert"></span></label>
-        <label>Número<input id="emp-numero" maxlength="20" autocomplete="off" aria-describedby="err-numero"><span class="erro-campo" id="err-numero" role="alert"></span></label>
-        <label>Complemento<input id="emp-complemento" maxlength="100" autocomplete="off" aria-describedby="err-complemento"><span class="erro-campo" id="err-complemento" role="alert"></span></label>
-        <label>Bairro<input id="emp-bairro" maxlength="100" autocomplete="off" aria-describedby="err-bairro"><span class="erro-campo" id="err-bairro" role="alert"></span></label>
-        <label>Cidade<input id="emp-cidade" maxlength="100" autocomplete="off" aria-describedby="err-cidade"><span class="erro-campo" id="err-cidade" role="alert"></span></label>
-        <label>UF<input id="emp-uf" maxlength="2" autocomplete="off" aria-describedby="err-uf"><span class="erro-campo" id="err-uf" role="alert"></span></label>
-        <label>CEP<input id="emp-cep" maxlength="9" inputmode="numeric" autocomplete="off" aria-describedby="err-cep"><span class="erro-campo" id="err-cep" role="alert"></span></label>
+        <label>Logradouro<input class="input" id="emp-endereco" maxlength="200" autocomplete="off" aria-describedby="err-endereco"><span class="erro-campo" id="err-endereco" role="alert"></span></label>
+        <label>Número<input class="input" id="emp-numero" maxlength="20" autocomplete="off" aria-describedby="err-numero"><span class="erro-campo" id="err-numero" role="alert"></span></label>
+        <label>Complemento<input class="input" id="emp-complemento" maxlength="100" autocomplete="off" aria-describedby="err-complemento"><span class="erro-campo" id="err-complemento" role="alert"></span></label>
+        <label>Bairro<input class="input" id="emp-bairro" maxlength="100" autocomplete="off" aria-describedby="err-bairro"><span class="erro-campo" id="err-bairro" role="alert"></span></label>
+        <label>Cidade<input class="input" id="emp-cidade" maxlength="100" autocomplete="off" aria-describedby="err-cidade"><span class="erro-campo" id="err-cidade" role="alert"></span></label>
+        <label>UF<input class="input" id="emp-uf" maxlength="2" autocomplete="off" aria-describedby="err-uf"><span class="erro-campo" id="err-uf" role="alert"></span></label>
+        <label>CEP<input class="input" id="emp-cep" maxlength="9" inputmode="numeric" autocomplete="off" aria-describedby="err-cep"><span class="erro-campo" id="err-cep" role="alert"></span></label>
       </div>
       <div class="protegidos" id="empProtegidos"><span class="material-symbols-outlined" aria-hidden="true">info</span><small>Razão social e CNPJ são mantidos pela SafeWork. Para solicitar a correção da razão social, procure o Suporte; o CNPJ identifica a empresa e não é alterado por esta tela.</small></div>
     </section>
 
-    <section class="glass">
-      <div class="section-head"><h2>Contatos da empresa</h2><span class="tag">Informações complementares</span></div>
+    <section class="glass card">
+      <div class="section-head"><div class="card-title"><div class="card-icon" aria-hidden="true">contact_mail</div><div><h2>Contatos da empresa</h2></div></div><span class="tag">Informações complementares</span></div>
       <div class="grid">
-        <label>E-mail institucional<input id="emp-email" type="email" maxlength="150" placeholder="contato@suaempresa.com.br" autocomplete="off" aria-describedby="err-email"><span class="erro-campo" id="err-email" role="alert"></span></label>
-        <label>Telefone geral<input id="emp-telefone" type="tel" maxlength="20" placeholder="(00) 0000-0000" autocomplete="off" aria-describedby="err-telefone"><span class="erro-campo" id="err-telefone" role="alert"></span></label>
+        <label>E-mail institucional<input class="input" id="emp-email" type="email" maxlength="150" placeholder="contato@suaempresa.com.br" autocomplete="off" aria-describedby="err-email"><span class="erro-campo" id="err-email" role="alert"></span></label>
+        <label>Telefone geral<input class="input" id="emp-telefone" type="tel" maxlength="20" placeholder="(00) 0000-0000" autocomplete="off" aria-describedby="err-telefone"><span class="erro-campo" id="err-telefone" role="alert"></span></label>
       </div>
       <div class="subheading">Segurança e operação</div>
       <div class="grid">
-        <label>E-mail do SST<input id="emp-emailSst" type="email" maxlength="150" placeholder="sst@suaempresa.com.br" autocomplete="off" aria-describedby="err-emailSst"><small>Segurança e Saúde no Trabalho · Contato para “Contatar SST”.</small><span class="erro-campo" id="err-emailSst" role="alert"></span></label>
-        <label>E-mail do Almoxarifado / Estoque<input id="emp-emailAlmoxarifado" type="email" maxlength="150" placeholder="almoxarifado@suaempresa.com.br" autocomplete="off" aria-describedby="err-emailAlmoxarifado"><small>Contato para “Solicitar apoio” ao Almoxarifado.</small><span class="erro-campo" id="err-emailAlmoxarifado" role="alert"></span></label>
+        <label>E-mail do SST<input class="input" id="emp-emailSst" type="email" maxlength="150" placeholder="sst@suaempresa.com.br" autocomplete="off" aria-describedby="err-emailSst"><small>Segurança e Saúde no Trabalho · Contato para “Contatar SST”.</small><span class="erro-campo" id="err-emailSst" role="alert"></span></label>
+        <label>E-mail do Almoxarifado / Estoque<input class="input" id="emp-emailAlmoxarifado" type="email" maxlength="150" placeholder="almoxarifado@suaempresa.com.br" autocomplete="off" aria-describedby="err-emailAlmoxarifado"><small>Contato para “Solicitar apoio” ao Almoxarifado.</small><span class="erro-campo" id="err-emailAlmoxarifado" role="alert"></span></label>
       </div>
       <div class="subheading">Representante da empresa</div>
       <div class="grid">
-        <label>Nome completo<input id="emp-representanteNome" maxlength="150" placeholder="Nome do representante" autocomplete="off" aria-describedby="err-representanteNome"><span class="erro-campo" id="err-representanteNome" role="alert"></span></label>
-        <label>Cargo / função<input id="emp-representanteCargo" maxlength="100" placeholder="Cargo ou função" autocomplete="off" aria-describedby="err-representanteCargo"><span class="erro-campo" id="err-representanteCargo" role="alert"></span></label>
-        <label>E-mail<input id="emp-representanteEmail" type="email" maxlength="150" placeholder="representante@suaempresa.com.br" autocomplete="off" aria-describedby="err-representanteEmail"><span class="erro-campo" id="err-representanteEmail" role="alert"></span></label>
-        <label>Telefone<input id="emp-representanteTelefone" type="tel" maxlength="20" placeholder="(00) 0000-0000" autocomplete="off" aria-describedby="err-representanteTelefone"><span class="erro-campo" id="err-representanteTelefone" role="alert"></span></label>
+        <label>Nome completo<input class="input" id="emp-representanteNome" maxlength="150" placeholder="Nome do representante" autocomplete="off" aria-describedby="err-representanteNome"><span class="erro-campo" id="err-representanteNome" role="alert"></span></label>
+        <label>Cargo / função<input class="input" id="emp-representanteCargo" maxlength="100" placeholder="Cargo ou função" autocomplete="off" aria-describedby="err-representanteCargo"><span class="erro-campo" id="err-representanteCargo" role="alert"></span></label>
+        <label>E-mail<input class="input" id="emp-representanteEmail" type="email" maxlength="150" placeholder="representante@suaempresa.com.br" autocomplete="off" aria-describedby="err-representanteEmail"><span class="erro-campo" id="err-representanteEmail" role="alert"></span></label>
+        <label>Telefone<input class="input" id="emp-representanteTelefone" type="tel" maxlength="20" placeholder="(00) 0000-0000" autocomplete="off" aria-describedby="err-representanteTelefone"><span class="erro-campo" id="err-representanteTelefone" role="alert"></span></label>
       </div>
       <div class="subheading">Contato financeiro</div>
       <div class="grid">
-        <label>Responsável financeiro<input id="emp-financeiroNome" maxlength="150" placeholder="Nome do responsável" autocomplete="off" aria-describedby="err-financeiroNome"><span class="erro-campo" id="err-financeiroNome" role="alert"></span></label>
-        <label>E-mail financeiro<input id="emp-financeiroEmail" type="email" maxlength="150" placeholder="financeiro@suaempresa.com.br" autocomplete="off" aria-describedby="err-financeiroEmail"><span class="erro-campo" id="err-financeiroEmail" role="alert"></span></label>
-        <label>Telefone financeiro<input id="emp-financeiroTelefone" type="tel" maxlength="20" placeholder="(00) 0000-0000" autocomplete="off" aria-describedby="err-financeiroTelefone"><span class="erro-campo" id="err-financeiroTelefone" role="alert"></span></label>
+        <label>Responsável financeiro<input class="input" id="emp-financeiroNome" maxlength="150" placeholder="Nome do responsável" autocomplete="off" aria-describedby="err-financeiroNome"><span class="erro-campo" id="err-financeiroNome" role="alert"></span></label>
+        <label>E-mail financeiro<input class="input" id="emp-financeiroEmail" type="email" maxlength="150" placeholder="financeiro@suaempresa.com.br" autocomplete="off" aria-describedby="err-financeiroEmail"><span class="erro-campo" id="err-financeiroEmail" role="alert"></span></label>
+        <label>Telefone financeiro<input class="input" id="emp-financeiroTelefone" type="tel" maxlength="20" placeholder="(00) 0000-0000" autocomplete="off" aria-describedby="err-financeiroTelefone"><span class="erro-campo" id="err-financeiroTelefone" role="alert"></span></label>
       </div>
     </section>
 
-    <section class="glass" id="empLogoSecao">
-      <div class="section-head"><h2>Logotipo da empresa</h2><span class="tag">Opcional</span></div>
+    <section class="glass card" id="empLogoSecao">
+      <div class="section-head"><div class="card-title"><div class="card-icon" aria-hidden="true">image</div><div><h2>Logotipo da empresa</h2></div></div><span class="tag">Opcional</span></div>
       <div class="logo-row">
         <div class="logo-frame" id="empLogo" role="img" aria-label="Ícone institucional padrão"><span class="material-symbols-outlined" aria-hidden="true">apartment</span></div>
         <div>
@@ -204,7 +205,7 @@
       </div>
     </section>
 
-    <div class="glass">
+    <div class="glass card">
       <div class="footer">
         <small>As alterações valem para toda a empresa. O logotipo é opcional.</small>
         <button class="primary" id="empSalvar" type="button" disabled><span class="material-symbols-outlined" aria-hidden="true">check</span> Salvar alterações</button>
