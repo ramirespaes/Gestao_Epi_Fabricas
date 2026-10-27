@@ -283,7 +283,7 @@ describe('menu, Portal e Permissões do Grupo', () => {
       const primeiro = arquivo === CENTRAL_ATENDIMENTO_TOKEN ? 'Atendimento Token' : 'Autoatendimento (Totem)';
       assert.deepEqual(rotulos, [primeiro, 'Pedido de EPI', 'Aprovação da Segurança do Trabalho', 'Entregas por solicitação'], arquivo);
     }
-    for (const arquivo of COM_MENU_COMPLETO.filter((f) => !INTEGRADAS.includes(f) && f !== CENTRAL_ATENDIMENTO_TOKEN && f !== 'company-data.html')) {
+    for (const arquivo of COM_MENU_COMPLETO.filter((f) => !INTEGRADAS.includes(f) && f !== CENTRAL_ATENDIMENTO_TOKEN && f !== 'company-data.html' && f !== 'support.html')) {
       const itens = secao(ler(`pages/${arquivo}`), 'Solicitações').itens;
       assert.match(itens.find((i) => i.rotulo === 'Aprovação da Segurança do Trabalho').html, /data-page="supervisorApproval"/, arquivo);
       assert.match(itens.find((i) => i.rotulo === 'Entregas por solicitação').html, /data-page="stockRequests"/, arquivo);

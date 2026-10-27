@@ -117,14 +117,14 @@ describe('migration 089 — ordem efetiva de aplicação pelo runner real', () =
   before(async () => { contexto = await abrirSchemaTemporario([]); });
   after(async () => { if (contexto) await contexto.encerrar(); });
 
-  test('o runner aplica a 089 depois da 087 (a 088 não existe; a 090 vem depois) e registra 90 migrations em ordem', async () => {
+  test('o runner aplica a 089 depois da 087 (a 088 não existe; 090 a 093 vêm depois) e registra 93 migrations em ordem', async () => {
     const aplicadas = await aplicarMigrations({ schema: contexto.schema, diretorio: DIRETORIO_MIGRATIONS });
     const nomes = aplicadas.map((migration) => migration.name);
-    assert.equal(nomes.length, 91);
-    assert.equal(nomes.at(-1), '091_alter_empresas_add_emails_sst_almoxarifado_versao');
-    assert.equal(nomes.at(-2), '090_create_biblioteca_imagens_material');
-    assert.equal(nomes.at(-3), '089_token_dispositivos_queda_suspeita');
-    assert.match(nomes.at(-4), /^087_/);
+    assert.equal(nomes.length, 93);
+    assert.deepEqual(nomes.slice(-3), ['091_alter_empresas_add_emails_sst_almoxarifado_versao', '092_create_suporte', '093_alter_suporte_conversa']);
+    assert.equal(nomes.at(-4), '090_create_biblioteca_imagens_material');
+    assert.equal(nomes.at(-5), '089_token_dispositivos_queda_suspeita');
+    assert.match(nomes.at(-6), /^087_/);
     assert.equal(nomes.some((nome) => nome.startsWith('088_')), false);
     const registradas = (await contexto.cliente.query('SELECT name FROM pgmigrations ORDER BY id')).rows.map((linha) => linha.name);
     assert.deepEqual(registradas, nomes);

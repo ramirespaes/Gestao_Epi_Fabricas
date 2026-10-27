@@ -39,9 +39,9 @@ const COM_LINK = ['recuperacaoPortal', 'recuperacaoPainel', 'conviteUsuario', 'c
 const linkDe = (nome) => CASOS[nome][1].link;
 
 describe('tipos e assuntos', () => {
-  test('os sete tipos existem (os dois alertas de estoque da 12G-6 têm testes próprios) e cada caso devolve assunto, texto e html', () => {
+  test('os tipos existem (os alertas de estoque da 12G-6 e o contato do Suporte têm testes próprios) e cada caso devolve assunto, texto e html', () => {
     assert.deepEqual(Object.keys(modulo().TIPOS).sort(), [
-      'CONVITE_MASTER', 'CONVITE_USUARIO', 'DISPONIBILIDADE_ESTOQUE_ENTREGA', 'EMAIL_ALTERADO', 'FALTA_ESTOQUE_ENTREGA', 'RECUPERACAO_SENHA', 'SENHA_ALTERADA',
+      'CONTATO_SUPORTE', 'CONVITE_MASTER', 'CONVITE_USUARIO', 'DISPONIBILIDADE_ESTOQUE_ENTREGA', 'EMAIL_ALTERADO', 'FALTA_ESTOQUE_ENTREGA', 'RECUPERACAO_SENHA', 'SENHA_ALTERADA',
     ]);
     for (const [nome, [tipo, dados]] of Object.entries(CASOS)) {
       const r = render(tipo, dados);

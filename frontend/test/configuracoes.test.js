@@ -499,12 +499,20 @@ describe('página Configurações como no navegador: itens "Em integração" e a
   });
   const etiqueta = (a) => a.querySelectorAll('.nav-etiqueta').map((e) => e.textContent.trim());
 
-  test('MASTER em Configurações: os quatro itens "Em integração" abrem o protótipo com ?inspecao=1, sem aria-disabled e com a etiqueta; os dois adiados ficam sem link; Configurações segue integrada, sem marcador', async () => {
+  const suporteDe = (pg) => pg.consulta('.nav a').find((a) => /^\s*support_agent\s*Suporte\s*$/.test(a.textContent.replace(/\s+/g, ' ')) || a.textContent.trim().endsWith('Suporte'));
+
+  test('MASTER em Configurações: os três itens "Em integração" abrem o protótipo com ?inspecao=1, sem aria-disabled e com a etiqueta; os dois adiados ficam sem link; Configurações e Suporte (integradas) nunca recebem o marcador', async () => {
     const pg = abrirPagina('pages/config.html', { rotas: rotas('MASTER') });
     await pg.esperar();
     assert.equal(pg.visivel('conteudoProtegido'), true);
     const todosPendentes = pg.consulta('.nav a.nav-pendente');
-    assert.equal(todosPendentes.length, 6);
+    assert.equal(todosPendentes.length, 5, 'Suporte deixou de ser pendente (página integrada)');
+    const suporte = suporteDe(pg);
+    assert.ok(suporte, 'o item Suporte existe');
+    assert.equal(suporte.getAttribute('href'), 'support.html');
+    assert.equal(suporte.getAttribute('aria-disabled'), null);
+    assert.equal(suporte.classList.contains('nav-pendente'), false);
+    assert.deepEqual(etiqueta(suporte), []);
     // 05/10/2026: Compras / Entradas e Regras Função / Setor são módulos adiados — seguem sem link, mesmo para o MASTER.
     const adiados = todosPendentes.filter((a) => /Compras \/ Entradas|Regras Função \/ Setor/.test(a.textContent));
     assert.equal(adiados.length, 2);
@@ -513,7 +521,7 @@ describe('página Configurações como no navegador: itens "Em integração" e a
       assert.equal(a.getAttribute('aria-disabled'), 'true', a.textContent.trim());
     }
     const pendentes = todosPendentes.filter((a) => !adiados.includes(a));
-    assert.equal(pendentes.length, 4);
+    assert.equal(pendentes.length, 3);
     assert.deepEqual(pendentes.map((a) => a.getAttribute('href')).sort(), Object.values(P.INSPECAO_PROTOTIPOS).map((f) => `${f}?inspecao=1`).sort());
     for (const a of pendentes) {
       assert.equal(a.getAttribute('aria-disabled'), null, a.textContent.trim());
@@ -528,13 +536,15 @@ describe('página Configurações como no navegador: itens "Em integração" e a
     assert.equal(pg.chamadas.map((c) => c.chave).includes('GET /auth/permissoes'), true, 'a liberação vem do perfil confirmado pelo servidor');
   });
 
-  test('ADMINISTRADOR, SUPERVISOR e USUARIO em Configurações: nenhum item "Em integração" ganha link (a liberação temporária é só do MASTER; a matriz é da 12J)', async () => {
+  test('ADMINISTRADOR, SUPERVISOR e USUARIO em Configurações: nenhum item "Em integração" ganha link (a liberação temporária é só do MASTER; a matriz é da 12J); o Suporte, integrado, abre para todos', async () => {
     for (const perfil of ['ADMINISTRADOR', 'SUPERVISOR', 'USUARIO']) {
       const pg = abrirPagina('pages/config.html', { rotas: rotas(perfil) });
       await pg.esperar();
       assert.equal(pg.visivel('conteudoProtegido'), true, perfil);
+      const suporte = suporteDe(pg);
+      assert.equal(suporte.getAttribute('href'), 'support.html', `${perfil}: Suporte abre para qualquer sessão válida`);
       const pendentes = pg.consulta('.nav a.nav-pendente');
-      assert.equal(pendentes.length, 6, perfil);
+      assert.equal(pendentes.length, 5, perfil);
       for (const a of pendentes) {
         assert.equal(a.getAttribute('href'), null, `${perfil}: ${a.textContent.trim()}`);
         assert.equal(a.getAttribute('aria-disabled'), 'true', perfil);

@@ -204,7 +204,7 @@ describe('migration 090 — imagens de produto (biblioteca padrão, biblioteca d
       assert.equal(migrationExiste('088'), false, 'a 088 está suspensa e não pode ser reutilizada');
       const prefixos = [...new Set(todasAsMigrations())];
       assert.equal(prefixos.includes('089'), true);
-      assert.deepEqual(prefixos.filter((p) => p > '089').sort(), ['090', '091'], 'depois da 089, exatamente a 090 e a 091 (Dados da Empresa, F1); nada além');
+      assert.deepEqual(prefixos.filter((p) => p > '089').sort(), ['090', '091', '092', '093'], 'depois da 089, exatamente a 090, a 091 (Dados da Empresa, F1), a 092 (Suporte) e a 093 (conversa do Suporte); nada além');
     });
   });
 

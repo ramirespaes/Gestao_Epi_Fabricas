@@ -53,7 +53,7 @@ const COM_MENU_COMPLETO = fs.readdirSync(path.join(RAIZ, 'pages')).filter((f) =>
 // Bloco 10 (10G): a Ficha de EPI passou a ser integrada.
 // Bloco 12 (12G-1): Pedido de EPI, Aprovação da Segurança do Trabalho e Entregas por solicitação.
 const INTEGRADAS = ['atendimento-token.html', 'available-items.html', 'company-data.html', 'config.html', 'dashboard.html', 'delivered-items.html', 'employee-groups.html', 'employee-history.html', 'epi-ficha.html', 'funcionarios.html', 'gestao-usuarios.html', 'import-employees.html', 'materials.html', 'operations.html',
-  'reports.html', 'request.html', 'stock-requests.html', 'stock-validity.html', 'supervisor-approval.html'];
+  'reports.html', 'request.html', 'stock-requests.html', 'stock-validity.html', 'supervisor-approval.html', 'support.html'];
 
 /** Seções do menu lateral: [{ nome, itens: [{ rotulo, html }] }]. */
 function secoesDoMenu(html) {
@@ -179,8 +179,8 @@ describe('tema claro e escuro automático', () => {
     assert.equal((codigo.match(/(setItem|getItem|removeItem)\(CHAVE_CACHE/g) || []).length, 3);
   });
 
-  test('as 19 páginas integradas carregam o tema no <head>, logo depois do CSS, antes de pintar', () => {
-    assert.equal(PAGINAS_INTEGRADAS.length, 19); // + atendimento-token.html (Etapa H) + company-data.html (F2)
+  test('as 20 páginas integradas carregam o tema no <head>, logo depois do CSS, antes de pintar', () => {
+    assert.equal(PAGINAS_INTEGRADAS.length, 20); // + atendimento-token.html (Etapa H) + company-data.html (F2) + support.html (Suporte)
     for (const arquivo of PAGINAS_INTEGRADAS) {
       const head = ler(`pages/${arquivo}`).split('</head>')[0];
       assert.match(head, /<link rel="stylesheet" href="\.\.\/css\/main\.css">\s*<script src="\.\.\/js\/tema\.js"><\/script>/, arquivo);

@@ -78,6 +78,12 @@
       abrir: [],
       alterar: [],
     },
+    // Suporte: ajuda ao usuário. Abre para qualquer sessão empresarial válida (sem permissão própria); cada ato (chamado,
+    // contato) é da própria pessoa, decidido pelo servidor pela sessão e pelo cadastro da empresa.
+    support: {
+      abrir: [],
+      alterar: [],
+    },
     // Parte C2: primeira página por RECURSO (não por área administrativa).
     // Abrir = materials.visualizar; salvar = materials.criar. A entrada
     // inicial de estoque é a ação MOVIMENTAR_ESTOQUE, consultada à parte
@@ -415,7 +421,6 @@
   // arquivos ficam preservados para retomada futura.
   var INSPECAO_PROTOTIPOS = {
     'Autoatendimento (Totem)': 'self-service.html',
-    'Suporte': 'support.html',
     'Gestão de E-mails': 'emails-gestao.html',
     'Privacidade / LGPD': 'lgpd.html',
   };
@@ -506,6 +511,39 @@
     });
   }
 
+  // Suporte: o item "Suporte" que as páginas integradas ainda trazem como "Em integração" passa a abrir support.html para QUALQUER
+  // sessão empresarial válida (o Suporte não tem permissão própria: é ajuda ao usuário). Ponto central da navegação, sem editar as
+  // páginas homologadas; com a consulta falha, o item já ajustado é escondido e o ainda não ajustado fica como está.
+  var ROTULO_SUPORTE = 'Suporte';
+  var HREF_SUPORTE = 'support.html';
+  var MARCA_SUPORTE = 'data-suporte';
+
+  function ajustarMenuSuporte(permissoes, raiz) {
+    if (!raiz || typeof raiz.querySelectorAll !== 'function') return;
+    var valida = !!permissoes;
+    Array.prototype.forEach.call(raiz.querySelectorAll('.nav a'), function (a) {
+      var ajustado = a.getAttribute(MARCA_SUPORTE) === 'true';
+      if (!ajustado && !(a.classList.contains('nav-pendente') && rotuloDoItem(a) === ROTULO_SUPORTE)) return;
+      if (!valida) {
+        if (ajustado) {
+          a.removeAttribute('href');
+          a.style.display = 'none';
+        }
+        return;
+      }
+      a.setAttribute('href', HREF_SUPORTE);
+      a.setAttribute(MARCA_SUPORTE, 'true');
+      a.removeAttribute('aria-disabled');
+      a.removeAttribute('title');
+      a.classList.remove('nav-pendente');
+      a.style.cursor = '';
+      a.style.display = '';
+      Array.prototype.forEach.call(a.querySelectorAll('.nav-etiqueta'), function (etiqueta) {
+        if (etiqueta.parentNode) etiqueta.parentNode.removeChild(etiqueta);
+      });
+    });
+  }
+
   // Dados da Empresa (F2): o item "Dados da Empresa" entra na seção Administração, logo depois de "Configurações", SÓ para quem pode
   // abrir a página pelas permissões efetivas (PAGINAS.companyData). É criado aqui, no ponto central da navegação: nenhuma das
   // páginas homologadas foi editada. Páginas que já trazem o item de forma estática (a própria company-data.html) são tratadas por
@@ -588,6 +626,7 @@
       liberarInspecao(null, documento);
       ajustarMenuAtendimentoToken(null, documento);
       ajustarMenuDadosEmpresa(null, documento);
+      ajustarMenuSuporte(null, documento);
       if (r.motivo === 'SEM_SESSAO' && global.EpiSessaoEmpresarial) {
         global.EpiSessaoEmpresarial.sessaoEncerrada();
         return null;
@@ -600,6 +639,7 @@
     liberarInspecao(r.permissoes, documento);
     ajustarMenuAtendimentoToken(r.permissoes, documento);
     ajustarMenuDadosEmpresa(r.permissoes, documento);
+    ajustarMenuSuporte(r.permissoes, documento);
     if (!podeAbrir(r.permissoes, o.pagina)) {
       aviso(MENSAGENS.SEM_ACESSO);
       return null;
@@ -627,6 +667,7 @@
         liberarInspecao(null, documento);
         ajustarMenuAtendimentoToken(null, documento);
         ajustarMenuDadosEmpresa(null, documento);
+        ajustarMenuSuporte(null, documento);
         if (r.motivo === 'SEM_SESSAO') {
           sessao.sessaoEncerrada();
           return { acao: 'encerrada' };
@@ -637,6 +678,7 @@
       liberarInspecao(r.permissoes, documento);
       ajustarMenuAtendimentoToken(r.permissoes, documento);
       ajustarMenuDadosEmpresa(r.permissoes, documento);
+      ajustarMenuSuporte(r.permissoes, documento);
       return { acao: JSON.stringify(r.permissoes) === assinatura ? 'liberar' : 'recarregar' };
     });
   }
@@ -669,6 +711,7 @@
     liberarInspecao: liberarInspecao,
     ajustarMenuAtendimentoToken: ajustarMenuAtendimentoToken,
     ajustarMenuDadosEmpresa: ajustarMenuDadosEmpresa,
+    ajustarMenuSuporte: ajustarMenuSuporte,
     hrefDeInspecao: hrefDeInspecao,
     INSPECAO_PROTOTIPOS: INSPECAO_PROTOTIPOS,
     podeAbrir: podeAbrir,

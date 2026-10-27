@@ -308,8 +308,9 @@ describe('liberação visual controlada (temporária, 05/10/2026): o MASTER abre
   // 05/10/2026: Compras / Entradas (purchases.html) e Regras Função / Setor (eligibility-rules.html)
   // são MÓDULOS TEMPORARIAMENTE DESATIVADOS / ADIADOS: fora da inspeção, sem link mesmo para o MASTER.
   const LEGADAS = {
-    'Autoatendimento (Totem)': 'self-service.html', 'Suporte': 'support.html', 'Gestão de E-mails': 'emails-gestao.html', 'Privacidade / LGPD': 'lgpd.html',
+    'Autoatendimento (Totem)': 'self-service.html', 'Gestão de E-mails': 'emails-gestao.html', 'Privacidade / LGPD': 'lgpd.html',
   };
+  // Suporte (support.html) é página integrada: sai da inspeção; seu menu é tratado por ajustarMenuSuporte (describe próprio abaixo).
   const DESATIVADAS = { 'Compras / Entradas': 'purchases.html', 'Regras Função / Setor': 'eligibility-rules.html' };
   // <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon">ícone</div>Rótulo<span class="nav-etiqueta">Em integração</span></a>
   function pendente(rotulo) {
@@ -325,7 +326,7 @@ describe('liberação visual controlada (temporária, 05/10/2026): o MASTER abre
   }
   const raizCom = (itens) => ({ querySelectorAll: (sel) => (sel === 'a.nav-pendente' ? itens : []) });
 
-  test('mapa: os seis itens apontam para páginas legadas existentes, com script externo (protótipos) e fora da allowlist de publicação; Configurações saiu (página integrada); os dois módulos adiados ficam fora, com os arquivos preservados', () => {
+  test('mapa: os três itens apontam para páginas legadas existentes, com script externo (protótipos) e fora da allowlist de publicação; Configurações saiu (página integrada); os dois módulos adiados ficam fora, com os arquivos preservados', () => {
     assert.deepEqual(P.INSPECAO_PROTOTIPOS, LEGADAS);
     assert.equal('Configurações' in P.INSPECAO_PROTOTIPOS, false);
     for (const [rotulo, arquivo] of Object.entries(DESATIVADAS)) {
@@ -341,7 +342,7 @@ describe('liberação visual controlada (temporária, 05/10/2026): o MASTER abre
     }
   });
 
-  test('MASTER: os quatro itens pendentes (4/4) ganham href com o marcador de inspeção, perdem aria-disabled e mantêm classe e etiqueta; rótulo desconhecido, "Configurações" e os dois módulos adiados não mudam', () => {
+  test('MASTER: os três itens pendentes (3/3) ganham href com o marcador de inspeção, perdem aria-disabled e mantêm classe e etiqueta; rótulo desconhecido, "Configurações" e os dois módulos adiados não mudam', () => {
     const rotulos = Object.keys(LEGADAS);
     const adiados = Object.keys(DESATIVADAS).map(pendente);
     const itens = rotulos.map(pendente).concat([pendente('Módulo Inexistente'), pendente('Configurações')], adiados);
@@ -380,13 +381,13 @@ describe('liberação visual controlada (temporária, 05/10/2026): o MASTER abre
   });
 
   test('não MASTER, perfil em outra caixa ou sem permissões: nada ganha link; o que tinha sido liberado volta a ficar sem link (revalidação com outro perfil)', () => {
-    const itens = [pendente('Suporte')];
+    const itens = [pendente('Privacidade / LGPD')];
     P.liberarInspecao({ perfil: 'ADMINISTRADOR' }, raizCom(itens));
     assert.equal(itens[0].atributos.href, undefined);
     P.liberarInspecao({ perfil: 'master' }, raizCom(itens));
     assert.equal(itens[0].atributos.href, undefined, 'comparação exata do perfil');
     P.liberarInspecao({ perfil: 'MASTER' }, raizCom(itens));
-    assert.equal(itens[0].atributos.href, 'support.html?inspecao=1');
+    assert.equal(itens[0].atributos.href, 'lgpd.html?inspecao=1');
     P.liberarInspecao({ perfil: 'SUPERVISOR' }, raizCom(itens));
     assert.deepEqual([itens[0].atributos.href, itens[0].atributos['aria-disabled'], itens[0].atributos.title, itens[0].style.cursor], [undefined, 'true', 'Em integração', '']);
     P.liberarInspecao({ perfil: 'MASTER' }, raizCom(itens));
@@ -396,14 +397,14 @@ describe('liberação visual controlada (temporária, 05/10/2026): o MASTER abre
   });
 
   test('prepararPagina: só o perfil MASTER confirmado pelo servidor libera os pendentes do documento; falha na consulta recolhe; podeAbrir dos protótipos continua falso', async () => {
-    const itens = [pendente('Suporte')];
+    const itens = [pendente('Privacidade / LGPD')];
     servidor(resposta(200, corpo({ perfil: 'MASTER' })));
     const contextoMaster = { ...CONTEXTO, usuario: { ...CONTEXTO.usuario, perfil: 'MASTER' } };
     const r = await P.prepararPagina({ pagina: 'grupos-acesso', contexto: contextoMaster, links: [], aviso: () => {}, documento: raizCom(itens) });
-    assert.equal(itens[0].atributos.href, 'support.html?inspecao=1');
+    assert.equal(itens[0].atributos.href, 'lgpd.html?inspecao=1');
     assert.equal(r.podeAlterar, true);
 
-    const outros = [pendente('Suporte')];
+    const outros = [pendente('Privacidade / LGPD')];
     servidor(resposta(200, corpo()));
     await P.prepararPagina({ pagina: 'grupos-acesso', contexto: CONTEXTO, links: [], aviso: () => {}, documento: raizCom(outros) });
     assert.equal(outros[0].atributos.href, undefined);
@@ -413,6 +414,65 @@ describe('liberação visual controlada (temporária, 05/10/2026): o MASTER abre
     assert.equal(itens[0].atributos.href, undefined, 'sem permissões confirmadas, o link some');
 
     for (const arquivo of Object.values(P.INSPECAO_PROTOTIPOS)) assert.equal(P.podeAbrir(corpo({ perfil: 'MASTER' }), arquivo.replace('.html', '')), false, arquivo);
+  });
+});
+
+describe('Suporte: página integrada, aberta a qualquer sessão empresarial válida', () => {
+  const item = (rotulo, classes = ['nav-pendente']) => {
+    const atributos = { class: classes.join(' '), 'aria-disabled': 'true', title: 'Em integração' };
+    const lista = new Set(classes);
+    return {
+      atributos,
+      style: {},
+      classList: { contains: (c) => lista.has(c), remove: (c) => lista.delete(c), add: (c) => lista.add(c) },
+      childNodes: [{ nodeType: 1, textContent: 'support_agent' }, { nodeType: 3, textContent: rotulo }],
+      querySelectorAll: () => [],
+      getAttribute: (n) => (Object.hasOwn(atributos, n) ? atributos[n] : null),
+      setAttribute: (n, v) => { atributos[n] = String(v); },
+      removeAttribute: (n) => { delete atributos[n]; },
+    };
+  };
+  const raizCom = (itens) => ({ querySelectorAll: (sel) => (sel === '.nav a' ? itens : []) });
+
+  test('PAGINAS.support abre para qualquer permissão válida, nunca tem "alterar" e continua fechada sem sessão', () => {
+    assert.deepEqual(P.PAGINAS.support, { abrir: [], alterar: [] });
+    for (const perfil of ['MASTER', 'ADMINISTRADOR', 'SUPERVISOR', 'USUARIO']) assert.equal(P.podeAbrir(corpo({ perfil }), 'support'), true, perfil);
+    assert.equal(P.podeAlterar(corpo(), 'support'), false);
+    assert.equal(P.podeAbrir(null, 'support'), false);
+  });
+
+  test('o item "Em integração" vira link real para support.html com qualquer sessão válida (não só MASTER), sem marcador de inspeção', () => {
+    for (const perfil of ['MASTER', 'ADMINISTRADOR', 'SUPERVISOR', 'USUARIO']) {
+      const suporte = item('Suporte');
+      const outro = item('Privacidade / LGPD');
+      P.ajustarMenuSuporte(corpo({ perfil }), raizCom([suporte, outro]));
+      assert.equal(suporte.atributos.href, 'support.html', perfil);
+      assert.doesNotMatch(suporte.atributos.href, /inspecao/);
+      assert.equal(suporte.atributos['aria-disabled'], undefined);
+      assert.equal(suporte.atributos.title, undefined);
+      assert.equal(suporte.classList.contains('nav-pendente'), false);
+      assert.equal(outro.atributos.href, undefined, 'nenhum outro item pendente é tocado');
+      assert.equal(outro.atributos['aria-disabled'], 'true');
+    }
+  });
+
+  test('com a consulta falha ou sem sessão: o item ainda "Em integração" fica como está e o já ajustado é escondido sem link', () => {
+    const intocado = item('Suporte');
+    P.ajustarMenuSuporte(null, raizCom([intocado]));
+    assert.deepEqual([intocado.atributos.href, intocado.atributos['aria-disabled'], intocado.style.display], [undefined, 'true', undefined]);
+    const ajustado = item('Suporte');
+    P.ajustarMenuSuporte(corpo(), raizCom([ajustado]));
+    P.ajustarMenuSuporte(null, raizCom([ajustado]));
+    assert.deepEqual([ajustado.atributos.href, ajustado.style.display], [undefined, 'none']);
+    assert.doesNotThrow(() => P.ajustarMenuSuporte(corpo(), null));
+  });
+
+  test('a página de Suporte (item estático data-pagina="support") não é duplicada nem reescrita pelo ajuste', () => {
+    const estatico = item('Suporte', ['active']);
+    estatico.atributos['data-pagina'] = 'support';
+    delete estatico.atributos['aria-disabled'];
+    P.ajustarMenuSuporte(corpo(), raizCom([estatico]));
+    assert.equal(estatico.atributos.href, undefined, 'item estático da própria página não é tocado');
   });
 });
 

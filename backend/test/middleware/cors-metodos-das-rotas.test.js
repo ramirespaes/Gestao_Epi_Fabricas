@@ -84,9 +84,9 @@ describe('CORS: métodos anunciados por namespace x métodos das rotas montadas'
     assert.ok(!METODOS_PLATAFORMA.includes('PUT') && !METODOS_PLATAFORMA.includes('DELETE'));
   });
 
-  test('o único PATCH do Painel Privado é a alteração de empresa (documentado: é ele que exige PATCH no CORS da plataforma)', () => {
+  test('os PATCH do Painel Privado são a alteração de empresa e a situação do chamado de suporte (documentado: são eles que exigem PATCH no CORS da plataforma)', () => {
     const patches = rotasDoNamespace('plataforma').filter((r) => r.metodo === 'PATCH');
-    assert.deepEqual(patches.map((r) => r.caminho), ['/empresas/:id']);
+    assert.deepEqual(patches.map((r) => r.caminho).sort(), ['/empresas/:id', '/suporte/chamados/:id/situacao']);
   });
 
   test('CORS e verificação de origem são camadas separadas: PUT e DELETE continuam sendo métodos inseguros para a origem, no Portal real', async () => {

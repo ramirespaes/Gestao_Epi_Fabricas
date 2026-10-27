@@ -50,16 +50,17 @@ const itemDoToken = (pg) => pg.consulta('.nav a').find((a) => /Autoatendimento \
 const rotulo = (a) => a.childNodes.filter((n) => n.nodeType === 3).map((n) => n.textContent).join('').trim();
 
 describe('o item "Solicitações → Atendimento Token" nas páginas integradas', () => {
-  test('há 18 páginas integradas com o menu completo (a 18ª é company-data.html, F2), e cada uma traz o item do Totem como "Em integração"', () => {
-    assert.equal(INTEGRADAS.length, 18);
+  test('há 19 páginas integradas com o menu completo (a 18ª é company-data.html, F2; a 19ª, support.html, Suporte), e cada uma traz o item do Totem como "Em integração"', () => {
+    assert.equal(INTEGRADAS.length, 19);
+    assert.ok(INTEGRADAS.includes('support.html'));
     for (const f of INTEGRADAS) {
       const html = ler(`pages/${f}`);
       assert.match(html, /<a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">badge<\/div>Autoatendimento \(Totem\)<span class="nav-etiqueta">Em integração<\/span><\/a>/, f);
     }
   });
 
-  test('com permissão de abrir a Central: o item vira "Atendimento Token", aponta para atendimento-token.html e perde o "Em integração" (nas 17 páginas abertas por DOM)', async () => {
-    assert.equal(ABRIVEIS.length, 17);
+  test('com permissão de abrir a Central: o item vira "Atendimento Token", aponta para atendimento-token.html e perde o "Em integração" (nas 18 páginas abertas por DOM)', async () => {
+    assert.equal(ABRIVEIS.length, 18);
     for (const arquivo of ABRIVEIS) {
       const pg = await abrir(arquivo, permissoes({ recurso: { visualizar: true } }));
       const a = itemDoToken(pg);
@@ -136,7 +137,8 @@ describe('páginas homologadas e protótipos: nenhuma alteração em massa', () 
 
   test('os protótipos mantêm o item "Autoatendimento (Totem)" e o self-service.html segue intacto e sem link novo', () => {
     const prototipos = PAGINAS.filter((f) => f !== CENTRAL && !INTEGRADAS.includes(f) && /Autoatendimento \(Totem\)/.test(ler(`pages/${f}`)));
-    assert.ok(prototipos.length >= 6);
+    // Suporte deixou de ser protótipo (página integrada): restam exatamente estes.
+    assert.deepEqual(prototipos, ['eligibility-rules.html', 'emails-gestao.html', 'lgpd.html', 'purchases.html', 'self-service.html']);
     for (const f of prototipos) assert.equal(/Atendimento Token/.test(ler(`pages/${f}`)), false, f);
     assert.match(ler('pages/self-service.html'), /<title>Gestão de EPI<\/title>/);
   });

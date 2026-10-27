@@ -161,7 +161,7 @@ describe('migration 068 — estrutura', () => {
     exigirMigration068();
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO, 'checksums.json'), 'utf8'));
     const arquivos = fs.readdirSync(DIRETORIO).filter((n) => /^\d{3}_.*\.sql$/.test(n)).sort();
-    assert.equal(arquivos.length, 91);
+    assert.equal(arquivos.length, 93);
     assert.equal(arquivos[0].slice(0, 3), '000');
     const inicio = arquivos.findIndex((n) => n.startsWith('068_'));
     assert.deepEqual(
@@ -171,7 +171,9 @@ describe('migration 068 — estrutura', () => {
     assert.equal(arquivos[inicio + 20].slice(0, 3), '089');
     assert.equal(arquivos[inicio + 21].slice(0, 3), '090');
     assert.equal(arquivos[inicio + 22].slice(0, 3), '091');
-    assert.equal(arquivos.length, inicio + 23, 'a 091 é a última');
+    assert.equal(arquivos[inicio + 23].slice(0, 3), '092');
+    assert.equal(arquivos[inicio + 24].slice(0, 3), '093');
+    assert.equal(arquivos.length, inicio + 25, 'a 093 (conversa do Suporte) é a última');
     assert.deepEqual(Object.keys(manifesto.migrations).sort(), arquivos);
     for (const nome of arquivos) {
       const sha = crypto.createHash('sha256').update(fs.readFileSync(path.join(DIRETORIO, nome))).digest('hex');

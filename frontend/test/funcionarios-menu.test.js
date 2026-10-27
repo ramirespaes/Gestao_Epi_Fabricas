@@ -32,8 +32,8 @@ const secao = (html, nome) => {
 };
 
 describe('menu lateral: entrada Funcionários', () => {
-  test('a referência de páginas com menu integrado é a mesma da Gestão de Usuários: as 16 de antes, a própria funcionarios.html (17) a Central atendimento-token.html (18, Etapa H) e company-data.html (19, Dados da Empresa, F2)', () => {
-    assert.equal(COM_MENU.length, 19, COM_MENU.join(', '));
+  test('a referência de páginas com menu integrado é a mesma da Gestão de Usuários: as 16 de antes, a própria funcionarios.html (17) a Central atendimento-token.html (18, Etapa H) company-data.html (19, Dados da Empresa, F2) e support.html (20, Suporte)', () => {
+    assert.equal(COM_MENU.length, 20, COM_MENU.join(', '));
     assert.ok(COM_MENU.includes('funcionarios.html'));
   });
 
@@ -79,7 +79,7 @@ describe('menu lateral: entrada Funcionários', () => {
   });
 
   test('os protótipos com barra própria não foram tocados', () => {
-    for (const arquivo of ['lgpd.html', 'purchases.html', 'eligibility-rules.html', 'self-service.html', 'support.html', 'emails-gestao.html']) {
+    for (const arquivo of ['lgpd.html', 'purchases.html', 'eligibility-rules.html', 'self-service.html', 'emails-gestao.html']) {
       assert.doesNotMatch(ler(`pages/${arquivo}`), /funcionarios\.html|data-pagina="funcionarios"/, arquivo);
     }
   });

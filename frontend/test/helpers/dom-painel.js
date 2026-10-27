@@ -210,6 +210,8 @@ function abrirPagina(arquivoHtml, { rotas = {}, transformar = null } = {}) {
     },
     setTimeout,
     clearTimeout,
+    // Todo navegador atual tem crypto (randomUUID); as chaves de idempotência do atendimento dependem dele.
+    crypto: globalThis.crypto,
     addEventListener(tipo, fn) { (eventosDaJanela[tipo] = eventosDaJanela[tipo] || []).push(fn); },
     removeEventListener(tipo, fn) { eventosDaJanela[tipo] = (eventosDaJanela[tipo] || []).filter((f) => f !== fn); },
     async fetch(destino, opcoes = {}) {
@@ -221,6 +223,7 @@ function abrirPagina(arquivoHtml, { rotas = {}, transformar = null } = {}) {
       const caminho = new URL(alvo).pathname.replace(/^\/api\/plataforma/, '');
       const chamada = {
         chave: `${opcoes.method} ${caminho}`,
+        url: alvo,
         corpoBruto: opcoes.body ?? null,
         corpo: opcoes.body === undefined ? null : JSON.parse(opcoes.body),
         credentials: opcoes.credentials,
