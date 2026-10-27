@@ -72,6 +72,8 @@ const PENDENTES = [
   '089_token_dispositivos_queda_suspeita',
   '090_create_biblioteca_imagens_material',
   '091_alter_empresas_add_emails_sst_almoxarifado_versao',
+  '092_create_suporte',
+  '093_alter_suporte_conversa',
 ];
 const GATILHO_ADIADO = 'trg_estoque_lotes_exigir_entrada';
 const CNPJ = '11222333000181';
@@ -126,7 +128,7 @@ describe('runner real: 042, 043 e 044 numa transação, com saldo em estoque_tam
 
     assert.deepEqual(aplicadas.map((migration) => migration.name), PENDENTES);
     const linhas = await registradas();
-    assert.equal(linhas.length, 91);
+    assert.equal(linhas.length, 93);
     assert.deepEqual(linhas.slice(-PENDENTES.length).map((linha) => linha.name), PENDENTES);
   });
 

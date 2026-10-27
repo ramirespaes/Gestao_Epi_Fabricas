@@ -57,8 +57,9 @@ describe('publicação do frontend do cliente por allowlist explícita', () => {
     const legadas = fs.readdirSync(path.join(RAIZ, 'pages'))
       .filter((f) => f.endsWith('.html'))
       .filter((f) => /<script[^>]+src=["']https?:/i.test(fs.readFileSync(path.join(RAIZ, 'pages', f), 'utf8')));
-    assert.equal(legadas.length, 6, 'as 6 páginas legadas continuam no repositório (a 12K-D integrou Relatórios; a 12K-C integrou EPIs Entregues; a E7 integrou a Validade de estoque, a E8 as Operações de estoque, a parte F as duas páginas de usuários, a 10G a Ficha de EPI, a 12G-1 as três da solicitação e Configurações virou página integrada)');
-    for (const integrada of ['pages/config.html', 'js/configuracoes.js']) assert.ok(publicados.includes(integrada), `${integrada} precisa estar no pacote`);
+    assert.deepEqual(legadas.sort(), ['eligibility-rules.html', 'emails-gestao.html', 'lgpd.html', 'purchases.html', 'self-service.html'],
+      'as 5 páginas legadas continuam no repositório (a 12K-D integrou Relatórios; a 12K-C integrou EPIs Entregues; a E7 integrou a Validade de estoque, a E8 as Operações de estoque, a parte F as duas páginas de usuários, a 10G a Ficha de EPI, a 12G-1 as três da solicitação, Configurações virou página integrada e o Suporte foi integrado)');
+    for (const integrada of ['pages/config.html', 'js/configuracoes.js', 'pages/support.html', 'js/suporte.js', 'css/support.css']) assert.ok(publicados.includes(integrada), `${integrada} precisa estar no pacote`);
     for (const pagina of legadas) assert.ok(!publicados.includes(`pages/${pagina}`), `${pagina} não pode ser publicada`);
     // 10J: a Ficha de EPI é publicada com o módulo que ela carrega.
     for (const oficial of ['pages/epi-ficha.html', 'js/epi-ficha.js']) assert.ok(publicados.includes(oficial), `${oficial} precisa estar no pacote`);
@@ -78,7 +79,8 @@ describe('publicação do frontend do cliente por allowlist explícita', () => {
     const saida = path.join(base, 'pacote');
     const allowlist = lerAllowlist();
 
-    recusa(() => empacotar({ saida, arquivos: [...allowlist, 'pages/support.html'] }), 'SCRIPT_EXTERNO');
+    // lgpd.html é protótipo real (carrega o SheetJS por CDN): exercita a mesma condição que o antigo support.html exercitava.
+    recusa(() => empacotar({ saida, arquivos: [...allowlist, 'pages/lgpd.html'] }), 'SCRIPT_EXTERNO');
     recusa(() => empacotar({ saida, arquivos: [...allowlist, 'js/main.js'] }), 'NUNCA_PUBLICAR');
     recusa(() => empacotar({ saida, arquivos: [...allowlist, 'js/db-api.js'] }), 'NUNCA_PUBLICAR');
     recusa(() => empacotar({ saida, arquivos: [...allowlist, 'painel-privado/index.html'] }), 'NUNCA_PUBLICAR');
@@ -121,9 +123,9 @@ describe('publicação do frontend do cliente por allowlist explícita', () => {
     empacotar({ saida });
     assert.doesNotThrow(() => verificarPacote(saida));
 
-    fs.writeFileSync(path.join(saida, 'pages', 'support.html'), '<p>legada</p>');
+    fs.writeFileSync(path.join(saida, 'pages', 'lgpd.html'), '<p>legada</p>');
     recusa(() => verificarPacote(saida), 'PACOTE_DIVERGENTE');
-    fs.rmSync(path.join(saida, 'pages', 'support.html'));
+    fs.rmSync(path.join(saida, 'pages', 'lgpd.html'));
 
     fs.rmSync(path.join(saida, 'js', 'dashboard.js'));
     recusa(() => verificarPacote(saida), 'PACOTE_DIVERGENTE');
@@ -239,7 +241,7 @@ describe('publicação do frontend do cliente por allowlist explícita', () => {
  * seis protótipos ainda não integrados continuam fora.
  */
 describe('K6 — páginas integradas e links de navegação no pacote', () => {
-  const PROTOTIPOS = ['pages/eligibility-rules.html', 'pages/emails-gestao.html', 'pages/lgpd.html', 'pages/purchases.html', 'pages/self-service.html', 'pages/support.html'];
+  const PROTOTIPOS = ['pages/eligibility-rules.html', 'pages/emails-gestao.html', 'pages/lgpd.html', 'pages/purchases.html', 'pages/self-service.html'];
   const paginasDoRepositorio = () => ['pages', 'portal']
     .flatMap((d) => fs.readdirSync(path.join(RAIZ, d)).filter((f) => f.endsWith('.html') && !/ 2\./.test(f)).map((f) => `${d}/${f}`))
     .sort();

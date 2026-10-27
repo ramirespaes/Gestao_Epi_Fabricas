@@ -21,7 +21,8 @@ const ler = (rel) => fs.readFileSync(path.join(RAIZ, rel), 'utf8');
 // 05/10/2026: Compras / Entradas e Regras Função / Setor são MÓDULOS TEMPORARIAMENTE DESATIVADOS / ADIADOS —
 // fora da inspeção, arquivos preservados; ainda carregam o script, que recusa ativar neles.
 // 12K-C: EPIs Entregues (delivered-items.html) e, na 12K-D, Relatórios (reports.html) viraram páginas integradas e saíram da inspeção.
-const PROTOTIPOS = ['emails-gestao.html', 'lgpd.html', 'self-service.html', 'support.html'];
+// Suporte (support.html) virou página integrada (sessão real, três canais reais, sem login demonstrativo; ver suporte-pagina.test.js): saiu da inspeção.
+const PROTOTIPOS = ['emails-gestao.html', 'lgpd.html', 'self-service.html'];
 const DESATIVADOS = ['purchases.html', 'eligibility-rules.html'];
 
 function elemento(tag) {
@@ -67,9 +68,9 @@ function montar(search, ancoras = []) {
 }
 
 describe('inspecao-visual: a navegação entre protótipos mantém a inspeção (o login simulado fica inacessível)', () => {
-  const INTEGRADAS = ['dashboard.html', 'reports.html', 'config.html', 'materials.html', 'import-employees.html', '../portal/inicio.html'];
+  const INTEGRADAS = ['dashboard.html', 'reports.html', 'config.html', 'support.html', 'materials.html', 'import-employees.html', '../portal/inicio.html'];
 
-  test('a lista dos seis protótipos é a mesma do menu das páginas integradas (permissoes-efetivas.js), sem Configurações; os dois módulos adiados ficam fora das duas listas, com os arquivos preservados', () => {
+  test('a lista dos três protótipos é a mesma do menu das páginas integradas (permissoes-efetivas.js), sem Configurações; os dois módulos adiados ficam fora das duas listas, com os arquivos preservados', () => {
     const P = require('../js/permissoes-efetivas'); // eslint-disable-line global-require
     const sandbox = montar('').sandbox;
     const lista = Array.from(sandbox.EpiInspecaoVisual.PROTOTIPOS).sort(); // Array do host: o sandbox tem outro protótipo
@@ -103,7 +104,7 @@ describe('inspecao-visual: a navegação entre protótipos mantém a inspeção 
     assert.equal(normal.body.filhos.length, 1, 'protótipo em inspeção continua ativando');
   });
 
-  test('comMarcador: só os seis protótipos ganham ?inspecao=1, uma vez só, preservando o ?_s= do legado e o fragmento; integradas, Configurações, módulos adiados, javascript: e URLs externas ficam como estão', () => {
+  test('comMarcador: só os três protótipos ganham ?inspecao=1, uma vez só, preservando o ?_s= do legado e o fragmento; integradas, Configurações, módulos adiados, javascript: e URLs externas ficam como estão', () => {
     const { comMarcador } = montar('').sandbox.EpiInspecaoVisual;
     for (const arquivo of PROTOTIPOS) {
       assert.equal(comMarcador(arquivo), `${arquivo}?inspecao=1`, arquivo);
@@ -121,19 +122,23 @@ describe('inspecao-visual: a navegação entre protótipos mantém a inspeção 
 
   test('ativo: os links já presentes são marcados na carga e o clique (fase de captura) marca o link na hora, mesmo depois de o legado reescrever o href; links de páginas integradas não mudam', () => {
     const reports = ancora('lgpd.html');
-    const suporte = ancora('support.html?_s=abc');
+    const suporte = ancora('self-service.html?_s=abc');
+    const suporteIntegrado = ancora('support.html');
     const dashboard = ancora('dashboard.html');
     const config = ancora('config.html');
     const vazio = ancora('javascript:void(0)');
-    const m = montar('?inspecao=1', [reports, suporte, dashboard, config, vazio]);
+    const m = montar('?inspecao=1', [reports, suporte, suporteIntegrado, dashboard, config, vazio]);
     m.carregar();
-    assert.deepEqual([reports, suporte, dashboard, config, vazio].map((a) => a.atributos.href), ['lgpd.html?inspecao=1', 'support.html?_s=abc&inspecao=1', 'dashboard.html', 'config.html', 'javascript:void(0)']);
+    assert.deepEqual([reports, suporte, suporteIntegrado, dashboard, config, vazio].map((a) => a.atributos.href),
+      ['lgpd.html?inspecao=1', 'self-service.html?_s=abc&inspecao=1', 'support.html', 'dashboard.html', 'config.html', 'javascript:void(0)']);
 
     const clique = (m.ouvintes.click || [])[0];
     assert.ok(clique && clique.captura, 'clique interceptado na fase de captura');
-    suporte.setAttribute('href', 'support.html?_s=zzz'); // o legado reescreveu o href depois da carga
+    suporte.setAttribute('href', 'self-service.html?_s=zzz'); // o legado reescreveu o href depois da carga
     clique.fn({ target: suporte.filho });
-    assert.equal(suporte.atributos.href, 'support.html?_s=zzz&inspecao=1');
+    assert.equal(suporte.atributos.href, 'self-service.html?_s=zzz&inspecao=1');
+    clique.fn({ target: suporteIntegrado.filho });
+    assert.equal(suporteIntegrado.atributos.href, 'support.html', 'Suporte é página integrada: nunca recebe o marcador');
     clique.fn({ target: config.filho });
     assert.equal(config.atributos.href, 'config.html', 'Configurações é página integrada: nunca recebe o marcador');
     assert.doesNotThrow(() => clique.fn({ target: null }));
@@ -244,7 +249,7 @@ describe('inspecao-visual: só com ?inspecao=1', () => {
 });
 
 describe('inspecao-visual: onde entra e onde nunca entra', () => {
-  test('os seis protótipos e os dois módulos adiados carregam o script logo depois de main.js; nenhuma página integrada o carrega', () => {
+  test('os três protótipos e os dois módulos adiados carregam o script logo depois de main.js; nenhuma página integrada o carrega', () => {
     const paginas = fs.readdirSync(path.join(RAIZ, 'pages')).filter((f) => f.endsWith('.html'));
     for (const arquivo of paginas) {
       const html = ler(`pages/${arquivo}`);
@@ -254,7 +259,7 @@ describe('inspecao-visual: onde entra e onde nunca entra', () => {
         assert.doesNotMatch(html, /inspecao-visual/, arquivo);
       }
     }
-    assert.equal(PROTOTIPOS.length, 4);
+    assert.equal(PROTOTIPOS.length, 3);
     assert.equal(DESATIVADOS.length, 2);
   });
 

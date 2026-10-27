@@ -61,6 +61,8 @@ const PENDENTES = [
   '089_token_dispositivos_queda_suspeita',
   '090_create_biblioteca_imagens_material',
   '091_alter_empresas_add_emails_sst_almoxarifado_versao',
+  '092_create_suporte',
+  '093_alter_suporte_conversa',
 ];
 const CNPJ = '11222333000181';
 const VIOLACAO_CHECK = '23514';
@@ -133,7 +135,7 @@ describe('runner real: 057 a 060 numa transação, sobre a 056 com estoque movim
 
     assert.deepEqual(aplicadas.map((migration) => migration.name), PENDENTES);
     const linhas = await registradas();
-    assert.equal(linhas.length, 91);
+    assert.equal(linhas.length, 93);
     assert.deepEqual(linhas.slice(-PENDENTES.length).map((linha) => linha.name), PENDENTES);
   });
 
@@ -220,7 +222,7 @@ describe('runner real: 057 a 060 numa transação, sobre a 056 com estoque movim
   test('manifesto: as entradas pendentes conferem com os arquivos e o total é 90', () => {
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO_REAL, 'checksums.json'), 'utf8'));
     const arquivos = fs.readdirSync(DIRETORIO_REAL).filter((n) => /^\d{3}_.*\.sql$/.test(n)).sort();
-    assert.equal(arquivos.length, 91);
+    assert.equal(arquivos.length, 93);
     assert.deepEqual(Object.keys(manifesto.migrations).sort(), arquivos);
     for (const nome of PENDENTES) {
       const arquivo = `${nome}.sql`;

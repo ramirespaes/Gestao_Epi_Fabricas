@@ -53,9 +53,11 @@ const PENDENTES = [
   '089_token_dispositivos_queda_suspeita',
   '090_create_biblioteca_imagens_material',
   '091_alter_empresas_add_emails_sst_almoxarifado_versao',
+  '092_create_suporte',
+  '093_alter_suporte_conversa',
 ];
 const TABELAS_NOVAS = ['redefinicoes_senha', 'redefinicoes_senha_plataforma', 'recuperacao_senha_solicitacoes', 'logs_auditoria_identidade'];
-const TOTAL = 91;
+const TOTAL = 93;
 
 describe('runner real: 061 a 074 numa transação, sobre a 060 com contas e sessões existentes', () => {
   let contexto;

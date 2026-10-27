@@ -18,6 +18,7 @@ const TIPOS = Object.freeze({
   CONVITE_MASTER: 'CONVITE_MASTER',
   DISPONIBILIDADE_ESTOQUE_ENTREGA: 'DISPONIBILIDADE_ESTOQUE_ENTREGA',
   FALTA_ESTOQUE_ENTREGA: 'FALTA_ESTOQUE_ENTREGA',
+  CONTATO_SUPORTE: 'CONTATO_SUPORTE',
 });
 
 const PORTAIS = Object.freeze({ PORTAL: 'Portal do Cliente', PLATAFORMA: 'Painel Privado' });
@@ -231,6 +232,41 @@ function faltaEstoqueEntrega({
   };
 }
 
+const CANAIS_SUPORTE = Object.freeze({ ALMOXARIFADO: 'Almoxarifado', SST: 'Segurança do Trabalho (SST)' });
+// Os limites são os do schema (mensagem de até 4000 code points): nenhuma linha nem linha nenhuma é cortada dentro do que o
+// servidor aceitou gravar — o e-mail enviado tem de ser o mesmo texto registrado.
+const MAX_LINHAS_CONTATO = 4000;
+const MAX_CARACTERES_LINHA_CONTATO = 4000;
+
+/**
+ * Suporte: mensagem de um usuário da empresa ao Almoxarifado ou à SST da MESMA empresa. O assunto do e-mail é constante (nenhum
+ * dado do usuário em cabeçalho); remetente, assunto escolhido e mensagem vão só no corpo, como texto escapado, sem link. O e-mail do
+ * remetente aparece como texto para o destinatário responder por fora; nunca vira link nem cabeçalho.
+ */
+function contatoSuporte({
+  canal, empresa, remetenteNome, remetenteEmail, assunto, mensagem,
+}) {
+  if (typeof canal !== 'string' || !Object.hasOwn(CANAIS_SUPORTE, canal)) throw new TypeError('canal inválido');
+  if (typeof mensagem !== 'string') throw new TypeError('mensagem inválida');
+  const linhas = mensagem.split('\n').map((l) => textoSimples(l, MAX_CARACTERES_LINHA_CONTATO)).filter((l) => l.length > 0).slice(0, MAX_LINHAS_CONTATO);
+  if (linhas.length === 0) throw new TypeError('mensagem vazia');
+  const rotulo = CANAIS_SUPORTE[canal];
+  return {
+    assunto: `Mensagem enviada pelo Suporte do SafeWork — ${rotulo}`,
+    estrutura: {
+      titulo: `Mensagem para ${rotulo}`,
+      preheader: 'Um usuário da empresa enviou uma mensagem pelo Suporte.',
+      paragrafos: [
+        `Empresa: ${textoSimples(empresa, 150)}`,
+        `De: ${textoSimples(remetenteNome, 100)} (${textoSimples(remetenteEmail, 150)})`,
+        `Assunto: ${textoSimples(assunto, 150)}`,
+        ...linhas,
+      ],
+      notas: ['Para responder, use o e-mail de quem enviou. Esta mensagem foi enviada pelo Suporte do SafeWork e não aceita resposta direta.'],
+    },
+  };
+}
+
 /**
  * Configurações: aviso de segurança ao endereço ANTIGO quando o e-mail de
  * acesso muda. Só no Portal do Cliente (o Painel Privado não troca e-mail por
@@ -264,6 +300,7 @@ const MONTADORES = Object.freeze({
   CONVITE_MASTER: conviteMaster,
   DISPONIBILIDADE_ESTOQUE_ENTREGA: disponibilidadeEstoqueEntrega,
   FALTA_ESTOQUE_ENTREGA: faltaEstoqueEntrega,
+  CONTATO_SUPORTE: contatoSuporte,
 });
 
 /**
