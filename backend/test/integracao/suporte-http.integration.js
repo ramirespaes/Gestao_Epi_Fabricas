@@ -163,6 +163,44 @@ describe('Suporte — Portal + Painel Privado (PostgreSQL real)', () => {
     assert.ok(!campos.some((c) => /email|empresa|usuario|chave|hash/i.test(c)), `projeção do Portal sem dados internos: ${campos}`);
   });
 
+  test('notificações: conta os chamados com resposta do suporte não lida, independentemente da paginação, por sessão, sem texto e sem marcar como lido', async () => {
+    const n1 = await g.contaDaEmpresa(g.empresas.A, 'USUARIO');
+    const contar = async (c) => {
+      const r = await como(c, 'get', `${PORTAL}/notificacoes`);
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      assert.deepEqual(Object.keys(r.body).sort(), ['chamadosNaoLidos', 'status'], 'só a contagem: nenhum texto, protocolo ou id');
+      return r.body.chamadosNaoLidos;
+    };
+    assert.equal(await contar(n1), 0, 'sem chamados');
+    const c1 = await abrir(n1, { assunto: 'Primeiro' });
+    const c2 = await abrir(n1, { assunto: 'Segundo' });
+    assert.equal(await contar(n1), 0, 'chamados sem resposta não contam');
+    // Vinte chamados mais novos empurram c1 e c2 para fora da primeira página da listagem (limite 20).
+    for (let i = 0; i < 20; i += 1) await abrir(n1, { assunto: `Enchimento ${i}` });
+    const primeira = await como(n1, 'get', `${PORTAL}/chamados`);
+    assert.ok(!primeira.body.itens.some((c) => c.id === c1.id || c.id === c2.id), 'c1 e c2 ficaram fora da primeira página');
+
+    assert.equal((await painel('post', `${PAINEL}/chamados/${c1.id}/respostas`, { texto: 'Resposta 1 ao primeiro' })).status, 201);
+    assert.equal((await painel('post', `${PAINEL}/chamados/${c1.id}/respostas`, { texto: 'Resposta 2 ao primeiro' })).status, 201);
+    assert.equal(await contar(n1), 1, 'duas respostas no MESMO chamado contam um chamado');
+    assert.equal((await painel('post', `${PAINEL}/chamados/${c2.id}/respostas`, { texto: 'Resposta ao segundo' })).status, 201);
+    assert.equal(await contar(n1), 2, 'chamados distintos contam separadamente, mesmo fora da primeira página');
+    assert.equal(await contar(n1), 2, 'consultar o contador não marca nada como lido');
+    assert.equal(await contar(a2), 0, 'outro usuário da mesma empresa não vê a contagem alheia');
+    assert.equal(await contar(b1), 0, 'outra empresa não vê a contagem alheia');
+
+    assert.equal((await como(n1, 'get', `${PORTAL}/chamados/${c1.id}`)).status, 200, 'abrir a conversa é lê-la');
+    assert.equal(await contar(n1), 1, 'o chamado lido sai; o outro continua');
+    const msg = await como(n1, 'post', `${PORTAL}/chamados/${c1.id}/mensagens`, { texto: 'Obrigado', chaveIdempotencia: uuid() });
+    assert.equal(msg.status, 201);
+    assert.equal(await contar(n1), 1, 'a própria mensagem do solicitante não conta como não lida');
+    assert.equal((await como(n1, 'get', `${PORTAL}/chamados/${c2.id}`)).status, 200);
+    assert.equal(await contar(n1), 0, 'tudo lido');
+    assert.equal((await painel('post', `${PAINEL}/chamados/${c2.id}/respostas`, { texto: 'Mais uma' })).status, 201);
+    assert.equal(await contar(n1), 1, 'resposta nova depois da leitura volta a contar');
+    assert.equal((await g.request(g.app).get(`${PORTAL}/notificacoes`)).status, 401, 'sem sessão não há contagem');
+  });
+
   test('XSS: o texto é guardado e devolvido literalmente (o escape é da interface), sem executar nem alterar o armazenado', async () => {
     const carga = '<img src=x onerror=alert(1)><script>alert(2)</script>';
     const c = await abrir(a1, { assunto: carga.slice(0, 40), descricao: carga });

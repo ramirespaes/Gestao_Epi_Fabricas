@@ -533,7 +533,7 @@ describe('inspeção estática das duas páginas', () => {
       assert.equal(proibido.test(codigo), false, `import-employees.html contém ${proibido}`);
     }
     const scripts = [...imp.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
-    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../vendor/read-excel-file-9.3.10.min.js', '../js/funcionarios.js']);
+    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/suporte-notificacoes.js', '../js/pagina-base.js', '../vendor/read-excel-file-9.3.10.min.js', '../js/funcionarios.js']);
     assert.match(imp, /<input type="file" id="importFileInput" accept="\.xlsx,\.csv"/);
     assert.match(imp, /salve como \.xlsx/i);
     const declaracao = /<span id="textoDeclaracaoLgpd">([^<]*)<\/span>/.exec(imp);
@@ -818,7 +818,7 @@ describe('página Histórico de Funcionários (DOM simulado)', () => {
     await pg.el('botaoConsultar').disparar('click');
     await pg.esperar();
   }
-  const daApi = (pg) => pg.chamadas.filter((c) => !c.caminho.startsWith('/auth/'));
+  const daApi = (pg) => pg.chamadas.filter((c) => !c.caminho.startsWith('/auth/') && c.caminho !== '/suporte/notificacoes'); // a sondagem do menu não é da página
   const aviso = (pg) => pg.texto('aviso').replace(/\s+/g, ' ').trim();
   const campos = (pg, ids) => ids.map((id) => pg.el(id).value);
   const SEIS = ['historyEmployeeName', 'historyEmployeeMatricula', 'historySector', 'historyEmployeeFuncao', 'historyEmployeeGhe', 'historyEmployeeSituacao'];
@@ -1028,7 +1028,7 @@ describe('ajuste 2 — CPF na busca: só números ou pontuação usual; letras e
     pg.el('historySearchValue').value = '529a982b247c25';
     await pg.el('botaoConsultar').disparar('click');
     await pg.esperar();
-    assert.equal(pg.chamadas.filter((c) => !c.caminho.startsWith('/auth/')).length, 0);
+    assert.equal(pg.chamadas.filter((c) => !c.caminho.startsWith('/auth/') && c.caminho !== '/suporte/notificacoes').length, 0);
     assert.match(pg.texto('aviso'), /CPF inválido/);
   });
 });

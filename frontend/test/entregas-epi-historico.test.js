@@ -303,7 +303,7 @@ describe('EPIs Entregues — inspeção estática', () => {
 
   test('página integrada: sem protótipo, sem login simulado, sem quiosque, sem biblioteca remota, módulos na ordem e menu com o item ativo', () => {
     const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
-    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/entregas-epi-historico.js']);
+    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/suporte-notificacoes.js', '../js/pagina-base.js', '../js/entregas-epi-historico.js']);
     for (const proibido of [/db-api\.js/, /main\.js/, /xlsx/i, /loginScreen/, /Cobresul/, /doLogin/, /kiosk/i, /localStorage|sessionStorage/, /innerHTML/, /cdn\.jsdelivr/]) {
       assert.equal(proibido.test(codigo), false, `contém ${proibido}`);
     }

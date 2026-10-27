@@ -417,7 +417,7 @@ describe('inspeção estática', () => {
 
   test('página integrada: sessão real, permissões do servidor; sem protótipo, sem planilha externa, sem auditoria', () => {
     const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
-    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/operacoes-estoque.js']);
+    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/suporte-notificacoes.js', '../js/pagina-base.js', '../js/operacoes-estoque.js']);
     for (const proibido of [/db-api\.js/, /main\.js/, /xlsx/i, /localStorage/, /sessionStorage/, /document\.cookie/, /showView\(/, /setActiveNav/, /data-page=/, /localhost:3000/, /auditoria/i, /Cobresul/, /doLogin/]) {
       assert.equal(proibido.test(codigo.replace(/onclick="(closeMobileMenu|toggleSidebar)\(\)"/g, '')), false, `contém ${proibido}`);
     }

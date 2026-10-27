@@ -404,7 +404,7 @@ describe('inspeção estática: pages/employee-groups.html', () => {
   test('carrega a biblioteca XLSX já existente e o módulo novo, antes do módulo de GHE; sem CDN novo; módulo na allowlist de publicação', () => {
     const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
     assert.deepEqual(scripts, [
-      '../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js',
+      '../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/suporte-notificacoes.js', '../js/pagina-base.js',
       '../vendor/read-excel-file-9.3.10.min.js', '../js/importacao-ghe.js', '../js/tipos-material.js', '../js/grupos-homogeneos.js',
     ]);
     assert.ok(fs.existsSync(path.join(RAIZ, 'vendor/read-excel-file-9.3.10.min.js')));

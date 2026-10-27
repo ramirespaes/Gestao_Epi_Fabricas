@@ -729,7 +729,7 @@ describe('página integrada — epi-ficha.html (estático)', () => {
 
   test('carrega os módulos reais na ordem e não carrega db-api.js, main.js nem xlsx de CDN', () => {
     const scripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
-    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/pagina-base.js', '../js/epi-ficha.js']);
+    assert.deepEqual(scripts, ['../js/tema.js', '../js/api-http.js', '../portal/config.js', '../js/sessao-empresarial.js', '../js/permissoes-efetivas.js', '../js/suporte-notificacoes.js', '../js/pagina-base.js', '../js/epi-ficha.js']);
     for (const proibido of [/db-api\.js/, /main\.js/, /xlsx/i, /cdn\.jsdelivr/]) assert.doesNotMatch(html, proibido);
   });
 

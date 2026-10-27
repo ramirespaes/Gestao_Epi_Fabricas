@@ -38,6 +38,11 @@ function criarSuporteController({ pool: poolInjetado, servicoEmail = undefined }
       res.status(200).json({ status: 'ok', ...resultado });
     },
 
+    async notificacoes(req, res) {
+      const resultado = await suporteService.contarNotificacoes(poolInjetado, { empresaId: req.empresa.id, usuarioId: req.usuario.id });
+      res.status(200).json({ status: 'ok', ...resultado });
+    },
+
     async detalharChamado(req, res) {
       const detalhe = await suporteService.detalharMeuChamado(poolInjetado, { empresaId: req.empresa.id, usuarioId: req.usuario.id, id: req.validado.params.id });
       res.status(200).json({ status: 'ok', ...detalhe });
