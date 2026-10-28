@@ -70,7 +70,7 @@ describe('migration 072 — telefone, tema e modo visual da identidade', () => {
   test('manifesto: 89 migrations, 000 a 087 e 089; a 025 continua idêntica ao manifesto', () => {
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO, 'checksums.json'), 'utf8'));
     const arquivos = fs.readdirSync(DIRETORIO).filter((f) => f.endsWith('.sql')).sort();
-    assert.equal(arquivos.length, 93);
+    assert.equal(arquivos.length, 95);
     assert.equal(arquivos[72], ARQUIVO_072);
     assert.deepEqual(Object.keys(manifesto.migrations).sort(), arquivos);
     const sha = (f) => require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(DIRETORIO, f))).digest('hex');

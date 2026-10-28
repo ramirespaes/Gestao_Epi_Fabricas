@@ -104,7 +104,7 @@ describe('migration 073 — vínculo explícito usuário ↔ funcionário (usuar
   test('manifesto: 89 migrations, 000 a 087 e 089; a 057 continua idêntica ao manifesto', () => {
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO, 'checksums.json'), 'utf8'));
     const arquivos = fs.readdirSync(DIRETORIO).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();
-    assert.equal(arquivos.length, 93);
+    assert.equal(arquivos.length, 95);
     assert.equal(arquivos[73], ARQUIVO_073);
     assert.deepEqual(Object.keys(manifesto.migrations).sort(), arquivos);
     const sha = (f) => crypto.createHash('sha256').update(fs.readFileSync(path.join(DIRETORIO, f))).digest('hex');
