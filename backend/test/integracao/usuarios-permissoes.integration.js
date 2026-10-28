@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 
 const { montar } = require('./helpers/gestao-usuarios-app');
 const autorizacao = require('../../src/middleware/autorizacao');
-const { RECURSOS_COM_EFEITO, ACOES_COM_EFEITO } = require('../../src/rbac/recursos');
+const { RECURSOS_COM_EFEITO, ACOES_COM_EFEITO, recursoExclusivoMaster } = require('../../src/rbac/recursos');
 
 /** ETAPA F — Configurar permissões: catálogo dinâmico, camadas (perfil/grupo/individual), efetivo = o do middleware; escrita só do MASTER. */
 const BASE = '/api/administracao/usuarios';
@@ -38,7 +38,8 @@ describe('Gestão de Usuários — Configurar permissões (PostgreSQL real)', ()
     const r = await detalhe(master, u.id);
     assert.equal(r.status, 200, JSON.stringify(r.body));
     const d = r.body.permissoes;
-    assert.deepEqual(d.recursos.map((x) => [x.recurso, x.rotulo, Object.keys(x.operacoes)]), RECURSOS_COM_EFEITO.map((x) => [x.recurso, x.rotulo, [...x.operacoes]]));
+    // LGPD-1: os recursos exclusivos do MASTER não entram no catálogo de um alvo que não é MASTER.
+    assert.deepEqual(d.recursos.map((x) => [x.recurso, x.rotulo, Object.keys(x.operacoes)]), RECURSOS_COM_EFEITO.filter((x) => !recursoExclusivoMaster(x.recurso)).map((x) => [x.recurso, x.rotulo, [...x.operacoes]]));
     const doCatalogo = (await g.todos('SELECT codigo FROM acoes ORDER BY codigo')).map((a) => a.codigo);
     assert.deepEqual(d.acoes.map((a) => a.codigo), doCatalogo.filter((c) => ACOES_COM_EFEITO.includes(c)), 'só as ações do catálogo que o backend aplica; nenhuma inventada');
     const semEfeito = doCatalogo.filter((c) => !ACOES_COM_EFEITO.includes(c));

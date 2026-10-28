@@ -119,10 +119,12 @@
     { id: 'importEmployees', nome: 'Importar Funcionários', operacoes: [], nota: 'Controlado pela permissão Criar de Histórico de Funcionários.' },
     { id: 'newUser', nome: 'Novo Usuário', operacoes: [], nota: GERENCIAR_USUARIOS },
     { id: 'userAdmin', nome: 'Administração de Usuários', operacoes: [], nota: GERENCIAR_USUARIOS },
-    { id: 'emailsGestao', nome: 'Gestão de E-mails', operacoes: [], nota: SEM_EFEITO },
+    // Bloco A1 (27/10/2026): emailsGestao.visualizar e lgpd.visualizar passaram a ser exigidos por GET /emails/resumo e
+    // GET /lgpd/resumo (e entraram no escopo do MASTER); este catálogo acompanha as rotas do servidor.
+    { id: 'emailsGestao', nome: 'Gestão de E-mails', operacoes: [V] },
     { id: 'config', nome: 'Configurações', operacoes: [], nota: SEM_EFEITO },
     { id: 'support', nome: 'Suporte', operacoes: [], nota: SEM_EFEITO },
-    { id: 'lgpd', nome: 'Privacidade / LGPD', operacoes: [], nota: SEM_EFEITO },
+    { id: 'lgpd', nome: 'Privacidade / LGPD', operacoes: [V] },
   ];
 
   function caminhoGrupo(grupoId) {

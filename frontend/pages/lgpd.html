@@ -7,169 +7,49 @@
   <title>Gestão de EPI</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
   <link rel="stylesheet" href="../css/main.css">
+  <script src="../js/tema.js"></script>
+  <style>
+    /* Itens do menu ainda não integrados ao backend (sem link) */
+    .nav a.nav-pendente{cursor:default;opacity:.55}
+    .nav a.nav-pendente:hover{background:transparent}
+    .nav-etiqueta{margin-left:auto;font-size:10px;font-weight:500;color:var(--on-surface-variant);border:1px solid var(--outline);border-radius:99px;padding:1px 7px}
+  </style>
   <link rel="stylesheet" href="../css/reports.css">
   <link rel="stylesheet" href="../css/integracao-visual.css">
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="../css/lgpd.css">
 </head>
-<body class="reports-visual integracao-visual">
+<!--
+  Privacidade e LGPD — página de CONSULTA integrada ao Portal Empresarial: sessão empresarial real e permissão efetiva
+  lgpd.visualizar (js/estado-pagina.js + js/permissoes-efetivas.js). Os números vêm SÓ de GET /api/lgpd/resumo (empresa da sessão):
+  funcionários do cadastro e usuários com conta, populações distintas, nunca somadas. Encarregado, solicitações de titulares,
+  política, retenção e prazos não têm fonte no sistema e aparecem como indisponíveis ou pendentes de validação jurídica.
+  Visual aprovado em css/lgpd.css (estrutura dos cards preservada). Nada vai para armazenamento do navegador; nenhuma escrita.
+-->
+<body class="reports-visual integracao-visual lgpd-visual">
 
-<div id="loginScreen" style="position:fixed;inset:0;z-index:10000;
-       background:var(--surface);display:flex;align-items:center;justify-content:center;
-       padding:20px">
-
-    <div style="width:100%;max-width:400px">
-
-      <!-- Logo -->
-      <div style="text-align:center;margin-bottom:28px">
-        <div style="width:64px;height:64px;border-radius:20px;background:#1a3a6b;
-                    display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
-          <span class="material-symbols-outlined" style="font-size:32px;color:#fff">safety_check</span>
-        </div>
-        <h1 style="font-size:20px;font-weight:700;margin:0">Gestão de EPIs</h1>
-        <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Cobresul Metais LTDA</p>
-      </div>
-
-      <!-- ── PAINEL 1: LOGIN ────────────────────────────────────────────── -->
-      <section class="card" id="loginPanel">
-        <div class="form-grid" style="margin-bottom:4px">
-          <div class="field full">
-            <label for="loginEmail">E-mail corporativo</label>
-            <input id="loginEmail" class="input" type="email" placeholder="seu.nome@example.invalid" autocomplete="username">
-          </div>
-          <div class="field full">
-            <label for="loginPassword">Senha</label>
-            <input id="loginPassword" class="input" type="password" placeholder="••••••••" autocomplete="current-password"
-                   onkeydown="if(event.key==='Enter') doLogin()">
-          </div>
-        </div>
-
-        <div id="loginError" style="display:none;margin-bottom:10px">
-          <div class="notice" style="background:rgba(255,59,48,0.06);color:#FF3B30;border-color:rgba(255,59,48,0.2)">
-            E-mail ou senha incorretos.
-          </div>
-        </div>
-
-        <button class="filled-btn" style="width:100%;height:48px" onclick="doLogin()">
-          <span class="material-symbols-outlined">login</span>Entrar
-        </button>
-
-        <!-- Login biométrico -->
-        <button class="outlined-btn" id="biometricLoginBtn" style="width:100%;height:48px;margin-top:10px;display:none"
-                onclick="loginWithBiometrics()">
-          <span class="material-symbols-outlined">fingerprint</span>Entrar com biometria
-        </button>
-
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
-          <button type="button" onclick="showLoginPanel('recoverPanel')"
-                  style="background:none;border:none;color:#007AFF;font-size:12px;cursor:pointer;padding:0">
-            Esqueci minha senha
-          </button>
-          <button type="button" onclick="showLoginPanel('biometricSetupPanel')"
-                  style="background:none;border:none;color:#007AFF;font-size:12px;cursor:pointer;padding:0">
-            Configurar biometria
-          </button>
-        </div>
-      </section>
-
-      <!-- ── PAINEL 2: RECUPERAÇÃO DE SENHA ─────────────────────────────── -->
-      <section class="card" id="recoverPanel" style="display:none">
-        <div class="card-header">
-          <div class="card-title">
-            <div class="card-icon" style="background:rgba(255,149,0,0.1);color:#FF9500">mail</div>
-            <div>
-              <h2>Recuperar senha</h2>
-              <p>Informe seu e-mail corporativo para receber o código de verificação.</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Etapa 1: pedir e-mail -->
-        <div id="recoverStep1">
-          <div class="field full">
-            <label for="recoverEmail">E-mail corporativo</label>
-            <input id="recoverEmail" class="input" type="email" placeholder="seu.nome@example.invalid">
-          </div>
-          <button class="filled-btn" style="width:100%;height:46px;margin-top:12px" onclick="sendRecoveryCode()">
-            <span class="material-symbols-outlined">send</span>Enviar código
-          </button>
-        </div>
-
-        <!-- Etapa 2: código + nova senha -->
-        <div id="recoverStep2" style="display:none">
-          <div class="notice" style="margin-bottom:12px">
-            Código enviado para <strong id="recoverEmailDisplay"></strong>.
-            <span style="display:block;margin-top:4px;font-size:11px">(Simulação: o código aparece no console do navegador — F12)</span>
-          </div>
-          <div class="field full">
-            <label for="recoverCode">Código de verificação</label>
-            <input id="recoverCode" class="input" type="text" maxlength="6" placeholder="000000">
-          </div>
-          <div class="field full">
-            <label for="recoverNewPassword">Nova senha</label>
-            <input id="recoverNewPassword" class="input" type="password" placeholder="Mínimo 8 caracteres">
-          </div>
-          <button class="filled-btn" style="width:100%;height:46px;margin-top:8px" onclick="confirmPasswordReset()">
-            <span class="material-symbols-outlined">check</span>Redefinir senha
-          </button>
-        </div>
-
-        <button type="button" onclick="showLoginPanel('loginPanel')"
-                style="background:none;border:none;color:#007AFF;font-size:12px;cursor:pointer;padding:0;margin-top:14px">
-          ← Voltar ao login
-        </button>
-      </section>
-
-      <!-- ── PAINEL 3: CONFIGURAR BIOMETRIA ─────────────────────────────── -->
-      <section class="card" id="biometricSetupPanel" style="display:none">
-        <div class="card-header">
-          <div class="card-title">
-            <div class="card-icon" style="background:rgba(0,122,255,0.1);color:#007AFF">fingerprint</div>
-            <div>
-              <h2>Configurar login biométrico</h2>
-              <p>Use Touch ID, Face ID, Windows Hello ou leitor de digital para entrar sem senha.</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="form-grid">
-          <div class="field full">
-            <label for="biometricEmail">E-mail corporativo</label>
-            <input id="biometricEmail" class="input" type="email" placeholder="seu.nome@example.invalid">
-          </div>
-          <div class="field full">
-            <label for="biometricPassword">Senha (confirmação)</label>
-            <input id="biometricPassword" class="input" type="password" placeholder="••••••••">
-          </div>
-        </div>
-
-        <div id="biometricUnsupported" style="display:none;margin-top:8px">
-          <div class="notice" style="background:rgba(255,59,48,0.06);color:#FF3B30;border-color:rgba(255,59,48,0.2)">
-            Este navegador/dispositivo não tem suporte a biometria (WebAuthn).
-          </div>
-        </div>
-
-        <button class="filled-btn" style="width:100%;height:46px;margin-top:8px" onclick="registerBiometrics()">
-          <span class="material-symbols-outlined">fingerprint</span>Cadastrar biometria deste dispositivo
-        </button>
-
-        <button type="button" onclick="showLoginPanel('loginPanel')"
-                style="background:none;border:none;color:#007AFF;font-size:12px;cursor:pointer;padding:0;margin-top:14px">
-          ← Voltar ao login
-        </button>
-      </section>
-
-      <p style="text-align:center;font-size:11px;color:var(--on-surface-variant);margin-top:20px">
-        Acesso restrito a colaboradores autorizados · NR-06 / NR-01 / LGPD
-      </p>
+<!-- Verificação da sessão: usa a sessão empresarial criada pelo Portal do Cliente, confirmada no servidor por js/sessao-empresarial.js. -->
+<div id="telaSessao" style="position:fixed;inset:0;z-index:10000;background:var(--surface);
+     display:flex;align-items:center;justify-content:center;padding:20px">
+  <div style="width:100%;max-width:400px;text-align:center">
+    <div style="width:64px;height:64px;border-radius:20px;background:#1a3a6b;
+                display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
+      <span class="material-symbols-outlined" style="font-size:32px;color:#fff">safety_check</span>
     </div>
+    <h1 style="font-size:20px;font-weight:700;margin:0">Gestão de EPIs</h1>
+    <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">SafeWork Engenharia</p>
+    <p id="telaSessaoMensagem" role="status" aria-live="polite" style="font-size:13px;color:var(--on-surface-variant);margin-top:8px">Verificando sua sessão…</p>
+    <a id="telaSessaoPortal" href="../portal/index.html" class="filled-btn" style="display:none;margin-top:16px">
+      <span class="material-symbols-outlined">login</span>Ir para o Portal do Cliente
+    </a>
   </div>
+</div>
 
-<div class="mobile-overlay" onclick="closeMobileMenu()"></div>
+<div class="mobile-overlay" id="menuFundo"></div>
 <div class="mobile-topbar">
     <div class="mobile-topbar-icon">safety_check</div>
     <span class="mobile-topbar-title">Gestão de EPIs</span>
   </div>
-  <button class="mobile-global-menu" type="button" onclick="toggleSidebar()" aria-label="Abrir menu">
+  <button class="mobile-global-menu" id="menuCelular" type="button" aria-label="Abrir menu">
     <svg width="20" height="14" viewBox="0 0 20 14" fill="none" xmlns="http://www.w3.org/2000/svg">
       <line x1="0" y1="1"  x2="20" y2="1"  stroke="#1C1C1E" stroke-width="1.8" stroke-linecap="round"/>
       <line x1="0" y1="7"  x2="20" y2="7"  stroke="#1C1C1E" stroke-width="1.8" stroke-linecap="round"/>
@@ -190,59 +70,73 @@
 
       <nav class="nav">
         <div class="nav-section">Visão geral</div>
-        <a class="active" data-page="dashboard" href="javascript:void(0)" onclick="showView('dashboardView'); setActiveNav(this); return false;"><div class="nav-icon blue">dashboard</div>Dashboard</a>
-        <a data-page="reports" href="javascript:void(0)" onclick="showView('reportsView'); setActiveNav(this); return false;"><div class="nav-icon indigo">analytics</div>Relatórios</a>
+        <a href="dashboard.html" data-pagina="dashboard" style="display:none"><div class="nav-icon blue">dashboard</div>Dashboard</a>
+        <a href="reports.html" data-pagina="reports" style="display:none"><div class="nav-icon indigo">analytics</div>Relatórios</a>
         <div class="nav-section">Estoque</div>
-        <a data-page="materials" href="javascript:void(0)" onclick="showView('materialsView'); setActiveNav(this); return false;"><div class="nav-icon teal">inventory_2</div>Gestão de estoque</a>
-        <a data-page="purchases" href="javascript:void(0)" onclick="showView('purchasesView'); setActiveNav(this); return false;"><div class="nav-icon orange">shopping_cart</div>Compras / Entradas</a>
-        <a data-page="stockValidity" href="javascript:void(0)" onclick="showView('stockValidityView'); setActiveNav(this); return false;"><div class="nav-icon red">event_busy</div>Validade de estoque</a>
-        <a data-page="availableItems" href="javascript:void(0)" onclick="showView('availableItemsView'); setActiveNav(this); return false;"><div class="nav-icon green">checklist</div>Análise de estoque</a>
-        <a data-page="operations" href="javascript:void(0)" onclick="showView('operationsView'); setActiveNav(this); return false;"><div class="nav-icon gray">receipt_long</div>Operações de estoque</a>
-        <a href="employee-groups.html"><div class="nav-icon purple">group_work</div>Gestão de GHE</a>
-        <a data-page="eligibilityRules" href="javascript:void(0)" onclick="showView('eligibilityRulesView'); setActiveNav(this); return false;"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor</a>
+        <a href="materials.html" data-pagina="materials" style="display:none"><div class="nav-icon teal">inventory_2</div>Gestão de estoque</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon orange">shopping_cart</div>Compras / Entradas<span class="nav-etiqueta">Em integração</span></a>
+        <a href="stock-validity.html" data-pagina="stockValidity" style="display:none"><div class="nav-icon red">event_busy</div>Validade de estoque</a>
+        <a href="available-items.html" data-pagina="availableItems" style="display:none"><div class="nav-icon green">checklist</div>Análise de estoque</a>
+        <a href="operations.html" data-pagina="operations" style="display:none"><div class="nav-icon gray">receipt_long</div>Operações de estoque</a>
+        <a href="employee-groups.html" data-pagina="employeeGroups" style="display:none"><div class="nav-icon purple">group_work</div>Gestão de GHE</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon purple">rule_settings</div>Regras Função / Setor<span class="nav-etiqueta">Em integração</span></a>
         <div class="nav-section">Entregas</div>
-        <a data-page="deliveredItems" href="javascript:void(0)" onclick="showView('deliveredItemsView'); setActiveNav(this); return false;"><div class="nav-icon green">inventory</div>EPIs Entregues</a>
-        <a data-page="epiFicha" href="javascript:void(0)" onclick="showView('epiFichaView'); setActiveNav(this); return false;"><div class="nav-icon brown">description</div>Ficha de EPI</a>
-        <a data-page="employeeHistory" href="javascript:void(0)" onclick="showView('employeeHistoryView'); setActiveNav(this); return false;"><div class="nav-icon blue">history</div>Histórico de Funcionários</a>
+        <a href="delivered-items.html" data-pagina="deliveredItems" style="display:none"><div class="nav-icon green">inventory</div>EPIs Entregues</a>
+        <a href="epi-ficha.html" data-pagina="epiFicha" style="display:none"><div class="nav-icon brown">description</div>Ficha de EPI</a>
+        <a href="funcionarios.html" data-pagina="funcionarios" style="display:none"><div class="nav-icon teal">people</div>Cadastro de Colaboradores</a>
+        <a href="employee-history.html" data-pagina="employeeHistory" style="display:none"><div class="nav-icon blue">history</div>Histórico de Funcionários</a>
         <div class="nav-section">Solicitações</div>
-        <a data-page="self-service" href="javascript:void(0)" onclick="showView('selfServiceView'); setActiveNav(this); return false;"><div class="nav-icon blue">badge</div>Autoatendimento (Totem)</a>
-        <a data-page="request" href="javascript:void(0)" onclick="showView('requestView'); setActiveNav(this); return false;"><div class="nav-icon blue">assignment</div>Pedido de EPI</a>
-        <a data-page="supervisorApproval" href="javascript:void(0)" onclick="showView('supervisorApprovalView'); setActiveNav(this); return false;"><div class="nav-icon orange">fact_check</div>Aprovação da Segurança do Trabalho</a>
-        <a data-page="stockRequests" href="javascript:void(0)" onclick="showView('stockRequestsView'); setActiveNav(this); return false;"><div class="nav-icon red">playlist_add_check_circle</div>Entregas por solicitação</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">badge</div>Autoatendimento (Totem)<span class="nav-etiqueta">Em integração</span></a>
+        <a href="request.html" data-pagina="request" style="display:none"><div class="nav-icon blue">assignment</div>Pedido de EPI</a>
+        <a href="supervisor-approval.html" data-pagina="supervisorApproval" style="display:none"><div class="nav-icon orange">fact_check</div>Aprovação da Segurança do Trabalho</a>
+        <a href="stock-requests.html" data-pagina="stockRequests" style="display:none"><div class="nav-icon red">playlist_add_check_circle</div>Entregas por solicitação</a>
         <div class="nav-section">Administração</div>
-        <a data-page="importEmployees" href="javascript:void(0)" onclick="showView('importEmployeesView'); setActiveNav(this); return false;"><div class="nav-icon green">upload_file</div>Importar Funcionários</a>
-        <a data-page="newUser" href="javascript:void(0)" onclick="showView('newUserView'); setActiveNav(this); return false;"><div class="nav-icon green">person_add</div>Novo Usuário</a>
-        <a data-page="userAdmin" href="javascript:void(0)" onclick="showView('userAdminView'); setActiveNav(this); return false;"><div class="nav-icon indigo">group</div>Administração de Usuários</a>
-        <a data-page="config" href="javascript:void(0)" onclick="showView('configView'); setActiveNav(this); return false;"><div class="nav-icon gray">settings</div>Configurações</a>
-        <a data-page="support" href="javascript:void(0)" onclick="showView('supportView'); setActiveNav(this); return false;"><div class="nav-icon teal">support_agent</div>Suporte</a>
-        <a data-page="emailsGestao" href="javascript:void(0)" onclick="showView('emailsGestaoView'); setActiveNav(this); return false;"><div class="nav-icon blue">mark_email_read</div>Gestão de E-mails</a>
-        <a data-page="lgpd" href="javascript:void(0)" onclick="showView('lgpdView'); setActiveNav(this); return false;"><div class="nav-icon indigo">privacy_tip</div>Privacidade / LGPD</a>
+        <a href="grupos-acesso.html" data-pagina="grupos-acesso" style="display:none"><div class="nav-icon indigo">groups</div>Grupos de Acesso</a>
+        <a href="grupo-permissoes.html" data-pagina="grupo-permissoes" style="display:none"><div class="nav-icon indigo">lock_person</div>Permissões do Grupo</a>
+        <a href="grupo-usuarios.html" data-pagina="grupo-usuarios" style="display:none"><div class="nav-icon indigo">group_add</div>Integrantes do Grupo</a>
+        <a href="autorizacoes-individuais.html" data-pagina="autorizacoes-individuais" style="display:none"><div class="nav-icon indigo">verified_user</div>Autorizações Individuais</a>
+        <a href="import-employees.html" data-pagina="importEmployees" style="display:none"><div class="nav-icon green">upload_file</div>Importar Funcionários</a>
+        <a href="new-user.html" data-pagina="newUser" style="display:none"><div class="nav-icon green">person_add</div>Novo Usuário</a>
+        <a href="user-admin.html" data-pagina="userAdmin" style="display:none"><div class="nav-icon indigo">group</div>Administração de Usuários</a>
+        <a href="gestao-usuarios.html" data-pagina="gestaoUsuarios" style="display:none"><div class="nav-icon indigo">manage_accounts</div>Gestão de Usuários</a>
+        <a href="config.html" data-pagina="config" style="display:none"><div class="nav-icon gray">settings</div>Configurações</a>
+        <a href="company-data.html" data-pagina="companyData" style="display:none"><div class="nav-icon teal">apartment</div>Dados da Empresa</a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon teal">support_agent</div>Suporte<span class="nav-etiqueta">Em integração</span></a>
+        <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">mark_email_read</div>Gestão de E-mails<span class="nav-etiqueta">Em integração</span></a>
+        <a class="active" href="javascript:void(0)" data-pagina="lgpd" style="display:none"><div class="nav-icon indigo">privacy_tip</div>Privacidade / LGPD</a>
+        <a href="../portal/inicio.html"><div class="nav-icon blue">home</div>Início</a>
       </nav>
     </aside>
 
     <main class="content">
+<div id="estadoPagina" style="display:none"></div>
+
+<div id="conteudoProtegido" style="display:none">
 <section id="lgpdView" class="view active">
         <div class="page-actions">
           <div>
             <h2 style="font-family:var(--font-brand);font-size:22px;line-height:1.1;letter-spacing:-0.4px;font-weight:500">Privacidade e LGPD</h2>
             <p style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">Política de privacidade, direitos do titular e conformidade com a Lei Geral de Proteção de Dados (Lei nº 13.709/2018).</p>
+            <p id="lgpdEmpresa" style="font-size:13px;color:var(--on-surface);margin-top:6px;font-weight:500"></p>
           </div>
           <span class="badge" style="background:rgba(88,86,214,0.12);color:#5856D6">LGPD — Lei 13.709/2018</span>
         </div>
 
-        <!-- KPIs LGPD -->
+        <div id="lgpdAviso" class="notice" role="alert" style="display:none;margin-bottom:16px;background:rgba(255,59,48,0.06);color:#C0221A;border-color:rgba(255,59,48,0.2)"></div>
+
+        <!-- Indicadores: só contagens do servidor (GET /lgpd/resumo); sem fonte, "—" com a explicação. -->
         <div class="integracao-kpis lgpd-kpis">
-          <div class="stat"><span>Titulares cadastrados</span><strong>24</strong></div>
-          <div class="stat"><span>Solicitações abertas</span><strong>0</strong></div>
-          <div class="stat"><span>Prazo máximo resposta</span><strong>15 dias</strong></div>
-          <div class="stat"><span>DPO responsável</span><strong style="font-size:14px;margin-top:8px">Definir</strong></div>
+<div class="stat"><span class="lgpd-kpi-icon material-symbols-outlined" aria-hidden="true">group</span><div><span>Funcionários cadastrados</span><strong id="lgpdKpiFuncionarios">—</strong><small id="lgpdKpiFuncionariosDetalhe">Carregando…</small></div></div>
+<div class="stat"><span class="lgpd-kpi-icon material-symbols-outlined" aria-hidden="true">manage_accounts</span><div><span>Usuários com conta de acesso</span><strong id="lgpdKpiUsuarios">—</strong><small id="lgpdKpiUsuariosDetalhe">Carregando…</small></div></div>
+<div class="stat"><span class="lgpd-kpi-icon material-symbols-outlined" aria-hidden="true">description</span><div><span>Solicitações dos titulares</span><strong id="lgpdKpiSolicitacoes">—</strong><small id="lgpdKpiSolicitacoesDetalhe">Registro ainda não disponível neste sistema</small></div></div>
+<div class="stat"><span class="lgpd-kpi-icon material-symbols-outlined" aria-hidden="true">verified_user</span><div><span>Conformidade LGPD</span><strong id="lgpdKpiConformidade">—</strong><small id="lgpdKpiConformidadeDetalhe">Avaliação não disponível</small></div></div>
         </div>
 
         <section class="grid lgpd-layout">
           <div class="stack">
 
-            <!-- POLÍTICA DE PRIVACIDADE -->
-            <section class="card">
+            <!-- POLÍTICA DE PRIVACIDADE: conteúdo de referência, pendente de validação jurídica; não é a política aprovada da empresa. -->
+            <section class="card lgpd-policy">
               <div class="card-header">
                 <div class="card-title">
                   <div class="card-icon" style="background:rgba(88,86,214,0.12);color:#5856D6">policy</div>
@@ -251,29 +145,33 @@
                     <p>Base legal, finalidade e responsabilidade pelo tratamento dos dados.</p>
                   </div>
                 </div>
+                <span class="badge role-supervisor" id="lgpdPoliticaSituacao">Pendente de validação jurídica</span>
               </div>
               <div class="switch-list">
-                <div class="switch-row" style="flex-direction:column;align-items:flex-start;gap:8px;width:100%">
+                <div class="switch-row" style="flex-direction:column;align-items:flex-start;gap:8px;width:100%"><span class="lgpd-policy-icon material-symbols-outlined" aria-hidden="true">gavel</span>
                   <strong style="font-size:13px">Base legal do tratamento</strong>
-                  <span style="font-size:12px;color:var(--on-surface-variant);line-height:1.5;word-break:break-word;display:block;width:100%">Art. 7º, inciso II da LGPD — <strong>execução de contrato de trabalho</strong>. O tratamento de dados pessoais dos funcionários (nome, CPF, matrícula, setor, função, data de nascimento e histórico de EPIs) é necessário para cumprimento das obrigações trabalhistas e das Normas Regulamentadoras NR-01 e NR-06.</span>
+                  <span style="font-size:12px;color:var(--on-surface-variant);line-height:1.5;word-break:break-word;display:block;width:100%">A hipótese legal (art. 7º da LGPD) deve ser definida para cada tratamento, conforme a finalidade e as obrigações aplicáveis, e validada juridicamente. O sistema ainda não registra a base legal de cada tratamento; nenhuma é deduzida automaticamente do cadastro.</span>
                 </div>
-                <div class="switch-row" style="flex-direction:column;align-items:flex-start;gap:8px;width:100%">
+                <div class="switch-row" style="flex-direction:column;align-items:flex-start;gap:8px;width:100%"><span class="lgpd-policy-icon material-symbols-outlined" aria-hidden="true">target</span>
                   <strong style="font-size:13px">Finalidade do tratamento</strong>
-                  <span style="font-size:12px;color:var(--on-surface-variant);line-height:1.5;word-break:break-word;display:block;width:100%">Controle de entrega de Equipamentos de Proteção Individual, gestão de estoque, geração de fichas de EPI com validade jurídica, relatórios para fiscalização do Ministério do Trabalho e Emprego e cumprimento do PGR.</span>
+                  <span style="font-size:12px;color:var(--on-surface-variant);line-height:1.5;word-break:break-word;display:block;width:100%">O sistema apoia o controle de entrega de Equipamentos de Proteção Individual, a gestão de estoque e a geração de fichas de EPI. As finalidades de cada tratamento, e a responsabilidade da empresa em cada um (controladora ou operadora), dependem das decisões sobre o tratamento e de validação jurídica.</span>
                 </div>
-                <div class="switch-row" style="flex-direction:column;align-items:flex-start;gap:8px;width:100%">
+                <div class="switch-row" style="flex-direction:column;align-items:flex-start;gap:8px;width:100%"><span class="lgpd-policy-icon material-symbols-outlined" aria-hidden="true">database</span>
                   <strong style="font-size:13px">Dados tratados</strong>
-                  <span style="font-size:12px;color:var(--on-surface-variant);line-height:1.5;word-break:break-word;display:block;width:100%">Nome completo · CPF · Matrícula · Setor e função · Data de nascimento · Data de contratação · Histórico de EPIs entregues · Assinatura eletrônica · Logs de acesso ao sistema (IP, dispositivo, data/hora).</span>
+                  <span style="font-size:12px;color:var(--on-surface-variant);line-height:1.5;word-break:break-word;display:block;width:100%">O cadastro operacional guarda dados de identificação e de vínculo dos funcionários (como nome, CPF, matrícula, setor, função e datas), o histórico de EPIs entregues com a confirmação da entrega, e os registros de auditoria de uso do sistema. O inventário completo, com categorias e ciclo de vida, depende de validação.</span>
                 </div>
-                <div class="switch-row" style="flex-direction:column;align-items:flex-start;gap:8px;width:100%">
+                <div class="switch-row" style="flex-direction:column;align-items:flex-start;gap:8px;width:100%"><span class="lgpd-policy-icon material-symbols-outlined" aria-hidden="true">share</span>
                   <strong style="font-size:13px">Compartilhamento de dados</strong>
-                  <span style="font-size:12px;color:var(--on-surface-variant);line-height:1.5;word-break:break-word;display:block;width:100%">Os dados poderão ser compartilhados com: Auditores internos autorizados · Inspeção do Trabalho (mediante solicitação formal, conforme NR-01) · Prestadores de serviço de TI sob contrato com cláusula de confidencialidade. <strong>Não há venda ou compartilhamento comercial de dados.</strong></span>
+                  <span style="font-size:12px;color:var(--on-surface-variant);line-height:1.5;word-break:break-word;display:block;width:100%">As hipóteses de compartilhamento (auditoria, fiscalização do trabalho, prestadores de serviço) devem ser inventariadas e validadas pela empresa. O sistema não realiza venda nem compartilhamento comercial de dados pessoais.</span>
                 </div>
+              </div>
+              <div class="notice" id="lgpdPoliticaAviso" style="margin-top:14px;background:rgba(255,149,0,0.06);color:#C07000;border-color:rgba(255,149,0,0.2)">
+                Conteúdo informativo de referência. Não constitui a política de privacidade aprovada da empresa: a política oficial depende de validação jurídica e de publicação pelos meios próprios.
               </div>
             </section>
 
-            <!-- PRAZO DE RETENÇÃO -->
-            <section class="card">
+            <!-- PRAZO DE RETENÇÃO: nenhum prazo está implantado; a tabela mostra o que falta definir, sem período demonstrativo. -->
+            <section class="card lgpd-retention">
               <div class="card-header">
                 <div class="card-title">
                   <div class="card-icon" style="background:rgba(255,149,0,0.10);color:#FF9500">timer</div>
@@ -282,6 +180,7 @@
                     <p>Por quanto tempo cada dado é mantido após o desligamento do funcionário.</p>
                   </div>
                 </div>
+                <span class="badge role-supervisor" id="lgpdRetencaoSituacao">Pendente de validação jurídica</span>
               </div>
               <div class="table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
                 <table style="min-width:420px">
@@ -295,37 +194,34 @@
                   </thead>
                   <tbody>
                     <tr>
-                      <td>Ficha de EPI assinada</td>
-                      <td><span class="badge" style="background:rgba(255,149,0,0.10);color:#C07000">20 anos</span></td>
-                      <td>NR-01 / TST / CLT art. 11</td>
-                      <td>Anonimização</td>
+                      <td>Ficha de EPI e confirmação da entrega</td>
+                      <td><span class="badge role-supervisor">A definir</span></td>
+                      <td>Pendente de validação jurídica</td>
+                      <td>Não implementado</td>
                     </tr>
                     <tr>
                       <td>Dados cadastrais do funcionário</td>
-                      <td><span class="badge" style="background:rgba(255,149,0,0.10);color:#C07000">5 anos</span></td>
-                      <td>CLT art. 11 / Decreto 3.048</td>
-                      <td>Eliminação</td>
+                      <td><span class="badge role-supervisor">A definir</span></td>
+                      <td>Pendente de validação jurídica</td>
+                      <td>Não implementado</td>
                     </tr>
                     <tr>
-                      <td>Logs de auditoria do sistema</td>
-                      <td><span class="badge" style="background:rgba(255,149,0,0.10);color:#C07000">5 anos</span></td>
-                      <td>NR-01 / Boa prática LGPD</td>
-                      <td>Eliminação</td>
+                      <td>Registros de auditoria do sistema</td>
+                      <td><span class="badge role-supervisor">A definir</span></td>
+                      <td>Pendente de validação jurídica</td>
+                      <td>Não implementado</td>
                     </tr>
                     <tr>
-                      <td>Histórico de estoque / CA</td>
-                      <td><span class="badge" style="background:rgba(255,149,0,0.10);color:#C07000">10 anos</span></td>
-                      <td>NR-06 / Código Civil art. 205</td>
-                      <td>Anonimização</td>
-                    </tr>
-                    <tr>
-                      <td>Assinatura eletrônica + evidências</td>
-                      <td><span class="badge" style="background:rgba(255,59,48,0.10);color:#C0221A">20 anos</span></td>
-                      <td>NR-01 / ICP-Brasil</td>
-                      <td>Anonimização</td>
+                      <td>Histórico de estoque e CA</td>
+                      <td><span class="badge role-supervisor">A definir</span></td>
+                      <td>Pendente de validação jurídica</td>
+                      <td>Não implementado</td>
                     </tr>
                   </tbody>
                 </table>
+              </div>
+              <div class="notice" id="lgpdRetencaoAviso" style="margin-top:14px;background:rgba(255,149,0,0.06);color:#C07000;border-color:rgba(255,149,0,0.2)">
+                Os prazos de retenção e o descarte (eliminação ou anonimização) ainda não foram definidos nem implantados no sistema. Nenhum dado é eliminado automaticamente.
               </div>
             </section>
 
@@ -333,8 +229,11 @@
 
           <div class="lgpd-col">
 
-            <!-- DPO / ENCARREGADO -->
-            <section class="card">
+            <!-- DPO / ENCARREGADO (LGPD-1): principal e substituto vigentes vêm do resumo (GET /lgpd/resumo); a gestão (designar,
+                 substituir, corrigir contato, encerrar) usa GET/POST /lgpd/encarregados e só abre para quem tem lgpdEncarregado.editar
+                 efetiva (recurso exclusivo do MASTER; o servidor decide de novo). Nada é inventado; nenhum contato de outro setor é
+                 usado como canal LGPD. A divulgação pública do encarregado é de pacote futuro. -->
+            <section class="card lgpd-dpo">
               <div class="card-header">
                 <div class="card-title">
                   <div class="card-icon" style="background:rgba(88,86,214,0.12);color:#5856D6">manage_accounts</div>
@@ -343,35 +242,28 @@
                     <p>Responsável pelo tratamento de dados pessoais (art. 41 LGPD).</p>
                   </div>
                 </div>
-                <button class="mini-btn" type="button" onclick="toggleDpoEdit()">Editar</button>
+                <button class="mini-btn" type="button" id="dpoEditar" disabled aria-describedby="dpoIndisponivel">Editar</button>
               </div>
               <div id="dpoDisplay">
                 <div class="detail-grid" style="margin-top:0;min-width:0;overflow:hidden">
-                  <div class="detail-item"><span>Nome / Cargo</span><strong id="dpoNome">A definir</strong></div>
-                  <div class="detail-item"><span>E-mail de contato</span><strong id="dpoEmail">A definir</strong></div>
-                  <div class="detail-item"><span>Telefone</span><strong id="dpoTel">A definir</strong></div>
-                  <div class="detail-item"><span>Empresa controladora</span><strong id="dpoEmpresa">A definir</strong></div>
+                  <div class="detail-item"><span>Nome / Cargo</span><strong id="dpoNome">Não cadastrado</strong></div>
+                  <div class="detail-item"><span>E-mail de contato</span><strong id="dpoEmail">Não cadastrado</strong></div>
+                  <div class="detail-item"><span>Telefone</span><strong id="dpoTel">Não cadastrado</strong></div>
+                  <div class="detail-item"><span>Empresa responsável</span><strong id="dpoEmpresa">—</strong></div>
+                </div>
+                <div class="detail-grid" id="dpoSubstitutoGrid" style="margin-top:10px;min-width:0;overflow:hidden">
+                  <div class="detail-item"><span>Substituto — Nome / Cargo</span><strong id="dpoSubNome">Não cadastrado</strong></div>
+                  <div class="detail-item"><span>Substituto — E-mail de contato</span><strong id="dpoSubEmail">Não cadastrado</strong></div>
                 </div>
               </div>
-              <div id="dpoEditForm" style="display:none;margin-top:14px">
-                <div class="form-grid">
-                  <div class="field"><label>Nome / Cargo</label><input class="input" id="dpoNomeInput" type="text" placeholder="Ex.: João Silva — Gerente de RH"></div>
-                  <div class="field"><label>E-mail</label><input class="input" id="dpoEmailInput" type="email" placeholder="dpo@example.invalid"></div>
-                  <div class="field"><label>Telefone</label><input class="input" id="dpoTelInput" type="text" placeholder="(47) 3xxx-xxxx"></div>
-                  <div class="field"><label>Empresa</label><input class="input" id="dpoEmpresaInput" type="text" placeholder="Razão social da empresa"></div>
-                </div>
-                <div class="footer-actions">
-                  <button class="outlined-btn" onclick="toggleDpoEdit()">Cancelar</button>
-                  <button class="filled-btn" onclick="saveDpo()"><span class="material-symbols-outlined">save</span>Salvar</button>
-                </div>
+              <div class="notice" id="dpoIndisponivel" style="margin-top:14px;background:rgba(88,86,214,0.06);color:#5856D6;border-color:rgba(88,86,214,0.2)">
+                A designação do encarregado (principal e substituto) é administrada pelo perfil Master, com histórico e auditoria. O canal do encarregado deve ser divulgado aos funcionários para o exercício dos direitos do titular (art. 18 LGPD); a divulgação pública ainda não está disponível neste sistema.
               </div>
-              <div class="notice" style="margin-top:14px;background:rgba(88,86,214,0.06);color:#5856D6;border-color:rgba(88,86,214,0.2)">
-                O canal do DPO deve ser divulgado aos funcionários e estar disponível para o exercício dos direitos do titular (art. 18 LGPD).
-              </div>
+              <div id="dpoStatus" role="status" aria-live="polite" style="margin-top:8px;font-size:12px;min-height:16px"></div>
             </section>
 
-            <!-- DIREITOS DO TITULAR -->
-            <section class="card">
+            <!-- DIREITOS DO TITULAR: explicativo. O acesso a esta página é permissão administrativa, não o exercício do direito. -->
+            <section class="card lgpd-rights">
               <div class="card-header">
                 <div class="card-title">
                   <div class="card-icon" style="background:rgba(0,122,255,0.10);color:#007AFF">person_check</div>
@@ -380,156 +272,128 @@
                     <p>O funcionário pode exercer os direitos do art. 18 da LGPD.</p>
                   </div>
                 </div>
-                <button class="filled-btn" onclick="openTitularModal()"><span class="material-symbols-outlined">add</span>Nova solicitação</button>
+                <button class="filled-btn" type="button" id="lgpdNovaSolicitacao" disabled aria-describedby="lgpdSolicitacoesIndisponivel"><span class="material-symbols-outlined">add</span>Nova solicitação</button>
               </div>
-              <div class="switch-list">
-                <div class="switch-row"><div class="switch-text"><strong>Confirmação de existência de tratamento</strong><span>Art. 18, I — o titular pode solicitar confirmação de que seus dados estão sendo tratados.</span></div><span class="badge status-active">Disponível</span></div>
-                <div class="switch-row"><div class="switch-text"><strong>Acesso aos dados</strong><span>Art. 18, II — cópia de todos os dados pessoais tratados pelo sistema.</span></div><span class="badge status-active">Disponível</span></div>
-                <div class="switch-row"><div class="switch-text"><strong>Correção de dados incompletos ou incorretos</strong><span>Art. 18, III — o titular pode solicitar atualização ou correção.</span></div><span class="badge status-active">Disponível</span></div>
-                <div class="switch-row"><div class="switch-text"><strong>Eliminação de dados desnecessários</strong><span>Art. 18, VI — após o prazo legal de retenção, dados podem ser eliminados a pedido.</span></div><span class="badge role-supervisor">Mediante análise</span></div>
-                <div class="switch-row"><div class="switch-text"><strong>Portabilidade</strong><span>Art. 18, V — exportação dos dados em formato estruturado (CSV/PDF).</span></div><span class="badge status-active">Disponível</span></div>
+              <div class="switch-list lgpd-rights-grid">
+                <details class="lgpd-right"><summary><span class="material-symbols-outlined" aria-hidden="true">description</span><span>Confirmação de existência de tratamento</span></summary><p>Art. 18, I — o titular pode solicitar confirmação de que seus dados estão sendo tratados.</p><span class="badge role-supervisor">Canal em definição</span></details>
+                <details class="lgpd-right"><summary><span class="material-symbols-outlined" aria-hidden="true">search</span><span>Acesso aos dados</span></summary><p>Art. 18, II — acesso aos dados pessoais tratados pelo sistema.</p><span class="badge role-supervisor">Canal em definição</span></details>
+                <details class="lgpd-right"><summary><span class="material-symbols-outlined" aria-hidden="true">edit</span><span>Correção de dados incompletos ou incorretos</span></summary><p>Art. 18, III — o titular pode solicitar atualização ou correção.</p><span class="badge role-supervisor">Canal em definição</span></details>
+                <details class="lgpd-right"><summary><span class="material-symbols-outlined" aria-hidden="true">delete</span><span>Eliminação de dados desnecessários</span></summary><p>Art. 18, VI — eliminação de dados desnecessários, excessivos ou tratados em desconformidade, observadas as hipóteses de conservação.</p><span class="badge role-supervisor">Canal em definição</span></details>
+                <details class="lgpd-right"><summary><span class="material-symbols-outlined" aria-hidden="true">download</span><span>Portabilidade</span></summary><p>Art. 18, V — portabilidade dos dados a outro fornecedor, conforme regulamentação.</p><span class="badge role-supervisor">Canal em definição</span></details>
               </div>
-
-              <!-- Histórico de solicitações -->
-              <div style="margin-top:16px">
-                <div style="font-size:12px;font-weight:500;color:var(--on-surface-variant);letter-spacing:.04em;text-transform:uppercase;margin-bottom:10px">Solicitações recentes</div>
-                <div id="titularRequestList">
-                  <div style="font-size:13px;color:var(--on-surface-variant);text-align:center;padding:16px">Nenhuma solicitação registrada.</div>
-                </div>
+              <div class="notice" id="lgpdSolicitacoesIndisponivel" style="margin-top:14px;background:rgba(0,122,255,0.06);color:var(--on-surface-variant);border-color:rgba(0,122,255,0.15)">
+                O registro de solicitações de titulares ainda não está disponível neste sistema. O acesso a esta página é uma permissão administrativa e não é o exercício dos direitos do titular: o canal de atendimento, a identificação do titular e os prazos de resposta de cada modalidade serão definidos pela empresa, com validação jurídica.
               </div>
+            </section>
+            <section class="card lgpd-requests">
+              <div class="card-header"><div class="card-title"><div class="card-icon" aria-hidden="true">description</div><div><h2>Solicitações recentes</h2><p>Solicitações de titulares registradas para esta empresa.</p></div></div></div>
+              <div id="titularRequestList"><div class="lgpd-empty">O registro de solicitações de titulares ainda não está disponível neste sistema.</div></div>
             </section>
 
           </div>
         </section>
-
-      <!-- MODAL: SOLICITAÇÃO DO TITULAR -->
-      <div class="modal-overlay" id="titularModal" onclick="closeTitularModal(event)">
-        <div class="modal-card" onclick="event.stopPropagation()">
-          <div class="modal-header">
-            <div class="modal-title">
-              <div class="card-icon" style="background:rgba(0,122,255,0.10);color:#007AFF">person_check</div>
-              <div>
-                <h2 style="font-family:var(--font-brand);font-size:18px;font-weight:500">Solicitação de direito do titular</h2>
-                <p style="font-size:13px;color:var(--on-surface-variant);margin-top:3px">Preencha os dados do funcionário e o direito que deseja exercer.</p>
-              </div>
-            </div>
-            <button class="modal-close" type="button" onclick="closeTitularModal()">close</button>
-          </div>
-          <div class="form-grid">
-            <div class="field"><label>Nome do funcionário <span style="color:var(--error)">*</span></label><input class="input" id="titularNome" type="text" placeholder="Nome completo"></div>
-            <div class="field"><label>Matrícula / CPF <span style="color:var(--error)">*</span></label><input class="input" id="titularMatricula" type="text" placeholder="MAT-000000 ou CPF"></div>
-            <div class="field full">
-              <label>Direito a exercer <span style="color:var(--error)">*</span></label>
-              <select class="select" id="titularDireito">
-                <option value="">Selecione...</option>
-                <option>Confirmação de existência de tratamento</option>
-                <option>Acesso aos dados</option>
-                <option>Correção de dados</option>
-                <option>Eliminação de dados</option>
-                <option>Portabilidade dos dados</option>
-                <option>Informação sobre compartilhamento</option>
-              </select>
-            </div>
-            <div class="field full">
-              <label>Detalhamento da solicitação</label>
-              <input class="input" id="titularDesc" type="text" placeholder="Descreva o que deseja...">
-            </div>
-          </div>
-          <div class="notice" style="margin-top:12px;background:rgba(0,122,255,0.06);color:var(--on-surface-variant);border-color:rgba(0,122,255,0.15)">
-            O prazo máximo para resposta é de <strong>15 dias</strong> a contar desta solicitação (art. 18 §3 LGPD). O responsável pelo DPO receberá notificação automática.
-          </div>
-          <div class="footer-actions">
-            <button class="outlined-btn" onclick="closeTitularModal()">Cancelar</button>
-            <button class="filled-btn" onclick="saveTitularRequest()"><span class="material-symbols-outlined">send</span>Registrar solicitação</button>
-          </div>
-        </div>
-      </div>
-
-
       </section>
+</div>
     </main>
   </div>
 
-<!-- ═══ MODAL: ATIVAR MODO QUIOSQUE ═══════════════════════════════ -->
-      <div class="modal-overlay" id="kioskActivateModal" onclick="closeKioskActivateModal(event)">
-        <div class="modal-card" style="width:min(100%,420px)" onclick="event.stopPropagation()">
-          <div class="modal-header">
-            <div class="modal-title">
-              <div class="card-icon" style="background:rgba(0,122,255,0.1);color:#007AFF">lock</div>
-              <div>
-                <h2 style="font-family:var(--font-brand);font-size:17px;font-weight:500">Ativar Modo Quiosque</h2>
-                <p style="font-size:12px;color:var(--on-surface-variant);margin-top:2px">A sidebar e a navegação serão bloqueadas. Só será possível desbloquear com a senha de administrador.</p>
-              </div>
-            </div>
-            <button class="modal-close" onclick="closeKioskActivateModal()">close</button>
-          </div>
-          <div class="field full" style="margin-top:8px">
-            <label>Defina a senha de desbloqueio</label>
-            <input id="kioskPassword" class="input" type="password" placeholder="Mínimo 4 dígitos" autocomplete="new-password">
-          </div>
-          <div class="notice" style="margin-top:10px;background:rgba(255,149,0,0.06);color:#C07000;border-color:rgba(255,149,0,0.2)">
-            Guarde esta senha. Ela será exigida para sair do modo quiosque neste dispositivo.
-          </div>
-          <div class="footer-actions">
-            <button class="outlined-btn" onclick="closeKioskActivateModal()">Cancelar</button>
-            <button class="filled-btn" onclick="activateKioskMode()">
-              <span class="material-symbols-outlined">lock</span>Ativar agora
-            </button>
-          </div>
+<!-- MODAL: ENCARREGADO (DPO) — só para quem tem lgpdEncarregado.editar; fora do #conteudoProtegido, nasce fechado e vazio. -->
+<div class="modal-overlay" id="dpoModal" role="dialog" aria-modal="true" aria-labelledby="dpoModalTitulo">
+  <div class="modal-card">
+    <div class="modal-header">
+      <div class="modal-title">
+        <div class="card-icon" style="background:rgba(88,86,214,0.12);color:#5856D6">manage_accounts</div>
+        <div>
+          <h2 id="dpoModalTitulo" style="font-family:var(--font-brand);font-size:17px;font-weight:500">Encarregado de dados</h2>
+          <p style="font-size:12px;color:var(--on-surface-variant);margin-top:2px">A empresa permanece responsável pela designação formal; o registro aqui não comprova validação jurídica.</p>
         </div>
       </div>
+      <button class="modal-close" type="button" id="dpoModalFechar" aria-label="Fechar">close</button>
+    </div>
+    <div class="form-grid">
+      <div class="field"><label for="dpo-funcao">Função</label><select id="dpo-funcao" class="select"><option value="PRINCIPAL">Principal</option><option value="SUBSTITUTO">Substituto</option></select></div>
+      <div class="field"><label for="dpo-acao">Operação</label><select id="dpo-acao" class="select"><option value="DESIGNAR">Designar</option><option value="SUBSTITUIR">Substituir o vigente</option><option value="CONTATO">Corrigir contato do vigente</option><option value="ENCERRAR">Encerrar o vigente</option></select></div>
+      <div class="field" data-dpo-campo="designacao"><label for="dpo-tipoPessoa">Tipo de pessoa</label><select id="dpo-tipoPessoa" class="select"><option value="PF">Pessoa física</option><option value="PJ">Pessoa jurídica</option></select></div>
+      <div class="field" data-dpo-campo="designacao"><label for="dpo-vinculo">Vínculo</label><select id="dpo-vinculo" class="select"><option value="INTERNO">Interno</option><option value="EXTERNO">Externo</option></select></div>
+      <div class="field full" data-dpo-campo="designacao" data-dpo-pj><label for="dpo-razaoSocial">Razão social (pessoa jurídica)</label><input id="dpo-razaoSocial" class="input" type="text" maxlength="150" autocomplete="off"></div>
+      <div class="field" data-dpo-campo="designacao contato" data-dpo-pj data-dpo-cnpj><label for="dpo-cnpj">CNPJ (pessoa jurídica)</label><input id="dpo-cnpj" class="input" type="text" inputmode="text" placeholder="00.000.000/0000-00" maxlength="18" autocomplete="off"></div>
+      <div class="field full" data-dpo-campo="designacao"><label for="dpo-nome" id="dpo-nome-rotulo">Nome completo</label><input id="dpo-nome" class="input" type="text" maxlength="150" autocomplete="off"></div>
+      <div class="field" data-dpo-campo="designacao contato"><label for="dpo-cargo">Cargo ou função profissional</label><input id="dpo-cargo" class="input" type="text" maxlength="100" autocomplete="off"></div>
+      <div class="field" data-dpo-campo="designacao contato"><label for="dpo-email">E-mail profissional</label><input id="dpo-email" class="input" type="email" maxlength="150" autocomplete="off"></div>
+      <div class="field" data-dpo-campo="designacao contato"><label for="dpo-telefone">Telefone profissional (opcional)</label><input id="dpo-telefone" class="input" type="tel" maxlength="20" autocomplete="off"></div>
+      <div class="field" data-dpo-campo="designacao"><label for="dpo-inicioEm">Início da designação</label><div class="dpo-data"><input id="dpo-inicioEm" class="input" type="text" inputmode="numeric" placeholder="DD/MM/AAAA" maxlength="10" autocomplete="off"><input id="dpo-inicioEm-seletor" class="input dpo-data-seletor" type="date" tabindex="-1" aria-hidden="true" style="display:none"><button class="outlined-btn dpo-data-abrir" type="button" id="dpo-inicioEm-abrir" aria-label="Abrir calendário"><span class="material-symbols-outlined" aria-hidden="true">calendar_month</span></button></div></div>
+      <div class="field" data-dpo-campo="designacao"><label for="dpo-atoReferencia">Referência ao ato formal (opcional)</label><input id="dpo-atoReferencia" class="input" type="text" maxlength="200" autocomplete="off"></div>
+      <div class="field" data-dpo-campo="designacao"><label for="dpo-atoData">Data do ato formal (opcional)</label><div class="dpo-data"><input id="dpo-atoData" class="input" type="text" inputmode="numeric" placeholder="DD/MM/AAAA" maxlength="10" autocomplete="off"><input id="dpo-atoData-seletor" class="input dpo-data-seletor" type="date" tabindex="-1" aria-hidden="true" style="display:none"><button class="outlined-btn dpo-data-abrir" type="button" id="dpo-atoData-abrir" aria-label="Abrir calendário"><span class="material-symbols-outlined" aria-hidden="true">calendar_month</span></button></div></div>
+      <div class="field" data-dpo-campo="designacao"><label for="dpo-conflito">Conflito de interesses</label><select id="dpo-conflito" class="select"><option value="NAO_AVALIADO">Não avaliado</option><option value="SEM_CONFLITO">Avaliado: sem conflito</option><option value="COM_CONFLITO_MITIGADO">Avaliado: conflito mitigado</option></select></div>
+      <div class="field full" data-dpo-campo="designacao"><label for="dpo-conflitoNota">Nota da avaliação (opcional)</label><input id="dpo-conflitoNota" class="input" type="text" maxlength="500" autocomplete="off"></div>
+      <div class="field" data-dpo-campo="encerrar substituir"><label for="dpo-fimEm" id="dpo-fimEm-rotulo">Data de encerramento do vigente (opcional; padrão: hoje)</label><div class="dpo-data"><input id="dpo-fimEm" class="input" type="text" inputmode="numeric" placeholder="DD/MM/AAAA" maxlength="10" autocomplete="off"><input id="dpo-fimEm-seletor" class="input dpo-data-seletor" type="date" tabindex="-1" aria-hidden="true" style="display:none"><button class="outlined-btn dpo-data-abrir" type="button" id="dpo-fimEm-abrir" aria-label="Abrir calendário"><span class="material-symbols-outlined" aria-hidden="true">calendar_month</span></button></div></div>
+    </div>
+    <p id="dpoModalMsg" role="alert" style="font-size:12px;margin-top:8px;min-height:16px"></p>
+    <div class="footer-actions">
+      <button class="outlined-btn" type="button" id="dpoModalCancelar">Cancelar</button>
+      <button class="filled-btn" type="button" id="dpoModalSalvar"><span class="material-symbols-outlined">save</span>Salvar</button>
+    </div>
+  </div>
+</div>
 
-      <!-- ═══ OVERLAY: MODO QUIOSQUE ATIVO (bloqueia tudo) ═══════════════ -->
-      <div id="kioskLockOverlay" style="display:none;position:fixed;inset:0;z-index:9999;
-           background:var(--surface);align-items:center;justify-content:center;flex-direction:column;gap:16px">
-        <div style="width:72px;height:72px;border-radius:22px;background:rgba(0,122,255,0.1);
-                    display:flex;align-items:center;justify-content:center">
-          <span class="material-symbols-outlined" style="font-size:36px;color:#007AFF">lock</span>
-        </div>
-        <div style="text-align:center">
-          <div style="font-size:16px;font-weight:600">Modo Quiosque Ativo</div>
-          <div style="font-size:13px;color:var(--on-surface-variant);margin-top:4px">
-            Este dispositivo está em modo de autoatendimento.<br>Digite a senha de administrador para liberar.
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input id="kioskUnlockInput" class="input" type="password" placeholder="Senha de desbloqueio"
-                 style="width:220px" onkeydown="if(event.key==='Enter') unlockKioskMode()">
-          <button class="filled-btn" onclick="unlockKioskMode()">
-            <span class="material-symbols-outlined">lock_open</span>Desbloquear
-          </button>
-        </div>
-        <div id="kioskUnlockError" style="display:none;color:#FF3B30;font-size:12px">Senha incorreta.</div>
-      </div>
-
-<script src="../js/db-api.js"></script>
-<script src="../js/main.js"></script>
-<script src="../js/inspecao-visual.js"></script>
+<script src="../js/api-http.js"></script>
+<script src="../portal/config.js"></script>
+<script src="../js/sessao-empresarial.js"></script>
+<script src="../js/permissoes-efetivas.js"></script>
+<script src="../js/suporte-notificacoes.js"></script>
+<script src="../js/pagina-base.js"></script>
+<script src="../js/estado-pagina.js"></script>
+<script src="../js/lgpd.js"></script>
 <script>
-  document.addEventListener('DOMContentLoaded', () => {
-    // init
-    var navLink = document.querySelector('.nav a[data-page="lgpd"]');
-    if (navLink && typeof setActiveNav === 'function') setActiveNav(navLink);
-    document.querySelectorAll('.nav a[data-page]').forEach(function(a) {
-      var page = a.getAttribute('data-page');
-      var fileMap = {
-        'self-service':'self-service.html','dashboard':'dashboard.html','config':'config.html',
-        'supervisorApproval':'supervisor-approval.html','request':'request.html',
-        'stockRequests':'stock-requests.html','userAdmin':'user-admin.html',
-        'operations':'operations.html','eligibilityRules':'eligibility-rules.html',
-        'materials':'materials.html','purchases':'purchases.html',
-        'stockValidity':'stock-validity.html','availableItems':'available-items.html',
-        'epiFicha':'epi-ficha.html','deliveredItems':'delivered-items.html',
-        'reports':'reports.html','employeeHistory':'employee-history.html',
-        'newUser':'new-user.html','support':'support.html',
-        'importEmployees':'import-employees.html','lgpd':'lgpd.html','emailsGestao':'emails-gestao.html'
-      };
-      if (fileMap[page]) {
-        a.setAttribute('href', fileMap[page]);
-        a.removeAttribute('onclick');
-      }
+/*
+  Ligação com o DOM — deliberadamente fina. Sessão e permissões reais (js/estado-pagina.js); os dados, o contrato e os textos
+  vivem em js/lgpd.js (testado sem navegador).
+*/
+(function () {
+  'use strict';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var tela = null;
+
+  // Menu lateral no celular (sem manipulador inline).
+  $('menuCelular').addEventListener('click', function () { EpiPaginaBase.toggleSidebar(); });
+  $('menuFundo').addEventListener('click', function () { EpiPaginaBase.closeMobileMenu(); });
+
+  // Mesmo endereço do Portal do Cliente (portal/config.js).
+  EpiHttp.configurar({ baseUrl: window.SAFEWORK_PORTAL_API_BASE_URL });
+
+  EpiEstadoPagina.montarPaginaProtegida({
+    pagina: 'lgpd',
+    elementos: {
+      tela: $('telaSessao'),
+      mensagem: $('telaSessaoMensagem'),
+      linkPortal: $('telaSessaoPortal'),
+      conteudo: $('conteudoProtegido'),
+      estado: $('estadoPagina'),
+      links: document.querySelectorAll('.nav a[data-pagina]'),
+    },
+    aoEncerrar: function () { if (tela) tela.encerrar(); },
+  }).then(function (acesso) {
+    if (!acesso) return undefined;
+    tela = EpiLgpd.criarTela({
+      // Gestão do encarregado só com lgpdEncarregado efetiva (visualizar e editar); o servidor decide de novo em cada chamada.
+      capacidades: EpiLgpd.capacidades(acesso.permissoes),
+      // Id da empresa da sessão validada: só para o modal do encarregado não ser restaurado (após F5) noutra empresa.
+      empresaId: acesso.contexto && acesso.contexto.empresa ? acesso.contexto.empresa.id : null,
+      aoSessaoEncerrada: function () {
+        if (tela) tela.encerrar();
+        EpiEstadoPagina.sessaoEncerrada({ conteudo: $('conteudoProtegido'), estado: $('estadoPagina') });
+      },
+      // 403 depois de o menu ter sido montado: a permissão foi retirada; falha fechada, nada do resumo fica na tela.
+      aoSemAutorizacao: function () {
+        if (tela) tela.encerrar();
+        $('conteudoProtegido').style.display = 'none';
+        EpiEstadoPagina.mostrar($('estadoPagina'), EpiEstadoPagina.TIPOS.ACESSO_NEGADO);
+      },
     });
+    return tela.iniciar();
   });
+})();
 </script>
 </body>
 </html>

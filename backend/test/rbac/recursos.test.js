@@ -55,7 +55,7 @@ describe('recursos conhecidos', () => {
 });
 
 describe('escopo do provisionamento do MASTER', () => {
-  test('é EXATAMENTE o que as rotas exigem: 4 recursos com visualizar/criar/editar (inclusive request, 05/10/2026); availableItems, dashboard, stockValidity, operations e epiFicha só visualizar (C3, C6, E9 e 10I); nenhum excluir; 2 ações', () => {
+  test('é EXATAMENTE o que as rotas exigem: 4 recursos com visualizar/criar/editar (inclusive request, 05/10/2026); availableItems, dashboard, stockValidity, operations, epiFicha, lgpd e emailsGestao só visualizar (C3, C6, E9, 10I e Bloco A1); nenhum excluir', () => {
     const escopo = recursos.ESCOPO_PROVISIONAMENTO_MASTER;
     assert.equal(escopo.perfil, 'MASTER');
     assert.deepEqual(
@@ -74,6 +74,10 @@ describe('escopo do provisionamento do MASTER', () => {
         ['reportsFiscal', ['visualizar']],
         ['atendimentoToken', ['visualizar', 'criar', 'editar']],
         ['companyData', ['visualizar', 'editar']],
+        ['lgpd', ['visualizar']],
+        ['emailsGestao', ['visualizar']],
+        // LGPD-1: encarregado (DPO), exclusivo do MASTER; lgpdRetencao fica fora até ter rota (LGPD-3).
+        ['lgpdEncarregado', ['visualizar', 'editar']],
       ],
     );
     assert.deepEqual([...escopo.acoes], ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS', 'TOKEN_REVOGAR_DISPOSITIVO', 'TOKEN_GERAR_ATIVACAO', 'TOKEN_GERENCIAR_REDES', 'TOKEN_PREVIA_CATALOGO_REAL']);
@@ -89,12 +93,16 @@ describe('escopo do provisionamento do MASTER', () => {
       'reportsAudit' /* 12K-D5: relatorio.routes.js (literal, como o teste de efeito real confere) */,
       'reportsFiscal' /* 12K-D6: relatorio.routes.js (literal) */,
       tokenDispositivoRoutes.RECURSO /* Atendimento Token, Etapa B */,
-      require('../../src/routes/empresa-dados.routes').RECURSO /* Dados da Empresa (F1) */]);
+      require('../../src/routes/empresa-dados.routes').RECURSO /* Dados da Empresa (F1) */,
+      require('../../src/routes/lgpd.routes').RECURSO /* Privacidade e LGPD (Bloco A1) */,
+      require('../../src/routes/email-gestao.routes').RECURSO /* Gestão de E-mails (Bloco A1) */,
+      require('../../src/routes/lgpd-encarregado.routes').RECURSO /* Encarregado (DPO), LGPD-1 */]);
     const recursosDoEscopo = new Set(recursos.ESCOPO_PROVISIONAMENTO_MASTER.recursos.map((r) => r.recurso));
     assert.deepEqual([...recursosDoEscopo].sort(), [...recursosDasRotas].sort());
     assert.deepEqual([...recursos.ESCOPO_PROVISIONAMENTO_MASTER.acoes], [estoqueRoutes.ACAO_ENTRADA_ESTOQUE, estoqueRoutes.ACAO_BAIXA_ESTOQUE, entregaEpiRoutes.ACAO_REALIZAR_ENTREGA, 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS', tokenDispositivoRoutes.ACAO_REVOGAR_DISPOSITIVO, tokenAtivacaoRoutes.ACAO_GERAR_ATIVACAO, tokenCentralRoutes.ACAO_REDES, tokenCentralRoutes.ACAO_PREVIA]);
     assert.ok(recursosDoEscopo.size < recursos.RECURSOS_CONHECIDOS.length, 'escopo é menor que a lista de conhecidos');
-    for (const legado of ['userAdmin', 'config', 'lgpd', 'importEmployees']) {
+    // Bloco A1: lgpd e emailsGestao ganharam rota e saíram desta lista.
+    for (const legado of ['userAdmin', 'config', 'importEmployees']) {
       assert.ok(!recursosDoEscopo.has(legado), `${legado} não tem rota no backend e não entra no escopo`);
     }
   });

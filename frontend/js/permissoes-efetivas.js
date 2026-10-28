@@ -207,6 +207,12 @@
       abrir: [{ recurso: 'companyData', operacao: 'visualizar' }],
       alterar: [{ recurso: 'companyData', operacao: 'editar' }],
     },
+    // Privacidade e LGPD (consulta): abre só com lgpd.visualizar, a permissão do toggle privacidadeLgpd (Bloco A1); página somente
+    // de leitura, sem "alterar". O perfil não decide nada; o servidor exige a mesma permissão em GET /lgpd/resumo.
+    lgpd: {
+      abrir: [{ recurso: 'lgpd', operacao: 'visualizar' }],
+      alterar: [],
+    },
   };
 
   var MENSAGENS = {
@@ -419,10 +425,10 @@
   // (eligibility-rules.html) são MÓDULOS TEMPORARIAMENTE DESATIVADOS / ADIADOS
   // (05/10/2026): saíram da inspeção, sem link mesmo para o MASTER; os
   // arquivos ficam preservados para retomada futura.
+  // Privacidade / LGPD saiu daqui: é página integrada (ajustarMenuLgpd) e ?inspecao=1 não a abre.
   var INSPECAO_PROTOTIPOS = {
     'Autoatendimento (Totem)': 'self-service.html',
     'Gestão de E-mails': 'emails-gestao.html',
-    'Privacidade / LGPD': 'lgpd.html',
   };
   var MARCADOR_INSPECAO = 'inspecao=1';
   var TITULO_INSPECAO = 'Em integração — aberta só para inspeção visual (MASTER)';
@@ -600,6 +606,39 @@
     configuracoes.parentNode.insertBefore(item, seguinte === undefined ? null : seguinte);
   }
 
+  // Privacidade e LGPD: o item "Privacidade / LGPD" que as páginas integradas trazem como "Em integração" passa a abrir lgpd.html
+  // SÓ para quem pode abri-la pelas permissões efetivas (PAGINAS.lgpd). Ponto central da navegação: nenhuma página homologada foi
+  // editada. Sem a permissão, ou com a consulta falha, o item some (não é módulo operacional disponível) — inclusive para o MASTER,
+  // que não recebe mais link de inspeção para ela. A própria lgpd.html traz o item estático com data-pagina (aplicarMenu).
+  var ROTULO_LGPD = 'Privacidade / LGPD';
+  var HREF_LGPD = 'lgpd.html';
+  var MARCA_LGPD = 'data-lgpd';
+
+  function ajustarMenuLgpd(permissoes, raiz) {
+    if (!raiz || typeof raiz.querySelectorAll !== 'function') return;
+    var pode = podeAbrir(permissoes, 'lgpd');
+    Array.prototype.forEach.call(raiz.querySelectorAll('.nav a'), function (a) {
+      var ajustado = a.getAttribute(MARCA_LGPD) === 'true';
+      if (!ajustado && !(a.classList.contains('nav-pendente') && rotuloDoItem(a) === ROTULO_LGPD)) return;
+      if (!pode) {
+        a.removeAttribute('href');
+        a.style.display = 'none';
+        return;
+      }
+      a.setAttribute('href', HREF_LGPD);
+      a.setAttribute('data-pagina', 'lgpd');
+      a.setAttribute(MARCA_LGPD, 'true');
+      a.removeAttribute('aria-disabled');
+      a.removeAttribute('title');
+      a.classList.remove('nav-pendente');
+      a.style.cursor = '';
+      a.style.display = '';
+      Array.prototype.forEach.call(a.querySelectorAll('.nav-etiqueta'), function (etiqueta) {
+        if (etiqueta.parentNode) etiqueta.parentNode.removeChild(etiqueta);
+      });
+    });
+  }
+
   /**
    * Empresa, usuário e perfil a partir do contexto que a página exibe
    * ({usuario, empresa} de EpiSessaoEmpresarial ou do Portal). Campos
@@ -632,6 +671,7 @@
       ajustarMenuAtendimentoToken(null, documento);
       ajustarMenuDadosEmpresa(null, documento);
       ajustarMenuSuporte(null, documento);
+      ajustarMenuLgpd(null, documento);
       if (r.motivo === 'SEM_SESSAO' && global.EpiSessaoEmpresarial) {
         global.EpiSessaoEmpresarial.sessaoEncerrada();
         return null;
@@ -645,6 +685,7 @@
     ajustarMenuAtendimentoToken(r.permissoes, documento);
     ajustarMenuDadosEmpresa(r.permissoes, documento);
     ajustarMenuSuporte(r.permissoes, documento);
+    ajustarMenuLgpd(r.permissoes, documento);
     if (!podeAbrir(r.permissoes, o.pagina)) {
       aviso(MENSAGENS.SEM_ACESSO);
       return null;
@@ -673,6 +714,7 @@
         ajustarMenuAtendimentoToken(null, documento);
         ajustarMenuDadosEmpresa(null, documento);
         ajustarMenuSuporte(null, documento);
+        ajustarMenuLgpd(null, documento);
         if (r.motivo === 'SEM_SESSAO') {
           sessao.sessaoEncerrada();
           return { acao: 'encerrada' };
@@ -684,6 +726,7 @@
       ajustarMenuAtendimentoToken(r.permissoes, documento);
       ajustarMenuDadosEmpresa(r.permissoes, documento);
       ajustarMenuSuporte(r.permissoes, documento);
+      ajustarMenuLgpd(r.permissoes, documento);
       return { acao: JSON.stringify(r.permissoes) === assinatura ? 'liberar' : 'recarregar' };
     });
   }
@@ -717,6 +760,7 @@
     ajustarMenuAtendimentoToken: ajustarMenuAtendimentoToken,
     ajustarMenuDadosEmpresa: ajustarMenuDadosEmpresa,
     ajustarMenuSuporte: ajustarMenuSuporte,
+    ajustarMenuLgpd: ajustarMenuLgpd,
     hrefDeInspecao: hrefDeInspecao,
     INSPECAO_PROTOTIPOS: INSPECAO_PROTOTIPOS,
     podeAbrir: podeAbrir,

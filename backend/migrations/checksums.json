@@ -93,6 +93,8 @@
     "090_create_biblioteca_imagens_material.sql": "38bf19945ff017b708dc844adbf49a7ec2a95fb14238e9dfa66ee492c3861732",
     "091_alter_empresas_add_emails_sst_almoxarifado_versao.sql": "36d425c1aeef95c9cd20bf50b2e15f00f2644bdf150ceba4151f0a78e75a55ba",
     "092_create_suporte.sql": "67cc2083872418730bae8d3738bcfcfe4a69dffc292c85ed70e2c4999b206ab8",
-    "093_alter_suporte_conversa.sql": "279f80ecb86f7eaa71eb865ea2375425b84106baaf6787703f21448c64489f0c"
+    "093_alter_suporte_conversa.sql": "279f80ecb86f7eaa71eb865ea2375425b84106baaf6787703f21448c64489f0c",
+    "094_create_lgpd_encarregados.sql": "67aa4f4ecc57a8978cfe2f2dd964680f81cb4ce27650126ab032741edc586dcf",
+    "095_alter_lgpd_encarregados_add_cnpj.sql": "d4918cce6d8bf91b4f3a6a03dab513ed09799bf53e6142d154327ce7c3ca611a"
   }
 }

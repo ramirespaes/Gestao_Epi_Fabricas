@@ -78,7 +78,9 @@ describe('J1 — o toggle novo no catálogo', () => {
     // Os sete do Atendimento Token entram na Etapa H (toggles-atendimento-token.test.js); aqui conta só o que é do pacote J.
     // Catálogo completo, sem exceção por identificador: fora os homologados e o grupo ATENDIMENTO, só podem existir o do pacote J e
     // o controle único de Dados da Empresa (definição completa em empresa-dados-rbac.test.js). Qualquer outro toggle novo reprova aqui.
-    assert.deepEqual(ids.filter((id) => !Object.hasOwn(ANTERIORES, id) && buscar(id).grupo !== 'ATENDIMENTO'), [TOGGLE, 'dadosEmpresa']);
+    // Bloco A1: Privacidade e LGPD e Gestão de E-mails (definição completa em toggles-lgpd-emails.test.js).
+    // LGPD-1: lgpdEncarregado (definição completa em recursos-exclusivos-master.test.js).
+    assert.deepEqual(ids.filter((id) => !Object.hasOwn(ANTERIORES, id) && buscar(id).grupo !== 'ATENDIMENTO'), [TOGGLE, 'dadosEmpresa', 'privacidadeLgpd', 'gestaoEmail', 'lgpdEncarregado']);
     for (const [id, [grupo, regra, dependencias]] of Object.entries(ANTERIORES)) {
       const t = buscar(id);
       assert.ok(t, id);
@@ -86,7 +88,7 @@ describe('J1 — o toggle novo no catálogo', () => {
     }
     assert.equal(new Set(ids).size, ids.length);
     assert.equal(PENDENCIAS.some((p) => /export/i.test(`${p.id} ${p.rotulo}`)), false, 'exportar é toggle real, não pendência');
-    assert.equal(PENDENCIAS.length, 8);
+    assert.equal(PENDENCIAS.length, 7, 'Bloco A1: Gestão de E-mail e Privacidade / LGPD deixaram de ser pendência (6); LGPD-1: + Política de retenção (7)');
   });
 });
 

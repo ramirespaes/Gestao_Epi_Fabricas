@@ -50,7 +50,25 @@ const RECURSOS_ATENDIMENTO_TOKEN = Object.freeze(['atendimentoToken']);
 // Dados da Empresa (Portal): consulta e edição do cadastro da própria empresa (empresa-dados.routes.js).
 const RECURSOS_DADOS_EMPRESA = Object.freeze(['companyData']);
 
-const RECURSOS_CONHECIDOS = Object.freeze([...RECURSOS_LEGADOS, ...RECURSOS_BLOCO_9, ...RECURSOS_RELATORIOS, ...RECURSOS_ATENDIMENTO_TOKEN, ...RECURSOS_DADOS_EMPRESA]);
+// Privacidade e LGPD (LGPD-1): encarregado (DPO) e política de retenção. Os dois são EXCLUSIVOS do MASTER (abaixo).
+// `lgpdRetencao` existe só no catálogo e na proteção de exclusividade: sem rota, sem toggle e fora do escopo de
+// provisionamento até o LGPD-3 (nada de retenção é operacional).
+const RECURSOS_LGPD = Object.freeze(['lgpdEncarregado', 'lgpdRetencao']);
+
+const RECURSOS_CONHECIDOS = Object.freeze([...RECURSOS_LEGADOS, ...RECURSOS_BLOCO_9, ...RECURSOS_RELATORIOS, ...RECURSOS_ATENDIMENTO_TOKEN, ...RECURSOS_DADOS_EMPRESA, ...RECURSOS_LGPD]);
+
+/**
+ * Recursos que SÓ o perfil MASTER pode possuir (decisão A de 27/10/2026). Não é bypass: o MASTER continua precisando da
+ * linha de perfil (provisionamento oficial, avaliada como qualquer outra). A exclusividade é a RECUSA, nos serviços de
+ * permissões (toggle do usuário, exceção individual, grupo), de conceder esses recursos a outro perfil — 409
+ * RECURSO_EXCLUSIVO_MASTER, com a tentativa auditada. Os serviços de escrita desses módulos exigem ainda a autoridade
+ * administrativa com ator MASTER (dupla barreira).
+ */
+const RECURSOS_EXCLUSIVOS_MASTER = Object.freeze([...RECURSOS_LGPD]);
+
+function recursoExclusivoMaster(recurso) {
+  return typeof recurso === 'string' && RECURSOS_EXCLUSIVOS_MASTER.includes(recurso);
+}
 
 // Operações que as rotas de produção exigem, por recurso:
 //   materials       -> material.routes.js (visualizar/criar/editar) e
@@ -93,6 +111,12 @@ const ESCOPO_PROVISIONAMENTO_MASTER = Object.freeze({
     // Dados da Empresa: GET exige visualizar; PATCH exige visualizar E editar. Sem criar/excluir (a empresa nasce no Painel Privado).
     // Razão social e CNPJ não são editáveis por nenhuma permissão.
     Object.freeze({ recurso: 'companyData', operacoes: Object.freeze(['visualizar', 'editar']) }),
+    // Bloco A1: Privacidade e LGPD (lgpd.routes.js) e Gestão de E-mails (email-gestao.routes.js), só o resumo de leitura.
+    Object.freeze({ recurso: 'lgpd', operacoes: Object.freeze(['visualizar']) }),
+    Object.freeze({ recurso: 'emailsGestao', operacoes: Object.freeze(['visualizar']) }),
+    // LGPD-1: encarregado (DPO) — lgpd-encarregado.routes.js: consultar (visualizar) e designar/substituir/corrigir/encerrar
+    // (editar). Exclusivo do MASTER (RECURSOS_EXCLUSIVOS_MASTER); sem criar/excluir (não há rota).
+    Object.freeze({ recurso: 'lgpdEncarregado', operacoes: Object.freeze(['visualizar', 'editar']) }),
   ]),
   // estoque.routes.js: entradas e baixas por lote; entrega-epi.routes.js: entrega e seu contexto (migrations 003/017).
   // Pacote J (085): exportar o Histórico de Funcionários, avaliado com a leitura em exportacao-historico-autorizacao.service.js.
@@ -140,6 +164,9 @@ const ROTULOS_RECURSOS = Object.freeze({
   reportsFiscal: 'Relatório — Fiscalização',
   atendimentoToken: 'Atendimento Token',
   companyData: 'Dados da Empresa',
+  lgpd: 'Privacidade e LGPD',
+  emailsGestao: 'Gestão de E-mails',
+  lgpdEncarregado: 'LGPD — Encarregado (DPO)',
 });
 for (const { recurso } of ESCOPO_PROVISIONAMENTO_MASTER.recursos) {
   if (typeof ROTULOS_RECURSOS[recurso] !== 'string') {
@@ -172,6 +199,9 @@ module.exports = {
   RECURSOS_LEGADOS,
   RECURSOS_BLOCO_9,
   RECURSOS_CONHECIDOS,
+  RECURSOS_LGPD,
+  RECURSOS_EXCLUSIVOS_MASTER,
+  recursoExclusivoMaster,
   ESCOPO_PROVISIONAMENTO_MASTER,
   recursoConhecido,
 };

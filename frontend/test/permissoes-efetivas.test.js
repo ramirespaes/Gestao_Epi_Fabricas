@@ -307,8 +307,9 @@ describe('menu, página e somente leitura', () => {
 describe('liberação visual controlada (temporária, 05/10/2026): o MASTER abre os protótipos "Em integração" só para inspeção', () => {
   // 05/10/2026: Compras / Entradas (purchases.html) e Regras Função / Setor (eligibility-rules.html)
   // são MÓDULOS TEMPORARIAMENTE DESATIVADOS / ADIADOS: fora da inspeção, sem link mesmo para o MASTER.
+  // Privacidade / LGPD (lgpd.html) virou página integrada (PAGINAS.lgpd + ajustarMenuLgpd; ver lgpd-menu.test.js): saiu da inspeção.
   const LEGADAS = {
-    'Autoatendimento (Totem)': 'self-service.html', 'Gestão de E-mails': 'emails-gestao.html', 'Privacidade / LGPD': 'lgpd.html',
+    'Autoatendimento (Totem)': 'self-service.html', 'Gestão de E-mails': 'emails-gestao.html',
   };
   // Suporte (support.html) é página integrada: sai da inspeção; seu menu é tratado por ajustarMenuSuporte (describe próprio abaixo).
   const DESATIVADAS = { 'Compras / Entradas': 'purchases.html', 'Regras Função / Setor': 'eligibility-rules.html' };
@@ -342,7 +343,7 @@ describe('liberação visual controlada (temporária, 05/10/2026): o MASTER abre
     }
   });
 
-  test('MASTER: os três itens pendentes (3/3) ganham href com o marcador de inspeção, perdem aria-disabled e mantêm classe e etiqueta; rótulo desconhecido, "Configurações" e os dois módulos adiados não mudam', () => {
+  test('MASTER: os dois itens pendentes (2/2) ganham href com o marcador de inspeção, perdem aria-disabled e mantêm classe e etiqueta; rótulo desconhecido, "Configurações" e os dois módulos adiados não mudam', () => {
     const rotulos = Object.keys(LEGADAS);
     const adiados = Object.keys(DESATIVADAS).map(pendente);
     const itens = rotulos.map(pendente).concat([pendente('Módulo Inexistente'), pendente('Configurações')], adiados);
@@ -381,13 +382,13 @@ describe('liberação visual controlada (temporária, 05/10/2026): o MASTER abre
   });
 
   test('não MASTER, perfil em outra caixa ou sem permissões: nada ganha link; o que tinha sido liberado volta a ficar sem link (revalidação com outro perfil)', () => {
-    const itens = [pendente('Privacidade / LGPD')];
+    const itens = [pendente('Gestão de E-mails')];
     P.liberarInspecao({ perfil: 'ADMINISTRADOR' }, raizCom(itens));
     assert.equal(itens[0].atributos.href, undefined);
     P.liberarInspecao({ perfil: 'master' }, raizCom(itens));
     assert.equal(itens[0].atributos.href, undefined, 'comparação exata do perfil');
     P.liberarInspecao({ perfil: 'MASTER' }, raizCom(itens));
-    assert.equal(itens[0].atributos.href, 'lgpd.html?inspecao=1');
+    assert.equal(itens[0].atributos.href, 'emails-gestao.html?inspecao=1');
     P.liberarInspecao({ perfil: 'SUPERVISOR' }, raizCom(itens));
     assert.deepEqual([itens[0].atributos.href, itens[0].atributos['aria-disabled'], itens[0].atributos.title, itens[0].style.cursor], [undefined, 'true', 'Em integração', '']);
     P.liberarInspecao({ perfil: 'MASTER' }, raizCom(itens));
@@ -397,14 +398,14 @@ describe('liberação visual controlada (temporária, 05/10/2026): o MASTER abre
   });
 
   test('prepararPagina: só o perfil MASTER confirmado pelo servidor libera os pendentes do documento; falha na consulta recolhe; podeAbrir dos protótipos continua falso', async () => {
-    const itens = [pendente('Privacidade / LGPD')];
+    const itens = [pendente('Gestão de E-mails')];
     servidor(resposta(200, corpo({ perfil: 'MASTER' })));
     const contextoMaster = { ...CONTEXTO, usuario: { ...CONTEXTO.usuario, perfil: 'MASTER' } };
     const r = await P.prepararPagina({ pagina: 'grupos-acesso', contexto: contextoMaster, links: [], aviso: () => {}, documento: raizCom(itens) });
-    assert.equal(itens[0].atributos.href, 'lgpd.html?inspecao=1');
+    assert.equal(itens[0].atributos.href, 'emails-gestao.html?inspecao=1');
     assert.equal(r.podeAlterar, true);
 
-    const outros = [pendente('Privacidade / LGPD')];
+    const outros = [pendente('Gestão de E-mails')];
     servidor(resposta(200, corpo()));
     await P.prepararPagina({ pagina: 'grupos-acesso', contexto: CONTEXTO, links: [], aviso: () => {}, documento: raizCom(outros) });
     assert.equal(outros[0].atributos.href, undefined);

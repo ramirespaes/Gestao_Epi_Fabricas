@@ -276,14 +276,14 @@ describe('menu, Portal e Permissões do Grupo', () => {
   });
 
   test('nenhuma das 25 páginas de menu completo usa os nomes antigos; os protótipos mantêm a navegação deles com os nomes novos', () => {
-    assert.equal(COM_MENU_COMPLETO.length, 25); // + atendimento-token.html (Etapa H) + company-data.html (F2)
+    assert.equal(COM_MENU_COMPLETO.length, 25); // + atendimento-token.html (Etapa H) + company-data.html (F2); lgpd.html passou de protótipo a integrada (mesma contagem)
     for (const arquivo of COM_MENU_COMPLETO) {
       const rotulos = secao(ler(`pages/${arquivo}`), 'Solicitações').itens.map((i) => i.rotulo);
       // A Central do Atendimento Token (Etapa H) é a página própria do item: ela mostra o nome novo, como cada página integrada marca a si mesma.
       const primeiro = arquivo === CENTRAL_ATENDIMENTO_TOKEN ? 'Atendimento Token' : 'Autoatendimento (Totem)';
       assert.deepEqual(rotulos, [primeiro, 'Pedido de EPI', 'Aprovação da Segurança do Trabalho', 'Entregas por solicitação'], arquivo);
     }
-    for (const arquivo of COM_MENU_COMPLETO.filter((f) => !INTEGRADAS.includes(f) && f !== CENTRAL_ATENDIMENTO_TOKEN && f !== 'company-data.html' && f !== 'support.html')) {
+    for (const arquivo of COM_MENU_COMPLETO.filter((f) => !INTEGRADAS.includes(f) && f !== CENTRAL_ATENDIMENTO_TOKEN && f !== 'company-data.html' && f !== 'support.html' && f !== 'lgpd.html')) {
       const itens = secao(ler(`pages/${arquivo}`), 'Solicitações').itens;
       assert.match(itens.find((i) => i.rotulo === 'Aprovação da Segurança do Trabalho').html, /data-page="supervisorApproval"/, arquivo);
       assert.match(itens.find((i) => i.rotulo === 'Entregas por solicitação').html, /data-page="stockRequests"/, arquivo);

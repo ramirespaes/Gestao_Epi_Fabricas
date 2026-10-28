@@ -22,7 +22,8 @@ const ler = (rel) => fs.readFileSync(path.join(RAIZ, rel), 'utf8');
 // fora da inspeção, arquivos preservados; ainda carregam o script, que recusa ativar neles.
 // 12K-C: EPIs Entregues (delivered-items.html) e, na 12K-D, Relatórios (reports.html) viraram páginas integradas e saíram da inspeção.
 // Suporte (support.html) virou página integrada (sessão real, três canais reais, sem login demonstrativo; ver suporte-pagina.test.js): saiu da inspeção.
-const PROTOTIPOS = ['emails-gestao.html', 'lgpd.html', 'self-service.html'];
+// Privacidade e LGPD (lgpd.html) virou página integrada (sessão real, lgpd.visualizar; ver lgpd-pagina.test.js): saiu da inspeção.
+const PROTOTIPOS = ['emails-gestao.html', 'self-service.html'];
 const DESATIVADOS = ['purchases.html', 'eligibility-rules.html'];
 
 function elemento(tag) {
@@ -121,16 +122,17 @@ describe('inspecao-visual: a navegação entre protótipos mantém a inspeção 
   });
 
   test('ativo: os links já presentes são marcados na carga e o clique (fase de captura) marca o link na hora, mesmo depois de o legado reescrever o href; links de páginas integradas não mudam', () => {
-    const reports = ancora('lgpd.html');
+    const reports = ancora('emails-gestao.html');
     const suporte = ancora('self-service.html?_s=abc');
     const suporteIntegrado = ancora('support.html');
     const dashboard = ancora('dashboard.html');
     const config = ancora('config.html');
+    const lgpdIntegrada = ancora('lgpd.html');
     const vazio = ancora('javascript:void(0)');
-    const m = montar('?inspecao=1', [reports, suporte, suporteIntegrado, dashboard, config, vazio]);
+    const m = montar('?inspecao=1', [reports, suporte, suporteIntegrado, dashboard, config, lgpdIntegrada, vazio]);
     m.carregar();
-    assert.deepEqual([reports, suporte, suporteIntegrado, dashboard, config, vazio].map((a) => a.atributos.href),
-      ['lgpd.html?inspecao=1', 'self-service.html?_s=abc&inspecao=1', 'support.html', 'dashboard.html', 'config.html', 'javascript:void(0)']);
+    assert.deepEqual([reports, suporte, suporteIntegrado, dashboard, config, lgpdIntegrada, vazio].map((a) => a.atributos.href),
+      ['emails-gestao.html?inspecao=1', 'self-service.html?_s=abc&inspecao=1', 'support.html', 'dashboard.html', 'config.html', 'lgpd.html', 'javascript:void(0)']);
 
     const clique = (m.ouvintes.click || [])[0];
     assert.ok(clique && clique.captura, 'clique interceptado na fase de captura');
@@ -148,10 +150,10 @@ describe('inspecao-visual: a navegação entre protótipos mantém a inspeção 
   test('módulo adiado dentro da inspeção: o link nunca ganha o marcador, fica aria-disabled com o aviso, e o clique é recusado com toast (fase de captura), mesmo depois de o legado reescrever o href', () => {
     const compras = ancora('purchases.html');
     const regras = ancora('eligibility-rules.html?_s=abc');
-    const reports = ancora('lgpd.html');
+    const reports = ancora('emails-gestao.html');
     const m = montar('?inspecao=1', [compras, regras, reports]);
     m.carregar();
-    assert.deepEqual([compras, regras, reports].map((a) => a.atributos.href), ['purchases.html', 'eligibility-rules.html?_s=abc', 'lgpd.html?inspecao=1']);
+    assert.deepEqual([compras, regras, reports].map((a) => a.atributos.href), ['purchases.html', 'eligibility-rules.html?_s=abc', 'emails-gestao.html?inspecao=1']);
     for (const a of [compras, regras]) {
       assert.equal(a.atributos['aria-disabled'], 'true');
       assert.match(a.atributos.title, /desativado/i);
@@ -259,7 +261,7 @@ describe('inspecao-visual: onde entra e onde nunca entra', () => {
         assert.doesNotMatch(html, /inspecao-visual/, arquivo);
       }
     }
-    assert.equal(PROTOTIPOS.length, 3);
+    assert.equal(PROTOTIPOS.length, 2);
     assert.equal(DESATIVADOS.length, 2);
   });
 

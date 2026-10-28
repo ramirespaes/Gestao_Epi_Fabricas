@@ -9,8 +9,8 @@ const { RECURSOS_COM_EFEITO, ACOES_COM_EFEITO } = require('../../src/rbac/recurs
 describe('catálogo binário de acessos', () => {
   test('os 19 acessos aprovados, Aprovar e Reprovar solicitações o Relatório — Auditoria e o Relatório — Fiscalização estão contabilizados, sem repetição e sem CRUD automático', () => {
     const ids = [...TOGGLES, ...PENDENCIAS].map((t) => t.id);
-    assert.equal(ids.length, 35, 'os 27 anteriores (24 + Cadastrar/Editar Funcionário + Exportar Histórico) mais os sete do Atendimento Token (Etapa H) e o controle único de Dados da Empresa; a pendência genérica do Token virou a da Etapa J');
-    assert.equal(new Set(ids).size, 35);
+    assert.equal(ids.length, 37, 'os 27 anteriores (24 + Cadastrar/Editar Funcionário + Exportar Histórico) mais os sete do Atendimento Token (Etapa H) e o controle único de Dados da Empresa; a pendência genérica do Token virou a da Etapa J; LGPD-1: + toggle do encarregado e + pendência da retenção');
+    assert.equal(new Set(ids).size, 37);
     assert.ok(ids.includes('exportarHistoricoFuncionarios'));
   });
 

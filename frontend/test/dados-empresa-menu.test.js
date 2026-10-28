@@ -60,8 +60,9 @@ describe('ajustarMenuDadosEmpresa — o item é criado centralmente', () => {
   });
 
   test('NENHUMA página homologada foi editada: só company-data.html e o Início do Portal mencionam a nova página', () => {
+    // lgpd.html foi integrada depois (LGPD de Consulta, V2) e nasceu com o menu completo, inclusive o item estático de Dados da Empresa.
     for (const f of PAGINAS) {
-      if (f === PROPRIA) continue;
+      if (f === PROPRIA || f === 'lgpd.html') continue;
       assert.equal(ler(`pages/${f}`).includes('company-data.html'), false, `${f} não deve ser editada`);
     }
     assert.match(ler('portal/inicio.html'), /<a href="\.\.\/pages\/company-data\.html" data-pagina="companyData" style="display:none">Dados da Empresa<\/a>/);
