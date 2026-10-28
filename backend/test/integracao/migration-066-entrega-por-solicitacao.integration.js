@@ -136,7 +136,7 @@ describe('migration 066 — estrutura logo após a sua aplicação', () => {
     const sha = crypto.createHash('sha256').update(fs.readFileSync(path.join(DIRETORIO, ARQUIVO_066))).digest('hex');
     assert.equal(manifesto.migrations[ARQUIVO_066], sha);
     const arquivos = fs.readdirSync(DIRETORIO).filter((n) => /^\d{3}_.*\.sql$/.test(n)).sort();
-    assert.equal(arquivos.length, 93);
+    assert.equal(arquivos.length, 95);
     assert.deepEqual(Object.keys(manifesto.migrations).sort(), arquivos);
   });
 });

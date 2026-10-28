@@ -222,8 +222,10 @@ describe('Permissões do Grupo sem controle decorativo', () => {
   // pelas próprias rotas do Token (recurso `atendimentoToken`, operações visualizar/criar/editar) e o MASTER o recebe pelo
   // provisionamento. Dados da Empresa (companyData, F2) tem seus dois acessos como toggles na Gestão de Usuários (por usuário e por
   // grupo, montados da API) e o MASTER o recebe pelo provisionamento; esta tela legada (aposentada na interface) não o edita.
+  // LGPD-1: lgpdEncarregado e lgpdRetencao são EXCLUSIVOS do MASTER (RECURSOS_EXCLUSIVOS_MASTER): o grupo nunca os concede (409 no
+  // servidor), então não há linha para eles nesta tela de grupo.
   // A lista é fechada: qualquer outro recurso novo do servidor continua exigindo uma linha nesta tela.
-  const FORA_DESTA_TELA = ['atendimentoToken', 'companyData'];
+  const FORA_DESTA_TELA = ['atendimentoToken', 'companyData', 'lgpdEncarregado', 'lgpdRetencao'];
 
   test('Validade e Operações de estoque oferecem só "Visualizar"; as outras operações aparecem como "não se aplica"', () => {
     for (const id of ['stockValidity', 'operations']) {
@@ -252,7 +254,8 @@ describe('Permissões do Grupo sem controle decorativo', () => {
     }
     for (const id of FORA_DESTA_TELA) {
       assert.equal(id in porId, false, `${id} é administrado fora desta tela e não pode aparecer nela`);
-      assert.ok(escopo[id], `${id} segue no escopo do MASTER (provisionamento)`);
+      // lgpdRetencao é reservado no catálogo (exclusivo do MASTER) e entra no escopo só quando tiver rota (LGPD-3).
+      if (id !== 'lgpdRetencao') assert.ok(escopo[id], `${id} segue no escopo do MASTER (provisionamento)`);
     }
     assert.deepEqual(escopo.atendimentoToken, ['podeVisualizar', 'podeCriar', 'podeEditar'], 'contrato do Atendimento Token (Etapa B): sem excluir');
     assert.deepEqual(escopo.request, ['podeVisualizar', 'podeCriar', 'podeEditar'], 'o MASTER recebe o Pedido de EPI pelo provisionamento');

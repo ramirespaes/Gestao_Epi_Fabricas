@@ -167,7 +167,7 @@ describe('Provisionamento das permissões do MASTER com PostgreSQL real', () => 
     assert.deepEqual(await contarPermissoes(pool, empresaA), { recursos: 0, acoes: 0 });
   });
 
-  test('2. dry-run (padrão do script): relata 22 AUSENTES (13 recursos, inclusive reportsAudit, reportsFiscal, atendimentoToken e companyData, + 9 ações), não grava, não audita; saída OK', async () => {
+  test('2. dry-run (padrão do script): relata 25 AUSENTES (16 recursos, inclusive reportsAudit, reportsFiscal, atendimentoToken, companyData, lgpd, emailsGestao e lgpdEncarregado, + 9 ações), não grava, não audita; saída OK', async () => {
     const saida = saidaCapturada();
     const { saida: codigo, resultado } = await script.executarComando({ empresaId: empresaA, atorId: null, executar: false }, { pool, saida });
     assert.equal(codigo, script.SAIDAS.OK);
@@ -175,7 +175,7 @@ describe('Provisionamento das permissões do MASTER com PostgreSQL real', () => 
     // F — dry-run continua representando SIMULAÇÃO: nada inserido, plano
     // permanece AUSENTE (nunca INSERIDA), e a linha de totais impressa ao
     // operador não afirma nenhuma inserção.
-    assert.deepEqual(provisionamento.resumir(resultado.plano), { AUSENTE: 22, ADEQUADA: 0, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 0 });
+    assert.deepEqual(provisionamento.resumir(resultado.plano), { AUSENTE: 25, ADEQUADA: 0, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 0 }); // LGPD-1: 16 recursos + 9 ações
     assert.ok(resultado.plano.recursos.every((r) => r.situacao === 'AUSENTE'));
     assert.ok(resultado.plano.acoes.every((a) => a.situacao === 'AUSENTE'));
     assert.deepEqual(await contarPermissoes(pool, empresaA), { recursos: 0, acoes: 0 });
@@ -183,27 +183,27 @@ describe('Provisionamento das permissões do MASTER com PostgreSQL real', () => 
     assert.ok(saida.linhas.some((l) => l.startsWith('Banco: ')), 'imprime o banco em que está');
     assert.ok(saida.linhas.some((l) => l.includes('DRY-RUN')));
     assert.ok(saida.linhas.some((l) => l.includes('Nada foi gravado')));
-    assert.ok(saida.linhas.some((l) => l === 'Totais: ausentes=22 inseridas=0 adequadas=0 insuficientes=0 naoCatalogadas=0'), 'dry-run nunca reporta inserção');
+    assert.ok(saida.linhas.some((l) => l === 'Totais: ausentes=25 inseridas=0 adequadas=0 insuficientes=0 naoCatalogadas=0'), 'dry-run nunca reporta inserção');
     assert.ok(!saida.linhas.join('\n').includes(SENHA) && !saida.linhas.join('\n').includes(HASH_SENHA), 'nenhuma credencial na saída');
     for (const rota of ROTAS_DE_LEITURA) {
       assert.equal((await request(app).get(rota).set('Cookie', cookieMasterA)).status, 403, 'dry-run não concede nada');
     }
   });
 
-  test('3. --executar com ator: insere 13 recursos (companyData só visualizar e editar;availableItems, dashboard, stockValidity, operations, epiFicha, reportsAudit e reportsFiscal só visualizar; request e atendimentoToken completos) + 9 ações, audita uma vez com o ator; MASTER passa a 200 (inclusive movimentar estoque)', async () => {
+  test('3. --executar com ator: insere 16 recursos (companyData e lgpdEncarregado só visualizar e editar; availableItems, dashboard, stockValidity, operations, epiFicha, reportsAudit, reportsFiscal, lgpd e emailsGestao só visualizar; request e atendimentoToken completos) + 9 ações, audita uma vez com o ator; MASTER passa a 200 (inclusive movimentar estoque)', async () => {
     const saida = saidaCapturada();
     const { saida: codigo, resultado } = await script.executarComando({ empresaId: empresaA, atorId: masterA, executar: true }, { pool, saida });
     assert.equal(codigo, script.SAIDAS.OK);
-    assert.deepEqual(resultado.inseridos, { recursos: ['materials', 'employeeHistory', 'employeeGroups', 'availableItems', 'dashboard', 'stockValidity', 'operations', 'epiFicha', 'request', 'reportsAudit', 'reportsFiscal', 'atendimentoToken', 'companyData'], acoes: ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS', 'TOKEN_REVOGAR_DISPOSITIVO', 'TOKEN_GERAR_ATIVACAO', 'TOKEN_GERENCIAR_REDES', 'TOKEN_PREVIA_CATALOGO_REAL'] });
-    assert.deepEqual(await contarPermissoes(pool, empresaA), { recursos: 13, acoes: 9 });
+    assert.deepEqual(resultado.inseridos, { recursos: ['materials', 'employeeHistory', 'employeeGroups', 'availableItems', 'dashboard', 'stockValidity', 'operations', 'epiFicha', 'request', 'reportsAudit', 'reportsFiscal', 'atendimentoToken', 'companyData', 'lgpd', 'emailsGestao', 'lgpdEncarregado'], acoes: ['ENTRADA_ESTOQUE', 'BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS', 'TOKEN_REVOGAR_DISPOSITIVO', 'TOKEN_GERAR_ATIVACAO', 'TOKEN_GERENCIAR_REDES', 'TOKEN_PREVIA_CATALOGO_REAL'] });
+    assert.deepEqual(await contarPermissoes(pool, empresaA), { recursos: 16, acoes: 9 }); // LGPD-1: + lgpdEncarregado
 
     // A/B/C/D/E — o plano FINAL desta execução não pode chamar de AUSENTE o
     // que acabou de ser inserido e confirmado: os 16 itens (11 recursos e 5 ações) viram INSERIDA, e
     // os totais impressos ao operador refletem exatamente isso (ausentes=0).
     assert.ok(resultado.plano.recursos.every((r) => r.situacao === 'INSERIDA'), 'nenhum item inserido continua rotulado AUSENTE no plano final');
     assert.ok(resultado.plano.acoes.every((a) => a.situacao === 'INSERIDA'));
-    assert.deepEqual(provisionamento.resumir(resultado.plano), { AUSENTE: 0, ADEQUADA: 0, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 22 });
-    assert.ok(saida.linhas.some((l) => l === 'Totais: ausentes=0 inseridas=22 adequadas=0 insuficientes=0 naoCatalogadas=0'), 'relatório administrativo não pode mais dizer "ausentes=4" depois de inserir com sucesso');
+    assert.deepEqual(provisionamento.resumir(resultado.plano), { AUSENTE: 0, ADEQUADA: 0, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 25 });
+    assert.ok(saida.linhas.some((l) => l === 'Totais: ausentes=0 inseridas=25 adequadas=0 insuficientes=0 naoCatalogadas=0'), 'relatório administrativo não pode mais dizer "ausentes=4" depois de inserir com sucesso');
 
     const { rows } = await pool.query(
       'SELECT recurso, pode_visualizar, pode_criar, pode_editar, pode_excluir, perfil FROM permissoes_recurso WHERE empresa_id = $1 ORDER BY recurso',
@@ -214,9 +214,12 @@ describe('Provisionamento das permissões do MASTER com PostgreSQL real', () => 
       { recurso: 'availableItems', pode_visualizar: true, pode_criar: false, pode_editar: false, pode_excluir: false, perfil: 'MASTER' },
       { recurso: 'companyData', pode_visualizar: true, pode_criar: false, pode_editar: true, pode_excluir: false, perfil: 'MASTER' },
       { recurso: 'dashboard', pode_visualizar: true, pode_criar: false, pode_editar: false, pode_excluir: false, perfil: 'MASTER' },
+      { recurso: 'emailsGestao', pode_visualizar: true, pode_criar: false, pode_editar: false, pode_excluir: false, perfil: 'MASTER' },
       { recurso: 'employeeGroups', pode_visualizar: true, pode_criar: true, pode_editar: true, pode_excluir: false, perfil: 'MASTER' },
       { recurso: 'employeeHistory', pode_visualizar: true, pode_criar: true, pode_editar: true, pode_excluir: false, perfil: 'MASTER' },
       { recurso: 'epiFicha', pode_visualizar: true, pode_criar: false, pode_editar: false, pode_excluir: false, perfil: 'MASTER' },
+      { recurso: 'lgpd', pode_visualizar: true, pode_criar: false, pode_editar: false, pode_excluir: false, perfil: 'MASTER' },
+      { recurso: 'lgpdEncarregado', pode_visualizar: true, pode_criar: false, pode_editar: true, pode_excluir: false, perfil: 'MASTER' },
       { recurso: 'materials', pode_visualizar: true, pode_criar: true, pode_editar: true, pode_excluir: false, perfil: 'MASTER' },
       { recurso: 'operations', pode_visualizar: true, pode_criar: false, pode_editar: false, pode_excluir: false, perfil: 'MASTER' },
       { recurso: 'reportsAudit', pode_visualizar: true, pode_criar: false, pode_editar: false, pode_excluir: false, perfil: 'MASTER' },
@@ -258,7 +261,7 @@ describe('Provisionamento das permissões do MASTER com PostgreSQL real', () => 
     // G — a segunda execução não insere nada: os 16 itens são reclassificados
     // ADEQUADA por planejar() (já existem com as flags certas), não INSERIDA
     // (esta execução não inseriu nada) — distinção preservada.
-    assert.deepEqual(provisionamento.resumir(resultado.plano), { AUSENTE: 0, ADEQUADA: 22, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 0 });
+    assert.deepEqual(provisionamento.resumir(resultado.plano), { AUSENTE: 0, ADEQUADA: 25, INSUFICIENTE: 0, NAO_CATALOGADA: 0, INSERIDA: 0 });
     assert.deepEqual(await contarPermissoes(pool, empresaA), antes);
     assert.equal(await contarAuditoria(pool, empresaA), 1);
   });
@@ -293,7 +296,7 @@ describe('Provisionamento das permissões do MASTER com PostgreSQL real', () => 
     const saida = saidaCapturada();
     const exec = await script.executarComando({ empresaId: empresaB, atorId: null, executar: true }, { pool, saida });
     assert.equal(exec.saida, script.SAIDAS.ATENCAO);
-    assert.deepEqual(exec.resultado.inseridos, { recursos: ['employeeHistory', 'employeeGroups', 'availableItems', 'dashboard', 'stockValidity', 'operations', 'epiFicha', 'request', 'reportsAudit', 'reportsFiscal', 'atendimentoToken', 'companyData'], acoes: ['BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS', 'TOKEN_REVOGAR_DISPOSITIVO', 'TOKEN_GERAR_ATIVACAO', 'TOKEN_GERENCIAR_REDES', 'TOKEN_PREVIA_CATALOGO_REAL'] });
+    assert.deepEqual(exec.resultado.inseridos, { recursos: ['employeeHistory', 'employeeGroups', 'availableItems', 'dashboard', 'stockValidity', 'operations', 'epiFicha', 'request', 'reportsAudit', 'reportsFiscal', 'atendimentoToken', 'companyData', 'lgpd', 'emailsGestao', 'lgpdEncarregado'], acoes: ['BAIXA_ESTOQUE', 'REALIZAR_ENTREGA', 'IMPORTAR_FUNCIONARIOS', 'EXPORTAR_HISTORICO_FUNCIONARIOS', 'TOKEN_REVOGAR_DISPOSITIVO', 'TOKEN_GERAR_ATIVACAO', 'TOKEN_GERENCIAR_REDES', 'TOKEN_PREVIA_CATALOGO_REAL'] });
     assert.ok(saida.linhas.some((l) => l.startsWith('ERR ATENÇÃO')));
 
     // G/H no plano FINAL desta execução: o que foi inserido agora vira
@@ -305,7 +308,7 @@ describe('Provisionamento das permissões do MASTER com PostgreSQL real', () => 
     assert.equal(porRecursoFinal.employeeGroups.situacao, 'INSERIDA');
     assert.equal(exec.resultado.plano.acoes[0].situacao, 'INSUFICIENTE');
     assert.equal(porRecursoFinal.availableItems.situacao, 'INSERIDA');
-    assert.deepEqual(provisionamento.resumir(exec.resultado.plano), { AUSENTE: 0, ADEQUADA: 0, INSUFICIENTE: 2, NAO_CATALOGADA: 0, INSERIDA: 20 });
+    assert.deepEqual(provisionamento.resumir(exec.resultado.plano), { AUSENTE: 0, ADEQUADA: 0, INSUFICIENTE: 2, NAO_CATALOGADA: 0, INSERIDA: 23 });
 
     const depois = await pool.query("SELECT pode_visualizar, pode_criar, pode_editar, pode_excluir, atualizado_em FROM permissoes_recurso WHERE empresa_id = $1 AND recurso = 'materials'", [empresaB]);
     assert.deepEqual(
@@ -316,7 +319,7 @@ describe('Provisionamento das permissões do MASTER com PostgreSQL real', () => 
     assert.equal(depois.rows[0].atualizado_em.getTime(), antes.rows[0].atualizado_em.getTime(), 'nem o trigger de atualizado_em disparou: nenhum UPDATE');
     const acao = await pool.query("SELECT permitido FROM permissoes_acao WHERE empresa_id = $1 AND acao_codigo = 'ENTRADA_ESTOQUE'", [empresaB]);
     assert.equal(acao.rows[0].permitido, false, 'ação negada permanece negada');
-    assert.deepEqual(await contarPermissoes(pool, empresaB), { recursos: 13, acoes: 9 });
+    assert.deepEqual(await contarPermissoes(pool, empresaB), { recursos: 16, acoes: 9 });
 
     const auditoria = await pool.query("SELECT contexto FROM logs_auditoria WHERE empresa_id = $1 AND acao = 'PERMISSOES_MASTER_PROVISIONADAS'", [empresaB]);
     assert.equal(auditoria.rows.length, 1);
@@ -484,7 +487,7 @@ describe('Provisionamento das permissões do MASTER com PostgreSQL real', () => 
       const materials = resultado.plano.recursos.find((r) => r.recurso === 'materials');
       assert.equal(materials.situacao, provisionamento.SITUACAO.INSUFICIENTE);
       assert.deepEqual(materials.faltantes, ['editar']);
-      assert.deepEqual(resultado.inseridos.recursos.sort(), ['atendimentoToken', 'availableItems', 'companyData', 'dashboard', 'employeeGroups', 'employeeHistory', 'epiFicha', 'operations', 'reportsAudit', 'reportsFiscal', 'request', 'stockValidity'], 'os recursos que NÃO conflitaramforam inseridos normalmente');
+      assert.deepEqual(resultado.inseridos.recursos.sort(), ['atendimentoToken', 'availableItems', 'companyData', 'dashboard', 'emailsGestao', 'employeeGroups', 'employeeHistory', 'epiFicha', 'lgpd', 'lgpdEncarregado', 'operations', 'reportsAudit', 'reportsFiscal', 'request', 'stockValidity'], 'os recursos que NÃO conflitaramforam inseridos normalmente');
 
       const { rows } = await pool.query(
         "SELECT pode_visualizar, pode_criar, pode_editar, pode_excluir FROM permissoes_recurso WHERE empresa_id = $1 AND recurso = 'materials'",

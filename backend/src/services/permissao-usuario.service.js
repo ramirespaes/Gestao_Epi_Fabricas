@@ -12,7 +12,7 @@ const permissaoIndividualRepo = require('../repositories/permissao-individual.re
 const autorizacaoRepo = require('../repositories/autorizacao-individual.repository');
 const grupoAcessoRepo = require('../repositories/grupo-acesso.repository');
 const auditoriaRepo = require('../repositories/auditoria.repository');
-const { RECURSOS_COM_EFEITO, ACOES_COM_EFEITO } = require('../rbac/recursos');
+const { RECURSOS_COM_EFEITO, ACOES_COM_EFEITO, recursoExclusivoMaster } = require('../rbac/recursos');
 const toggles = require('../rbac/toggles');
 const { avisosDosAcessos } = require('../rbac/avisos-acessos');
 const { descreverDependencia } = require('../rbac/dependencias-acessos');
@@ -60,7 +60,29 @@ const ERRO = Object.freeze({
   ORIGEM: ['USUARIO_ORIGEM_NAO_ENCONTRADO', 'Usuário de origem não encontrado'],
   MESMO: ['COPIA_PARA_O_PROPRIO_USUARIO', 'Origem e destino precisam ser usuários diferentes'],
   GRUPO_INATIVO: ['GRUPO_INATIVO', 'Grupo inativo não recebe novos vínculos'],
+  EXCLUSIVO: ['RECURSO_EXCLUSIVO_MASTER', 'Este acesso é exclusivo do perfil Master e não pode ser concedido a outros usuários'],
 });
+const ACAO_AUDITORIA_EXCLUSIVO = 'LGPD_PERMISSAO_EXCLUSIVA_RECUSADA';
+
+/**
+ * Tentativa de conceder um recurso exclusivo do MASTER a outro perfil: 409, com a tentativa marcada para auditoria. A
+ * auditoria é gravada DEPOIS do ROLLBACK (auditarRecusaExclusiva), nunca dentro da transação: o ator e o alvo estão travados
+ * FOR UPDATE e um INSERT em logs_auditoria por outra conexão esperaria esses locks.
+ */
+function recusarExclusivo({ atorId, alvoId, recurso, origem }) {
+  const erro = HttpError.conflict(...ERRO.EXCLUSIVO);
+  erro.recusaExclusiva = { atorId, alvoId, recurso, origem };
+  return erro;
+}
+
+async function auditarRecusaExclusiva(pool, { empresaId, ip, dispositivo }, erro) {
+  if (!erro || !erro.recusaExclusiva) return;
+  const { atorId, alvoId, recurso, origem } = erro.recusaExclusiva;
+  await auditoriaRepo.registrar(pool, {
+    empresaId, usuarioId: atorId, acao: ACAO_AUDITORIA_EXCLUSIVO, referencia: String(alvoId), ip, dispositivo,
+    contexto: { origem, recurso, alvoUsuarioId: alvoId },
+  });
+}
 
 function exigirId(valor, nome) {
   if (!Number.isInteger(valor) || valor <= 0) {
@@ -153,6 +175,8 @@ async function montar(executor, ator, empresaId, alvo) {
   const ctx = { empresaId };
   const recursos = [];
   for (const entrada of RECURSOS_COM_EFEITO) {
+    // Recurso exclusivo do MASTER não é oferecido a outro perfil (nem para consulta da célula): não há o que configurar.
+    if (alvo.perfil !== PERFIL_MASTER && recursoExclusivoMaster(entrada.recurso)) continue;
     recursos.push(await celulaDeRecurso(executor, ctx, alvo, grupo, entrada));
   }
   const contexto = {
@@ -204,10 +228,20 @@ async function detalhar(pool, { empresaId, atorId, usuarioId }) {
 }
 
 /** Esqueleto das escritas: trava da empresa, autoridade, MASTER-only, alvo travado e não-MASTER. */
-async function escrever(pool, { empresaId, atorId, usuarioId }, operacao) {
+async function escrever(pool, { empresaId, atorId, usuarioId, ip = null, dispositivo = null }, operacao) {
   exigirId(empresaId, 'identificador de empresa');
   exigirId(atorId, 'identificador de ator');
   exigirId(usuarioId, 'identificador de usuário');
+  try {
+    return await escreverNaTransacao(pool, { empresaId, atorId, usuarioId }, operacao);
+  } catch (erro) {
+    // Recusa de recurso exclusivo: auditada só agora, com os locks da transação já liberados pelo ROLLBACK.
+    await auditarRecusaExclusiva(pool, { empresaId, ip, dispositivo }, erro);
+    throw erro;
+  }
+}
+
+async function escreverNaTransacao(pool, { empresaId, atorId, usuarioId }, operacao) {
   return usuarioAdministracao.emTransacao(pool, async (client) => {
     await client.query('SELECT pg_advisory_xact_lock($1::bigint)', [usuarioAdministracao.travaDaEmpresa(empresaId)]);
     const ator = await autoridade.exigirAutoridadeAdministrativa(
@@ -234,7 +268,10 @@ async function auditar(client, { empresaId, atorId, alvoId, acao, antes, depois,
 async function configurarRecurso(pool, {
   empresaId, atorId, usuarioId, recurso, flags, ip = null, dispositivo = null,
 }) {
-  return escrever(pool, { empresaId, atorId, usuarioId }, async (client, ator, alvo) => {
+  return escrever(pool, { empresaId, atorId, usuarioId, ip, dispositivo }, async (client, ator, alvo) => {
+    if (recursoExclusivoMaster(recurso)) {
+      throw recusarExclusivo({ atorId: ator.id, alvoId: alvo.id, recurso, origem: 'permissao_individual_recurso' });
+    }
     const entrada = RECURSOS_COM_EFEITO.find((r) => r.recurso === recurso);
     if (entrada === undefined) {
       throw HttpError.notFound(...ERRO.RECURSO);
@@ -278,7 +315,7 @@ async function configurarAcao(pool, {
   if (!ESTADOS.includes(estado)) {
     throw new TypeError('estado inválido');
   }
-  return escrever(pool, { empresaId, atorId, usuarioId }, (client, ator, alvo) => aplicarAcao(client, {
+  return escrever(pool, { empresaId, atorId, usuarioId, ip, dispositivo }, (client, ator, alvo) => aplicarAcao(client, {
     empresaId, ator, alvo, acaoCodigo, estado, ip, dispositivo,
   }));
 }
@@ -357,7 +394,8 @@ const efetivoDoToggle = (completo, regra) => {
  */
 function resumirToggles(completo, { autoridadeAdministrativa = null } = {}) {
   const fixo = completo.usuario.perfil === PERFIL_MASTER;
-  const lista = toggles.TOGGLES.map((t) => {
+  // Toggle exclusivo do MASTER: só aparece no próprio MASTER (fixo); os demais perfis não o recebem nem o veem.
+  const lista = toggles.TOGGLES.filter((t) => fixo || t.somenteMaster !== true).map((t) => {
     const daAutoridade = fixo && autoridadeAdministrativa !== null && t.regra.tipo === 'ACAO'
       && t.regra.codigo === autoridade.ACOES_ADMINISTRATIVAS.USUARIOS;
     const base = {
@@ -440,9 +478,13 @@ async function configurarToggle(pool, {
   empresaId, atorId, usuarioId, toggleId, ligado, ip = null, dispositivo = null,
 }) {
   if (typeof ligado !== 'boolean') throw new TypeError('ligado inválido');
-  return escrever(pool, { empresaId, atorId, usuarioId }, async (client, ator, alvo) => {
+  return escrever(pool, { empresaId, atorId, usuarioId, ip, dispositivo }, async (client, ator, alvo) => {
     const toggle = toggles.buscar(toggleId);
     if (toggle === null) throw HttpError.notFound(...ERRO_TOGGLE);
+    if (toggle.somenteMaster === true) {
+      // O alvo aqui nunca é MASTER (escrever() já o recusou): é tentativa de conceder a outro perfil.
+      throw recusarExclusivo({ atorId: ator.id, alvoId: alvo.id, recurso: toggle.regra.recurso, origem: 'toggle_usuario' });
+    }
     const completoAntes = await montar(client, ator, empresaId, alvo);
     const antes = efetivoDoToggle(completoAntes, toggle.regra);
     const { regra } = toggle;
@@ -591,4 +633,5 @@ async function copiar(pool, {
 
 module.exports = {
   copiar, detalhar, detalharToggles, configurarToggle, configurarRecurso, configurarAcao, ESTADOS, OPERACOES, ACAO_AUDITORIA, ERRO, escrever, montar,
+  resumirToggles,
 };

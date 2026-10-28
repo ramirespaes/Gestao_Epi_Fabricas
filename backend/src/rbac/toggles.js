@@ -74,6 +74,13 @@ const TOGGLES = Object.freeze([
   { id: 'tokenGerarAtivacao', rotulo: 'Gerar ativação (QR)', grupo: 'ATENDIMENTO', regra: acao('TOKEN_GERAR_ATIVACAO'), dependencias: [LEITURA_TOKEN] },
   { id: 'tokenRedes', rotulo: 'Redes autorizadas', grupo: 'ATENDIMENTO', regra: acao('TOKEN_GERENCIAR_REDES') },
   { id: 'tokenPrevia', rotulo: 'Prévia do catálogo', grupo: 'ATENDIMENTO', regra: acao('TOKEN_PREVIA_CATALOGO_REAL') },
+  // Bloco A1: dois controles independentes, cada um só sobre a consulta do resumo do próprio módulo (GET /lgpd/resumo e
+  // GET /emails/resumo). Editar e ações sensíveis ficam para decisão futura; as páginas seguem em inspeção visual.
+  { id: 'privacidadeLgpd', rotulo: 'Privacidade e LGPD', grupo: 'ADMINISTRACAO', regra: recurso('lgpd', ['visualizar']) },
+  { id: 'gestaoEmail', rotulo: 'Gestão de E-mails', grupo: 'ADMINISTRACAO', regra: recurso('emailsGestao', ['visualizar']) },
+  // LGPD-1: cadastro do encarregado (DPO). somenteMaster: o controle só é oferecido no MASTER (fixo, reflete a linha do
+  // perfil); para os demais perfis o recurso não é concedível por toggle, grupo nem exceção individual (409).
+  { id: 'lgpdEncarregado', rotulo: 'LGPD — Encarregado (DPO)', grupo: 'ADMINISTRACAO', regra: recurso('lgpdEncarregado', ['visualizar', 'editar']), somenteMaster: true },
 ].map((t) => Object.freeze(t)));
 
 // Sem enforcement real hoje: não viram controle até existir a rota (ou a decisão) que falta.
@@ -83,9 +90,8 @@ const PENDENCIAS = Object.freeze([
   { id: 'gestaoColaboradores', rotulo: 'Gestão de Colaboradores', situacao: 'SEM_ENFORCEMENT', motivo: 'A página Cadastro de Colaboradores e as rotas de funcionários já existem; o acesso é configurado por Cadastrar Funcionário e Editar Funcionário (com a leitura do Histórico de Funcionários).' },
   { id: 'configuracoes', rotulo: 'Configurações', situacao: 'SEM_ENFORCEMENT', motivo: 'A tela é pessoal e abre para qualquer sessão; não há rota restrita por permissão.' },
   { id: 'suporte', rotulo: 'Suporte', situacao: 'SEM_ENFORCEMENT', motivo: 'Tela em protótipo, sem rota no servidor.' },
-  { id: 'gestaoEmail', rotulo: 'Gestão de E-mail', situacao: 'SEM_ENFORCEMENT', motivo: 'Tela em protótipo, sem rota no servidor.' },
-  { id: 'privacidadeLgpd', rotulo: 'Privacidade / LGPD', situacao: 'SEM_ENFORCEMENT', motivo: 'Tela em protótipo, sem rota no servidor.' },
   { id: 'tokenMonitoramentoHistorico', rotulo: 'Token — Monitoramento e Histórico', situacao: 'SEM_ENFORCEMENT', motivo: 'Abas ainda sem dado nem rota; as ações próprias existem no banco e entram na Etapa J.' },
+  { id: 'lgpdRetencao', rotulo: 'LGPD — Política de retenção', situacao: 'SEM_ENFORCEMENT', motivo: 'Recurso exclusivo do MASTER já reservado no catálogo; a política de retenção (rotas e tela) é do pacote LGPD-3.' },
 ].map((p) => Object.freeze(p)));
 
 // Atribuição DIRETA por operação (APIs antigas de usuário e de grupo): só Funcionários garante a leitura ao conceder criar ou editar,

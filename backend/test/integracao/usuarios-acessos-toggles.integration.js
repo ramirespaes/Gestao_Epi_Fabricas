@@ -10,7 +10,7 @@ const { TOGGLES, PENDENCIAS } = require('../../src/rbac/toggles');
 
 /** Modelo binário de acessos: ON/OFF pelo resultado efetivo; camadas internas escolhidas pelo servidor. */
 const BASE = '/api/administracao/usuarios';
-const IDS_REAIS = ['dashboard', 'historicoFuncionarios', 'cadastrarFuncionario', 'editarFuncionario', 'fichaEpi', 'entregasSolicitacao', 'gestaoGhe', 'analiseEstoque', 'operacoesEstoque', 'cadastrarProduto', 'entradaLote', 'registrarBaixa', 'importacaoFuncionarios', 'exportarHistoricoFuncionarios', 'gestaoUsuarios', 'aprovarSolicitacoes', 'reprovarSolicitacoes', 'dadosEmpresa', 'reportsAudit', 'reportsFiscal', 'tokenVisualizar', 'tokenCadastrar', 'tokenEditar', 'tokenRevogar', 'tokenGerarAtivacao', 'tokenRedes', 'tokenPrevia'];
+const IDS_REAIS = ['dashboard', 'historicoFuncionarios', 'cadastrarFuncionario', 'editarFuncionario', 'fichaEpi', 'entregasSolicitacao', 'gestaoGhe', 'analiseEstoque', 'operacoesEstoque', 'cadastrarProduto', 'entradaLote', 'registrarBaixa', 'importacaoFuncionarios', 'exportarHistoricoFuncionarios', 'gestaoUsuarios', 'aprovarSolicitacoes', 'reprovarSolicitacoes', 'dadosEmpresa', 'reportsAudit', 'reportsFiscal', 'tokenVisualizar', 'tokenCadastrar', 'tokenEditar', 'tokenRevogar', 'tokenGerarAtivacao', 'tokenRedes', 'tokenPrevia', 'privacidadeLgpd', 'gestaoEmail'];
 
 describe('Gestão de Usuários — acessos ON/OFF (PostgreSQL real)', () => {
   let g;
@@ -39,9 +39,10 @@ describe('Gestão de Usuários — acessos ON/OFF (PostgreSQL real)', () => {
     const u = await g.usuarioPronto(master);
     const r = await lista(master, u.id);
     assert.equal(r.status, 200, JSON.stringify(r.body));
+    // LGPD-1: o alvo é USUARIO, então o toggle exclusivo do MASTER (lgpdEncarregado) não é oferecido; no catálogo ele existe.
     assert.deepEqual(r.body.acessos.toggles.map((t) => t.id), IDS_REAIS);
-    assert.deepEqual(TOGGLES.map((t) => t.id), IDS_REAIS);
-    assert.equal(TOGGLES.length + PENDENCIAS.length, 35, 'os 27 anteriores mais os sete do Atendimento Token (Etapa H) e o controle único de Dados da Empresa; antes: os 19 acessos aprovados, os dois da decisão da SST, Entregas por solicitação, o Relatório — Auditoria, o Relatório — Fiscalização, Cadastrar/Editar Funcionário e Exportar Histórico de Funcionários (pacote J) estão contabilizados');
+    assert.deepEqual(TOGGLES.map((t) => t.id), [...IDS_REAIS, 'lgpdEncarregado']);
+    assert.equal(TOGGLES.length + PENDENCIAS.length, 37, 'os 27 anteriores mais os sete do Atendimento Token (Etapa H) e o controle único de Dados da Empresa; antes: os 19 acessos aprovados, os dois da decisão da SST, Entregas por solicitação, o Relatório — Auditoria, o Relatório — Fiscalização, Cadastrar/Editar Funcionário e Exportar Histórico de Funcionários (pacote J) estão contabilizados');
     assert.deepEqual(r.body.acessos.pendencias.map((p) => p.id).sort(), PENDENCIAS.map((p) => p.id).sort());
     for (const id of ['relatorios', 'token', 'tokenMonitoramentoHistorico']) {
       assert.equal((await ligar(master, u.id, id, true)).status, 404, `${id} sem enforcement real não é controlável`);

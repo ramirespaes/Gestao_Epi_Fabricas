@@ -145,7 +145,7 @@ describe('tema: ligação com a sessão', () => {
 
   test('todas as páginas integradas carregam js/tema.js no <head>, antes de pintar', () => {
     const paginas = fs.readdirSync(path.join(RAIZ, 'pages')).filter((f) => f.endsWith('.html'));
-    const prototipos = ['delivered-items.html', 'eligibility-rules.html', 'emails-gestao.html', 'lgpd.html', 'purchases.html', 'reports.html', 'self-service.html', 'support.html'];
+    const prototipos = ['delivered-items.html', 'eligibility-rules.html', 'emails-gestao.html', 'purchases.html', 'reports.html', 'self-service.html', 'support.html'];
     for (const arquivo of paginas) {
       if (prototipos.includes(arquivo)) continue;
       const html = fs.readFileSync(path.join(RAIZ, 'pages', arquivo), 'utf8');

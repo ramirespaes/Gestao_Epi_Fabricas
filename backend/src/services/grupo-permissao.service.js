@@ -269,15 +269,40 @@ async function configurarRecurso(pool, dados) {
   exigirId(grupoId, 'identificador de grupo');
   const informadas = extrairOperacoesInformadas(dados);
 
-  return emTransacao(pool, async (client) => {
-    const ator = await autoridade.exigirAutoridadeAdministrativa(client, empresaId, atorId, 'GRUPO_PERMISSAO_NAO_AUTORIZADA', MSG_NAO_AUTORIZADO, autoridade.ACOES_ADMINISTRATIVAS.PERMISSOES_GRUPO);
-    await exigirGrupoDeTerceiro(client, empresaId, ator, grupoId);
+  // LGPD-1: tentativa de conceder recurso exclusivo do MASTER a um grupo. A recusa (409) nasce dentro da transação, depois
+  // de a autoridade do ator ser confirmada; a auditoria é gravada só DEPOIS do ROLLBACK (o ator está travado FOR UPDATE na
+  // transação, e um INSERT em logs_auditoria por outra conexão esperaria esse lock).
+  let recusaExclusiva = null;
+  try {
+    return await emTransacao(pool, async (client) => {
+      const ator = await autoridade.exigirAutoridadeAdministrativa(client, empresaId, atorId, 'GRUPO_PERMISSAO_NAO_AUTORIZADA', MSG_NAO_AUTORIZADO, autoridade.ACOES_ADMINISTRATIVAS.PERMISSOES_GRUPO);
+      await exigirGrupoDeTerceiro(client, empresaId, ator, grupoId);
 
-    // SEC-NOVO-001: só recurso do catálogo oficial, como as ações, que
-    // precisam existir em `acoes`. Formato válido não basta.
-    if (!recursos.recursoConhecido(recurso)) {
-      throw HttpError.badRequest('GRUPO_PERMISSAO_RECURSO_INVALIDO', MSG_RECURSO_INVALIDO);
+      // SEC-NOVO-001: só recurso do catálogo oficial, como as ações, que
+      // precisam existir em `acoes`. Formato válido não basta.
+      if (!recursos.recursoConhecido(recurso)) {
+        throw HttpError.badRequest('GRUPO_PERMISSAO_RECURSO_INVALIDO', MSG_RECURSO_INVALIDO);
+      }
+      if (recursos.recursoExclusivoMaster(recurso)) {
+        recusaExclusiva = { atorId: ator.id };
+        throw HttpError.conflict('RECURSO_EXCLUSIVO_MASTER', 'Este acesso é exclusivo do perfil Master e não pode ser concedido a grupos');
+      }
+      return configurarRecursoNaTransacao(client, { empresaId, grupoId, recurso, ator, informadas, ip, dispositivo, contextoExtra });
+    });
+  } finally {
+    if (recusaExclusiva !== null) {
+      await auditoriaRepo.registrar(pool, {
+        empresaId, usuarioId: recusaExclusiva.atorId, acao: 'LGPD_PERMISSAO_EXCLUSIVA_RECUSADA', referencia: String(grupoId), ip, dispositivo,
+        contexto: { origem: 'permissao_grupo_recurso', recurso, grupoId },
+      });
     }
+  }
+}
+
+async function configurarRecursoNaTransacao(client, {
+  empresaId, grupoId, recurso, ator, informadas, ip, dispositivo, contextoExtra,
+}) {
+  {
 
     if (Object.keys(informadas).length === 0) {
       throw HttpError.badRequest('GRUPO_PERMISSAO_SEM_ALTERACAO', MSG_SEM_ALTERACAO);
@@ -311,7 +336,7 @@ async function configurarRecurso(pool, dados) {
 
     await auditoriaRepo.registrar(client, {
       empresaId,
-      usuarioId: atorId,
+      usuarioId: ator.id,
       acao: ACAO_AUDITORIA_RECURSO,
       referencia: String(grupoId),
       ip,
@@ -324,7 +349,7 @@ async function configurarRecurso(pool, dados) {
     });
 
     return { configuracao, alterado: true };
-  });
+  }
 }
 
 /**

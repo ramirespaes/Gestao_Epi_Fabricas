@@ -25,6 +25,8 @@ const FLAG = { visualizar: 'podeVisualizar', criar: 'podeCriar', editar: 'podeEd
 async function acessosDisponiveis(pool) {
   const lista = [];
   for (const t of toggles.TOGGLES) {
+    // Exclusivo do MASTER: o grupo nunca o oferece (LGPD-1).
+    if (t.somenteMaster === true) continue;
     if (t.regra.tipo === 'ACAO') {
       const configuracao = await permissaoRepo.buscarConfiguracaoAcao(pool, t.regra.codigo);
       if (configuracao === null || configuracao.ativo !== true || configuracao.modoAutorizacaoIndividual !== MODO_ALTERNATIVA) continue;
@@ -85,6 +87,11 @@ async function configurarToggle(pool, {
   empresaId, atorId, grupoId, toggleId, ligado, ip = null, dispositivo = null,
 }) {
   if (typeof ligado !== 'boolean') throw new TypeError('ligado inválido');
+  const exclusivo = toggles.buscar(toggleId);
+  if (exclusivo !== null && exclusivo.somenteMaster === true) {
+    // Passa pela configuração de recurso do grupo, que confere a autoridade do ator, audita a tentativa e recusa com 409.
+    await aplicarRegra(pool, { empresaId, atorId, grupoId, ip, dispositivo }, exclusivo.regra, ligado);
+  }
   const toggle = (await acessosDisponiveis(pool)).find((t) => t.id === toggleId);
   if (toggle === undefined) throw HttpError.notFound(...ERRO_TOGGLE);
   const base = {

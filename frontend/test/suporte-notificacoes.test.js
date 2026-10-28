@@ -107,7 +107,7 @@ describe('módulo (sem página)', () => {
         assert.ok(!scripts.includes('../js/suporte-notificacoes.js'), `${p} é legada e não carrega o módulo`);
       }
     }
-    assert.equal(integradas.length, 20);
+    assert.equal(integradas.length, 21); // + lgpd.html (Privacidade e LGPD de consulta)
     assert.ok(JSON.parse(ler('publicacao/allowlist.json')).arquivos.includes('js/suporte-notificacoes.js'));
     assert.match(ler('js/permissoes-efetivas.js'), /EpiSuporteNotificacoes\.sincronizar\(/, 'o ponto central do menu aciona o módulo');
   });

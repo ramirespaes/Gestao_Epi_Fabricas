@@ -73,7 +73,7 @@ describe('T1 — os sete toggles do Atendimento Token no catálogo', () => {
     assert.ok(j, 'pendência de Monitoramento e Histórico');
     assert.equal(j.situacao, 'SEM_ENFORCEMENT');
     assert.match(j.motivo, /Etapa J/);
-    assert.equal(PENDENCIAS.length, 8, 'mesmo número de pendências: uma saiu e uma entrou');
+    assert.equal(PENDENCIAS.length, 7, 'na Etapa H uma saiu e uma entrou (8); o Bloco A1 tirou Gestão de E-mail e Privacidade / LGPD (6); o LGPD-1 pôs a Política de retenção (7)');
   });
 });
 

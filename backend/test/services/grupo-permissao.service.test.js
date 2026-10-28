@@ -527,13 +527,19 @@ describe('SEC-NOVO-001 — recurso fora do catálogo', () => {
     }
   });
 
-  test('todos os recursos do catálogo continuam configuráveis', async (t) => {
+  test('todos os recursos do catálogo continuam configuráveis, exceto os exclusivos do MASTER (LGPD-1), recusados com 409 sem gravar', async (t) => {
     const escritas = mundoValido(t);
-    for (const recurso of RECURSOS_CONHECIDOS) {
+    const { RECURSOS_EXCLUSIVOS_MASTER } = require('../../src/rbac/recursos'); // eslint-disable-line global-require
+    const configuraveis = RECURSOS_CONHECIDOS.filter((r) => !RECURSOS_EXCLUSIVOS_MASTER.includes(r));
+    for (const recurso of configuraveis) {
       const r = await servico.configurarRecurso(criarPoolFalso(criarClienteFalso()), dadosRecurso({ recurso, podeVisualizar: true }));
       assert.equal(r.alterado, true, recurso);
     }
-    assert.equal(escritas.salvarRecurso.mock.calls.length, RECURSOS_CONHECIDOS.length);
+    assert.equal(escritas.salvarRecurso.mock.calls.length, configuraveis.length);
+    for (const recurso of RECURSOS_EXCLUSIVOS_MASTER) {
+      await assert.rejects(servico.configurarRecurso(criarPoolFalso(criarClienteFalso()), dadosRecurso({ recurso, podeVisualizar: true })), (e) => e.status === 409 && e.codigo === 'RECURSO_EXCLUSIVO_MASTER');
+    }
+    assert.equal(escritas.salvarRecurso.mock.calls.length, configuraveis.length, 'nada gravado para os exclusivos');
   });
 });
 

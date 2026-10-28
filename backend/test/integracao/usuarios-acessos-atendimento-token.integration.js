@@ -82,7 +82,8 @@ describe('Atendimento Token — toggles na Gestão de Usuários (PostgreSQL real
     assert.deepEqual(doToken.map((t) => t.id), IDS);
     assert.deepEqual(doToken.map((t) => t.rotulo), ['Consultar', 'Cadastrar dispositivo', 'Editar dispositivo', 'Revogar dispositivo', 'Gerar ativação (QR)', 'Redes autorizadas', 'Prévia do catálogo']);
     assert.ok(doToken.every((t) => t.ligado === false && t.fixo === false));
-    assert.equal(r.body.acessos.toggles.length, TOGGLES.length);
+    // LGPD-1: o toggle somenteMaster (lgpdEncarregado) não é oferecido a quem não é MASTER; o resto do catálogo aparece inteiro.
+    assert.equal(r.body.acessos.toggles.length, TOGGLES.filter((t) => t.somenteMaster !== true).length);
     assert.ok(r.body.acessos.pendencias.some((p) => p.id === 'tokenMonitoramentoHistorico'));
     assert.equal(r.body.acessos.pendencias.some((p) => p.id === 'token'), false);
     assert.deepEqual(await rotas(u), NENHUMA, 'todas as rotas do Token negadas');

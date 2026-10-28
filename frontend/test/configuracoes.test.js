@@ -520,8 +520,9 @@ describe('página Configurações como no navegador: itens "Em integração" e a
       assert.equal(a.getAttribute('href'), null, a.textContent.trim());
       assert.equal(a.getAttribute('aria-disabled'), 'true', a.textContent.trim());
     }
-    const pendentes = todosPendentes.filter((a) => !adiados.includes(a));
-    assert.equal(pendentes.length, 3);
+    // Privacidade / LGPD virou página integrada (ajustarMenuLgpd): sem a permissão, o item some e não entra entre os pendentes de inspeção.
+    const pendentes = todosPendentes.filter((a) => !adiados.includes(a) && !/Privacidade \/ LGPD/.test(a.textContent));
+    assert.equal(pendentes.length, 2);
     assert.deepEqual(pendentes.map((a) => a.getAttribute('href')).sort(), Object.values(P.INSPECAO_PROTOTIPOS).map((f) => `${f}?inspecao=1`).sort());
     for (const a of pendentes) {
       assert.equal(a.getAttribute('aria-disabled'), null, a.textContent.trim());
