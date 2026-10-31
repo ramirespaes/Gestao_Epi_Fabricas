@@ -338,8 +338,17 @@
         inicial: e.tipo === 'CADASTRO' || e.tipo === 'IMPORTACAO',
         anterior: rotulo(e.anterior),
         novo: rotulo(e.novo),
+        dataEfetiva: modelo.dataEfetiva(e.dataEfetiva),
         responsavel: ouVazio(e.responsavel && e.responsavel.nome),
       };
+    },
+    /** Data efetiva (data civil AAAA-MM-DD, sem fuso) como dd/mm/aaaa; ausente, fora do formato ou inexistente no calendário: '' (nada é exibido). */
+    dataEfetiva: function (iso) {
+      var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(texto(iso));
+      if (!m) return '';
+      var d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+      var real = d.getUTCFullYear() === Number(m[1]) && d.getUTCMonth() === Number(m[2]) - 1 && d.getUTCDate() === Number(m[3]);
+      return real ? m[3] + '/' + m[2] + '/' + m[1] : '';
     },
     /**
      * Evento cadastral: uma linha por campo conhecido, na ordem do servidor. Data de admissão YYYY-MM-DD vira dd/mm/aaaa
@@ -737,7 +746,10 @@
         carregando: TEXTOS.SITUACAO_CARREGANDO, vazio: TEXTOS.SITUACAO_VAZIO, vazioPeriodo: TEXTOS.SITUACAO_VAZIO_PERIODO, semPermissao: TEXTOS.SITUACAO_SEM_PERMISSAO, falha: TEXTOS.SITUACAO_FALHA,
       },
       modelo: modelo.eventoSituacao,
-      linhas: function (v) { return v.inicial ? ['Situação inicial: ' + v.novo] : ['Situação anterior: ' + v.anterior, 'Situação nova: ' + v.novo]; },
+      linhas: function (v) {
+        var base = v.inicial ? ['Situação inicial: ' + v.novo] : ['Situação anterior: ' + v.anterior, 'Situação nova: ' + v.novo];
+        return v.dataEfetiva ? base.concat(['Data efetiva: ' + v.dataEfetiva]) : base;
+      },
     });
     var secaoCadastral = criarSecaoEventos({
       tipo: 'CADASTRAL',

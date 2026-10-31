@@ -106,6 +106,8 @@
     .fn .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
     .fn .field{display:flex;flex-direction:column;gap:5px}
     .fn .field.full{grid-column:1/-1}
+    .fn .field[hidden]{display:none}
+    .fn #cCampoData{margin-top:14px}
     .fn .field label{font-size:12px;font-weight:500;color:var(--on-var);letter-spacing:normal}
     .fn .field label b{color:var(--error)}
     .fn .err{font-size:11px;color:var(--error)}
@@ -366,7 +368,14 @@
           <div class="modal-ico"><span class="material-symbols-outlined">help</span></div>
           <div><h2 id="cTitulo">Confirmar</h2></div>
         </div>
-        <div class="modal-body"><p class="texto" id="cTexto"></p></div>
+        <div class="modal-body">
+          <p class="texto" id="cTexto"></p>
+          <div class="field" id="cCampoData" hidden>
+            <label for="cData" id="cDataRotulo"></label>
+            <input id="cData" class="input" type="date">
+            <div class="err" id="cDataErro"></div>
+          </div>
+        </div>
         <div class="modal-foot">
           <button class="btn btn-outlined" id="cCancelar" type="button">Cancelar</button>
           <button class="btn btn-filled" id="cConfirmar" type="button">Confirmar</button>

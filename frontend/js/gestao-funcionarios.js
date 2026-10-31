@@ -10,7 +10,8 @@
    *   GET  /funcionarios/ghes                 seletor de GHE: { id, codigo, descricao } dos GHEs ativos da empresa
    *   POST /funcionarios                      cadastro individual (employeeHistory.criar); nasce ATIVO
    *   PATCH /funcionarios/:id                 edição (employeeHistory.editar); nunca cpf, situacao nem ativo
-   *   POST /funcionarios/:id/situacao         { situacao: ATIVO | AFASTADO | INATIVO } (employeeHistory.editar)
+   *   POST /funcionarios/:id/situacao         { situacao: ATIVO | AFASTADO | INATIVO, dataEfetiva? } (employeeHistory.editar); a data
+   *                                           é exigida em INATIVO e AFASTADO e no retorno de AFASTADO, e não existe na reativação de INATIVO
    *
    *   acoes       — chamadas à API (envelope do EpiHttp).
    *   modelo      — normalização do que a API devolve.
@@ -44,6 +45,17 @@
     ATIVO: 'O colaborador volta a poder solicitar e receber EPI, conforme as demais regras.',
   };
 
+  // Data efetiva da mudança de situação: só o rótulo muda com a operação; reativar quem está INATIVO não tem data.
+  var ROTULO_DATA = { INATIVO: 'Data efetiva do desligamento', AFASTADO: 'Data efetiva do afastamento', RETORNO: 'Data efetiva do retorno' };
+  function rotuloDaData(situacaoAtual, destino) {
+    if (destino === 'ATIVO') return situacaoAtual === 'AFASTADO' ? ROTULO_DATA.RETORNO : null;
+    return ROTULO_DATA[destino] || null;
+  }
+  function dataBr(s) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(texto(s));
+    return m ? m[3] + '/' + m[2] + '/' + m[1] : null;
+  }
+
   var TEXTOS = {
     VAZIO: 'Nenhum colaborador encontrado.',
     CARREGANDO: 'Carregando colaboradores…',
@@ -57,6 +69,12 @@
     SEM_PERMISSAO: 'Você não tem permissão para esta operação.',
     NAO_ENCONTRADO: 'Colaborador não encontrado. A lista foi atualizada.',
     SITUACAO_MUDOU: 'A situação do colaborador já mudou. A lista foi atualizada.',
+    DATA_OBRIGATORIA: 'Informe a data efetiva.',
+    DATA_INVALIDA: 'Data inválida.',
+    DATA_FUTURA: 'A data efetiva não pode ser futura.',
+    DATA_ANTES_ADMISSAO: 'A data efetiva não pode ser anterior à data de admissão.',
+    DATA_ANTES_SITUACAO: 'A data efetiva não pode ser anterior à última data efetiva registrada.',
+    ENTREGAS_POSTERIORES: 'Existem entregas de EPI registradas depois desta data.',
     GENERICO: 'Não foi possível concluir a operação. Tente novamente.',
     REDE: 'Não foi possível falar com o servidor. Verifique sua conexão.',
     LIMITE_CPF: 'Muitas consultas ao CPF em pouco tempo. Aguarde um instante e tente novamente.',
@@ -84,6 +102,8 @@
     gheInvalido: 'GHE inválido. Escolha um GHE da lista.',
     nascimentoServidor: 'Data de nascimento inválida.',
     contratacaoServidor: 'Data de contratação inválida.',
+    contratacaoPosteriorSituacao: 'A data de contratação não pode ser posterior a {data}, a primeira data efetiva de situação já registrada.',
+    contratacaoPosteriorSituacaoSemData: 'A data de contratação não pode ser posterior a uma data efetiva de situação já registrada.',
   };
   // Campo da API (body.<campo>) → sufixo dos ids do formulário (#f<Sufixo>, #e<Sufixo>).
   var CAMPO_DA_TELA = {
@@ -145,8 +165,11 @@
     revelarCpf: function (id) {
       return http().requisitar('POST', CAMINHO + '/' + encodeURIComponent(id) + '/cpf/revelar', { corpo: {} });
     },
-    situacao: function (id, destino) {
-      return http().requisitar('POST', CAMINHO + '/' + encodeURIComponent(id) + '/situacao', { corpo: { situacao: destino } });
+    /** dataEfetiva só entra no corpo quando a operação tem data; o servidor decide se ela é exigida ou recusada. */
+    situacao: function (id, destino, dataEfetiva) {
+      var corpo = { situacao: destino };
+      if (dataEfetiva) corpo.dataEfetiva = dataEfetiva;
+      return http().requisitar('POST', CAMINHO + '/' + encodeURIComponent(id) + '/situacao', { corpo: corpo });
     },
     /**
      * Junta todas as páginas da API (a paginação é a dela). Sem teto de quantidade: a proteção é contra
@@ -349,6 +372,10 @@
       if (codigo === 'FUNCIONARIO_GHE_OBRIGATORIO') return { campos: { Ghe: MSG.gheObrigatorio } };
       if (codigo === 'FUNCIONARIO_DATA_NASCIMENTO_INVALIDA') return { campos: { Nascimento: MSG.nascimentoServidor } };
       if (codigo === 'FUNCIONARIO_DATA_ADMISSAO_INVALIDA') return { campos: { Contratacao: MSG.contratacaoServidor } };
+      if (codigo === 'FUNCIONARIO_DATA_ADMISSAO_POSTERIOR_A_SITUACAO') {
+        var limiteAdmissao = r && r.detalhes && !Array.isArray(r.detalhes) && typeof r.detalhes === 'object' && dataReal(r.detalhes.limite) ? dataBr(r.detalhes.limite) : null;
+        return { campos: { Contratacao: limiteAdmissao ? MSG.contratacaoPosteriorSituacao.replace('{data}', limiteAdmissao) : MSG.contratacaoPosteriorSituacaoSemData } };
+      }
       if (codigo === 'VALIDACAO' && r && Array.isArray(r.detalhes)) {
         var campos = {};
         r.detalhes.forEach(function (d) {
@@ -380,14 +407,36 @@
       var cpf = r && r.ok && r.dados ? r.dados.cpf : null;
       return typeof cpf === 'string' && /^\d{11}$/.test(cpf) ? cpf : null;
     },
+    /**
+     * { sessao: true } | { campo } (erro da data: a janela continua aberta, com o que o operador digitou) | { aviso, manter? }
+     * (manter: a janela continua aberta, como na falha de rede) | { aviso, atualizar? }. Texto sempre próprio, nunca o do servidor.
+     */
     daSituacao: function (r) {
       var status = r ? r.status : 0;
       var codigo = r ? r.codigo : null;
+      var d = r && r.detalhes && !Array.isArray(r.detalhes) && typeof r.detalhes === 'object' ? r.detalhes : {};
       if (status === 401) return { sessao: true };
       if (status === 403) return { aviso: TEXTOS.SEM_PERMISSAO };
       if (status === 404) return { aviso: TEXTOS.NAO_ENCONTRADO, atualizar: true };
-      if (codigo === 'FUNCIONARIO_SITUACAO_IGUAL' || codigo === 'FUNCIONARIO_SITUACAO_TRANSICAO_INVALIDA') return { aviso: TEXTOS.SITUACAO_MUDOU, atualizar: true };
-      if (status === 0) return { aviso: TEXTOS.REDE };
+      if (codigo === 'FUNCIONARIO_SITUACAO_IGUAL' || codigo === 'FUNCIONARIO_SITUACAO_TRANSICAO_INVALIDA'
+        || codigo === 'DATA_EFETIVA_NAO_SE_APLICA' || codigo === 'DATA_EFETIVA_OBRIGATORIA') return { aviso: TEXTOS.SITUACAO_MUDOU, atualizar: true };
+      if (codigo === 'DATA_EFETIVA_FUTURA') return { campo: TEXTOS.DATA_FUTURA };
+      if (codigo === 'DATA_EFETIVA_ANTERIOR_A_ADMISSAO') return { campo: TEXTOS.DATA_ANTES_ADMISSAO };
+      if (codigo === 'DATA_EFETIVA_INVALIDA') return { campo: TEXTOS.DATA_INVALIDA };
+      if (codigo === 'DATA_EFETIVA_ANTERIOR_A_SITUACAO_REGISTRADA') {
+        var limite = dataBr(d.limite);
+        return { campo: limite ? 'A data efetiva não pode ser anterior a ' + limite + ' (última data efetiva registrada).' : TEXTOS.DATA_ANTES_SITUACAO };
+      }
+      if (codigo === 'DESLIGAMENTO_ANTERIOR_A_ENTREGA' || codigo === 'AFASTAMENTO_ANTERIOR_A_ENTREGA') {
+        var total = Number.isInteger(d.entregasPosteriores) && d.entregasPosteriores > 0 ? d.entregasPosteriores : null;
+        var primeira = dataBr(d.primeiraEntregaEm);
+        var ultima = dataBr(d.ultimaEntregaEm);
+        if (!total || !primeira || !ultima) return { campo: TEXTOS.ENTREGAS_POSTERIORES };
+        return { campo: (total === 1 ? 'Existe 1 entrega de EPI registrada depois desta data, em ' + primeira + '.'
+          : 'Existem ' + total + ' entregas de EPI registradas depois desta data, de ' + primeira + ' a ' + ultima + '.')
+          + ' Informe uma data a partir de ' + ultima + '.' };
+      }
+      if (status === 0) return { aviso: TEXTOS.REDE, manter: true };
       return { aviso: TEXTOS.GENERICO };
     },
   };
@@ -729,38 +778,63 @@
     }
 
     // ── situação (com confirmação)
+    function mostrarErroData(msg) { $('cDataErro').textContent = msg || ''; }
     function abrirConfirmacao(f, acao) {
-      situacaoPendente = { funcionario: f, destino: acao.destino, rotulo: acao.rotulo };
+      var rotuloData = rotuloDaData(f.situacao, acao.destino);
+      situacaoPendente = { funcionario: f, destino: acao.destino, rotulo: acao.rotulo, comData: rotuloData !== null };
       $('cTitulo').textContent = acao.rotulo + ' ' + f.nome + '?';
       $('cTexto').textContent = EXPLICACAO[acao.destino];
       $('cConfirmar').textContent = acao.rotulo + ' colaborador';
+      // O campo abre vazio em toda abertura: nada da operação anterior nem de um cancelamento.
+      $('cData').value = '';
+      mostrarErroData('');
+      $('cDataRotulo').textContent = rotuloData || '';
+      $('cCampoData').hidden = rotuloData === null;
       $('confirmacaoSituacao').classList.add('open');
     }
     function fecharConfirmacao() {
       $('confirmacaoSituacao').classList.remove('open');
       situacaoPendente = null;
     }
+    /** Espelha as regras locais do servidor (que continua a autoridade); null quando válida. */
+    function erroLocalDaData(valor, f) {
+      if (valor === '') return TEXTOS.DATA_OBRIGATORIA;
+      if (!dataReal(valor)) return TEXTOS.DATA_INVALIDA;
+      if (valor > dataDeHoje()) return TEXTOS.DATA_FUTURA;
+      if (f.dataAdmissao && valor < f.dataAdmissao) return TEXTOS.DATA_ANTES_ADMISSAO;
+      return null;
+    }
     async function confirmarSituacao() {
       if (enviando || encerrada || !situacaoPendente) return;
       var pendente = situacaoPendente;
+      var data = null;
+      if (pendente.comData) {
+        data = texto($('cData').value).trim();
+        var erroData = erroLocalDaData(data, pendente.funcionario);
+        mostrarErroData(erroData);
+        if (erroData) return;
+      }
       enviando = true;
       $('cConfirmar').disabled = true;
       var r;
       try {
-        r = await acoes.situacao(pendente.funcionario.id, pendente.destino);
+        r = await acoes.situacao(pendente.funcionario.id, pendente.destino, data);
       } finally {
         enviando = false;
         $('cConfirmar').disabled = false;
       }
       if (encerrada) return;
-      fecharConfirmacao();
       if (r && r.ok) {
+        fecharConfirmacao();
         aviso(TEXTOS.SITUACAO_ALTERADA, 'ok');
         await recarregar();
         return;
       }
       var tratamento = erros.daSituacao(r);
-      if (tratamento.sessao) { sessaoCaiu(); return; }
+      if (tratamento.sessao) { fecharConfirmacao(); sessaoCaiu(); return; }
+      if (tratamento.campo) { mostrarErroData(tratamento.campo); return; }
+      if (tratamento.manter) { aviso(tratamento.aviso, 'err'); return; }
+      fecharConfirmacao();
       aviso(tratamento.aviso, 'err');
       if (tratamento.atualizar) await recarregar();
     }
