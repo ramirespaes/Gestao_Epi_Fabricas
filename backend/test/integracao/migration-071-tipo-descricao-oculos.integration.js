@@ -133,7 +133,7 @@ describe('migration 071 — descrição de "Outros" e tipos de óculos de prote�
   test('manifesto: 89 migrations, 000 a 087 e 089; a 045 e a 058 continuam idênticas ao manifesto; a 071 só acrescenta a sua entrada', () => {
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO, 'checksums.json'), 'utf8'));
     const arquivos = fs.readdirSync(DIRETORIO).filter((n) => /^\d{3}_.*\.sql$/.test(n)).sort();
-    assert.equal(arquivos.length, 95);
+    assert.equal(arquivos.length, 96);
     const inicio = arquivos.indexOf(ARQUIVO_071);
     assert.notEqual(inicio, -1);
     assert.deepEqual(arquivos.slice(inicio, inicio + 17), [
@@ -162,7 +162,8 @@ describe('migration 071 — descrição de "Outros" e tipos de óculos de prote�
     assert.match(arquivos[inicio + 21], /^093_.+\.sql$/);
     assert.match(arquivos[inicio + 22], /^094_.+\.sql$/);
     assert.match(arquivos[inicio + 23], /^095_.+\.sql$/);
-    assert.equal(arquivos.length, inicio + 24, 'a 095 (LGPD-1, CNPJ do encarregado PJ) é a última');
+    assert.match(arquivos[inicio + 24], /^096_.+\.sql$/);
+    assert.equal(arquivos.length, inicio + 25, 'a 096 (datas efetivas da situação) é a última');
     assert.deepEqual(Object.keys(manifesto.migrations).sort(), arquivos);
     for (const nome of arquivos) {
       const sha = crypto.createHash('sha256').update(fs.readFileSync(path.join(DIRETORIO, nome))).digest('hex');

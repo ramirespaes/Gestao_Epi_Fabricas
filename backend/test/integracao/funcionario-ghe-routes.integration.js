@@ -16,6 +16,7 @@ const { criarFuncionarioRoutes } = require('../../src/routes/funcionario.routes'
 const { criarExigirSessao } = require('../../src/middleware/autenticacao');
 const { criarLimitador } = require('../../src/middleware/rate-limit');
 const { gerarHashSenha } = require('../../src/security/password');
+const { HOJE } = require('./helpers/ambiente-funcionario-situacao-datas');
 
 /**
  * API HTTP de GHE e funcionários (Bloco 9, Etapa B) de ponta a ponta:
@@ -303,9 +304,9 @@ describe('API HTTP de GHE e funcionários com PostgreSQL real', () => {
     });
 
     test('inativar (audita) é idempotente; reativar audita; a tabela usuarios ficou intocada por todo o fluxo', async () => {
-      const primeiro = await request(app).post(`/api/funcionarios/${funcionarioId}/inativar`).set('Cookie', cookieMasterA).send({});
+      const primeiro = await request(app).post(`/api/funcionarios/${funcionarioId}/inativar`).set('Cookie', cookieMasterA).send({ dataEfetiva: HOJE });
       assert.equal(primeiro.body.alterado, true);
-      const segundo = await request(app).post(`/api/funcionarios/${funcionarioId}/inativar`).set('Cookie', cookieMasterA).send({});
+      const segundo = await request(app).post(`/api/funcionarios/${funcionarioId}/inativar`).set('Cookie', cookieMasterA).send({ dataEfetiva: HOJE });
       assert.equal(segundo.body.alterado, false);
       assert.equal(await contarAuditoria(pool, empresaA, 'FUNCIONARIO_INATIVADO'), 1);
       assert.equal((await request(app).post(`/api/funcionarios/${funcionarioId}/reativar`).set('Cookie', cookieMasterA).send({})).body.funcionario.ativo, true);
@@ -382,7 +383,7 @@ describe('API HTTP de GHE e funcionários com PostgreSQL real', () => {
 
     test('procedimento aprovado: inativar preserva o cadastro e o histórico; recadastrar com CPF correto (201); o CPF do inativo continua reservado (409)', async () => {
       const antes = await fotografar();
-      const inativar = await request(app).post(`/api/funcionarios/${funcionarioId}/inativar`).set('Cookie', cookieMasterA).send({});
+      const inativar = await request(app).post(`/api/funcionarios/${funcionarioId}/inativar`).set('Cookie', cookieMasterA).send({ dataEfetiva: HOJE });
       assert.equal(inativar.status, 200);
       assert.equal(inativar.body.alterado, true);
       assert.equal(inativar.body.funcionario.cpf, undefined);

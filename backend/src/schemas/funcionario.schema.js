@@ -2,7 +2,6 @@
 
 const { z } = require('zod');
 const { normalizarNomeGhe } = require('../utils/normalizacao');
-const { SITUACOES } = require('../utils/situacao-funcionario');
 const { IDS_FORMATOS } = require('../services/exportacao-historico/formatos');
 const {
   idParametro, idCorpo, booleanoQuery, paginacaoQuery, textoCurto, cpfComDigitosVerificadores, dataCalendario,
@@ -165,13 +164,27 @@ const alterar = {
 };
 
 const semCorpo = z.strictObject({});
-const inativar = { params: paramsComId, body: semCorpo };
+// Data efetiva (096): data civil AAAA-MM-DD informada pelo operador, em calendário estrito. O formato é daqui (DATA_EFETIVA_INVALIDA,
+// sem eco do valor); "futura", "anterior à admissão" e a cronologia contra o histórico e as entregas são do serviço, sob a trava.
+const dataEfetiva = dataCalendario('DATA_EFETIVA_INVALIDA', 'Data efetiva inválida');
+// Rota legada: inativar passa a EXIGIR a data do desligamento (mesmas regras de POST /situacao).
+const inativar = { params: paramsComId, body: z.strictObject({ dataEfetiva }) };
 // Revelação do CPF na edição: nada vem do cliente além do id da URL (empresa e ator são da sessão); corpo e query vazios, estritos.
 const revelarCpf = { params: paramsComId, query: semCorpo, body: semCorpo };
-const reativar = { params: paramsComId, body: semCorpo };
-// S2: a situação só muda por esta rota (o PATCH genérico não a declara). Valor fora do enum é 400 do schema; transição
-// proibida e situação igual à atual são 409 do serviço.
-const situacao = { params: paramsComId, body: z.strictObject({ situacao: z.enum(SITUACOES) }) };
+// Rota legada: reativar aceita {} (compatibilidade) ou { dataEfetiva }; quem decide se a data é exigida (AFASTADO) ou recusada (INATIVO) é o serviço.
+const reativar = { params: paramsComId, body: z.strictObject({ dataEfetiva: dataEfetiva.optional() }) };
+// S2: a situação só muda por esta rota (o PATCH genérico não a declara). Valor fora do contrato é 400 do schema; transição
+// proibida e situação igual à atual são 409 do serviço. Datas efetivas (096): INATIVO e AFASTADO EXIGEM `dataEfetiva`; ATIVO a aceita
+// opcional só aqui (o serviço decide pelo estado travado: AFASTADO → ATIVO exige a data do retorno; INATIVO → ATIVO a recusa).
+// Só a situação e a data efetiva existem no corpo: qualquer outra chave é 400 (strict).
+const situacao = {
+  params: paramsComId,
+  body: z.discriminatedUnion('situacao', [
+    z.strictObject({ situacao: z.literal('INATIVO'), dataEfetiva }),
+    z.strictObject({ situacao: z.literal('AFASTADO'), dataEfetiva }),
+    z.strictObject({ situacao: z.literal('ATIVO'), dataEfetiva: dataEfetiva.optional() }),
+  ]),
+};
 
 // ── Importação em lote (C4, decisões D1/D4 de 25/09/2026) ──────────────
 // DUAS camadas, de propósito:

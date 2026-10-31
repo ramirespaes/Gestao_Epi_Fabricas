@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 
 const { montarAmbienteGhe } = require('./helpers/ambiente-funcionario-ghe');
 const { cpfFicticio } = require('../helpers/cpf-ficticio');
+const { HOJE } = require('./helpers/ambiente-funcionario-situacao-datas');
 
 /**
  * Histórico de Funcionários — pacote F (RED): histórico de SITUAÇÃO do funcionário.
@@ -60,9 +61,9 @@ describe('F — histórico de situação do funcionário (PostgreSQL real)', () 
     assert.equal(criado.status, 201, JSON.stringify(criado.body));
     ids.atual = criado.body.funcionario.id;
     const A = ids.atual;
-    await post(`/api/funcionarios/${A}/situacao`, { situacao: 'AFASTADO' });
-    await post(`/api/funcionarios/${A}/situacao`, { situacao: 'ATIVO' });
-    await post(`/api/funcionarios/${A}/inativar`, {});
+    await post(`/api/funcionarios/${A}/situacao`, { situacao: 'AFASTADO', dataEfetiva: HOJE });
+    await post(`/api/funcionarios/${A}/situacao`, { situacao: 'ATIVO', dataEfetiva: HOJE });
+    await post(`/api/funcionarios/${A}/inativar`, { dataEfetiva: HOJE });
     await post(`/api/funcionarios/${A}/reativar`, {});
     // Eventos do mesmo funcionário que NÃO são de situação: GHE, setor e CPF consultado.
     const ghe = await amb.como(amb.usuarios.master).patch(`/api/funcionarios/${A}`, { grupoHomogeneoId: amb.ghes.caldeiraria, setor: 'Manutenção' });
@@ -125,7 +126,9 @@ describe('F — histórico de situação do funcionário (PostgreSQL real)', () 
     test('F1.2 cada evento: id, tipo, ocorridoEm (decrescente) e responsável { id, nome } — e nada além', async () => {
       const { eventos } = await lerEventos(ids.atual);
       for (const e of eventos) {
-        assert.deepEqual(Object.keys(e).sort(), ['anterior', 'id', 'novo', 'ocorridoEm', 'responsavel', 'tipo']);
+        // dataEfetiva (096) só existe nos eventos novos com data; os demais mantêm exatamente as chaves antigas.
+        const chaves = Object.keys(e).sort().filter((k) => k !== 'dataEfetiva');
+        assert.deepEqual(chaves, ['anterior', 'id', 'novo', 'ocorridoEm', 'responsavel', 'tipo']);
         assert.equal(typeof e.id, 'string');
         assert.deepEqual(e.responsavel, { id: amb.usuarios.master, nome: nomeMaster });
       }

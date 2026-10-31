@@ -9,6 +9,7 @@ const { criarFuncionarioController } = require('../../src/controllers/funcionari
 const { criarFuncionarioRoutes } = require('../../src/routes/funcionario.routes');
 const { criarGrupoPermissaoController } = require('../../src/controllers/grupo-permissao.controller');
 const { criarGrupoPermissaoRoutes } = require('../../src/routes/grupo-permissao.routes');
+const { HOJE } = require('./helpers/ambiente-funcionario-situacao-datas');
 
 /**
  * RBAC da Gestão de Funcionários (RED) — as três permissões que já existem, sem nenhuma nova:
@@ -62,8 +63,8 @@ describe('Gestão de Funcionários — RBAC (PostgreSQL real)', () => {
     { nome: 'cadastro individual', op: 'c', metodo: 'post', caminho: '/funcionarios' },
     { nome: 'edição individual', op: 'e', metodo: 'patch', caminho: `/funcionarios/${ID_INEXISTENTE}` },
     { nome: 'troca de GHE', op: 'e', metodo: 'patch', caminho: `/funcionarios/${ID_INEXISTENTE}`, corpo: { grupoHomogeneoId: 1 } },
-    { nome: 'situação (rota nova)', op: 'e', metodo: 'post', caminho: `/funcionarios/${ID_INEXISTENTE}/situacao`, corpo: { situacao: 'AFASTADO' } },
-    { nome: 'inativar (legado)', op: 'e', metodo: 'post', caminho: `/funcionarios/${ID_INEXISTENTE}/inativar` },
+    { nome: 'situação (rota nova)', op: 'e', metodo: 'post', caminho: `/funcionarios/${ID_INEXISTENTE}/situacao`, corpo: { situacao: 'AFASTADO', dataEfetiva: HOJE } },
+    { nome: 'inativar (legado)', op: 'e', metodo: 'post', caminho: `/funcionarios/${ID_INEXISTENTE}/inativar`, corpo: { dataEfetiva: HOJE } },
     { nome: 'reativar (legado)', op: 'e', metodo: 'post', caminho: `/funcionarios/${ID_INEXISTENTE}/reativar` },
   ];
   const permitidos = async (u) => {
@@ -88,11 +89,11 @@ describe('Gestão de Funcionários — RBAC (PostgreSQL real)', () => {
       await conceder(soCriar, 'c');
       assert.equal(await negada(soCriar, 'post', '/funcionarios'), false);
       assert.equal(await negada(soCriar, 'get', '/funcionarios'), true);
-      assert.equal(await negada(soCriar, 'post', `/funcionarios/${ID_INEXISTENTE}/situacao`, { situacao: 'AFASTADO' }), true);
+      assert.equal(await negada(soCriar, 'post', `/funcionarios/${ID_INEXISTENTE}/situacao`, { situacao: 'AFASTADO', dataEfetiva: HOJE }), true);
       const soEditar = await g.usuarioPronto(master);
       await conceder(soEditar, 'e');
       assert.equal(await negada(soEditar, 'patch', `/funcionarios/${ID_INEXISTENTE}`, { grupoHomogeneoId: 1 }), false);
-      assert.equal(await negada(soEditar, 'post', `/funcionarios/${ID_INEXISTENTE}/situacao`, { situacao: 'AFASTADO' }), false);
+      assert.equal(await negada(soEditar, 'post', `/funcionarios/${ID_INEXISTENTE}/situacao`, { situacao: 'AFASTADO', dataEfetiva: HOJE }), false);
       assert.equal(await negada(soEditar, 'post', '/funcionarios'), true);
       assert.equal(await negada(soEditar, 'get', '/funcionarios'), true);
     });
@@ -243,7 +244,7 @@ describe('Gestão de Funcionários — RBAC (PostgreSQL real)', () => {
         "INSERT INTO funcionarios (empresa_id, matricula, nome, cpf, grupo_homogeneo_id) VALUES ($1, 'RBAC-1', 'Func RBAC', $2, NULL) RETURNING id", [g.empresas.A, g.cpfFicticio(8101)],
       );
       const contaB = await g.contaDaEmpresa(g.empresas.B);
-      const r = await g.request(g.app).post(`/api/funcionarios/${f.id}/situacao`).set('Cookie', g.cookie(contaB)).send({ situacao: 'AFASTADO' });
+      const r = await g.request(g.app).post(`/api/funcionarios/${f.id}/situacao`).set('Cookie', g.cookie(contaB)).send({ situacao: 'AFASTADO', dataEfetiva: HOJE });
       assert.equal(r.status, 404, JSON.stringify(r.body));
       assert.equal((await g.um('SELECT situacao FROM funcionarios WHERE id = $1', [f.id])).situacao, 'ATIVO');
       const patch = await g.request(g.app).patch(`/api/funcionarios/${f.id}`).set('Cookie', g.cookie(contaB)).send({ setor: 'Invasão' });

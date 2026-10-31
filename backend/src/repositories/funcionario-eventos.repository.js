@@ -106,6 +106,7 @@ async function contarGhe(executor, empresaId, funcionarioId, filtro) {
 //   - FUNCIONARIO_INATIVADO / FUNCIONARIO_REATIVADO, com `ativo` mudando: antes do S2 eram o único registro. Desde o S2 vêm
 //     DEPOIS do SITUACAO_ALTERADA na mesma transação; só ficam de fora quando há o SITUACAO_ALTERADA correspondente: mesma
 //     empresa, referência, instante e usuário, id menor e a MESMA transição (o legado só conhece ATIVO/INATIVO).
+// A data efetiva vem do histórico próprio, ligada pelo `historicoId` do contexto da auditoria; evento sem essa ligação (legado) não tem data.
 // FUNCIONARIO_ALTERADO nunca mudou a situação (o PATCH jamais aceitou ativo/situacao): não é fonte.
 const ACOES_SITUACAO = ['FUNCIONARIO_SITUACAO_ALTERADA', 'FUNCIONARIO_CRIADO', 'FUNCIONARIO_INATIVADO', 'FUNCIONARIO_REATIVADO'];
 const SITUACAO_DO_ATIVO = (expr) => `CASE ${expr} WHEN 'true' THEN 'ATIVO' WHEN 'false' THEN 'INATIVO' END`;
@@ -141,9 +142,13 @@ async function listarSituacao(executor, empresaId, funcionarioId, { pagina, limi
             l.dados_anteriores->>'situacao' AS situacao_anterior, l.dados_novos->>'situacao' AS situacao_nova,
             ${SITUACAO_DO_ATIVO("l.dados_anteriores->>'ativo'")} AS situacao_do_ativo_anterior,
             ${SITUACAO_DO_ATIVO("l.dados_novos->>'ativo'")} AS situacao_do_ativo_nova,
+            to_char(h.data_efetiva, 'YYYY-MM-DD') AS data_efetiva,
             u.id AS responsavel_id, u.nome AS responsavel_nome
        FROM logs_auditoria l
        LEFT JOIN usuarios u ON u.empresa_id = l.empresa_id AND u.id = l.usuario_id
+       LEFT JOIN funcionario_situacoes h
+              ON h.empresa_id = l.empresa_id AND h.funcionario_id::text = l.referencia
+             AND l.acao = 'FUNCIONARIO_SITUACAO_ALTERADA' AND h.id::text = l.contexto->>'historicoId'
       ${FILTRO_SITUACAO}
       ORDER BY l.criado_em DESC, l.id DESC
       LIMIT $6 OFFSET $7`,
@@ -158,6 +163,7 @@ async function listarSituacao(executor, empresaId, funcionarioId, { pagina, limi
       origem: l.origem,
       situacaoAnterior: atual ? l.situacao_anterior : l.situacao_do_ativo_anterior,
       situacaoNova: atual ? l.situacao_nova : l.situacao_do_ativo_nova,
+      dataEfetiva: l.data_efetiva,
       responsavel: l.responsavel_id === null ? null : { id: l.responsavel_id, nome: l.responsavel_nome },
     };
   });

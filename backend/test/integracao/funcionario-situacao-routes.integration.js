@@ -4,6 +4,7 @@ const { describe, test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { montarAmbienteSituacao, DISPOSITIVO } = require('./helpers/ambiente-funcionario-situacao');
+const { HOJE } = require('./helpers/ambiente-funcionario-situacao-datas');
 
 /**
  * S2 (RED) — situação funcional do funcionário: `POST /api/funcionarios/:id/situacao`.
@@ -31,7 +32,8 @@ describe('S2 — situação do funcionário (rota, regras, auditoria e rotas leg
   before(async () => { amb = await montarAmbienteSituacao(); });
   after(async () => { if (amb) await amb.encerrar(); });
 
-  const mudar = (usuarioId, id, situacao) => amb.como(usuarioId).post(ROTA(id), { situacao });
+  // Datas efetivas (096): desligamento, afastamento e retorno de afastado levam a data; reativar um INATIVO não tem data.
+  const mudar = (usuarioId, id, situacao, semData = false) => amb.como(usuarioId).post(ROTA(id), semData ? { situacao } : { situacao, dataEfetiva: HOJE });
   const master = () => amb.usuarios.master;
 
   describe('transições permitidas', () => {
@@ -45,7 +47,7 @@ describe('S2 — situação do funcionário (rota, regras, auditoria e rotas leg
     for (const [de, para] of PERMITIDAS) {
       test(`${de} → ${para}: 200, a resposta e o banco trazem a nova situação e \`ativo\` acompanha`, async () => {
         const id = await amb.trabalhador(de);
-        const r = await mudar(master(), id, para);
+        const r = await mudar(master(), id, para, de === 'INATIVO' && para === 'ATIVO');
         assert.equal(r.status, 200, JSON.stringify(r.body));
         assert.equal(r.body.funcionario?.situacao, para);
         assert.equal(r.body.funcionario?.ativo, para === 'ATIVO');
@@ -196,7 +198,7 @@ describe('S2 — situação do funcionário (rota, regras, auditoria e rotas leg
     test('anterior e nova corretas em cada transição permitida', async () => {
       for (const [de, para] of [['ATIVO', 'INATIVO'], ['AFASTADO', 'ATIVO'], ['AFASTADO', 'INATIVO'], ['INATIVO', 'ATIVO']]) {
         const id = await amb.trabalhador(de);
-        const r = await mudar(master(), id, para);
+        const r = await mudar(master(), id, para, de === 'INATIVO' && para === 'ATIVO');
         assert.equal(r.status, 200, `${de} → ${para}: ${JSON.stringify(r.body)}`);
         const [linha] = await amb.auditoria('FUNCIONARIO_SITUACAO_ALTERADA', id);
         assert.equal(linha?.dados_anteriores?.situacao, de);
@@ -244,7 +246,7 @@ describe('S2 — situação do funcionário (rota, regras, auditoria e rotas leg
     for (const [de, para, esperados] of MATRIZ) {
       test(`${de} → ${para} pela rota nova: ${esperados.join(' + ')}`, async () => {
         const id = await amb.trabalhador(de);
-        const r = await mudar(master(), id, para);
+        const r = await mudar(master(), id, para, de === 'INATIVO' && para === 'ATIVO');
         assert.equal(r.status, 200, JSON.stringify(r.body));
         assert.deepEqual((await amb.eventos(id)).sort(), [...esperados].sort());
       });
@@ -252,11 +254,12 @@ describe('S2 — situação do funcionário (rota, regras, auditoria e rotas leg
   });
 
   describe('rotas legadas inativar e reativar continuam existindo e convergem para INATIVO e ATIVO', () => {
-    const legado = (id, rota) => amb.como(master()).post(`/api/funcionarios/${id}/${rota}`, {});
+    const legado = (id, rota, corpo = {}) => amb.como(master()).post(`/api/funcionarios/${id}/${rota}`, corpo);
+    const COM_DATA = { dataEfetiva: HOJE };
 
     test('inativar ATIVO: 200, alterado, INATIVO; eventos INATIVADO e SITUACAO_ALTERADA', async () => {
       const id = await amb.trabalhador('ATIVO');
-      const r = await legado(id, 'inativar');
+      const r = await legado(id, 'inativar', COM_DATA);
       assert.equal(r.status, 200, JSON.stringify(r.body));
       assert.equal(r.body.alterado, true);
       assert.equal(r.body.funcionario?.situacao, 'INATIVO');
@@ -266,7 +269,7 @@ describe('S2 — situação do funcionário (rota, regras, auditoria e rotas leg
 
     test('inativar AFASTADO: vai a INATIVO (alterado), só SITUACAO_ALTERADA, sem evento legado', async () => {
       const id = await amb.trabalhador('AFASTADO');
-      const r = await legado(id, 'inativar');
+      const r = await legado(id, 'inativar', COM_DATA);
       assert.equal(r.status, 200, JSON.stringify(r.body));
       assert.equal(r.body.alterado, true);
       assert.equal(r.body.funcionario?.situacao, 'INATIVO');
@@ -278,7 +281,7 @@ describe('S2 — situação do funcionário (rota, regras, auditoria e rotas leg
 
     test('inativar INATIVO continua idempotente: 200, alterado false, nada auditado', async () => {
       const id = await amb.trabalhador('INATIVO');
-      const r = await legado(id, 'inativar');
+      const r = await legado(id, 'inativar', COM_DATA);
       assert.equal(r.status, 200, JSON.stringify(r.body));
       assert.equal(r.body.alterado, false);
       assert.equal(r.body.funcionario?.situacao, 'INATIVO');
@@ -296,7 +299,7 @@ describe('S2 — situação do funcionário (rota, regras, auditoria e rotas leg
 
     test('reativar AFASTADO: vai a ATIVO (alterado), só SITUACAO_ALTERADA, sem evento legado', async () => {
       const id = await amb.trabalhador('AFASTADO');
-      const r = await legado(id, 'reativar');
+      const r = await legado(id, 'reativar', COM_DATA);
       assert.equal(r.status, 200, JSON.stringify(r.body));
       assert.equal(r.body.alterado, true);
       assert.equal(r.body.funcionario?.situacao, 'ATIVO');

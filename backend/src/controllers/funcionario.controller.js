@@ -31,6 +31,11 @@ function paraResposta(funcionario) {
   return { ...resto, cpfMascarado: mascararCpf(cpf) };
 }
 
+// Só a mudança real devolve o bloco; a repetição idempotente (alterado: false) não tem registro novo a mostrar.
+const blocoUltimaMudanca = (ultima) => (ultima === undefined ? {} : {
+  ultimaMudancaSituacao: { situacao: ultima.situacao, dataEfetiva: ultima.dataEfetiva, registradaEm: ultima.registradaEm },
+});
+
 // S4: "hoje" das regras de data é a data civil (America/Sao_Paulo) do relógio injetado; o padrão é o relógio real.
 function criarFuncionarioController({ pool: poolInjetado, relogio = () => new Date() }) {
   return {
@@ -147,20 +152,25 @@ function criarFuncionarioController({ pool: poolInjetado, relogio = () => new Da
     },
 
     async inativar(req, res) {
-      const { funcionario, alterado } = await funcionarioService.inativar(poolInjetado, { ...comContexto(req), funcionarioId: req.validado.params.id });
-      res.status(200).json({ status: 'ok', funcionario: paraResposta(funcionario), alterado });
+      const { funcionario, alterado, ultimaMudanca } = await funcionarioService.inativar(poolInjetado, {
+        ...comContexto(req), hoje: dataOperacional(relogio()), funcionarioId: req.validado.params.id, dataEfetiva: req.validado.body.dataEfetiva,
+      });
+      res.status(200).json({ status: 'ok', funcionario: paraResposta(funcionario), alterado, ...blocoUltimaMudanca(ultimaMudanca) });
     },
 
     async alterarSituacao(req, res) {
-      const { funcionario, situacaoAnterior } = await funcionarioService.alterarSituacao(poolInjetado, {
-        ...comContexto(req), funcionarioId: req.validado.params.id, situacao: req.validado.body.situacao,
+      const { funcionario, situacaoAnterior, ultimaMudanca } = await funcionarioService.alterarSituacao(poolInjetado, {
+        ...comContexto(req), hoje: dataOperacional(relogio()), funcionarioId: req.validado.params.id,
+        situacao: req.validado.body.situacao, dataEfetiva: req.validado.body.dataEfetiva,
       });
-      res.status(200).json({ status: 'ok', funcionario: paraResposta(funcionario), situacaoAnterior });
+      res.status(200).json({ status: 'ok', funcionario: paraResposta(funcionario), situacaoAnterior, ...blocoUltimaMudanca(ultimaMudanca) });
     },
 
     async reativar(req, res) {
-      const { funcionario, alterado } = await funcionarioService.reativar(poolInjetado, { ...comContexto(req), funcionarioId: req.validado.params.id });
-      res.status(200).json({ status: 'ok', funcionario: paraResposta(funcionario), alterado });
+      const { funcionario, alterado, ultimaMudanca } = await funcionarioService.reativar(poolInjetado, {
+        ...comContexto(req), hoje: dataOperacional(relogio()), funcionarioId: req.validado.params.id, dataEfetiva: req.validado.body.dataEfetiva,
+      });
+      res.status(200).json({ status: 'ok', funcionario: paraResposta(funcionario), alterado, ...blocoUltimaMudanca(ultimaMudanca) });
     },
   };
 }
