@@ -59,6 +59,7 @@ async function eventosDeSituacao(pool, empresaId, funcionarioId, { pagina, limit
     ocorridoEm: l.ocorridoEm,
     anterior: l.acao === 'FUNCIONARIO_CRIADO' ? null : situacaoOuNula(l.situacaoAnterior),
     novo: situacaoOuNula(l.situacaoNova),
+    ...(typeof l.dataEfetiva === 'string' && DATA.test(l.dataEfetiva) ? { dataEfetiva: l.dataEfetiva } : {}),
     responsavel: l.responsavel,
   }));
   return { eventos, total };

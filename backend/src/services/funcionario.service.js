@@ -1,9 +1,11 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const { HttpError } = require('../errors/HttpError');
 const funcionarioRepo = require('../repositories/funcionario.repository');
 const gheRepo = require('../repositories/grupo-homogeneo-exposicao.repository');
 const auditoriaRepo = require('../repositories/auditoria.repository');
+const situacaoRepo = require('../repositories/funcionario-situacao.repository');
 const { normalizarCpf, cpfTemDigitosVerificadoresValidos, normalizarNomeGhe } = require('../utils/normalizacao');
 const { TRANSICOES, situacaoDe } = require('../utils/situacao-funcionario');
 const { dataOperacional } = require('../utils/data-operacional');
@@ -121,6 +123,7 @@ function exigirDatasValidas(dataNascimento, dataAdmissao) {
 const NASCIMENTO_MINIMO = '1900-01-01';
 const MSG_DATA_NASCIMENTO_INVALIDA = 'Data de nascimento inválida: deve ser a partir de 1900-01-01 e anterior a hoje';
 const MSG_DATA_ADMISSAO_FUTURA = 'Data de admissão inválida: não pode ser futura';
+const MSG_ADMISSAO_POSTERIOR_A_SITUACAO = 'A data de admissão não pode ser posterior a uma data efetiva de situação já registrada';
 
 function exigirNascimentoNoDominio(dataNascimento, hoje) {
   if (dataNascimento !== null && dataNascimento !== undefined && (dataNascimento < NASCIMENTO_MINIMO || dataNascimento >= hoje)) {
@@ -467,6 +470,14 @@ async function alterar(pool, dados) {
       dataNascimentoInformado ? (dataNascimento ?? null) : (anterior.dataNascimento ?? null),
       dataAdmissaoInformado ? (dataAdmissao ?? null) : (anterior.dataAdmissao ?? null),
     );
+    // Histórico de situações (096): a admissão nunca passa a ser POSTERIOR à primeira data efetiva já registrada (o sentido inverso é
+    // conferido em mudarSituacao). Mesma trava e mesma transação; só consulta quando a admissão realmente muda para uma data.
+    if (dataAdmissaoInformado && dataAdmissao !== null && dataAdmissao !== undefined && dataAdmissao !== (anterior.dataAdmissao ?? null)) {
+      const primeira = await situacaoRepo.buscarPrimeiraDataEfetiva(client, empresaId, funcionarioId);
+      if (primeira !== null && dataAdmissao > primeira) {
+        throw new HttpError(409, 'FUNCIONARIO_DATA_ADMISSAO_POSTERIOR_A_SITUACAO', MSG_ADMISSAO_POSTERIOR_A_SITUACAO, { detalhes: { limite: primeira } });
+      }
+    }
 
     let atualizado;
     try {
@@ -510,23 +521,80 @@ async function alterar(pool, dados) {
   });
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// Situação com DATA EFETIVA (migration 096)
+// ═══════════════════════════════════════════════════════════════════
+
+const OPERACAO_DA_SITUACAO = Object.freeze({ INATIVO: 'INATIVAR', AFASTADO: 'AFASTAR', ATIVO: 'ATIVAR' });
+const ACAO_AUDITORIA_SITUACAO_RECUSADA = 'FUNCIONARIO_SITUACAO_RECUSADA';
+// Só as recusas NOVAS de cronologia e de entrega são auditadas (código técnico, sem datas, fora da transação desfeita).
+// Validação 400 e os 409 que já existiam (situação igual, transição proibida) não geram registro.
+const CODIGOS_DE_RECUSA_AUDITADOS = new Set([
+  'DATA_EFETIVA_ANTERIOR_A_SITUACAO_REGISTRADA', 'DESLIGAMENTO_ANTERIOR_A_ENTREGA', 'AFASTAMENTO_ANTERIOR_A_ENTREGA',
+]);
+// Volume controlável por quem tem permissão de editar: no máximo um registro por evento de recusa (ver auditarRecusaDeSituacao) nesta janela.
+const JANELA_SUPRESSAO_RECUSA_SEGUNDOS = 60;
+const ESPACO_SUPRESSAO_RECUSA = 'auditoria_recusa_situacao_funcionario';
+
+const MSG_DATA_OBRIGATORIA = 'Informe a data efetiva';
+const MSG_DATA_EFETIVA_INVALIDA = 'Data efetiva inválida';
+const MSG_DATA_NAO_SE_APLICA = 'A reativação de um funcionário inativo não tem data efetiva';
+const MSG_DATA_FUTURA = 'A data efetiva não pode ser futura';
+const MSG_DATA_ANTERIOR_A_ADMISSAO = 'A data efetiva não pode ser anterior à data de admissão';
+const MSG_DATA_ANTERIOR_A_SITUACAO = 'A data efetiva não pode ser anterior à última data efetiva registrada';
+const MSG_DESLIGAMENTO_ANTES_DE_ENTREGA = 'Existem entregas de EPI posteriores à data efetiva do desligamento';
+const MSG_AFASTAMENTO_ANTES_DE_ENTREGA = 'Existem entregas de EPI posteriores à data efetiva do afastamento';
+
+const DATA_CIVIL = /^\d{4}-\d{2}-\d{2}$/;
+const diasDoMes = (ano, mes) => [31, (ano % 4 === 0 && ano % 100 !== 0) || ano % 400 === 0 ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][mes - 1];
+
+/** AAAA-MM-DD existente no calendário (ano ≥ 1), sem converter para Date: o dia informado é o dia gravado, em qualquer fuso. */
+function dataCivilExistente(texto) {
+  if (typeof texto !== 'string' || !DATA_CIVIL.test(texto)) return false;
+  const [ano, mes, dia] = texto.split('-').map(Number);
+  return ano >= 1 && mes >= 1 && mes <= 12 && dia >= 1 && dia <= diasDoMes(ano, mes);
+}
+
+function exigirHojeCivil(hoje) {
+  if (!dataCivilExistente(hoje)) {
+    throw new TypeError('data civil de hoje inválida: o serviço não lê o relógio, o chamador a informa');
+  }
+}
+
 /**
  * Muda a situação (ATIVO, AFASTADO, INATIVO) sobre a linha TRAVADA (FOR UPDATE): a transição é validada contra o estado
  * já confirmado por quem veio antes, então duas mudanças concorrentes se ordenam e a cadeia anterior→nova da auditoria
- * não quebra. A auditoria vai na mesma transação (falhou, desfaz a mudança).
+ * não quebra. O histórico de situações (repositório próprio) e a auditoria vão na mesma transação (falhou, desfaz a mudança).
+ *
+ * Ordem: trava → forma da data (depende só do destino) → igualdade e transição → aplicabilidade pelo estado → regras de data
+ * (futura, admissão) → cronologia contra o histórico → entregas posteriores → UPDATE → histórico → auditoria. A cronologia
+ * é decidida antes das entregas, então um único conflito é informado. A data efetiva é a data civil informada; `hoje` é a data
+ * civil de São Paulo do relógio injetado no controller (nunca a data UTC). Reativar um INATIVO não tem data (nem é retorno
+ * nem nova contratação): a linha nasce com data nula. Dado legado sem linha de histórico nunca ganha data inventada.
  *
  * `tolerarIgual` é o contrato das rotas legadas (inativar/reativar CONVERGEM para um alvo e são idempotentes); a rota
  * nova (S2) recusa a mesma situação (409 FUNCIONARIO_SITUACAO_IGUAL) e a transição proibida (409
  * FUNCIONARIO_SITUACAO_TRANSICAO_INVALIDA, ex.: INATIVO → AFASTADO). Os eventos legados FUNCIONARIO_INATIVADO e
  * FUNCIONARIO_REATIVADO só acompanham ATIVO → INATIVO e INATIVO → ATIVO; transição com AFASTADO grava só
- * FUNCIONARIO_SITUACAO_ALTERADA. Nenhum dos eventos leva CPF, telefone nem nascimento.
+ * FUNCIONARIO_SITUACAO_ALTERADA. Nenhum dos eventos leva CPF, telefone, nascimento nem datas.
  */
-async function mudarSituacao(client, { empresaId, atorId, funcionarioId, situacao, tolerarIgual, ip, dispositivo }) {
+async function mudarSituacao(client, {
+  empresaId, atorId, funcionarioId, situacao, dataEfetiva, hoje, tolerarIgual, ip, dispositivo,
+}) {
   const anterior = await funcionarioRepo.buscarPorIdParaAtualizacao(client, empresaId, funcionarioId);
   if (anterior === null) {
     throw HttpError.notFound('FUNCIONARIO_NAO_ENCONTRADO', MSG_NAO_ENCONTRADO);
   }
   const situacaoAnterior = situacaoDe(anterior);
+
+  const informada = dataEfetiva !== undefined && dataEfetiva !== null;
+  if (!informada && situacao !== 'ATIVO') {
+    throw HttpError.badRequest('DATA_EFETIVA_OBRIGATORIA', MSG_DATA_OBRIGATORIA);
+  }
+  if (informada && !dataCivilExistente(dataEfetiva)) {
+    throw HttpError.badRequest('DATA_EFETIVA_INVALIDA', MSG_DATA_EFETIVA_INVALIDA);
+  }
+
   if (situacaoAnterior === situacao) {
     if (tolerarIgual) return { funcionario: anterior, situacaoAnterior, alterado: false };
     throw HttpError.conflict('FUNCIONARIO_SITUACAO_IGUAL', `O funcionário já está na situação ${situacao}`);
@@ -535,11 +603,46 @@ async function mudarSituacao(client, { empresaId, atorId, funcionarioId, situaca
     throw HttpError.conflict('FUNCIONARIO_SITUACAO_TRANSICAO_INVALIDA', `Não é possível passar da situação ${situacaoAnterior} para ${situacao}`);
   }
 
+  if (situacao === 'ATIVO' && situacaoAnterior === 'AFASTADO' && !informada) {
+    throw HttpError.badRequest('DATA_EFETIVA_OBRIGATORIA', MSG_DATA_OBRIGATORIA);
+  }
+  if (situacao === 'ATIVO' && situacaoAnterior === 'INATIVO' && informada) {
+    throw HttpError.badRequest('DATA_EFETIVA_NAO_SE_APLICA', MSG_DATA_NAO_SE_APLICA);
+  }
+
+  if (informada) {
+    if (dataEfetiva > hoje) {
+      throw HttpError.badRequest('DATA_EFETIVA_FUTURA', MSG_DATA_FUTURA);
+    }
+    if (anterior.dataAdmissao !== null && anterior.dataAdmissao !== undefined && dataEfetiva < anterior.dataAdmissao) {
+      throw HttpError.badRequest('DATA_EFETIVA_ANTERIOR_A_ADMISSAO', MSG_DATA_ANTERIOR_A_ADMISSAO);
+    }
+    const ultima = await situacaoRepo.buscarUltimaDataEfetiva(client, empresaId, funcionarioId);
+    if (ultima !== null && dataEfetiva < ultima) {
+      throw new HttpError(409, 'DATA_EFETIVA_ANTERIOR_A_SITUACAO_REGISTRADA', MSG_DATA_ANTERIOR_A_SITUACAO, { detalhes: { limite: ultima } });
+    }
+    if (situacao !== 'ATIVO') {
+      const entregas = await situacaoRepo.resumirEntregasPosteriores(client, empresaId, funcionarioId, dataEfetiva);
+      if (entregas.total > 0) {
+        const desligamento = situacao === 'INATIVO';
+        throw new HttpError(
+          409,
+          desligamento ? 'DESLIGAMENTO_ANTERIOR_A_ENTREGA' : 'AFASTAMENTO_ANTERIOR_A_ENTREGA',
+          desligamento ? MSG_DESLIGAMENTO_ANTES_DE_ENTREGA : MSG_AFASTAMENTO_ANTES_DE_ENTREGA,
+          { detalhes: { entregasPosteriores: entregas.total, primeiraEntregaEm: entregas.primeiraEm, ultimaEntregaEm: entregas.ultimaEm } },
+        );
+      }
+    }
+  }
+
   const atualizado = await funcionarioRepo.atualizar(client, empresaId, funcionarioId, { situacao });
+  const historico = await situacaoRepo.registrar(client, {
+    empresaId, funcionarioId, situacaoAnterior, situacaoNova: situacao, dataEfetiva: informada ? dataEfetiva : null, registradoPor: atorId,
+  });
 
   await auditoriaRepo.registrar(client, {
     empresaId, usuarioId: atorId, acao: ACAO_AUDITORIA_SITUACAO, referencia: String(funcionarioId), ip, dispositivo,
-    contexto: { origem: ORIGEM_AUDITORIA_SITUACAO },
+    contexto: { origem: ORIGEM_AUDITORIA_SITUACAO, operacao: OPERACAO_DA_SITUACAO[situacao], historicoId: String(historico.id) },
     dadosAnteriores: { situacao: situacaoAnterior }, dadosNovos: { situacao },
   });
   const legado = { ATIVO: { INATIVO: ACAO_AUDITORIA_INATIVACAO }, INATIVO: { ATIVO: ACAO_AUDITORIA_REATIVACAO } }[situacaoAnterior]?.[situacao];
@@ -551,27 +654,93 @@ async function mudarSituacao(client, { empresaId, atorId, funcionarioId, situaca
     });
   }
 
-  return { funcionario: atualizado, situacaoAnterior, alterado: true };
+  return {
+    funcionario: atualizado,
+    situacaoAnterior,
+    alterado: true,
+    ultimaMudanca: { situacao, dataEfetiva: informada ? dataEfetiva : null, registradaEm: historico.registradoEm },
+  };
+}
+
+/** Trava de 64 bits (texto, para o bigint do PostgreSQL) do EVENTO de recusa, num espaço próprio: nunca a trava do funcionário nem a do estoque. */
+function travaDaRecusaDeSituacao(empresaId, atorId, funcionarioId, operacao, codigo) {
+  return crypto.createHash('sha256')
+    .update(`${ESPACO_SUPRESSAO_RECUSA}\n${empresaId}\n${atorId}\n${funcionarioId}\n${operacao}\n${codigo}`)
+    .digest().readBigInt64BE(0).toString();
+}
+
+/**
+ * Auditoria da recusa 409 de cronologia ou de entrega: roda DEPOIS do ROLLBACK, em conexão e transação PRÓPRIAS (nunca presa à
+ * transação desfeita), só com a operação e o código técnico. Nunca datas, contagens, nomes ou texto livre.
+ *
+ * Supressão por EVENTO = empresa + ator + colaborador + operação + código técnico: dentro da janela, a recusa idêntica é
+ * consolidada em uma linha; código (ou operação, ator, colaborador, empresa) diferente é outro evento e é registrado. A trava
+ * de transação por evento serializa a consulta e a gravação, então recusas idênticas simultâneas geram uma linha só. A falha
+ * desta auditoria nunca troca o erro do domínio: vai para o registro técnico, sem payload.
+ */
+async function auditarRecusaDeSituacao(pool, {
+  empresaId, atorId, funcionarioId, situacao, ip, dispositivo,
+}, codigo, { janelaSegundos = JANELA_SUPRESSAO_RECUSA_SEGUNDOS } = {}) {
+  try {
+    const referencia = String(funcionarioId);
+    const contexto = { operacao: OPERACAO_DA_SITUACAO[situacao], codigo };
+    const cliente = await pool.connect();
+    try {
+      await cliente.query('BEGIN');
+      await cliente.query('SELECT pg_advisory_xact_lock($1::bigint)', [travaDaRecusaDeSituacao(empresaId, atorId, funcionarioId, contexto.operacao, codigo)]);
+      const jaRegistrada = await auditoriaRepo.existeRecente(cliente, {
+        empresaId, usuarioId: atorId, acao: ACAO_AUDITORIA_SITUACAO_RECUSADA, referencia, janelaSegundos, contexto,
+      });
+      if (!jaRegistrada) {
+        await auditoriaRepo.registrar(cliente, {
+          empresaId, usuarioId: atorId, acao: ACAO_AUDITORIA_SITUACAO_RECUSADA, referencia, ip, dispositivo, contexto,
+        });
+      }
+      await cliente.query('COMMIT');
+    } catch (erroInterno) {
+      await cliente.query('ROLLBACK').catch(() => {});
+      throw erroInterno;
+    } finally {
+      cliente.release();
+    }
+  } catch (erro) {
+    console.error('[situacao-funcionario] auditoria da recusa falhou', { empresaId, codigo, motivo: typeof erro?.code === 'string' ? erro.code : 'Error' });
+  }
+}
+
+async function executarMudancaDeSituacao(pool, parametros) {
+  try {
+    return await emTransacao(pool, (client) => mudarSituacao(client, parametros));
+  } catch (erro) {
+    if (HttpError.ehHttpError(erro) && erro.status === 409 && CODIGOS_DE_RECUSA_AUDITADOS.has(erro.codigo)) {
+      await auditarRecusaDeSituacao(pool, parametros, erro.codigo);
+    }
+    throw erro;
+  }
 }
 
 async function alterarSituacao(pool, {
-  empresaId, atorId, funcionarioId, situacao, ip = null, dispositivo = null,
+  empresaId, atorId, funcionarioId, situacao, dataEfetiva, hoje, ip = null, dispositivo = null,
 }) {
   exigirId(empresaId, 'identificador de empresa');
   exigirId(atorId, 'identificador de ator');
   exigirId(funcionarioId, 'identificador de funcionário');
-  return emTransacao(pool, (client) => mudarSituacao(client, {
-    empresaId, atorId, funcionarioId, situacao, tolerarIgual: false, ip, dispositivo,
-  }));
+  exigirHojeCivil(hoje);
+  return executarMudancaDeSituacao(pool, {
+    empresaId, atorId, funcionarioId, situacao, dataEfetiva, hoje, tolerarIgual: false, ip, dispositivo,
+  });
 }
 
-async function alterarEstado(pool, { empresaId, atorId, funcionarioId, ativo, ip = null, dispositivo = null }) {
+async function alterarEstado(pool, {
+  empresaId, atorId, funcionarioId, ativo, dataEfetiva, hoje, ip = null, dispositivo = null,
+}) {
   exigirId(empresaId, 'identificador de empresa');
   exigirId(atorId, 'identificador de ator');
   exigirId(funcionarioId, 'identificador de funcionário');
-  return emTransacao(pool, (client) => mudarSituacao(client, {
-    empresaId, atorId, funcionarioId, situacao: ativo ? 'ATIVO' : 'INATIVO', tolerarIgual: true, ip, dispositivo,
-  }));
+  exigirHojeCivil(hoje);
+  return executarMudancaDeSituacao(pool, {
+    empresaId, atorId, funcionarioId, situacao: ativo ? 'ATIVO' : 'INATIVO', dataEfetiva, hoje, tolerarIgual: true, ip, dispositivo,
+  });
 }
 
 async function inativar(pool, dados) {
@@ -836,5 +1005,5 @@ async function listarGhesParaImportacao(pool, { empresaId }) {
 
 module.exports = {
   criar, buscar, listar, alterar, inativar, reativar, alterarSituacao, revelarCpf, importar, listarGhesParaImportacao, listarGhesParaFormulario,
-  ACAO_AUDITORIA_CPF_CONSULTADO,
+  ACAO_AUDITORIA_CPF_CONSULTADO, auditarRecusaDeSituacao,
 };

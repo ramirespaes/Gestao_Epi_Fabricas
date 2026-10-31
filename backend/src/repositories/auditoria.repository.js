@@ -107,9 +107,25 @@ async function registrar(executor, {
  * supressão da auditoria de recusa (12C-3). A janela corre pelo relógio da
  * consulta (clock_timestamp), não pelo do início da transação. Atende-se pelos
  * índices de empresa e usuário e pelo de criado_em; sem índice novo.
+ *
+ * `contexto` (opcional) restringe a registros cujo contexto CONTÉM esse objeto
+ * (@>): permite distinguir eventos da mesma ação, como o código técnico de uma
+ * recusa. Objeto simples, não vazio, até 8 chaves, só valores escalares; vai
+ * sempre como parâmetro. Sem ele, a consulta é a de antes.
  */
+const CONTEXTO_MAXIMO_DE_CHAVES = 8;
+
+function exigirContextoDeBusca(contexto) {
+  const objeto = contexto !== null && typeof contexto === 'object' && !Array.isArray(contexto) && Object.getPrototypeOf(contexto) === Object.prototype;
+  const chaves = objeto ? Object.keys(contexto) : [];
+  const escalares = chaves.every((k) => ['string', 'number', 'boolean'].includes(typeof contexto[k]));
+  if (!objeto || chaves.length === 0 || chaves.length > CONTEXTO_MAXIMO_DE_CHAVES || !escalares) {
+    throw new TypeError('contexto de busca inválido: objeto simples, de 1 a 8 chaves, com valores texto, número ou booleano');
+  }
+}
+
 async function existeRecente(executor, {
-  empresaId, usuarioId, acao, referencia, janelaSegundos,
+  empresaId, usuarioId, acao, referencia, janelaSegundos, contexto,
 }) {
   exigirEmpresa(empresaId);
   if (!Number.isInteger(usuarioId) || usuarioId <= 0) throw new TypeError('identificador de usuário inválido');
@@ -118,13 +134,20 @@ async function existeRecente(executor, {
   if (typeof referencia !== 'string' || referencia.length === 0 || referencia.length > 150) throw new TypeError('referência de auditoria inválida');
   if (!Number.isInteger(janelaSegundos) || janelaSegundos < 1 || janelaSegundos > 3600) throw new TypeError('janela em segundos inválida');
 
+  const valores = [empresaId, usuarioId, acao, referencia, janelaSegundos];
+  let filtroDeContexto = '';
+  if (contexto !== undefined) {
+    exigirContextoDeBusca(contexto);
+    valores.push(JSON.stringify(contexto));
+    filtroDeContexto = '\n        AND contexto @> $6::jsonb';
+  }
   const { rows } = await executor.query(
     `SELECT 1
        FROM logs_auditoria
       WHERE empresa_id = $1 AND usuario_id = $2 AND acao = $3 AND referencia = $4
-        AND criado_em > clock_timestamp() - make_interval(secs => $5)
+        AND criado_em > clock_timestamp() - make_interval(secs => $5)${filtroDeContexto}
       LIMIT 1`,
-    [empresaId, usuarioId, acao, referencia, janelaSegundos],
+    valores,
   );
   return rows.length > 0;
 }
