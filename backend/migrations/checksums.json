@@ -95,6 +95,7 @@
     "092_create_suporte.sql": "67cc2083872418730bae8d3738bcfcfe4a69dffc292c85ed70e2c4999b206ab8",
     "093_alter_suporte_conversa.sql": "279f80ecb86f7eaa71eb865ea2375425b84106baaf6787703f21448c64489f0c",
     "094_create_lgpd_encarregados.sql": "67aa4f4ecc57a8978cfe2f2dd964680f81cb4ce27650126ab032741edc586dcf",
-    "095_alter_lgpd_encarregados_add_cnpj.sql": "d4918cce6d8bf91b4f3a6a03dab513ed09799bf53e6142d154327ce7c3ca611a"
+    "095_alter_lgpd_encarregados_add_cnpj.sql": "d4918cce6d8bf91b4f3a6a03dab513ed09799bf53e6142d154327ce7c3ca611a",
+    "096_create_funcionario_situacoes.sql": "d11d3b1a22a0bc7b31337fedad21f162cfd19a470ee0ad824283a222e7fe61ac"
   }
 }

@@ -57,9 +57,10 @@ const PENDENTES = [
   '093_alter_suporte_conversa',
   '094_create_lgpd_encarregados',
   '095_alter_lgpd_encarregados_add_cnpj',
+  '096_create_funcionario_situacoes',
 ];
 const TABELAS_NOVAS = ['redefinicoes_senha', 'redefinicoes_senha_plataforma', 'recuperacao_senha_solicitacoes', 'logs_auditoria_identidade'];
-const TOTAL = 95;
+const TOTAL = 96;
 
 describe('runner real: 061 a 074 numa transação, sobre a 060 com contas e sessões existentes', () => {
   let contexto;
