@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 
 const { montarAmbienteGhe } = require('./helpers/ambiente-funcionario-ghe');
 const { cpfFicticio } = require('../helpers/cpf-ficticio');
+const { HOJE } = require('./helpers/ambiente-funcionario-situacao-datas');
 
 /**
  * Histórico de Funcionários — pacote E (RED): histórico de GHE do funcionário.
@@ -78,7 +79,7 @@ describe('E — histórico de GHE do funcionário (PostgreSQL real)', () => {
     // Outros eventos do mesmo funcionário que NÃO são de GHE: setor, situação e consulta de CPF.
     for (const [nome, r] of [
       ['setor', await amb.como(amb.usuarios.master).patch(`/api/funcionarios/${ids.atual}`, { setor: 'Manutenção' })],
-      ['situação', await amb.como(amb.usuarios.master).post(`/api/funcionarios/${ids.atual}/situacao`, { situacao: 'AFASTADO' })],
+      ['situação', await amb.como(amb.usuarios.master).post(`/api/funcionarios/${ids.atual}/situacao`, { situacao: 'AFASTADO', dataEfetiva: HOJE })],
       ['CPF', await amb.como(amb.usuarios.master).post(`/api/funcionarios/${ids.atual}/cpf/revelar`, {})],
     ]) assert.equal(r.status, 200, `${nome}: ${JSON.stringify(r.body)}`);
     assert.deepEqual(await amb.eventos(ids.atual), [

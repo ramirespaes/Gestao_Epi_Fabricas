@@ -4,6 +4,7 @@ const { describe, test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { montarAmbienteSituacao } = require('./helpers/ambiente-funcionario-situacao');
+const { HOJE } = require('./helpers/ambiente-funcionario-situacao-datas');
 
 /**
  * S2 (RED) — concorrência da mudança de situação, em PostgreSQL real com conexões independentes.
@@ -47,7 +48,7 @@ describe('S2 — concorrência da situação do funcionário', () => {
     try {
       await segurando.query('BEGIN');
       await segurando.query('SELECT id FROM funcionarios WHERE id = $1 FOR UPDATE', [id]);
-      respostaPendente = (async () => amb.como(amb.usuarios.master).post(ROTA(id), { situacao: 'AFASTADO' }))();
+      respostaPendente = (async () => amb.como(amb.usuarios.master).post(ROTA(id), { situacao: 'AFASTADO', dataEfetiva: HOJE }))();
       esperou = await esperouPorTravaDeLinha(amb.pool);
       await segurando.query("UPDATE funcionarios SET situacao = 'AFASTADO' WHERE id = $1", [id]);
       await segurando.query('COMMIT');
@@ -66,8 +67,8 @@ describe('S2 — concorrência da situação do funcionário', () => {
     for (let rodada = 0; rodada < 5; rodada += 1) {
       const id = await amb.trabalhador('ATIVO');
       const respostas = await Promise.all([
-        amb.como(amb.usuarios.master).post(ROTA(id), { situacao: 'AFASTADO' }),
-        amb.como(amb.usuarios.comEditar).post(ROTA(id), { situacao: 'AFASTADO' }),
+        amb.como(amb.usuarios.master).post(ROTA(id), { situacao: 'AFASTADO', dataEfetiva: HOJE }),
+        amb.como(amb.usuarios.comEditar).post(ROTA(id), { situacao: 'AFASTADO', dataEfetiva: HOJE }),
       ]);
       assert.deepEqual(respostas.map((r) => r.status).sort(), [200, 409], `rodada ${rodada}: ${JSON.stringify(respostas.map((r) => r.body))}`);
       assert.equal(respostas.find((r) => r.status === 409).body.codigo, 'FUNCIONARIO_SITUACAO_IGUAL');
@@ -79,8 +80,8 @@ describe('S2 — concorrência da situação do funcionário', () => {
   test('transições encadeadas ao mesmo tempo (AFASTADO e depois INATIVO) respeitam a ordem real: o estado final é válido e cada mudança tem a sua auditoria', async () => {
     const id = await amb.trabalhador('ATIVO');
     const respostas = await Promise.all([
-      amb.como(amb.usuarios.master).post(ROTA(id), { situacao: 'AFASTADO' }),
-      amb.como(amb.usuarios.comEditar).post(ROTA(id), { situacao: 'INATIVO' }),
+      amb.como(amb.usuarios.master).post(ROTA(id), { situacao: 'AFASTADO', dataEfetiva: HOJE }),
+      amb.como(amb.usuarios.comEditar).post(ROTA(id), { situacao: 'INATIVO', dataEfetiva: HOJE }),
     ]);
     for (const r of respostas) assert.ok([200, 409].includes(r.status), JSON.stringify(r.body));
     assert.ok(respostas.some((r) => r.status === 200), 'ao menos uma mudança deveria vencer');

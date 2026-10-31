@@ -112,6 +112,7 @@ async function clicarBotao(pg, texto, dentro) {
   await b.disparar('click');
   await pg.esperar();
 }
+const DATA_EFETIVA = '2026-10-01';
 async function acionarNaLinha(pg, nome, texto) {
   const tr = linhaDe(pg, nome);
   assert.ok(tr, `linha de ${nome}`);
@@ -122,6 +123,11 @@ async function acionarNaLinha(pg, nome, texto) {
   if (texto === 'Editar') return;
   const caixa = confirmacaoVisivel(pg);
   assert.ok(caixa, `a ação "${texto}" deveria pedir confirmação`);
+  // Datas efetivas (096): quando a janela pede a data (desligamento, afastamento, retorno), ela é informada; reativar INATIVO não tem campo.
+  if (pg.existe('cCampoData') && pg.visivel('cCampoData')) {
+    pg.el('cData').value = DATA_EFETIVA;
+    await pg.el('cData').disparar('input');
+  }
   const { confirmar } = botoesDaConfirmacao(caixa);
   assert.ok(confirmar, 'a confirmação precisa de um botão para confirmar');
   await confirmar.disparar('click');
@@ -659,6 +665,34 @@ describe('Gestão de Funcionários — edição', () => {
     assert.ok(tabela(pg).some((l) => l[0] === 'Mauro Teste' && l[2] === 'Produção'), 'a lista é relida');
   });
 
+  test('admissão posterior à primeira data efetiva do histórico (409): a mensagem própria vai ao campo de contratação com a data limite em dd/mm/aaaa; modal aberto, digitado preservado, texto do servidor nunca exibido', async () => {
+    const SEGREDO = 'TEXTO_SECRETO_DO_SERVIDOR_456';
+    const resposta = { status: 409, corpo: { status: 'error', codigo: 'FUNCIONARIO_DATA_ADMISSAO_POSTERIOR_A_SITUACAO', message: SEGREDO, detalhes: { limite: '2026-10-05' } } };
+    const pg = await abrirComEdicao(1, resposta);
+    await abrirEdicao(pg, 'Mauro Teste');
+    await digitarEm(pg, 'fContratacao', '2026-01-15');
+    await digitarEm(pg, 'fSetor', 'Produção');
+    await salvar(pg);
+    assert.equal(chamadasDe(pg, 'PATCH /funcionarios/1').length, 1);
+    assert.equal(pg.visivel('overlay'), true, 'o modal continua aberto');
+    assert.match(pg.texto('eContratacao'), /05\/10\/2026/);
+    assert.equal(pg.el('fContratacao').value, '2026-01-15');
+    assert.equal(pg.el('fSetor').value, 'Produção');
+    assert.equal(pg.textoDoDom().includes(SEGREDO), false);
+  });
+
+  test('erros.daEscrita para a admissão posterior à situação: campo Contratacao com a data limite; sem limite válido, texto genérico do campo; nunca o texto do servidor', () => {
+    const E = require('../js/gestao-funcionarios').erros; // eslint-disable-line global-require
+    assert.equal(typeof E.daEscrita, 'function');
+    const comLimite = E.daEscrita({ status: 409, codigo: 'FUNCIONARIO_DATA_ADMISSAO_POSTERIOR_A_SITUACAO', detalhes: { limite: '2026-10-05' }, message: 'x' });
+    assert.match(comLimite.campos.Contratacao, /05\/10\/2026/);
+    for (const detalhes of [undefined, {}, { limite: 'ontem' }, { limite: '2026-02-30' }]) {
+      const r = E.daEscrita({ status: 409, codigo: 'FUNCIONARIO_DATA_ADMISSAO_POSTERIOR_A_SITUACAO', detalhes });
+      assert.match(r.campos.Contratacao, /\S/);
+      assert.doesNotMatch(r.campos.Contratacao, /undefined|NaN|ontem/);
+    }
+  });
+
   test('troca de GHE e de datas: o corpo leva o id do GHE novo e as datas com os nomes da API, dentro do contrato do PATCH', async () => {
     const troca = await abrirComEdicao(1, atualizado({ grupoHomogeneoId: 20, grupoHomogeneo: GHES[1] }));
     await abrirEdicao(troca, 'Mauro Teste');
@@ -772,6 +806,8 @@ describe('Gestão de Funcionários — situação (só pelas rotas específicas)
     return Object.assign(pg, { estado: m.estado });
   };
   const ok = (extra) => ({ status: 200, corpo: { status: 'ok', funcionario: funcionario(extra), situacaoAnterior: 'ATIVO' } });
+  // O corpo leva a data efetiva em desligamento, afastamento e retorno de afastado; reativar um INATIVO continua sem data.
+  const corpoEsperado = (id, destino) => (destino === 'ATIVO' && id === 3 ? { situacao: destino } : { situacao: destino, dataEfetiva: DATA_EFETIVA });
   const CASOS = [
     [1, 'Mauro Teste', 'Afastar', 'AFASTADO', { situacao: 'AFASTADO', ativo: false }, 'Afastado'],
     [1, 'Mauro Teste', 'Inativar', 'INATIVO', { situacao: 'INATIVO', ativo: false }, 'Inativo'],
@@ -780,12 +816,12 @@ describe('Gestão de Funcionários — situação (só pelas rotas específicas)
     [3, 'Ana Souza', 'Ativar', 'ATIVO', { id: 3, nome: 'Ana Souza', situacao: 'ATIVO', ativo: true, grupoHomogeneoId: 20, grupoHomogeneo: GHES[1] }, 'Ativo'],
   ];
   for (const [id, nome, acao, destino, resultado, rotulo] of CASOS) {
-    test(`${nome}: "${acao}" → POST /funcionarios/${id}/situacao { situacao: "${destino}" } (e só isso); a lista é relida e mostra ${rotulo}`, async () => {
+    test(`${nome}: "${acao}" → POST /funcionarios/${id}/situacao { situacao: "${destino}"${corpoEsperado(id, destino).dataEfetiva ? ', dataEfetiva' : ''} } (e só isso); a lista é relida e mostra ${rotulo}`, async () => {
       const pg = await comSituacao(id, ok(resultado));
       await acionarNaLinha(pg, nome, acao);
       const envios = chamadasDe(pg, `POST /funcionarios/${id}/situacao`);
       assert.equal(envios.length, 1);
-      assert.deepEqual(envios[0].corpo, { situacao: destino });
+      assert.deepEqual(envios[0].corpo, corpoEsperado(id, destino));
       assert.equal(pg.chamadas.some((c) => c.metodo === 'PATCH'), false, 'situação nunca vai pelo PATCH genérico');
       const linha = tabela(pg).find((l) => l[0] === nome);
       assert.equal(linha?.[5], rotulo);

@@ -162,7 +162,12 @@ describe('funcionarios.html — moldura padrão de navegação', () => {
     const PAGINACAO = '\n      <nav id="paginacaoColaboradores" class="paginacao-colaboradores" aria-label="Páginas de colaboradores" hidden>\n        <button id="paginaColaboradoresAnterior" class="btn btn-outlined" type="button" aria-controls="tbody">Anterior</button>\n        <div id="paginasColaboradores" class="paginas-colaboradores"></div>\n        <button id="paginaColaboradoresProxima" class="btn btn-outlined" type="button" aria-controls="tbody">Próxima</button>\n        <span id="paginaColaboradoresResumo" class="count"></span>\n      </nav>';
     assert.equal(miolo[1].split(CONTADOR_COM_STATUS).length - 1, 1, 'o contador com status aparece uma vez');
     assert.equal(miolo[1].split(PAGINACAO).length - 1, 1, 'a barra de páginas aparece uma vez');
-    const semAcrescimos = miolo[1].replace(FILTRO, '').replace(OLHO_ABRE, '              ').replace(OLHO_FECHA, '').replace(CONTADOR_COM_STATUS, CONTADOR_APROVADO).replace(PAGINACAO, '');
+    // E o campo de data efetiva da janela de situação (096): um bloco único dentro do corpo da janela de confirmação, que sem ele
+    // volta à linha aprovada.
+    const CORPO_APROVADO = '        <div class="modal-body"><p class="texto" id="cTexto"></p></div>';
+    const CORPO_COM_DATA = '        <div class="modal-body">\n          <p class="texto" id="cTexto"></p>\n          <div class="field" id="cCampoData" hidden>\n            <label for="cData" id="cDataRotulo"></label>\n            <input id="cData" class="input" type="date">\n            <div class="err" id="cDataErro"></div>\n          </div>\n        </div>';
+    assert.equal(miolo[1].split(CORPO_COM_DATA).length - 1, 1, 'o campo de data efetiva aparece uma vez, na janela de situação');
+    const semAcrescimos = miolo[1].replace(CORPO_COM_DATA, CORPO_APROVADO).replace(FILTRO, '').replace(OLHO_ABRE, '              ').replace(OLHO_FECHA, '').replace(CONTADOR_COM_STATUS, CONTADOR_APROVADO).replace(PAGINACAO, '');
     assert.equal(sha(semAcrescimos), MIOLO_SHA);
     const principal = html.slice(html.indexOf('<main class="content">'), html.indexOf('</main>'));
     for (const id of ['estadoPagina', 'conteudoProtegido', 'toasts']) assert.ok(principal.includes(`id="${id}"`), `#${id} dentro de main.content`);

@@ -7,6 +7,7 @@ const servico = require('../../src/services/funcionario.service');
 const funcionarioRepo = require('../../src/repositories/funcionario.repository');
 const gheRepo = require('../../src/repositories/grupo-homogeneo-exposicao.repository');
 const auditoriaRepo = require('../../src/repositories/auditoria.repository');
+const situacaoRepo = require('../../src/repositories/funcionario-situacao.repository');
 const { HttpError } = require('../../src/errors/HttpError');
 
 /**
@@ -64,6 +65,10 @@ function mundoValido(t, { existente = funcionario() } = {}) {
       ativo: campos.ativo ?? existente.ativo,
     })),
     registrar: t.mock.method(auditoriaRepo, 'registrar', async () => ({ id: '1', criadoEm: new Date() })),
+    // Datas efetivas (096): o histórico de situações e a cronologia são do repositório próprio; aqui só o necessário para o legado.
+    historico: t.mock.method(situacaoRepo, 'registrar', async () => ({ id: '1', registradoEm: new Date() })),
+    ultimaData: t.mock.method(situacaoRepo, 'buscarUltimaDataEfetiva', async () => null),
+    entregasPosteriores: t.mock.method(situacaoRepo, 'resumirEntregasPosteriores', async () => ({ total: 0, primeiraEm: null, ultimaEm: null })),
   };
 }
 
@@ -269,26 +274,26 @@ describe('alterar', () => {
 describe('inativar e reativar', () => {
   test('inativar audita FUNCIONARIO_INATIVADO; repetido é idempotente sem auditoria; reativar audita FUNCIONARIO_REATIVADO', async (t) => {
     const escritas = mundoValido(t);
-    const r = await servico.inativar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, funcionarioId: FUNC_ID });
+    const r = await servico.inativar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, funcionarioId: FUNC_ID, dataEfetiva: '2026-10-01', hoje: '2026-10-30' });
     assert.equal(r.alterado, true);
     // S2: toda mudança real grava FUNCIONARIO_SITUACAO_ALTERADA; o evento legado acompanha ATIVO → INATIVO.
     assert.deepEqual(escritas.registrar.mock.calls.map((c) => c.arguments[1].acao), ['FUNCIONARIO_SITUACAO_ALTERADA', 'FUNCIONARIO_INATIVADO']);
     for (const c of escritas.registrar.mock.calls) assertSemDadosSensiveis(c.arguments[1]);
 
     const repetido = mundoValido(t, { existente: funcionario({ ativo: false }) });
-    const r2 = await servico.inativar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, funcionarioId: FUNC_ID });
+    const r2 = await servico.inativar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, funcionarioId: FUNC_ID, dataEfetiva: '2026-10-01', hoje: '2026-10-30' });
     assert.equal(r2.alterado, false);
     assert.equal(repetido.registrar.mock.calls.length, 0);
 
     const reativado = mundoValido(t, { existente: funcionario({ ativo: false }) });
-    await servico.reativar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, funcionarioId: FUNC_ID });
+    await servico.reativar(criarPoolFalso(criarClienteFalso()), { empresaId: EMPRESA, atorId: ATOR_ID, funcionarioId: FUNC_ID, hoje: '2026-10-30' });
     assert.deepEqual(reativado.registrar.mock.calls.map((c) => c.arguments[1].acao), ['FUNCIONARIO_SITUACAO_ALTERADA', 'FUNCIONARIO_REATIVADO']);
   });
 
   test('inexistente nesta empresa: 404 com ROLLBACK', async (t) => {
     mundoValido(t, { existente: null });
     const cliente = criarClienteFalso();
-    await esperarHttpError(servico.inativar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, funcionarioId: FUNC_ID }), 404, 'FUNCIONARIO_NAO_ENCONTRADO');
+    await esperarHttpError(servico.inativar(criarPoolFalso(cliente), { empresaId: EMPRESA, atorId: ATOR_ID, funcionarioId: FUNC_ID, dataEfetiva: '2026-10-01', hoje: '2026-10-30' }), 404, 'FUNCIONARIO_NAO_ENCONTRADO');
     assert.equal(contar(cliente.chamadas, /^ROLLBACK$/), 1);
   });
 });

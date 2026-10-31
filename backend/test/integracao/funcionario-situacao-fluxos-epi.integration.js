@@ -11,6 +11,7 @@ const entregaSolicitacaoSvc = require('../../src/services/entrega-solicitacao.se
 const consultaEntregaSvc = require('../../src/services/entrega-epi-consulta.service');
 const contextoSolicitacaoSvc = require('../../src/services/solicitacao-epi-contexto.service');
 const { HttpError } = require('../../src/errors/HttpError');
+const { HOJE } = require('./helpers/ambiente-funcionario-situacao-datas');
 
 /**
  * S2 (RED) — o funcionário AFASTADO não solicita nem recebe EPI, com código e mensagem PRÓPRIOS
@@ -156,7 +157,7 @@ describe('S2 — AFASTADO nos fluxos de EPI', () => {
       const [, demandaAfastado] = f.numeros(await f.posicao(material));
       assert.equal(demandaAfastado, 0, 'enquanto afastado, a demanda aprovada fica suspensa (fora da posição)');
 
-      const r = await amb.como(amb.usuarios.master).post(ROTA(trabalhador), { situacao: 'ATIVO' });
+      const r = await amb.como(amb.usuarios.master).post(ROTA(trabalhador), { situacao: 'ATIVO', dataEfetiva: HOJE });
       assert.equal(r.status, 200, JSON.stringify(r.body));
       const [, demandaAtivo] = f.numeros(await f.posicao(material));
       assert.equal(demandaAtivo, 1, 'de volta ao ATIVO, a solicitação aprovada volta à demanda');
@@ -191,7 +192,7 @@ describe('S2 — AFASTADO nos fluxos de EPI', () => {
       assert.deepEqual([antes.fichas, antes.entregas, antes.solicitacoes], [1, 1, 1]);
       const gheAntes = (await amb.ler(trabalhador)).grupo_homogeneo_id;
 
-      const r = await amb.como(amb.usuarios.master).post(ROTA(trabalhador), { situacao: 'AFASTADO' });
+      const r = await amb.como(amb.usuarios.master).post(ROTA(trabalhador), { situacao: 'AFASTADO', dataEfetiva: f.HOJE });
       assert.equal(r.status, 200, JSON.stringify(r.body));
       assert.deepEqual(await contagens(trabalhador), antes);
       assert.equal(await statusDaSolicitacao(alvo.id), 'APROVADA');
@@ -207,7 +208,7 @@ describe('S2 — AFASTADO nos fluxos de EPI', () => {
       const alvo = await f.aprovada({ materialId: material, quantidade: 1, funcionarioId: trabalhador });
       await amb.definirSituacao(trabalhador, 'AFASTADO');
 
-      const r = await amb.como(amb.usuarios.master).post(ROTA(trabalhador), { situacao: 'ATIVO' });
+      const r = await amb.como(amb.usuarios.master).post(ROTA(trabalhador), { situacao: 'ATIVO', dataEfetiva: HOJE });
       assert.equal(r.status, 200, JSON.stringify(r.body));
       assert.equal((await amb.ler(trabalhador)).situacao, 'ATIVO');
 
@@ -222,7 +223,7 @@ describe('S2 — AFASTADO nos fluxos de EPI', () => {
     test('AFASTADO → ATIVO: o contexto de entrega e o de solicitação voltam a abrir; nova solicitação é aceita', async () => {
       const material = await f.material();
       const trabalhador = await amb.trabalhador('AFASTADO');
-      const r = await amb.como(amb.usuarios.master).post(ROTA(trabalhador), { situacao: 'ATIVO' });
+      const r = await amb.como(amb.usuarios.master).post(ROTA(trabalhador), { situacao: 'ATIVO', dataEfetiva: HOJE });
       assert.equal(r.status, 200, JSON.stringify(r.body));
       const contexto = await consultaEntregaSvc.contextoDoTrabalhador(amb.pool, { empresaId: d.empresaA, funcionarioId: trabalhador });
       assert.equal(contexto.funcionario.id, trabalhador);

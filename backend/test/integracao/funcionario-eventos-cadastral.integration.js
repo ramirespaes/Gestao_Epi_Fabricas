@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 
 const { montarAmbienteGhe } = require('./helpers/ambiente-funcionario-ghe');
 const { cpfFicticio } = require('../helpers/cpf-ficticio');
+const { HOJE } = require('./helpers/ambiente-funcionario-situacao-datas');
 
 /**
  * Histórico de Funcionários — pacote G (RED): histórico de ALTERAÇÕES CADASTRAIS.
@@ -68,7 +69,7 @@ describe('G — histórico de alterações cadastrais (PostgreSQL real)', () => 
     await patch(A, { setor: 'Manutenção' });                    // informado SEM mudança
     await patch(A, { telefone: '47999990002' });                // só campo sensível: nada cadastral muda
     await patch(A, { grupoHomogeneoId: amb.ghes.caldeiraria }); // só GHE: é o pacote E
-    const sit = await amb.como(amb.usuarios.master).post(`/api/funcionarios/${A}/situacao`, { situacao: 'AFASTADO' }); // pacote F
+    const sit = await amb.como(amb.usuarios.master).post(`/api/funcionarios/${A}/situacao`, { situacao: 'AFASTADO', dataEfetiva: HOJE }); // pacote F
     assert.equal(sit.status, 200, JSON.stringify(sit.body));
     assert.deepEqual(await amb.eventos(A), [
       'FUNCIONARIO_CRIADO', 'FUNCIONARIO_ALTERADO', 'FUNCIONARIO_ALTERADO', 'FUNCIONARIO_ALTERADO', 'FUNCIONARIO_ALTERADO',

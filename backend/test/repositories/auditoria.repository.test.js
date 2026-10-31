@@ -125,6 +125,28 @@ describe('existeRecente — janela de supressão da auditoria de recusa (12C-3)'
     }
     assert.equal(executor.chamadas.length, 0);
   });
+
+  // Supressão por código (recusa de situação do colaborador): filtro opcional por contexto, sempre parametrizado e só quando pedido.
+  test('com `contexto`, acrescenta o filtro de contenção JSONB parametrizado ($6) antes do LIMIT; sem ele, a consulta e os valores não mudam', async () => {
+    const executor = consulta([{ existe: 1 }]);
+    assert.equal(await repositorio().existeRecente(executor, dados({ contexto: { operacao: 'INATIVAR', codigo: 'DESLIGAMENTO_ANTERIOR_A_ENTREGA' } })), true);
+    const { texto, valores } = executor.chamadas[0];
+    assert.match(texto, /AND contexto @> \$6::jsonb\s+LIMIT 1$/);
+    assert.doesNotMatch(texto, /DESLIGAMENTO|INATIVAR/, 'o valor nunca é concatenado no SQL');
+    assert.deepEqual(valores, [EMPRESA, USUARIO, 'SALDO_LIVRE_INSUFICIENTE', 'BAIXA:30:40', 60, JSON.stringify({ operacao: 'INATIVAR', codigo: 'DESLIGAMENTO_ANTERIOR_A_ENTREGA' })]);
+    const sem = consulta([]);
+    await repositorio().existeRecente(sem, dados());
+    assert.doesNotMatch(sem.chamadas[0].texto, /contexto/);
+    assert.equal(sem.chamadas[0].valores.length, 5);
+  });
+
+  test('recusa `contexto` que não seja objeto simples, não vazio, de valores escalares, antes de consultar', async () => {
+    const executor = consulta();
+    for (const contexto of [[], 'x', 5, {}, { a: { b: 1 } }, { a: [1] }, { a: undefined }, { a: null }, Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`k${i}`, i]))]) {
+      await assert.rejects(() => repositorio().existeRecente(executor, dados({ contexto })), TypeError, JSON.stringify(contexto));
+    }
+    assert.equal(executor.chamadas.length, 0);
+  });
 });
 
 describe('SEC-002 — IP e User-Agent cabem nas colunas', () => {
