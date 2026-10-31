@@ -21,9 +21,15 @@ const { listarMigrations, lerManifesto, compararComManifesto, temDivergencia } =
  * GUARDA_BANCOS_PERMITIDOS (separados por vírgula). Não há banco padrão, curinga
  * nem opção de desligar a guarda: sem a variável (ausente, vazia ou só
  * espaços) a guarda reprova antes de qualquer conexão.
+ *
+ * Biblioteca padrão de imagens (opt-in): só com IMAGENS_BIBLIOTECA_PADRAO=obrigatoria a guarda também reprova uma biblioteca ausente (nenhuma imagem padrão
+ * registrada) ou inconsistente, pela verificação de imagem-biblioteca-prontidao.service (carregada só nesse caso). Sem a variável (ausente, vazia ou só espaços) ou
+ * com `desabilitada`, nada muda: nenhuma consulta nem módulo a mais. Qualquer outro valor reprova, para um erro de digitação não desligar a exigência em silêncio.
+ * Não lê o plano nem os ZIPs; a conferência contra o plano aprovado é do portão de publicação (npm run imagens:prontidao).
  */
 
 const VARIAVEL_BANCOS_PERMITIDOS = 'GUARDA_BANCOS_PERMITIDOS';
+const VARIAVEL_BIBLIOTECA_IMAGENS = 'IMAGENS_BIBLIOTECA_PADRAO';
 const DIRETORIO_PADRAO = path.join(__dirname, '..', '..', 'migrations');
 const SCHEMA_PADRAO = 'public';
 const MANIFESTO = 'checksums.json';
@@ -46,6 +52,13 @@ function bancosPermitidos(env) {
   return typeof env[VARIAVEL_BANCOS_PERMITIDOS] === 'string'
     ? env[VARIAVEL_BANCOS_PERMITIDOS].split(',').map((s) => s.trim()).filter(Boolean)
     : [];
+}
+
+/** null = sem exigência (ausente, vazia ou só espaços); 'obrigatoria' | 'desabilitada'; 'invalida' para qualquer outro valor. Os valores são os de POLITICAS do serviço de prontidão. */
+function politicaDaBiblioteca(env) {
+  const valor = env[VARIAVEL_BIBLIOTECA_IMAGENS];
+  if (typeof valor !== 'string' || valor.trim() === '') return null;
+  return valor === 'obrigatoria' || valor === 'desabilitada' ? valor : 'invalida';
 }
 
 const PROBLEMA_LISTA_NAO_CONFIGURADA = Object.freeze({
@@ -92,7 +105,15 @@ function avaliar({ env, observado }) {
     problemas.push({ codigo: 'MANIFESTO_DIVERGENTE', mensagem: `arquivos de migration divergem do manifesto checksums.json: ${itens.join('; ')}` });
   }
 
-  const resumo = `banco=${observado.banco} papel=${observado.papel} porta=${observado.porta} | ${m.aplicadas.length} migrations aplicadas, última ${m.ultima || '—'}, pendentes ${m.pendentes.length} | sentinelas ausentes ${observado.sentinelasAusentes.length} | manifesto ${observado.integridade.integro ? 'íntegro' : 'divergente'}`;
+  if (politicaDaBiblioteca(env) === 'invalida') {
+    problemas.push({ codigo: 'BIBLIOTECA_IMAGENS_POLITICA_INVALIDA', mensagem: `${VARIAVEL_BIBLIOTECA_IMAGENS} deve ser obrigatoria ou desabilitada (ou ficar sem valor)` });
+  }
+  if (observado.biblioteca) problemas.push(...observado.biblioteca.problemas);
+
+  const bibliotecaResumo = observado.biblioteca && observado.biblioteca.resumo
+    ? ` | biblioteca de imagens padrão: ${observado.biblioteca.resumo.registrosPadrao} registro(s), armazenamento ${observado.biblioteca.resumo.veredito}`
+    : '';
+  const resumo = `banco=${observado.banco} papel=${observado.papel} porta=${observado.porta} | ${m.aplicadas.length} migrations aplicadas, última ${m.ultima || '—'}, pendentes ${m.pendentes.length} | sentinelas ausentes ${observado.sentinelasAusentes.length} | manifesto ${observado.integridade.integro ? 'íntegro' : 'divergente'}${bibliotecaResumo}`;
   return { aprovado: problemas.length === 0, problemas, resumo };
 }
 
@@ -161,7 +182,9 @@ function criarClientePadrao(env) {
 }
 
 /** Execução completa (CLI). Devolve o código de saída; nunca lança. */
-async function executar({ env = process.env, saida = console, criarCliente = criarClientePadrao, coletar: coletarInjetado, inspecionar, diretorio = DIRETORIO_PADRAO } = {}) {
+async function executar({
+  env = process.env, saida = console, criarCliente = criarClientePadrao, coletar: coletarInjetado, inspecionar, diretorio = DIRETORIO_PADRAO, verificarBiblioteca,
+} = {}) {
   // Sem lista de bancos permitidos não há o que conferir: reprova antes de criar
   // o cliente, portanto sem nenhuma conexão com o banco.
   if (bancosPermitidos(env).length === 0) {
@@ -185,7 +208,12 @@ async function executar({ env = process.env, saida = console, criarCliente = cri
     const observado = coletarInjetado
       ? await coletarInjetado({ client, env })
       : await coletar({ client, inspecionar: inspecionar || require('../../scripts/migrate').inspecionarMigrations, diretorio });
-    const resultado = avaliar({ env, observado });
+    let resultado = avaliar({ env, observado });
+    // Com banco ou estrutura já reprovados a biblioteca nem é consultada: as tabelas podem faltar e o erro esconderia o motivo real.
+    if (resultado.aprovado && politicaDaBiblioteca(env) === 'obrigatoria') {
+      const verificar = verificarBiblioteca || require('../services/imagem-biblioteca-prontidao.service').verificarParaInicializacao;
+      resultado = avaliar({ env, observado: { ...observado, biblioteca: await verificar({ ambiente: env, cliente: client }) } });
+    }
     saida.log(`[guarda] ${resultado.resumo}`);
     if (resultado.aprovado) {
       saida.log('[guarda] GUARDA APROVADA: banco e estrutura compatíveis com o código');
@@ -203,4 +231,4 @@ async function executar({ env = process.env, saida = console, criarCliente = cri
   }
 }
 
-module.exports = { VARIAVEL_BANCOS_PERMITIDOS, SENTINELAS, SAIDAS, bancosPermitidos, avaliar, coletar, executar };
+module.exports = { VARIAVEL_BANCOS_PERMITIDOS, VARIAVEL_BIBLIOTECA_IMAGENS, SENTINELAS, SAIDAS, bancosPermitidos, politicaDaBiblioteca, avaliar, coletar, executar };

@@ -22,6 +22,8 @@
     "db:mfa:redefinir": "node --require dotenv/config scripts/mfa-redefinir.js",
     "alertas:processar": "node --require dotenv/config scripts/processar-alertas-estoque.js",
     "fiscalizacao:recuperar": "node --require dotenv/config scripts/fiscalizacao-recuperar-abandonados.js",
+    "imagens:importar-padrao": "node --require dotenv/config scripts/imagens-importar-padrao.js",
+    "imagens:prontidao": "node --require dotenv/config scripts/imagens-prontidao.js",
     "imagens:verificar": "node --require dotenv/config scripts/imagens-verificar.js",
     "imagens:limpar-orfaos": "node --require dotenv/config scripts/imagens-limpar-orfaos.js",
     "token:verificar-comunicacao": "node --require dotenv/config scripts/verificar-comunicacao-token.js"
