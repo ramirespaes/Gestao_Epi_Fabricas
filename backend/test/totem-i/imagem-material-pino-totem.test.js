@@ -23,7 +23,8 @@ const PINOS = Object.freeze({
   'index.html': '6ec5236ec6673c581332468b2cb2f7b64df8467f260030b9a47b5387a78bd286',
   'boot.js': '583454fe94c2ed73776fd77b4560eb70c59dd708ad582b2a61ff4878104d6899',
   // GREEN-2A/2C (20/10/2026): fotografias integradas, autorizadas por Ramires. Pino ANTERIOR (histórico): 9ee5d2f8d66e154c067c0f7a35c5214a1341fcd42899f92ac3c16cdf5a60c33e.
-  'totem.js': 'c6728858e0d185cb0331c78099d47f9688ea22d7fdcbca4600bd9ba1478b6afc',
+  // FIX-TOTEM-NUMERO (31/10/2026): confirmação do pedido com o número inteiro do backend, autorizada por Ramires. Pino ANTERIOR (histórico): c6728858e0d185cb0331c78099d47f9688ea22d7fdcbca4600bd9ba1478b6afc.
+  'totem.js': 'caa89895eec5660db5cb9b4ca746c6590b7a15575f38a215d4a2b19c61807fc5',
   'totem.css': '3caa1760e92f1c5feddcb211ab09c082f16db2dc4a0eb182f3f02e609d4ebe50',
 });
 

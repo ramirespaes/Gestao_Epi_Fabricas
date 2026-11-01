@@ -299,7 +299,7 @@
       var repetido = abertas.some(function (a) { return a.materialId === item.materialId && a.tamanho === tamanho; });
       if (repetido) return erro(409, 'ITEM_JA_SOLICITADO', campo);
     }
-    var pedido = { estado: 'REGISTRADO', numero: 'PREVIA', status: 'PENDENTE', quantidadeItens: corpo.itens.length };
+    var pedido = { estado: 'REGISTRADO', numero: 1, status: 'PENDENTE', quantidadeItens: corpo.itens.length }; // número inteiro, como o do backend (INTEGER >= 1)
     pedidos[corpo.chaveIdempotencia] = pedido;
     atendimento = null; // o pedido encerra o atendimento, como no tablet
     return resposta(201, { status: 'ok', repetida: false, pedido: pedido });

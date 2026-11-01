@@ -1099,10 +1099,15 @@
     return { itens: itens, canonico: canonico };
   }
 
+  /* O número do pedido é o INTEGER do backend (CHECK numero > 0): inteiro de 1 a 2147483647. Texto, zero, negativo, decimal e outros tipos não confirmam. */
+  function numeroDePedidoValido(n) {
+    return Number.isInteger(n) && n >= 1 && n <= 2147483647;
+  }
+
   /* A confirmação do servidor: 201 (criado) ou 200 repetido, com status ok e um número. Qualquer outra coisa NÃO é sucesso. */
   function pedidoConfirmado(r) {
     var c = r.corpo;
-    return (r.status === 201 || r.status === 200) && c && c.status === 'ok' && c.pedido && typeof c.pedido.numero === 'string' && c.pedido.numero !== ''
+    return (r.status === 201 || r.status === 200) && c && c.status === 'ok' && c.pedido && numeroDePedidoValido(c.pedido.numero)
       && Number.isInteger(c.pedido.quantidadeItens);
   }
 
@@ -1208,7 +1213,7 @@
       // 401: o atendimento acabou ou o cookie foi removido. Sem acesso não se sabe se o pedido existe: nada é afirmado.
       if (r.status === 401) { voltarAIdentificacao(TEXTOS.sessaoTerminou); return; }
       var pedido = r.corpo && r.corpo.status === 'ok' ? r.corpo.pedido : null;
-      if (r.status === 200 && pedido && pedido.estado === 'REGISTRADO' && typeof pedido.numero === 'string' && pedido.numero !== '') { confirmar(); return; }
+      if (r.status === 200 && pedido && pedido.estado === 'REGISTRADO' && numeroDePedidoValido(pedido.numero)) { confirmar(); return; }
       if (r.status === 202 && pedido && pedido.estado === 'EM_PROCESSAMENTO') { aviso.textContent = TEXTOS.processando; aviso.hidden = false; return; }
       if (r.status === 404 && r.codigo === 'PEDIDO_NAO_ENCONTRADO') { aviso.hidden = true; $('btnReenviar').hidden = false; return; }
       aviso.textContent = TEXTOS.comunicacao;

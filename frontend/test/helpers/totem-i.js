@@ -391,7 +391,8 @@ function criarServidor(opcoes = {}) {
         }
       }
       s.seq += 1;
-      const visao = { numero: `PED-${s.seq}`, status: 'PENDENTE', quantidadeItens: c.corpo.itens.length, itens: c.corpo.itens.map((i) => ({ materialId: i.materialId, tamanho: i.tamanho ?? null, quantidade: i.quantidade, motivo: i.motivo })) };
+      // O backend numera por empresa com INTEGER (1 a 2147483647) e devolve o número como inteiro JSON: o servidor falso segue o contrato real.
+      const visao = { numero: s.seq, status: 'PENDENTE', quantidadeItens: c.corpo.itens.length, itens: c.corpo.itens.map((i) => ({ materialId: i.materialId, tamanho: i.tamanho ?? null, quantidade: i.quantidade, motivo: i.motivo })) };
       s.pedidos.set(c.corpo.chaveIdempotencia, { hash, atendimentoId: a.id, visao, itens: c.corpo.itens });
       a.encerrado = 'PEDIDO_ENVIADO';
       return resp(201, { status: 'ok', repetida: false, pedido: visao });
