@@ -17,6 +17,9 @@ const coberturaRepo = require('../../src/repositories/solicitacao-epi-cobertura.
 const { dataOperacional } = require('../../src/utils/data-operacional');
 const consultaSvc = require('../../src/services/solicitacao-epi-consulta.service');
 
+// Contrato consumido pelo Totem: `pedido.numero` é o INTEGER de solicitacoes_epi (CHECK numero > 0), devolvido como inteiro JSON, nunca como texto.
+const numeroDoPedidoValido = (n) => Number.isInteger(n) && n >= 1 && n <= 2147483647;
+
 /**
  * Atendimento Token — Etapa F (RED): do carrinho finalizado ao PEDIDO (solicitação de EPI AUTOATENDIMENTO) pelo fluxo REAL da 12G-6.
  * PostgreSQL real, schema temporário com TODAS as migrations; sem migration nova. Reutiliza: tablet (C), atendimento (D), catálogo (E) e as
@@ -174,6 +177,7 @@ describe('Atendimento Token — F: pedido do tablet pelo fluxo de solicitações
       assert.equal(r.status, 201, aviso(r));
       assert.deepEqual(Object.keys(r.body).sort(), ['pedido', 'repetida', 'status']);
       assert.equal(r.body.repetida, false);
+      assert.equal(numeroDoPedidoValido(r.body.pedido.numero), true, 'pedido.numero é inteiro de 1 a 2147483647, não texto');
       assert.deepEqual(Object.keys(r.body.pedido).sort(), CHAVES_DO_PEDIDO);
       assert.deepEqual(r.body.pedido.itens.map((i) => Object.keys(i).sort()), [CHAVES_DO_ITEM]);
       assert.deepEqual([r.body.pedido.status, r.body.pedido.quantidadeItens, r.body.pedido.itens[0]], ['PENDENTE', 1, { materialId: c.unico, tamanho: null, quantidade: 2, motivo: 'SUBSTITUICAO_PRAZO' }]);
@@ -506,6 +510,7 @@ describe('Atendimento Token — F: pedido do tablet pelo fluxo de solicitações
       const [r1, r2] = await Promise.all([a.finalizar(app, c.t, c.token, payload), a.finalizar(app, c.t, c.token, payload)]);
       assert.deepEqual([r1.status, r2.status].sort(), [200, 201], `${aviso(r1)} | ${aviso(r2)}`);
       assert.equal(r1.body.pedido.numero, r2.body.pedido.numero);
+      assert.deepEqual([r1.body.pedido.numero, r2.body.pedido.numero].map(numeroDoPedidoValido), [true, true], 'o 201 e o 200 repetido trazem o número como inteiro');
       assert.deepEqual([r1.body.repetida, r2.body.repetida].sort(), [false, true]);
       assert.equal((await a.solicitacoesDe(c.f.id)).length, 1);
       assert.equal((await a.q('SELECT count(*)::int AS n FROM solicitacoes_autoatendimento WHERE atendimento_id = $1', [c.atendimentoId])).rows[0].n, 1);
@@ -652,6 +657,7 @@ describe('Atendimento Token — F: pedido do tablet pelo fluxo de solicitações
       const consulta = await a.resultado(app, c.t, c.token, payload.chaveIdempotencia);
       assert.equal(consulta.status, 200, aviso(consulta));
       assert.deepEqual(consulta.body.pedido, { estado: 'REGISTRADO', numero: gravado.body.pedido.numero, status: 'PENDENTE', quantidadeItens: 1 });
+      assert.equal(numeroDoPedidoValido(consulta.body.pedido.numero), true, 'o GET REGISTRADO também traz o número como inteiro');
       assert.deepEqual(lerSetCookie(consulta), [], 'a consulta de resultado nunca emite nem renova cookie');
       assert.equal(JSON.stringify(consulta.body).includes(payload.chaveIdempotencia), false, 'a chave não volta no corpo');
       const outro = await a.cenario(app, { gheId: c.gheId });
