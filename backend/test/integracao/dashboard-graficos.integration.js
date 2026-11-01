@@ -244,8 +244,10 @@ describe('12I — gráficos do Dashboard (PostgreSQL real)', () => {
       assert.equal(gr.series[0].chave, PRIMEIRO);
       assert.equal(gr.series[gr.series.length - 1].chave, HOJE);
       assert.ok(gr.series.every((s) => s.quantidades.length === 5));
-      assert.deepEqual(gr.series[0].quantidades, [12, 15, 0, 0, 0]);
-      assert.deepEqual(gr.series[gr.series.length - 1].quantidades.slice(0, 5), HOJE === PRIMEIRO ? [20, 15, 10, 8, 5] : [8, 0, 10, 8, 5]);
+      // No dia 1º, o primeiro dia e hoje são o MESMO dia da série: as duas entregas se somam (Luva 12 + 8 = 20). Nos demais dias ficam em dias distintos.
+      const mesmoDia = HOJE === PRIMEIRO;
+      assert.deepEqual(gr.series[0].quantidades, mesmoDia ? [20, 15, 10, 8, 5] : [12, 15, 0, 0, 0]);
+      assert.deepEqual(gr.series[gr.series.length - 1].quantidades.slice(0, 5), mesmoDia ? [20, 15, 10, 8, 5] : [8, 0, 10, 8, 5]);
       // Cada coluna soma o total do produto.
       gr.produtos.forEach((p, c) => assert.equal(gr.series.reduce((s, d) => s + d.quantidades[c], 0), p.total, p.nome));
     });

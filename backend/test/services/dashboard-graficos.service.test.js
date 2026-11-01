@@ -126,3 +126,71 @@ describe('episEntregues: top 5 produtos por unidades entregues no período', () 
     assert.equal(servico.LIMITE_PRODUTOS, 5);
   });
 });
+
+/**
+ * Calendário determinístico: a data operacional (`hoje`) é um argumento do serviço, então o 1º dia do mês, os dias intermediários, o último dia,
+ * a virada de ano e o ano bissexto são provados sem depender do dia em que a suíte roda. Regressão da CI #80, que falhou em 01/11/2026: no dia 1º,
+ * "o primeiro dia" e "hoje" são o MESMO ponto da série, e as duas entregas se somam em vez de aparecerem em dias distintos.
+ */
+describe('episEntregues: calendário determinístico da série por dia', () => {
+  const dois = (n) => String(n).padStart(2, '0');
+  const TOP = [{ materialId: 7, nome: 'Luva', total: 20 }, { materialId: 9, nome: 'Botina', total: 15 }, { materialId: 11, nome: 'Capacete', total: 10 }];
+  const TOTAIS = [20, 15, 10];
+  // Uma linha por material e dia, como o repositório (GROUP BY): Luva 12 e Botina 15 no dia 1º; Luva 8 e Capacete 10 em hoje.
+  const linhasDe = (primeiro, hoje) => (primeiro === hoje
+    ? [{ materialId: 7, chave: primeiro, quantidade: 20 }, { materialId: 9, chave: primeiro, quantidade: 15 }, { materialId: 11, chave: primeiro, quantidade: 10 }]
+    : [
+      { materialId: 7, chave: primeiro, quantidade: 12 }, { materialId: 9, chave: primeiro, quantidade: 15 },
+      { materialId: 7, chave: hoje, quantidade: 8 }, { materialId: 11, chave: hoje, quantidade: 10 },
+    ]);
+
+  // [hoje, dias da série, último dia do mês]
+  const CASOS = [
+    ['2026-11-01', 1, '2026-11-30'], // 1º dia: a série tem um ponto só
+    ['2026-11-02', 2, '2026-11-30'], // 2º dia: primeiro e hoje já são pontos distintos
+    ['2026-11-15', 15, '2026-11-30'], // intermediário
+    ['2026-11-30', 30, '2026-11-30'], // último dia de um mês de 30 dias
+    ['2026-12-31', 31, '2026-12-31'], // último dia do ano
+    ['2027-01-01', 1, '2027-01-31'], // virada de ano: 1º dia
+    ['2026-02-28', 28, '2026-02-28'], // fevereiro comum
+    ['2028-02-28', 28, '2028-02-29'], // ano bissexto, véspera do dia 29
+    ['2028-02-29', 29, '2028-02-29'], // ano bissexto, 29 de fevereiro
+    ['2100-02-28', 28, '2100-02-28'], // século não bissexto
+  ];
+
+  for (const [hoje, dias, ultimo] of CASOS) {
+    test(`MES com hoje = ${hoje}: ${dias} ${dias === 1 ? 'ponto' : 'pontos'} de 1º a hoje, de/ate do mês, quantidades do 1º dia e de hoje corretas e colunas fechando o total`, async (t) => {
+      const primeiro = `${hoje.slice(0, 7)}-01`;
+      const chamadas = simular(t, { top: TOP, serie: linhasDe(primeiro, hoje), soma: 45 });
+      const r = await servico.episEntregues(pool, { ...CONTEXTO, hoje, periodo: 'MES' });
+      assert.deepEqual([r.de, r.ate, r.agrupamento], [primeiro, ultimo, 'DIA']);
+      assert.deepEqual(r.series.map((s) => s.chave), Array.from({ length: dias }, (_, i) => `${hoje.slice(0, 7)}-${dois(i + 1)}`));
+      const mesmoDia = primeiro === hoje;
+      assert.deepEqual(r.series[0].quantidades, mesmoDia ? [20, 15, 10] : [12, 15, 0], 'primeiro dia do mês');
+      assert.deepEqual(r.series[dias - 1].quantidades, mesmoDia ? [20, 15, 10] : [8, 0, 10], 'dia de hoje');
+      for (const s of r.series.slice(1, -1)) assert.deepEqual(s.quantidades, [0, 0, 0], `dia sem entrega ${s.chave}`);
+      TOTAIS.forEach((total, c) => assert.equal(r.series.reduce((soma, d) => soma + d.quantidades[c], 0), total, TOP[c].nome));
+      assert.equal(r.total, 45);
+      assert.deepEqual(chamadas.top[0][2], { padraoItem: null, padraoFuncionario: null, padraoSetor: null, de: primeiro, ate: ultimo, diasMin: null, diasMax: null });
+    });
+  }
+
+  test('duas linhas do mesmo material e do mesmo dia somam na célula (o serviço nunca sobrescreve)', async (t) => {
+    simular(t, { top: [TOP[0]], serie: [{ materialId: 7, chave: '2026-11-01', quantidade: 12 }, { materialId: 7, chave: '2026-11-01', quantidade: 8 }], soma: 20 });
+    const r = await servico.episEntregues(pool, { ...CONTEXTO, hoje: '2026-11-01', periodo: 'MES' });
+    assert.deepEqual(r.series, [{ chave: '2026-11-01', quantidades: [20] }]);
+  });
+
+  test('SEIS_MESES e ANO atravessam a virada de ano e o ano bissexto com as chaves e os limites de calendário certos', async (t) => {
+    simular(t, { top: [], serie: [], soma: 0 });
+    const seis = await servico.episEntregues(pool, { ...CONTEXTO, hoje: '2027-01-01', periodo: 'SEIS_MESES' });
+    const ano = await servico.episEntregues(pool, { ...CONTEXTO, hoje: '2027-01-01', periodo: 'ANO' });
+    assert.deepEqual(seis.series.map((s) => s.chave), ['2026-08', '2026-09', '2026-10', '2026-11', '2026-12', '2027-01']);
+    assert.deepEqual([seis.de, seis.ate], ['2026-08-01', '2027-01-31']);
+    assert.deepEqual(ano.series.map((s) => s.chave), ['2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11', '2026-12', '2027-01']);
+    assert.deepEqual([ano.de, ano.ate], ['2026-02-01', '2027-01-31']);
+    const bissexto = await servico.episEntregues(pool, { ...CONTEXTO, hoje: '2028-02-29', periodo: 'ANO' });
+    assert.deepEqual([bissexto.de, bissexto.ate, bissexto.series.length], ['2027-03-01', '2028-02-29', 12]);
+    assert.deepEqual([bissexto.series[0].chave, bissexto.series[11].chave], ['2027-03', '2028-02']);
+  });
+});
