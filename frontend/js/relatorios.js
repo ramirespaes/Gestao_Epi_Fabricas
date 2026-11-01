@@ -426,7 +426,7 @@
     GERACAO_EM_ANDAMENTO: 'Já existe uma geração em andamento para esta empresa. Aguarde a conclusão.',
     IDEMPOTENCIA_CONFLITO: 'Esta tentativa já foi usada para outro pedido. Faça uma nova tentativa.',
     GERACAO_ABANDONADA: 'A geração foi interrompida. Faça uma nova tentativa.',
-    FISCALIZACAO_INDISPONIVEL: 'A Fiscalização não está disponível neste ambiente.',
+    FISCALIZACAO_INDISPONIVEL: 'A Fiscalização está temporariamente indisponível. Tente novamente mais tarde ou procure o administrador do sistema.',
     PACOTE_NAO_CONCLUIDO: 'O pacote ainda não está concluído ou a geração falhou.',
     PACOTE_NAO_ENCONTRADO: 'Pacote não encontrado.',
     PACOTE_INTEGRIDADE: 'Não foi possível validar a integridade do pacote. Gere um novo pacote.',
@@ -601,6 +601,7 @@
         if (campos.some(function (c) { return typeof c === 'string' && c.indexOf('query.') === 0; })) return TEXTOS.FILTRO_INVALIDO;
       }
       if (r && r.status === 404) return TEXTOS.SERVIDOR_DESATUALIZADO;
+      if (r && r.status === 503 && r.codigo === 'FISCALIZACAO_INDISPONIVEL') return ERROS_FISCAIS.FISCALIZACAO_INDISPONIVEL;
       return TEXTOS.FALHA;
     },
     paginacao: function (d, quantidade) {
