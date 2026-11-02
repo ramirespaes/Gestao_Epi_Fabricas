@@ -1,0 +1,72 @@
+name: Ensaio D-12 sharp/libvips (strace)
+
+# Ensaio TEMPORÁRIO e isolado (D-ORF-6, D-12): roda SOMENTE em push na branch exclusiva de testes e só quando os arquivos do ensaio mudam.
+# Não roda na main nem na branch de desenvolvimento, não altera o CI oficial, não usa secrets, PostgreSQL, AWS nem dados reais. Remover ao encerrar D-12.
+on:
+  push:
+    branches:
+      - teste/d-orf-6-d12-linux-20261102
+    paths:
+      - ".github/workflows/ensaio-d12-sharp.yml"
+      - "backend/test/ensaio-d12/**"
+
+permissions:
+  contents: read
+
+env:
+  TZ: America/Sao_Paulo
+
+jobs:
+  ensaio-strace:
+    name: Worker real de imagens sob strace (dados sintéticos)
+    if: github.ref == 'refs/heads/teste/d-orf-6-d12-linux-20261102'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: strace (única dependência do sistema)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends strace
+          strace --version
+          echo "ptrace_scope=$(cat /proc/sys/kernel/yama/ptrace_scope)"
+
+      - name: Backend - instalar dependências (npm ci, lockfile)
+        working-directory: backend
+        run: npm ci
+
+      - name: Autoteste do analisador do rastro
+        working-directory: backend
+        run: node test/ensaio-d12/ensaio-strace-d12.js --autoteste
+
+      - name: Ensaio D-12 sob strace
+        working-directory: backend
+        run: node test/ensaio-d12/ensaio-strace-d12.js --saida "$RUNNER_TEMP/ensaio-d12"
+
+      - name: Resumo
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/ensaio-d12/relatorio-ensaio-d12.json" ]; then
+            node -e 'const r=require(process.argv[1]);console.log(JSON.stringify({plataforma:r.plataforma,conclusao:r.conclusao,cenarios:r.cenarios.map(c=>({cenario:c.cenario,veredito:c.veredito,resumo:c.analise&&c.analise.resumo,memoria:c.memoria&&{picoHwmKiB:c.memoria.picoHwmKiB,picoRssSomaKiB:c.memoria.picoRssSomaKiB},resultado:c.resultado}))},null,1))' "$RUNNER_TEMP/ensaio-d12/relatorio-ensaio-d12.json"
+            cat "$RUNNER_TEMP/ensaio-d12/MANIFESTO-SHA256.txt"
+          else
+            echo "relatório não gerado"
+          fi
+
+      - name: Evidências (rastros, entradas sintéticas, relatório e manifesto)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ensaio-d12-strace-${{ github.sha }}
+          path: ${{ runner.temp }}/ensaio-d12
+          if-no-files-found: warn
+          retention-days: 30
