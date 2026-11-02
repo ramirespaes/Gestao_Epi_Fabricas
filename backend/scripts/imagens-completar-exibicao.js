@@ -569,7 +569,16 @@ function criarArmazenamento(modo, diretorio) {
     existe: async (...a) => doDisco().existe(...a),
     abrir: async (...a) => doDisco().abrir(...a),
     gravar: modo === 'EXECUTAR' ? async (...a) => doDisco().gravar(...a) : somenteLeitura,
-    remover: modo === 'EXECUTAR' ? async (...a) => doDisco().remover(...a) : somenteLeitura,
+    // CONS-02: a remoção física (única deste consumidor: a compensação do arquivo criado por esta execução) só ocorre sob a janela de LIMPEZA, mutuamente exclusiva do backup. Sem janela configurada, ou com ela ocupada, a
+    // compensação falha com segurança (o chamador registra `FALHOU`) e o arquivo é MANTIDO para a limpeza de órfãos.
+    remover: modo === 'EXECUTAR' ? async (chave) => {
+      doDisco();
+      const { lerArquivoDaJanela } = require('../src/utils/janela-escrita-imagens');
+      const { executarComRemocaoProtegida } = require('../src/storage/armazenamento-imagens');
+      const arquivoDaJanela = lerArquivoDaJanela(process.env);
+      if (arquivoDaJanela === null) throw falhar('JANELA_NAO_CONFIGURADA', 'a janela de escrita das imagens não está configurada');
+      return executarComRemocaoProtegida({ diretorio, arquivoDaJanela, operacao: (protegido) => protegido.remover(chave) });
+    } : somenteLeitura,
   });
 }
 

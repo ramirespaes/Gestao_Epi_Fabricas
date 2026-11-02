@@ -11,6 +11,7 @@ const {
   rodarContrato, chaveOraculo, sha256De, bytesAleatorios, lerStream, esperar, rejeitaComCodigo, H, MAX,
 } = require('./helpers/contrato-armazenamento-imagens');
 const { criarArmazenamentoMemoriaFalso } = require('./helpers/armazenamento-memoria-falso');
+const { adquirirPosseDeLimpeza } = require('./helpers/posse-limpeza');
 const {
   criarRaizTemporaria, removerTemporarioSeguro, pendentes, arquivosSob,
 } = require('./helpers/tmp-seguro');
@@ -39,8 +40,10 @@ const SO_POSIX = { skip: !POSIX && 'depende de permissões e links POSIX' };
 async function criarLocal() {
   const modulo = M();
   const raiz = criarRaizTemporaria();
-  const armazenamento = modulo.criarArmazenamentoImagens({ diretorio: raiz });
-  return { armazenamento, raiz, limpar: async () => { removerTemporarioSeguro(raiz); } };
+  // CONS-02: a remoção legítima usa uma posse VERDADEIRA da janela de LIMPEZA (a recusa sem posse é testada em imagem-backup-marco-c-cons02.test.js).
+  const janela = await adquirirPosseDeLimpeza(raiz);
+  const armazenamento = modulo.criarArmazenamentoImagens({ diretorio: raiz, janelaDeRemocao: janela.posse });
+  return { armazenamento, raiz, limpar: async () => { await janela.liberar(); removerTemporarioSeguro(raiz); } };
 }
 
 async function comLocal(corpo) {
