@@ -16,9 +16,14 @@ const crypto = require('node:crypto');
 const PREFIXO = 'safework-imagem-';
 const TENTATIVAS_DE_NOME = 5;
 const SOBRAS_MAX = 100;
+const { O_RDONLY, O_DIRECTORY = 0, O_NOFOLLOW = 0 } = fs.constants;
 
 const ehArea = (a) => a !== null && typeof a === 'object' && typeof a.caminho === 'string' && path.isAbsolute(a.caminho)
-  && path.basename(a.caminho).startsWith(PREFIXO) && Number.isInteger(a.dev) && Number.isInteger(a.ino) && Number.isInteger(a.uid);
+  && path.basename(a.caminho).startsWith(PREFIXO) && Number.isInteger(a.dev) && Number.isInteger(a.ino) && Number.isInteger(a.uid)
+  && Number.isInteger(a.fd) && a.fd >= 0;
+const mesmoObjeto = (st, area) => Number(st.dev) === area.dev && Number(st.ino) === area.ino;
+/** Tokens cujo descritor já foi fechado por este módulo: nunca fechar duas vezes (o número pode já pertencer a outro arquivo). */
+const descritoresFechados = new WeakSet();
 
 function criarAreaExclusiva({ base = os.tmpdir() } = {}) {
   if (typeof base !== 'string' || !path.isAbsolute(base)) throw new TypeError('base da área temporária deve ser um caminho absoluto');
@@ -31,8 +36,15 @@ function criarAreaExclusiva({ base = os.tmpdir() } = {}) {
       if (erro && erro.code === 'EEXIST') continue;
       throw erro;
     }
-    const st = fs.lstatSync(caminho);
-    return Object.freeze({ caminho, dev: Number(st.dev), ino: Number(st.ino), uid: Number(st.uid) });
+    // O descritor aberto prende o inode até a remoção: um diretório recriado com o mesmo nome nunca recebe a mesma identidade (Linux reutiliza inodes livres).
+    const fd = fs.openSync(caminho, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+    const porDescritor = fs.fstatSync(fd);
+    const porCaminho = fs.lstatSync(caminho);
+    if (!porCaminho.isDirectory() || Number(porCaminho.dev) !== Number(porDescritor.dev) || Number(porCaminho.ino) !== Number(porDescritor.ino)) {
+      fs.closeSync(fd);
+      throw new Error('identidade da área temporária divergente logo após a criação');
+    }
+    return Object.freeze({ caminho, dev: Number(porDescritor.dev), ino: Number(porDescritor.ino), uid: Number(porDescritor.uid), fd });
   }
   throw new Error('não foi possível criar a área temporária exclusiva');
 }
@@ -59,22 +71,44 @@ function inventariar(raiz) {
 
 const resultado = (removida, motivo, inventario = { sobras: Object.freeze([]), truncado: false }) => Object.freeze({ removida, motivo, ...inventario });
 
+/**
+ * Prova de identidade pelo descritor guardado: só vale se ele ainda estiver aberto e apontar para o objeto registrado. Descritor fechado,
+ * inválido ou reaproveitado por outro arquivo não prova nada e, por isso, nunca é fechado aqui (fechar número alheio seria pior).
+ */
+function descritorProvaIdentidade(area) {
+  if (descritoresFechados.has(area)) return false;
+  let porDescritor;
+  try { porDescritor = fs.fstatSync(area.fd); } catch { return false; }
+  return porDescritor.isDirectory() && mesmoObjeto(porDescritor, area);
+}
+
+function fecharDescritor(area) {
+  if (descritoresFechados.has(area)) return;
+  descritoresFechados.add(area);
+  try { fs.closeSync(area.fd); } catch { /* já fechado */ }
+}
+
 /** Remove SÓ o diretório descrito pelo token devolvido por criarAreaExclusiva; se o caminho foi trocado, não toca em nada e relata. */
 function removerAreaExclusiva(area) {
   if (!ehArea(area)) throw new TypeError('área temporária inválida');
-  let st;
-  try { st = fs.lstatSync(area.caminho); } catch (erro) {
-    return resultado(false, erro && erro.code === 'ENOENT' ? 'INEXISTENTE' : 'INACESSIVEL');
-  }
-  if (!st.isDirectory() || Number(st.dev) !== area.dev || Number(st.ino) !== area.ino || Number(st.uid) !== area.uid) return resultado(false, 'TROCADA');
-  const inventario = inventariar(area.caminho);
+  const provado = descritorProvaIdentidade(area);
   try {
-    // Links dentro da área são removidos como links, nunca seguidos.
-    fs.rmSync(area.caminho, { recursive: true, force: true, maxRetries: 3, retryDelay: 25 });
-  } catch {
-    return resultado(false, 'FALHA_AO_REMOVER', inventario);
+    let st;
+    try { st = fs.lstatSync(area.caminho); } catch (erro) {
+      return resultado(false, erro && erro.code === 'ENOENT' ? 'INEXISTENTE' : 'INACESSIVEL');
+    }
+    if (!provado || !st.isDirectory() || !mesmoObjeto(st, area) || Number(st.uid) !== area.uid) return resultado(false, 'TROCADA');
+    const inventario = inventariar(area.caminho);
+    try {
+      // Links dentro da área são removidos como links, nunca seguidos.
+      fs.rmSync(area.caminho, { recursive: true, force: true, maxRetries: 3, retryDelay: 25 });
+    } catch {
+      return resultado(false, 'FALHA_AO_REMOVER', inventario);
+    }
+    return resultado(true, null, inventario);
+  } finally {
+    if (provado) fecharDescritor(area);
   }
-  return resultado(true, null, inventario);
 }
 
 module.exports = { criarAreaExclusiva, removerAreaExclusiva, PREFIXO, SOBRAS_MAX };

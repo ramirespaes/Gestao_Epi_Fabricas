@@ -353,7 +353,9 @@ describe('Biblioteca de Imagens — envio com o processador real, de ponta a pon
   test('E2E-11 — contrato do filho: sem shell, ambiente mínimo com UV_THREADPOOL_SIZE=4, memória limitada, geração de código desligada e pasta neutra — nos spawns feitos e no que um filho realmente recebe', async () => {
     const doWorker = registro.chamadas.filter(({ argumentos }) => argumentos.some((argumento) => String(argumento).endsWith('imagem-processador.worker.js')));
     assert.ok(doWorker.length >= 5, `filhos reais iniciados até aqui: ${doWorker.length}`);
-    const esperadas = ['MALLOC_ARENA_MAX', 'PATH', 'TMPDIR', 'UV_THREADPOOL_SIZE', 'VIPS_BLOCK_UNTRUSTED'];
+    const esperadas = ['MALLOC_ARENA_MAX', 'PATH', 'TMPDIR', 'UV_THREADPOOL_SIZE', 'VIPS_BLOCK_UNTRUSTED', 'VIPS_DISC_THRESHOLD'];
+    // D-12B: a "pasta neutra" é uma ÁREA EXCLUSIVA por execução (TMPDIR = pasta atual), logo abaixo da pasta temporária do sistema, removida ao fim; o limiar de disco do libvips é fixo.
+    const areas = new Set();
     for (const { comando, argumentos, opcoes } of doWorker) {
       assert.equal(comando, process.execPath);
       assert.equal(argumentos[0], '--max-old-space-size=192');
@@ -362,9 +364,15 @@ describe('Biblioteca de Imagens — envio com o processador real, de ponta a pon
       assert.deepEqual(Object.keys(opcoes.env).sort(), esperadas);
       assert.equal(opcoes.env.UV_THREADPOOL_SIZE, '4');
       assert.equal(opcoes.env.VIPS_BLOCK_UNTRUSTED, '1');
-      assert.equal(opcoes.cwd, os.tmpdir());
+      assert.equal(opcoes.env.VIPS_DISC_THRESHOLD, '268435456');
+      assert.equal(opcoes.env.TMPDIR, opcoes.cwd, 'TMPDIR e pasta atual são a mesma área exclusiva');
+      assert.equal(fs.realpathSync(path.dirname(opcoes.cwd)), fs.realpathSync(os.tmpdir()), 'a área fica logo abaixo da pasta temporária do sistema');
+      assert.ok(path.basename(opcoes.cwd).startsWith('safework-imagem-'), opcoes.cwd);
+      assert.equal(fs.existsSync(opcoes.cwd), false, 'a área exclusiva já foi removida ao fim da execução');
+      areas.add(opcoes.cwd);
       assert.equal(typeof JSON.parse(argumentos[3]).ladoMax, 'number', 'o único argumento de dados é o JSON dos limites numéricos');
     }
+    assert.equal(areas.size, doWorker.length, 'cada execução teve a sua própria área');
 
     let impresso = '';
     const comCaptura = (comando, argumentos, opcoes) => {
@@ -376,10 +384,14 @@ describe('Biblioteca de Imagens — envio com o processador real, de ponta a pon
     const r = await enviar(montarApp({ processador }), a.d.master, imagens.ambiente, { nome: 'Ambiente do filho' });
     assert.equal(r.status, 500, aviso(r));
     const recebido = JSON.parse(impresso.trim());
-    assert.deepEqual(recebido.valores, { PATH: '/usr/bin:/bin', TMPDIR: os.tmpdir(), UV_THREADPOOL_SIZE: '4', VIPS_BLOCK_UNTRUSTED: '1', MALLOC_ARENA_MAX: '2' });
+    assert.deepEqual(recebido.valores, { PATH: '/usr/bin:/bin', TMPDIR: recebido.cwd, UV_THREADPOOL_SIZE: '4', VIPS_BLOCK_UNTRUSTED: '1', MALLOC_ARENA_MAX: '2' });
+    assert.ok(recebido.chaves.includes('VIPS_DISC_THRESHOLD'), 'o filho real recebe o limiar de disco do libvips');
     assert.ok(recebido.chaves.every((chave) => [...esperadas, '__CF_USER_TEXT_ENCODING'].includes(chave)), `variáveis vistas pelo filho: ${recebido.chaves}`);
     assert.ok(recebido.execArgv.includes('--max-old-space-size=192') && recebido.execArgv.includes('--disallow-code-generation-from-strings'));
-    assert.equal(fs.realpathSync(recebido.cwd), fs.realpathSync(os.tmpdir()));
+    // a área já foi removida quando a resposta chega: confere-se o pai (existente) e o prefixo, não o próprio caminho
+    assert.equal(fs.realpathSync(path.dirname(recebido.cwd)), fs.realpathSync(os.tmpdir()));
+    assert.ok(path.basename(recebido.cwd).startsWith('safework-imagem-'), recebido.cwd);
+    assert.equal(fs.existsSync(recebido.cwd), false, 'nada sobra da área exclusiva');
   });
 
   test('E2E-12 — falhas do processamento: cada uma vira uma resposta pública genérica, não deixa linha, arquivo nem auditoria, não vaza detalhe interno e não deixa filho vivo', async () => {

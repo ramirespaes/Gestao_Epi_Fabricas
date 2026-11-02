@@ -20,18 +20,37 @@ const TMP = fs.realpathSync(os.tmpdir());
  * O prefixo do nome não é prova de propriedade e nenhuma varredura ou glob é feita: um diretório de nome parecido que o teste não criou, ou um impostor no mesmo caminho, nunca é removido.
  */
 const criadas = [];
+const { O_RDONLY, O_DIRECTORY = 0, O_NOFOLLOW = 0 } = fs.constants;
+/** Identidade por DESCRITOR aberto: enquanto ele vive, o inode não pode ser reutilizado (no Linux um diretório recriado herdaria o mesmo número). */
+function identidade(caminho) {
+  const fd = fs.openSync(caminho, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+  const st = fs.fstatSync(fd);
+  return { caminho, dev: st.dev, ino: st.ino, fd };
+}
 function registrarCriada(caminho) {
-  const st = fs.lstatSync(caminho);
-  criadas.push({ caminho, dev: st.dev, ino: st.ino });
+  criadas.push(identidade(caminho));
   return caminho;
+}
+/** Só fecha o descritor se ele ainda é o objeto registrado; um descritor já fechado (número possivelmente reaproveitado) nunca é fechado de novo. */
+function fecharSeProprio(entrada) {
+  let pd;
+  try { pd = fs.fstatSync(entrada.fd); } catch { return false; }
+  if (pd.dev !== entrada.dev || pd.ino !== entrada.ino) return false;
+  fs.closeSync(entrada.fd);
+  return true;
 }
 function removerCriadas(lista) {
   const removidas = [];
-  for (const { caminho, dev, ino } of lista) {
+  for (const entrada of lista) {
+    const { caminho, dev, ino, fd } = entrada;
+    let pd;
+    try { pd = fs.fstatSync(fd); } catch { continue; }
+    if (!pd.isDirectory() || pd.dev !== dev || pd.ino !== ino) continue;
     let st;
-    try { st = fs.lstatSync(caminho); } catch { continue; }
-    if (path.dirname(caminho) !== TMP || st.isSymbolicLink() || !st.isDirectory() || st.dev !== dev || st.ino !== ino || st.uid !== uid) continue;
+    try { st = fs.lstatSync(caminho); } catch { fecharSeProprio(entrada); continue; }
+    if (path.dirname(caminho) !== TMP || st.isSymbolicLink() || !st.isDirectory() || st.dev !== dev || st.ino !== ino || st.uid !== uid) { fecharSeProprio(entrada); continue; }
     fs.rmSync(caminho, { recursive: true, force: true });
+    fecharSeProprio(entrada);
     removidas.push(caminho);
   }
   return removidas;
@@ -91,9 +110,10 @@ describe('[OR-T] teardown das fixtures do próprio teste', () => {
     const alvoDoLink = fs.realpathSync(fs.mkdtempSync(path.join(TMP, 'gepi-orf-t01-')));
     const ligacao = path.join(TMP, `gepi-orf-t01-ln-${process.pid}`);
     fs.symlinkSync(alvoDoLink, ligacao);
-    const ident = (p) => { const st = fs.lstatSync(p); return { caminho: p, dev: st.dev, ino: st.ino }; };
-    const lista = [ident(meu), ident(impostor), { ...ident(alvoDoLink), caminho: ligacao }, { ...ident(homonimo), ino: 1 }];
-    // o "impostor" é trocado depois do registro (mesmo caminho, outro inode)
+    const ident = identidade;
+    const doHomonimo = ident(homonimo);
+    const lista = [ident(meu), ident(impostor), { ...ident(alvoDoLink), caminho: ligacao }, { ...doHomonimo, ino: 1 }];
+    // o "impostor" é trocado depois do registro (mesmo caminho, outro inode: o descritor aberto impede que o número seja reutilizado)
     fs.rmdirSync(impostor);
     fs.mkdirSync(impostor, { mode: 0o700 });
     try {
@@ -102,6 +122,9 @@ describe('[OR-T] teardown das fixtures do próprio teste', () => {
       assert.equal(existe(meu), false);
       for (const ficou of [homonimo, impostor, alvoDoLink, ligacao]) assert.equal(existe(ficou), true, ficou);
       assert.equal(removerCriadas([ident(homonimo)]).length, 1, 'registrado corretamente, o mesmo homônimo seria removido: a identidade, e não o nome, decide');
+      // a entrada de identidade falsa (ino: 1) não foi fechada pelo teardown; o descritor real ainda está aberto e é fechado UMA vez; a segunda tentativa não fecha nada
+      assert.equal(fecharSeProprio(doHomonimo), true, 'descritor próprio ainda aberto é fechado uma única vez');
+      assert.equal(fecharSeProprio(doHomonimo), false, 'descritor já fechado nunca é fechado em dobro');
     } finally {
       for (const p of [impostor, alvoDoLink]) fs.rmSync(p, { recursive: true, force: true });
       fs.unlinkSync(ligacao);

@@ -30,9 +30,16 @@ describe('criarAreaExclusiva', () => {
     assert.equal(st.mode & 0o777, 0o700);
     assert.deepEqual([area.dev, area.ino, area.uid], [Number(st.dev), Number(st.ino), Number(st.uid)]);
     assert.ok(Object.isFrozen(area));
+    assert.ok(Number.isInteger(area.fd) && area.fd >= 0, 'o token carrega o descritor aberto do diretório');
+    const porDescritor = fs.fstatSync(area.fd);
+    assert.ok(porDescritor.isDirectory());
+    assert.deepEqual([Number(porDescritor.dev), Number(porDescritor.ino)], [area.dev, area.ino], 'o descritor aponta para o mesmo objeto do caminho');
     const outra = A.criarAreaExclusiva({ base });
     assert.notEqual(outra.caminho, area.caminho);
     assert.notEqual(outra.ino, area.ino);
+    assert.notEqual(outra.fd, area.fd);
+    for (const a of [area, outra]) assert.equal(A.removerAreaExclusiva(a).removida, true);
+    assert.throws(() => fs.fstatSync(area.fd), (e) => e.code === 'EBADF', 'o descritor é fechado na remoção');
   });
 
   test('A-02 — base relativa é erro de programação; base inexistente falha sem criar nada', () => {
@@ -74,14 +81,30 @@ describe('removerAreaExclusiva', () => {
   });
 
   test('A-06 — token inválido é erro de programação; token com o caminho de OUTRO diretório não remove nada (TROCADA)', () => {
-    for (const ruim of [null, {}, { caminho: 'relativo', dev: 1, ino: 1, uid: 1 }, { caminho: path.join(base, 'sem-prefixo'), dev: 1, ino: 1, uid: 1 }]) assert.throws(() => A.removerAreaExclusiva(ruim), TypeError);
+    for (const ruim of [null, {}, { caminho: 'relativo', dev: 1, ino: 1, uid: 1, fd: 3 }, { caminho: path.join(base, 'sem-prefixo'), dev: 1, ino: 1, uid: 1, fd: 3 }, { caminho: path.join(base, `${A.PREFIXO}x`), dev: 1, ino: 1, uid: 1 }, { caminho: path.join(base, `${A.PREFIXO}x`), dev: 1, ino: 1, uid: 1, fd: -1 }]) assert.throws(() => A.removerAreaExclusiva(ruim), TypeError);
     const area = A.criarAreaExclusiva({ base });
     const alheia = path.join(base, `${A.PREFIXO}alheia`);
     fs.mkdirSync(alheia);
     fs.writeFileSync(path.join(alheia, 'dado.txt'), 'de terceiro');
     assert.deepEqual(A.removerAreaExclusiva({ ...area, caminho: alheia }), { removida: false, motivo: 'TROCADA', sobras: [], truncado: false });
     assert.equal(fs.readFileSync(path.join(alheia, 'dado.txt'), 'utf8'), 'de terceiro');
-    assert.equal(A.removerAreaExclusiva(area).removida, true);
+    // fail-closed: a tentativa com caminho alheio CONSOME o token (o descritor, que era próprio, é fechado uma vez); o token original deixa de provar identidade, nunca remove e nada é fechado em dobro
+    assert.throws(() => fs.fstatSync(area.fd), (e) => e.code === 'EBADF');
+    assert.deepEqual(A.removerAreaExclusiva(area), { removida: false, motivo: 'TROCADA', sobras: [], truncado: false });
+    assert.ok(fs.lstatSync(area.caminho).isDirectory(), 'a área real permanece intacta');
+    fs.rmSync(area.caminho, { recursive: true });
+    // descritor fechado ou alheio NÃO prova identidade: a área fica intacta e nada é fechado em dobro
+    const outra = A.criarAreaExclusiva({ base });
+    fs.closeSync(outra.fd);
+    assert.deepEqual(A.removerAreaExclusiva(outra), { removida: false, motivo: 'TROCADA', sobras: [], truncado: false });
+    assert.ok(fs.lstatSync(outra.caminho).isDirectory(), 'sem prova pelo descritor, o diretório permanece');
+    const terceira = A.criarAreaExclusiva({ base });
+    const fdDeArquivo = fs.openSync(path.join(alheia, 'dado.txt'), 'r');
+    assert.deepEqual(A.removerAreaExclusiva({ ...terceira, fd: fdDeArquivo }), { removida: false, motivo: 'TROCADA', sobras: [], truncado: false });
+    assert.ok(fs.fstatSync(fdDeArquivo).isFile(), 'o descritor alheio continua aberto e intocado');
+    fs.closeSync(fdDeArquivo);
+    assert.equal(A.removerAreaExclusiva(terceira).removida, true);
+    fs.rmSync(outra.caminho, { recursive: true });
   });
 
   test('A-07 — caminho trocado por link simbólico entre a criação e a remoção: nada é removido, o link fica e o alvo permanece intacto', () => {

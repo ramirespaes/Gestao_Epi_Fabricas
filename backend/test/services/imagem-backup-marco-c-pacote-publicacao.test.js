@@ -615,8 +615,10 @@ describe('[MC-C] consistência plano do snapshot x cópia preservada (CONS-02) e
     const areaFonte = fs.readFileSync(path.join(src, 'services', 'imagem-processador-area.service.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     assert.equal((areaFonte.match(/\b(unlink|unlinkSync|rmSync|rmdirSync|rmdir)\(|\bfsp\.rm\(|\.rm\(/g) ?? []).length, 1, 'uma única remoção na área exclusiva');
     assert.match(areaFonte, /fs\.rmSync\(area\.caminho, \{ recursive: true, force: true/);
-    assert.ok(areaFonte.indexOf('fs.lstatSync(area.caminho)') < areaFonte.indexOf('fs.rmSync(area.caminho'), 'a conferência de identidade vem antes da remoção');
-    assert.match(areaFonte, /!== area\.dev \|\| [^\n]*!== area\.ino \|\| [^\n]*!== area\.uid\) return resultado\(false, 'TROCADA'\)/);
+    assert.ok(areaFonte.indexOf('fs.lstatSync(area.caminho)') < areaFonte.indexOf('fs.rmSync(area.caminho'), 'a conferência de identidade pelo caminho vem antes da remoção');
+    assert.ok(areaFonte.indexOf('fs.fstatSync(area.fd)') < areaFonte.indexOf('fs.rmSync(area.caminho'), 'a prova pelo descritor aberto vem antes da remoção');
+    assert.match(areaFonte, /if \(!provado \|\| !st\.isDirectory\(\) \|\| !mesmoObjeto\(st, area\) \|\| Number\(st\.uid\) !== area\.uid\) return resultado\(false, 'TROCADA'\)/);
+    assert.match(areaFonte, /const mesmoObjeto = \(st, area\) => Number\(st\.dev\) === area\.dev && Number\(st\.ino\) === area\.ino;/);
     assert.equal(/armazenamento-imagens|janela-escrita-imagens|imagem-backup/.test(areaFonte), false);
     for (const p of lista) if (!p.endsWith('imagem-processador.service.js') && !p.endsWith('imagem-processador-area.service.js')) assert.equal(/imagem-processador-area\.service/.test(fs.readFileSync(p, 'utf8')), false, `${path.relative(src, p)} importa a área exclusiva`);
 
