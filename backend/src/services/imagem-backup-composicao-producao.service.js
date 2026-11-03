@@ -21,6 +21,18 @@ const { hostSintaticamenteValido } = require('./imagem-backup-host-postgres');
 const portas = require('./imagem-backup-portas-sistema.service');
 const { criarOrcamentoDeBytes } = require('../utils/orcamento-de-bytes');
 const { criarRegistroDeOperacoes } = require('../utils/registro-operacoes-pendentes');
+// P6 (D-ORF-6): layout 2 opcional (padrão 1): composição por fonte, leitor L2, restauração L2 com consistência cruzada (P7).
+const { criarLeitorL2 } = require('./backup-fontes-manifesto-l2.service');
+const { criarComposicaoL2, planejarNoSnapshot, restaurarL2 } = require('./backup-fontes-composicao-l2.service');
+const { obterAdaptador } = require('./backup-fontes-adaptadores.service');
+const { inventariar } = require('../repositories/backup-fontes-postgres-inventario.repository');
+const { blocoN0, compatibilidadeDeEsquema } = require('./backup-fontes-postgres-cobertura.service');
+const { obterCatalogo } = require('./backup-fontes-catalogo.service');
+const { validarCatalogo } = require('./backup-fontes-regras.service');
+const { criarSelagem } = require('./imagem-backup-selagem.service');
+const { criarArmazenamentoImagens } = require('../storage/armazenamento-imagens');
+const { criarArmazenamentoLocal } = require('../storage/armazenamento-local');
+const { listarMigrations } = require('../db/checksums');
 
 /**
  * Backup permanente da Biblioteca de Imagens (D-ORF-6): COMPOSIÇÃO DE PRODUÇÃO do backup e da restauração. Liga, com contratos explícitos e falha fechada, os componentes JÁ APROVADOS (coordenador, supervisor, controle de processo, janela de escrita,
@@ -187,12 +199,23 @@ function lerAutenticacaoDoPacote(leitor, preparacoes, publicados, nome, sha256Ma
 function criarBackupDeProducao(config) {
   let cfg;
   try {
-    exigir(ehObjeto(config) && soChaves(config, ['postgres', 'conexao', 'armazenamento', 'chaves', 'relatorio', 'prazos', 'maxBytesPorArquivo', 'portas', 'janela', 'limites', 'operacoes'], ['postgres', 'conexao', 'armazenamento', 'chaves', 'prazos', 'maxBytesPorArquivo', 'janela']));
+    exigir(ehObjeto(config) && soChaves(config, ['postgres', 'conexao', 'armazenamento', 'chaves', 'relatorio', 'prazos', 'maxBytesPorArquivo', 'portas', 'janela', 'limites', 'operacoes', 'layoutDoManifesto', 'fontes', 'catalogo'], ['postgres', 'conexao', 'armazenamento', 'chaves', 'prazos', 'maxBytesPorArquivo', 'janela']));
     validarPostgres(config.postgres, { precisaDump: true });
     exigir(ehJanelaDeBackup(config.janela));
     const { conexao, armazenamento, chaves, relatorio } = config;
     exigir(ehObjeto(conexao) && chavesExatas(conexao, ['criarConexao', 'finalizacaoMs']) && ehFuncao(conexao.criarConexao) && inteiroPositivo(conexao.finalizacaoMs));
-    exigir(ehObjeto(armazenamento) && chavesExatas(armazenamento, ['imagens', 'preparacoes', 'dumps', 'publicados']) && Object.values(armazenamento).every(caminhoAbsoluto));
+    // P6: `armazenamento.fiscalizacao` (opcional) só é usado com layout 2 e fonte `fiscalizacao-pacotes`.
+    exigir(ehObjeto(armazenamento) && soChaves(armazenamento, ['imagens', 'preparacoes', 'dumps', 'publicados', 'fiscalizacao'], ['imagens', 'preparacoes', 'dumps', 'publicados']) && Object.values(armazenamento).every(caminhoAbsoluto));
+    // P6: layout do manifesto (padrão 1 = histórico). Com 2: fontes com adaptador (padrão ['imagens']) e catálogo (padrão o oficial de P1).
+    const layoutDoManifesto = config.layoutDoManifesto === undefined ? 1 : config.layoutDoManifesto;
+    exigir(layoutDoManifesto === 1 || layoutDoManifesto === 2);
+    exigir(layoutDoManifesto === 2 || (config.fontes === undefined && config.catalogo === undefined));
+    const fontesL2 = config.fontes === undefined ? ['imagens'] : config.fontes;
+    exigir(Array.isArray(fontesL2) && fontesL2.length > 0 && new Set(fontesL2).size === fontesL2.length && fontesL2.every((f) => typeof f === 'string'));
+    exigir(!fontesL2.includes('fiscalizacao-pacotes') || armazenamento.fiscalizacao !== undefined);
+    const catalogoL2 = config.catalogo === undefined ? obterCatalogo() : config.catalogo;
+    exigir(validarCatalogo(catalogoL2).valido);
+    if (layoutDoManifesto === 2) for (const f of fontesL2) obterAdaptador(f, catalogoL2);
     exigir(ehObjeto(chaves) && chavesExatas(chaves, ['fonteDeChaves', 'chaveId']) && ehFonteDeChaves(chaves.fonteDeChaves) && typeof chaves.chaveId === 'string' && CHAVE_ID.test(chaves.chaveId));
     if (relatorio !== undefined) exigir(ehObjeto(relatorio) && soChaves(relatorio, ['produtor', 'origensAceitas'], ['produtor']) && ehProdutorReconhecido(relatorio.produtor));
     exigir(inteiroPositivo(config.maxBytesPorArquivo));
@@ -208,6 +231,7 @@ function criarBackupDeProducao(config) {
       janela: config.janela,
       limites: config.limites === undefined ? null : validarLimites(config.limites),
       operacoes: config.operacoes === undefined ? null : validarOperacoes(config.operacoes),
+      layoutDoManifesto, fontes: Object.freeze([...fontesL2]), catalogo: catalogoL2,
     });
   } catch {
     throw configuracaoInvalida();
@@ -252,7 +276,21 @@ function criarBackupDeProducao(config) {
     const controleLista = criarControleDeProcesso({ spawn, observarGrupo, criarLancador: ({ spawn: s }) => criarLancadorEstruturalComSpawn({ spawn: s }) });
     const verificadorEstrutural = criarVerificadorEstrutural({ alvo: { executavel: cfg.postgres.pgRestore }, lancador: controleLista.lancador, sistema: controleLista.sistema, temporizador, prazos: cfg.prazos });
     const selagem = criarSelagemAutenticada(cfg.chaves);
-    const leitor = criarLeitorV2({ fonteDeChaves: cfg.chaves.fonteDeChaves });
+    // P6: com layout 2 a releitura final (publicador e prontidão) é pelo leitor L2 (exige layout 2: um L1 autêntico no lugar do L2 é recusado).
+    const leitor = cfg.layoutDoManifesto === 2 ? criarLeitorL2({ fonteDeChaves: cfg.chaves.fonteDeChaves, layoutMinimo: 2 }) : criarLeitorV2({ fonteDeChaves: cfg.chaves.fonteDeChaves });
+    // P6: composição por fonte L2 (só com layout 2): planos e inventário lidos no MESMO snapshot; o bloco postgres fica N0 porque o sumário do dump é produzido pela verificação estrutural DEPOIS da selagem (ordem do executor).
+    const composicaoL2 = cfg.layoutDoManifesto !== 2 ? null : (() => {
+      const base = criarComposicaoL2({ catalogo: cfg.catalogo, fonteDeChaves: cfg.chaves.fonteDeChaves, chaveId: cfg.chaves.chaveId, maxBytesPorArquivo: cfg.maxBytesPorArquivo });
+      const origens = {};
+      for (const id of cfg.fontes) origens[id] = id === 'imagens' ? criarArmazenamentoImagens({ diretorio: cfg.armazenamento.imagens }) : criarArmazenamentoLocal({ diretorio: cfg.armazenamento.fiscalizacao });
+      return Object.freeze({
+        compor: (e) => base.compor(e),
+        lerAdicionais: (executor) => planejarNoSnapshot({ executor, catalogo: cfg.catalogo, fontes: [...cfg.fontes] }),
+        origens: Object.freeze(origens),
+        contexto: Object.freeze({}),
+        postgres: () => blocoN0('SUMARIO_POSTERIOR_A_SELAGEM'),
+      });
+    })();
     let capturado = null;
     // Produtor padrão = OPERACIONAL, que só reconhece evidências emitidas pelos componentes confiáveis e, por fatos que só a composição conhece, a captura íntegra do dump (fluxo = arquivo persistido, fsync) e a janela genuína. Fonte de chaves e destino operacionais: listas vazias.
     const complementos = () => ({
@@ -301,6 +339,7 @@ function criarBackupDeProducao(config) {
       },
       verificadorEstrutural,
       publicador,
+      ...(composicaoL2 === null ? {} : { layoutDoManifesto: 2, composicaoL2 }),
     });
     const resultado = await executarBackupEncadeado({ inicializacao, nomeDaPreparacao: entrada.nomeDaPreparacao, conjuntoId: entrada.conjuntoId });
     // evidência final da captura (inclusive a falha, com o motivo fixo), mesmo que a declaração do dump não tenha chegado a ser pedida
@@ -425,8 +464,70 @@ function criarRestauracaoDeProducao(config) {
     throw configuracaoInvalida();
   }
 
+  /**
+   * P6/P7 (D-ORF-6): restauração de PRODUÇÃO de um pacote LAYOUT 2 (`entrada.layoutMinimo === 2`), na ordem 11.4: (1) selagem relida pelo leitor L2 (exige layout 2; L1 autêntico é
+   * recusado); (2) dump do pacote aberto sem seguir link e conferido (tamanho e SHA-256) ANTES de virar entrada padrão do `pg_restore` supervisionado (política de destino do lançador);
+   * (3) referências e migrations lidas do banco RESTAURADO em transação READ ONLY (adaptadores por fonte e inventário do P4) e compatibilidade do esquema (6.4);
+   * (4) `restaurarL2`: destino novo, verificações 8.7, arquivos por fonte e conciliação (P7); (5) veredito INTEGRO | INCONSISTENTE | INCOMPLETO. Nunca `restauracaoReal`/`recuperavelEmProducao`.
+   */
+  async function restaurarLayout2(entrada, execucao, restauradorDoBanco, registro) {
+    const pacote = path.join(entrada.raizAutorizada, entrada.nome);
+    const falhou = (passo, codigo, extra = {}) => Object.freeze({
+      restauracao: Object.freeze({ ok: false, layout: 2, falha: Object.freeze({ passo, codigo }), ...extra }),
+      proveniencia: Object.freeze({ execucaoId: execucao.id, origemDaChave: cfg.fonteDeChaves.origem, operacoes: registro === null ? null : registro.resumo() }),
+      estado: Object.freeze({ restauracaoReal: false, consistenciaLogicaVerificada: false, recuperavelEmProducao: false, publicacaoOperacional: false }),
+    });
+    // (1) selagem + manifesto L2
+    const leitor = criarLeitorL2({ fonteDeChaves: cfg.fonteDeChaves, layoutMinimo: 2, catalogoAtual: cfg.catalogo });
+    let lido;
+    try {
+      const v = await criarSelagem({ leitor }).verificar({ area: pacote });
+      if (v.ok !== true) return falhou('VERIFICACOES_8_7', `SELAGEM_${v.falha?.codigo ?? 'INVALIDA'}`);
+      lido = leitor({ bytes: fs.readFileSync(path.join(pacote, 'manifesto.json')), sha256: v.sha256 });
+    } catch { return falhou('VERIFICACOES_8_7', 'SELAGEM_INVALIDA'); }
+    // (2) dump conferido e entregue como entrada padrão ao restaurador supervisionado
+    if (restauradorDoBanco.autorizarDestino(entrada.destino) !== true) return falhou('BANCO_E_ESQUEMA', 'DESTINO_NAO_AUTORIZADO');
+    let fd = null;
+    let banco;
+    try {
+      fd = fs.openSync(path.join(pacote, 'dump', 'postgres.dump'), fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+      const estado = fs.fstatSync(fd);
+      if (!estado.isFile() || estado.size !== lido.manifesto.dump.bytes) return falhou('BANCO_E_ESQUEMA', 'DUMP_DIVERGENTE');
+      const hash = crypto.createHash('sha256');
+      const bloco = Buffer.alloc(1024 * 1024);
+      let posicao = 0;
+      for (;;) { const n = fs.readSync(fd, bloco, 0, bloco.length, posicao); if (n === 0) break; hash.update(bloco.subarray(0, n)); posicao += n; }
+      if (hash.digest('hex') !== lido.manifesto.dump.sha256) return falhou('BANCO_E_ESQUEMA', 'DUMP_DIVERGENTE');
+      banco = await restauradorDoBanco.restaurar({ destino: entrada.destino, dump: { descritor: fd, bytes: lido.manifesto.dump.bytes, sha256: lido.manifesto.dump.sha256 } });
+    } catch { return falhou('BANCO_E_ESQUEMA', 'DUMP_DIVERGENTE'); } finally { if (fd !== null) { try { fs.closeSync(fd); } catch { /* já fechado */ } } }
+    if (banco.ok !== true) return falhou('BANCO_E_ESQUEMA', `PG_RESTORE_${banco.motivo}`, { banco });
+    // (3) referências e migrations do banco RESTAURADO (somente leitura) e compatibilidade do esquema
+    const referencias = {};
+    let esquema;
+    let cliente = null;
+    try {
+      cliente = await cfg.criarConexaoDoBanco(entrada.destino.banco);
+      await cliente.connect();
+      await cliente.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      for (const fonte of lido.fontes) referencias[fonte.id] = (await obterAdaptador(fonte.id, cfg.catalogo).planejar(cliente)).referencias;
+      const inventario = await inventariar(cliente);
+      esquema = compatibilidadeDeEsquema({ migrationsDoBanco: inventario.migrations, migrationsDoCodigo: listarMigrations(path.join(__dirname, '..', '..', 'migrations')).map((m) => m.nome) });
+    } catch { return falhou('BANCO_E_ESQUEMA', 'REFERENCIAS_NAO_LIDAS', { banco }); } finally {
+      if (cliente !== null) { await cliente.query('ROLLBACK').catch(() => {}); await cliente.end().catch(() => {}); }
+    }
+    // (4) + (5) arquivos por fonte e conciliação cruzada
+    const r = await restaurarL2({ pacote, destino: path.join(entrada.imagens.raiz, entrada.imagens.nome), fonteDeChaves: cfg.fonteDeChaves, layoutMinimo: 2, maxBytesPorArquivo: entrada.maxBytesPorArquivo, referencias, esquema, catalogo: cfg.catalogo });
+    return Object.freeze({
+      restauracao: Object.freeze({ ...r, layout: 2, banco, esquema }),
+      proveniencia: Object.freeze({ execucaoId: execucao.id, origemDaChave: cfg.fonteDeChaves.origem, identidade: lido.identidade, avisos: lido.avisos, operacoes: registro === null ? null : registro.resumo() }),
+      estado: Object.freeze({ restauracaoReal: false, consistenciaLogicaVerificada: r.ok === true && r.veredito.classe === 'INTEGRO', recuperavelEmProducao: false, publicacaoOperacional: false }),
+    });
+  }
+
   async function restaurar(entrada) {
-    exigir(ehObjeto(entrada) && chavesExatas(entrada, ['raizAutorizada', 'nome', 'imagens', 'destino']) && ehObjeto(entrada.destino));
+    const layout2 = ehObjeto(entrada) && entrada.layoutMinimo === 2;
+    exigir(ehObjeto(entrada) && chavesExatas(entrada, layout2 ? ['raizAutorizada', 'nome', 'imagens', 'destino', 'layoutMinimo', 'maxBytesPorArquivo'] : ['raizAutorizada', 'nome', 'imagens', 'destino']) && ehObjeto(entrada.destino));
+    if (layout2) exigir(inteiroPositivo(entrada.maxBytesPorArquivo) && ehObjeto(entrada.imagens) && typeof entrada.imagens.raiz === 'string' && typeof entrada.imagens.nome === 'string' && typeof entrada.raizAutorizada === 'string' && typeof entrada.nome === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(entrada.nome));
     try { fs.accessSync(cfg.pgRestore, fs.constants.X_OK); } catch { throw dependenciaIndisponivel('PG_RESTORE'); }
     const { spawn, observarGrupo, temporizador } = portasEfetivas(cfg.portas);
     // identidade da EXECUÇÃO, emitida aqui (dentro da fronteira confiável) ANTES de qualquer lançamento; o chamador não a escolhe e ela acompanha controle, restaurador, consulta e sondas
@@ -445,6 +546,8 @@ function criarRestauracaoDeProducao(config) {
       politicaDeDestino: cfg.politicaDeDestino,
       execucaoId: execucao.id,
     });
+    // P6/P7: pacote layout 2 segue o caminho por fonte com consistência cruzada; o caminho histórico (layout 1) continua intacto abaixo.
+    if (layout2) return restaurarLayout2(entrada, execucao, restauradorDoBanco, registro);
     const adaptador = criarAdaptadorDeReferencias({ criarConexao: () => cfg.criarConexaoDoBanco(entrada.destino.banco) });
     const sonda = criarSondaDeInstancia({ criarConexao: () => cfg.criarConexaoDoBanco(entrada.destino.banco) });
     let consultaFeita = null;

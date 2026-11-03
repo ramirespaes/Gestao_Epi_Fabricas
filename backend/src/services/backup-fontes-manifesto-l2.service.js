@@ -275,6 +275,7 @@ function validarEstruturaL2(objeto) {
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------- resultado
 const resultadosProduzidos = new WeakSet();
+const autenticacoesProduzidas = new WeakSet(); // só o leitor/escritor L2 produz evidência de autenticação reconhecida (literal ou clone não é)
 const caminhoL2 = (fonteId, chave) => `arquivos/${fonteId}/${chave}`;
 const caminhoL1 = (fonteId, chave) => (fonteId === 'imagens' ? `imagens/${chave}` : null);
 
@@ -282,6 +283,7 @@ function produzirResultado({ bytes, sha256, manifesto, layout, fontes, cobertura
   const interno = Buffer.from(bytes);
   const identidade = Object.freeze({ conjuntoId: manifesto.conjuntoId, sha256Manifesto: sha256 });
   const autenticacao = Object.freeze({ versao: VERSAO, layout, autenticado: true, algoritmo: ALGORITMO, chaveId: manifesto.autenticacao.chaveId, origemDaChave });
+  autenticacoesProduzidas.add(autenticacao);
   const caminho = layout === LAYOUT ? caminhoL2 : caminhoL1;
   const saida = {
     manifesto, sha256, identidade, autenticacao, layout, fontes, cobertura, postgres,
@@ -299,6 +301,7 @@ function produzirResultado({ bytes, sha256, manifesto, layout, fontes, cobertura
   return saida;
 }
 const ehResultadoDoLeitor = (v) => v !== null && typeof v === 'object' && resultadosProduzidos.has(v);
+const ehAutenticacaoL2 = (v) => v !== null && typeof v === 'object' && autenticacoesProduzidas.has(v);
 
 // -------------------------------------------------------------------------------------------------------------------------------------------------- escritor
 /**
@@ -445,6 +448,6 @@ function criarLeitorL2({ fonteDeChaves, layoutMinimo, catalogoAtual }) {
 }
 
 module.exports = {
-  criarEscritorL2, criarLeitorL2, declararCobertura, descreverDeclaracao, serializarCanonico, ehResultadoDoLeitor,
+  criarEscritorL2, criarLeitorL2, declararCobertura, descreverDeclaracao, serializarCanonico, ehResultadoDoLeitor, ehAutenticacaoL2,
   VERSAO, LAYOUT, ALGORITMO, DOMINIO, LAYOUTS_ACEITOS, DECLARACOES, LIMITES, MOTIVOS, CHAVES,
 };

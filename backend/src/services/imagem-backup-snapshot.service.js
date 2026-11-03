@@ -75,7 +75,9 @@ const inteiroPositivo = (valor) => Number.isSafeInteger(valor) && valor > 0;
 
 function validarOpcoes(opcoes) {
   if (!ehObjeto(opcoes)) throw new TypeError('opções do snapshot inválidas');
-  const { criarConexao, temporizador, prazos, tamanhoDaPagina = PAGINA_PADRAO, planejar, operacoes } = opcoes;
+  const { criarConexao, temporizador, prazos, tamanhoDaPagina = PAGINA_PADRAO, planejar, operacoes, lerAdicionais } = opcoes;
+  // P6 (D-ORF-6): leitura ADICIONAL no MESMO snapshot (planos por fonte e inventário PostgreSQL), injetada; opcional e sem efeito quando ausente.
+  if (lerAdicionais !== undefined && !ehFuncao(lerAdicionais)) throw new TypeError('leitura adicional inválida');
   if (!ehFuncao(criarConexao)) throw new TypeError('fábrica de conexão inválida');
   if (!ehObjeto(temporizador) || !ehFuncao(temporizador.prazo)) throw new TypeError('temporizador inválido');
   if (!ehObjeto(prazos) || !inteiroPositivo(prazos.finalizacaoMs)) throw new TypeError('prazo de finalização inválido');
@@ -83,7 +85,7 @@ function validarOpcoes(opcoes) {
   if (!inteiroPositivo(tamanhoDaPagina) || tamanhoDaPagina > PAGINA_MAXIMA) throw new TypeError('tamanho de página inválido');
   if (planejar !== undefined && !ehFuncao(planejar)) throw new TypeError('planejador inválido');
   if (operacoes !== undefined && !ehRegistroDeOperacoes(operacoes)) throw new TypeError('registro de operações inválido');
-  return { criarConexao, temporizador, finalizacaoMs: prazos.finalizacaoMs, aberturaMs: prazos.aberturaMs, tamanhoDaPagina, planejar, operacoes: operacoes ?? null };
+  return { criarConexao, temporizador, finalizacaoMs: prazos.finalizacaoMs, aberturaMs: prazos.aberturaMs, tamanhoDaPagina, planejar, operacoes: operacoes ?? null, lerAdicionais: lerAdicionais ?? null };
 }
 
 /** Só o código, e só se tiver formato seguro (SQLSTATE ou código do Node); a mensagem e os demais campos nunca saem. */
@@ -159,7 +161,7 @@ function montarPlano(planejar, registros) {
 }
 
 function criarSnapshot(opcoes) {
-  const { criarConexao, temporizador, finalizacaoMs, aberturaMs, tamanhoDaPagina, planejar, operacoes } = validarOpcoes(opcoes);
+  const { criarConexao, temporizador, finalizacaoMs, aberturaMs, tamanhoDaPagina, planejar, operacoes, lerAdicionais } = validarOpcoes(opcoes);
 
   let fase = FASES.NOVO;
   let cliente = null; // só o cliente dedicado aceito; um objeto recusado nunca é guardado aqui
@@ -265,12 +267,20 @@ function criarSnapshot(opcoes) {
       const empresa = await paginar((depoisDe) => listarEmpresa(cliente, { depoisDe, limite: tamanhoDaPagina }), tamanhoDaPagina, verificar);
       const registros = Object.freeze({ padrao, empresa });
       const plano = montarPlano(planejar, registros);
+      // P6: leitura adicional no MESMO cliente/transação (planos por fonte, inventário); exceção = CONSULTA_FALHOU, resultado não-objeto = CONSULTA_INVALIDA.
+      let adicionais = null;
+      if (lerAdicionais !== null) {
+        verificar();
+        adicionais = await passo(MOTIVOS.CONSULTA_FALHOU, () => lerAdicionais(cliente));
+        if (!ehObjeto(adicionais)) throw new FalhaDaAbertura(MOTIVOS.CONSULTA_INVALIDA);
+        adicionais = Object.freeze(adicionais);
+      }
       // Do último teste até o return não há await: a finalização pedida antes deste ponto nunca vê um ok publicado.
       verificar();
       if (conexaoPerdida) return falhar(MOTIVOS.CONEXAO_PERDIDA);
       fase = FASES.ABERTO;
       const contexto = Object.freeze({
-        snapshotId, banco: Object.freeze({ nome: banco.nome, oid: banco.oid }), registros, plano,
+        snapshotId, banco: Object.freeze({ nome: banco.nome, oid: banco.oid }), registros, plano, ...(lerAdicionais === null ? {} : { adicionais }),
       });
       return Object.freeze({ ok: true, contexto });
     } catch (falha) {

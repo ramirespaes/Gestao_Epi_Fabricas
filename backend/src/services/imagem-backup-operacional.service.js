@@ -32,7 +32,8 @@ const { ehRegistroDeOperacoes } = require('../utils/registro-operacoes-pendentes
  */
 
 const TOPO = new Set(['janela', 'conexao', 'processoDoDump', 'copia', 'avaliar', 'parada', 'integracao', 'controle']);
-const CONEXAO = new Set(['criarConexao', 'temporizador', 'prazos', 'tamanhoDaPagina', 'planejar']);
+// P6 (D-ORF-6): `lerAdicionais` (opcional) é repassado ao snapshot: leitura adicional (planos por fonte e inventário) no MESMO snapshot.
+const CONEXAO = new Set(['criarConexao', 'temporizador', 'prazos', 'tamanhoDaPagina', 'planejar', 'lerAdicionais']);
 const PAGINA_MAXIMA = 1000;
 
 const ehObjeto = (valor) => valor !== null && typeof valor === 'object' && !Array.isArray(valor);
@@ -125,6 +126,8 @@ function capturar(dependencias) {
     const prazos = conexao.prazos;
     const tamanhoDaPagina = Object.hasOwn(conexao, 'tamanhoDaPagina') ? conexao.tamanhoDaPagina : undefined;
     const planejar = Object.hasOwn(conexao, 'planejar') ? conexao.planejar : undefined;
+    const lerAdicionais = Object.hasOwn(conexao, 'lerAdicionais') ? conexao.lerAdicionais : undefined;
+    if (lerAdicionais !== undefined && !ehFuncao(lerAdicionais)) return null;
     if (!ehFuncao(criarConexao)) return null;
     if (!ehObjeto(temporizador)) return null;
     const prazo = temporizador.prazo;
@@ -151,6 +154,7 @@ function capturar(dependencias) {
         prazos: Object.freeze({ finalizacaoMs, ...(aberturaMs === undefined ? {} : { aberturaMs }) }),
         ...(tamanhoDaPagina === undefined ? {} : { tamanhoDaPagina }),
         ...(planejar === undefined ? {} : { planejar }),
+        ...(lerAdicionais === undefined ? {} : { lerAdicionais }),
         ...(controle === null ? {} : { operacoes: controle.registro }),
       },
     };

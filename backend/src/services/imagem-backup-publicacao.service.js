@@ -8,6 +8,7 @@ const { promisify } = require('node:util');
 const { reconhecerCorrelacao, avaliarCorrelacao, estruturaVerificada } = require('./imagem-backup-correlacao.service');
 const { lerManifesto } = require('./imagem-backup-manifesto.service');
 const { ehAutenticacaoReconhecida } = require('./imagem-backup-manifesto-autenticado.service');
+const { ehAutenticacaoL2 } = require('./backup-fontes-manifesto-l2.service'); // P6: autenticação do manifesto layout 2 (leitor L2 injetado)
 const { ehFaltaDeEspaco, ehOrcamentoDeBytes } = require('../utils/orcamento-de-bytes');
 const { criarRegistroDePublicacao } = require('./imagem-backup-registro-publicacao.service');
 
@@ -220,7 +221,8 @@ function criarServicoDePacote(opcoes = {}) {
   async function verificarPacote(entrada) {
     if (!ehObjeto(entrada) || !chavesExatas(entrada, ['preparacao', 'manifesto', 'identidade'])) throw invalido();
     const { preparacao, manifesto, identidade } = entrada;
-    if (!caminhoAbsolutoCanonico(preparacao) || !ehObjeto(manifesto) || !Array.isArray(manifesto.arquivos) || !ehObjeto(manifesto.dump) || !ehObjeto(identidade) || !SHA256.test(String(identidade.sha256Manifesto))) throw invalido();
+    const formaValida = ehObjeto(manifesto) && (manifesto.layout === 2 ? Array.isArray(manifesto.fontes) : Array.isArray(manifesto.arquivos));
+    if (!caminhoAbsolutoCanonico(preparacao) || !formaValida || !ehObjeto(manifesto.dump) || !ehObjeto(identidade) || !SHA256.test(String(identidade.sha256Manifesto))) throw invalido();
     if (!(await diretorioReal(ops, preparacao))) return recusa('PREPARACAO_INVALIDA');
 
     let arvore;
@@ -228,7 +230,16 @@ function criarServicoDePacote(opcoes = {}) {
     if (arvore.invalida) return recusa('ENTRADA_INVALIDA');
 
     const esperados = new Map();
-    for (const item of manifesto.arquivos) esperados.set(`imagens/${item.chave}`, { bytes: item.bytes, sha256: item.sha256 });
+    // P6 (D-ORF-6): layout 2 = `arquivos/<fonteId>/<chave>` por fonte (manifesto L2 lido e autenticado pelo leitor injetado); layout 1 continua `imagens/<chave>`.
+    if (manifesto.layout === 2) {
+      if (!Array.isArray(manifesto.fontes)) throw invalido();
+      for (const fonte of manifesto.fontes) {
+        if (!ehObjeto(fonte) || typeof fonte.id !== 'string' || !/^[a-z0-9-]{1,40}$/.test(fonte.id) || !Array.isArray(fonte.arquivos)) throw invalido();
+        for (const item of fonte.arquivos) esperados.set(`arquivos/${fonte.id}/${item.chave}`, { bytes: item.bytes, sha256: item.sha256 });
+      }
+    } else {
+      for (const item of manifesto.arquivos) esperados.set(`imagens/${item.chave}`, { bytes: item.bytes, sha256: item.sha256 });
+    }
     esperados.set('manifesto.json', { sha256: identidade.sha256Manifesto });
     esperados.set('manifesto.sha256', null);
     esperados.set(`${PASTA_DO_DUMP}/${ARQUIVO_DO_DUMP}`, { bytes: manifesto.dump.bytes, sha256: manifesto.dump.sha256 });
@@ -352,7 +363,7 @@ function criarAvaliadorDeProntidao({ destinos, origemDaChave }) {
       VERIFICACAO_ESTRUTURAL: estrutura,
       CONSISTENCIA_EXIGIDA: consistenciaOk,
       PACOTE_VERIFICADO: pacoteOk,
-      MANIFESTO_V2_AUTENTICADO: ehAutenticacaoReconhecida(e.autenticacao) && aut.versao === 2 && aut.autenticado === true,
+      MANIFESTO_V2_AUTENTICADO: (ehAutenticacaoReconhecida(e.autenticacao) || ehAutenticacaoL2(e.autenticacao)) && aut.versao === 2 && aut.autenticado === true,
       FONTE_OPERACIONAL_DE_CHAVES: ehAutenticacaoReconhecida(e.autenticacao) && aut.origemDaChave === origemDaChave,
       DESTINO_AUTORIZADO: typeof destino.raizDoDestino === 'string' && destinos.includes(destino.raizDoDestino),
     });

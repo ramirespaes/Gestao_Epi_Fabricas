@@ -84,6 +84,9 @@ function criarLancadorEstruturalComSpawn(opcoes) {
   if (!ehObjeto(opcoes)) throw new TypeError('opções do lançador inválidas');
   const spawn = opcoes.spawn;
   if (!ehFuncao(spawn)) throw new TypeError('spawn inválido');
+  // P6 (D-ORF-6): observador OPCIONAL do stdout. Recebe cada bloco bruto (para o leitor em fluxo do sumário, P4) ANTES da captura restrita de 64 KiB, que não muda.
+  // Exceção do observador é engolida (a captura e o contrato de término não dependem dele). Sem observador, nada muda.
+  if (opcoes.aoDado !== undefined && !ehFuncao(opcoes.aoDado)) throw new TypeError('observador de saída inválido');
   const registros = [];
 
   function lancar(spec) {
@@ -164,6 +167,7 @@ function criarLancadorEstruturalComSpawn(opcoes) {
       };
       // O stdout é lido e DESCARTADO além do limite: o excesso nunca é retido.
       const aoDado = (bloco) => {
+        if (opcoes.aoDado !== undefined) { try { opcoes.aoDado(Buffer.isBuffer(bloco) ? Buffer.from(bloco) : Buffer.from(String(bloco), 'latin1')); } catch { /* observador é melhor esforço */ } }
         try {
           const texto = Buffer.isBuffer(bloco) ? bloco.toString('latin1') : String(bloco);
           const restante = LIMITE_DA_CAPTURA - retido.length;

@@ -18,6 +18,8 @@ const APROVADA_B = Object.freeze({ revisaoHumana: 'APROVADA', aprovadoEm: DATA_D
 const APROVADA_C = Object.freeze({ revisaoHumana: 'APROVADA', aprovadoEm: DATA_DA_DECISAO, aprovacaoRef: `GATE-P2-${DATA_DA_DECISAO}-C` });
 const DATA_DA_DECISAO_45 = '2026-11-03';
 const APROVADA_D = Object.freeze({ revisaoHumana: 'APROVADA', aprovadoEm: DATA_DA_DECISAO_45, aprovacaoRef: `GATE-P2-${DATA_DA_DECISAO_45}-D` });
+const DATA_DA_DECISAO_46 = '2026-11-03';
+const APROVADA_E = Object.freeze({ revisaoHumana: 'APROVADA', aprovadoEm: DATA_DA_DECISAO_46, aprovacaoRef: `GATE-P2-${DATA_DA_DECISAO_46}-E` });
 const SAIDA = 'SAIDA_DO_BACKUP';
 
 const ESCRITORES_CONHECIDOS = {
@@ -68,6 +70,10 @@ const ESCRITORES_CONHECIDOS = {
   'src/services/backup-fontes-fiscalizacao-arquivos.service.js': {
     classificacao: SAIDA, ocorrencias: { escrita: { link: 1, mkdir: 2, o_creat: 2, o_wronly: 2, writefile: 1 }, remocao: { rm: 1 } }, ...APROVADA_D,
     justificativa: 'P3 (D-F1, 03/11/2026): cópia verificada dos ZIPs da Fiscalização para a área de preparação do backup e restauração em destino NOVO: pasta da empresa por mkdir não recursivo 0700, temporário exclusivo O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW 0600 (writeFile em blocos com SHA-256 e tamanho recalculados), publicação por link (nunca sobrescreve) e rm SÓ do próprio temporário (force, sem recursive). Nunca escreve na origem (FISCALIZACAO_ARMAZENAMENTO_DIRETORIO) nem apaga arquivo publicado. Risco se errado: gravação fora da preparação ou do destino novo (o destino é diretório existente/novo validado por lstat+realpath, e a pasta da empresa vem só do formato da chave). Aprovada no gate de 2026-11-03 (ref D); as 44 anteriores não mudam.',
+  },
+  'src/services/backup-fontes-composicao-l2.service.js': {
+    classificacao: SAIDA, ocorrencias: { escrita: { mkdir: 1 }, remocao: {} }, ...APROVADA_E,
+    justificativa: 'P6 (03/11/2026): composição por fonte do pacote layout 2 e restauração por fonte. Única escrita própria: mkdir NÃO recursivo 0700 (linha 70) de um segmento novo (`arquivos`, `arquivos/<fonteId>`, destino novo da restauração) sob um pai conferido como diretório real por lstat+realpath; existente = recusa (DESTINO_EXISTENTE), nada reaproveitado, nada removido. As gravações de conteúdo passam pelos escritores já aprovados (armazenamento-imagens.gravar, backup-fontes-fiscalizacao-arquivos, selagem histórica). Leituras com O_RDONLY|O_NOFOLLOW; links recusados. Risco se errado: pasta criada fora da preparação/destino (o pai é validado como real e o nome é um único segmento seguro vindo do catálogo ou de constante). Entrada nova; não altera as 45 anteriores.',
   },
   'src/services/imagem-processador-area.service.js': {
     classificacao: 'NAO_PERSISTENTE', ocorrencias: { escrita: { mkdirsync: 1 }, remocao: { rmsync: 1 } }, ...APROVADA_A,
@@ -175,6 +181,7 @@ const APROVACOES = [
   { ref: APROVADA_B.aprovacaoRef, documento: DOCUMENTO_DA_DECISAO, sha256: SHA256_DA_DECISAO },
   { ref: APROVADA_C.aprovacaoRef, documento: DOCUMENTO_DA_DECISAO, sha256: SHA256_DA_DECISAO },
   { ref: APROVADA_D.aprovacaoRef, documento: `test/backup-guarda/aprovacoes/GATE-P2-${DATA_DA_DECISAO_45}-D.md`, sha256: '35a6841842801801087343afc2fc00c66b12f3eba5f64b9d1fbc889124c192a1' },
+  { ref: APROVADA_E.aprovacaoRef, documento: `test/backup-guarda/aprovacoes/GATE-P2-${DATA_DA_DECISAO_46}-E.md`, sha256: '743b1cc3354fe0441df111730836856959f1666606e87081b21578be6b54e906' },
 ];
 
 module.exports = Object.freeze({

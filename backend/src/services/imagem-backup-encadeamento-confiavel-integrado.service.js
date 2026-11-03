@@ -31,7 +31,8 @@ const { ehRegistroDeOperacoes } = require('../utils/registro-operacoes-pendentes
  */
 
 const OBRIGATORIAS_DA_INICIALIZACAO = ['configuracaoDeImagens', 'diretorioPai', 'diretorioDoDump', 'janela', 'conexao', 'dump', 'maxBytesPorArquivo', 'declaracaoDoDump'];
-const PERMITIDAS_DA_INICIALIZACAO = new Set([...OBRIGATORIAS_DA_INICIALIZACAO, 'selagem', 'publicador', 'verificadorEstrutural', 'orcamento', 'controle', 'observarPublicacao']);
+// P6 (D-ORF-6): `layoutDoManifesto` (1 | 2; padrão 1 = comportamento histórico) e `composicaoL2` ({ compor, lerAdicionais, planos, origens, contexto, postgres }), obrigatória só com layout 2.
+const PERMITIDAS_DA_INICIALIZACAO = new Set([...OBRIGATORIAS_DA_INICIALIZACAO, 'selagem', 'publicador', 'verificadorEstrutural', 'orcamento', 'controle', 'observarPublicacao', 'layoutDoManifesto', 'composicaoL2']);
 const CHAVES_DO_DUMP = ['alvo', 'lancador', 'sistema', 'arquivos', 'temporizador', 'prazos'];
 const chavesDoDumpValidas = (dump) => chavesExatas(dump, Reflect.ownKeys(dump).includes('saida') ? [...CHAVES_DO_DUMP, 'saida'] : CHAVES_DO_DUMP) && (!Reflect.ownKeys(dump).includes('saida') || dump.saida === 'PIPE_COM_HASH' || dump.saida === 'DESCRITOR');
 const CHAVES_DA_CONEXAO = new Set(['criarConexao', 'temporizador', 'prazos', 'tamanhoDaPagina']);
@@ -108,8 +109,16 @@ function criarInicializacaoConfiavel(opcoes) {
     const observarPublicacao = proprias.includes('observarPublicacao') ? opcoes.observarPublicacao : null;
     if (observarPublicacao !== null && !ehFuncao(observarPublicacao)) throw erro('PARAMETROS_INVALIDOS');
 
+    // P6: layout do manifesto (1 = histórico, padrão). Com 2, a composição por fonte L2 é OBRIGATÓRIA e a montagem L1 serve só para adquirir a preparação exclusiva.
+    const layoutDoManifesto = proprias.includes('layoutDoManifesto') ? opcoes.layoutDoManifesto : 1;
+    if (layoutDoManifesto !== 1 && layoutDoManifesto !== 2) throw erro('PARAMETROS_INVALIDOS');
+    const composicaoL2 = proprias.includes('composicaoL2') ? opcoes.composicaoL2 : null;
+    if (layoutDoManifesto === 2 && !(ehObjeto(composicaoL2) && ehFuncao(composicaoL2.compor) && ehFuncao(composicaoL2.lerAdicionais) && ehObjeto(composicaoL2.origens) && ehObjeto(composicaoL2.contexto) && ehFuncao(composicaoL2.postgres))) throw erro('PARAMETROS_INVALIDOS');
+    if (layoutDoManifesto === 1 && composicaoL2 !== null) throw erro('PARAMETROS_INVALIDOS');
+
     const inicializacao = Object.freeze({
       configuracaoDeImagens, diretorioPai, diretorioDoDump, janela, conexao: Object.freeze({ ...conexao }), dump: Object.freeze({ ...dump }), maxBytesPorArquivo, declaracaoDoDump, selagem: temSelagem ? selagem : null, publicador, verificadorEstrutural, orcamento, controle, observarPublicacao,
+      layoutDoManifesto, composicaoL2,
     });
     inicializacoesProduzidas.add(inicializacao);
     return inicializacao;
@@ -201,7 +210,21 @@ async function executarBackupEncadeado(opcoes) {
     // (d) cópia, verificação física, manifesto, selagem e releitura: tudo da montagem aprovada
     try {
       const dumpDaComposicao = { concluido: true, bytes: evidencia.bytes, sha256Declarado: declarado, sha256Recalculado: evidencia.sha256Calculado };
-      estado.composicao = await estado.montagem.compor(entregue.sinal === undefined ? { contexto, dump: dumpDaComposicao } : { contexto, dump: dumpDaComposicao, sinal: entregue.sinal });
+      if (ini.layoutDoManifesto === 2) {
+        // P6: composição POR FONTE (layout 2) na preparação já exclusiva; os planos vêm da leitura adicional feita NO MESMO snapshot (`contexto.adicionais`).
+        const adicionais = entregue.adicionais;
+        if (declarado !== evidencia.sha256Calculado || !ehObjeto(adicionais) || !ehObjeto(adicionais.planos)) { estado.composicao = Object.freeze({ ok: false, selado: false, falha: Object.freeze({ estagio: 'ENTRADA', codigo: 'PLANOS_DO_SNAPSHOT_AUSENTES' }) }); return { ok: false }; }
+        const montagemL1 = estado.montagem;
+        estado.itensDoPlano = Object.values(adicionais.planos).reduce((s, p) => s + (Array.isArray(p.plano) ? p.plano.length : 0), 0);
+        const r = await ini.composicaoL2.compor({
+          preparacao: path.join(ini.diretorioPai, nomeDaPreparacao), planos: adicionais.planos, origens: ini.composicaoL2.origens, banco: contexto.banco, conjuntoId,
+          dump: { bytes: evidencia.bytes, sha256: evidencia.sha256Calculado }, contexto: ini.composicaoL2.contexto, postgres: ini.composicaoL2.postgres({ adicionais }),
+        });
+        estado.composicao = r.ok === true ? Object.freeze({ ok: true, selado: true, arquivos: r.arquivos, identidade: r.identidade, manifesto: r.manifesto, layout: 2 }) : Object.freeze({ ok: false, selado: false, falha: r.falha });
+        estado.montagem = Object.freeze({ compor: montagemL1.compor, obterVerificacao: () => (r.ok === true ? r.verificacao : Object.freeze({ classe: 'NAO_EXECUTADA' })) });
+      } else {
+        estado.composicao = await estado.montagem.compor(entregue.sinal === undefined ? { contexto, dump: dumpDaComposicao } : { contexto, dump: dumpDaComposicao, sinal: entregue.sinal });
+      }
     } catch {
       return { ok: false };
     }
@@ -298,7 +321,7 @@ async function executarBackupEncadeado(opcoes) {
 
   const coordenador = await executarBackupPgDump({
     janela: ini.janela,
-    conexao: { ...ini.conexao, planejar: planejarArquivos },
+    conexao: { ...ini.conexao, planejar: planejarArquivos, ...(ini.layoutDoManifesto === 2 ? { lerAdicionais: (executor) => ini.composicaoL2.lerAdicionais(executor) } : {}) },
     dump,
     copia,
     avaliar,
