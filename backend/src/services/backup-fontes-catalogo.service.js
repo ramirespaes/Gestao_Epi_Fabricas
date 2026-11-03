@@ -88,19 +88,30 @@ const FONTES = [
     ...comum,
     id: 'fiscalizacao-pacotes',
     tipo: 'ARQUIVOS',
-    classe: null,
-    decisaoPendente: 'D-F1',
-    recomendacao: 'PROTEGIDA',
+    // D-F1 decidida em 03/11/2026 (classe A, PROTEGIDA): o ZIP entregue é o artefato de prova e regenerar não reproduz o SHA-256 registrado. Retenção (D) depende de D-F6.
+    classe: 'PROTEGIDA',
+    decisaoRef: 'D-F1',
+    justificativa: 'ZIP entregue a quem fiscaliza; linha CONCLUIDO imutavel referencia sha256, tamanho e chave; regerar nao reproduz o hash (manifesto interno com geradoEm).',
     relevancia: 'PERSISTENTE_RELEVANTE',
     persistenciaFisica: 'SIM',
     riscoResidual: 'DADO_PESSOAL',
     responsavel: 'RELATORIO_DE_FISCALIZACAO',
     raiz: { variavel: 'FISCALIZACAO_ARMAZENAMENTO_DIRETORIO' },
+    chave: { formatoChaveId: 'fiscalizacao-v1' },
+    verificadorId: 'fiscalizacao-pacotes-consistencia-v1',
     escopo: { tipo: 'EMPRESA', regraEmpresa: 'SEGMENTO_INICIAL_DA_CHAVE' },
     referencias: [{ tabela: 'fiscalizacao_pacotes', colunas: ['empresa_id', 'status', 'sha256', 'tamanho_bytes', 'chave_armazenamento'] }],
     mutabilidade: 'IMUTAVEL_POR_CONTEUDO',
     sensibilidade: 'PESSOAL',
+    // D-F10 (janela UNICA): esta fonte nao participa da janela porque, apos ACH-FISC-01, nenhum arquivo REFERENCIADO por linha CONCLUIDO e removido; so residuos de GERANDO/FALHA.
     remocao: { fisica: 'SOMENTE_NAO_REFERENCIADOS', janela: 'NAO_APLICAVEL' },
+    // Existencia dos modulos (P3), nao comprovacao: promocao fica nula ate restauracao demonstrada em ambiente autorizado.
+    componentes: {
+      planejador: presente('src/services/backup-fontes-fiscalizacao-plano.service.js', 'test/services/backup-fontes-fiscalizacao-plano.test.js'),
+      copiador: presente('src/services/backup-fontes-fiscalizacao-arquivos.service.js', 'test/services/backup-fontes-fiscalizacao-arquivos.test.js'),
+      verificador: presente('src/services/backup-fontes-fiscalizacao-verificacao.service.js', 'test/services/backup-fontes-fiscalizacao-verificacao.test.js'),
+      restaurador: presente('src/services/backup-fontes-fiscalizacao-arquivos.service.js', 'test/services/backup-fontes-fiscalizacao-arquivos.test.js'),
+    },
   },
   {
     ...comum,
@@ -154,8 +165,8 @@ const DECISOES_DO_P0 = Object.freeze({
   'P0-CF-3': Object.freeze({ fonteId: 'imagens', estadoInicial: 'IMPLEMENTADA_NAO_COMPROVADA', documento: DOCUMENTO_DO_P0, secao: '10' }),
 });
 
-/** ACH-FISC-01 (adendo, seção 11): hipótese estática NÃO resolvida; registrada aqui só para rastreabilidade, sem efeito no catálogo. */
-const ACHADOS_ABERTOS = Object.freeze([Object.freeze({ id: 'ACH-FISC-01', fonteId: 'fiscalizacao-pacotes', situacao: 'HIPOTESE_NAO_TESTADA', documento: DOCUMENTO_DO_P0 })]);
+/** ACH-FISC-01 (adendo, seção 11): corrigido em 03/11/2026 em fiscalizacao-pacote.service.js (decidirDescarteAposFalha); registrado para rastreabilidade, sem efeito no catálogo. */
+const ACHADOS_ABERTOS = Object.freeze([Object.freeze({ id: 'ACH-FISC-01', fonteId: 'fiscalizacao-pacotes', situacao: 'CORRIGIDO_COM_TESTE', documento: DOCUMENTO_DO_P0 })]);
 
 let selado = null;
 function obterCatalogo() {

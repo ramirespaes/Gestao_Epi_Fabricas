@@ -35,10 +35,16 @@ describe('S6 — catálogo inicial (P1): fontes reais, estados aprovados no P0',
     assert.equal(fonte('imagens').promocao, null);
     assert.equal(fonte('postgres-aplicacao').classe, 'PROTEGIDA');
     assert.equal(estado('postgres-aplicacao'), 'IMPLEMENTACAO_PARCIAL');
-    assert.equal(fonte('fiscalizacao-pacotes').classe, null);
-    assert.equal(fonte('fiscalizacao-pacotes').decisaoPendente, 'D-F1');
-    assert.equal(fonte('fiscalizacao-pacotes').recomendacao, 'PROTEGIDA');
-    assert.equal(estado('fiscalizacao-pacotes'), 'PENDENTE_DECISAO');
+    // D-F1 decidida (P3, 03/11/2026): PROTEGIDA com os quatro componentes presentes e promoção nula = implementada, NÃO comprovada.
+    assert.equal(fonte('fiscalizacao-pacotes').classe, 'PROTEGIDA');
+    assert.equal(fonte('fiscalizacao-pacotes').decisaoPendente, null);
+    assert.equal(fonte('fiscalizacao-pacotes').decisaoRef, 'D-F1');
+    assert.equal(fonte('fiscalizacao-pacotes').verificadorId, 'fiscalizacao-pacotes-consistencia-v1');
+    assert.equal(fonte('fiscalizacao-pacotes').chave.formatoChaveId, 'fiscalizacao-v1');
+    assert.deepEqual(fonte('fiscalizacao-pacotes').remocao, { fisica: 'SOMENTE_NAO_REFERENCIADOS', janela: 'NAO_APLICAVEL' });
+    assert.equal(fonte('fiscalizacao-pacotes').promocao, null);
+    assert.equal(estado('fiscalizacao-pacotes'), 'IMPLEMENTADA_NAO_COMPROVADA');
+    assert.equal(C().ACHADOS_ABERTOS.find((a) => a.id === 'ACH-FISC-01').situacao, 'CORRIGIDO_COM_TESTE');
     assert.equal(fonte('email-arquivo').classe, null);
     assert.equal(fonte('email-arquivo').decisaoPendente, 'D-F2');
     assert.equal(fonte('email-arquivo').recomendacao, 'EFEMERA');
@@ -67,7 +73,7 @@ describe('S6 — catálogo inicial (P1): fontes reais, estados aprovados no P0',
   test('pendências do catálogo inicial: códigos fechados', () => {
     assert.deepEqual(R().pendenciasDeCobertura(C().obterCatalogo()).map((p) => [p.fonteId, p.codigo]), [
       ['email-arquivo', 'CLASSE_NAO_DECIDIDA'],
-      ['fiscalizacao-pacotes', 'CLASSE_NAO_DECIDIDA'],
+      ['fiscalizacao-pacotes', 'NAO_COMPROVADA'],
       ['imagens', 'NAO_COMPROVADA'],
       ['postgres-aplicacao', 'COMPONENTE_PARCIAL:verificador'],
     ]);
@@ -191,6 +197,27 @@ describe('S6 — contratos com os módulos históricos (somente leitura)', () =>
     for (const relativo of ['src/storage/armazenamento-imagens.js', 'src/services/imagem-backup-manifesto.service.js', 'src/services/imagem-backup-verificacao-imagens-copiadas.service.js']) {
       assert.equal(literal(relativo), esperado, relativo);
     }
+  });
+
+  test('C08 — conformidade por corpus do formato de chave "fiscalizacao-v1" com o armazenamento local (chave montada só com inteiros do servidor)', async () => {
+    const { criarArmazenamentoLocal } = exigirModulo('src/storage/armazenamento-local');
+    const { criarRaizTemporaria, removerTemporarioSeguro } = require('../storage/helpers/tmp-seguro');
+    const regex = R().FORMATOS_DE_CHAVE['fiscalizacao-v1'];
+    const raiz = criarRaizTemporaria();
+    try {
+      const armazenamento = criarArmazenamentoLocal({ diretorio: raiz });
+      for (const [empresaId, pacoteId] of [[1, 1], [42, 7], [999999999999999, 999999999999999]]) {
+        const g = await armazenamento.iniciar({ empresaId, pacoteId });
+        assert.equal(regex.test(g.chave), true, g.chave);
+        await g.abortar();
+      }
+      for (const chave of ['0/pacote-1.zip', '01/pacote-1.zip', '1/pacote-0.zip', '1/pacote-1.tmp', '1/pacote-1.zip/', '../1/pacote-1.zip', 'padrao/pacote-1.zip', '1/pacote-1.ZIP', '']) {
+        assert.equal(regex.test(chave), false, chave);
+        await assert.rejects(armazenamento.existe(chave), /chave de armazenamento inválida/, chave);
+      }
+      assert.equal(regex.test('1/pacote-1.zip'), true);
+      assert.equal(await armazenamento.existe('1/pacote-1.zip'), false);
+    } finally { removerTemporarioSeguro(raiz); }
   });
 
   test('C03 — o pg_dump continua sem filtro (args fechados) e a fonte POSTGRES é coerente com isso', () => {

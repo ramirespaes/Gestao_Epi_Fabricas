@@ -597,6 +597,8 @@ describe('[MC-C] consistência plano do snapshot x cópia preservada (CONS-02) e
       ['services/imagem-backup-diario-execucao.service.js', 'arquivos de TRAVA da supervisão (tentativa e recurso): nunca imagem, dump, pacote, registro ou diário'],
       // acréscimo (D-ORF-6, D-12, 02/11/2026; inventário técnico, pendente de revisão humana na guarda P2): rmSync SÓ do diretório temporário exclusivo que o próprio módulo criou (0700, nome aleatório sob os.tmpdir()), após conferir tipo/dev/ino/dono e sem seguir links; nunca imagem, dump, pacote nem registro
       ['services/imagem-processador-area.service.js', 'área temporária exclusiva do processador de imagens (TMPDIR e pasta atual do filho sharp)'],
+      // acréscimo (D-ORF-6, P3/D-F1, 03/11/2026; inventário técnico, pendente de revisão humana na guarda P2): rm SÓ do próprio temporário aleatório (force, sem recursive) na cópia verificada/restauração dos ZIPs da Fiscalização; nunca toca a origem, imagens, dump ou pacote
+      ['services/backup-fontes-fiscalizacao-arquivos.service.js', 'temporário próprio da cópia verificada e da restauração dos ZIPs da Fiscalização (destino novo)'],
     ]);
     const donos = lista.filter((p) => REMOCAO.test(fs.readFileSync(p, 'utf8'))).map((p) => path.relative(src, p).split(path.sep).join('/'));
     for (const dono of donos) assert.equal(PERMITIDOS.has(dono), true, `caminho de remoção física não previsto: ${dono}`);
@@ -621,6 +623,12 @@ describe('[MC-C] consistência plano do snapshot x cópia preservada (CONS-02) e
     assert.match(areaFonte, /const mesmoObjeto = \(st, area\) => Number\(st\.dev\) === area\.dev && Number\(st\.ino\) === area\.ino;/);
     assert.equal(/armazenamento-imagens|janela-escrita-imagens|imagem-backup/.test(areaFonte), false);
     for (const p of lista) if (!p.endsWith('imagem-processador.service.js') && !p.endsWith('imagem-processador-area.service.js')) assert.equal(/imagem-processador-area\.service/.test(fs.readFileSync(p, 'utf8')), false, `${path.relative(src, p)} importa a área exclusiva`);
+    // a cópia/restauração dos ZIPs da Fiscalização: UMA remoção, do próprio temporário, com force e sem recursive; sem importar armazenamento de imagens, janela nem módulos do backup de imagens
+    const fiscFonte = fs.readFileSync(path.join(src, 'services', 'backup-fontes-fiscalizacao-arquivos.service.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    assert.equal((fiscFonte.match(/\b(unlink|unlinkSync|rmSync|rmdirSync|rmdir)\(|\bfsp\.rm\(|\.rm\(/g) ?? []).length, 1, 'uma única remoção na cópia da fiscalização');
+    assert.match(fiscFonte, /await fs\.rm\(temporario, \{ force: true \}\)\.catch/);
+    assert.equal(/recursive/.test(fiscFonte), false);
+    assert.equal(/armazenamento-imagens|janela-escrita-imagens|imagem-backup/.test(fiscFonte), false);
 
     const usam = lista.filter((p) => /require\([^)]*storage\/armazenamento-imagens'\)/.test(fs.readFileSync(p, 'utf8')) && !p.endsWith('storage/armazenamento-imagens.js'));
     for (const p of usam) {

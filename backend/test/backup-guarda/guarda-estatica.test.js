@@ -63,13 +63,25 @@ describe('P2 — guarda sobre a árvore real', () => {
       assert.match(a.sha256, /^[0-9a-f]{64}$/);
       assert.ok(!r.violacoes.some((v) => v.codigo === 'REGISTRO_DE_APROVACAO_INVALIDO' && v.arquivo === a.documento), `documento de ${a.ref} presente e íntegro`);
     }
+    // Cada entrada está em UM de dois estados rastreáveis: APROVADA com data e referência declarada, ou PENDENTE sem nenhum dado de aprovação
+    // (entrada nova desde o gate de 2026-11-02, aguardando decisão humana; é o GATE HUMANO abaixo que a deixa vermelha, não este teste).
+    const aprovadas = [];
+    const pendentes = [];
     for (const lista of ['ESCRITORES_CONHECIDOS', 'ROTAS_BINARIAS_CONHECIDAS', 'MIGRATIONS_CONHECIDAS', 'DEPENDENCIAS_REVISADAS']) {
       for (const [chave, e] of Object.entries(listas[lista])) {
-        assert.equal(e.revisaoHumana, 'APROVADA', `${lista}:${chave}`);
-        assert.match(e.aprovadoEm, /^\d{4}-\d{2}-\d{2}$/, `${lista}:${chave}`);
-        assert.ok(refs.has(e.aprovacaoRef), `${lista}:${chave} aponta para registro declarado`);
+        if (e.revisaoHumana === 'APROVADA') {
+          assert.match(e.aprovadoEm, /^\d{4}-\d{2}-\d{2}$/, `${lista}:${chave}`);
+          assert.ok(refs.has(e.aprovacaoRef), `${lista}:${chave} aponta para registro declarado`);
+          aprovadas.push(chave);
+        } else {
+          assert.equal(e.revisaoHumana, 'PENDENTE', `${lista}:${chave}`);
+          assert.deepEqual([e.aprovadoEm, e.aprovacaoRef], [null, null], `${lista}:${chave}: pendente não carrega dados de aprovação`);
+          pendentes.push(chave);
+        }
       }
     }
+    assert.ok(aprovadas.length >= 44, `as 44 entradas do gate de 2026-11-02 seguem aprovadas (${aprovadas.length})`);
+    assert.ok(pendentes.every((c) => !['sharp'].includes(c)), 'sharp não volta a pendente');
   });
 
   test('o inventário nunca carrega conteúdo de linha, caminho absoluto ou segredo', () => {

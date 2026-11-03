@@ -24,13 +24,15 @@ const REMOCOES = Object.freeze(['JANELA_LIMPEZA', 'SOMENTE_NAO_REFERENCIADOS', '
 const JANELAS = Object.freeze(['UNICA', 'NAO_APLICAVEL']);
 const COMPONENTES = Object.freeze(['planejador', 'copiador', 'verificador', 'restaurador']);
 const ESTADOS_DE_COMPONENTE = Object.freeze(['AUSENTE', 'PARCIAL', 'PRESENTE']);
-const VERIFICADORES = Object.freeze(['imagens-consistencia-v1', 'postgres-estrutura-v1']);
+const VERIFICADORES = Object.freeze(['imagens-consistencia-v1', 'postgres-estrutura-v1', 'fiscalizacao-pacotes-consistencia-v1']);
 const NIVEIS_POSTGRES = Object.freeze(['N0', 'N1', 'N2a', 'N2b', 'N3']);
 const NIVEIS_SUFICIENTES = Object.freeze(['N1', 'N2a', 'N2b', 'N3']);
 const DECISOES_PENDENTES = Object.freeze(Array.from({ length: 17 }, (_, i) => `D-F${i + 1}`));
 const DECISOES_VALIDAS = Object.freeze([...DECISOES_PENDENTES, 'P0-CF-1', 'P0-CF-2', 'P0-CF-3']);
 const FORMATOS_DE_CHAVE = Object.freeze({
   'imagem-v1': /^(?:[1-9][0-9]{0,14}|padrao)\/[0-9a-f]{64}\/(?:mestre\.(?:png|jpg|webp)|(?:exibicao|miniatura)\.webp)$/,
+  // D-F1 (P3): a chave do ZIP da Fiscalização é montada SÓ com inteiros do servidor (storage/armazenamento-local.js, CHAVE_FORMATO).
+  'fiscalizacao-v1': /^[1-9][0-9]{0,14}\/pacote-[1-9][0-9]{0,14}\.zip$/,
 });
 const LIMITE_DE_FONTES = 16;
 

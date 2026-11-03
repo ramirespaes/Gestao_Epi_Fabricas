@@ -168,6 +168,20 @@ async function* medir(registro, nome, contador, origem) {
   registro.set(nome, { sha256: hash.digest('hex'), bytes, linhas: contador.linhas });
 }
 
+/**
+ * ACH-FISC-01 (D-ORF-6): o que fazer com os artefatos de uma tentativa quando a geração lança DEPOIS de algum passo irreversível. Decisão PURA a partir
+ * da situação da linha, relida do banco: CONCLUIDO = o ZIP foi publicado e o registro é final, nada é removido e a tentativa deu certo; GERANDO ou FALHA =
+ * os resíduos (temporário e ZIP não referenciado) podem ser removidos; situação desconhecida (consulta falhou ou linha ausente) = NADA é removido,
+ * porque a propriedade e o estado do artefato não estão comprovados. Nunca remove o que pode ser um pacote entregue.
+ */
+const DESCARTE = Object.freeze({ PRESERVAR: 'PRESERVAR', REMOVER_RESIDUOS: 'REMOVER_RESIDUOS', CONCLUIDO: 'CONCLUIDO' });
+function decidirDescarteAposFalha(linha) {
+  if (linha === null || typeof linha !== 'object') return DESCARTE.PRESERVAR;
+  if (linha.status === 'CONCLUIDO') return DESCARTE.CONCLUIDO;
+  if (linha.status === 'GERANDO' || linha.status === 'FALHA') return DESCARTE.REMOVER_RESIDUOS;
+  return DESCARTE.PRESERVAR;
+}
+
 function textoLeiame({ id, periodo, finalidade, escopos }) {
   return [
     'PACOTE DE DOCUMENTAÇÃO PARA FISCALIZAÇÃO E AUDITORIA',
@@ -411,8 +425,14 @@ function criarFiscalizacaoPacoteService({ pool, armazenamento, config }) {
       return pacoteDto(await pacoteRepo.buscarPorId(pool, empresaId, id));
     } catch (erro) {
       await instantaneo.query('ROLLBACK').catch(() => {});
+      // ACH-FISC-01: a situação é relida ANTES de qualquer remoção; CONCLUIDO prova que o ZIP foi publicado e registrado (nada é removido, a geração deu certo);
+      // situação desconhecida preserva tudo (falha fechada): só GERANDO/FALHA liberam a remoção dos resíduos da própria tentativa.
+      let situacao = null;
+      try { situacao = await pacoteRepo.buscarPorId(pool, empresaId, id); } catch { situacao = null; }
+      const descarte = decidirDescarteAposFalha(situacao);
+      if (descarte === DESCARTE.CONCLUIDO) return pacoteDto(situacao);
       if (gravador) await gravador.abortar().catch(() => {});
-      await armazenamento.removerResiduos({ empresaId, pacoteId: id }).catch(() => {});
+      if (descarte === DESCARTE.REMOVER_RESIDUOS) await armazenamento.removerResiduos({ empresaId, pacoteId: id }).catch(() => {});
       if (perdido) throw new HttpError(409, 'GERACAO_ABANDONADA', 'A geração foi encerrada antes de concluir. Inicie uma nova geração com uma nova chave.');
       if (erro instanceof ErroZip && erro.codigo === 'ZIP_EXCEDE_LIMITE') {
         await registrarFalha(ator, id, 'ZIP_EXCEDE_LIMITE');
@@ -505,4 +525,4 @@ function criarFiscalizacaoPacoteService({ pool, armazenamento, config }) {
   return { previa, gerar, listar, obter, abrirDownload, recuperarAbandonados };
 }
 
-module.exports = { criarFiscalizacaoPacoteService, ROTULOS, DEFINICOES, LIMITACOES, VERSAO_FORMATO, MIB };
+module.exports = { criarFiscalizacaoPacoteService, decidirDescarteAposFalha, DESCARTE, ROTULOS, DEFINICOES, LIMITACOES, VERSAO_FORMATO, MIB };

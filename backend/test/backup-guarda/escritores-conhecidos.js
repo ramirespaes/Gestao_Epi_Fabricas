@@ -16,6 +16,8 @@ const DATA_DA_DECISAO = '2026-11-02';
 const APROVADA_A = Object.freeze({ revisaoHumana: 'APROVADA', aprovadoEm: DATA_DA_DECISAO, aprovacaoRef: `GATE-P2-${DATA_DA_DECISAO}-A` });
 const APROVADA_B = Object.freeze({ revisaoHumana: 'APROVADA', aprovadoEm: DATA_DA_DECISAO, aprovacaoRef: `GATE-P2-${DATA_DA_DECISAO}-B` });
 const APROVADA_C = Object.freeze({ revisaoHumana: 'APROVADA', aprovadoEm: DATA_DA_DECISAO, aprovacaoRef: `GATE-P2-${DATA_DA_DECISAO}-C` });
+const DATA_DA_DECISAO_45 = '2026-11-03';
+const APROVADA_D = Object.freeze({ revisaoHumana: 'APROVADA', aprovadoEm: DATA_DA_DECISAO_45, aprovacaoRef: `GATE-P2-${DATA_DA_DECISAO_45}-D` });
 const SAIDA = 'SAIDA_DO_BACKUP';
 
 const ESCRITORES_CONHECIDOS = {
@@ -62,6 +64,10 @@ const ESCRITORES_CONHECIDOS = {
   'src/services/imagem-backup-selagem.service.js': {
     classificacao: SAIDA, ocorrencias: { escrita: { link: 1, o_creat: 1, o_wronly: 1, writefile: 1 }, remocao: { unlink: 1 } }, ...APROVADA_A,
     justificativa: 'Selagem de manifesto.json e manifesto.sha256 na área de preparação: temporário O_CREAT|O_EXCL|O_NOFOLLOW 0600 -> link (nunca sobrescreve) -> unlink só do temporário cujo dev/ino foi registrado. Risco se errado: remoção de arquivo alheio (a prova de propriedade por inode impede).',
+  },
+  'src/services/backup-fontes-fiscalizacao-arquivos.service.js': {
+    classificacao: SAIDA, ocorrencias: { escrita: { link: 1, mkdir: 2, o_creat: 2, o_wronly: 2, writefile: 1 }, remocao: { rm: 1 } }, ...APROVADA_D,
+    justificativa: 'P3 (D-F1, 03/11/2026): cópia verificada dos ZIPs da Fiscalização para a área de preparação do backup e restauração em destino NOVO: pasta da empresa por mkdir não recursivo 0700, temporário exclusivo O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW 0600 (writeFile em blocos com SHA-256 e tamanho recalculados), publicação por link (nunca sobrescreve) e rm SÓ do próprio temporário (force, sem recursive). Nunca escreve na origem (FISCALIZACAO_ARMAZENAMENTO_DIRETORIO) nem apaga arquivo publicado. Risco se errado: gravação fora da preparação ou do destino novo (o destino é diretório existente/novo validado por lstat+realpath, e a pasta da empresa vem só do formato da chave). Aprovada no gate de 2026-11-03 (ref D); as 44 anteriores não mudam.',
   },
   'src/services/imagem-processador-area.service.js': {
     classificacao: 'NAO_PERSISTENTE', ocorrencias: { escrita: { mkdirsync: 1 }, remocao: { rmsync: 1 } }, ...APROVADA_A,
@@ -168,6 +174,7 @@ const APROVACOES = [
   { ref: APROVADA_A.aprovacaoRef, documento: DOCUMENTO_DA_DECISAO, sha256: SHA256_DA_DECISAO },
   { ref: APROVADA_B.aprovacaoRef, documento: DOCUMENTO_DA_DECISAO, sha256: SHA256_DA_DECISAO },
   { ref: APROVADA_C.aprovacaoRef, documento: DOCUMENTO_DA_DECISAO, sha256: SHA256_DA_DECISAO },
+  { ref: APROVADA_D.aprovacaoRef, documento: `test/backup-guarda/aprovacoes/GATE-P2-${DATA_DA_DECISAO_45}-D.md`, sha256: '35a6841842801801087343afc2fc00c66b12f3eba5f64b9d1fbc889124c192a1' },
 ];
 
 module.exports = Object.freeze({
