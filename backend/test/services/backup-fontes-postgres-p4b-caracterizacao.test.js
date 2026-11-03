@@ -30,7 +30,7 @@ describe('[KZ] caracterização da observação do P4b', () => {
     assert.deepEqual(o.opcionais['S:SEQUENCE OWNED BY'], { presentes: 0, ausentes: 1 });
     assert.equal(o.sumario.declaradasIgualLidas, true);
     assert.equal(o.sumario.versaoServidor, '16.4');
-    assert.deepEqual(o.mapa, { versao: 1, observadoEm: null });
+    assert.deepEqual(o.mapa, { versao: 1, observadoEm: '2026-11-03' });
     assert.ok(Object.isFrozen(o) && Object.isFrozen(o.porCategoria) && Object.isFrozen(o.contradicoes));
   });
 

@@ -212,8 +212,9 @@ describe('D-ORF-6 P4b — observação real do TOC de um dump sintético (só na
       assert.ok(caracterizacao.relacoesDoEsquema > 50, 'o esquema sintético precisa ter as relações das migrations reais');
       assert.equal(comparacao.ok, true, `comparador reprovou: ${comparacao.motivos.join(',')}`);
       assert.equal(bloco.nivelCalculado, 'N1');
-      assert.equal(bloco.nivelAtingido, 'N0', 'o nível atingido só sobe depois da revisão humana desta observação (observadoEm)');
-      assert.deepEqual(bloco.motivos, ['MAPA_NAO_OBSERVADO']);
+      // Mapa observado e registrado (CI 41693689221): o nível atingido iguala o calculado. Contradição futura reprova aqui e reabre o contrato.
+      assert.equal(bloco.nivelAtingido, 'N1');
+      assert.deepEqual(bloco.motivos, []);
       assert.equal(restauracao.ok, true, `restauração fictícia divergente: ${restauracao.divergencias.join(',')}`);
       assert.equal(restauracao.migrations.relacao, 'IGUAL');
     } finally {

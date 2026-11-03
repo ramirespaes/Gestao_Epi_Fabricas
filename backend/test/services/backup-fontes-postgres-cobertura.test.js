@@ -49,7 +49,7 @@ describe('[CB] comparador inventário × sumário', () => {
     assert.equal(r.relacoes.entradasSemInventario, 0);
     assert.deepEqual(r.relacoes.opcionaisAusentes, { 'SEQUENCE OWNED BY': 1 });
     assert.match(r.relacoes.sha256, /^[0-9a-f]{64}$/);
-    assert.deepEqual(r.mapa, { versao: 1, observado: false });
+    assert.deepEqual(r.mapa, { versao: 1, observado: true });
     assert.equal(r.sumario.entradas, 9);
     assert.ok(Object.isFrozen(r) && Object.isFrozen(r.relacoes) && Object.isFrozen(r.relacoes.ausentes));
   });
@@ -96,11 +96,16 @@ describe('[CB] comparador inventário × sumário', () => {
     assert.throws(() => C.compararInventarioComSumario({ inventario: inventarioBase(), sumario: tar, extra: 1 }), (e) => e.code === 'ENTRADA_INVALIDA');
   });
 
-  test('CB-05 — o mapa v1 é explícito, congelado e NÃO observado; categorias existentes no projeto têm regra, as demais são null', () => {
+  test('CB-05 — o mapa v1 é explícito, congelado e OBSERVADO com evidência citada (CI 41693689221); categorias existentes no projeto têm regra, as demais são null', () => {
     const M = C.MAPA_DE_CORRESPONDENCIA;
     assert.equal(M.versao, 1);
-    assert.equal(M.observadoEm, null);
-    assert.ok(Object.isFrozen(M) && Object.isFrozen(M.categorias));
+    assert.equal(M.observadoEm, '2026-11-03');
+    assert.deepEqual(M.observacao, {
+      ci: 'github-actions:41693689221', commit: 'c862a7232e20679fd6ab92e039306ee6f9129837', servidor: '16.15',
+      dumpSha256: '244f54752665bd3792390ab32b05e638fdb71ce67eb7eb32bb2812f33b739459', relacoes: 417, contradicoes: 0,
+      entradasOcultas: ['ENCODING', 'STDSTRINGS', 'SEARCHPATH', 'DATABASE', 'COMMENT'],
+    });
+    assert.ok(Object.isFrozen(M) && Object.isFrozen(M.categorias) && Object.isFrozen(M.observacao));
     assert.deepEqual(Object.keys(M.categorias).sort(), ['I', 'S', 'c', 'f', 'i', 'i:restricao', 'm', 'p', 'r', 't', 'v']);
     assert.deepEqual(M.categorias.r, { obrigatorias: ['TABLE'], opcionais: ['TABLE DATA'] });
     assert.deepEqual(M.categorias['i:restricao'], { obrigatorias: ['CONSTRAINT'], opcionais: [] });
@@ -136,12 +141,13 @@ describe('[ES] impressão digital e compatibilidade do esquema', () => {
 });
 
 describe('[BL] bloco cobertura.postgres', () => {
-  test('BL-01 — avaliação completa com sumário íntegro: nivelCalculado N1, mas nivelAtingido N0 com MAPA_NAO_OBSERVADO (nada declara cobertura antes do P4b)', () => {
+  test('BL-01 — avaliação completa com sumário íntegro: nivelCalculado N1 e, com o mapa observado no P4b, nivelAtingido N1 sem motivos', () => {
     const bloco = C.avaliarCoberturaPostgres({ inventario: inventarioBase(), sumario: sumarioDe(LINHAS_COMPLETAS), migrationsDoCodigo: MIGRATIONS });
     assert.equal(bloco.versaoContratoPostgres, 1);
     assert.equal(bloco.nivelCalculado, 'N1');
-    assert.equal(bloco.nivelAtingido, 'N0');
-    assert.deepEqual(bloco.motivos, ['MAPA_NAO_OBSERVADO']);
+    assert.equal(bloco.nivelAtingido, 'N1');
+    assert.deepEqual(bloco.motivos, []);
+    assert.equal(bloco.relacoes.mapa.observado, true);
     assert.deepEqual(Object.keys(bloco).sort(), [...C.CHAVES_DO_BLOCO].sort());
     assert.equal(bloco.relacoes.correspondidas, 4);
     assert.equal(bloco.esquema.quantidade, 3);
@@ -167,7 +173,7 @@ describe('[BL] bloco cobertura.postgres', () => {
     for (const [bloco, motivo] of casos) {
       assert.equal(bloco.nivelCalculado, 'N0', motivo);
       assert.equal(bloco.nivelAtingido, 'N0', motivo);
-      assert.ok(bloco.motivos.includes(motivo) && bloco.motivos.includes('MAPA_NAO_OBSERVADO'), `${motivo}: ${bloco.motivos}`);
+      assert.ok(bloco.motivos.includes(motivo) && !bloco.motivos.includes('MAPA_NAO_OBSERVADO'), `${motivo}: ${bloco.motivos}`);
       assert.deepEqual(C.validarBlocoPostgres(bloco), { valido: true, erros: [] });
     }
     const atras = avaliar(inventarioBase({ migrations: MIGRATIONS.slice(0, 2) }), sumarioDe(LINHAS_COMPLETAS));
@@ -197,8 +203,12 @@ describe('[BL] bloco cobertura.postgres', () => {
     const n0 = R.avaliarCobertura(catalogo, { ...base, nivelPostgres: 'N0' });
     assert.notEqual(n0.teto, 'COMPLETA');
     assert.ok(R.NIVEIS_POSTGRES.includes('N1') && !['N0'].some((n) => R.avaliarCobertura(catalogo, { ...base, nivelPostgres: n }).teto === 'COMPLETA'));
-    const blocoN0 = C.avaliarCoberturaPostgres({ inventario: inventarioBase(), sumario: sumarioDe(LINHAS_COMPLETAS), migrationsDoCodigo: MIGRATIONS });
-    assert.equal(blocoN0.nivelAtingido, 'N0');
-    assert.ok(R.NIVEIS_POSTGRES.includes(blocoN0.nivelAtingido) && C.NIVEIS.every((n) => R.NIVEIS_POSTGRES.includes(n)), 'níveis do contrato = níveis das regras');
+    const blocoN1 = C.avaliarCoberturaPostgres({ inventario: inventarioBase(), sumario: sumarioDe(LINHAS_COMPLETAS), migrationsDoCodigo: MIGRATIONS });
+    assert.equal(blocoN1.nivelAtingido, 'N1');
+    assert.ok(R.NIVEIS_POSTGRES.includes(blocoN1.nivelAtingido) && C.NIVEIS.every((n) => R.NIVEIS_POSTGRES.includes(n)), 'níveis do contrato = níveis das regras');
+    // N1 remove só o motivo do nível: o catálogo real continua com fontes pendentes, logo o teto segue abaixo de COMPLETA.
+    const n1 = R.avaliarCobertura(catalogo, { ...base, nivelPostgres: blocoN1.nivelAtingido });
+    assert.notEqual(n1.teto, 'COMPLETA');
+    assert.ok(!n1.motivos.some((m) => m.startsWith('NIVEL_POSTGRES_INSUFICIENTE')) && n1.motivos.some((m) => m.startsWith('PENDENCIA:')));
   });
 });

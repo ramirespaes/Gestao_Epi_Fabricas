@@ -27,11 +27,16 @@ const CHAVES_DO_BLOCO = Object.freeze(['versaoContratoPostgres', 'nivelAtingido'
 /**
  * Mapa v1 (R2 6.3). `obrigatorias`: entradas do TOC que toda relação da categoria precisa ter; `opcionais`: entradas cuja presença é observada e
  * contada, nunca exigida. `null` = categoria conhecida mas NÃO mapeada (inexistente no projeto): sua presença no inventário é falha fechada.
- * `observadoEm: null` enquanto o P4b não registrar a observação real.
+ * `observadoEm` registra a observação real do P4b (CI 41693689221, 03/11/2026, PostgreSQL 16.15, 417 relações, zero contradições): só a partir dela o
+ * `nivelAtingido` pode igualar o `nivelCalculado`. Observação contradita em execução futura => nova versão do contrato e `observadoEm` de novo nulo.
  */
 const MAPA_DE_CORRESPONDENCIA = Object.freeze({
   versao: 1,
-  observadoEm: null,
+  observadoEm: '2026-11-03',
+  observacao: Object.freeze({
+    ci: 'github-actions:41693689221', commit: 'c862a7232e20679fd6ab92e039306ee6f9129837', servidor: '16.15', dumpSha256: '244f54752665bd3792390ab32b05e638fdb71ce67eb7eb32bb2812f33b739459',
+    relacoes: 417, contradicoes: 0, entradasOcultas: Object.freeze(['ENCODING', 'STDSTRINGS', 'SEARCHPATH', 'DATABASE', 'COMMENT']),
+  }),
   categorias: Object.freeze({
     r: Object.freeze({ obrigatorias: Object.freeze(['TABLE']), opcionais: Object.freeze(['TABLE DATA']) }),
     S: Object.freeze({ obrigatorias: Object.freeze(['SEQUENCE']), opcionais: Object.freeze(['SEQUENCE SET', 'SEQUENCE OWNED BY']) }),
