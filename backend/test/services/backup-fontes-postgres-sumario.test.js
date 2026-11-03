@@ -42,7 +42,7 @@ describe('[SM] leitor do sumário de pg_restore --list', () => {
     assert.equal(r.ok, true, JSON.stringify(r.motivos));
     assert.deepEqual(r.cabecalho, { formato: 'CUSTOM', entradasDeclaradas: 16, versaoServidor: '16.4', versaoPgDump: '16.4' });
     assert.deepEqual(r.contagem, {
-      total: 16, interpretadas: 16, naoInterpretadas: 0,
+      total: 16, interpretadas: 16, naoInterpretadas: 0, ocultas: 0,
       porTipo: { ACL: 1, COMMENT: 1, CONSTRAINT: 1, DATABASE: 1, ENCODING: 1, 'FK CONSTRAINT': 1, FUNCTION: 2, INDEX: 1, SEARCHPATH: 1, SEQUENCE: 1, 'SEQUENCE SET': 1, STDSTRINGS: 1, TABLE: 1, 'TABLE DATA': 1, TRIGGER: 1 },
     });
     assert.deepEqual(r.entradas.find((e) => e.tipo === 'TABLE'), { tipo: 'TABLE', esquema: 'public', nome: 'empresas', relacao: null });
@@ -96,7 +96,14 @@ describe('[SM] leitor do sumário de pg_restore --list', () => {
     const semContagem = S.lerSumario(sumarioDe(ENTRADAS_BASE).replace(/;     TOC Entries: \d+\n/, ''));
     assert.deepEqual(semContagem.motivos, ['CONTAGEM_AUSENTE']);
     const divergente = S.lerSumario(sumarioDe(ENTRADAS_BASE, 99));
-    assert.deepEqual(divergente.motivos, ['CONTAGEM_DIVERGENTE']);
+    assert.deepEqual(divergente.motivos, ['CONTAGEM_DIVERGENTE'], 'ocultas acima do teto');
+    assert.deepEqual(S.lerSumario(sumarioDe(ENTRADAS_BASE, 15)).motivos, ['CONTAGEM_DIVERGENTE'], 'mais linhas que o declarado');
+    // Observado no P4b (CI 41683852389): o --list omite ENCODING, STDSTRINGS, SEARCHPATH, DATABASE e o COMMENT do banco (5 ocultas num dump real).
+    const comOcultas = S.lerSumario(sumarioDe(ENTRADAS_BASE, 16 + 5));
+    assert.deepEqual(comOcultas.motivos, []);
+    assert.equal(comOcultas.contagem.ocultas, 5);
+    assert.equal(S.lerSumario(sumarioDe(ENTRADAS_BASE, 16 + S.TETO_DE_ENTRADAS_OCULTAS)).ok, true);
+    assert.equal(S.lerSumario(sumarioDe(ENTRADAS_BASE, 17 + S.TETO_DE_ENTRADAS_OCULTAS)).ok, false);
     const vazio = S.lerSumario(sumarioDe([], 0));
     assert.deepEqual(vazio.motivos, ['SUMARIO_VAZIO']);
     assert.deepEqual(S.lerSumario('').motivos, ['CONTAGEM_AUSENTE', 'FORMATO_AUSENTE', 'SUMARIO_VAZIO']);

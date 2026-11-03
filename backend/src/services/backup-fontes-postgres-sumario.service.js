@@ -17,6 +17,10 @@ const crypto = require('node:crypto');
  */
 
 const LIMITES_PADRAO = Object.freeze({ maxBytes: 8 * 1024 * 1024, maxEntradas: 20000, maxBytesDaLinha: 4096 });
+// OBSERVADO no P4b (CI 41683852389, PostgreSQL 16.15): `TOC Entries` conta TODAS as entradas do arquivo, mas `pg_restore --list` (sem --verbose) omite
+// as que a restauração não usa: ENCODING, STDSTRINGS, SEARCHPATH, DATABASE (sem --create) e seus dependentes (COMMENT do banco) — 5 num dump real.
+// Declaradas - listadas = "ocultas"; só é divergência se for negativo ou passar deste teto (nunca silencioso).
+const TETO_DE_ENTRADAS_OCULTAS = 8;
 
 // Tipos cujo rótulo é um identificador de relação ou tipo (tag = nome).
 const TIPOS_RELACIONAIS = Object.freeze(['TABLE', 'TABLE DATA', 'TABLE ATTACH', 'SEQUENCE', 'SEQUENCE SET', 'SEQUENCE OWNED BY', 'INDEX', 'INDEX ATTACH',
@@ -168,8 +172,12 @@ function criarLeitorDeSumario(opcoes) {
     parcial = '';
     if (cabecalho.formato === null) motivos.add('FORMATO_AUSENTE');
     else if (cabecalho.formato !== 'CUSTOM') motivos.add('FORMATO_NAO_CUSTOM');
+    let ocultas = null;
     if (cabecalho.entradasDeclaradas === null) motivos.add('CONTAGEM_AUSENTE');
-    else if (!truncado && cabecalho.entradasDeclaradas !== total) motivos.add('CONTAGEM_DIVERGENTE');
+    else if (!truncado) {
+      ocultas = cabecalho.entradasDeclaradas - total;
+      if (ocultas < 0 || ocultas > TETO_DE_ENTRADAS_OCULTAS) motivos.add('CONTAGEM_DIVERGENTE');
+    }
     if (naoInterpretadas > 0) motivos.add('ENTRADAS_NAO_INTERPRETADAS');
     if (total === 0) motivos.add('SUMARIO_VAZIO');
     const contagemPorTipo = Object.freeze(Object.fromEntries([...porTipo.entries()].sort(([a], [b]) => (a < b ? -1 : 1))));
@@ -179,7 +187,7 @@ function criarLeitorDeSumario(opcoes) {
       ok: motivos.size === 0,
       cabecalho: Object.freeze({ ...cabecalho }),
       entradas: Object.freeze(entradas),
-      contagem: Object.freeze({ total, interpretadas: entradas.length, naoInterpretadas, porTipo: contagemPorTipo }),
+      contagem: Object.freeze({ total, interpretadas: entradas.length, naoInterpretadas, ocultas, porTipo: contagemPorTipo }),
       truncado,
       bytesLidos,
       sha256,
@@ -202,5 +210,5 @@ const ehSumario = (v) => ehObjeto(v) && Object.isFrozen(v) && typeof v.ok === 'b
 
 module.exports = {
   criarLeitorDeSumario, lerSumario, interpretarEntrada, ehSumario,
-  LIMITES_PADRAO, TIPOS_DE_ENTRADA, TIPOS_RELACIONAIS, TIPOS_DEPENDENTES, TIPOS_DE_ROTINA, TIPOS_CONTADOS,
+  LIMITES_PADRAO, TETO_DE_ENTRADAS_OCULTAS, TIPOS_DE_ENTRADA, TIPOS_RELACIONAIS, TIPOS_DEPENDENTES, TIPOS_DE_ROTINA, TIPOS_CONTADOS,
 };

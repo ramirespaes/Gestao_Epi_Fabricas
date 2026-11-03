@@ -75,6 +75,7 @@ function caracterizarObservacao(entrada) {
       entradasDeclaradas: sumario.cabecalho?.entradasDeclaradas ?? null,
       linhasLidas: sumario.contagem?.total ?? null,
       declaradasIgualLidas: (sumario.cabecalho?.entradasDeclaradas ?? null) === (sumario.contagem?.total ?? null),
+      ocultas: sumario.contagem?.ocultas ?? null,
       naoInterpretadas: sumario.contagem?.naoInterpretadas ?? null,
       truncado: sumario.truncado === true,
       porTipo: sumario.contagem?.porTipo ?? null,

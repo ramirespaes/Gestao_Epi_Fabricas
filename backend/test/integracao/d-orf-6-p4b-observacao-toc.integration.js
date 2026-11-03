@@ -61,11 +61,11 @@ function localizarBinarios() {
 
 const comPrazo = (promessa, rotulo) => Promise.race([promessa, new Promise((_, rej) => setTimeout(() => rej(new Error(`prazo esgotado: ${rotulo}`)), PRAZO_PROCESSO_MS).unref())]);
 
-/** Lança `pg_restore --list` com o spec do lançador estrutural e alimenta o leitor em fluxo. */
-function listarSumario(executavel, descritorDoDump) {
+/** Lança `pg_restore --list` com o spec do lançador estrutural e alimenta o leitor em fluxo. `--verbose` só na caracterização das entradas ocultas. */
+function listarSumario(executavel, descritorDoDump, argumentos = ['--list']) {
   return new Promise((resolver, rejeitar) => {
     const leitor = criarLeitorDeSumario();
-    const filho = cp.spawn(executavel, ['--list'], { env: {}, shell: false, detached: false, stdio: [descritorDoDump, 'pipe', 'ignore'] });
+    const filho = cp.spawn(executavel, argumentos, { env: {}, shell: false, detached: false, stdio: [descritorDoDump, 'pipe', 'ignore'] });
     let codigo = null;
     filho.on('error', (e) => rejeitar(new Error(`pg_restore --list não iniciou (${e.code ?? 'sem código'})`)));
     filho.stdout.on('data', (bloco) => { try { leitor.alimentar(bloco); } catch { /* leitor já truncou: ignora */ } });
@@ -166,6 +166,15 @@ describe('D-ORF-6 P4b — observação real do TOC de um dump sintético (só na
       observacao.caracterizacao = caracterizacao;
       observacao.sumarioMotivos = sumario.motivos;
 
+      // 4b. Caracterização das entradas OCULTAS (observado em 41683852389: 932 declaradas × 927 listadas): `--list --verbose` imprime todas; a diferença
+      // por tipo é registrada no JSON. Só evidência; a regra de produção continua `--list` com o teto de ocultas do leitor.
+      const descritorVerbose = fs.openSync(caminhoDoDump, 'r');
+      let verbose;
+      try { verbose = await comPrazo(listarSumario(binarios.restore, descritorVerbose, ['--list', '--verbose']), 'pg_restore --list --verbose'); } finally { fs.closeSync(descritorVerbose); }
+      const porTipoVerbose = verbose.sumario.contagem.porTipo;
+      const ocultasPorTipo = Object.fromEntries(Object.entries(porTipoVerbose).map(([t, n]) => [t, n - (sumario.contagem.porTipo[t] ?? 0)]).filter(([, d]) => d !== 0));
+      observacao.ocultas = { codigoVerbose: verbose.codigo, declaradas: sumario.cabecalho.entradasDeclaradas, listadas: sumario.contagem.total, listadasVerbose: verbose.sumario.contagem.total, ocultas: sumario.contagem.ocultas, naoInterpretadasVerbose: verbose.sumario.contagem.naoInterpretadas, porTipo: ocultasPorTipo };
+
       // 5. Comparador e bloco do P4a sobre dados reais.
       const comparacao = C.compararInventarioComSumario({ inventario, sumario });
       const bloco = C.avaliarCoberturaPostgres({ inventario, sumario, migrationsDoCodigo });
@@ -198,6 +207,7 @@ describe('D-ORF-6 P4b — observação real do TOC de um dump sintético (só na
       // 7. Registro durável no log e veredito (falha fechada: qualquer contradição reprova).
       process.stdout.write(`P4B_OBSERVACAO_JSON ${JSON.stringify(observacao)}\n`);
       assert.deepEqual(sumario.motivos, [], `sumário com motivos: ${sumario.motivos.join(',')}`);
+      assert.ok(verbose.codigo === 0 && verbose.sumario.contagem.total >= sumario.contagem.total, 'a listagem verbose precisa conter pelo menos as entradas da listagem normal');
       assert.deepEqual(caracterizacao.contradicoes, [], `mapa v1 contradito: ${caracterizacao.contradicoes.join(',')}`);
       assert.ok(caracterizacao.relacoesDoEsquema > 50, 'o esquema sintético precisa ter as relações das migrations reais');
       assert.equal(comparacao.ok, true, `comparador reprovou: ${comparacao.motivos.join(',')}`);
