@@ -1,0 +1,29 @@
+{
+  "arquivos": [
+    "favicon.svg",
+    "js/api-http.js",
+    "js/senha-ciclo.js",
+    "painel-privado/aceitar-convite.html",
+    "painel-privado/aceitar-convite.js",
+    "painel-privado/config.js",
+    "painel-privado/empresas.html",
+    "painel-privado/empresas.js",
+    "painel-privado/index.html",
+    "painel-privado/login.js",
+    "painel-privado/mfa.css",
+    "painel-privado/mfa.js",
+    "painel-privado/painel.html",
+    "painel-privado/painel.js",
+    "painel-privado/recuperar-senha.html",
+    "painel-privado/recuperar-senha.js",
+    "painel-privado/redefinir-senha.html",
+    "painel-privado/redefinir-senha.js",
+    "painel-privado/sair.js",
+    "painel-privado/seguranca.html",
+    "painel-privado/seguranca.js",
+    "painel-privado/suporte.html",
+    "painel-privado/suporte.js",
+    "vendor/LICENSE-qrcode-generator.txt",
+    "vendor/qrcode-generator-2.0.4.js"
+  ]
+}

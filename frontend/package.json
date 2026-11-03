@@ -6,7 +6,8 @@
   "type": "commonjs",
   "scripts": {
     "test": "node --test \"test/**/*.test.js\"",
-    "publicacao:empacotar": "node publicacao/empacotar.js"
+    "publicacao:empacotar": "node publicacao/empacotar.js",
+    "publicacao:empacotar-painel": "node publicacao/empacotar-painel.js"
   },
   "license": "UNLICENSED"
 }
