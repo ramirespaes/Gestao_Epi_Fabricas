@@ -46,6 +46,9 @@ jobs:
         working-directory: frontend
         run: npm test
 
+      - name: Homologação - testes dos scripts e do workflow de preparação
+        run: node --test ".github/scripts/hml/test/*.test.js"
+
   integracao-postgresql:
     name: Integração com PostgreSQL 16 efêmero
     runs-on: ubuntu-latest
