@@ -599,6 +599,8 @@ describe('[MC-C] consistência plano do snapshot x cópia preservada (CONS-02) e
       ['services/imagem-processador-area.service.js', 'área temporária exclusiva do processador de imagens (TMPDIR e pasta atual do filho sharp)'],
       // acréscimo (D-ORF-6, P3/D-F1, 03/11/2026; inventário técnico, pendente de revisão humana na guarda P2): rm SÓ do próprio temporário aleatório (force, sem recursive) na cópia verificada/restauração dos ZIPs da Fiscalização; nunca toca a origem, imagens, dump ou pacote
       ['services/backup-fontes-fiscalizacao-arquivos.service.js', 'temporário próprio da cópia verificada e da restauração dos ZIPs da Fiscalização (destino novo)'],
+      // acréscimo (D-ORF-6, P11/D-F4, 03/11/2026; inventário técnico, pendente de revisão humana na guarda P2): rm SÓ do próprio temporário aleatório (force, sem recursive) na cifra em envelope do pacote L2 e na decifra para destino novo; nunca toca a origem, imagens, dump ou pacote verificado
+      ['services/backup-fontes-cifra-envelope.service.js', 'temporário próprio da cifra/decifra em envelope do pacote layout 2 (contêiner e destino novos)'],
     ]);
     const donos = lista.filter((p) => REMOCAO.test(fs.readFileSync(p, 'utf8'))).map((p) => path.relative(src, p).split(path.sep).join('/'));
     for (const dono of donos) assert.equal(PERMITIDOS.has(dono), true, `caminho de remoção física não previsto: ${dono}`);
@@ -629,6 +631,12 @@ describe('[MC-C] consistência plano do snapshot x cópia preservada (CONS-02) e
     assert.match(fiscFonte, /await fs\.rm\(temporario, \{ force: true \}\)\.catch/);
     assert.equal(/recursive/.test(fiscFonte), false);
     assert.equal(/armazenamento-imagens|janela-escrita-imagens|imagem-backup/.test(fiscFonte), false);
+    // a cifra em envelope (P11): UMA remoção, do próprio temporário, com force e sem recursive; mkdir sempre não recursivo; sem importar armazenamento de imagens nem janela (só a fonte de chaves do manifesto e o verificador do pacote L2)
+    const cifraFonte = fs.readFileSync(path.join(src, 'services', 'backup-fontes-cifra-envelope.service.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    assert.equal((cifraFonte.match(/\b(unlink|unlinkSync|rmSync|rmdirSync|rmdir)\(|\bfsp\.rm\(|\.rm\(/g) ?? []).length, 1, 'uma única remoção na cifra em envelope');
+    assert.match(cifraFonte, /await fsp\.rm\(temporario, \{ force: true \}\)\.catch/);
+    assert.equal(/recursive: true/.test(cifraFonte), false);
+    assert.equal(/armazenamento-imagens|janela-escrita-imagens/.test(cifraFonte), false);
 
     const usam = lista.filter((p) => /require\([^)]*storage\/armazenamento-imagens'\)/.test(fs.readFileSync(p, 'utf8')) && !p.endsWith('storage/armazenamento-imagens.js'));
     for (const p of usam) {

@@ -20,6 +20,8 @@ const DATA_DA_DECISAO_45 = '2026-11-03';
 const APROVADA_D = Object.freeze({ revisaoHumana: 'APROVADA', aprovadoEm: DATA_DA_DECISAO_45, aprovacaoRef: `GATE-P2-${DATA_DA_DECISAO_45}-D` });
 const DATA_DA_DECISAO_46 = '2026-11-03';
 const APROVADA_E = Object.freeze({ revisaoHumana: 'APROVADA', aprovadoEm: DATA_DA_DECISAO_46, aprovacaoRef: `GATE-P2-${DATA_DA_DECISAO_46}-E` });
+const DATA_DA_DECISAO_47 = '2026-11-03';
+const APROVADA_F = Object.freeze({ revisaoHumana: 'APROVADA', aprovadoEm: DATA_DA_DECISAO_47, aprovacaoRef: `GATE-P2-${DATA_DA_DECISAO_47}-F` });
 const SAIDA = 'SAIDA_DO_BACKUP';
 
 const ESCRITORES_CONHECIDOS = {
@@ -74,6 +76,10 @@ const ESCRITORES_CONHECIDOS = {
   'src/services/backup-fontes-composicao-l2.service.js': {
     classificacao: SAIDA, ocorrencias: { escrita: { mkdir: 1 }, remocao: {} }, ...APROVADA_E,
     justificativa: 'P6 (03/11/2026): composição por fonte do pacote layout 2 e restauração por fonte. Única escrita própria: mkdir NÃO recursivo 0700 (linha 70) de um segmento novo (`arquivos`, `arquivos/<fonteId>`, destino novo da restauração) sob um pai conferido como diretório real por lstat+realpath; existente = recusa (DESTINO_EXISTENTE), nada reaproveitado, nada removido. As gravações de conteúdo passam pelos escritores já aprovados (armazenamento-imagens.gravar, backup-fontes-fiscalizacao-arquivos, selagem histórica). Leituras com O_RDONLY|O_NOFOLLOW; links recusados. Risco se errado: pasta criada fora da preparação/destino (o pai é validado como real e o nome é um único segmento seguro vindo do catálogo ou de constante). Entrada nova; não altera as 45 anteriores.',
+  },
+  'src/services/backup-fontes-cifra-envelope.service.js': {
+    classificacao: SAIDA, ocorrencias: { escrita: { link: 1, mkdir: 1, o_creat: 2, o_wronly: 2, writefile: 1 }, remocao: { rm: 1 } }, ...APROVADA_F,
+    justificativa: 'P11 (03/11/2026): cifra em envelope (AES-256-GCM por arquivo, DEK envolvida pela KEK, envelope HMAC-SHA256 encrypt-then-MAC) de um pacote layout 2 JÁ VERIFICADO por verificarPacoteL2, e a decifra para pacote NOVO. Escritas próprias: mkdir NÃO recursivo 0700 (linha 108) de um segmento novo sob pai conferido por lstat+realpath (contêiner novo, `dados/`, subpastas dos caminhos relativos do manifesto); temporário exclusivo O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW 0600 (linha 124) com writeFile em blocos (130), fsync e publicação por link (133) que nunca sobrescreve; rm SÓ do próprio temporário, com force e sem recursive (linha 137), inclusive em falha. Destino existente = recusa (DESTINO_EXISTENTE); nada é lido em claro de fora do pacote; leituras com O_RDONLY|O_NOFOLLOW. Chaves só de fonte TESTE_CONTROLADO (PROVEDORES_DE_CIFRA_APROVADOS vazia, D-F5). Risco se errado: gravação fora do contêiner/destino (o pai é validado como diretório real e cada segmento vem do caminho canônico do manifesto, sem `.`/`..`), ou publicação de arquivo cuja tag GCM não conferiu (decipher.final lança antes do link; o temporário é removido). Aprovada no gate de 2026-11-03 (ref F); as 46 anteriores não mudam.',
   },
   'src/services/imagem-processador-area.service.js': {
     classificacao: 'NAO_PERSISTENTE', ocorrencias: { escrita: { mkdirsync: 1 }, remocao: { rmsync: 1 } }, ...APROVADA_A,
@@ -182,6 +188,7 @@ const APROVACOES = [
   { ref: APROVADA_C.aprovacaoRef, documento: DOCUMENTO_DA_DECISAO, sha256: SHA256_DA_DECISAO },
   { ref: APROVADA_D.aprovacaoRef, documento: `test/backup-guarda/aprovacoes/GATE-P2-${DATA_DA_DECISAO_45}-D.md`, sha256: '35a6841842801801087343afc2fc00c66b12f3eba5f64b9d1fbc889124c192a1' },
   { ref: APROVADA_E.aprovacaoRef, documento: `test/backup-guarda/aprovacoes/GATE-P2-${DATA_DA_DECISAO_46}-E.md`, sha256: '743b1cc3354fe0441df111730836856959f1666606e87081b21578be6b54e906' },
+  { ref: APROVADA_F.aprovacaoRef, documento: `test/backup-guarda/aprovacoes/GATE-P2-${DATA_DA_DECISAO_47}-F.md`, sha256: '3e0f082f2e2c704da261f8bca7abf6e815202fa2e151f8b7e44d1e067586d51a' },
 ];
 
 module.exports = Object.freeze({
