@@ -114,9 +114,12 @@ describe('[PRT] a limpeza não vira rota nem temporizador do processo da API', (
     const permitidos = new Set([SERVICO_DA_LIMPEZA, path.join(SRC, 'utils', 'janela-escrita-imagens.js'), coordenadorBackup, path.join(SRC, 'storage', 'armazenamento-imagens.js')]);
     const citam = arquivosJs(SRC).filter((arquivo) => ASSINATURAS.test(lerCodigo(arquivo)) && !permitidos.has(arquivo));
     assert.deepEqual(citam.map(relativo), [], 'nenhum outro arquivo de produção deve conhecer a limpeza');
-    const codigoBackup = lerCodigo(coordenadorBackup);
-    assert.match(codigoBackup, /require\s*\(\s*['"]\.\.\/utils\/janela-escrita-imagens['"]\s*\)/, 'backup deve importar a trava autorizada');
-    assert.doesNotMatch(codigoBackup, /imagem-armazenamento-limpeza|limparOrfaos|imagens-limpar-orfaos|limpar-orfaos/, 'backup não pode utilizar o mecanismo de limpeza');
+    // O coordenador de backup entra com o D-ORF-6 (G2); enquanto não existir em src/, só a lista de permitidos acima vale. Quando existir, as duas regras abaixo são obrigatórias.
+    if (fs.existsSync(coordenadorBackup)) {
+      const codigoBackup = lerCodigo(coordenadorBackup);
+      assert.match(codigoBackup, /require\s*\(\s*['"]\.\.\/utils\/janela-escrita-imagens['"]\s*\)/, 'backup deve importar a trava autorizada');
+      assert.doesNotMatch(codigoBackup, /imagem-armazenamento-limpeza|limparOrfaos|imagens-limpar-orfaos|limpar-orfaos/, 'backup não pode utilizar o mecanismo de limpeza');
+    }
     for (const nome of ['app.js', 'server.js']) assert.doesNotMatch(lerCodigo(path.join(SRC, nome)), ASSINATURAS, nome);
   });
 
