@@ -1,6 +1,6 @@
 'use strict';
 
-const { describe, test, after } = require('node:test');
+const { describe, test, after, before } = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -12,6 +12,7 @@ const { inspecionarContainer, ErroDeImagem, CODIGOS } = require('../../src/utils
 const { pngFicticio } = require('../helpers/imagens-ficticias');
 const { webpMinimo } = require('../helpers/imagens-validas');
 const cli = require('../../scripts/imagens-completar-exibicao');
+const { adquirirJanela, TIPOS, VARIAVEL_ARQUIVO } = require('../../src/utils/janela-escrita-imagens');
 
 /**
  * IMG-EXIB-01 — scripts/imagens-completar-exibicao.js: completa a variante de EXIBIÇÃO (WebP 640x640) de UMA imagem padrão que ainda não a tem.
@@ -52,6 +53,19 @@ after(() => {
   for (const diretorio of temporarios) {
     if (path.dirname(diretorio) === os.tmpdir() && path.basename(diretorio).startsWith('epi-exibicao-')) fs.rmSync(diretorio, { recursive: true, force: true });
   }
+});
+
+// CONS-02: a compensação (única remoção física do script) só ocorre sob a janela de LIMPEZA do arquivo configurado em IMAGENS_JANELA_ESCRITA_ARQUIVO. A suíte aponta a variável para um arquivo de trava
+// EXCLUSIVO de teste (fora do armazenamento) e a restaura ao final; os testes de compensação exercitam o caminho REAL de produção, com a janela real.
+let arquivoDaJanela = null;
+let janelaAnterior;
+before(() => {
+  janelaAnterior = process.env[VARIAVEL_ARQUIVO];
+  arquivoDaJanela = path.join(novoTemporario(), 'janela.lock');
+  process.env[VARIAVEL_ARQUIVO] = arquivoDaJanela;
+});
+after(() => {
+  if (janelaAnterior === undefined) delete process.env[VARIAVEL_ARQUIVO]; else process.env[VARIAVEL_ARQUIVO] = janelaAnterior;
 });
 
 // ───────────────────────── dublê do banco ─────────────────────────
@@ -695,6 +709,41 @@ describe('falhas entre a publicação do arquivo e o COMMIT', () => {
     assert.equal(erro.compensacao, 'REMOVIDO');
     assert.equal(fs.existsSync(caminhoDe(ctx, '22', 'exibicao.webp')), false);
     assert.equal(ctx.db.estado.linhas.get('22').sha256_exibicao, null);
+  });
+
+  test('CONS-02 — compensação sob a janela: depois de remover, a janela de LIMPEZA foi liberada (nenhum arquivo de trava sobra)', async () => {
+    const ctx = await montar();
+    ctx.db.estado.falhas.commit = 'perdido';
+    const erro = await executar(ctx).then(() => null, (e) => e);
+    assert.equal(erro.compensacao, 'REMOVIDO');
+    assert.equal(fs.existsSync(arquivoDaJanela), false, 'a janela foi liberada');
+  });
+
+  test('CONS-02 — com um BACKUP em andamento (janela ocupada) a compensação NÃO remove: falha com segurança (FALHOU), o arquivo é MANTIDO e a janela do backup permanece intacta', async () => {
+    const ctx = await montar();
+    ctx.db.estado.falhas.commit = 'perdido';
+    const backup = await adquirirJanela({ arquivo: arquivoDaJanela, tipo: TIPOS.BACKUP, raizArmazenamento: ctx.dir });
+    try {
+      const erro = await executar(ctx).then(() => null, (e) => e);
+      assert.equal(erro.compensacao, 'FALHOU');
+      assert.equal(fs.existsSync(caminhoDe(ctx, '22', 'exibicao.webp')), true, 'o arquivo foi mantido para a limpeza de órfãos');
+      assert.equal((await backup.confirmarPosse()).confirmada, true, 'a posse do backup não foi tocada');
+    } finally {
+      assert.equal((await backup.liberar()).liberada, true);
+    }
+    assert.equal(fs.existsSync(arquivoDaJanela), false);
+  });
+
+  test('CONS-02 — sem a janela configurada a compensação NÃO remove: FALHOU e o arquivo é mantido', async () => {
+    const ctx = await montar();
+    ctx.db.estado.falhas.commit = 'perdido';
+    const guardada = process.env[VARIAVEL_ARQUIVO];
+    delete process.env[VARIAVEL_ARQUIVO];
+    try {
+      const erro = await executar(ctx).then(() => null, (e) => e);
+      assert.equal(erro.compensacao, 'FALHOU');
+      assert.equal(fs.existsSync(caminhoDe(ctx, '22', 'exibicao.webp')), true);
+    } finally { process.env[VARIAVEL_ARQUIVO] = guardada; }
   });
 
   test('COMMIT que falha depois de gravar (resposta perdida): o registro é reconhecido, o arquivo fica e a verificação conclui', async () => {

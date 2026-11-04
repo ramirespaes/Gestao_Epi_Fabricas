@@ -109,9 +109,14 @@ describe('[PRT] a limpeza não vira rota nem temporizador do processo da API', (
   const ASSINATURAS = /imagem-armazenamento-limpeza|janela-escrita-imagens|limparOrfaos|imagens-limpar-orfaos|limpar-orfaos/;
 
   test('PRT-07 — app.js, server.js, rotas, controladores, middlewares e configuração não importam nem citam a limpeza ou a trava de janela; só o serviço da limpeza e a própria trava a conhecem em src/', () => {
-    const permitidos = new Set([SERVICO_DA_LIMPEZA, path.join(SRC, 'utils', 'janela-escrita-imagens.js')]);
+    const coordenadorBackup = path.join(SRC, 'services', 'imagem-backup.service.js');
+    // CONS-02: o armazenamento de imagens passou a conhecer a janela SÓ para exigir a posse de LIMPEZA nas suas remoções (nenhuma rota, controlador, middleware, configuração, app.js ou server.js a conhece).
+    const permitidos = new Set([SERVICO_DA_LIMPEZA, path.join(SRC, 'utils', 'janela-escrita-imagens.js'), coordenadorBackup, path.join(SRC, 'storage', 'armazenamento-imagens.js')]);
     const citam = arquivosJs(SRC).filter((arquivo) => ASSINATURAS.test(lerCodigo(arquivo)) && !permitidos.has(arquivo));
     assert.deepEqual(citam.map(relativo), [], 'nenhum outro arquivo de produção deve conhecer a limpeza');
+    const codigoBackup = lerCodigo(coordenadorBackup);
+    assert.match(codigoBackup, /require\s*\(\s*['"]\.\.\/utils\/janela-escrita-imagens['"]\s*\)/, 'backup deve importar a trava autorizada');
+    assert.doesNotMatch(codigoBackup, /imagem-armazenamento-limpeza|limparOrfaos|imagens-limpar-orfaos|limpar-orfaos/, 'backup não pode utilizar o mecanismo de limpeza');
     for (const nome of ['app.js', 'server.js']) assert.doesNotMatch(lerCodigo(path.join(SRC, nome)), ASSINATURAS, nome);
   });
 

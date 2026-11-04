@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { promisify } = require('node:util');
+const { TIPOS, adquirirJanela, ehPosseDeJanela } = require('../utils/janela-escrita-imagens');
 
 // Leitura entregue como fluxo por descritor numérico: um fluxo aberto e nunca lido não vira erro ao ser coletado.
 const abrirDescritor = promisify(fs.open);
@@ -39,6 +40,7 @@ const MENSAGENS = {
   GRAVACAO_ABORTADA: 'gravação abortada',
   FONTE_INVALIDA: 'fonte de gravação inválida',
   ARMAZENAMENTO_FALHOU: 'falha no armazenamento de imagens',
+  REMOCAO_SEM_JANELA: 'a remoção física exige a posse confirmada da janela de escrita',
 };
 const erro = (codigo) => Object.assign(new Error(MENSAGENS[codigo]), { codigo });
 
@@ -69,7 +71,13 @@ const traduzir = (falha) => {
   return erro('ARMAZENAMENTO_FALHOU');
 };
 
-function criarArmazenamentoImagens({ diretorio } = {}) {
+/**
+ * CONS-02 (exclusão mútua com o backup): `remover` e `removerVariantes` são as ÚNICAS remoções físicas deste armazenamento e só agem com a POSSE CONFIRMADA da janela de escrita do tipo LIMPEZA
+ * (`janelaDeRemocao`, devolvida por `adquirirJanela`; objeto literal, clone, tipo BACKUP ou posse já liberada/perdida são recusados com REMOCAO_SEM_JANELA, e a chave inválida continua CHAVE_INVALIDA).
+ * A janela é um arquivo único: com o backup em andamento (tipo BACKUP) ninguém consegue a posse de LIMPEZA, então nenhuma remoção por este armazenamento coincide com um backup. Gravar, abrir, existir e listar não mudam.
+ * LIMITE: protege as remoções feitas POR ESTE MÓDULO; não impede processo externo (operador, outro programa) de apagar arquivos diretamente.
+ */
+function criarArmazenamentoImagens({ diretorio, janelaDeRemocao } = {}) {
   if (typeof diretorio !== 'string' || diretorio.trim() === '') throw new TypeError('diretório de armazenamento obrigatório');
   if (diretorio.includes('\0')) throw new TypeError('diretório de armazenamento inválido');
   if (!path.isAbsolute(diretorio)) throw new TypeError('o diretório de armazenamento deve ser um caminho absoluto');
@@ -231,8 +239,18 @@ function criarArmazenamentoImagens({ diretorio } = {}) {
     try { return (await localizar(chave)) !== null; } catch (falha) { throw traduzir(falha); }
   }
 
+  /** A posse da janela de LIMPEZA ainda é desta aquisição? Sem ela (ou com qualquer dúvida) a remoção é recusada. */
+  async function exigirJanelaDeRemocao() {
+    if (!ehPosseDeJanela(janelaDeRemocao) || janelaDeRemocao.tipo !== TIPOS.LIMPEZA) throw erro('REMOCAO_SEM_JANELA');
+    let confirmacao;
+    try { confirmacao = await janelaDeRemocao.confirmarPosse(); } catch { throw erro('REMOCAO_SEM_JANELA'); }
+    if (confirmacao === null || typeof confirmacao !== 'object' || confirmacao.confirmada !== true) throw erro('REMOCAO_SEM_JANELA');
+  }
+
   async function remover(chave) {
     try {
+      validarChave(chave);
+      await exigirJanelaDeRemocao();
       const arquivo = await localizar(chave);
       if (arquivo === null) return;
       try { await fsp.unlink(arquivo); } catch (falha) { if (falha.code !== 'ENOENT') throw falha; }
@@ -243,6 +261,7 @@ function criarArmazenamentoImagens({ diretorio } = {}) {
   async function removerVariantes(argumentos) {
     try {
       const [segmento, sha] = validarChave(chaveDe({ ...argumentos, variante: 'mestre', formato: 'PNG' }));
+      await exigirJanelaDeRemocao();
       const { empresa, hash } = pastasDe(segmento, sha);
       if (!(await presente(empresa, true)) || !(await presente(hash, true))) return;
       for (const nome of NOMES_POSSIVEIS) {
@@ -276,4 +295,18 @@ function criarArmazenamentoImagens({ diretorio } = {}) {
   return Object.freeze({ gravar, abrir, existe, remover, removerVariantes, listar, chaveDe });
 }
 
-module.exports = { criarArmazenamentoImagens, chaveDe };
+/**
+ * Executa `operacao(armazenamentoComRemocao)` sob a janela de LIMPEZA: adquire a janela (ocupada = ErroDeJanela JANELA_OCUPADA, sem esperar e sem remover nada), entrega um armazenamento cuja remoção está ligada A ESTA posse e SEMPRE
+ * libera a posse no `finally` (inclusive quando a operação falha), sem aquisição duplicada: a posse é única por chamada. Uma falha ao liberar não substitui o resultado nem o erro da operação.
+ */
+async function executarComRemocaoProtegida({ diretorio, arquivoDaJanela, operacao } = {}) {
+  if (typeof operacao !== 'function') throw new TypeError('operação inválida');
+  const posse = await adquirirJanela({ arquivo: arquivoDaJanela, tipo: TIPOS.LIMPEZA, raizArmazenamento: diretorio });
+  try {
+    return await operacao(criarArmazenamentoImagens({ diretorio, janelaDeRemocao: posse }));
+  } finally {
+    await posse.liberar().catch(() => {});
+  }
+}
+
+module.exports = { criarArmazenamentoImagens, executarComRemocaoProtegida, chaveDe };

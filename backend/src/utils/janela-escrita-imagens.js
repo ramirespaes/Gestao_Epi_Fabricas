@@ -197,7 +197,13 @@ async function adquirirJanela({ arquivo, tipo, raizArmazenamento, agora = Date.n
     const atual = await lerDocumento(alvo);
     return { confirmada: atual !== null && atual !== AUSENTE && atual.token === token };
   }
-  return Object.freeze({ tipo, liberar, confirmarPosse });
+  const posse = Object.freeze({ tipo, liberar, confirmarPosse });
+  posses.add(posse);
+  return posse;
 }
 
-module.exports = { TIPOS, VARIAVEL_ARQUIVO, ErroDeJanela, adquirirJanela, lerJanela, lerArquivoDaJanela, validarArquivoDaJanela };
+/** Marca de origem em memória: a posse foi devolvida por `adquirirJanela` neste processo (objeto literal ou clone não é reconhecido). Prova a origem do objeto; quem confirma que a trava ainda é nossa é `confirmarPosse()`. */
+const posses = new WeakSet();
+const ehPosseDeJanela = (valor) => valor !== null && typeof valor === 'object' && posses.has(valor);
+
+module.exports = { TIPOS, VARIAVEL_ARQUIVO, ErroDeJanela, adquirirJanela, lerJanela, lerArquivoDaJanela, validarArquivoDaJanela, ehPosseDeJanela };
