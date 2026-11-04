@@ -8,6 +8,7 @@ const path = require('node:path');
 const { criarArmazenamentoImagens } = require('../../src/storage/armazenamento-imagens');
 const { chaveOraculo, sha256De, bytesAleatorios, MAX } = require('./helpers/contrato-armazenamento-imagens');
 const { criarRaizTemporaria, removerTemporarioSeguro, pendentes } = require('./helpers/tmp-seguro');
+const { adquirirPosseDeLimpeza } = require('./helpers/posse-limpeza');
 
 /**
  * Biblioteca de Imagens, Unidade 1 (complemento ao ARM-15): falhas REAIS do sistema de arquivos (permissão negada) não vazam o caminho,
@@ -31,8 +32,10 @@ function exigirErroGenerico(falha, raiz, sha) {
 
 async function comRaiz(corpo) {
   const raiz = criarRaizTemporaria();
-  try { await corpo(raiz, criarArmazenamentoImagens({ diretorio: raiz })); } finally {
+  const janela = await adquirirPosseDeLimpeza(raiz); // CONS-02: posse VERDADEIRA de LIMPEZA para as remoções legítimas
+  try { await corpo(raiz, criarArmazenamentoImagens({ diretorio: raiz, janelaDeRemocao: janela.posse })); } finally {
     for (const pasta of [raiz, path.join(raiz, '5'), path.join(raiz, '5', 'x')]) { try { fs.chmodSync(pasta, 0o700); } catch { /* inexistente */ } }
+    await janela.liberar();
     removerTemporarioSeguro(raiz);
   }
 }
