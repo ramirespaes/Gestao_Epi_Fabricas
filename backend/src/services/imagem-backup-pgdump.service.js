@@ -44,7 +44,8 @@ const { criarObservadorDoDump, ID_DA_OPERACAO } = require('./imagem-backup-evide
  * Fora do escopo: proteção contra reutilização de PGID, identidade do binário, diagnóstico seguro do stderr, componentes ancestrais do caminho.
  */
 
-const TOPO = new Set(['janela', 'conexao', 'dump', 'copia', 'avaliar', 'parada', 'operacao', 'verificadorEstrutural', 'controle']);
+// P8 (D-ORF-6): `estruturaAntesDaCopia` (booleano, opcional) segue à integração: verificação estrutural antes da cópia (layout 2); ausente = ordem histórica.
+const TOPO = new Set(['janela', 'conexao', 'dump', 'copia', 'avaliar', 'parada', 'operacao', 'verificadorEstrutural', 'controle', 'estruturaAntesDaCopia']);
 const CHAVES_DO_DUMP = ['alvo', 'destino', 'lancador', 'sistema', 'arquivos', 'temporizador', 'prazos'];
 // `saida` é OPCIONAL e fechada: ausente = o pg_dump escreve direto no descritor (contrato anterior); 'PIPE_COM_HASH' = os bytes saem pelo STDOUT, passam pela captura (SHA-256 incremental + gravação íntegra + fsync) e o arquivo exclusivo é só o destino da captura.
 const MODOS_DE_SAIDA = new Set(['DESCRITOR', 'PIPE_COM_HASH']);
@@ -373,7 +374,7 @@ async function executarBackupPgDump(dependencias) {
       // O dump é SEMPRE o do construtor, alimentado só pelo contexto do snapshot aberto nesta operação.
       processoDoDump: (contexto) => construir(contexto, configuracao),
       // Marco C: o verificador estrutural, se houver, precisa ser o PRODUZIDO por `criarVerificadorEstrutural` (o executor revalida); sem ele a estrutura consta como NÃO EXECUTADA.
-      integracao: Object.freeze({ operacaoId, observador, ...(Object.hasOwn(dependencias, 'verificadorEstrutural') ? { verificadorEstrutural: dependencias.verificadorEstrutural } : {}) }),
+      integracao: Object.freeze({ operacaoId, observador, ...(Object.hasOwn(dependencias, 'verificadorEstrutural') ? { verificadorEstrutural: dependencias.verificadorEstrutural } : {}), ...(Object.hasOwn(dependencias, 'estruturaAntesDaCopia') ? { estruturaAntesDaCopia: dependencias.estruturaAntesDaCopia } : {}) }),
     };
     if (Object.hasOwn(dependencias, 'parada')) entrada.parada = dependencias.parada;
     // P2/P3 (opcional): `controle` (registro de operações) segue ao entrypoint operacional, que o confere antes da trava.

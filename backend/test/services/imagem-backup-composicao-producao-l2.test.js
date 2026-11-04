@@ -84,7 +84,9 @@ function clienteFalso(banco, dados = linhas(), { migrations = MIGRATIONS_DO_CODI
   };
   return c;
 }
-function spawnFalso({ dump = 'ok', lista = 'ok', restore = 'ok' } = {}) {
+// Sumário REAL mínimo (formato documentado do PostgreSQL 16): a tabela do inventário falso com TABLE + TABLE DATA; 2 declaradas, 2 listadas.
+const SUMARIO_COERENTE = ';     TOC Entries: 2\n;     Format: CUSTOM\n;     Dumped from database version: 16.4\n1; 1259 1 TABLE public imagens_padrao d\n2; 0 1 TABLE DATA public imagens_padrao d\n';
+function spawnFalso({ dump = 'ok', lista = 'ok', restore = 'ok', sumario = '; Format: CUSTOM\n; TOC Entries: 12\n' } = {}) {
   const chamadas = [];
   let pid = 7000;
   const spawn = (exe, args, opcoes) => {
@@ -104,7 +106,7 @@ function spawnFalso({ dump = 'ok', lista = 'ok', restore = 'ok' } = {}) {
         filho.emit('exit', dump === 'falha' ? 1 : 0, null);
         filho.emit('close', 0, null);
       } else if (args.includes('--list')) {
-        filho.stdout.emit('data', Buffer.from('; Format: CUSTOM\n; TOC Entries: 12\n'));
+        filho.stdout.emit('data', Buffer.from(sumario, 'latin1'));
         filho.emit('exit', lista === 'falha' ? 1 : 0, null);
         filho.emit('close', 0, null);
       } else {
@@ -173,8 +175,9 @@ describe('[CP-L2] produção com manifesto layout 2', () => {
     const bytes = fs.readFileSync(path.join(publicado, 'manifesto.json'));
     const lido = criarLeitorL2({ fonteDeChaves: a.fonteDeChaves, layoutMinimo: 2 })({ bytes, sha256: sha(bytes) });
     assert.deepEqual([lido.layout, lido.fontes.map((f) => [f.id, f.total.arquivos])], [2, [['imagens', 5]]]);
+    // sumário falso padrão (12 declaradas, nenhuma listada) => N0 pelos motivos reais do comparador (o nível nunca bloqueia a publicação)
     assert.equal(lido.postgres.nivelAtingido, 'N0');
-    assert.deepEqual(lido.postgres.motivos, ['SUMARIO_POSTERIOR_A_SELAGEM']);
+    assert.ok(lido.postgres.motivos.includes('CONTAGEM_DIVERGENTE'), lido.postgres.motivos.join(','));
     assert.equal(lido.manifesto.cobertura.declaracao, 'NAO_COMPROVADA');
     assert.equal(lido.manifesto.dump.sha256, sha(DUMP_BYTES));
     // o leitor antigo recusa o L2 ANTES de qualquer estrutura: o MAC do domínio L2 não vale no domínio L1 (M2-2), falha fechada
@@ -191,6 +194,37 @@ describe('[CP-L2] produção com manifesto layout 2', () => {
     const prontidao = avaliarProntidaoOperacional({ correlacao: composto.resultado.correlacao, pacote: composto.resultado.pacote.verificacao, consistencia: composto.resultado.pacote.consistencia, autenticacao: lido.autenticacao, destino: { raizDoDestino: a.dirs.publicados, nomeFinal: 'prep-l2' } });
     assert.ok(!prontidao.pendencias.includes('MANIFESTO_V2_AUTENTICADO'), JSON.stringify(prontidao.pendencias));
     assert.ok(prontidao.pendencias.includes('FONTE_OPERACIONAL_DE_CHAVES'));
+  });
+
+  teste('CP-L2-05 — P8: a verificação estrutural corre ANTES da selagem e o sumário capturado alimenta o bloco cobertura.postgres: com inventário coerente e sumário real, o manifesto L2 publicado registra N1; sem sumário coerente, N0 com motivo; o L1 não muda de ordem de processos', async () => {
+    const falso = spawnFalso({ sumario: SUMARIO_COERENTE });
+    const a = await ambiente({ spawn: falso.spawn, alterarConfig: (c) => ({ ...c, layoutDoManifesto: 2 }) });
+    const composto = await executar(a.config, 'prep-n1');
+    assert.equal(classificarEstadoDoBackup(composto).pacotePublicado, true, JSON.stringify(composto.resultado.publicacao));
+    assert.deepEqual(falso.chamadas.map((c) => c.nome), ['pg_dump', 'pg_restore'], 'a listagem estrutural continua uma só, depois do dump');
+    const bytes = fs.readFileSync(path.join(a.dirs.publicados, 'prep-n1', 'manifesto.json'));
+    const lido = criarLeitorL2({ fonteDeChaves: a.fonteDeChaves, layoutMinimo: 2 })({ bytes, sha256: sha(bytes) });
+    assert.deepEqual([lido.postgres.nivelCalculado, lido.postgres.nivelAtingido, lido.postgres.motivos], ['N1', 'N1', []]);
+    assert.equal(lido.postgres.relacoes.correspondidas, 1);
+    assert.equal(lido.postgres.esquema.compatibilidade.relacao, 'IGUAL');
+    assert.deepEqual(lido.avisos, ['CHAVE_NAO_OPERACIONAL'], 'sem aviso NIVEL_N0');
+    // sumário incoerente (12 declaradas, 0 listadas): bloco N0 com motivo, backup continua publicado (o nível nunca bloqueia a publicação)
+    const b = await ambiente({ alterarConfig: (c) => ({ ...c, layoutDoManifesto: 2 }) });
+    const c2 = await executar(b.config, 'prep-n0');
+    assert.equal(classificarEstadoDoBackup(c2).pacotePublicado, true);
+    const bytes0 = fs.readFileSync(path.join(b.dirs.publicados, 'prep-n0', 'manifesto.json'));
+    const lido0 = criarLeitorL2({ fonteDeChaves: b.fonteDeChaves, layoutMinimo: 2 })({ bytes: bytes0, sha256: sha(bytes0) });
+    assert.equal(lido0.postgres.nivelAtingido, 'N0');
+    assert.ok(lido0.postgres.motivos.includes('CONTAGEM_DIVERGENTE') || lido0.postgres.motivos.includes('RELACAO_AUSENTE_NO_DUMP'), lido0.postgres.motivos.join(','));
+    // estrutura que falha (saída não zero): a composição L2 grava N0 com o motivo da estrutura e a publicação é recusada pelas portas históricas (ESTRUTURA_NAO_VERIFICADA)
+    const quebrado = spawnFalso({ lista: 'falha', sumario: SUMARIO_COERENTE });
+    const d = await ambiente({ spawn: quebrado.spawn, alterarConfig: (c) => ({ ...c, layoutDoManifesto: 2 }) });
+    const c3 = await executar(d.config, 'prep-falha');
+    assert.equal(classificarEstadoDoBackup(c3).pacotePublicado, false);
+    assert.equal(c3.resultado.composicao.ok, true, 'a composição (preparação) ainda acontece; só a publicação é recusada');
+    const bytesF = fs.readFileSync(path.join(d.dirs.preparacoes, 'prep-falha', 'manifesto.json'));
+    const lidoF = criarLeitorL2({ fonteDeChaves: d.fonteDeChaves, layoutMinimo: 2 })({ bytes: bytesF, sha256: sha(bytesF) });
+    assert.deepEqual([lidoF.postgres.nivelAtingido, lidoF.postgres.motivos], ['N0', ['ESTRUTURA_NAO_VERIFICADA_ANTES_DA_SELAGEM']]);
   });
 
   teste('CP-L2-02 — regressão: sem `layoutDoManifesto` o pacote continua layout 1 (`imagens/<chave>`, manifesto V2/L1 lido pelo leitor antigo); layout 2 explícito e padrão não se confundem', async () => {

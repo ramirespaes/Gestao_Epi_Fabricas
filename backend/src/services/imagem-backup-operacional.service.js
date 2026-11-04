@@ -97,6 +97,11 @@ function capturar(dependencias) {
         if (!ehVerificadorEstrutural(verificadorEstrutural)) return null;
         integracao.verificadorEstrutural = verificadorEstrutural;
       }
+      // P8: ordem da verificação estrutural (antes da cópia, para o manifesto layout 2); ausente = histórica
+      if (Object.hasOwn(bruta, 'estruturaAntesDaCopia')) {
+        if (typeof bruta.estruturaAntesDaCopia !== 'boolean') return null;
+        integracao.estruturaAntesDaCopia = bruta.estruturaAntesDaCopia;
+      }
     }
 
     if (!ehObjeto(janela)) return null;

@@ -48,6 +48,8 @@ function dependenciasValidas(d) {
     const i = d.integracao;
     if (!ehObjeto(i) || typeof i.operacaoId !== 'string' || !ID_DA_OPERACAO.test(i.operacaoId) || !ehObservadorDoDump(i.observador) || !ehFuncao(i.snapshotId)) return false;
     if (Object.hasOwn(i, 'verificadorEstrutural') && !ehVerificadorEstrutural(i.verificadorEstrutural)) return false;
+    // P8: `estruturaAntesDaCopia` (opcional, booleano): a verificação estrutural corre antes da cópia (layout 2). Ausente = ordem histórica (na avaliação).
+    if (Object.hasOwn(i, 'estruturaAntesDaCopia') && typeof i.estruturaAntesDaCopia !== 'boolean') return false;
   }
   return true;
 }
@@ -101,6 +103,8 @@ async function executarBackupSupervisionado(dependencias) {
   let supervisao = null;
   let terminal = null; // E2: terminal do supervisor desta operação (congelado)
   let observacao = null; // E3': T1 aceita desta operação
+  let estrutura = ESTRUTURA_NAO_EXECUTADA; // P8: verificação estrutural desta operação (uma vez; antes da cópia quando T1 é aceita)
+  let estruturaExecutada = false;
   const etapas = [
     { nome: 'snapshot', executar: () => snapshot() },
     {
@@ -122,7 +126,13 @@ async function executarBackupSupervisionado(dependencias) {
         if (terminal === null || terminal.concluido !== true) return { ok: false };
         // E3': T1 é obtida UMA vez, só depois da conclusão supervisionada. O consumidor é avisado do resultado de T1 (para registrar o diagnóstico), mas o retorno dele NUNCA transforma uma T1 recusada em sucesso.
         const t1 = await observador.observar();
-        const informacao = Object.freeze({ operacaoId, supervisao: terminal, dump: Object.freeze({ observacao: t1, conferir: () => observador.conferir() }), ...(sinalDaOperacao === undefined ? {} : { sinal: sinalDaOperacao }) });
+        // P8 (D-ORF-6): a verificação estrutural (supervisionada, sobre o MESMO artefato de T1) passa a correr ANTES da cópia/selagem, para que o sumário do dump
+        // esteja disponível ao manifesto layout 2 (cobertura.postgres). Só com T1 aceita; o resultado é guardado e reutilizado na avaliação (T2 continua DEPOIS dela).
+        if (verificadorEstrutural !== null && t1.ok === true && integracao.estruturaAntesDaCopia === true) {
+          estruturaExecutada = true;
+          try { estrutura = await verificadorEstrutural.verificar({ operacaoId, observador }); } catch { estrutura = ESTRUTURA_NAO_EXECUTADA; }
+        }
+        const informacao = Object.freeze({ operacaoId, supervisao: terminal, dump: Object.freeze({ observacao: t1, conferir: () => observador.conferir() }), estrutura, ...(sinalDaOperacao === undefined ? {} : { sinal: sinalDaOperacao }) });
         const resposta = await copia(informacao);
         if (t1.ok !== true) return { ok: false };
         observacao = t1;
@@ -136,8 +146,9 @@ async function executarBackupSupervisionado(dependencias) {
     if (terminal === null || observacao === null) return { valido: false }; // evidência obrigatória ausente: falha fechada, sem chamar o avaliador do consumidor
     // Marco C: a verificação estrutural (supervisionada, sobre o MESMO artefato de T1) vem ANTES de T2, para que T2 confirme que o artefato não mudou durante ela. Sem verificador configurado, ou em qualquer falha
     // inesperada, a estrutura consta como NÃO EXECUTADA (falha fechada para a publicação).
-    let estrutura = ESTRUTURA_NAO_EXECUTADA;
-    if (verificadorEstrutural !== null) {
+    // P8: se a verificação estrutural já correu antes da cópia (T1 aceita), o resultado é REUTILIZADO (uma execução por operação); senão corre aqui, como antes.
+    if (verificadorEstrutural !== null && !estruturaExecutada) {
+      estruturaExecutada = true;
       try { estrutura = await verificadorEstrutural.verificar({ operacaoId, observador }); } catch { estrutura = ESTRUTURA_NAO_EXECUTADA; }
     }
     const t2 = await observador.conferir();

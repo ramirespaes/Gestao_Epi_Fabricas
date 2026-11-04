@@ -23,7 +23,7 @@ const { criarOrcamentoDeBytes } = require('../utils/orcamento-de-bytes');
 const { criarRegistroDeOperacoes } = require('../utils/registro-operacoes-pendentes');
 // P6 (D-ORF-6): layout 2 opcional (padrão 1): composição por fonte, leitor L2, restauração L2 com consistência cruzada (P7).
 const { criarLeitorL2 } = require('./backup-fontes-manifesto-l2.service');
-const { criarComposicaoL2, planejarNoSnapshot, restaurarL2 } = require('./backup-fontes-composicao-l2.service');
+const { criarComposicaoL2, planejarNoSnapshot, restaurarL2, avaliarPostgresDoSnapshot, criarCapturaDeSumario } = require('./backup-fontes-composicao-l2.service');
 const { obterAdaptador } = require('./backup-fontes-adaptadores.service');
 const { inventariar } = require('../repositories/backup-fontes-postgres-inventario.repository');
 const { blocoN0, compatibilidadeDeEsquema } = require('./backup-fontes-postgres-cobertura.service');
@@ -273,7 +273,9 @@ function criarBackupDeProducao(config) {
 
     // um controle de processo por operação e por processo (uso único): pg_dump e verificação estrutural
     const controleDump = criarControleDeProcesso({ spawn, observarGrupo, ...(cfg.limites !== null && cfg.limites.maxBytesDoDump !== undefined ? { limiteDeBytes: cfg.limites.maxBytesDoDump } : {}), ...(orcamento === null ? {} : { orcamento }) });
-    const controleLista = criarControleDeProcesso({ spawn, observarGrupo, criarLancador: ({ spawn: s }) => criarLancadorEstruturalComSpawn({ spawn: s }) });
+    // P8: com layout 2, o stdout do `pg_restore --list` alimenta o leitor em fluxo do sumário (P4) para o bloco cobertura.postgres; a captura restrita de 64 KiB não muda.
+    const capturaDoSumario = cfg.layoutDoManifesto === 2 ? criarCapturaDeSumario() : null;
+    const controleLista = criarControleDeProcesso({ spawn, observarGrupo, criarLancador: ({ spawn: s }) => criarLancadorEstruturalComSpawn({ spawn: s, ...(capturaDoSumario === null ? {} : { aoDado: (b) => capturaDoSumario.alimentar(b) }) }) });
     const verificadorEstrutural = criarVerificadorEstrutural({ alvo: { executavel: cfg.postgres.pgRestore }, lancador: controleLista.lancador, sistema: controleLista.sistema, temporizador, prazos: cfg.prazos });
     const selagem = criarSelagemAutenticada(cfg.chaves);
     // P6: com layout 2 a releitura final (publicador e prontidão) é pelo leitor L2 (exige layout 2: um L1 autêntico no lugar do L2 é recusado).
@@ -288,7 +290,13 @@ function criarBackupDeProducao(config) {
         lerAdicionais: (executor) => planejarNoSnapshot({ executor, catalogo: cfg.catalogo, fontes: [...cfg.fontes] }),
         origens: Object.freeze(origens),
         contexto: Object.freeze({}),
-        postgres: () => blocoN0('SUMARIO_POSTERIOR_A_SELAGEM'),
+        // P8: a verificação estrutural corre ANTES da cópia (executor reordenado); com ela ok e o sumário capturado, o bloco vem da avaliação do P4 (N1 quando tudo confere).
+        postgres: ({ adicionais, estrutura }) => {
+          if (!ehObjeto(estrutura) || estrutura.ok !== true) return blocoN0('ESTRUTURA_NAO_VERIFICADA_ANTES_DA_SELAGEM');
+          try {
+            return avaliarPostgresDoSnapshot({ inventario: adicionais?.inventario ?? null, leitorDeSumario: capturaDoSumario, migrationsDoCodigo: listarMigrations(path.join(__dirname, '..', '..', 'migrations')).map((m) => m.nome) });
+          } catch { return blocoN0('AVALIACAO_POSTGRES_FALHOU'); }
+        },
       });
     })();
     let capturado = null;

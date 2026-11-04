@@ -218,7 +218,7 @@ async function executarBackupEncadeado(opcoes) {
         estado.itensDoPlano = Object.values(adicionais.planos).reduce((s, p) => s + (Array.isArray(p.plano) ? p.plano.length : 0), 0);
         const r = await ini.composicaoL2.compor({
           preparacao: path.join(ini.diretorioPai, nomeDaPreparacao), planos: adicionais.planos, origens: ini.composicaoL2.origens, banco: contexto.banco, conjuntoId,
-          dump: { bytes: evidencia.bytes, sha256: evidencia.sha256Calculado }, contexto: ini.composicaoL2.contexto, postgres: ini.composicaoL2.postgres({ adicionais }),
+          dump: { bytes: evidencia.bytes, sha256: evidencia.sha256Calculado }, contexto: ini.composicaoL2.contexto, postgres: ini.composicaoL2.postgres({ adicionais, estrutura: entregue.estrutura }),
         });
         estado.composicao = r.ok === true ? Object.freeze({ ok: true, selado: true, arquivos: r.arquivos, identidade: r.identidade, manifesto: r.manifesto, layout: 2 }) : Object.freeze({ ok: false, selado: false, falha: r.falha });
         estado.montagem = Object.freeze({ compor: montagemL1.compor, obterVerificacao: () => (r.ok === true ? r.verificacao : Object.freeze({ classe: 'NAO_EXECUTADA' })) });
@@ -326,6 +326,8 @@ async function executarBackupEncadeado(opcoes) {
     copia,
     avaliar,
     ...(ini.verificadorEstrutural === null ? {} : { verificadorEstrutural: ini.verificadorEstrutural }),
+    // P8: com layout 2 a verificação estrutural corre antes da cópia (sumário disponível ao manifesto); layout 1 mantém a ordem histórica
+    ...(ini.layoutDoManifesto === 2 && ini.verificadorEstrutural !== null ? { estruturaAntesDaCopia: true } : {}),
     ...(ini.controle === null ? {} : { controle: ini.controle }),
     ...(parada === undefined ? {} : { parada }),
   });
