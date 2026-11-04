@@ -1,6 +1,6 @@
 'use strict';
 
-const { describe, test, before, after } = require('node:test');
+const { describe, test, before, after, mock } = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -15,6 +15,7 @@ const { exigirModulo } = require('../helpers/exigir-modulo');
 const { criarRelatorioController } = require('../../src/controllers/relatorio.controller');
 const { criarRelatorioRoutes } = require('../../src/routes/relatorio.routes');
 const auditoriaRepo = require('../../src/repositories/auditoria.repository');
+const pacoteRepo = require('../../src/repositories/fiscalizacao-pacote.repository');
 const provisionamento = require('../../src/services/provisionamento-permissoes.service');
 const { dataOperacional } = require('../../src/utils/data-operacional');
 
@@ -1028,6 +1029,51 @@ describe('Relatório — Fiscalização 12K-D6 (PostgreSQL real, arquivos reais)
 
     test('a FK composta isola o usuário por empresa: usuário de outra empresa não pode gerar pacote', async () => {
       await assert.rejects(() => semear({ empresaId: g.empresas.A, status: 'FALHA', usuarioId: masterB.usuarioId }), (err) => err.code === '23503');
+    });
+  });
+
+  describe('ACH-FISC-01 — falha DEPOIS do COMMIT que marca CONCLUIDO nunca remove o ZIP publicado (D-ORF-6, P3)', () => {
+    const original = pacoteRepo.buscarPorId;
+    const arquivoDe = (linha) => path.join(diretorio, linha.chave_armazenamento);
+    const falhasDe = (id) => g.todos("SELECT * FROM logs_auditoria WHERE acao = 'FISCALIZACAO_PACOTE_FALHOU' AND referencia = $1", [String(id)]);
+
+    test('falha transitória na releitura final: a geração ainda responde 201 CONCLUIDO, o ZIP permanece íntegro e nenhuma FALHA é auditada', async (t) => {
+      let lancar = true;
+      mock.method(pacoteRepo, 'buscarPorId', async (...argumentos) => {
+        if (lancar) { lancar = false; throw new Error('releitura indisponível (injetada)'); }
+        return original(...argumentos);
+      });
+      t.after(() => mock.restoreAll());
+      const r = await gerar();
+      assert.equal(r.status, 201, JSON.stringify(r.body));
+      assert.equal(r.body.pacote.status, 'CONCLUIDO');
+      assert.equal(lancar, false, 'a falha injetada foi exercitada na releitura após o COMMIT');
+      const [linha] = await g.todos('SELECT * FROM fiscalizacao_pacotes WHERE id = $1', [r.body.pacote.id]);
+      assert.equal(linha.status, 'CONCLUIDO');
+      const bytes = fs.readFileSync(arquivoDe(linha));
+      assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'), linha.sha256, 'o ZIP publicado não foi removido nem alterado');
+      assert.equal(bytes.length, Number(linha.tamanho_bytes));
+      assert.deepEqual(await falhasDe(linha.id), []);
+      assert.equal(arquivosNoDisco().filter((n) => String(n).endsWith('.tmp')).length, 0);
+    });
+
+    test('falha persistente na releitura (situação não comprovável): a resposta é erro, mas o ZIP e a linha CONCLUIDO são preservados (falha fechada, sem remoção)', async (t) => {
+      const antes = (await pacotes()).map((p) => p.id);
+      mock.method(pacoteRepo, 'buscarPorId', async () => { throw new Error('banco indisponível (injetado)'); });
+      t.after(() => mock.restoreAll());
+      const r = await gerar();
+      mock.restoreAll();
+      assert.equal(r.status, 500, JSON.stringify(r.body));
+      const [linha] = (await pacotes()).filter((p) => !antes.includes(p.id));
+      assert.ok(linha, 'a tentativa foi criada');
+      assert.equal(linha.status, 'CONCLUIDO', 'o COMMIT de conclusão aconteceu antes da falha injetada');
+      const bytes = fs.readFileSync(arquivoDe(linha));
+      assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'), linha.sha256, 'nada foi removido: a situação não comprovada preserva o artefato');
+      assert.deepEqual(await falhasDe(linha.id), [], 'FALHA não é registrada sobre linha CONCLUIDO');
+      assert.equal(arquivosNoDisco().filter((n) => String(n).endsWith('.tmp')).length, 0);
+      const depois = await get(`pacotes/${linha.id}`);
+      assert.equal(depois.status, 200);
+      assert.equal(depois.body.pacote.status, 'CONCLUIDO');
     });
   });
 

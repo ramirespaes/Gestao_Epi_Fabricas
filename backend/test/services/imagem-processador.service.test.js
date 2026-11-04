@@ -24,6 +24,7 @@ const carregar = (caminho, trecho) => {
   }
 };
 const S = () => carregar('../../src/services/imagem-processador.service', 'imagem-processador.service');
+const A = () => carregar('../../src/services/imagem-processador-area.service', 'imagem-processador-area.service');
 const C = () => carregar('../../src/utils/imagem-container', 'imagem-container');
 const Q = () => carregar('../../src/utils/imagem-quadro', 'imagem-quadro');
 const teste = (nome, fn) => test(nome, { timeout: 90000 }, fn);
@@ -165,8 +166,11 @@ describe('criarProcessadorDeImagens — o que o filho recebe', () => {
     assert.ok(falso.entrada().equals(arquivo), 'os bytes do envio vão inteiros e só pela entrada padrão');
     assert.equal(opcoes.shell, false);
     assert.deepEqual(opcoes.stdio, ['pipe', 'pipe', 'pipe']);
-    assert.deepEqual(opcoes.env, S().ambienteDoFilho());
-    assert.equal(fs.realpathSync(opcoes.cwd), fs.realpathSync(os.tmpdir()));
+    assert.deepEqual(opcoes.env, S().ambienteDoFilho(opcoes.cwd));
+    assert.equal(opcoes.env.TMPDIR, opcoes.cwd, 'TMPDIR e pasta atual são a mesma área exclusiva');
+    assert.equal(path.dirname(fs.realpathSync.native(path.dirname(opcoes.cwd)) + path.sep + path.basename(opcoes.cwd)), fs.realpathSync.native(os.tmpdir()), 'a área fica logo abaixo da pasta temporária do sistema');
+    assert.ok(path.basename(opcoes.cwd).startsWith(A().PREFIXO));
+    assert.ok(!fs.existsSync(opcoes.cwd), 'a área exclusiva já foi removida quando o resultado chega');
     assert.ok(!opcoes.detached);
   });
 
@@ -176,8 +180,9 @@ describe('criarProcessadorDeImagens — o que o filho recebe', () => {
     Object.assign(process.env, sentinelas);
     try {
       const env = S().ambienteDoFilho();
-      assert.deepEqual(Object.keys(env).sort(), ['MALLOC_ARENA_MAX', 'PATH', 'TMPDIR', 'UV_THREADPOOL_SIZE', 'VIPS_BLOCK_UNTRUSTED']);
+      assert.deepEqual(Object.keys(env).sort(), ['MALLOC_ARENA_MAX', 'PATH', 'TMPDIR', 'UV_THREADPOOL_SIZE', 'VIPS_BLOCK_UNTRUSTED', 'VIPS_DISC_THRESHOLD']);
       assert.equal(env.VIPS_BLOCK_UNTRUSTED, '1');
+      assert.equal(env.VIPS_DISC_THRESHOLD, String(S().LIMIAR_DE_DISCO_DO_LIBVIPS_BYTES));
       assert.equal(env.PATH, '/usr/bin:/bin');
       assert.ok(Number(env.UV_THREADPOOL_SIZE) >= 2 && Number(env.UV_THREADPOOL_SIZE) <= 8);
       const texto = JSON.stringify(env);
@@ -188,13 +193,23 @@ describe('criarProcessadorDeImagens — o que o filho recebe', () => {
     }
   });
 
+  teste('PRS-10b — D-12: o limiar de disco do libvips passado ao filho é um inteiro em bytes acima do maior decodificado possível (pixelsMax × 4 bytes), com folga', () => {
+    const { ambienteDoFilho, parametrosDoProcessamento, LIMIAR_DE_DISCO_DO_LIBVIPS_BYTES } = S();
+    const valor = ambienteDoFilho().VIPS_DISC_THRESHOLD;
+    assert.match(valor, /^[1-9]\d*$/, 'inteiro decimal em bytes, sem sufixo (o libvips lê o número com sscanf)');
+    assert.equal(Number(valor), LIMIAR_DE_DISCO_DO_LIBVIPS_BYTES);
+    const maiorDecodificadoBytes = parametrosDoProcessamento().pixelsMax * 4;
+    assert.ok(LIMIAR_DE_DISCO_DO_LIBVIPS_BYTES >= 2 * maiorDecodificadoBytes, `limiar ${LIMIAR_DE_DISCO_DO_LIBVIPS_BYTES} < 2 × ${maiorDecodificadoBytes}`);
+    assert.ok(LIMIAR_DE_DISCO_DO_LIBVIPS_BYTES >= 100 * MIB, 'nunca abaixo do padrão compilado do libvips');
+  });
+
   teste('PRS-11 — o filho REAL, aberto com as opções de verdade, só enxerga o ambiente combinado, só o JSON como argumento, a memória limitada e a pasta neutra', () => {
     const { montarExecucaoDoFilho } = S();
     const execucao = montarExecucaoDoFilho({ caminhoDoFilho: filho('imprime-ambiente.js') });
     const sentinela = 'SEGREDO-QUE-NAO-PODE-VAZAR';
     const saida = childProcess.execFileSync(execucao.comando, execucao.argumentos, { ...execucao.opcoes, env: { ...execucao.opcoes.env }, encoding: 'utf8' });
     const visto = JSON.parse(saida);
-    const permitidas = ['MALLOC_ARENA_MAX', 'PATH', 'TMPDIR', 'UV_THREADPOOL_SIZE', 'VIPS_BLOCK_UNTRUSTED', '__CF_USER_TEXT_ENCODING'];
+    const permitidas = ['MALLOC_ARENA_MAX', 'PATH', 'TMPDIR', 'UV_THREADPOOL_SIZE', 'VIPS_BLOCK_UNTRUSTED', 'VIPS_DISC_THRESHOLD', '__CF_USER_TEXT_ENCODING'];
     assert.ok(visto.chaves.every((k) => permitidas.includes(k)), `variáveis vistas pelo filho: ${visto.chaves}`);
     assert.ok(!JSON.stringify(visto).includes(sentinela));
     assert.equal(visto.argv.length, 1);
@@ -359,6 +374,134 @@ describe('criarProcessadorDeImagens — concorrência e limpeza', () => {
     const processador = S().criarProcessadorDeImagens({ caminhoDoFilho: filho('sai-com-124.js'), prazoExternoMs: 20000 });
     recusaCom('IMAGEM_PROCESSAMENTO_EXCEDEU_TEMPO')(await processador.processar(await F.png(400, 320)).then(() => null, (e) => e));
     assert.deepEqual(processador.ativos(), []);
+  });
+
+  teste('PRS-26 — D-12: cada execução do filho REAL roda em área exclusiva própria (TMPDIR = pasta atual), removida ao fim sem sobras; concorrentes não compartilham área', async () => {
+    const limpezas = [];
+    const areas = new Set();
+    const spawnar = (comando, argumentos, opcoes) => { areas.add(opcoes.cwd); assert.equal(opcoes.env.TMPDIR, opcoes.cwd); assert.ok(fs.lstatSync(opcoes.cwd).isDirectory()); return childProcess.spawn(comando, argumentos, opcoes); };
+    const processador = S().criarProcessadorDeImagens({ spawnar, observarLimpeza: (l) => limpezas.push(l) });
+    const entradas = await Promise.all([F.png(500, 400), F.jpeg(500, 400), F.webp(500, 400), F.png(700, 500)]);
+    const resultados = await Promise.all(entradas.map((e) => processador.processar(e)));
+    for (const r of resultados) assert.deepEqual([r.largura, r.altura], [1024, 1024]);
+    assert.equal(areas.size, 4, 'uma área por execução');
+    assert.equal(limpezas.length, 4);
+    for (const l of limpezas) {
+      assert.ok(areas.has(l.area));
+      assert.deepEqual([l.removida, l.motivo, l.sobras, l.truncado], [true, null, [], false], `área ${path.basename(l.area)} sem sobras do decodificador`);
+      assert.ok(!fs.existsSync(l.area));
+    }
+    assert.deepEqual(processador.ativos(), []);
+  });
+
+  teste('PRS-27 — D-12: a área exclusiva é removida também em erro, prazo (SIGKILL), encerramento forçado, falha ao iniciar e filho que não morre', async () => {
+    const limpezas = [];
+    const observar = (l) => limpezas.push(l);
+    const arquivo = await F.png(400, 320);
+    const conferir = async (nome, criar, executar) => {
+      const antes = limpezas.length;
+      const processador = criar();
+      await executar(processador);
+      const novas = limpezas.slice(antes);
+      assert.equal(novas.length, 1, `${nome}: exatamente uma limpeza`);
+      assert.deepEqual([novas[0].removida, novas[0].sobras], [true, []], `${nome}: área removida e sem sobras`);
+      assert.ok(!fs.existsSync(novas[0].area), `${nome}: área não existe mais`);
+      assert.deepEqual(processador.ativos(), []);
+    };
+    await conferir('erro', () => S().criarProcessadorDeImagens({ caminhoDoFilho: filho('sai-com-codigo.js'), prazoExternoMs: 20000, observarLimpeza: observar }), async (p) => { internoCom(CODIGOS_INTERNOS.CODIGO)(await p.processar(arquivo).then(() => null, (e) => e)); });
+    await conferir('prazo', () => S().criarProcessadorDeImagens({ caminhoDoFilho: filho('travado.js'), prazoExternoMs: 300, observarLimpeza: observar }), async (p) => { recusaCom('IMAGEM_PROCESSAMENTO_EXCEDEU_TEMPO')(await p.processar(arquivo).then(() => null, (e) => e)); });
+    await conferir('encerramento', () => S().criarProcessadorDeImagens({ caminhoDoFilho: filho('travado.js'), prazoExternoMs: 60000, observarLimpeza: observar }), async (p) => {
+      const execucao = p.processar(arquivo).then(() => null, (e) => e);
+      assert.ok(await esperarAte(() => p.ativos().length === 1));
+      await p.encerrarTodos();
+      internoCom(CODIGOS_INTERNOS.ENCERRADO)(await execucao);
+    });
+    await conferir('falha ao iniciar', () => S().criarProcessadorDeImagens({ spawnar: () => { throw Object.assign(new Error('spawn EAGAIN'), { code: 'EAGAIN' }); }, observarLimpeza: observar }), async (p) => { internoCom('IMAGENS_INDISPONIVEL')(await p.processar(arquivo).then(() => null, (e) => e)); });
+    const imortal = new EventEmitter();
+    imortal.pid = 777777; imortal.stdin = new Writable({ write(_c, _e, cb) { cb(); } }); imortal.stdout = new PassThrough(); imortal.stderr = new PassThrough(); imortal.kill = () => true;
+    await conferir('filho que não morre', () => S().criarProcessadorDeImagens({ spawnar: () => imortal, prazoExternoMs: 100, esperaPelaMorteMs: 100, observarLimpeza: observar }), async (p) => { recusaCom('IMAGEM_PROCESSAMENTO_EXCEDEU_TEMPO')(await p.processar(arquivo).then(() => null, (e) => e)); });
+  });
+
+  teste('PRS-28 — D-12: sobras deixadas pelo filho são inventariadas e removidas; um link para fora da área nunca é seguido e a vítima fica intacta', async () => {
+    const vitima = fs.mkdtempSync(path.join(os.tmpdir(), 'gepi-vitima-'));
+    fs.writeFileSync(path.join(vitima, 'intocada.txt'), 'fica');
+    try {
+      const limpezas = [];
+      const processador = S().criarProcessadorDeImagens({ caminhoDoFilho: filho('cria-sobras.js'), prazoExternoMs: 20000, observarLimpeza: (l) => limpezas.push(l) });
+      const arquivo = F.inserirPedacoPng(await F.png(400, 320), 'tEXt', Buffer.from(`k\0VITIMA:${vitima}\0`, 'latin1'));
+      await assert.rejects(processador.processar(arquivo), recusaCom('IMAGEM_INVALIDA'));
+      assert.equal(limpezas.length, 1);
+      const [l] = limpezas;
+      assert.deepEqual([l.removida, l.motivo, l.truncado], [true, null, false]);
+      assert.deepEqual(l.sobras.map((s) => [s.caminho, s.tipo]), [['ligacao', 'link'], ['sobra.bin', 'arquivo'], ['sub', 'diretorio'], ['sub/interna.tmp', 'arquivo']]);
+      assert.ok(!fs.existsSync(l.area));
+      assert.equal(fs.readFileSync(path.join(vitima, 'intocada.txt'), 'utf8'), 'fica');
+      assert.deepEqual(processador.ativos(), []);
+    } finally { fs.rmSync(vitima, { recursive: true, force: true }); }
+  });
+
+  teste('PRS-29 — D-12: se a área for trocada por um link enquanto o filho roda, nada é removido (TROCADA), o alvo fica intacto e o resultado do filho não muda', async () => {
+    const vitima = fs.mkdtempSync(path.join(os.tmpdir(), 'gepi-vitima-'));
+    fs.writeFileSync(path.join(vitima, 'intocada.txt'), 'fica');
+    let areaTrocada = null;
+    try {
+      const limpezas = [];
+      const spawnar = (comando, argumentos, opcoes) => {
+        fs.rmdirSync(opcoes.cwd);
+        fs.symlinkSync(vitima, opcoes.cwd);
+        areaTrocada = opcoes.cwd;
+        return childProcess.spawn(comando, argumentos, { ...opcoes, cwd: vitima });
+      };
+      const processador = S().criarProcessadorDeImagens({ caminhoDoFilho: filho('recusa-valida.js'), prazoExternoMs: 20000, spawnar, observarLimpeza: (l) => limpezas.push(l) });
+      await assert.rejects(processador.processar(await F.png(400, 320)), (erro) => erro instanceof C().ErroDeImagem);
+      assert.equal(limpezas.length, 1);
+      assert.deepEqual([limpezas[0].removida, limpezas[0].motivo, limpezas[0].sobras], [false, 'TROCADA', []]);
+      assert.ok(fs.lstatSync(areaTrocada).isSymbolicLink(), 'o link plantado não foi seguido nem removido');
+      assert.equal(fs.readFileSync(path.join(vitima, 'intocada.txt'), 'utf8'), 'fica');
+    } finally {
+      if (areaTrocada !== null) { try { fs.unlinkSync(areaTrocada); } catch { /* já não existe */ } }
+      fs.rmSync(vitima, { recursive: true, force: true });
+    }
+  });
+
+  teste('PRS-30 — D-12: sem área não há filho (IMAGENS_INDISPONIVEL); falha na remoção ou no observador não altera o resultado do processamento', async () => {
+    const arquivo = await F.png(400, 320);
+    let iniciados = 0;
+    const semArea = S().criarProcessadorDeImagens({ criarArea: () => { throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' }); }, spawnar: () => { iniciados += 1; throw new Error('não devia iniciar'); } });
+    internoCom('IMAGENS_INDISPONIVEL')(await semArea.processar(arquivo).then(() => null, (e) => e));
+    assert.equal(iniciados, 0);
+    const limpezas = [];
+    const areas = [];
+    const frageis = S().criarProcessadorDeImagens({
+      criarArea: () => { const a = A().criarAreaExclusiva(); areas.push(a); return a; }, removerArea: () => { throw new Error('remoção quebrada'); }, observarLimpeza: (l) => { limpezas.push(l); throw new Error('observador quebrado'); },
+    });
+    const r = await frageis.processar(await F.png(640, 480));
+    assert.deepEqual([r.formato, r.largura, r.altura], [['PNG'][0], 1024, 1024]);
+    assert.deepEqual([limpezas.length, limpezas[0].removida, limpezas[0].motivo], [1, false, 'FALHA_AO_REMOVER']);
+    for (const a of areas) assert.equal(A().removerAreaExclusiva(a).removida, true);
+    for (const ruim of [{ observarLimpeza: 'x' }, { criarArea: null }, { removerArea: 42 }]) assert.throws(() => S().criarProcessadorDeImagens(ruim), TypeError);
+  });
+
+  teste('PRS-31 — D-12B: a área NUNCA é removida com o filho vivo: se a graça vence e o processo ainda existe, a limpeza é adiada (FILHO_VIVO) e só acontece no close', async () => {
+    const f = new EventEmitter();
+    f.pid = process.pid; // um processo que certamente existe: a limpeza tem de esperar
+    f.stdin = new Writable({ write(_c, _e, cb) { cb(); } });
+    f.stdout = new PassThrough();
+    f.stderr = new PassThrough();
+    f.kill = () => true;
+    const limpezas = [];
+    let area = null;
+    const spawnar = (_c, _a, opcoes) => { area = opcoes.cwd; return f; };
+    const processador = S().criarProcessadorDeImagens({ spawnar, prazoExternoMs: 100, esperaPelaMorteMs: 100, observarLimpeza: (l) => limpezas.push(l) });
+    await assert.rejects(processador.processar(await F.png(400, 320)), recusaCom('IMAGEM_PROCESSAMENTO_EXCEDEU_TEMPO'));
+    assert.deepEqual(processador.ativos(), [], 'a vaga é liberada mesmo com o filho vivo');
+    assert.deepEqual(limpezas.map((l) => [l.area, l.removida, l.motivo]), [[area, false, 'FILHO_VIVO']]);
+    assert.ok(fs.lstatSync(area).isDirectory(), 'a área continua existindo enquanto o filho vive');
+    f.emit('close', null, 'SIGKILL');
+    assert.deepEqual(limpezas.map((l) => [l.removida, l.motivo]), [[false, 'FILHO_VIVO'], [true, null]]);
+    assert.ok(!fs.existsSync(area));
+    f.emit('close', null, 'SIGKILL');
+    assert.equal(limpezas.length, 2, 'a remoção acontece uma única vez');
   });
 
   teste('PRS-24 — se o filho NÃO morrer depois do SIGKILL, o processador desiste da espera (prazo de graça) e erra mesmo assim: nunca fica pendurado segurando a vaga', async () => {
