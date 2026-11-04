@@ -40,6 +40,41 @@ Acrescentar um arquivo à allowlist é uma decisão de segurança e passa por re
 
 **Limite conhecido.** A inspeção do HTML é por expressões regulares, não um parser completo. Formas anômalas, como `<script/src="https://...">` (barra no lugar do espaço), não são reconhecidas como script externo, e `<base href>` não é inspecionado: um `<base>` externo faria os caminhos relativos da allowlist carregarem de outra origem. Nenhuma página do repositório usa essas formas, e a CSP obrigatória do servidor estático (requisito 2 abaixo: nenhum host de script externo e `base-uri 'none'`) cobre os dois casos. Endurecer o empacotador é hardening futuro de publicação, junto da CSP e da implantação (Bloco 14).
 
+## Pacote do Painel Privado
+
+O Painel Privado tem empacotador e allowlist independentes: `empacotar-painel.js` e `allowlist-painel.json`. O módulo não importa o empacotador do cliente, e uma mudança em um nunca altera o outro.
+
+```bash
+cd frontend
+npm run publicacao:empacotar-painel -- --saida <diretório novo ou vazio, fora de frontend/>
+```
+
+O comando termina com código 0 quando gera o pacote e com código 1 quando o recusa. Em caso de recusa, nada fica escrito. O pacote tem **25 arquivos**, sempre a árvore completa a partir da raiz: `painel-privado/`, `js/`, `vendor/` e `favicon.svg`. Nenhuma página é editada, porque os caminhos relativos (`../js/`, `../vendor/`, `../favicon.svg`) continuam válidos.
+
+| Grupo | Arquivos |
+|---|---|
+| Próprios (20) | todos os de `painel-privado/`: 8 páginas HTML (`index`, `painel`, `empresas`, `seguranca`, `suporte`, `aceitar-convite`, `recuperar-senha`, `redefinir-senha`), 11 scripts (um por página, mais `config.js`, `mfa.js` e `sair.js`) e `mfa.css` |
+| Compartilhados (5) | `js/api-http.js`, `js/senha-ciclo.js`, `vendor/qrcode-generator-2.0.4.js`, `vendor/LICENSE-qrcode-generator.txt`, `favicon.svg` |
+
+Os 5 compartilhados são fixados no código do empacotador (`COMPARTILHADOS_PERMITIDOS`), não só na allowlist. Incluir um sexto arquivo de `js/` ou `vendor/` exige mudança de código revisada.
+
+### Validações, todas antes de escrever qualquer arquivo
+
+1. Entradas canônicas, sem duplicata, arquivo regular dentro de `frontend/`, sem link simbólico.
+2. `NUNCA_PUBLICAR`: tudo fora de `painel-privado/` e dos 5 compartilhados é recusado mesmo listado. Isso exclui Portal, Totem, institucional, páginas integradas, protótipos, `test/`, `publicacao/` e `IMAGEN/`.
+3. Nenhum script externo, **sem exceção** (o Turnstile aceito no Portal é recusado aqui). Folha, imagem, fonte, `@import` e `url()` externos também. `<base>`, `<iframe>`, `<object>`, `<embed>` e a forma `<script/` são recusados. Nenhuma página do Painel usa essas formas hoje.
+4. Todo recurso local carregado por página ou folha, e todo link de navegação para `.html`, está na allowlist.
+5. O vendor do QR Code tem o SHA-256 fixado no código, o mesmo de `vendor/README.md`.
+6. A saída é nova ou vazia e fica fora do código-fonte.
+
+Depois da cópia, o pacote é conferido contra a allowlist e o manifesto SHA-256. Qualquer divergência apaga só o que o módulo escreveu, preservando um diretório vazio preexistente. A API devolve o manifesto, que nunca é gravado dentro do pacote. As provas estão em `test/publicacao-painel.test.js`, no `npm test`.
+
+**Mesmos limites do pacote do cliente.** A inspeção do HTML é por expressões regulares, e a CSP obrigatória do servidor estático continua sendo a segunda barreira. As páginas do Painel têm `<style>` inline e `index.html` tem um `<script>` inline, que exigem hash ou nonce na CSP do Painel. O Painel depende de a API responder na mesma origem, em `/api/plataforma` (ver `painel-privado/config.js`).
+
+## Release de homologação (preparação)
+
+`.github/workflows/deploy-hml.yml` valida o commit e gera os dois pacotes com manifestos, guardados apenas como artefato da execução. **Nesta etapa ele não publica nada**: sem segredos, sem AWS, sem job de deploy. O procedimento, os releases versionados, o rollback de código e a coordenação com D-ORF-6 estão em `docs/sistema/publicacao-homologacao.md`.
+
 ## Fora do pacote do cliente, de propósito
 
 | Item | Motivo |
@@ -47,7 +82,7 @@ Acrescentar um arquivo à allowlist é uma decisão de segurança e passa por re
 | 13 páginas legadas, `js/main.js`, `js/db-api.js` | protótipo (ver acima) |
 | `js/auth-session.js` | nenhuma página publicada o carrega |
 | `index.html` da raiz | redirecionamento do protótipo, usado só em desenvolvimento |
-| `painel-privado/` | tem origem própria, com allowlist de CORS disjunta da do cliente; se for publicado, será um alvo separado, com allowlist própria |
+| `painel-privado/` | tem origem própria, com allowlist de CORS disjunta da do cliente; é publicado por alvo separado, com empacotador e allowlist próprios (seção "Pacote do Painel Privado") |
 | `IMAGEN/`, `test/`, `publicacao/`, `package.json`, `vendor/README.md` | material de desenvolvimento e documentação |
 
 ## Requisitos obrigatórios do deploy do frontend

@@ -1,0 +1,164 @@
+name: Deploy HML (preparação)
+
+# ETAPA DE PREPARAÇÃO: este workflow valida o commit escolhido e gera os dois
+# pacotes do frontend (Portal do Cliente e Painel Privado) com manifestos
+# SHA-256, publicados apenas como artefato da execução. Ele NÃO transmite nada
+# para a AWS, não usa segredos, não reinicia serviços e não toca banco ou
+# backend. A publicação real é etapa futura, com job próprio, environment
+# protegido e autorização específica (docs/sistema/publicacao-homologacao.md).
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: "SHA completo (40 hex) de um commit da main com o CI verde"
+        required: true
+        type: string
+      confirmacao:
+        description: "Digite HOMOLOGACAO para confirmar"
+        required: true
+        type: string
+      permitir_commit_anterior:
+        description: "Somente rollback de código: aceita commit anterior à cabeça da main; a release sai rotulada como retroativa"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+# Uma preparação por vez; a que está em andamento nunca é cancelada por outra.
+concurrency:
+  group: deploy-hml
+  cancel-in-progress: false
+
+env:
+  TZ: America/Sao_Paulo
+
+jobs:
+  validar:
+    name: Validar commit, CI verde e posição na main
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      rotulo: ${{ steps.decisao.outputs.rotulo }}
+      atual: ${{ steps.decisao.outputs.atual }}
+      commit: ${{ steps.decisao.outputs.commit }}
+    steps:
+      - name: Confirmação literal, formato do SHA e execução a partir da main
+        env:
+          CONFIRMACAO: ${{ inputs.confirmacao }}
+          COMMIT: ${{ inputs.commit }}
+          REF_DO_WORKFLOW: ${{ github.ref }}
+        run: |
+          # A validação vive neste YAML: só vale o da própria main.
+          [ "$REF_DO_WORKFLOW" = "refs/heads/main" ] || { echo "o workflow só pode ser disparado a partir da main (ref: $REF_DO_WORKFLOW)"; exit 1; }
+          [ "$CONFIRMACAO" = "HOMOLOGACAO" ] || { echo "confirmação ausente ou diferente de HOMOLOGACAO"; exit 1; }
+          printf '%s' "$COMMIT" | grep -Eq '^[0-9a-f]{40}$' || { echo "o commit precisa ser o SHA completo, 40 hex minúsculos"; exit 1; }
+
+      - name: Checkout da main (história completa, sem credenciais persistidas)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Autoteste dos scripts de homologação
+        run: node --test ".github/scripts/hml/test/*.test.js"
+
+      - name: Coletar fatos (cabeça da main, ancestralidade, execuções do CI)
+        env:
+          COMMIT: ${{ inputs.commit }}
+          PERMITIR_ANTERIOR: ${{ inputs.permitir_commit_anterior }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CABECA="$(git rev-parse HEAD)"
+          if git cat-file -e "${COMMIT}^{commit}" 2>/dev/null && git merge-base --is-ancestor "$COMMIT" HEAD; then ANCESTRAL=true; else ANCESTRAL=false; fi
+          gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${COMMIT}&per_page=50" \
+            --jq '[.workflow_runs[] | {head_sha, path, event, head_branch, status, conclusion}]' > "$RUNNER_TEMP/execucoes-ci.json"
+          node -e '
+            const fs = require("node:fs");
+            const fatos = {
+              commit: process.env.COMMIT,
+              cabecaMain: process.argv[1],
+              ancestral: process.argv[2] === "true",
+              permitirAnterior: process.env.PERMITIR_ANTERIOR === "true",
+              execucoesCi: JSON.parse(fs.readFileSync(process.argv[3], "utf8")),
+              agora: Date.now(),
+            };
+            fs.writeFileSync(process.argv[4], JSON.stringify(fatos, null, 2));
+          ' "$CABECA" "$ANCESTRAL" "$RUNNER_TEMP/execucoes-ci.json" "$RUNNER_TEMP/fatos.json"
+
+      - name: Decidir (fail-closed)
+        id: decisao
+        run: node .github/scripts/hml/validar-commit.js --fatos "$RUNNER_TEMP/fatos.json"
+
+      - name: Resumo
+        env:
+          ROTULO: ${{ steps.decisao.outputs.rotulo }}
+          ATUAL: ${{ steps.decisao.outputs.atual }}
+          COMMIT: ${{ steps.decisao.outputs.commit }}
+        run: |
+          {
+            echo "## Preparação de homologação"
+            echo "- Commit: \`$COMMIT\`"
+            echo "- Release: \`$ROTULO\`"
+            echo "- Cabeça atual da main: $ATUAL"
+            [ "$ATUAL" = "true" ] || echo "- **ATENÇÃO: release retroativa, não é a versão atual da main.**"
+            echo "- Nenhuma publicação foi feita: esta execução só valida e gera artefatos."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  empacotar:
+    name: Gerar pacotes do Portal e do Painel com manifestos
+    needs: validar
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exato do commit validado
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validar.outputs.commit }}
+          persist-credentials: false
+
+      - name: Conferir que o checkout é exatamente o commit validado
+        env:
+          COMMIT: ${{ needs.validar.outputs.commit }}
+        run: |
+          [ "$(git rev-parse HEAD)" = "$COMMIT" ] || { echo "checkout diferente do commit validado"; exit 1; }
+          [ -z "$(git status --porcelain)" ] || { echo "árvore de trabalho não está limpa"; exit 1; }
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Frontend - provas dos dois empacotadores
+        working-directory: frontend
+        run: node --test test/publicacao.test.js test/publicacao-painel.test.js
+
+      - name: Gerar release (dois pacotes, manifestos e release.json)
+        env:
+          COMMIT: ${{ needs.validar.outputs.commit }}
+          ROTULO: ${{ needs.validar.outputs.rotulo }}
+          ATUAL: ${{ needs.validar.outputs.atual }}
+        run: node .github/scripts/hml/gerar-release.js --saida "$RUNNER_TEMP/release" --commit "$COMMIT" --rotulo "$ROTULO" --atual "$ATUAL"
+
+      - name: Conferir manifestos com sha256sum
+        run: |
+          cd "$RUNNER_TEMP/release/portal" && sha256sum -c --quiet ../manifesto-portal.sha256
+          cd "$RUNNER_TEMP/release/painel" && sha256sum -c --quiet ../manifesto-painel.sha256
+          cat "$RUNNER_TEMP/release/release.json"
+
+      - name: Guardar release como artefato da execução
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ needs.validar.outputs.rotulo }}
+          path: ${{ runner.temp }}/release
+          if-no-files-found: error
+          retention-days: 14
