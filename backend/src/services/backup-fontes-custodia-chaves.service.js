@@ -2,7 +2,7 @@
 
 const { ehFonteDeChaves, PROVEDORES_OPERACIONAIS_APROVADOS } = require('./imagem-backup-manifesto-autenticado.service');
 const { ehFonteDeCifra, PROVEDORES_DE_CIFRA_APROVADOS } = require('./backup-fontes-cifra-envelope.service');
-const { ARMAZENAMENTOS_DURAVEIS_APROVADOS } = require('./imagem-backup-durabilidade.service');
+const { ARMAZENAMENTOS_DURAVEIS_APROVADOS, localizarArmazenamentoDuravel } = require('./imagem-backup-durabilidade.service');
 const { DESTINOS_AUTORIZADOS } = require('./imagem-backup-destinos.service');
 
 /**
@@ -80,12 +80,13 @@ function avaliarProntidaoCriptografica(entrada) {
 }
 
 function autorizarEnvioDuravel(entrada) {
-  if (!ehObjeto(entrada) || !Reflect.ownKeys(entrada).every((k) => ['containerCifrado', 'destinoId', 'ambiente'].includes(k))) throw entradaInvalida('ENTRADA');
-  const { containerCifrado, destinoId, ambiente } = entrada;
+  if (!ehObjeto(entrada) || !Reflect.ownKeys(entrada).every((k) => ['containerCifrado', 'destinoId', 'ambiente', 'registro'].includes(k))) throw entradaInvalida('ENTRADA');
+  const { containerCifrado, destinoId, ambiente, registro } = entrada;
   if (!ehObjeto(containerCifrado) || containerCifrado.ok !== true || typeof containerCifrado.sha256Envelope !== 'string') return Object.freeze({ autorizado: false, motivo: 'CONTAINER_NAO_CIFRADO' });
   if (ambiente !== 'HOMOLOGACAO' && ambiente !== 'PRODUCAO') return Object.freeze({ autorizado: false, motivo: 'AMBIENTE_INVALIDO' });
-  if (!ARMAZENAMENTOS_DURAVEIS_APROVADOS.some((d) => ehObjeto(d) && d.id === destinoId)) return Object.freeze({ autorizado: false, motivo: 'DESTINO_DURAVEL_NAO_APROVADO' });
-  return Object.freeze({ autorizado: true, destinoId, ambiente });
+  const achado = localizarArmazenamentoDuravel(destinoId, ambiente, registro);
+  if (!achado.encontrada) return Object.freeze({ autorizado: false, motivo: achado.motivo });
+  return Object.freeze({ autorizado: true, destinoId, ambiente, origem: achado.origem });
 }
 
 module.exports = { avaliarProntidaoCriptografica, autorizarEnvioDuravel, REQUISITOS, TEMPORARIOS, ESCOPOS, POLITICAS_DE_RETENCAO };
