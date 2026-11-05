@@ -22,6 +22,9 @@ const DATA_DA_DECISAO_46 = '2026-11-03';
 const APROVADA_E = Object.freeze({ revisaoHumana: 'APROVADA', aprovadoEm: DATA_DA_DECISAO_46, aprovacaoRef: `GATE-P2-${DATA_DA_DECISAO_46}-E` });
 const DATA_DA_DECISAO_47 = '2026-11-03';
 const APROVADA_F = Object.freeze({ revisaoHumana: 'APROVADA', aprovadoEm: DATA_DA_DECISAO_47, aprovacaoRef: `GATE-P2-${DATA_DA_DECISAO_47}-F` });
+const DATA_DA_DECISAO_48 = '2026-11-05';
+const APROVADA_G = Object.freeze({ revisaoHumana: 'APROVADA', aprovadoEm: DATA_DA_DECISAO_48, aprovacaoRef: `GATE-P2-${DATA_DA_DECISAO_48}-G` });
+const REF_DO_ADENDO_47 = `GATE-P2-${DATA_DA_DECISAO_48}-F1`;
 const SAIDA = 'SAIDA_DO_BACKUP';
 
 const ESCRITORES_CONHECIDOS = {
@@ -80,6 +83,10 @@ const ESCRITORES_CONHECIDOS = {
   'src/services/backup-fontes-cifra-envelope.service.js': {
     classificacao: SAIDA, ocorrencias: { escrita: { link: 1, mkdir: 1, o_creat: 2, o_wronly: 2, writefile: 1 }, remocao: { rm: 1 } }, ...APROVADA_F,
     justificativa: 'P11 (03/11/2026): cifra em envelope (AES-256-GCM por arquivo, DEK envolvida pela KEK, envelope HMAC-SHA256 encrypt-then-MAC) de um pacote layout 2 JÁ VERIFICADO por verificarPacoteL2, e a decifra para pacote NOVO. Escritas próprias: mkdir NÃO recursivo 0700 (linha 108) de um segmento novo sob pai conferido por lstat+realpath (contêiner novo, `dados/`, subpastas dos caminhos relativos do manifesto); temporário exclusivo O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW 0600 (linha 124) com writeFile em blocos (130), fsync e publicação por link (133) que nunca sobrescreve; rm SÓ do próprio temporário, com force e sem recursive (linha 137), inclusive em falha. Destino existente = recusa (DESTINO_EXISTENTE); nada é lido em claro de fora do pacote; leituras com O_RDONLY|O_NOFOLLOW. Chaves só de fonte TESTE_CONTROLADO (PROVEDORES_DE_CIFRA_APROVADOS vazia, D-F5). Risco se errado: gravação fora do contêiner/destino (o pai é validado como diretório real e cada segmento vem do caminho canônico do manifesto, sem `.`/`..`), ou publicação de arquivo cuja tag GCM não conferiu (decipher.final lança antes do link; o temporário é removido). Aprovada no gate de 2026-11-03 (ref F); as 46 anteriores não mudam.',
+  },
+  'src/services/backup-baixador-duravel.service.js': {
+    classificacao: SAIDA, ocorrencias: { escrita: { link: 1, mkdir: 1, o_creat: 1, o_wronly: 1 }, remocao: { rm: 1 } }, ...APROVADA_G,
+    justificativa: 'R-D45 (05/11/2026), versão 4, APROVADA (GATE-P2-2026-11-05-G; arquivo de SHA-256 111da4773726e94c9cbb7ae06187151c0c184d5814c4e37ef4d7e7fdf7f13e98): baixador de restauração por versão explícita do recibo, VINCULADO ao registro oficial DESTINOS_AUTORIZADOS (validador criarValidadorDeDestinos; lista real vazia): só cria um filho NOVO e direto de uma raiz autorizada, revalida a contenção a cada etapa (identidade dev/ino, dono, modo, sem link) e confere espaço, inodes e limites antes de gravar. Escritas próprias, todas nesse diretório NOVO: mkdir NÃO recursivo 0700 (linha 70) de um segmento novo, cuja identidade é registrada e reconferida (destino e subpastas vindas de caminhos do recibo, só segmentos simples); temporário exclusivo O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW 0600 (linha 197) escrito em blocos por FileHandle.write (que não é sinal da guarda), fsync (215) e publicação por link (220) ao nome final, que nunca sobrescreve; rm SÓ do próprio temporário, com force e sem recursive (linha 78), só se este módulo o criou (open com O_EXCL bem-sucedido), também em falha. Cada objeto é conferido (bytes e SHA-256 do recibo) ANTES do link; destino existente = recusa; nada é removido além do temporário próprio. A origem é sempre a versão explícita do recibo, lida pela porta de restauração (somente identidade e leitura por versão). Risco se errado: gravação fora de destino autorizado (a raiz vem do registro oficial e é revalidada antes de criar, de abrir cada temporário e de publicar; as pastas criadas têm identidade conferida; os segmentos vêm de chave validada, sem ponto, ponto-ponto ou vazio; depois do link o arquivo tem de ser o mesmo i-node do temporário) ou publicação de objeto diferente do recibo (a conferência precede o link). Residual: janela mínima entre conferência e uso, sem openat no Node, explorável só por quem já escreve na raiz 0700 do mesmo usuário. Aprovada no gate de 2026-11-05 (ref G), condicionada à correspondência integral com este mapa e com o SHA-256 acima: qualquer alteração do arquivo exige nova decisão; B1, B2 e B3 são condição do futuro ponto de entrada operacional. As 47 anteriores não mudam.',
   },
   'src/services/imagem-processador-area.service.js': {
     classificacao: 'NAO_PERSISTENTE', ocorrencias: { escrita: { mkdirsync: 1 }, remocao: { rmsync: 1 } }, ...APROVADA_A,
@@ -189,6 +196,8 @@ const APROVACOES = [
   { ref: APROVADA_D.aprovacaoRef, documento: `test/backup-guarda/aprovacoes/GATE-P2-${DATA_DA_DECISAO_45}-D.md`, sha256: '35a6841842801801087343afc2fc00c66b12f3eba5f64b9d1fbc889124c192a1' },
   { ref: APROVADA_E.aprovacaoRef, documento: `test/backup-guarda/aprovacoes/GATE-P2-${DATA_DA_DECISAO_46}-E.md`, sha256: '743b1cc3354fe0441df111730836856959f1666606e87081b21578be6b54e906' },
   { ref: APROVADA_F.aprovacaoRef, documento: `test/backup-guarda/aprovacoes/GATE-P2-${DATA_DA_DECISAO_47}-F.md`, sha256: '3e0f082f2e2c704da261f8bca7abf6e815202fa2e151f8b7e44d1e067586d51a' },
+  { ref: REF_DO_ADENDO_47, documento: `test/backup-guarda/aprovacoes/GATE-P2-${DATA_DA_DECISAO_48}-F1.md`, sha256: 'f5543e7c8cb51250dd93990e4066ab34c008248970b96926fdee9c2a2eb861da' },
+  { ref: APROVADA_G.aprovacaoRef, documento: `test/backup-guarda/aprovacoes/GATE-P2-${DATA_DA_DECISAO_48}-G.md`, sha256: 'cb6ba45137626892bc75914e00d05706add2a064c0248923059e98b72031155a' },
 ];
 
 module.exports = Object.freeze({

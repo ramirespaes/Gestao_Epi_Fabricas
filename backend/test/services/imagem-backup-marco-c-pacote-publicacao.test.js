@@ -601,6 +601,8 @@ describe('[MC-C] consistência plano do snapshot x cópia preservada (CONS-02) e
       ['services/backup-fontes-fiscalizacao-arquivos.service.js', 'temporário próprio da cópia verificada e da restauração dos ZIPs da Fiscalização (destino novo)'],
       // acréscimo (D-ORF-6, P11/D-F4, 03/11/2026; inventário técnico, pendente de revisão humana na guarda P2): rm SÓ do próprio temporário aleatório (force, sem recursive) na cifra em envelope do pacote L2 e na decifra para destino novo; nunca toca a origem, imagens, dump ou pacote verificado
       ['services/backup-fontes-cifra-envelope.service.js', 'temporário próprio da cifra/decifra em envelope do pacote layout 2 (contêiner e destino novos)'],
+      // acréscimo (D-ORF-6, R-D45/D-F4, 05/11/2026; entrada 48 APROVADA na guarda P2, ref GATE-P2-2026-11-05-G): rm SÓ do próprio temporário aleatório (force, sem recursive) do baixador de restauração por versão explícita, em diretório local NOVO; nunca toca a origem, imagens, dump ou pacote
+      ['services/backup-baixador-duravel.service.js', 'temporário próprio do baixador de restauração do destino durável (diretório local novo)'],
     ]);
     const donos = lista.filter((p) => REMOCAO.test(fs.readFileSync(p, 'utf8'))).map((p) => path.relative(src, p).split(path.sep).join('/'));
     for (const dono of donos) assert.equal(PERMITIDOS.has(dono), true, `caminho de remoção física não previsto: ${dono}`);

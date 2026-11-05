@@ -103,25 +103,25 @@ function capturarChaves({ cifra, mac }) {
 }
 
 async function diretorioReal(caminho) { try { const e = await fsp.lstat(caminho); return e.isDirectory() && (await fsp.realpath(caminho)) === caminho; } catch { return false; } }
-async function criarSubdiretorio(pai, nome) {
-  if (!SEGMENTO.test(nome) || nome === '.' || nome === '..' || !(await diretorioReal(pai))) return false;
+async function criarSubdiretorio(pai, nome, contencao) {
+  if (!SEGMENTO.test(nome) || nome === '.' || nome === '..' || !(await diretorioReal(pai)) || !(await conter(contencao, pai))) return false;
   try { await fsp.mkdir(path.join(pai, nome), { recursive: false, mode: 0o700 }); } catch { return false; }
-  return diretorioReal(path.join(pai, nome));
+  return (await diretorioReal(path.join(pai, nome))) && (await registrarCriado(contencao, path.join(pai, nome)));
 }
-async function garantirCaminho(raiz, relativo) {
+async function garantirCaminho(raiz, relativo, contencao) {
   const partes = relativo.split('/');
   let atual = raiz;
   for (const p of partes.slice(0, -1)) {
     const alvo = path.join(atual, p);
-    if (!(await diretorioReal(alvo)) && !(await criarSubdiretorio(atual, p))) return null;
+    if (!(await diretorioReal(alvo)) && !(await criarSubdiretorio(atual, p, contencao))) return null;
     atual = alvo;
   }
   return path.join(atual, partes[partes.length - 1]);
 }
 /** Grava arquivo NOVO: temporário exclusivo 0600 → blocos → fsync → link (nunca sobrescreve) → rm SÓ do próprio temporário (também em falha). */
-async function gravarNovo(caminhoFinal, produzir) {
+async function gravarNovo(caminhoFinal, produzir, contencao) {
   const temporario = `${caminhoFinal}.${crypto.randomBytes(8).toString('hex')}.tmp`;
-  const descritor = await fsp.open(temporario, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600);
+  if (!(await conter(contencao, path.dirname(caminhoFinal)))) throw destinoAlterado(); const descritor = await fsp.open(temporario, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600);
   const hash = crypto.createHash('sha256');
   let total = 0;
   let ligado = false;
@@ -130,7 +130,7 @@ async function gravarNovo(caminhoFinal, produzir) {
       for await (const bloco of produzir()) { await descritor.writeFile(bloco); hash.update(bloco); total += bloco.length; }
       await descritor.sync();
     } finally { await descritor.close(); }
-    await fsp.link(temporario, caminhoFinal);
+    if (!(await conter(contencao, path.dirname(caminhoFinal)))) throw destinoAlterado(); await fsp.link(temporario, caminhoFinal);
     ligado = true;
     return { bytes: total, sha256: hash.digest('hex') };
   } finally {
@@ -146,6 +146,14 @@ async function* lerBlocos(caminho) {
     for (;;) { const { bytesRead } = await d.read(bloco, 0, bloco.length, null); if (bytesRead === 0) return; yield Buffer.from(bloco.subarray(0, bytesRead)); }
   } finally { await d.close(); }
 }
+/**
+ * Contenção OPCIONAL da decifra num destino autorizado (ver `backup-contencao-destino.service`): `conferir(dir)` ANTES de criar uma subpasta, abrir um temporário ou ligar um arquivo dentro de `dir`;
+ * `registrar(dir)` logo DEPOIS de criar uma pasta. Sem ela nada muda (a cifra e a decifra anteriores). Falha, exceção ou resposta diferente de `true` é recusa (falha fechada).
+ */
+async function conter(contencao, dir) { if (contencao === undefined) return true; try { return (await contencao.conferir(dir)) === true; } catch { return false; } }
+async function registrarCriado(contencao, dir) { if (contencao === undefined) return true; try { return (await contencao.registrar(dir)) === true; } catch { return false; } }
+const contencaoValida = (c) => c === undefined || (ehObjeto(c) && typeof c.conferir === 'function' && typeof c.registrar === 'function');
+function destinoAlterado() { return Object.assign(new Error('destino alterado durante a gravação'), { code: 'DESTINO_ALTERADO' }); }
 function canonico(valor) {
   if (valor === null || typeof valor === 'boolean' || typeof valor === 'string' || Number.isSafeInteger(valor)) return valor;
   if (Array.isArray(valor)) return valor.map(canonico);
@@ -237,8 +245,8 @@ function validarEnvelope(objeto) {
 }
 
 async function decifrarContainer(entrada) {
-  if (!ehObjeto(entrada) || !chavesExatas(entrada, ['container', 'destino', 'cifra', 'mac'])) return falha('ENTRADA', 'ENTRADA_INVALIDA');
-  const { container, destino } = entrada;
+  if (!ehObjeto(entrada) || !Reflect.ownKeys(entrada).every((k) => ['container', 'destino', 'cifra', 'mac', 'contencao'].includes(k)) || !['container', 'destino', 'cifra', 'mac'].every((k) => Reflect.ownKeys(entrada).includes(k)) || !contencaoValida(entrada.contencao)) return falha('ENTRADA', 'ENTRADA_INVALIDA');
+  const { container, destino, contencao } = entrada;
   if (!caminhoAbsolutoCanonico(container) || !caminhoAbsolutoCanonico(destino)) return falha('ENTRADA', 'ENTRADA_INVALIDA');
   const chaves = capturarChaves({ cifra: entrada.cifra, mac: entrada.mac });
   if (chaves.motivo !== undefined) return falha('CHAVES', chaves.motivo);
@@ -271,11 +279,12 @@ async function decifrarContainer(entrada) {
     if (dek.length !== 32) { dek.fill(0); return falha('CHAVES', 'DEK_NAO_DESENVOLVIDA'); }
     try {
       // destino NOVO
-      if (fs.existsSync(destino) || !(await criarSubdiretorio(path.dirname(destino), path.basename(destino)))) return falha('DESTINO', 'DESTINO_EXISTENTE');
+      if (fs.existsSync(destino)) return falha('DESTINO', 'DESTINO_EXISTENTE');
+      if (!(await criarSubdiretorio(path.dirname(destino), path.basename(destino), contencao))) return falha('DESTINO', contencao === undefined ? 'DESTINO_EXISTENTE' : 'DESTINO_ALTERADO');
       let total = 0;
       for (const a of objeto.arquivos) {
         const origem = path.join(container, 'dados', ...`${a.caminho}.enc`.split('/'));
-        const alvo = await garantirCaminho(destino, a.caminho);
+        const alvo = await garantirCaminho(destino, a.caminho, contencao);
         if (alvo === null) return falha('DECIFRA', 'DESTINO_INVALIDO');
         const decipher = crypto.createDecipheriv('aes-256-gcm', dek, Buffer.from(a.iv, 'hex'));
         decipher.setAAD(Buffer.from(a.caminho, 'utf8'));
@@ -286,8 +295,8 @@ async function decifrarContainer(entrada) {
           gravado = await gravarNovo(alvo, async function* produzir() {
             for await (const bloco of lerBlocos(origem)) { hashCifrado.update(bloco); const p = decipher.update(bloco); if (p.length > 0) yield p; }
             const fim = decipher.final(); if (fim.length > 0) yield fim; // lança se a tag não confere: nada é ligado ao nome final
-          });
-        } catch (e) { return falha('DECIFRA', e && e.code === 'ENOENT' ? 'ARQUIVO_AUSENTE' : 'ARQUIVO_ADULTERADO'); }
+          }, contencao);
+        } catch (e) { return falha('DECIFRA', e && e.code === 'ENOENT' ? 'ARQUIVO_AUSENTE' : e && e.code === 'DESTINO_ALTERADO' ? 'DESTINO_ALTERADO' : 'ARQUIVO_ADULTERADO'); }
         if (hashCifrado.digest('hex') !== a.sha256Cifrado || gravado.bytes !== a.bytes) return falha('DECIFRA', 'ARQUIVO_ADULTERADO');
         total += gravado.bytes;
       }
