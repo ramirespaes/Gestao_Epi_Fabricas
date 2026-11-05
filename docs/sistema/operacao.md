@@ -31,6 +31,23 @@ D-ORF-6 é frente própria protegida: não mover, apagar, executar wrappers, reu
 autorização ou declarar GREEN por teste histórico. Travas/wrappers de uso único,
 inclusive g3 NAO-EXECUTAR, permanecem protegidos. Finder recusou? Pare, sem contorno.
 
+### Diagnóstico do ambiente do backup (`backup-operar --verificar`)
+
+`node scripts/backup-operar.js --verificar [--json]` é o único modo do executor nesta versão e é somente leitura: não cria janela, arquivo, conexão
+nem processo, não executa os binários do PostgreSQL e não carrega o `.env` da API (o ambiente vem só de `process.env`, por exemplo
+`node --env-file=<arquivo do executor> scripts/backup-operar.js --verificar` ou o `EnvironmentFile` de uma unidade). Relata, item a item: diretórios
+(reais, canônicos, do usuário do processo, sem acesso de grupo e outros), mesmo dispositivo de `preparacoes`, `dumps` e `publicados`, separação entre
+backup, origens e código, trava de janela I5 (valor, validade, pasta de controle, livre ou ocupada), binários e `PGPASSFILE` do PostgreSQL (arquivo
+regular, sem link, modo 0600, do usuário do processo), variáveis `PG*` conflitantes, limites e espaço livre. Variáveis lidas:
+`IMAGENS_ARMAZENAMENTO_DIRETORIO`, `FISCALIZACAO_ARMAZENAMENTO_DIRETORIO`, `IMAGENS_JANELA_ESCRITA_ARQUIVO`, `BACKUP_RAIZ`, `BACKUP_PG_BINARIOS`
+(padrão `/usr/lib/postgresql/16/bin`), `BACKUP_PG_HOST`, `BACKUP_PG_PORTA`, `BACKUP_PG_USUARIO`, `BACKUP_PG_BANCO`, `PGPASSFILE`,
+`BACKUP_LIMITE_DUMP_BYTES`, `BACKUP_LIMITE_TOTAL_BYTES`, `BACKUP_LIMITE_LIVRE_BYTES`. Valores de variáveis nunca são impressos.
+
+Chaves, destinos duráveis, custódia e retenção aparecem como pendências, lidas das mesmas listas e do mesmo avaliador que o código de produção consulta;
+`prontidaoOperacional` é sempre falso. A composição de produção não é instanciada: ela só se constrói com fonte de chaves reconhecida, e a de teste exige
+`NODE_ENV=test` enquanto as operacionais seguem bloqueadas. Saída: 0 sem falhas e sem pendência de infraestrutura (isto não é prontidão operacional),
+1 falha ou erro, 2 argumentos inválidos, 3 pendência de infraestrutura. Os modos de ensaio e operacional não existem e dependem de D-F4 e D-F5.
+
 ### Documentos especializados existentes — fonte única
 
 Consultar [os caminhos das fontes únicas](fontes-especializadas.md), sem cópias paralelas. A
@@ -90,6 +107,19 @@ informações históricas não revalidadas, não estados atuais. Domínio real e
 local não são publicados. Decisão não autoriza DNS, contratar, migrar, reiniciar
 ou implantar; frente/equipe AWS mantém responsabilidade e autorização próprias.
 Mudança de provedor ou arquitetura não ocorre por iniciativa do agente documental.
+
+## Endereço de escuta da API (`BIND_ADDRESS`)
+
+`BIND_ADDRESS` é opcional e aceita somente um endereço IP literal (IPv4 ou IPv6), sem porta, colchetes, nome de host nem escopo (`%`). Ausente ou vazia, a
+API mantém o comportamento anterior e escuta em todas as interfaces da porta `PORT`. Valor inválido impede a subida, sem eco do valor. Atrás de um proxy
+reverso local (Nginx) a API deve escutar só em `127.0.0.1`: sem isso, quem alcançar a porta da API fala direto com ela e o `X-Forwarded-For` que enviar
+passa a valer como IP do cliente sob `TRUST_PROXY_HOPS=1`, anulando o limitador por IP e contaminando a auditoria. A variável é defesa em profundidade e
+não substitui o firewall do provedor.
+
+Publicação, só com autorização própria: publicar a versão do backend que contém `BIND_ADDRESS`; conferir que o `proxy_pass` do Nginx usa
+`http://127.0.0.1:<porta>` (e não um nome que possa resolver para `::1`); definir `BIND_ADDRESS=127.0.0.1` no ambiente do serviço da API; reiniciar a API;
+conferir a escuta em `127.0.0.1:<porta>` (`ss -ltn`), a resposta normal pelo Nginx e a recusa ou o timeout a partir de fora. Rollback: remover a variável e
+reiniciar a API, ou voltar o deploy anterior; o comportamento anterior volta sem outra mudança.
 
 ## Referência operacional atual
 
