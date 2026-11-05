@@ -11,7 +11,11 @@
  * parcial — é INCONCLUSIVO e nunca durável. Não existe confirmação inventada: sem adaptador aprovado só há confirmações de TESTE_CONTROLADO (NODE_ENV=test), que nunca são operacionais.
  */
 
+const { validarRegistroDuravel, localizarFicha } = require('./backup-armazenamento-duravel-fichas.service');
+
+/** Lista de fichas de destino durável aprovadas (formato único em `backup-armazenamento-duravel-fichas.service`). Hoje VAZIA; validada no carregamento. */
 const ARMAZENAMENTOS_DURAVEIS_APROVADOS = Object.freeze([]);
+validarRegistroDuravel(ARMAZENAMENTOS_DURAVEIS_APROVADOS);
 const ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const CHAVE = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
@@ -23,6 +27,18 @@ const chavesExatas = (o, esperadas) => {
   return proprias.length === esperadas.length && proprias.every((k) => typeof k === 'string' && esperadas.includes(k));
 };
 const configuracaoInvalida = () => Object.assign(new TypeError('configuração de durabilidade inválida'), { code: 'CONFIGURACAO_INVALIDA' });
+
+/**
+ * A ÚNICA porta de consulta da lista de destinos duráveis (criação do destino e autorização de envio passam por aqui). `ambiente` é opcional; com ele, a ficha tem de ser
+ * do mesmo ambiente. `registro` (lista de teste) só existe em NODE_ENV=test, é validado e nunca gera origem OPERACIONAL.
+ */
+function localizarArmazenamentoDuravel(id, ambiente, registro) {
+  const deTeste = registro !== undefined;
+  if (deTeste && process.env.NODE_ENV !== 'test') throw configuracaoInvalida();
+  if (deTeste) validarRegistroDuravel(registro);
+  const achado = localizarFicha(deTeste ? registro : ARMAZENAMENTOS_DURAVEIS_APROVADOS, id, ambiente);
+  return Object.freeze(achado.encontrada ? { encontrada: true, ficha: achado.ficha, origem: deTeste ? 'TESTE_CONTROLADO' : 'OPERACIONAL' } : { ...achado });
+}
 
 /**
  * Cinco dimensões independentes, derivadas só de evidências dos componentes (captura e publicação) e de uma confirmação RECONHECIDA. `restauravelComprovado` é fornecido pela entrada operacional (prova ligada ao pacote); aqui só é repassado como booleano estrito.
@@ -46,9 +62,10 @@ function classificarDurabilidade({ captura = null, publicacao = null, confirmaca
 
 /** `criarDestinoDuravel({ id, adaptador, prazoMs })`: aprovado só se `id` estiver em ARMAZENAMENTOS_DURAVEIS_APROVADOS (vazia); em NODE_ENV=test a origem é TESTE_CONTROLADO. */
 function criarDestinoDuravel(opcoes) {
-  if (!ehObjeto(opcoes) || !chavesExatas(opcoes, ['id', 'adaptador', 'prazoMs']) || typeof opcoes.id !== 'string' || !ID.test(opcoes.id) || !ehObjeto(opcoes.adaptador) || typeof opcoes.adaptador.confirmar !== 'function') throw configuracaoInvalida();
+  if (!ehObjeto(opcoes) || !chavesExatas(opcoes, Reflect.ownKeys(opcoes).includes('registro') ? ['id', 'adaptador', 'prazoMs', 'registro'] : ['id', 'adaptador', 'prazoMs']) || typeof opcoes.id !== 'string' || !ID.test(opcoes.id) || !ehObjeto(opcoes.adaptador) || typeof opcoes.adaptador.confirmar !== 'function') throw configuracaoInvalida();
   if (!Number.isSafeInteger(opcoes.prazoMs) || opcoes.prazoMs < 1 || opcoes.prazoMs > 600000) throw configuracaoInvalida();
-  const aprovado = ARMAZENAMENTOS_DURAVEIS_APROVADOS.includes(opcoes.id);
+  const achado = localizarArmazenamentoDuravel(opcoes.id, undefined, opcoes.registro);
+  const aprovado = achado.encontrada && achado.origem === 'OPERACIONAL';
   if (!aprovado && process.env.NODE_ENV !== 'test') throw Object.assign(new Error('armazenamento durável não aprovado'), { code: 'ARMAZENAMENTO_DURAVEL_NAO_APROVADO' });
   const origem = aprovado ? 'OPERACIONAL' : 'TESTE_CONTROLADO';
   const { id, adaptador, prazoMs } = opcoes;
@@ -74,4 +91,7 @@ function criarDestinoDuravel(opcoes) {
   return Object.freeze({ id, origem, confirmarGravacao });
 }
 
-module.exports = { classificarDurabilidade, criarDestinoDuravel, ARMAZENAMENTOS_DURAVEIS_APROVADOS };
+/** Lê NODE_ENV na chamada: portas e registros de TESTE só existem em NODE_ENV=test (os módulos que os aceitam não leem o ambiente por conta própria). */
+const ambienteDeTeste = () => process.env.NODE_ENV === 'test';
+
+module.exports = { classificarDurabilidade, criarDestinoDuravel, localizarArmazenamentoDuravel, ambienteDeTeste, ARMAZENAMENTOS_DURAVEIS_APROVADOS };
