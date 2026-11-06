@@ -46,7 +46,7 @@ regular, sem link, modo 0600, do usuário do processo), variáveis `PG*` conflit
 Chaves, destinos duráveis, custódia e retenção aparecem como pendências, lidas das mesmas listas e do mesmo avaliador que o código de produção consulta;
 `prontidaoOperacional` é sempre falso. A composição de produção não é instanciada: ela só se constrói com fonte de chaves reconhecida, e a de teste exige
 `NODE_ENV=test` enquanto as operacionais seguem bloqueadas. Saída: 0 sem falhas e sem pendência de infraestrutura (isto não é prontidão operacional),
-1 falha ou erro, 2 argumentos inválidos, 3 pendência de infraestrutura. Os modos de ensaio e operacional não existem e dependem de D-F4 e D-F5.
+1 falha ou erro, 2 argumentos inválidos, 3 pendência de infraestrutura. Os modos `--ensaio`, `--operar` e `--monitorar` existem (seção do executor operacional) e continuam bloqueados ou somente leitura.
 
 ### Destino durável S3 e custódia de chaves (R-D45, D-F4 e D-F5) — implementado localmente, NÃO ativado
 
@@ -106,8 +106,8 @@ trocado ou modo da raiz aberto interrompem a decifra com `DESTINO_ALTERADO`, sem
 impede que um script importe o módulo da cifra e enumera os usos de teste autorizados (um teste novo que cite a decifra precisa entrar na lista de propósito).
 ENOSPC durante a gravação (baixador e decifra) falha fechado: o arquivo final não é publicado, só o temporário próprio é removido e arquivos alheios ou já publicados não são tocados; na decifra o código
 de falha continua `ARQUIVO_ADULTERADO` (rótulo herdado, a corrigir em etapa própria). Limite honesto: o Node não tem operações relativas a descritor de diretório, então resta uma janela mínima entre
-conferência e uso, explorável só por quem já escreve na raiz 0700 do mesmo usuário (ou o administrador); um temporário pode ficar numa pasta trocada. Falta ligar o ponto de entrada operacional, que deve passar a
-lista de áreas protegidas e o teto de bytes do executor.
+conferência e uso, explorável só por quem já escreve na raiz 0700 do mesmo usuário (ou o administrador); um temporário pode ficar numa pasta trocada. O compositor do executor (seção seguinte) passa a lista de áreas
+protegidas, o teto de bytes e o destino local dedicado ao baixador; a ligação ao processo real continua pendente.
 
 **Chaves (D-F5).** MAC e KEK são segredos independentes de 32 bytes ou mais, em famílias, ids e objetos distintos (RC-4). Caminho de operação: `backup-fontes-kms-pre-resolvido`
 decifra UMA vez, antes de começar, cada blob (chave KMS fixada pelo ARN da ficha e contexto de criptografia com ambiente, finalidade e id; valor de verificação conferido) e entrega
@@ -140,15 +140,71 @@ e RTO. Os limites de RPO e RTO NÃO estão fixados (decisão pendente).
 **Riscos residuais.** Host comprometido expõe as chaves em uso e as credenciais do publicador (o Object Lock protege o que já existe, não impede objetos novos forjados, daí a
 verificação independente); zerar buffers em JavaScript é melhor esforço; a política condicional e o formato real da versão dependem da AWS (T2); um destino local parcial da
 restauração permanece para análise; a cadeia do SDK será revisada no gate DEP-2; o procedimento de partes depende de pessoas. Pendências de decisão: D-F6 (retenção e DPO), D-F7 (TLS),
-D-F13, RPO e RTO, cerimônia de custódia, preenchimento real das listas, ponto de entrada operacional (condições B1 e B3).
+D-F13, RPO e RTO, cerimônia de custódia, preenchimento real das listas, ligação do executor ao processo real (produção do pacote e restaurador do banco), estratégia de credenciais da AWS e custódia dos recibos consolidados.
 
 **Guarda P2.** Em 05/11/2026 Ramires aprovou documentalmente a entrada 47 (adendo, ref. `GATE-P2-2026-11-05-F1`: contenção opcional em `decifrarContainer`; o texto e o mapa de sinais da entrada 47 não
 mudam; módulo de SHA-256 `50f1bdafb80eb6652b45eaca1ed35a27c21ab806eb30be7a6992479a1fe4f48c`) e a entrada 48 (ref. `GATE-P2-2026-11-05-G`, `src/services/backup-baixador-duravel.service.js`, SHA-256
 `111da4773726e94c9cbb7ae06187151c0c184d5814c4e37ef4d7e7fdf7f13e98`: mkdir 1, link 1, O_CREAT 1, O_WRONLY 1; remoção: rm 1). As duas estão registradas em `APROVACOES` com o SHA-256 do documento
 (`test/backup-guarda/aprovacoes/`); a aprovação histórica F e as propostas anteriores ficam intactas. A aprovação vale só para esses arquivos e esses mapas de sinais: qualquer alteração exige nova decisão.
-As condições B1 (o ponto de entrada operacional usa só `restaurarContainerDoDestinoDuravel`), B2 (bloqueio estático acima, implementado) e B3 (áreas protegidas, teto de bytes e destino local dedicado)
-continuam condição do futuro ponto de entrada operacional, que ainda não existe. Os demais módulos novos não têm sinais de escrita ou remoção. A guarda é validação léxica do repositório: passar nela
-não prova isolamento operacional efetivo.
+As condições B1 (a restauração usa só `restaurarContainerDoDestinoDuravel`), B2 (bloqueio estático acima) e B3 (áreas protegidas, teto de bytes e destino local dedicado) são impostas pelo compositor do
+executor e pelos testes da seção seguinte. Os demais módulos novos não têm sinais de escrita ou remoção. A guarda é validação léxica do repositório: passar nela não prova isolamento operacional efetivo.
+
+### Executor operacional do backup (D-ORF-6, rodada consolidada 1/3) — implementado localmente, NÃO ativado
+
+Estado: o executor existe como biblioteca com portas injetáveis, modos, portões, coordenação, evidência e monitoramento. Nada contata a AWS, o SDK não está instalado (DEP-2), as listas reais continuam vazias,
+`OPERACAO_HABILITADA` (constante única em `backup-executor-politica`) é falsa e nenhuma unidade systemd foi instalada. A ligação ao processo real (produção do pacote por `criarBackupDeProducao`, restaurador do
+banco novo, clientes AWS e fontes de chaves) NÃO existe: sem ela o CLI devolve BLOQUEADO com o motivo `LIGACAO_OPERACIONAL_AUSENTE`.
+
+**Módulos.** `backup-executor-politica` (portões, puro), `backup-executor-evidencia` (linha NDJSON canônica com SHA-256, puro), `backup-executor-publicacao` (estágio: destino local, cifra, inventário, pré-voo, envio,
+consolidação, confirmação, verificação), `backup-executor-recuperacao` (estágio: destino local, baixar e decifrar pelo orquestrador existente — B1 —, verificar o pacote L2, restaurar as fontes, avaliar o DR),
+`backup-executor-operacional` (compositor), `backup-executor-monitoramento` (puro), `backup-aws-sdk-carregador` e `backup-aws-portas` (adaptadores do SDK da AWS por injeção) e `scripts/backup-operar.js` (quatro
+modos). Os modelos de unidade estão em `backend/ops/systemd/*.modelo`, inertes. Testes: `backup-executor-*`, `backup-aws-*`, `backup-operar-execucao-cli`, `systemd-modelos` e
+`proxy-addr-condicao-de-explorabilidade`.
+
+**Portões** (`avaliarPortoes`, todos os motivos de uma vez, só códigos fixos): modo, ação e ambiente válidos; frase de confirmação exata por modo e ação; `OPERACAO_NAO_HABILITADA`; ensaio só em HOMOLOGACAO;
+usuário diferente de root e identificado; umask com todos os bits de grupo e outros mascarados; destino durável na lista (`DESTINO_DURAVEL_NAO_APROVADO`); fonte de chaves aprovada (de teste só em NODE_ENV=test e nunca
+na operação); SDK aprovado (`SDK_NAO_APROVADO`) ou simulado só em teste; destino local DEDICADO (`containers...` para o contêiner cifrado, `restauracao...` para restaurar) e autorizado pelo validador oficial;
+cinco áreas protegidas distintas (imagens, fiscalização, preparações, dumps e publicados) fora do destino local (`DESTINO_LOCAL_SOBREPOE_AREA_PROTEGIDA`); portas fora do papel (`PORTAS_FORA_DO_PAPEL`).
+
+**Papéis (privilégio mínimo).** BACKUP: produção do pacote, publicador S3 e chaves de operação (o verificador só é aceito no ensaio); RESTAURACAO: restauração S3, restaurador das fontes e chaves; VERIFICACAO_DESTINO:
+somente o verificador, fora do host do backup, com arquivo de ambiente e usuário próprios. Qualquer porta a mais bloqueia. Sem credencial do verificador no host do backup a verificação independente fica PENDENTE.
+
+**Sequência e falha fechada.** BACKUP: COORDENACAO, PRODUCAO, DESTINO_LOCAL, CIFRA, INVENTARIO, PRE_VOO, ENVIO (um objeto por vez, envelope por último), CONSOLIDACAO, CONFIRMACAO, VERIFICACAO, REGISTRO_DOS_RECIBOS.
+RESTAURACAO: COORDENACAO, DESTINO_LOCAL, RESTAURAR_CONTAINER, VERIFICAR_PACOTE, RESTAURAR_FONTES, AVALIAR_DR. A coordenação exclusiva (cadeados de sessão do P10) é tomada depois dos portões e liberada sempre. Estados:
+CONCLUIDO, BLOQUEADO (portão), RECUSADO (nada foi feito), FALHOU e INCERTO (pode ter gravado: decisão humana). Nada é apagado nem repetido; o contêiner local e o que já estiver no bucket permanecem. Sem alvos de RPO e
+RTO o ensaio de DR fica NAO_AVALIADO e a pendência `RPO_E_RTO_NAO_FIXADOS` é registrada; com alvos só RECUPERADO conta, e nunca se promove `recuperavelEmProducao`.
+
+**Evidência.** Uma linha NDJSON por execução, chaves ordenadas, com SHA-256 próprio: tipo, operação, modo, ação, ambiente, destino, instantes, estado, código, etapa que falhou, bloqueios, etapas com duração,
+conjunto, SHA-256 do manifesto e do consolidado, contagens, origens das chaves e do destino, verificação independente e pendências T2/T3. Nunca leva caminho, URL, texto de erro ou segredo; `duravelmenteArmazenado` e
+`recuperavelEmProducao` são sempre falsos e `operacional` só existe numa operação concluída com chaves e destino operacionais. A evidência é entregue a uma porta (`evidencia.registrar`), inclusive nos bloqueios; o
+destino durável do histórico depende de D-F13. Os recibos consolidados (bytes canônicos e SHA-256) vão a outra porta (`recibos.registrar`) e são o documento que a restauração e a verificação exigem: sua custódia fora do host é
+decisão pendente.
+
+**CLI.** `--verificar`, `--ensaio`, `--operar --acao=<backup|restauracao|verificacao-destino> --ambiente --destino --confirmo` e `--monitorar --evidencias --ambiente --limite-backup-horas --limite-verificacao-horas`
+(opcionais: `--modo`, `--limite-falhas`, `--limite-ensaio-dr-dias`, `--json`). Ensaio e operação imprimem UMA linha de evidência no stdout. Saídas: 0 ok, 1 falha, 2 argumentos, 3 infraestrutura pendente, 4 bloqueado,
+5 recusado, 6 incerto, 7 alerta. O monitoramento só lê (O_NOFOLLOW, limite de tamanho), recusa limites ausentes e alerta para linha ilegível, backup ausente ou atrasado, verificação independente ausente ou divergente,
+execução incerta, falhas consecutivas, relógio inconsistente, bloqueio e ensaio de DR atrasado.
+
+**Adaptadores AWS (sem chamada real).** `backup-aws-portas` implementa, sobre o SDK injetado, as portas do publicador (STS GetCallerIdentity, HeadBucket, GetBucketVersioning, GetObjectLockConfiguration,
+GetBucketEncryption, GetBucketOwnershipControls, KMS DescribeKey e PutObject com `IfNoneMatch: '*'`, SHA-256 informado, tamanho e dono esperado), do verificador (ListObjectVersions e HeadObject por versão), da
+restauração (GetObject por versão) e do KMS pré-resolvido (Decrypt com a chave fixada, contexto e `SYMMETRIC_DEFAULT`, zerando o buffer do SDK). Sem endpoint configurável; credencial é um provedor injetado por papel; o cliente de
+gravação não faz retentativa; erros do SDK viram erro com nome do serviço e mensagem fixa. `backup-aws-sdk-carregador` só carrega o SDK depois de `VERSOES_APROVADAS` (hoje vazia) listar a versão exata dos três
+clientes. Os testes usam um SDK falso em memória e provam o pedido montado, não a AWS.
+
+**DEP-2 (gate).** Candidatos: `@aws-sdk/client-s3`, `@aws-sdk/client-kms` e `@aws-sdk/client-sts` em versão exata, sem scripts de instalação, licença Apache-2.0, Node >= 20 (compatível com Node 22), CommonJS (`main` em
+`dist-cjs`), 24 pacotes transitivos. O dossiê com versões, integridade, mudança prevista no lockfile, riscos e critérios de aprovação está em `documentos/` (rodada consolidada 1/3). Instalar exige entradas de dependência na
+guarda P2 (regra G6: `@aws-sdk/*` precisa de classificação `ARMAZENAMENTO_REVISADO` aprovada) e a aprovação das versões no carregador. Nada foi instalado nem alterado em `package.json` ou no lockfile.
+
+**Retenção e agendamento.** A retenção mínima do destino está na ficha (Object Lock, modo e dias); a expiração por ciclo de vida é configurada pela equipe AWS em T2, com prazo não inferior ao bloqueio, e depende de D-F6.
+Localmente a limpeza continua desabilitada e `planejarRetencao` só planeja. Agendamento e monitoramento têm modelos inertes de systemd (backup, verificação independente fora do host e monitoramento sem rede), com
+condição de arquivo-chave, usuário próprio, umask 077 e sistema de arquivos somente leitura; o teste confere que cada ExecStart preenchido é aceito pelo CLI.
+
+**Vulnerabilidades de dependências.** O alerta crítico do `proxy-addr` (falsificação de IP com `trust proxy` em sub-rede) não é explorável: o SafeWork só aceita `false` ou um número de saltos, e os testes
+`proxy-addr-condicao-de-explorabilidade` impedem abrir essa configuração. A correção definitiva (atualização do lockfile) e os demais alertas (altos: body-parser, brace-expansion, zod; moderados) ficam para o gate de
+dependências, sem `npm audit fix`.
+
+**Critérios de homologação adicionados.** T1.5 (depois do DEP-2): instanciar os clientes reais com um manipulador de requisição sem rede e conferir o pedido serializado de cada porta (cabeçalhos de condição,
+checksum, dono, versão); T2/T3 como acima, executados pelo CLI em ensaio (HOMOLOGACAO, dados sintéticos); aceite do monitoramento: alerta disparado com backup atrasado, sem verificação, divergência e linha adulterada.
 
 ### Documentos especializados existentes — fonte única
 

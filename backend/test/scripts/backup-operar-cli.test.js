@@ -35,10 +35,11 @@ async function rodarInjetado(argv, ambiente, raizDoCodigo, portas) {
 }
 
 describe('[CLI] argumentos', () => {
-  test('CLI-01 — só --verificar [--json]; qualquer outro modo ou repetição é recusado sem eco do argumento', () => {
-    assert.deepEqual(cli.interpretarArgumentos(['--verificar']), { ok: true, json: false });
-    assert.deepEqual(cli.interpretarArgumentos(['--json', '--verificar']), { ok: true, json: true });
-    for (const ruim of [[], ['--json'], ['--executar'], ['--ensaio'], ['--operacional'], ['--verificar', '--verificar'], ['--verificar', '--json', '--json'], ['verificar'], ['--verificar', '--x-segredo-ficticio']]) {
+  test('CLI-01 — um único modo por vez (--verificar, --ensaio, --operar ou --monitorar); modo ausente, repetido, argumento desconhecido ou repetido é recusado sem eco do argumento', () => {
+    assert.deepEqual(cli.interpretarArgumentos(['--verificar']), { ok: true, modo: 'VERIFICAR', json: false });
+    assert.deepEqual(cli.interpretarArgumentos(['--json', '--verificar']), { ok: true, modo: 'VERIFICAR', json: true });
+    for (const ruim of [[], ['--json'], ['--executar'], ['--operacional'], ['--verificar', '--verificar'], ['--verificar', '--json', '--json'], ['verificar'], ['--verificar', '--x-segredo-ficticio'], ['--verificar', '--ensaio'],
+      ['--ensaio'], ['--operar'], ['--monitorar'], ['--verificar', '--acao=backup']]) {
       const r = cli.interpretarArgumentos(ruim);
       assert.equal(r.ok, false, JSON.stringify(ruim));
       assert.equal(JSON.stringify(r).includes('segredo-ficticio'), false);
@@ -46,13 +47,14 @@ describe('[CLI] argumentos', () => {
     assert.throws(() => cli.interpretarArgumentos('--verificar'), TypeError);
   });
 
-  test('CLI-02 — processo real: argumento inválido sai com 2, usa só stderr e não cria nada', () => {
-    for (const argumentos of [[], ['--executar'], ['--ensaio'], ['--verificar', '--verificar']]) {
+  test('CLI-02 — processo real: argumento inválido sai com 2, usa só stderr, mostra o uso dos modos e não cria nada', () => {
+    for (const argumentos of [[], ['--executar'], ['--ensaio'], ['--verificar', '--verificar'], ['--monitorar']]) {
       const r = rodarReal(argumentos, {});
       assert.equal(r.status, SAIDAS.ARGUMENTOS, JSON.stringify(argumentos));
       assert.equal(r.stdout, '');
-      assert.match(r.stderr, /Uso: node scripts\/backup-operar\.js --verificar/);
-      assert.match(r.stderr, /não existem nesta versão/);
+      assert.match(r.stderr, /Uso:\n\s+node scripts\/backup-operar\.js --verificar/);
+      assert.match(r.stderr, /--ensaio\|--operar/);
+      assert.match(r.stderr, /--monitorar/);
     }
   });
 });

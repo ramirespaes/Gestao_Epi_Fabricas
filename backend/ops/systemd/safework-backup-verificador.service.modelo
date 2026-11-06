@@ -1,0 +1,42 @@
+# MODELO INERTE (D-ORF-6). Não instalar sem autorização: ver LEIAME.md. Os marcadores <...> impedem execução acidental.
+# Serviço da VERIFICAÇÃO INDEPENDENTE do destino durável. Roda FORA do host do backup, com a credencial do VERIFICADOR (somente leitura de metadados) e
+# arquivo de ambiente próprio: o host do backup nunca tem esta credencial.
+[Unit]
+Description=SafeWork backup (D-ORF-6) - verificacao independente do destino
+Documentation=file:///opt/safework/backend/ops/systemd/LEIAME.md
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/safework/backup-verificador-habilitado
+
+[Service]
+Type=oneshot
+User=safework-verificador
+Group=safework-verificador
+UMask=0077
+WorkingDirectory=/opt/safework/backend
+EnvironmentFile=/etc/safework/backup-verificador.env
+ExecStart=/usr/bin/node /opt/safework/backend/scripts/backup-operar.js --operar --acao=verificacao-destino --ambiente=<AMBIENTE> --destino=<ID_DA_FICHA> --confirmo=<FRASE_DE_CONFIRMACAO>
+StandardOutput=append:/var/lib/safework/verificador/evidencias/execucoes.ndjson
+StandardError=journal
+Restart=no
+TimeoutStartSec=1h
+SuccessExitStatus=0
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+MemoryMax=512M
+ReadWritePaths=/var/lib/safework/verificador
+ReadOnlyPaths=/var/lib/safework/verificador/recibos

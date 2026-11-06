@@ -1,0 +1,44 @@
+# MODELO INERTE (D-ORF-6). Não instalar sem autorização: ver LEIAME.md. Os marcadores <...> impedem execução acidental.
+# Serviço do BACKUP: uma execução por disparo, sem reinício, com privilégio mínimo. Quem liga isto é um ato humano (gate A1 a A10).
+[Unit]
+Description=SafeWork backup (D-ORF-6) - executor operacional
+Documentation=file:///opt/safework/backend/ops/systemd/LEIAME.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+# Só roda se Ramires criar este arquivo de propósito; apagá-lo desliga o backup sem tocar na unidade.
+ConditionPathExists=/etc/safework/backup-habilitado
+
+[Service]
+Type=oneshot
+User=safework-backup
+Group=safework-backup
+UMask=0077
+WorkingDirectory=/opt/safework/backend
+# Variáveis do executor (diretórios, PostgreSQL, limites). Nenhum segredo vai na unidade: senha só em PGPASSFILE (0600).
+EnvironmentFile=/etc/safework/backup-executor.env
+ExecStart=/usr/bin/node /opt/safework/backend/scripts/backup-operar.js --operar --acao=backup --ambiente=<AMBIENTE> --destino=<ID_DA_FICHA> --confirmo=<FRASE_DE_CONFIRMACAO>
+# A evidência (uma linha por execução) vai ao arquivo de evidências e ao journal; o executor não escreve evidência sozinho.
+StandardOutput=append:/var/lib/safework/backup/evidencias/execucoes.ndjson
+StandardError=journal
+Restart=no
+TimeoutStartSec=4h
+SuccessExitStatus=0
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+MemoryMax=2G
+ReadWritePaths=/var/lib/safework/backup /var/lib/safework/janela
+ReadOnlyPaths=/var/lib/safework/imagens /var/lib/safework/fiscalizacao

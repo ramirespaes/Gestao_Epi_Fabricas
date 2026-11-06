@@ -1,0 +1,14 @@
+# MODELO INERTE (D-ORF-6). Não instalar sem autorização: ver LEIAME.md.
+# Disparo da verificação independente (depois de cada backup, dentro da janela que o monitoramento exige).
+[Unit]
+Description=SafeWork backup (D-ORF-6) - agenda da verificacao independente
+
+[Timer]
+OnCalendar=<AGENDA_DA_VERIFICACAO>
+RandomizedDelaySec=10min
+AccuracySec=1min
+Persistent=false
+Unit=safework-backup-verificador.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,14 @@
+# MODELO INERTE (D-ORF-6). Não instalar sem autorização: ver LEIAME.md.
+# Disparo do monitoramento (leve e somente leitura; pode ser mais frequente que o backup).
+[Unit]
+Description=SafeWork backup (D-ORF-6) - agenda do monitoramento
+
+[Timer]
+OnCalendar=<AGENDA_DO_MONITORAMENTO>
+RandomizedDelaySec=2min
+AccuracySec=1min
+Persistent=false
+Unit=safework-backup-monitor.service
+
+[Install]
+WantedBy=timers.target
