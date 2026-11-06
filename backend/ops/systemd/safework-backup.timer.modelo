@@ -1,0 +1,14 @@
+# MODELO INERTE (D-ORF-6). Não instalar sem autorização: ver LEIAME.md.
+# Disparo do backup. Sem recuperação de disparos perdidos (Persistent=false): depois de uma queda nada roda sozinho "para compensar".
+[Unit]
+Description=SafeWork backup (D-ORF-6) - agenda
+
+[Timer]
+OnCalendar=<AGENDA_DO_BACKUP>
+RandomizedDelaySec=15min
+AccuracySec=1min
+Persistent=false
+Unit=safework-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,39 @@
+# MODELO INERTE (D-ORF-6). Não instalar sem autorização: ver LEIAME.md. Os marcadores <...> impedem execução acidental.
+# Serviço do MONITORAMENTO: só lê o arquivo de evidências, sem rede e sem escrita. Código 7 (alerta) ou 1 (falha) marca a unidade como falha
+# e aciona o alerta externo configurado em OnFailure (a ligação com o canal de alerta é decisão futura).
+[Unit]
+Description=SafeWork backup (D-ORF-6) - monitoramento das evidencias
+Documentation=file:///opt/safework/backend/ops/systemd/LEIAME.md
+OnFailure=<UNIDADE_DE_ALERTA>
+
+[Service]
+Type=oneshot
+User=safework-monitor
+Group=safework-monitor
+UMask=0077
+WorkingDirectory=/opt/safework/backend
+ExecStart=/usr/bin/node /opt/safework/backend/scripts/backup-operar.js --monitorar --evidencias=/var/lib/safework/backup/evidencias/execucoes.ndjson --ambiente=<AMBIENTE> --limite-backup-horas=<LIMITE_BACKUP_HORAS> --limite-verificacao-horas=<LIMITE_VERIFICACAO_HORAS>
+StandardOutput=journal
+StandardError=journal
+Restart=no
+TimeoutStartSec=5min
+SuccessExitStatus=0
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+MemoryMax=256M
+ReadOnlyPaths=/var/lib/safework/backup/evidencias
