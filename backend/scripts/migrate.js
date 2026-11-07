@@ -3,6 +3,7 @@
 const { Client } = require('pg');
 
 const { listarMigrations } = require('../src/db/checksums');
+const { opcoesDeTls } = require('../src/config/database-tls');
 
 /**
  * Adaptador do node-pg-migrate.
@@ -57,6 +58,8 @@ function criarCliente() {
     database: process.env.DB_NAME,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
+    // D-F7: TLS verify-full só por opt-in (DB_SSL_MODE); sem a variável nada muda.
+    ...opcoesDeTls({ modo: process.env.DB_SSL_MODE, raizCa: process.env.DB_SSL_ROOT_CERT, host: process.env.DB_HOST, pgsslmode: process.env.PGSSLMODE }),
   });
 }
 

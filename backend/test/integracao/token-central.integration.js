@@ -25,7 +25,12 @@ const { avaliarPermissaoRecurso, avaliarPermissaoAcao } = require('../../src/mid
 const aviso = (r) => `${r.status} ${JSON.stringify(r.body)}`;
 const SEGREDO = /hash|credencial|senha|segredo|codigo_?ativacao|token_?hash/i;
 const HEX64 = /\b[0-9a-f]{64}\b/i;
-const TOKEN43 = /\b[A-Za-z0-9_-]{43}\b/;
+// Código de ativação: 32 bytes em base64url sem padding = exatamente 43 caracteres de [A-Za-z0-9_-]. Dois usos distintos:
+//  - FORMATO do código devolvido na geração: âncoras ^ e $ (o mesmo contrato de src/security/token.js).
+//  - VAZAMENTO em texto JSON: delimitação por lookaround sobre o PRÓPRIO alfabeto, não `\b`: `\b` é fronteira de palavra ASCII e o hífen não é
+//    caractere de palavra, então um código iniciado ou terminado por `-` (1 em 32 códigos em cada extremidade) escapava da busca e era recusado como formato.
+const TOKEN43_FORMATO = /^[A-Za-z0-9_-]{43}$/;
+const TOKEN43_EM_TEXTO = /(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])/;
 const ACOES_TOKEN = Object.freeze(['TOKEN_GERAR_ATIVACAO', 'TOKEN_REVOGAR_DISPOSITIVO', 'TOKEN_GERENCIAR_REDES', 'TOKEN_PREVIA_CATALOGO_REAL', 'TOKEN_VISUALIZAR_MONITORAMENTO', 'TOKEN_VISUALIZAR_HISTORICO']);
 
 function chavesDe(valor, acumulado = []) {
@@ -257,7 +262,7 @@ describe('Atendimento Token — H: Central Administrativa (PostgreSQL real)', ()
         const r = await como(gera).get(`${RAIZ}/dispositivos/${x.id}/ativacao`);
         assert.equal(r.status, 200, aviso(r));
         semSegredo(r.body, 'estado');
-        assert.equal(TOKEN43.test(JSON.stringify(r.body)), false, 'nenhum código de 43 caracteres em nenhum estado');
+        assert.equal(TOKEN43_EM_TEXTO.test(JSON.stringify(r.body)), false, 'nenhum código de 43 caracteres em nenhum estado');
         assert.deepEqual(Object.keys(r.body.ativacao).sort(), [...CHAVES_DA_ATIVACAO], 'só as chaves do contrato, em todos os estados');
         return r.body.ativacao;
       };
@@ -372,7 +377,10 @@ describe('Atendimento Token — H: Central Administrativa (PostgreSQL real)', ()
       const g = await como(gestor).post(`${RAIZ}/dispositivos/${x.id}/ativacao`);
       const { codigo, ...resto } = g.body.ativacao;
       semSegredo(resto, 'geração (sem o código)');
-      assert.match(codigo, TOKEN43);
+      assert.match(codigo, TOKEN43_FORMATO);
+      // a busca por vazamento precisa enxergar ESTE código, inclusive quando começa ou termina por `-` (controle positivo do detector)
+      assert.equal(TOKEN43_EM_TEXTO.test(JSON.stringify(g.body)), true, 'o detector de vazamento reconhece o código gerado');
+      assert.equal(TOKEN43_EM_TEXTO.test(JSON.stringify(resto)), false, 'sem o código, nada de 43 caracteres sobra na resposta da geração');
     });
 
     test('H15b — nenhuma superfície NOVA expõe segredo: Visão Geral, estado da ativação e prévia não trazem credencial, hash, código de ativação, CPF ou matrícula', async () => {

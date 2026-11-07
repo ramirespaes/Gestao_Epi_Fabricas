@@ -404,3 +404,39 @@ describe('[HS-F] política de destino do restaurador do banco', () => {
     }
   });
 });
+
+describe('[HOST-TLS] D-F7: auxiliares de TLS do host (opt-in)', () => {
+  const os = require('node:os');
+  const pasta = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'host-tls-'));
+  after(() => fs.rmSync(pasta, { recursive: true, force: true }));
+  const cert = path.join(pasta, 'ca.pem');
+  fs.writeFileSync(cert, 'sintetico', { mode: 0o600 });
+  const BASE_CHAVES = ['PGPASSFILE', 'PGHOST', 'PGPORT', 'PGUSER'];
+  const amb = (extra = {}) => ({ PGPASSFILE: '/x/pgpass', PGHOST: 'db.exemplo', PGPORT: '5432', PGUSER: 'u', ...extra });
+
+  test('HTLS-01 — certificadoRaizSeguro: arquivo próprio 0600/0644 canônico passa; frouxo, elo, relativo, inexistente e vazio não', () => {
+    assert.equal(host.certificadoRaizSeguro(cert), true);
+    const frouxo = path.join(pasta, 'frouxo.pem'); fs.writeFileSync(frouxo, 'x'); fs.chmodSync(frouxo, 0o666);
+    const elo = path.join(pasta, 'elo.pem'); fs.symlinkSync(cert, elo);
+    const vazio = path.join(pasta, 'vazio.pem'); fs.writeFileSync(vazio, '', { mode: 0o600 });
+    for (const ruim of [frouxo, elo, 'ca.pem', path.join(pasta, 'nao.pem'), vazio, pasta, undefined]) assert.equal(host.certificadoRaizSeguro(ruim), false, String(ruim));
+  });
+
+  test('HTLS-02 — formaDoAmbiente: BASE, TLS (par completo) ou null', () => {
+    assert.equal(host.formaDoAmbiente(amb(), BASE_CHAVES), 'BASE');
+    assert.equal(host.formaDoAmbiente(amb({ PGSSLMODE: 'verify-full', PGSSLROOTCERT: cert }), BASE_CHAVES), 'TLS');
+    assert.equal(host.formaDoAmbiente(amb({ PGSSLMODE: 'verify-full' }), BASE_CHAVES), null);
+    assert.equal(host.formaDoAmbiente(amb({ PGSSLROOTCERT: cert }), BASE_CHAVES), null);
+    assert.equal(host.formaDoAmbiente(amb({ OUTRA: 'x' }), BASE_CHAVES), null);
+    assert.equal(host.formaDoAmbiente(null, BASE_CHAVES), null);
+    assert.equal(host.formaDoAmbiente([], BASE_CHAVES), null);
+  });
+
+  test('HTLS-03 — tlsDoAmbienteValido exige verify-full, host por nome e CA segura', () => {
+    assert.equal(host.tlsDoAmbienteValido({ modo: 'verify-full', raiz: cert, host: 'db.exemplo', porta: 5432 }), true);
+    assert.equal(host.tlsDoAmbienteValido({ modo: 'require', raiz: cert, host: 'db.exemplo', porta: 5432 }), false);
+    assert.equal(host.tlsDoAmbienteValido({ modo: 'verify-full', raiz: cert, host: '127.0.0.1', porta: 5432 }), true, 'IP é host por NOME (TCP)');
+    assert.equal(host.tlsDoAmbienteValido({ modo: 'verify-full', raiz: cert, host: pasta, porta: 5432 }), false);
+    assert.equal(host.tlsDoAmbienteValido({ modo: 'verify-full', raiz: path.join(pasta, 'nao.pem'), host: 'db.exemplo', porta: 5432 }), false);
+  });
+});

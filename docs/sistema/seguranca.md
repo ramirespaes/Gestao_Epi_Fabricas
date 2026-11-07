@@ -273,6 +273,13 @@ Nunca colocar em `logs_auditoria`:
 - TOTP;
 - outros segredos equivalentes.
 
+**Pendência registrada em 07/11/2026 (PENDENCIA-SEG-TRG04, D-ORF-6 L1, Bloco B; ABERTA; bloqueia a produção).** A trava automática `logs_auditoria_bloquear_dado_sensivel`
+(função `logs_auditoria_chave_json_e_sensivel`, migration 014, usada também por `logs_auditoria_plataforma` e `logs_auditoria_identidade`) reconhece chaves sensíveis por
+segmentos e NÃO bloqueia nomes compostos sem separador nem fronteira camelCase (`PGPASSWORD`, `DBPASSWORD`, `ACCESSTOKEN`, `CLIENTSECRET` aceitos em PostgreSQL real, teste
+`TRG-04L`). A lista acima continua integral: a defesa primária é o escritor gravar só campos explícitos; a trava é proteção adicional. Tratamento futuro exige nova migration
+(a 014 é imutável), testes RED→GREEN, varredura dos escritores e decisão própria; detalhes na seção da L1 em [Operação](operacao.md) e em
+`04-Backup-Restauracao/documentos/D-ORF-6-L1-PENDENCIA-SEG-TRG04-20261107.md`.
+
 ---
 
 ### Origem CLAUDE §24 — linha 610

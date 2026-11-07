@@ -1006,3 +1006,72 @@ describe('[CP-E] portas reais do sistema (sem processos)', () => {
     await temporizadorReal.intervalo(1);
   });
 });
+
+describe('[CP-F] D-F7: TLS opt-in do PostgreSQL na composição', () => {
+  const comTlsCfg = (tls, host = 'db.interno.exemplo') => (c) => { c.postgres.host = host; if (tls !== undefined) c.postgres.tls = tls; return c; };
+  teste('CP-F01 — sem tls nada muda; com tls verify-full + CA absoluta e host por NOME a configuração é aceita', async () => {
+    const sem = await ambiente({});
+    assert.doesNotThrow(() => criarBackupDeProducao(sem.config));
+    const com = await ambiente({ alterarConfig: comTlsCfg({ modo: 'verify-full', raizCa: path.join(sem.raiz, 'ca.pem') }) });
+    assert.doesNotThrow(() => criarBackupDeProducao(com.config));
+  });
+
+  teste('CP-F02 — tls com modo fraco, caminho relativo, chave extra ou host por socket Unix é recusado na criação', async () => {
+    const ca = '/tmp/ca.pem';
+    for (const [tls, host] of [
+      [{ modo: 'require', raizCa: ca }, undefined],
+      [{ modo: 'verify-full', raizCa: 'ca.pem' }, undefined],
+      [{ modo: 'verify-full', raizCa: ca, extra: 1 }, undefined],
+      [{ modo: 'verify-full' }, undefined],
+      [{ modo: 'verify-full', raizCa: ca }, '/var/run/postgresql'],
+    ]) {
+      const a = await ambiente({ alterarConfig: comTlsCfg(tls, host) });
+      assert.throws(() => criarBackupDeProducao(a.config), `${JSON.stringify(tls)} ${host}`);
+    }
+  });
+
+  teste('CP-F03 — certificado raiz ausente é dependência indisponível antes de qualquer execução (sem spawn)', async () => {
+    const falso = spawnFalso();
+    const a = await ambiente({ portasExtras: { spawn: falso.spawn }, alterarConfig: comTlsCfg({ modo: 'verify-full', raizCa: '/nao/existe/ca.pem' }) });
+    await assert.rejects(() => executar(a.config), (e) => /CERTIFICADO_RAIZ|DEPENDENCIA/.test(`${e.code} ${e.message}`));
+    assert.equal(falso.chamadas.length, 0);
+  });
+});
+
+describe('[CP-G] adaptador producao-l2 sobre a composição REAL (spawn falso)', () => {
+  const { criarProducaoL2 } = require('../../src/services/backup-executor-producao-l2.service');
+  const LIDO = { identidade: { sha256Manifesto: 'd'.repeat(64) } };
+  const OP = 'e'.repeat(32);
+
+  teste('CP-G01 — resultado reconhecido e publicado: ok com dir sob a raiz de publicados e o manifesto lido pelo leitor injetado', async () => {
+    const falso = spawnFalso();
+    const a = await ambiente({ portasExtras: { spawn: falso.spawn } });
+    let pedidoDeLeitura;
+    const p = criarProducaoL2({ composicao: criarBackupDeProducao(a.config), raizPublicados: a.dirs.publicados, lerPacote: async (e) => { pedidoDeLeitura = e; return LIDO; } });
+    const r = await p.produzir({ operacaoId: OP, conjuntoId: 'conjunto-cp-0001' });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(r.pacote.dir, path.join(a.dirs.publicados, `l2-${OP}`));
+    assert.equal(r.pacote.lido, LIDO);
+    assert.deepEqual({ ...pedidoDeLeitura }, { dir: r.pacote.dir, nome: `l2-${OP}` });
+    assert.equal(fs.statSync(r.pacote.dir).isDirectory(), true);
+    assert.deepEqual(falso.chamadas.map((c) => c.nome), ['pg_dump', 'pg_restore'], 'só os dois processos da supervisão existente');
+  });
+
+  teste('CP-G02 — leitor que falha ou devolve manifesto sem hash: PRODUCAO_PACOTE_ILEGIVEL, sem vazar a causa', async () => {
+    for (const leitor of [async () => { throw new Error('SEGREDO'); }, async () => ({}), async () => ({ identidade: { sha256Manifesto: 'x' } })]) {
+      const a = await ambiente({ portasExtras: { spawn: spawnFalso().spawn } });
+      const p = criarProducaoL2({ composicao: criarBackupDeProducao(a.config), raizPublicados: a.dirs.publicados, lerPacote: leitor });
+      const r = await p.produzir({ operacaoId: OP, conjuntoId: 'conjunto-cp-0001' });
+      assert.deepEqual({ ...r }, { ok: false, codigo: 'PRODUCAO_PACOTE_ILEGIVEL' });
+    }
+  });
+
+  teste('CP-G03 — falha do pg_dump na composição real: ok false com código fixo e nenhum pacote publicado', async () => {
+    const a = await ambiente({ portasExtras: { spawn: spawnFalso({ dump: 'falha' }).spawn } });
+    const p = criarProducaoL2({ composicao: criarBackupDeProducao(a.config), raizPublicados: a.dirs.publicados, lerPacote: async () => LIDO });
+    const r = await p.produzir({ operacaoId: OP, conjuntoId: 'conjunto-cp-0001' });
+    assert.equal(r.ok, false);
+    assert.match(r.codigo, /^PRODUCAO_[A-Z_]+$/);
+    assert.equal(fs.existsSync(path.join(a.dirs.publicados, `l2-${OP}`)), false);
+  });
+});

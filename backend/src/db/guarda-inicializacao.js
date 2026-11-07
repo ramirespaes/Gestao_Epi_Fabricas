@@ -3,6 +3,7 @@
 const path = require('node:path');
 
 const { listarMigrations, lerManifesto, compararComManifesto, temDivergencia } = require('./checksums');
+const { opcoesDeTls } = require('../config/database-tls');
 
 /**
  * Guarda de inicialização (P1, 15/10/2026).
@@ -178,6 +179,8 @@ function criarClientePadrao(env) {
     user: env.DB_USER,
     password: env.DB_PASSWORD,
     connectionTimeoutMillis: 5000,
+    // D-F7: TLS verify-full só por opt-in (DB_SSL_MODE); sem a variável nada muda.
+    ...opcoesDeTls({ modo: env.DB_SSL_MODE, raizCa: env.DB_SSL_ROOT_CERT, host: env.DB_HOST, pgsslmode: env.PGSSLMODE }),
   });
 }
 
@@ -202,7 +205,16 @@ async function executar({
     saida.error(`[guarda]   - MIGRATIONS_DIRETORIO_INVALIDO: ${erro.message} — remova ou mova o arquivo fora do padrão antes de iniciar`);
     return SAIDAS.REPROVADA;
   }
-  const client = criarCliente(env);
+  // D-F7: configuração TLS explícita incoerente reprova ANTES de qualquer conexão (código fixo, nunca o valor).
+  let client;
+  try {
+    client = criarCliente(env);
+  } catch (erro) {
+    const codigo = typeof erro?.code === 'string' && /^TLS_[A-Z_]{3,40}$/.test(erro.code) ? erro.code : 'CLIENTE_DO_BANCO_INDISPONIVEL';
+    saida.error('[guarda] GUARDA REPROVADA — o backend NÃO foi iniciado:');
+    saida.error(`[guarda]   - ${codigo}: configuração do cliente do banco inválida`);
+    return SAIDAS.REPROVADA;
+  }
   try {
     await client.connect();
     const observado = coletarInjetado

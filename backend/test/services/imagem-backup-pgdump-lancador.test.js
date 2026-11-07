@@ -682,3 +682,40 @@ describe('[LAN-11] exigências PRÉ-OPERACIONAIS registradas (fora deste increme
   todo('LAN-11f — processo órfão de um lançamento inconclusivo: política operacional (alerta, retenção permanente da trava, procedimento de recuperação) e histórico limitado de `situacao()`', 'decisão operacional');
   todo('LAN-11g — descritores reais: o descritor passado em `stdio` precisa existir e pertencer ao arquivo criado de forma exclusiva; verificação no sistema operacional', 'depende de sistema de arquivos real');
 });
+
+// ------------------------------------------------------------------------------------------------------------------------------- LAN-TLS
+describe('[LAN-TLS] D-F7: par PGSSLMODE/PGSSLROOTCERT opt-in no ambiente do dump', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const pasta = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'dump-tls-'));
+  const cert = path.join(pasta, 'ca.pem');
+  fs.writeFileSync(cert, 'sintetico', { mode: 0o600 });
+  require('node:test').after(() => fs.rmSync(pasta, { recursive: true, force: true }));
+  const comAmbiente = (extra) => ({ ...SPEC(), ambiente: { ...SPEC().ambiente, ...extra } });
+
+  teste('LAN-TLS-01 — com o par válido e host por nome o spawn recebe seis chaves; sem o par continua com quatro', async () => {
+    const a = criarSpawn({ lanca: erroSensivel('EINVAL') });
+    await desfecho(criar(a.spawn).lancar(comAmbiente({ PGSSLMODE: 'verify-full', PGSSLROOTCERT: cert })));
+    assert.deepEqual(Object.keys(a.chamadas[0].opcoes.env).sort(), ['PGHOST', 'PGPASSFILE', 'PGPORT', 'PGSSLMODE', 'PGSSLROOTCERT', 'PGUSER']);
+    const b = criarSpawn({ lanca: erroSensivel('EINVAL') });
+    await desfecho(criar(b.spawn).lancar(SPEC()));
+    assert.deepEqual(Object.keys(b.chamadas[0].opcoes.env).sort(), ['PGHOST', 'PGPASSFILE', 'PGPORT', 'PGUSER']);
+  });
+
+  teste('LAN-TLS-02 — par incompleto, modo fraco, CA insegura/inexistente ou chave extra: SPEC_INVALIDO e nenhum spawn', async () => {
+    const frouxo = path.join(pasta, 'frouxo.pem');
+    fs.writeFileSync(frouxo, 'x'); fs.chmodSync(frouxo, 0o666);
+    for (const extra of [
+      { PGSSLMODE: 'verify-full' }, { PGSSLROOTCERT: cert }, { PGSSLMODE: 'require', PGSSLROOTCERT: cert },
+      { PGSSLMODE: 'verify-full', PGSSLROOTCERT: frouxo }, { PGSSLMODE: 'verify-full', PGSSLROOTCERT: path.join(pasta, 'nao.pem') },
+      { PGSSLMODE: 'verify-full', PGSSLROOTCERT: cert, PGSSLCERT: '/x' },
+    ]) {
+      const s = criarSpawn();
+      const d = await desfecho(criar(s.spawn).lancar(comAmbiente(extra)));
+      assert.equal(d.tipo, 'rejeitado');
+      assert.equal(d.erro.code, 'SPEC_INVALIDO');
+      assert.equal(s.chamadas.length, 0);
+    }
+  });
+});

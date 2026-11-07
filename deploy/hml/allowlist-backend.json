@@ -1,0 +1,13 @@
+{
+  "arquivos": [
+    "migrations/checksums.json",
+    "package-lock.json",
+    "package.json"
+  ],
+  "raizes": [
+    { "prefixo": "migrations/", "extensoes": [".sql"] },
+    { "prefixo": "scripts/", "extensoes": [".js"] },
+    { "prefixo": "src/", "extensoes": [".js"] },
+    { "prefixo": "src/email/assets/", "extensoes": [".png"] }
+  ]
+}
