@@ -12,7 +12,7 @@
  *  - executável absoluto e canônico terminado em `/pg_restore`;
  *  - argumentos EXATAMENTE `--exit-on-error --no-owner --no-privileges --single-transaction --dbname=<banco>`, nessa ordem (nada de `--clean`, `--create`, `--file`, `--host`, `--username`, `--password`, `-d` ou qualquer outro);
  *  - POLÍTICA DE DESTINO imposta AQUI, independente da do restaurador (defesa em profundidade, fixada na construção e imutável pelo chamador): banco com o prefixo exigido, só `[a-z0-9_]`, fora dos protegidos, host autorizado;
- *  - ambiente EXATAMENTE `PGPASSFILE`, `PGHOST`, `PGPORT`, `PGUSER` (nenhuma senha, `PGDATABASE`, `PGOPTIONS`, `PATH` ou outra variável; o ambiente do processo atual NÃO é herdado);
+ *  - ambiente EXATAMENTE `PGPASSFILE`, `PGHOST`, `PGPORT`, `PGUSER` (nenhuma senha, `PGDATABASE`, `PGOPTIONS`, `PATH` ou outra variável; o ambiente do processo atual NÃO é herdado); D-F7 (opt-in): opcionalmente, e em par, `PGSSLMODE=verify-full` e `PGSSLROOTCERT` (host de rede e certificado fisicamente seguro);
  *  - opções exatamente `{ shell:false, detached:true, stdio:[inteiro >= 3 (o dump, entrada padrão), 'ignore', 'ignore'] }`: nenhuma saída é capturada nem retida.
  * Falha: rejeita SPEC_INVALIDO ou DESTINO_NAO_AUTORIZADO, sem spawn. Chama `spawn` UMA vez e registra os ouvintes do filho de forma SÍNCRONA. NAO_INICIADO só com a ausência de início comprovada; INICIO_INCONCLUSIVO em todo o resto
  * antes do `spawn`; saída (`exit`) e fluxos (`close`) são promessas SEPARADAS; `error` posterior só registra a causa segura. Mensagens e códigos fixos, sem eco de valores.
@@ -20,7 +20,7 @@
  * LIMITES: execução real não exercida; identidade de grupo/PGID e filhos órfãos como nos demais lançadores; a política só vale para o que passa por este lançador; `PGPASSFILE` aponta um arquivo cujo conteúdo e permissões não são verificados aqui.
  */
 
-const { hostAutorizavel, socketFisicoSeguro } = require('./imagem-backup-host-postgres');
+const { hostAutorizavel, socketFisicoSeguro, formaDoAmbiente, tlsDoAmbienteValido } = require('./imagem-backup-host-postgres');
 
 const SEGMENTO = /^[A-Za-z0-9._+~@-]{1,255}$/;
 const BANCO = /^[a-z][a-z0-9_]{0,62}$/;
@@ -84,9 +84,12 @@ function capturarSpec(spec, politica) {
     if (typeof ultimo !== 'string' || !ultimo.startsWith(PREFIXO_DO_DBNAME)) return { codigo: 'SPEC_INVALIDO' };
     const banco = ultimo.slice(PREFIXO_DO_DBNAME.length);
     if (!BANCO.test(banco)) return { codigo: 'SPEC_INVALIDO' };
-    if (!ehObjeto(ambiente) || !chavesExatas(ambiente, CHAVES_DO_AMBIENTE)) return { codigo: 'SPEC_INVALIDO' };
-    const { PGPASSFILE: arquivoDeSenha, PGHOST: host, PGPORT: porta, PGUSER: usuario } = ambiente;
+    // D-F7 (opt-in): as quatro chaves OU as quatro mais o par TLS (PGSSLMODE=verify-full e PGSSLROOTCERT), nunca uma chave só do par.
+    const forma = formaDoAmbiente(ambiente, CHAVES_DO_AMBIENTE);
+    if (forma === null) return { codigo: 'SPEC_INVALIDO' };
+    const { PGPASSFILE: arquivoDeSenha, PGHOST: host, PGPORT: porta, PGUSER: usuario, PGSSLMODE: modoTls, PGSSLROOTCERT: raizTls } = ambiente;
     if (!caminhoAbsolutoCanonico(arquivoDeSenha) || typeof host !== 'string' || typeof porta !== 'string' || !PORTA.test(porta) || Number(porta) > 65535 || !socketFisicoSeguro(host, Number(porta)) || typeof usuario !== 'string' || !USUARIO.test(usuario)) return { codigo: 'SPEC_INVALIDO' };
+    if (forma === 'TLS' && !tlsDoAmbienteValido({ modo: modoTls, raiz: raizTls, host, porta: Number(porta) })) return { codigo: 'SPEC_INVALIDO' };
     if (!ehObjeto(opcoes) || !chavesExatas(opcoes, CHAVES_DAS_OPCOES)) return { codigo: 'SPEC_INVALIDO' };
     const { shell, detached, stdio } = opcoes;
     if (shell !== false || detached !== true || !Array.isArray(stdio) || stdio.length !== 3) return { codigo: 'SPEC_INVALIDO' };
@@ -94,7 +97,7 @@ function capturarSpec(spec, politica) {
     if (!Number.isSafeInteger(entrada) || entrada < 3 || stdio[1] !== 'ignore' || stdio[2] !== 'ignore') return { codigo: 'SPEC_INVALIDO' };
     // política de destino imposta pelo lançador, independente da do restaurador
     if (!banco.startsWith(politica.prefixoDoBanco) || banco.length === politica.prefixoDoBanco.length || politica.protegidos.has(banco.toLowerCase()) || !politica.hosts.has(host)) return { codigo: 'DESTINO_NAO_AUTORIZADO' };
-    return { executavel, banco, arquivoDeSenha, host, porta, usuario, entrada };
+    return { executavel, banco, arquivoDeSenha, host, porta, usuario, entrada, tls: forma === 'TLS' ? { modo: modoTls, raiz: raizTls } : null };
   } catch {
     return { codigo: 'SPEC_INVALIDO' };
   }
@@ -119,7 +122,9 @@ function criarLancadorDeRestauracaoComSpawn(opcoes) {
       try {
         // Argumentos e ambiente são REMONTADOS dos valores validados; o ambiente do processo atual não é herdado.
         filho = spawn(capturado.executavel, [...ARGUMENTOS_FIXOS, `${PREFIXO_DO_DBNAME}${capturado.banco}`], {
-          env: { PGPASSFILE: capturado.arquivoDeSenha, PGHOST: capturado.host, PGPORT: capturado.porta, PGUSER: capturado.usuario },
+          env: capturado.tls === null
+            ? { PGPASSFILE: capturado.arquivoDeSenha, PGHOST: capturado.host, PGPORT: capturado.porta, PGUSER: capturado.usuario }
+            : { PGPASSFILE: capturado.arquivoDeSenha, PGHOST: capturado.host, PGPORT: capturado.porta, PGUSER: capturado.usuario, PGSSLMODE: capturado.tls.modo, PGSSLROOTCERT: capturado.tls.raiz },
           shell: false,
           detached: true,
           stdio: [capturado.entrada, 'ignore', 'ignore'],
