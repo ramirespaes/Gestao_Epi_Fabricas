@@ -206,6 +206,39 @@ dependências, sem `npm audit fix`.
 **Critérios de homologação adicionados.** T1.5 (depois do DEP-2): instanciar os clientes reais com um manipulador de requisição sem rede e conferir o pedido serializado de cada porta (cabeçalhos de condição,
 checksum, dono, versão); T2/T3 como acima, executados pelo CLI em ensaio (HOMOLOGACAO, dados sintéticos); aceite do monitoramento: alerta disparado com backup atrasado, sem verificação, divergência e linha adulterada.
 
+### Ligação local do executor (D-ORF-6, L1, Blocos A e B) — implementado localmente, NÃO ativado
+
+Estado (06/11/2026, PR #91): a ligação local do executor existe como contratos e adaptadores por injeção. Continua valendo tudo da seção anterior: `OPERACAO_HABILITADA` é falsa e única na política,
+nada contata a AWS, o SDK não está instalado (DEP-2) e nenhuma unidade systemd foi instalada. O que mudou: a ligação ao processo real deixou de ser inexistente e passou a ter adaptadores locais
+provados com composições falsas e reais em teste, sem execução operacional. Arquivos: `backend/src/config/database-tls.js`, `backend/src/services/backup-executor-{credenciais,auditoria,ligacao,producao-l2,restaurador-l2}.service.js`
+e ajustes em `imagem-backup-host-postgres`, nos dois lançadores (`pgdump-lancador`, `restauracao-lancador`), na composição de produção, em `config/database.js`, `scripts/migrate.js` e `db/guarda-inicializacao.js`.
+
+**D-F7 (TLS do banco), implementado como opt-in.** `DB_SSL_MODE=verify-full` (e `DB_SSL_ROOT_CERT` opcional) liga TLS com verificação de cadeia e nome no pool da API, no `migrate` e na guarda de
+inicialização; ausente, nada muda (o driver segue lendo `PGSSLMODE`). Só `verify-full` é aceito; modo fraco, certificado inseguro, socket Unix ou `PGSSLMODE` conflitante reprovam com código fixo e a guarda
+não sobe a API. Para `pg_dump` e `pg_restore` o par `PGSSLMODE=verify-full`/`PGSSLROOTCERT` é aceito inteiro ou nunca, só com host TCP e certificado seguro; a composição o injeta pelo wrapper `comTls`
+(provisório: os serviços `imagem-backup-pgdump` e `imagem-backup-restauracao-banco`, que montam o ambiente, não foram alterados). A obrigatoriedade de TLS em produção NÃO está implementada: depende da topologia.
+
+**D-F13 (auditoria), implementado sem migration.** O registro primário continua sendo a linha de evidência no stdout do CLI. `backup-executor-auditoria` relê e confere a linha e grava UM evento `SISTEMA`
+em `logs_auditoria_plataforma` pelo `registrarEventoSistema` existente, com contexto de 15 chaves fixas e não sensíveis (identificadores, estado, códigos, contagens e o SHA-256 da evidência). Nunca lança: falha de
+auditoria não mascara o desfecho. Provado em PostgreSQL 16 efêmero local (06/11/2026, 16/16): eventos aceitos, as 15 chaves aceitas, dez recusas de chave sensível, append-only e schema `public` intocado. No CI a
+suíte `d-orf-6-l1-auditoria-trigger.integration.js` é ignorada (`TRG_SO_NA_INSTANCIA_EFEMERA_LOCAL`); só roda com `SWB_PGDATA` declarado.
+
+**Credenciais e ligação.** `backup-executor-credenciais` entrega, por papel (PUBLICADOR, VERIFICADOR, RESTAURACAO), o que um fornecedor injetado devolve, com segredo e token não enumeráveis, recusa de papel
+trocado, expiração e formato, e separação de `accessKeyId` entre papéis; a fonte real (arquivo, STS, Roles Anywhere) e o papel da porta KMS são decisão H9-a. `backup-executor-ligacao` monta as portas AWS por
+papel, o KMS e a auditoria, sem processo, ambiente ou rede. `backup-executor-producao-l2` e `backup-executor-restaurador-l2` ligam as portas `producao` e `restaurador` às composições aprovadas
+(`criarBackupDeProducao`, `criarRestauracaoDeProducao`), reutilizando a supervisão existente (D-LIG-1) sem escritor nem processo novo; a guarda P2 continua verde sem entrada nova. A leitura autenticada do
+manifesto (`lerPacote`) é injetada e a versão real não existe.
+
+**PENDENCIA-SEG-TRG04 (segurança; bloqueia a produção, não a integração).** A função `logs_auditoria_chave_json_e_sensivel` (migration 014, compartilhada pelas três trilhas de auditoria) reconhece chaves por
+segmentos do nome, não por substring: nomes compostos SEM separador e sem fronteira camelCase não são bloqueados (`PGPASSWORD`, `DBPASSWORD`, `ACCESSTOKEN`, `CLIENTSECRET` confirmados aceitos em banco real). Não é
+comportamento seguro e NÃO foi corrigido: o trigger e a migration 014 permanecem intactos; o teste `TRG-04L` só caracteriza a limitação e deve ser invertido quando ela for tratada. Tratamento, em etapa própria e antes
+da produção: nova migration com `CREATE OR REPLACE FUNCTION` (regra adicional por sufixo de segmento, preservando `secretaria_id`, `hashtag`, `hash_arquivo`), testes RED→GREEN em schema temporário, varredura dos
+escritores, `migrations/checksums.json`, contagens de migrations e dicionário de dados (`docs/sistema/dicionario-de-dados.md` ainda não existe). A defesa primária continua sendo gravar só campos explícitos.
+
+**O que continua bloqueando a produção.** DEP-2 (SDK real e `VERSOES_APROVADAS`), fonte real de credenciais e papel do KMS (H9-a), TLS obrigatório por ambiente, `lerPacote` real, dump e restauração reais
+pelo executor, ajuste definitivo do `comTls`, PENDENCIA-SEG-TRG04, RPO e RTO, cerimônia de custódia e listas reais. Evidências locais (PostgreSQL efêmero, 14 arquivos com SHA-256) ficam fora do Git, em
+`~/SafeWorkDados/d-orf-6-l1-bloco-b-evidencias-20261106`.
+
 ### Documentos especializados existentes — fonte única
 
 Consultar [os caminhos das fontes únicas](fontes-especializadas.md), sem cópias paralelas. A
