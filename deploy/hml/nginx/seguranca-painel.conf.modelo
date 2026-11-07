@@ -1,0 +1,10 @@
+# MODELO do Painel Privado (homologacao). Nao aplicado em nenhum servidor.
+# Incluido no servidor e em todo location que define add_header: um add_header em
+# location descarta os cabecalhos herdados do servidor.
+add_header Content-Security-Policy "{{CSP_PAINEL}}" always;
+add_header X-Content-Type-Options "nosniff" always;
+add_header X-Frame-Options "DENY" always;
+add_header Referrer-Policy "no-referrer" always;
+add_header Permissions-Policy "camera=(), geolocation=(), microphone=(), payment=()" always;
+add_header Cross-Origin-Opener-Policy "same-origin" always;
+add_header Strict-Transport-Security "max-age={{HSTS_MAX_AGE}}" always;
