@@ -4,9 +4,10 @@
  * Pacote do BACKEND por allowlist explícita (deploy/hml/allowlist-backend.json).
  *
  * Leva só src/, scripts/, migrations/ (com o checksums.json) e package.json /
- * package-lock.json. Nunca leva test/, docs/, .env*, node_modules nem segredos.
- * As dependências são instaladas no destino a partir do lockfile; este pacote
- * não carrega node_modules.
+ * package-lock.json. Nunca leva test/, docs/, .env*, node_modules, segredos nem
+ * ops/ (modelos operacionais do D-ORF-6, instalados por procedimento próprio e
+ * autorizado, fora da release). As dependências são instaladas no destino a
+ * partir do lockfile; este pacote não carrega node_modules.
  *
  * Fail-closed, nesta ordem, ANTES de escrever qualquer arquivo:
  *   1. item desconhecido na raiz, link simbólico, duplicata do Finder;
@@ -35,6 +36,12 @@ const SHA_COMPLETO = /^[0-9a-f]{40}$/;
 const ROTULO = /^hml-\d{8}T\d{6}-[0-9a-f]{7}(-retroativo)?$/;
 const OBRIGATORIOS = ['package.json', 'package-lock.json', 'migrations/checksums.json', 'src/server.js', 'scripts/guarda-inicializacao.js'];
 const IGNORADOS_NA_RAIZ = new Set(['node_modules', 'test', 'docs', 'coverage', '.gitignore', '.env.example']);
+// Diretórios OPERACIONAIS do backend que existem no repositório mas NUNCA entram na release: `ops/` guarda os modelos
+// inertes de unidades systemd do D-ORF-6 (backup), instalados só por procedimento próprio e autorizado, fora deste pacote.
+// A exclusão é explícita e verificada: a allowlist não pode apontar para dentro deles, só um DIRETÓRIO real com esse nome
+// é aceito na raiz (link ou arquivo com o nome continua recusado) e o conteúdo não é lido nem copiado.
+const EXCLUIDOS_DA_RELEASE = new Set(['ops']);
+const apontaParaExcluido = (rel) => EXCLUIDOS_DA_RELEASE.has(rel.split('/')[0]);
 const ENV_NA_RAIZ = /^\.env(\..+)?$/;
 const DUPLICATA_FINDER = /^.+ \d+(\.[^ ]+)?$/;
 const HOOKS_DE_INSTALACAO = ['preinstall', 'install', 'postinstall', 'prepublish', 'preprepare', 'prepare', 'postprepare', 'prepack', 'postpack'];
@@ -114,7 +121,15 @@ function lerAllowlist(arquivo = ARQUIVO_ALLOWLIST) {
       && path.posix.normalize(r.prefixo) === r.prefixo && Array.isArray(r.extensoes) && r.extensoes.length > 0
       && r.extensoes.every((e) => /^\.[a-z0-9]+$/.test(e)));
   if (!ok) throw erro('ALLOWLIST_INVALIDA', 'allowlist do backend malformada');
+  verificarAllowlistForaDosExcluidos(dados);
   return { arquivos: dados.arquivos.slice(), raizes: dados.raizes.map((r) => ({ prefixo: r.prefixo, extensoes: r.extensoes.slice() })) };
+}
+
+// Vale tanto para a allowlist lida do arquivo quanto para uma injetada: nenhuma regra pode alcançar um diretório operacional.
+function verificarAllowlistForaDosExcluidos(allow) {
+  if (allow.arquivos.some(apontaParaExcluido) || allow.raizes.some((r) => apontaParaExcluido(r.prefixo))) {
+    throw erro('ALLOWLIST_INVALIDA', 'allowlist do backend aponta para um diretório operacional excluído da release');
+  }
 }
 
 function lerContratos(arquivo = ARQUIVO_CONTRATOS) {
@@ -162,6 +177,7 @@ function percorrer(raiz, rel, allow, acumulado) {
 }
 
 function enumerar(raiz, allow) {
+  verificarAllowlistForaDosExcluidos(allow);
   const dirsDeTopo = new Set([...allow.raizes.map((r) => r.prefixo.split('/')[0]), ...allow.arquivos.filter((a) => a.includes('/')).map((a) => a.split('/')[0])]);
   const arquivosDaRaiz = new Set(allow.arquivos.filter((a) => !a.includes('/')));
   const acumulado = [];
@@ -170,6 +186,8 @@ function enumerar(raiz, allow) {
     if (nome === '.DS_Store' || IGNORADOS_NA_RAIZ.has(nome) || ENV_NA_RAIZ.test(nome)) continue;
     if (entrada.isSymbolicLink()) throw erro('ENTRADA_INVALIDA', `link simbólico: ${nome}`);
     if (DUPLICATA_FINDER.test(nome)) throw erro('DUPLICATA_FINDER', `duplicata do Finder: ${nome}`);
+    // Diretório operacional: fica fora da release sem ser lido nem copiado. Link ou arquivo com esse nome caem nas recusas acima e abaixo.
+    if (entrada.isDirectory() && EXCLUIDOS_DA_RELEASE.has(nome)) continue;
     if (entrada.isDirectory() && dirsDeTopo.has(nome)) percorrer(raiz, nome, allow, acumulado);
     else if (entrada.isFile() && arquivosDaRaiz.has(nome)) acumulado.push(nome);
     else throw erro('ENTRADA_RAIZ_DESCONHECIDA', `item desconhecido na raiz do backend: ${nome}`);
@@ -415,4 +433,5 @@ if (require.main === module) {
 
 module.exports = {
   empacotarBackend, gerarReleaseBackend, verificarReleaseBackend, lerAllowlist, lerContratos, linhasDoManifesto, ErroPublicacaoBackend, ROTULO, LIMITE_LINHA,
+  EXCLUIDOS_DA_RELEASE,
 };

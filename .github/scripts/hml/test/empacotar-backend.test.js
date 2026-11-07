@@ -152,7 +152,8 @@ describe('empacotar-backend — allowlist e pacote', () => {
     assert.deepEqual(listar(saida), esperado);
     assert.deepEqual(r.arquivos, esperado);
     for (const fora of ['.env.example', '.gitignore']) assert.ok(!r.arquivos.includes(fora), fora);
-    assert.ok(!r.arquivos.some((f) => /^(test|docs|node_modules|coverage)\//.test(f)));
+    assert.ok(fs.statSync(path.join(BACKEND_REAL, 'ops')).isDirectory(), 'o backend real tem ops/ (modelos systemd do D-ORF-6), que a release exclui');
+    assert.ok(!r.arquivos.some((f) => /^(test|docs|node_modules|coverage|ops)\//.test(f)));
     for (const rel of ['src/server.js', 'src/app.js', 'migrations/checksums.json', 'scripts/guarda-inicializacao.js', 'src/email/assets/marca-safework.png']) assert.ok(r.arquivos.includes(rel), rel);
     for (const rel of esperado) assert.equal(r.manifesto[rel], sha256(fs.readFileSync(path.join(BACKEND_REAL, rel))), rel);
   });
@@ -179,6 +180,36 @@ describe('empacotar-backend — allowlist e pacote', () => {
     const raiz = criarRaiz({ '.env': 'SMTP_SENHA=valor-real-muito-longo-123456789\n', '.env.local': 'X=1\n', '.env.production': 'Y=2\n', '.DS_Store': 'x', 'src/.DS_Store': 'x' });
     const saida = path.join(novoDiretorio(), 'pacote');
     assert.deepEqual(empacotarBackend({ saida, raiz }).arquivos, EMPACOTADOS_SINTETICOS);
+  });
+
+  test('ops/ (modelos operacionais do D-ORF-6) na raiz nunca entra na release: excluído por nome, não lido e não copiado', () => {
+    const { empacotarBackend, EXCLUIDOS_DA_RELEASE } = carregar();
+    assert.deepEqual([...EXCLUIDOS_DA_RELEASE], ['ops']);
+    const raiz = criarRaiz({ 'ops/systemd/safework-backup.service.modelo': '[Service]\nExecStart=/opt/x\n', 'ops/systemd/safework-backup.timer.modelo': '[Timer]\n', 'ops/systemd/LEIAME.md': 'modelos inertes\n' });
+    const saida = path.join(novoDiretorio(), 'pacote');
+    const r = empacotarBackend({ saida, raiz });
+    assert.deepEqual(r.arquivos, EMPACOTADOS_SINTETICOS);
+    assert.deepEqual(listar(saida), EMPACOTADOS_SINTETICOS);
+    assert.ok(!Object.keys(r.manifesto).some((f) => f.startsWith('ops/')));
+    assert.equal(fs.existsSync(path.join(saida, 'ops')), false);
+  });
+
+  test('fail-closed: "ops" como link ou arquivo na raiz continua recusado, e uma allowlist que alcance ops/ é inválida, lida ou injetada', () => {
+    const { empacotarBackend, lerAllowlist } = carregar();
+    const saida = path.join(novoDiretorio(), 'pacote');
+    const raizLink = criarRaiz();
+    fs.symlinkSync(novoDiretorio(), path.join(raizLink, 'ops'));
+    recusa(() => empacotarBackend({ saida, raiz: raizLink }), 'ENTRADA_INVALIDA');
+    recusa(() => empacotarBackend({ saida, raiz: criarRaiz({ ops: 'x' }) }), 'ENTRADA_RAIZ_DESCONHECIDA');
+    const base = JSON.parse(fs.readFileSync(path.join(REPO, 'deploy', 'hml', 'allowlist-backend.json'), 'utf8'));
+    const arquivo = path.join(novoDiretorio(), 'allowlist.json');
+    fs.writeFileSync(arquivo, JSON.stringify({ ...base, raizes: [...base.raizes, { prefixo: 'ops/', extensoes: ['.modelo'] }] }));
+    recusa(() => lerAllowlist(arquivo), 'ALLOWLIST_INVALIDA');
+    fs.writeFileSync(arquivo, JSON.stringify({ ...base, arquivos: [...base.arquivos, 'ops/systemd/LEIAME.md'] }));
+    recusa(() => lerAllowlist(arquivo), 'ALLOWLIST_INVALIDA');
+    const injetada = { ...base, raizes: [...base.raizes, { prefixo: 'ops/', extensoes: ['.modelo'] }] };
+    recusa(() => empacotarBackend({ saida, raiz: criarRaiz({ 'ops/x.modelo': 'x' }), allowlist: injetada }), 'ALLOWLIST_INVALIDA');
+    assert.equal(fs.existsSync(saida), false);
   });
 
   test('fail-closed: item desconhecido na raiz do backend', () => {

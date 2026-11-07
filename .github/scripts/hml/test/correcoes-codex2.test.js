@@ -1040,8 +1040,17 @@ describe('B01 — as âncoras: troca de diretório detectada, ordem de publicaç
       executar: async (cmd, args, o) => {
         const alvo = path.join(o.cwd, 'package.json');
         const conteudo = fs.readFileSync(alvo);
-        fs.rmSync(alvo);
-        fs.writeFileSync(alvo, conteudo);
+        // O inode original fica ABERTO enquanto o substituto é criado. Em ext4 (CI, Linux) um inode recém-liberado é
+        // reaproveitado na hora e o substituto nascia com o MESMO número, o que não é a troca que este teste descreve; em
+        // APFS isso não acontece. Com o descritor aberto o kernel nunca reaproveita, e a precondição é conferida.
+        const original = fs.openSync(alvo, 'r');
+        try {
+          fs.rmSync(alvo);
+          fs.writeFileSync(alvo, conteudo);
+          assert.notEqual(fs.statSync(alvo).ino, fs.fstatSync(original).ino, 'precondição: o substituto precisa ser outro inode');
+        } finally {
+          fs.closeSync(original);
+        }
       },
     });
     const e = await falha(inst().instalar({ config: amb.config, componente: 'backend', release: dir, opcoes: opc(dir), deps }));
