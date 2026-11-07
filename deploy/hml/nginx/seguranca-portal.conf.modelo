@@ -1,0 +1,10 @@
+# MODELO do Portal do Cliente (homologacao). Nao aplicado em nenhum servidor.
+# Incluido no servidor e em todo location que define add_header: um add_header em
+# location descarta os cabecalhos herdados do servidor.
+add_header Content-Security-Policy "{{CSP_PORTAL}}" always;
+add_header X-Content-Type-Options "nosniff" always;
+add_header X-Frame-Options "DENY" always;
+add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+add_header Permissions-Policy "geolocation=(), microphone=(), payment=()" always;
+add_header Cross-Origin-Opener-Policy "same-origin" always;
+add_header Strict-Transport-Security "max-age={{HSTS_MAX_AGE}}" always;

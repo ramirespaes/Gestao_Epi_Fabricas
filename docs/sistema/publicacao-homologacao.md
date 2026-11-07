@@ -20,6 +20,14 @@ segredos, sem `environment`, sem permissão de escrita e sem nenhum comando de
 transmissão. Isso é provado por `.github/scripts/hml/test/workflow-deploy-hml.test.js`,
 que falha se alguém acrescentar SSH, AWS, segredo, gatilho automático ou ação de terceiros.
 
+## Componentes locais para a publicação real
+
+Instalador de releases com rollback, compatibilidade com migrations e contratos,
+pacote do backend, verificação pós-publicação, gerador de CSP, modelos Nginx e o
+desenho do futuro job de publicação estão em
+[publicacao-homologacao-componentes.md](publicacao-homologacao-componentes.md). Todos
+foram testados só em ambiente local; nenhum foi instalado ou aplicado em servidor.
+
 ## Regras do disparo manual
 
 Gatilho único `workflow_dispatch`, com `commit` (SHA completo), `confirmacao`
@@ -104,6 +112,7 @@ de qualquer publicação real:
 - **Dois "manifestos" distintos.** O manifesto SHA-256 desta release lista arquivos de frontend e não tem relação com o manifesto evolutivo de backup do D-ORF-6 (versão 2, layout 2, em validação). Nenhuma peça deste CD lê, grava ou interpreta o manifesto de backup, e o inverso também vale.
 - **Rollback e layout 2.** O rollback de código aqui descrito é só do frontend e não afeta backups. Um rollback futuro do **backend** para uma versão anterior ao leitor de layout 2 pode impedir a leitura ou a restauração de backups gravados em layout 2, que o contrato de Operação exige restaurar apenas em banco e diretório novos. Esse rollback exige verificar a versão do leitor de backup antes de reapontar o backend.
 - **Migrations e dados.** Voltar o frontend não reverte migration nem dado persistente. Voltar o backend sem reverter o banco só é seguro se a versão anterior for compatível com o esquema já migrado, o que precisa de verificação caso a caso.
+- A interface de coordenação proposta (estado `LIVRE`, `OCUPADO` ou `DESCONHECIDO`, com o backend bloqueado, sem atestado que o libere, enquanto não houver provedor homologado) está em [publicacao-homologacao-componentes.md](publicacao-homologacao-componentes.md). **Nenhuma trava do D-ORF-6 foi homologada**; a interface não a implementa nem a presume.
 - A integração de D-ORF-6 à `main` é independente. O CD deve ser reavaliado depois dela, porque a `main` e o conteúdo de `frontend/` mudam.
 
 ## Riscos e limites conhecidos
