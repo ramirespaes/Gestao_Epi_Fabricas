@@ -1,0 +1,73 @@
+# MODELO da origem do Painel Privado (homologacao). Nao aplicado em nenhum servidor.
+# Origem propria, disjunta da do cliente. Somente /api/plataforma/ chega ao backend,
+# com o Host original preservado para a validacao de host da plataforma.
+server {
+    listen 80;
+    server_name {{DOMINIO_PAINEL}};
+    server_tokens off;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root {{RAIZ_ACME}};
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 301 https://{{DOMINIO_PAINEL}}$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name {{DOMINIO_PAINEL}};
+    server_tokens off;
+
+    ssl_certificate {{CERTIFICADO_PAINEL}};
+    ssl_certificate_key {{CHAVE_PAINEL}};
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    root {{RAIZ_PAINEL}};
+    autoindex off;
+    client_max_body_size {{LIMITE_CORPO}};
+
+    include {{ARQUIVO_SEGURANCA_PAINEL}};
+
+    location ~ /\. {
+        return 404;
+    }
+
+    location = /versao.json {
+        allow 127.0.0.1;
+        allow ::1;
+        allow {{REDE_VERIFICACAO}};
+        deny all;
+        alias {{ARQUIVO_VERSAO_PAINEL}};
+        default_type application/json;
+        include {{ARQUIVO_SEGURANCA_PAINEL}};
+        add_header Cache-Control "no-store" always;
+    }
+
+    location ^~ /api/plataforma/ {
+        proxy_pass http://127.0.0.1:{{PORTA_BACKEND}};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_hide_header X-Powered-By;
+        proxy_read_timeout 60s;
+    }
+
+    location ^~ /api/ {
+        return 404;
+    }
+
+    location = / {
+        return 302 {{DESTINO_RAIZ_PAINEL}};
+    }
+
+    location / {
+        include {{ARQUIVO_SEGURANCA_PAINEL}};
+        add_header Cache-Control "no-cache" always;
+        try_files $uri $uri/index.html =404;
+    }
+}
