@@ -26,7 +26,12 @@ adversariais da auditoria de segurança, cada um escrito antes da correção.
 ## Pacote do backend
 
 Leva `src/`, `scripts/`, `migrations/` com o `checksums.json`, `package.json` e
-`package-lock.json`. Não leva `test/`, `docs/`, `.env*`, `node_modules` nem `coverage`.
+`package-lock.json`. Não leva `test/`, `docs/`, `.env*`, `node_modules`, `coverage` nem
+`ops/`, os modelos inertes de unidades systemd do D-ORF-6, cuja instalação é procedimento
+próprio e autorizado, fora da release: `ops/` é um diretório operacional excluído por
+nome, não é lido nem copiado, a allowlist não pode apontar para dentro dele (lida do
+arquivo ou injetada, a recusa é `ALLOWLIST_INVALIDA`) e um link ou arquivo com esse nome
+na raiz continua recusado.
 Recusa, antes de escrever: item desconhecido na raiz, link simbólico, duplicata do
 Finder, arquivo de segredo por nome, extensão fora da regra, arquivo grande, segredo no
 conteúdo (a mensagem cita arquivo, linha e regra, nunca o valor), `package.json` com hook
@@ -145,7 +150,11 @@ montagens, SSH só em `127.0.0.1:60022`), isolada por nftables com cobertura COM
 antes de qualquer execução. A entrega v3 (22 arquivos, SELO `b1d9fe41bab1efb989b4e7f6d2dd8134043109829329b694d1be479bc0767375`)
 leva 12 arquivos deste repositório, os 3 testes só Linux (`correcoes-ancora`, `correcoes-bloqueantes` e `correcoes-codex2`)
 e 9 componentes de `deploy/hml/`, fixados em `MANIFESTO-ARQUIVOS.sha256`
-(`f6f1ba905023dd2ac121a2e195e8a150895790f4551c9abdf96819bb071b8b87`) e idênticos, byte a byte, aos desta versão.
+(`f6f1ba905023dd2ac121a2e195e8a150895790f4551c9abdf96819bb071b8b87`). Dez deles continuam idênticos, byte a byte, aos desta
+versão. Depois da homologação, a correção do CI da PR #92 alterou dois: `deploy/hml/empacotar-backend.js` (exclusão explícita
+de `ops/`, que a `main` passou a ter com o D-ORF-6) e `correcoes-codex2.test.js` (precondição determinística do teste de troca
+de inode, que o ext4 invalidava ao reaproveitar o número do inode). Nenhum dos 11 testes só Linux mudou, e a validação de
+identidade do instalador não foi tocada.
 
 Comprovado: cadeia F0b a F9b com `SESSAO7_COMPLETA_OK`; L1 com os 11 testes só Linux aprovados em disco (ext4) e em
 tmpfs, 66 eventos sem skip, umask 0022 (o ponto que reprovou a sessão 6); L2 com a reverificação dos 11 e as
