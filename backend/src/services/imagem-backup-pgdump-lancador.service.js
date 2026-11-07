@@ -1,6 +1,6 @@
 'use strict';
 
-const { hostSintaticamenteValido, socketFisicoSeguro } = require('./imagem-backup-host-postgres');
+const { hostSintaticamenteValido, socketFisicoSeguro, formaDoAmbiente, tlsDoAmbienteValido } = require('./imagem-backup-host-postgres');
 const { criarCapturaDoDump } = require('./imagem-backup-captura-dump.service');
 const { ehOrcamentoDeBytes } = require('../utils/orcamento-de-bytes');
 /**
@@ -13,7 +13,7 @@ const { ehOrcamentoDeBytes } = require('../utils/orcamento-de-bytes');
  *
  * `lancar(spec)` -> Promise<{ pid, saida, fluxosFechados }>, compatível com o serviço do dump:
  *   1. captura e valida o spec ANTES de qualquer spawn (cada propriedade lida uma vez; leitura que lança = inválido): executável absoluto terminado em
- *      /pg_dump; exatamente os quatro argumentos fechados; ambiente exatamente PGPASSFILE, PGHOST, PGPORT e PGUSER; opcoes exatamente
+ *      /pg_dump; exatamente os quatro argumentos fechados; ambiente exatamente PGPASSFILE, PGHOST, PGPORT e PGUSER (D-F7, opt-in: mais, em par, PGSSLMODE=verify-full e PGSSLROOTCERT); opcoes exatamente
  *      { shell: false, detached: true, stdio: ['ignore', inteiro >= 3, 'ignore'] }. Falha: rejeita SPEC_INVALIDO, sem spawn e sem registro;
  *   2. chama `spawn(executavel, argumentos, { env, shell: false, detached: true, stdio })` UMA vez, com cópias (nada de `process.env`), e registra os
  *      ouvintes do filho de forma SÍNCRONA (`spawn`, `error`, `exit`, `close`);
@@ -104,13 +104,16 @@ function capturarSpec(spec) {
     const casamentos = ARGUMENTOS_FECHADOS.map((padrao) => lista.filter((argumento) => padrao.test(argumento)).length);
     if (!casamentos.every((n) => n === 1)) return null;
 
-    if (!ehObjeto(ambiente) || !chavesExatas(ambiente, CHAVES_DO_AMBIENTE)) return null;
-    const { PGPASSFILE, PGHOST, PGPORT, PGUSER } = ambiente;
+    // D-F7 (opt-in): o conjunto fechado são as quatro chaves OU as quatro mais o par TLS (PGSSLMODE=verify-full e PGSSLROOTCERT), nunca uma chave só do par.
+    const forma = formaDoAmbiente(ambiente, CHAVES_DO_AMBIENTE);
+    if (forma === null) return null;
+    const { PGPASSFILE, PGHOST, PGPORT, PGUSER, PGSSLMODE, PGSSLROOTCERT } = ambiente;
     if (!caminhoAbsolutoCanonico(PGPASSFILE)) return null;
     if (typeof PGPORT !== 'string' || !PORTA.test(PGPORT) || Number(PGPORT) > 65535) return null;
     // nome de host OU socket Unix (caminho completo dentro do limite; diretório real, próprio e privado, conferido ANTES do spawn)
     if (!socketFisicoSeguro(PGHOST, Number(PGPORT))) return null;
     if (typeof PGUSER !== 'string' || !USUARIO.test(PGUSER)) return null;
+    if (forma === 'TLS' && !tlsDoAmbienteValido({ modo: PGSSLMODE, raiz: PGSSLROOTCERT, host: PGHOST, porta: Number(PGPORT) })) return null;
 
     if (!ehObjeto(opcoes) || !chavesExatas(opcoes, CHAVES_DAS_OPCOES)) return null;
     const { shell, detached, stdio } = opcoes;
@@ -132,7 +135,7 @@ function capturarSpec(spec) {
     return {
       executavel,
       argumentos: lista,
-      ambiente: { PGPASSFILE, PGHOST, PGPORT, PGUSER },
+      ambiente: forma === 'TLS' ? { PGPASSFILE, PGHOST, PGPORT, PGUSER, PGSSLMODE, PGSSLROOTCERT } : { PGPASSFILE, PGHOST, PGPORT, PGUSER },
       descritor,
       descritorDaSaida,
     };

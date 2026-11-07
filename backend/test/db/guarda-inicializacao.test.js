@@ -516,3 +516,35 @@ describe('guarda de inicialização — integração nos scripts npm', () => {
     }
   });
 });
+
+describe('guarda de inicialização — D-F7 (TLS opt-in)', () => {
+  const linhas = () => { const l = []; return { l, saida: { log: (...a) => l.push(a.join(' ')), error: (...a) => l.push(a.join(' ')) } }; };
+  const dirValido = (t) => { const d = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'guarda-tls-')); fs.writeFileSync(path.join(d, '000_inicial.sql'), 'SELECT 1;'); t.after(() => fs.rmSync(d, { recursive: true, force: true })); return d; };
+
+  test('TLS explícito incoerente reprova antes de conectar, com código fixo e sem o valor', async (t) => {
+    const { l, saida } = linhas();
+    const env = { ...envBom(), DB_SSL_MODE: 'segredo-xyz' };
+    const codigo = await guarda().executar({ env, saida, diretorio: dirValido(t) });
+    assert.equal(codigo, guarda().SAIDAS.REPROVADA);
+    assert.ok(l.some((x) => /TLS_MODO_INVALIDO/.test(x)));
+    assert.ok(!l.join('\n').includes('segredo-xyz'));
+  });
+
+  test('cliente padrão: sem DB_SSL_MODE não há chave ssl; com verify-full há rejectUnauthorized true', async (t) => {
+    const { saida } = linhas();
+    let semSsl;
+    await guarda().executar({ env: envBom(), saida, diretorio: dirValido(t), coletar: async () => observadoBom(), criarCliente: (e) => { semSsl = e; return { connect: async () => {}, end: async () => {} }; } });
+    assert.equal(semSsl.DB_SSL_MODE, undefined);
+    const { opcoesDeTls } = require('../../src/config/database-tls');
+    assert.equal(Object.hasOwn(opcoesDeTls({ modo: undefined }), 'ssl'), false);
+    assert.equal(opcoesDeTls({ modo: 'verify-full' }).ssl.rejectUnauthorized, true);
+  });
+
+  test('falha ao criar o cliente (qualquer causa) reprova com código fixo, sem lançar', async (t) => {
+    const { l, saida } = linhas();
+    const codigo = await guarda().executar({ env: envBom(), saida, diretorio: dirValido(t), criarCliente: () => { throw new Error('SENHA-VAZADA'); } });
+    assert.equal(codigo, guarda().SAIDAS.REPROVADA);
+    assert.ok(l.some((x) => /CLIENTE_DO_BANCO_INDISPONIVEL/.test(x)));
+    assert.ok(!l.join('\n').includes('SENHA-VAZADA'));
+  });
+});

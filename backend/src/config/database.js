@@ -1,15 +1,18 @@
 const { Pool } = require('pg');
+const { opcoesDeTls } = require('./database-tls');
 
 // Pool de conexões com o PostgreSQL. O driver `pg` conecta sob demanda
 // (na primeira query) — instanciar o Pool aqui não abre conexão nem
 // exige que o banco já exista, então o servidor sobe normalmente mesmo
 // sem Postgres disponível ainda.
+// D-F7: TLS verify-full só por opt-in (DB_SSL_MODE); sem a variável nada muda.
 const pool = new Pool({
   host: process.env.DB_HOST,
   port: Number(process.env.DB_PORT) || 5432,
   database: process.env.DB_NAME,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
+  ...opcoesDeTls({ modo: process.env.DB_SSL_MODE, raizCa: process.env.DB_SSL_ROOT_CERT, host: process.env.DB_HOST, pgsslmode: process.env.PGSSLMODE }),
 });
 
 // SEC-007: o objeto de erro do pg carrega mensagem, detail, hint, where,

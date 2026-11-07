@@ -59,4 +59,50 @@ function socketFisicoSeguro(host, porta) {
   }
 }
 
-module.exports = { hostSintaticamenteValido, hostAutorizavel, socketFisicoSeguro, diretorioDeSocketCanonico, caminhoDoSocket, LIMITE_SUN_PATH };
+/**
+ * D-F7 (TLS por opt-in): o ambiente dos clientes PostgreSQL continua um conjunto FECHADO. Além das chaves-base de cada lançador, aceita-se, OPCIONALMENTE e SEMPRE EM PAR,
+ * `PGSSLMODE` (exatamente `verify-full`) e `PGSSLROOTCERT` (caminho absoluto canônico de um arquivo regular, próprio, 0600 ou 0644, de até 64 KiB, sem link). TLS só vale para host do tipo NOME
+ * (TCP); com socket Unix o par é recusado. Sem o par, nada muda. O conteúdo do certificado nunca é lido aqui (o libpq o valida).
+ */
+const CHAVES_TLS = Object.freeze(['PGSSLMODE', 'PGSSLROOTCERT']);
+const LIMITE_CERTIFICADO_BYTES = 64 * 1024;
+
+/** Validação FÍSICA do certificado raiz (síncrona, só leitura). */
+function certificadoRaizSeguro(caminho) {
+  if (!diretorioDeSocketCanonico(caminho)) return false;
+  try {
+    const estado = fs.lstatSync(caminho);
+    if (estado.isSymbolicLink() || !estado.isFile()) return false;
+    if (fs.realpathSync(caminho) !== caminho) return false;
+    if (estado.size < 1 || estado.size > LIMITE_CERTIFICADO_BYTES) return false;
+    const modo = estado.mode & 0o777;
+    if (modo !== 0o600 && modo !== 0o644) return false;
+    if (typeof process.getuid === 'function' && estado.uid !== process.getuid()) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** `'BASE'` (só as chaves-base), `'TLS'` (as chaves-base mais o par TLS) ou `null` (qualquer outro conjunto). Lê só os NOMES das propriedades. */
+function formaDoAmbiente(ambiente, chavesBase) {
+  if (ambiente === null || typeof ambiente !== 'object' || Array.isArray(ambiente)) return null;
+  const proprias = Reflect.ownKeys(ambiente);
+  if (!proprias.every((k) => typeof k === 'string') || new Set(proprias).size !== proprias.length) return null;
+  const comTls = proprias.length === chavesBase.length + CHAVES_TLS.length && [...chavesBase, ...CHAVES_TLS].every((k) => proprias.includes(k));
+  if (comTls) return 'TLS';
+  return proprias.length === chavesBase.length && chavesBase.every((k) => proprias.includes(k)) ? 'BASE' : null;
+}
+
+/** Valores do par TLS já lidos pelo chamador (uma vez): modo exato, host de rede (NOME) e certificado fisicamente seguro. */
+function tlsDoAmbienteValido({ modo, raiz, host, porta }) {
+  if (modo !== 'verify-full') return false;
+  const sintaxe = hostSintaticamenteValido(host, porta);
+  if (sintaxe === null || sintaxe.tipo !== 'NOME') return false;
+  return certificadoRaizSeguro(raiz);
+}
+
+module.exports = {
+  hostSintaticamenteValido, hostAutorizavel, socketFisicoSeguro, diretorioDeSocketCanonico, caminhoDoSocket, LIMITE_SUN_PATH,
+  CHAVES_TLS, LIMITE_CERTIFICADO_BYTES, certificadoRaizSeguro, formaDoAmbiente, tlsDoAmbienteValido,
+};

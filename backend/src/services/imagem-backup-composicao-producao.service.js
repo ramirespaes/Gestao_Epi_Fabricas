@@ -17,7 +17,7 @@ const { criarRestauradorDoBanco } = require('./imagem-backup-restauracao-banco.s
 const { criarLancadorDeRestauracaoComSpawn } = require('./imagem-backup-restauracao-lancador.service');
 const { criarAdaptadorDeReferencias, criarSondaDeInstancia } = require('./imagem-backup-consistencia-banco.service');
 const { avaliarRestauracaoReal, ehAvaliacaoReconhecida, emitirExecucaoDeRestauracao } = require('./imagem-backup-proveniencia-restauracao.service');
-const { hostSintaticamenteValido } = require('./imagem-backup-host-postgres');
+const { hostSintaticamenteValido, certificadoRaizSeguro } = require('./imagem-backup-host-postgres');
 const portas = require('./imagem-backup-portas-sistema.service');
 const { criarOrcamentoDeBytes } = require('../utils/orcamento-de-bytes');
 const { criarRegistroDeOperacoes } = require('../utils/registro-operacoes-pendentes');
@@ -39,7 +39,7 @@ const { listarMigrations } = require('../db/checksums');
  * preparação exclusiva, verificação de imagens, manifesto V2 autenticado, publicação, restauração); não reimplementa nenhum. Não lê ambiente (NODE_ENV inclusive), não abre conexão, não escolhe serviço de segredos e não cadastra destinos.
  *
  * `criarBackupDeProducao(config)` (ESTRITO; TypeError `CONFIGURACAO_INVALIDA` genérico, sem eco de valores, ANTES de qualquer efeito) -> `{ verificarDependencias(), executar({ nomeDaPreparacao, conjuntoId }) }`. `config`:
- *   - `postgres`: { pgDump, pgRestore (caminhos absolutos canônicos), host (nome ou socket Unix canônico), porta (inteiro 1..65535, OBRIGATÓRIA), usuario, arquivoDeSenha (absoluto), banco: { nome, oid } };
+ *   - `postgres`: { pgDump, pgRestore (caminhos absolutos canônicos), host (nome ou socket Unix canônico), porta (inteiro 1..65535, OBRIGATÓRIA), usuario, arquivoDeSenha (absoluto), banco: { nome, oid }, tls? (D-F7, opt-in: { modo: 'verify-full', raizCa }; só host de rede) };
  *   - `conexao`: { criarConexao (cliente DEDICADO, injetado), finalizacaoMs };  `armazenamento`: { imagens, preparacoes, dumps, publicados } (absolutos);
  *   - `chaves`: { fonteDeChaves (produzida pela fábrica aprovada), chaveId };  `prazos`: os cinco do supervisor;  `maxBytesPorArquivo`;
  *   - `relatorio` (opcional): { produtor, origensAceitas }. O PADRÃO é o produtor OPERACIONAL BLOQUEADO (`criarProdutorOperacional`): nenhuma publicação até haver fonte operacional de chaves e destino autorizado. O produtor de TESTE só existe com a fábrica de teste e nunca vira operacional;
@@ -103,13 +103,23 @@ function dependenciaIndisponivel(item) {
 }
 const exigir = (condicao) => { if (!condicao) throw configuracaoInvalida(); };
 
+/**
+ * D-F7 (opt-in): `postgres.tls` opcional = { modo: 'verify-full', raizCa: caminho absoluto canônico }. Ausente = comportamento anterior, sem nenhuma mudança. Presente, vale para o `pg_dump` (que exige host de rede,
+ * não socket Unix) e para o `pg_restore`: a composição acrescenta o par `PGSSLMODE`/`PGSSLROOTCERT` ao ambiente que os lançadores validam (ver `comTls`); qualquer desvio é CONFIGURACAO_INVALIDA.
+ */
+function validarTls(tls) {
+  exigir(ehObjeto(tls) && chavesExatas(tls, ['modo', 'raizCa']) && tls.modo === 'verify-full' && caminhoAbsoluto(tls.raizCa));
+}
 function validarPostgres(pgcfg, { precisaDump }) {
-  exigir(ehObjeto(pgcfg) && chavesExatas(pgcfg, precisaDump ? ['pgDump', 'pgRestore', 'host', 'porta', 'usuario', 'arquivoDeSenha', 'banco'] : ['pgRestore']));
+  const base = precisaDump ? ['pgDump', 'pgRestore', 'host', 'porta', 'usuario', 'arquivoDeSenha', 'banco'] : ['pgRestore'];
+  exigir(ehObjeto(pgcfg) && soChaves(pgcfg, [...base, 'tls'], base));
+  if (pgcfg.tls !== undefined) validarTls(pgcfg.tls);
   exigir(executavelDe(pgcfg.pgRestore, 'pg_restore'));
   if (!precisaDump) return;
   exigir(executavelDe(pgcfg.pgDump, 'pg_dump'));
   exigir(Number.isSafeInteger(pgcfg.porta) && pgcfg.porta >= 1 && pgcfg.porta <= 65535);
   exigir(hostSintaticamenteValido(pgcfg.host, pgcfg.porta) !== null);
+  if (pgcfg.tls !== undefined) exigir(hostSintaticamenteValido(pgcfg.host, pgcfg.porta).tipo === 'NOME');
   exigir(typeof pgcfg.usuario === 'string' && USUARIO.test(pgcfg.usuario) && caminhoAbsoluto(pgcfg.arquivoDeSenha));
   exigir(ehObjeto(pgcfg.banco) && chavesExatas(pgcfg.banco, ['nome', 'oid']) && typeof pgcfg.banco.nome === 'string' && NOME_DE_BANCO.test(pgcfg.banco.nome) && typeof pgcfg.banco.oid === 'string' && OID.test(pgcfg.banco.oid));
 }
@@ -162,6 +172,20 @@ const portasEfetivas = (p) => Object.freeze({
   observarGrupo: p.observarGrupo ?? portas.observarGrupoReal,
   temporizador: p.temporizador ?? portas.temporizadorReal,
 });
+
+/**
+ * D-F7 (opt-in): lançador que acrescenta o par TLS ao ambiente do spec antes de delegar ao lançador do controle de processo. Quem VALIDA o par continua sendo o lançador aprovado (host de rede,
+ * certificado fisicamente seguro, `verify-full`): se o spec ou o ambiente não tiverem a forma esperada o spec segue INALTERADO e o lançador o recusa. Sem `tls`, devolve o próprio lançador.
+ */
+function comTls(lancador, tls) {
+  if (tls === null || tls === undefined) return lancador;
+  return Object.freeze({
+    lancar: (spec) => {
+      const injetavel = ehObjeto(spec) && ehObjeto(spec.ambiente);
+      return lancador.lancar(injetavel ? { ...spec, ambiente: Object.freeze({ ...spec.ambiente, PGSSLMODE: tls.modo, PGSSLROOTCERT: tls.raizCa }) } : spec);
+    },
+  });
+}
 
 const resultadosProduzidos = new WeakSet();
 
@@ -220,7 +244,7 @@ function criarBackupDeProducao(config) {
     if (relatorio !== undefined) exigir(ehObjeto(relatorio) && soChaves(relatorio, ['produtor', 'origensAceitas'], ['produtor']) && ehProdutorReconhecido(relatorio.produtor));
     exigir(inteiroPositivo(config.maxBytesPorArquivo));
     cfg = Object.freeze({
-      postgres: Object.freeze({ ...config.postgres, banco: Object.freeze({ ...config.postgres.banco }) }),
+      postgres: Object.freeze({ ...config.postgres, banco: Object.freeze({ ...config.postgres.banco }), ...(config.postgres.tls === undefined ? {} : { tls: Object.freeze({ ...config.postgres.tls }) }) }),
       conexao: Object.freeze({ ...conexao }),
       armazenamento: Object.freeze({ ...armazenamento }),
       chaves: Object.freeze({ ...chaves }),
@@ -249,12 +273,13 @@ function criarBackupDeProducao(config) {
     let senha;
     try { senha = fs.lstatSync(cfg.postgres.arquivoDeSenha); } catch { throw dependenciaIndisponivel('ARQUIVO_DE_SENHA'); }
     if (!senha.isFile() || senha.isSymbolicLink() || (senha.mode & 0o077) !== 0 || (typeof process.getuid === 'function' && senha.uid !== process.getuid())) throw dependenciaIndisponivel('ARQUIVO_DE_SENHA');
+    if (cfg.postgres.tls !== undefined && !certificadoRaizSeguro(cfg.postgres.tls.raizCa)) throw dependenciaIndisponivel('CERTIFICADO_RAIZ');
     for (const [item, dir] of [['IMAGENS', cfg.armazenamento.imagens], ['PREPARACOES', cfg.armazenamento.preparacoes], ['DUMPS', cfg.armazenamento.dumps], ['PUBLICADOS', cfg.armazenamento.publicados]]) {
       let e;
       try { e = fs.lstatSync(dir); } catch { throw dependenciaIndisponivel(item); }
       if (!e.isDirectory() || e.isSymbolicLink() || fs.realpathSync(dir) !== dir || (typeof process.getuid === 'function' && e.uid !== process.getuid())) throw dependenciaIndisponivel(item);
     }
-    return Object.freeze({ ok: true, itens: Object.freeze(['PG_DUMP', 'PG_RESTORE', 'ARQUIVO_DE_SENHA', 'IMAGENS', 'PREPARACOES', 'DUMPS', 'PUBLICADOS']) });
+    return Object.freeze({ ok: true, itens: Object.freeze(['PG_DUMP', 'PG_RESTORE', 'ARQUIVO_DE_SENHA', 'IMAGENS', 'PREPARACOES', 'DUMPS', 'PUBLICADOS', ...(cfg.postgres.tls === undefined ? [] : ['CERTIFICADO_RAIZ'])]) });
   }
 
   async function executar(entrada) {
@@ -323,7 +348,7 @@ function criarBackupDeProducao(config) {
       observarPublicacao: (dados) => { fasePublicacao = dados; },
       dump: {
         alvo: { executavel: cfg.postgres.pgDump, host: cfg.postgres.host, porta: cfg.postgres.porta, usuario: cfg.postgres.usuario, arquivoDeSenha: cfg.postgres.arquivoDeSenha, bancoEsperado: { nome: cfg.postgres.banco.nome, oid: cfg.postgres.banco.oid } },
-        lancador: controleDump.lancador,
+        lancador: comTls(controleDump.lancador, cfg.postgres.tls),
         sistema: controleDump.sistema,
         arquivos: { criarExclusivo: (spec) => criador.criarExclusivo(spec) },
         temporizador,
@@ -459,6 +484,7 @@ function criarRestauracaoDeProducao(config) {
     exigir(ehObjeto(pol) && chavesExatas(pol, ['prefixoDoBanco', 'hostsAutorizados', 'bancosProtegidos']) && Array.isArray(pol.hostsAutorizados) && Array.isArray(pol.bancosProtegidos));
     cfg = Object.freeze({
       pgRestore: config.postgres.pgRestore,
+      tls: config.postgres.tls === undefined ? null : Object.freeze({ ...config.postgres.tls }),
       politicaDeDestino: Object.freeze({ prefixoDoBanco: pol.prefixoDoBanco, hostsAutorizados: Object.freeze([...pol.hostsAutorizados]), bancosProtegidos: Object.freeze([...pol.bancosProtegidos]) }),
       fonteDeChaves: config.fonteDeChaves,
       criarConexaoDoBanco: config.criarConexaoDoBanco,
@@ -547,7 +573,7 @@ function criarRestauracaoDeProducao(config) {
     const controle = criarControleDeProcesso({ spawn, observarGrupo, execucaoId: execucao.id, criarLancador: ({ spawn: s }) => criarLancadorDeRestauracaoComSpawn({ spawn: s, politicaDeDestino: cfg.politicaDeDestino }) });
     const restauradorDoBanco = criarRestauradorDoBanco({
       alvo: { executavel: cfg.pgRestore },
-      lancador: controle.lancador,
+      lancador: comTls(controle.lancador, cfg.tls),
       sistema: controle.sistema,
       temporizador,
       prazos: cfg.prazos,
