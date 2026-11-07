@@ -240,9 +240,36 @@ comportamento seguro e NÃO foi corrigido: o trigger e a migration 014 permanece
 da produção: nova migration com `CREATE OR REPLACE FUNCTION` (regra adicional por sufixo de segmento, preservando `secretaria_id`, `hashtag`, `hash_arquivo`), testes RED→GREEN em schema temporário, varredura dos
 escritores, `migrations/checksums.json`, contagens de migrations e dicionário de dados (`docs/sistema/dicionario-de-dados.md` ainda não existe). A defesa primária continua sendo gravar só campos explícitos.
 
-**O que continua bloqueando a produção.** DEP-2 (SDK real e `VERSOES_APROVADAS`), fonte real de credenciais e papel do KMS (H9-a), TLS obrigatório por ambiente, `lerPacote` real, dump e restauração reais
-pelo executor, ajuste definitivo do `comTls`, PENDENCIA-SEG-TRG04, RPO e RTO, cerimônia de custódia e listas reais. Evidências locais (PostgreSQL efêmero, 14 arquivos com SHA-256) ficam fora do Git, em
-`~/SafeWorkDados/d-orf-6-l1-bloco-b-evidencias-20261106`.
+**O que continua bloqueando a produção.** DEP-2 (SDK real e `VERSOES_APROVADAS`), fonte real de credenciais e papel do KMS (H9-a), TLS obrigatório por ambiente, dump e restauração reais
+pelo executor, ajuste definitivo do `comTls`, PENDENCIA-SEG-TRG04, RPO e RTO, cerimônia de custódia e listas reais. O `lerPacote` real passou a existir no Bloco C (abaixo). Evidências locais
+(PostgreSQL efêmero, 14 arquivos com SHA-256) ficam fora do Git, em `~/SafeWorkDados/d-orf-6-l1-bloco-b-evidencias-20261106`.
+
+### Ligação completa local do executor (D-ORF-6, L2, Bloco C) — implementado localmente, NÃO ativado
+
+Estado (07/11/2026, base `main` `1b95752`): as duas peças que faltavam entre a ligação (Bloco A), os adaptadores L2 (Bloco B) e o compositor operacional existem como módulos locais, provados com
+falsos e com o leitor real. Nada mudou no CLI, na política, no SDK, nas listas ou nas dependências: `scripts/backup-operar.js` continua sem ligação e devolve `LIGACAO_OPERACIONAL_AUSENTE`;
+`OPERACAO_HABILITADA` continua falsa e única; a guarda P2 continua verde sem entrada nova (os módulos só leem). Arquivos: `backend/src/services/backup-executor-{leitor-pacote,compositor}.service.js`
+e os testes `backup-executor-{leitor-pacote,compositor,l2-contrato}`; `backup-executor-invariantes` e `backup-executor-ligacao-invariantes` passaram a cobrir os dois módulos.
+
+**Leitor real do pacote (`backup-executor-leitor-pacote`).** `criarLeitorDePacote({ fonteDeChaves, raizPublicados, catalogoAtual?, tamanhoMaximo? })` -> `lerPacote({ dir, nome })`, a porta que o
+adaptador de produção exigia injetada. Só lê: `dir` tem de ser exatamente `<raizPublicados>/<nome>`, o caminho real tem de coincidir com o pedido (nenhum link simbólico em nenhum componente) e ser um
+diretório; `manifesto.sha256` e `manifesto.json` são abertos com `O_RDONLY | O_NOFOLLOW`, precisam ser arquivos regulares com um único nome (sem hard link), dentro do limite de bytes, e o caminho tem de
+apontar para o mesmo inode, com o mesmo tamanho e mtime, antes e depois da leitura (substituição concorrente é recusada). O hash do selo é entregue ao leitor L2 (P5), que confere hash, versão,
+`layoutMinimo: 2`, bloco de autenticação, MAC em tempo constante e estrutura canônica. Qualquer desvio é `PACOTE_ILEGIVEL` com motivo fixo (sem caminho, conteúdo ou causa), que a produção traduz em
+`PRODUCAO_PACOTE_ILEGIVEL`. Os demais arquivos do pacote continuam sendo conferidos por `verificarPacoteL2` na cifra. LIMITE: a proteção contra substituição concorrente foi provada só nos casos
+determinísticos (link, hard link, não arquivo, selo e manifesto adulterados, limite); a corrida em si não é reproduzida em teste.
+
+**Compositor (`backup-executor-compositor`).** `criarCompositor({ ligacao, producao?, restaurador?, chaves?, coordenacao, evidencia, recibos, destinoLocal?, protegidos?, limites?, prazoMs?, trabalho,
+fatos, relogio, gerarId?, registro? })` -> `compor({ modo, acao, ambiente, destino, confirmacao })` -> `{ executar() }`, na forma que o CLI espera em `portas.compor`. É o único chamador de
+`criarExecutorOperacional`; exige modo e ação iguais aos da ligação (uma ligação serve a uma ação), monta o pedido do executor com as portas da ligação por papel e, depois da execução, entrega a linha
+de evidência a `ligacao.finalizar` (auditoria D-F13) sem alterar o desfecho nem lançar (`auditoria: { gravado, codigo? }` no resultado). `criarCoordenacaoDoExecutor({ executorDeBanco })` adapta os
+advisory locks do P10 (`adquirirExclusao`) à porta `coordenacao`, sem lançar. Provado em teste: ciclo completo de ensaio de backup com o leitor real, S3 e chaves falsos (CONCLUIDO; o hash do manifesto na
+evidência é o do pacote escrito pelo escritor L2 e lido pelo leitor real), restauração a partir do consolidado com DR RECUPERADO (e NAO_AVALIADO sem alvos), verificação do destino CONFORME e DIVERGENTE,
+bloqueio em OPERACAO sem nenhum efeito, coordenação recusada ou indisponível, recibos não registrados, auditoria que falha, e a ligação REAL do Bloco A aceita e falhando fechada no pré-voo sobre o
+SDK falso. Contrato L7 (PREP-01): o `lido` do leitor real é reconhecido pelo núcleo L2 e aceito por `verificarPacoteL2` e `cifrarPacote` sem adaptação; uma cópia do `lido` não é reconhecida.
+
+**O que falta para o CLI executar.** A injeção do compositor em `scripts/backup-operar.js` depende das decisões H9 (fonte das credenciais por papel, provedor de chaves, destinos autorizados,
+limites e papel de banco): é quem lê ambiente e arquivo, o que estes módulos não fazem. Até lá o processo real continua BLOQUEADO. Nenhuma homologação AWS foi feita.
 
 ### Documentos especializados existentes — fonte única
 

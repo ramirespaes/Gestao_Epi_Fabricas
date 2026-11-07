@@ -18,6 +18,8 @@ const DECIFRA = ['decifrar', 'Container'].join('');
 const MODULOS = [
   'backup-executor-politica', 'backup-executor-evidencia', 'backup-executor-publicacao', 'backup-executor-recuperacao', 'backup-executor-operacional', 'backup-executor-monitoramento',
   'backup-aws-portas', 'backup-aws-sdk-carregador',
+  // L2 (Bloco C): o leitor só lê (O_RDONLY | O_NOFOLLOW) e o compositor não toca o sistema de arquivos
+  'backup-executor-leitor-pacote', 'backup-executor-compositor',
 ];
 const lerFonte = (arquivo) => fs.readFileSync(path.join(BACKEND, arquivo), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\'"`])\/\/[^\n]*/g, '$1');
 const ESCRITA = /\b(?:createWriteStream|writeFile|writeFileSync|appendFile|appendFileSync|copyFile|copyFileSync|link|linkSync|symlink|symlinkSync|rename|renameSync|mkdir|mkdirSync|mkdtemp|mkdtempSync|truncate|truncateSync|ftruncate|ftruncateSync|chmod|chmodSync|chown|chownSync|utimes|utimesSync)\s*\(|\bO_(?:WRONLY|CREAT|RDWR|APPEND|TRUNC)\b/;
@@ -26,7 +28,7 @@ const PROCESSO = /\b(?:spawn|spawnSync|execSync|execFile|execFileSync|fork)\s*\(
 const RAIZ_G1 = /\b[A-Z][A-Z0-9_]*(?:_DIRETORIO|_ARQUIVO|_ARMAZENAMENTO[A-Z0-9_]*|_BUCKET|_STORAGE|_UPLOAD[A-Z0-9_]*)\b/;
 
 describe('[EXE-INV] módulos novos', () => {
-  test('EXE-INV-01 — os oito módulos novos não escrevem, não removem, não lançam processo, não leem ambiente nem argumentos e não definem nomes de raiz da guarda G1', () => {
+  test('EXE-INV-01 — os módulos novos do executor (rodada consolidada e Bloco C) não escrevem, não removem, não lançam processo, não leem ambiente nem argumentos e não definem nomes de raiz da guarda G1', () => {
     for (const nome of MODULOS) {
       const fonte = lerFonte(`src/services/${nome}.service.js`);
       assert.equal(ESCRITA.test(fonte), false, `${nome}: escrita`);
