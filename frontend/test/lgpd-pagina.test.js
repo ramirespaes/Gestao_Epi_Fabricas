@@ -396,7 +396,7 @@ describe('funções sem backend ficam explicitamente indisponíveis', () => {
 describe('menu da própria página', () => {
   test('o item LGPD é estático (data-pagina="lgpd", ativo) e aparece só com a permissão; o restante do menu é o das páginas integradas', async () => {
     const html = ler(ARQUIVO);
-    assert.match(html, /<a class="active" href="javascript:void\(0\)" data-pagina="lgpd" style="display:none">/);
+    assert.match(html, /<a class="active" role="link" tabindex="0" aria-current="page" data-pagina="lgpd" style="display:none">/);
     assert.match(html, /<a href="\.\.\/portal\/inicio\.html"/);
     assert.match(html, /<a href="config\.html" data-pagina="config" style="display:none">/);
     assert.match(html, /<a href="company-data\.html" data-pagina="companyData" style="display:none">/);

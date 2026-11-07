@@ -127,7 +127,7 @@ describe('as três páginas saem do protótipo (inspeção estática)', () => {
       assert.match(script, new RegExp(`EpiEstadoPagina\\.montarPaginaProtegida\\(\\{\\s*pagina: '${pagina}'`));
       for (const id of ['identidade', 'botaoSair', 'botaoTrocarEmpresa']) assert.equal(html.includes(`id="${id}"`), false, `#${id}: sem cabeçalho de conta (E6)`);
       assert.match(html, /<a href="\.\.\/portal\/inicio\.html">/, 'o Início do Portal, que tem Sair');
-      assert.match(html, new RegExp(`<a class="active" href="javascript:void\\(0\\)" data-pagina="${pagina}" style="display:none">`));
+      assert.match(html, new RegExp(`<a class="active" role="link" tabindex="0" aria-current="page" data-pagina="${pagina}" style="display:none">`));
     });
   }
 
@@ -268,7 +268,7 @@ describe('menu, Portal e Permissões do Grupo', () => {
       for (const item of itens.slice(1)) {
         const [href, pagina] = destino[item.rotulo];
         const esperado = NOVAS[arquivo] && NOVAS[arquivo].pagina === pagina
-          ? `<a class="active" href="javascript:void(0)" data-pagina="${pagina}" style="display:none">`
+          ? `<a class="active" role="link" tabindex="0" aria-current="page" data-pagina="${pagina}" style="display:none">`
           : `<a href="${href}" data-pagina="${pagina}" style="display:none">`;
         assert.ok(item.html.startsWith(esperado), `${arquivo}: ${item.html}`);
       }

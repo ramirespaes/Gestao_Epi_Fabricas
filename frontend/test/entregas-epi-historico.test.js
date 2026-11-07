@@ -307,7 +307,7 @@ describe('EPIs Entregues — inspeção estática', () => {
     for (const proibido of [/db-api\.js/, /main\.js/, /xlsx/i, /loginScreen/, /Cobresul/, /doLogin/, /kiosk/i, /localStorage|sessionStorage/, /innerHTML/, /cdn\.jsdelivr/]) {
       assert.equal(proibido.test(codigo), false, `contém ${proibido}`);
     }
-    assert.match(html, /<a class="active" href="javascript:void\(0\)" data-pagina="deliveredItems" style="display:none"><div class="nav-icon green">inventory<\/div>EPIs Entregues<\/a>/);
+    assert.match(html, /<a class="active" role="link" tabindex="0" aria-current="page" data-pagina="deliveredItems" style="display:none"><div class="nav-icon green">inventory<\/div>EPIs Entregues<\/a>/);
     assert.match(semComentarios(html), /EpiPermissoes\.prepararPagina\(\{\s*pagina: 'deliveredItems'/);
   });
 
