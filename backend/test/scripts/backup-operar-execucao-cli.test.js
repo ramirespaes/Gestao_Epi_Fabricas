@@ -76,14 +76,15 @@ describe('[CLI-EXE] argumentos', () => {
 });
 
 describe('[CLI-EXE] processo real: sem ligação operacional tudo fica BLOQUEADO, com uma linha de evidência', () => {
-  test('CLI-33 — ensaio de backup com a frase correta: sai com 4, stdout é UMA linha de evidência BLOQUEADO com os motivos (SDK, chaves, destino durável, destino local, ligação) e stderr vazio; nada é escrito', () => {
+  test('CLI-33 — ensaio de backup com a frase correta: sai com 4, stdout é UMA linha de evidência BLOQUEADO com os motivos (chaves, destino durável, destino local, ligação; o SDK aprovado e instalado deixa de bloquear) e stderr vazio; nada é escrito', () => {
     const r = rodarReal(ARGS_BACKUP);
     assert.equal(r.status, SAIDAS.BLOQUEADO, `${r.stdout}\n${r.stderr}`);
     assert.equal(r.stderr, '');
     assert.equal(r.stdout.split('\n').length, 2, 'uma linha e a quebra final');
     const e = lida(r.stdout);
     assert.deepEqual({ tipo: e.tipo, estado: e.estado, modo: e.modo, acao: e.acao, falhouEm: e.falhouEm, etapas: e.etapas.length, op: e.operacional }, { tipo: 'EXECUCAO_BACKUP', estado: 'BLOQUEADO', modo: 'ENSAIO', acao: 'BACKUP', falhouEm: 'GATE', etapas: 0, op: false });
-    for (const esperado of ['DESTINO_DURAVEL_NAO_APROVADO', 'DESTINO_LOCAL_NAO_AUTORIZADO', 'FONTE_DE_CHAVES_NAO_APROVADA', 'LIGACAO_OPERACIONAL_AUSENTE', 'SDK_NAO_APROVADO']) assert.ok(e.bloqueios.includes(esperado), `${esperado}: ${e.bloqueios}`);
+    for (const esperado of ['DESTINO_DURAVEL_NAO_APROVADO', 'DESTINO_LOCAL_NAO_AUTORIZADO', 'FONTE_DE_CHAVES_NAO_APROVADA', 'LIGACAO_OPERACIONAL_AUSENTE']) assert.ok(e.bloqueios.includes(esperado), `${esperado}: ${e.bloqueios}`);
+    assert.equal(e.bloqueios.includes('SDK_NAO_APROVADO'), false, `o SDK aprovado e instalado não bloqueia: ${e.bloqueios}`);
     assert.equal(e.bloqueios.includes('OPERACAO_NAO_HABILITADA'), false);
   });
 

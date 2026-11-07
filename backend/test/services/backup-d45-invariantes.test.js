@@ -49,8 +49,16 @@ describe('[INV] nada é ativado e nada novo entra por configuração', () => {
     assert.match(lerFonte('src/services/imagem-backup-orfaos.service.js'), /const LIMPEZA_OPERACIONAL_HABILITADA = false;/);
   });
 
-  test('INV-03 — nenhuma dependência nova (sem SDK da AWS no package.json nem no lock) e nenhuma variável nova de bucket, chave ou AWS em .env.example ou src/config', () => {
-    for (const arquivo of ['package.json', 'package-lock.json']) assert.equal(/aws-sdk/i.test(fs.readFileSync(path.join(BACKEND, arquivo), 'utf8')), false, arquivo);
+  test('INV-03 — a única dependência de SDK da AWS são os três clientes exatos do gate DEP-2 (no package.json e na raiz do lock) e nenhuma variável nova de bucket, chave ou AWS em .env.example ou src/config', () => {
+    const esperadas = { '@aws-sdk/client-kms': '3.1152.0', '@aws-sdk/client-s3': '3.1152.0', '@aws-sdk/client-sts': '3.1152.0' };
+    const doSdk = ([n]) => /aws-sdk|^@smithy\/|^@aws\//i.test(n);
+    const lerJson = (arquivo) => JSON.parse(fs.readFileSync(path.join(BACKEND, arquivo), 'utf8'));
+    const pacote = lerJson('package.json');
+    const raizDoLock = lerJson('package-lock.json').packages[''];
+    for (const grupo of [pacote, raizDoLock]) {
+      assert.deepEqual(Object.fromEntries(Object.entries(grupo.dependencies ?? {}).filter(doSdk)), esperadas);
+      for (const outro of ['devDependencies', 'optionalDependencies', 'peerDependencies']) assert.deepEqual(Object.entries(grupo[outro] ?? {}).filter(doSdk), [], outro);
+    }
     assert.equal(/bucket|kms|aws_/i.test(fs.readFileSync(path.join(BACKEND, '.env.example'), 'utf8')), false);
     for (const f of fs.readdirSync(path.join(BACKEND, 'src', 'config'))) if (f.endsWith('.js')) assert.equal(/bucket|kms|aws_/i.test(fs.readFileSync(path.join(BACKEND, 'src', 'config', f), 'utf8')), false, f);
   });

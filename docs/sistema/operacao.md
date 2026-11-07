@@ -50,7 +50,7 @@ Chaves, destinos duráveis, custódia e retenção aparecem como pendências, li
 
 ### Destino durável S3 e custódia de chaves (R-D45, D-F4 e D-F5) — implementado localmente, NÃO ativado
 
-Estado: o código existe com clientes injetáveis e simulados. Nada contata a AWS, o AWS SDK não está instalado (gate DEP-2 pendente), as listas aprovadas
+Estado: o código existe com clientes injetáveis e simulados. Nada contata a AWS, o AWS SDK só será instalado no gate de instalação do DEP-2 (veja a seção do executor), as listas aprovadas
 (`ARMAZENAMENTOS_DURAVEIS_APROVADOS`, `PROVEDORES_OPERACIONAIS_APROVADOS`, `PROVEDORES_DE_CIFRA_APROVADOS`, `DESTINOS_AUTORIZADOS`) continuam vazias, as fábricas
 operacionais continuam bloqueadas e a limpeza continua desabilitada. Declarações como "durável" ou "restaurável" exigem evidência real (T2 e T3, abaixo).
 
@@ -151,7 +151,7 @@ executor e pelos testes da seção seguinte. Os demais módulos novos não têm 
 
 ### Executor operacional do backup (D-ORF-6, rodada consolidada 1/3) — implementado localmente, NÃO ativado
 
-Estado: o executor existe como biblioteca com portas injetáveis, modos, portões, coordenação, evidência e monitoramento. Nada contata a AWS, o SDK não está instalado (DEP-2), as listas reais continuam vazias,
+Estado: o executor existe como biblioteca com portas injetáveis, modos, portões, coordenação, evidência e monitoramento. Nada contata a AWS, o SDK tem as versões aprovadas no carregador mas só passa a existir no `package.json` e no lock depois do gate de instalação do DEP-2 (veja abaixo), as listas reais continuam vazias,
 `OPERACAO_HABILITADA` (constante única em `backup-executor-politica`) é falsa e nenhuma unidade systemd foi instalada. A ligação ao processo real (produção do pacote por `criarBackupDeProducao`, restaurador do
 banco novo, clientes AWS e fontes de chaves) NÃO existe: sem ela o CLI devolve BLOQUEADO com o motivo `LIGACAO_OPERACIONAL_AUSENTE`.
 
@@ -188,12 +188,17 @@ execução incerta, falhas consecutivas, relógio inconsistente, bloqueio e ensa
 **Adaptadores AWS (sem chamada real).** `backup-aws-portas` implementa, sobre o SDK injetado, as portas do publicador (STS GetCallerIdentity, HeadBucket, GetBucketVersioning, GetObjectLockConfiguration,
 GetBucketEncryption, GetBucketOwnershipControls, KMS DescribeKey e PutObject com `IfNoneMatch: '*'`, SHA-256 informado, tamanho e dono esperado), do verificador (ListObjectVersions e HeadObject por versão), da
 restauração (GetObject por versão) e do KMS pré-resolvido (Decrypt com a chave fixada, contexto e `SYMMETRIC_DEFAULT`, zerando o buffer do SDK). Sem endpoint configurável; credencial é um provedor injetado por papel; o cliente de
-gravação não faz retentativa; erros do SDK viram erro com nome do serviço e mensagem fixa. `backup-aws-sdk-carregador` só carrega o SDK depois de `VERSOES_APROVADAS` (hoje vazia) listar a versão exata dos três
-clientes. Os testes usam um SDK falso em memória e provam o pedido montado, não a AWS.
+gravação não faz retentativa; erros do SDK viram erro com nome do serviço e mensagem fixa. `backup-aws-sdk-carregador` só carrega o SDK depois de `VERSOES_APROVADAS` listar a versão exata dos três
+clientes (`3.1152.0`; lista vazia = nada é carregado). Os testes `backup-aws-portas` usam um SDK falso em memória e provam o pedido montado; o T1.5 (`backup-aws-sdk-real-t15`) refaz a prova contra o SDK real. Nenhum
+dos dois prova a AWS.
 
-**DEP-2 (gate).** Candidatos: `@aws-sdk/client-s3`, `@aws-sdk/client-kms` e `@aws-sdk/client-sts` em versão exata, sem scripts de instalação, licença Apache-2.0, Node >= 20 (compatível com Node 22), CommonJS (`main` em
-`dist-cjs`), 24 pacotes transitivos. O dossiê com versões, integridade, mudança prevista no lockfile, riscos e critérios de aprovação está em `documentos/` (rodada consolidada 1/3). Instalar exige entradas de dependência na
-guarda P2 (regra G6: `@aws-sdk/*` precisa de classificação `ARMAZENAMENTO_REVISADO` aprovada) e a aprovação das versões no carregador. Nada foi instalado nem alterado em `package.json` ou no lockfile.
+**DEP-2 (gate).** Clientes: `@aws-sdk/client-s3`, `@aws-sdk/client-kms` e `@aws-sdk/client-sts` em `3.1152.0` exata, sem scripts de instalação, licença Apache-2.0, Node >= 20 (compatível com Node 22), CommonJS (`main` em
+`dist-cjs`), 27 pacotes adicionados ao lock (cenário C2: resolução com corte em 2026-10-31T00:00:00.000Z, maturidade mínima de sete dias por pacote, nenhum pacote existente alterado ou removido, integridade sha512 e zero
+depreciações conferidas contra o registro). O dossiê com versões, integridade, riscos e critérios está em `documentos/` (rodada consolidada 1/3 e dossiê v2). Etapas e dependências entre elas:
+(1) código e testes (carregador com as versões aprovadas, LDR-01/02, INV-03, EXE-INV-03, CLI-33 e T1.5), preparados; (2) instalação (`package.json`, lock e `npm ci --ignore-scripts`), somente a partir de
+2026-11-07 00:00 UTC e com autorização específica; (3) entradas `ARMAZENAMENTO_REVISADO` dos três clientes na guarda P2 (regra G6) e o documento `GATE-P2-<data>-H`, que dependem de aprovação humana (H5) e ainda NÃO foram aplicados.
+Os testes de (1) que exigem o pacote instalado ficam vermelhos até (2); a ausência do SDK nunca conta como verde. A aceitação condicional da falta de proveniência npm nos três clientes (H4) não substitui as
+verificações de integridade (`npm ci`), de assinaturas (`npm audit signatures`) e de auditoria (`npm audit`) depois da instalação. `OPERACAO_HABILITADA` continua falsa.
 
 **Retenção e agendamento.** A retenção mínima do destino está na ficha (Object Lock, modo e dias); a expiração por ciclo de vida é configurada pela equipe AWS em T2, com prazo não inferior ao bloqueio, e depende de D-F6.
 Localmente a limpeza continua desabilitada e `planejarRetencao` só planeja. Agendamento e monitoramento têm modelos inertes de systemd (backup, verificação independente fora do host e monitoramento sem rede), com
@@ -203,8 +208,8 @@ condição de arquivo-chave, usuário próprio, umask 077 e sistema de arquivos 
 `proxy-addr-condicao-de-explorabilidade` impedem abrir essa configuração. A correção definitiva (atualização do lockfile) e os demais alertas (altos: body-parser, brace-expansion, zod; moderados) ficam para o gate de
 dependências, sem `npm audit fix`.
 
-**Critérios de homologação adicionados.** T1.5 (depois do DEP-2): instanciar os clientes reais com um manipulador de requisição sem rede e conferir o pedido serializado de cada porta (cabeçalhos de condição,
-checksum, dono, versão); T2/T3 como acima, executados pelo CLI em ensaio (HOMOLOGACAO, dados sintéticos); aceite do monitoramento: alerta disparado com backup atrasado, sem verificação, divergência e linha adulterada.
+**Critérios de homologação adicionados.** T1.5 (`backup-aws-sdk-real-t15.test.js`, depois da instalação do DEP-2, em Node 22): instancia os clientes reais com um manipulador de requisição simulado, credenciais sintéticas e a rede
+interceptada, e confere o pedido serializado de cada porta (cabeçalhos de condição, checksum, dono, versão, alvo do KMS, uma única tentativa na gravação); T2/T3 como acima, executados pelo CLI em ensaio (HOMOLOGACAO, dados sintéticos); aceite do monitoramento: alerta disparado com backup atrasado, sem verificação, divergência e linha adulterada.
 
 ### Documentos especializados existentes — fonte única
 

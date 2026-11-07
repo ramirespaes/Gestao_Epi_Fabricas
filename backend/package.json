@@ -36,6 +36,9 @@
     "node": ">=22"
   },
   "dependencies": {
+    "@aws-sdk/client-kms": "3.1152.0",
+    "@aws-sdk/client-s3": "3.1152.0",
+    "@aws-sdk/client-sts": "3.1152.0",
     "argon2": "^0.45.1",
     "cookie": "^0.7.2",
     "cors": "^2.8.6",
