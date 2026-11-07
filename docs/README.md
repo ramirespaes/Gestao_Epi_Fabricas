@@ -17,7 +17,7 @@ sem necessidade de resolver regra, congelamento, evidência ou divergência.
 | Frontend, Dashboard, Central, Totem | [Interfaces](sistema/interfaces-e-autoatendimento.md) | Contrato funcional; segurança; padrões existentes |
 | Serviços, processos, backup, restore, AWS/deploy | [Operação](sistema/operacao.md) | Procedimento específico e autorização própria |
 | Publicação, biblioteca, padrões visuais | [Fontes únicas](sistema/fontes-especializadas.md) | Segurança e operação |
-| Release, CD e rollback de código da homologação | [Publicação HML](sistema/publicacao-homologacao.md) | Operação; fonte única de publicação; autorização própria |
+| Release, CD e rollback de código da homologação | [Publicação HML](sistema/publicacao-homologacao.md) e [componentes](sistema/publicacao-homologacao-componentes.md) | Operação; fonte única de publicação; autorização própria |
 | Conflito, exceção, congelamento ou pendência | [Reconciliações](../historico/governanca/reconciliacoes.md) | [Matriz](../historico/governanca/rastreabilidade.md), fonte específica |
 | Regra de comportamento ou contrato | [Governança comum](governanca/agentes.md) e contrato por assunto | A fonte privada é consultada pelo responsável somente quando necessária e autorizada |
 
