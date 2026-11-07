@@ -3,8 +3,8 @@
 const { ambienteDeTeste } = require('./imagem-backup-durabilidade.service');
 
 /**
- * D-ORF-6, DEP-2: CARREGADOR DO SDK DA AWS. O SDK é carregado por um `requerer` injetado e SÓ depois que `VERSOES_APROVADAS` (hoje VAZIA: DEP-2 fechado) listar a versão EXATA
- * de cada um dos três clientes. Sem aprovação nada é carregado, mesmo que os pacotes sejam instalados por engano. Devolve apenas os símbolos de que os adaptadores precisam
+ * D-ORF-6, DEP-2: CARREGADOR DO SDK DA AWS. O SDK é carregado por um `requerer` injetado e SÓ depois que `VERSOES_APROVADAS` listar a versão EXATA
+ * de cada um dos três clientes (3.1152.0, gate DEP-2). Com a lista vazia nada é carregado, mesmo que os pacotes sejam instalados por engano. Devolve apenas os símbolos de que os adaptadores precisam
  * (construtores de cliente e comandos), congelados; nunca o módulo inteiro. Fora de NODE_ENV=test a lista de versões não pode ser injetada: aprovar o SDK é alterar este código.
  * Erros: só código e pacote fixos (SDK_NAO_APROVADO, SDK_NAO_INSTALADO, SDK_VERSAO_DIVERGENTE, SDK_INCOMPATIVEL, CONFIGURACAO_INVALIDA).
  */
@@ -17,7 +17,11 @@ const SIMBOLOS_POR_PACOTE = Object.freeze({
 });
 const SIMBOLOS_EXIGIDOS = Object.freeze(PACOTES_DO_SDK.flatMap((p) => SIMBOLOS_POR_PACOTE[p]));
 /** `[{ pacote, versao }]` com os três pacotes e a versão exata aprovada no gate DEP-2. Vazia = SDK não aprovado. */
-const VERSOES_APROVADAS = Object.freeze([]);
+const VERSOES_APROVADAS = Object.freeze([
+  Object.freeze({ pacote: '@aws-sdk/client-s3', versao: '3.1152.0' }),
+  Object.freeze({ pacote: '@aws-sdk/client-kms', versao: '3.1152.0' }),
+  Object.freeze({ pacote: '@aws-sdk/client-sts', versao: '3.1152.0' }),
+]);
 const VERSAO_EXATA = /^\d+\.\d+\.\d+$/;
 
 const ehObjeto = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);

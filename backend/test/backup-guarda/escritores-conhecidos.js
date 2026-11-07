@@ -25,6 +25,9 @@ const APROVADA_F = Object.freeze({ revisaoHumana: 'APROVADA', aprovadoEm: DATA_D
 const DATA_DA_DECISAO_48 = '2026-11-05';
 const APROVADA_G = Object.freeze({ revisaoHumana: 'APROVADA', aprovadoEm: DATA_DA_DECISAO_48, aprovacaoRef: `GATE-P2-${DATA_DA_DECISAO_48}-G` });
 const REF_DO_ADENDO_47 = `GATE-P2-${DATA_DA_DECISAO_48}-F1`;
+// DEP-2 (H5/H4, 07/11/2026): três dependências de armazenamento do AWS SDK, classificadas como revisadas por decisão de Ramires.
+const DATA_DA_DECISAO_49 = '2026-11-07';
+const APROVADA_H = Object.freeze({ revisaoHumana: 'APROVADA', aprovadoEm: DATA_DA_DECISAO_49, aprovacaoRef: `GATE-P2-${DATA_DA_DECISAO_49}-H` });
 const SAIDA = 'SAIDA_DO_BACKUP';
 
 const ESCRITORES_CONHECIDOS = {
@@ -175,6 +178,21 @@ const DEPENDENCIAS_REVISADAS = {
   'node-pg-migrate': { classificacao: 'FERRAMENTA_DE_DESENVOLVIMENTO', justificativa: 'devDependency sem uso localizado no código (pendência registrada no CLAUDE.md).', ...APROVADA_A },
   nodemon: { classificacao: 'FERRAMENTA_DE_DESENVOLVIMENTO', justificativa: 'Recarga em desenvolvimento.', ...APROVADA_A },
   supertest: { classificacao: 'FERRAMENTA_DE_DESENVOLVIMENTO', justificativa: 'Testes HTTP.', ...APROVADA_A },
+  '@aws-sdk/client-kms': {
+    classificacao: 'ARMAZENAMENTO_REVISADO',
+    justificativa: 'Cliente do KMS (D-F5): DescribeKey e Decrypt de chaves pré-resolvidas; carregado só por backup-aws-sdk-carregador e usado só por backup-aws-portas; sem arquivo local.',
+    ...APROVADA_H,
+  },
+  '@aws-sdk/client-s3': {
+    classificacao: 'ARMAZENAMENTO_REVISADO',
+    justificativa: 'Cliente do S3 do destino durável (D-F4, Object Lock e versionamento): PutObject condicional, GetObject, HeadObject, ListObjectVersions e leitura da configuração do bucket; carregado só por backup-aws-sdk-carregador e usado só por backup-aws-portas; não grava em disco (a gravação local da restauração é do baixador já classificado).',
+    ...APROVADA_H,
+  },
+  '@aws-sdk/client-sts': {
+    classificacao: 'ARMAZENAMENTO_REVISADO',
+    justificativa: 'Cliente do STS: GetCallerIdentity para conferir o papel em uso; carregado só por backup-aws-sdk-carregador e usado só por backup-aws-portas; sem arquivo local.',
+    ...APROVADA_H,
+  },
 };
 
 const SUPERFICIE_ESPERADA = {
@@ -198,6 +216,7 @@ const APROVACOES = [
   { ref: APROVADA_F.aprovacaoRef, documento: `test/backup-guarda/aprovacoes/GATE-P2-${DATA_DA_DECISAO_47}-F.md`, sha256: '3e0f082f2e2c704da261f8bca7abf6e815202fa2e151f8b7e44d1e067586d51a' },
   { ref: REF_DO_ADENDO_47, documento: `test/backup-guarda/aprovacoes/GATE-P2-${DATA_DA_DECISAO_48}-F1.md`, sha256: 'f5543e7c8cb51250dd93990e4066ab34c008248970b96926fdee9c2a2eb861da' },
   { ref: APROVADA_G.aprovacaoRef, documento: `test/backup-guarda/aprovacoes/GATE-P2-${DATA_DA_DECISAO_48}-G.md`, sha256: 'cb6ba45137626892bc75914e00d05706add2a064c0248923059e98b72031155a' },
+  { ref: APROVADA_H.aprovacaoRef, documento: `test/backup-guarda/aprovacoes/GATE-P2-${DATA_DA_DECISAO_49}-H.md`, sha256: '31c4aa92940a79d8c9e47b9e2c91949b5a55ea2d6e8f3d21d239d939122250ce' },
 ];
 
 module.exports = Object.freeze({

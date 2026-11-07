@@ -47,9 +47,13 @@ describe('[EXE-INV] módulos novos', () => {
     assert.match(lerFonte('src/services/backup-aws-sdk-carregador.service.js'), /@aws-sdk\/client-s3/);
   });
 
-  test('EXE-INV-03 — travas fechadas: operação real desabilitada, SDK sem versão aprovada, limpeza desabilitada, e a operação não pode ser ligada por ambiente, argumento ou módulo (a constante é única e const)', () => {
+  test('EXE-INV-03 — travas fechadas: operação real desabilitada, SDK só nas três versões exatas do gate DEP-2, limpeza desabilitada, e a operação não pode ser ligada por ambiente, argumento ou módulo (a constante é única e const)', () => {
     assert.equal(Pol.OPERACAO_HABILITADA, false);
-    assert.deepEqual([...L.VERSOES_APROVADAS], []);
+    assert.deepEqual(L.VERSOES_APROVADAS.map((v) => ({ ...v })), [
+      { pacote: '@aws-sdk/client-s3', versao: '3.1152.0' },
+      { pacote: '@aws-sdk/client-kms', versao: '3.1152.0' },
+      { pacote: '@aws-sdk/client-sts', versao: '3.1152.0' },
+    ]);
     assert.match(lerFonte('src/services/imagem-backup-orfaos.service.js'), /const LIMPEZA_OPERACIONAL_HABILITADA = false;/);
     assert.match(lerFonte('src/services/backup-executor-politica.service.js'), /^const OPERACAO_HABILITADA = false;$/m);
     const donos = [];
