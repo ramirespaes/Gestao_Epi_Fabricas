@@ -9,7 +9,7 @@ const Pol = require('../../src/services/backup-executor-politica.service');
 /** D-ORF-6, L1 (Bloco A): invariantes dos módulos novos — operação real desligada e nenhum efeito colateral (escrita, remoção, processo, ambiente, rede) neles. */
 
 const DIR = path.join(__dirname, '../../src/services');
-const NOVOS = ['backup-executor-credenciais.service.js', 'backup-executor-auditoria.service.js', 'backup-executor-ligacao.service.js'];
+const NOVOS = ['backup-executor-credenciais.service.js', 'backup-executor-auditoria.service.js', 'backup-executor-ligacao.service.js', 'backup-executor-compositor.service.js'];
 const PROIBIDOS = [/\bwriteFile/, /\bappendFile/, /\bcreateWriteStream/, /\bunlink/, /\brmSync|\brm\(/, /\brename/, /\bmkdir/, /child_process/, /\bspawn|\bexec(?:File)?\b/, /process\.env/, /\bfetch\(/, /node:(?:http|https|net|dns)/, /\bfs\b/];
 
 describe('[LIG-INV] invariantes', () => {
