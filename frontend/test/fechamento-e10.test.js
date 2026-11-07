@@ -91,7 +91,7 @@ describe('menu: Operações de estoque em ESTOQUE, na mesma ordem em todas as p�
     for (const arquivo of INTEGRADAS) {
       const item = secao(ler(`pages/${arquivo}`), 'Estoque').itens.find((i) => i.rotulo === 'Operações de estoque');
       const esperado = arquivo === 'operations.html'
-        ? '<a class="active" href="javascript:void(0)" data-pagina="operations" style="display:none">'
+        ? '<a class="active" role="link" tabindex="0" aria-current="page" data-pagina="operations" style="display:none">'
         : '<a href="operations.html" data-pagina="operations" style="display:none">';
       assert.ok(item.html.startsWith(esperado), `${arquivo}: ${item.html}`);
     }
@@ -121,7 +121,7 @@ describe('menu: Operações de estoque em ESTOQUE, na mesma ordem em todas as p�
       const itens = secao(ler(`pages/${arquivo}`), 'Entregas').itens;
       const item = itens.find((i) => i.rotulo === 'Ficha de EPI');
       const esperado = arquivo === 'epi-ficha.html'
-        ? '<a class="active" href="javascript:void(0)" data-pagina="epiFicha" style="display:none">'
+        ? '<a class="active" role="link" tabindex="0" aria-current="page" data-pagina="epiFicha" style="display:none">'
         : '<a href="epi-ficha.html" data-pagina="epiFicha" style="display:none">';
       assert.ok(item && item.html.startsWith(esperado), `${arquivo}: ${item && item.html}`);
       assert.doesNotMatch(item.html, /nav-pendente|Em integração/, arquivo);

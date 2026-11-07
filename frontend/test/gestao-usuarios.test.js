@@ -23,7 +23,7 @@ const U = require('../js/usuarios');
 const ATAQUE = '<img src=x onerror=alert(1)>';
 const EM_INTEGRACAO = 'Funcionalidade em integração';
 const LINK = '<a href="gestao-usuarios.html" data-pagina="gestaoUsuarios" style="display:none"><div class="nav-icon indigo">manage_accounts</div>Gestão de Usuários</a>';
-const LINK_ATIVO = '<a class="active" href="javascript:void(0)" data-pagina="gestaoUsuarios" style="display:none"><div class="nav-icon indigo">manage_accounts</div>Gestão de Usuários</a>';
+const LINK_ATIVO = '<a class="active" role="link" tabindex="0" aria-current="page" data-pagina="gestaoUsuarios" style="display:none"><div class="nav-icon indigo">manage_accounts</div>Gestão de Usuários</a>';
 const SEIS_ANTIGAS = ['grupos-acesso.html', 'grupo-permissoes.html', 'grupo-usuarios.html', 'autorizacoes-individuais.html', 'new-user.html', 'user-admin.html'];
 const COM_MENU = fs.readdirSync(path.join(RAIZ, 'pages')).filter((f) => f.endsWith('.html') && /data-pagina="userAdmin"/.test(ler(`pages/${f}`)));
 

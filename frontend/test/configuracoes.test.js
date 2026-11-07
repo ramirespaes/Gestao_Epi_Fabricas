@@ -239,7 +239,7 @@ describe('página Configurações (inspeção estática)', () => {
   });
 
   test('menu: Configurações ativa aqui e link real por data-pagina nas demais páginas integradas e no Portal; saiu dos protótipos em inspeção; publicada', () => {
-    assert.match(html, /<a class="active" href="javascript:void\(0\)" data-pagina="config" style="display:none"><div class="nav-icon gray">settings<\/div>Configurações<\/a>/);
+    assert.match(html, /<a class="active" role="link" tabindex="0" aria-current="page" data-pagina="config" style="display:none"><div class="nav-icon gray">settings<\/div>Configurações<\/a>/);
     const integradas = fs.readdirSync(path.join(RAIZ, 'pages')).filter((f) => f.endsWith('.html') && /data-pagina="importEmployees"/.test(ler(`pages/${f}`)) && f !== 'config.html');
     assert.ok(integradas.length >= 12,`${integradas.length} páginas integradas com menu completo`);
     for (const arquivo of integradas) {

@@ -21,7 +21,7 @@ const COM_MENU = fs.readdirSync(path.join(RAIZ, 'pages')).filter((f) => f.endsWi
 
 const LINK = '<a href="funcionarios.html" data-pagina="funcionarios" style="display:none"><div class="nav-icon teal">people</div>Cadastro de Colaboradores</a>';
 const HISTORICO ='<a href="employee-history.html" data-pagina="employeeHistory" style="display:none"><div class="nav-icon blue">history</div>Histórico de Funcionários</a>';
-const HISTORICO_ATIVO = '<a class="active" href="javascript:void(0)" data-pagina="employeeHistory" style="display:none"><div class="nav-icon blue">history</div>Histórico de Funcionários</a>';
+const HISTORICO_ATIVO = '<a class="active" role="link" tabindex="0" aria-current="page" data-pagina="employeeHistory" style="display:none"><div class="nav-icon blue">history</div>Histórico de Funcionários</a>';
 
 const nav = (h) => h.match(/<nav class="nav">([\s\S]*?)<\/nav>/)?.[1];
 const secao = (html, nome) => {
@@ -116,7 +116,7 @@ describe('Início do Portal: entrada Funcionários', () => {
 // ═══════════════════════════════════════════════════════════════════
 // funcionarios.html participa da moldura padrão (sidebar, topbar do celular, tema), sem tocar no conteúdo aprovado.
 // ═══════════════════════════════════════════════════════════════════
-const LINK_ATIVO = '<a class="active" href="javascript:void(0)" data-pagina="funcionarios" style="display:none"><div class="nav-icon teal">people</div>Cadastro de Colaboradores</a>';
+const LINK_ATIVO = '<a class="active" role="link" tabindex="0" aria-current="page" data-pagina="funcionarios" style="display:none"><div class="nav-icon teal">people</div>Cadastro de Colaboradores</a>';
 // SHA-256 do miolo aprovado de #conteudoProtegido (cabeçalho, busca, tabela, modal de cadastro/edição e confirmação), byte a byte.
 // Atualizado na nomenclatura visual "Cadastro de Colaboradores" (h1, subtítulo, botão e título do modal): só texto, mesma estrutura.
 const MIOLO_SHA = '741a8482865cfb1299bbe1c89b6e5bf078f5b19e73224f92042cb82356732118';
@@ -136,7 +136,7 @@ describe('funcionarios.html — moldura padrão de navegação', () => {
 
   test('o menu é o mesmo das demais páginas integradas (referência: Pedido de EPI); só "Funcionários" é a página atual', () => {
     const ref = nav(ler('pages/request.html'))
-      .replace('<a class="active" href="javascript:void(0)" data-pagina="request"', '<a href="request.html" data-pagina="request"')
+      .replace('<a class="active" role="link" tabindex="0" aria-current="page" data-pagina="request"', '<a href="request.html" data-pagina="request"')
       .replace(LINK, LINK_ATIVO);
     assert.ok(ref.includes(LINK_ATIVO), 'referência montada');
     assert.equal(nav(html), ref);

@@ -203,7 +203,7 @@ describe('inspeção estática: pages/dashboard.html', () => {
   });
 
   test('menu: Dashboard ativo; páginas integradas por permissão; o Portal e as páginas integradas oferecem o Dashboard', () => {
-    assert.match(html, /<a class="active" href="javascript:void\(0\)" data-pagina="dashboard" style="display:none"><div class="nav-icon blue">dashboard<\/div>Dashboard<\/a>/);
+    assert.match(html, /<a class="active" role="link" tabindex="0" aria-current="page" data-pagina="dashboard" style="display:none"><div class="nav-icon blue">dashboard<\/div>Dashboard<\/a>/);
     for (const arquivo of ['pages/materials.html', 'pages/available-items.html', 'pages/employee-history.html', 'pages/import-employees.html', 'pages/employee-groups.html']) {
       assert.match(ler(arquivo), /<a href="dashboard\.html" data-pagina="dashboard" style="display:none"><div class="nav-icon blue">dashboard<\/div>Dashboard<\/a>/, arquivo);
     }

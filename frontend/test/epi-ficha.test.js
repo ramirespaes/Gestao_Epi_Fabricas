@@ -837,7 +837,7 @@ describe('10I — Ficha de EPI no fluxo oficial de páginas', () => {
     assert.match(script, /EpiPermissoes\.recurso\([^)]*'epiFicha', 'visualizar'\)/);
     assert.match(script, /EpiPermissoes\.acao\([^)]*'REALIZAR_ENTREGA'\)/);
     assert.doesNotMatch(script, /EpiPermissoes\.carregar\(/, 'a consulta é do fluxo central');
-    assert.match(html, /<a class="active" href="javascript:void\(0\)" data-pagina="epiFicha" style="display:none"><div class="nav-icon brown">description<\/div>Ficha de EPI<\/a>/);
+    assert.match(html, /<a class="active" role="link" tabindex="0" aria-current="page" data-pagina="epiFicha" style="display:none"><div class="nav-icon brown">description<\/div>Ficha de EPI<\/a>/);
     assert.doesNotMatch(html, /Ficha de EPI<span class="nav-etiqueta">/);
   });
 

@@ -240,13 +240,17 @@ pacotes atuais:
 | Pacote | Páginas | Resultado |
 |---|---|---|
 | Painel Privado | 8 | **viável**: 1 hash de script, 8 de estilo, 13 atributos `style` cobertos só em `style-src-attr`, nenhum host externo, nenhum manipulador inline |
-| Portal | 37 | **bloqueado**: 21 páginas usam `href="javascript:void(...)"` (uma cada) e `js/pagina-base.js` monta manipulador `on*=` em texto; a CSP bloquearia esses usos |
+| Portal | 37 | **viável** desde a P-HML-02 (07/11/2026): 24 hashes de script, 26 de estilo, 2 manipuladores inline cobertos por hash em `script-src-attr 'unsafe-hashes'`, 1.267 atributos `style` cobertos só em `style-src-attr`, hosts externos `challenges.cloudflare.com` (script, frame, connect), `fonts.googleapis.com` (style) e `fonts.gstatic.com` (font); 0 problemas |
 
-Aplicar a CSP ao Portal exige alterar frontend (trocar o `javascript:void` por botão ou
-`href="#"` com tratamento no script), o que está fora desta autorização, e uma das
-páginas (`pages/materials.html`) tem edição protegida. Os modelos Nginx estão prontos e
-validados, mas **não são aplicados**. Os pontos que a operação ainda precisa cumprir
-estão em `deploy/hml/nginx/LEIA-ME.md`.
+Histórico: até a P-HML-02 o Portal estava **bloqueado**, porque em 21 páginas o item de menu da
+própria página era `<a class="active" href="javascript:void(0)" …>`, que a CSP bloquearia. A
+correção trocou esse `href` por `role="link" tabindex="0" aria-current="page"` (item sem ação,
+focável, anunciado como página atual), sem alterar classes, `data-pagina`, conteúdo ou
+comportamento, com uma edição focal autorizada em `pages/materials.html`. O gerador ainda emite
+o aviso `MANIPULADOR_EM_JS` para `js/pagina-base.js`: é falso positivo, disparado por um
+comentário que contém o texto `onclick="..."`; os manipuladores reais do menu (`toggleSidebar()`,
+`closeMobileMenu()`) entram por hash. Os modelos Nginx estão prontos e validados, mas **não são
+aplicados**. Os pontos que a operação ainda precisa cumprir estão em `deploy/hml/nginx/LEIA-ME.md`.
 
 Decisões dos modelos depois da auditoria: sem `http2` (a diretiva `http2 on` exige nginx
 1.25.1 ou superior e a versão da homologação é desconhecida); a porta 80 atende o desafio
@@ -370,6 +374,7 @@ Controles do desenho:
 | A-10 | configurar `processo.pidComando` do backend, validar a prova de versão em Linux real e definir `REDE_VERIFICACAO` e `RAIZ_ACME` nos modelos |
 | A-11 | validar em Linux real, no sistema de arquivos do servidor, o `fsync` de arquivo e diretório (e que nenhum aviso `DURABILIDADE_NAO_GARANTIDA` apareça), o `O_NOFOLLOW`, a travessia da base por descritor e a resolução por `/proc/self/fd` das âncoras, o comportamento do `npm ci` com um `node_modules` que seja link (em diretório sintético isolado, nunca em dados reais), inclusive o diretório de trabalho do `npm ci` por `/proc/<pid>/fd/<n>`, com o usuário e as permissões de implantação (os testes que só o Linux executa rodam no CI), a queda abrupta entre as trocas de link e depois do reinício (reconciliação pelo diário), e o corte de energia; homologar com o D-ORF-6 a trava compartilhada que libera o backend, sem atestado humano |
 
-Decisão sobre o Portal: a CSP só se aplica depois de remover os 21 `javascript:void` e o
-manipulador montado em `js/pagina-base.js`, mudança de frontend que precisa de
-autorização e coordenação com o trabalho visual protegido.
+Decisão sobre o Portal (resolvida em 07/11/2026, P-HML-02): os 21 `javascript:void` do item ativo
+do menu foram removidos e o gerador aceita a CSP do Portal com 0 problemas; o aviso sobre
+`js/pagina-base.js` é falso positivo em comentário. A aplicação da CSP no servidor continua
+dependendo da publicação pelos modelos Nginx (A-8), ainda não executada.

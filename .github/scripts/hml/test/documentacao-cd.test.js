@@ -64,7 +64,7 @@ describe('documentação e invariantes do CD de homologação', () => {
     }
   });
 
-  test('os números citados sobre a CSP vêm do gerador: Painel sem problemas, Portal com os javascript: conhecidos', () => {
+  test('os números citados sobre a CSP vêm do gerador: Painel e Portal sem problemas (Portal desde a P-HML-02)', () => {
     const { gerarCsp } = require(path.join(REPO, 'deploy', 'hml', 'csp', 'gerar-csp.js'));
     const os = require('node:os');
     const base = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'hml-doc-'));
@@ -74,9 +74,10 @@ describe('documentação e invariantes do CD de homologação', () => {
       const painel = gerarCsp({ raiz: path.join(base, 'painel'), perfil: 'painel' });
       assert.deepEqual([painel.paginas, painel.problemas.length, painel.hashes.script.length, painel.hashes.style.length, painel.atributosStyle], [8, 0, 1, 8, 13]);
       const portal = gerarCsp({ raiz: path.join(base, 'portal'), perfil: 'portal' });
-      assert.equal(portal.problemas.length > 0, true, 'se zerar, a documentação do Portal precisa ser revista');
-      assert.ok(portal.problemas.every((p) => p.codigo === 'JAVASCRIPT_URL'));
+      assert.equal(portal.problemas.length, 0, 'se voltar a haver problemas, a documentação do Portal precisa ser revista');
+      assert.deepEqual([portal.paginas, portal.hashes.script.length, portal.hashes.style.length, portal.hashes.manipuladores.length, portal.atributosStyle], [37, 24, 26, 2, 1267]);
       assert.ok(ler(DOC).includes(`| Portal | ${portal.paginas} |`) || ler(DOC).includes('| Portal | 37 |'), 'a tabela da documentação cita as páginas do Portal');
+      assert.ok(ler(DOC).includes('P-HML-02'), 'a documentação registra a correção que liberou a CSP do Portal');
     } finally {
       fs.rmSync(base, { recursive: true, force: true });
     }
