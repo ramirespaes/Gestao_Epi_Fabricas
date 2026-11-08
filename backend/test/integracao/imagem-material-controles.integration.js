@@ -86,13 +86,18 @@ describe('controles do ambiente da Biblioteca de Imagens (passam já no RED)', (
     assert.ok(a.pool.options.max >= 10);
   });
 
-  test('CTL-07: as chaves de auditoria planejadas passam pela barreira JSON da migration 014 (imagemId, formato, bytes, imagem{origem,id}, estado) — e uma chave sensível é recusada (controle positivo)', async () => {
+  test('CTL-07: as chaves de auditoria planejadas passam pela barreira JSON da migration 014 (imagemId, formato, bytes, imagem{origem,id}, estado) — e uma chave sensível é recusada pelas duas barreiras (controle positivo)', async () => {
     const ref = String(Date.now());
     await auditoriaRepo.registrar(a.pool, {
       empresaId: a.d.empresaA, usuarioId: a.d.atorA, acao: 'IMAGEM_MATERIAL_IMPORTADA', referencia: ref,
       contexto: { imagemId: 1, formato: 'PNG', bytes: 139000 }, dadosAnteriores: { imagem: null }, dadosNovos: { imagem: { origem: 'EMPRESA', id: 1 }, estado: 'ATIVA' },
     });
     assert.equal((await a.auditoria('IMAGEM_MATERIAL_IMPORTADA', a.d.empresaA)).some((l) => l.referencia === ref), true);
-    await assert.rejects(auditoriaRepo.registrar(a.pool, { empresaId: a.d.empresaA, usuarioId: a.d.atorA, acao: 'IMAGEM_MATERIAL_IMPORTADA', contexto: { token: 'x' } }), (e) => e.code === 'P0001');
+    // Rodada A (R2): o repositório recusa antes do INSERT (primeira barreira, TypeError); o gatilho 014/097 segue provado por INSERT direto, que a contorna.
+    await assert.rejects(auditoriaRepo.registrar(a.pool, { empresaId: a.d.empresaA, usuarioId: a.d.atorA, acao: 'IMAGEM_MATERIAL_IMPORTADA', contexto: { token: 'x' } }), (e) => e instanceof TypeError && /contém chave JSON sensível/.test(e.message));
+    await assert.rejects(a.pool.query(
+      "INSERT INTO logs_auditoria (empresa_id, usuario_id, acao, contexto) VALUES ($1, $2, 'IMAGEM_MATERIAL_IMPORTADA', $3::jsonb)",
+      [a.d.empresaA, a.d.atorA, JSON.stringify({ token: 'x' })],
+    ), (e) => e.code === 'P0001');
   });
 });

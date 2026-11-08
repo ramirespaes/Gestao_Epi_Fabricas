@@ -487,13 +487,17 @@ describe('repositórios do MFA da plataforma (PostgreSQL real)', () => {
       ]);
     });
 
-    test('o bloqueio de chave sensível do banco vale também para CLI e SISTEMA', async () => {
+    test('o bloqueio de chave sensível vale também para CLI e SISTEMA: primeira barreira do repositório e gatilho do banco', async () => {
+      // Rodada A (R2): o repositório recusa antes do INSERT (TypeError); o gatilho do banco é provado por INSERT direto, que contorna o repositório.
+      const primeiraBarreira = (e) => e instanceof TypeError && /contém chave JSON sensível/.test(e.message);
+      await assert.rejects(() => auditoria.registrarOperacaoCli(contexto.pool, { acao: 'X', contexto: { segredo: 'nao-pode' } }), primeiraBarreira);
+      await assert.rejects(() => auditoria.registrarEventoSistema(contexto.pool, { acao: 'X', dadosNovos: { totp: 'nao-pode' } }), primeiraBarreira);
       await assert.rejects(
-        () => auditoria.registrarOperacaoCli(contexto.pool, { acao: 'X', contexto: { segredo: 'nao-pode' } }),
+        () => q("INSERT INTO logs_auditoria_plataforma (acao, ator_tipo, contexto) VALUES ('X', 'OPERACAO_CLI', $1::jsonb)", [JSON.stringify({ segredo: 'nao-pode' })]),
         /chave sensível/,
       );
       await assert.rejects(
-        () => auditoria.registrarEventoSistema(contexto.pool, { acao: 'X', dadosNovos: { totp: 'nao-pode' } }),
+        () => q("INSERT INTO logs_auditoria_plataforma (acao, ator_tipo, dados_novos) VALUES ('X', 'SISTEMA', $1::jsonb)", [JSON.stringify({ totp: 'nao-pode' })]),
         /chave sensível/,
       );
     });

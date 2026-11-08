@@ -77,6 +77,7 @@ const PENDENTES = [
   '094_create_lgpd_encarregados',
   '095_alter_lgpd_encarregados_add_cnpj',
   '096_create_funcionario_situacoes',
+  '097_alter_logs_auditoria_chave_sensivel_sem_separador',
 ];
 const GATILHO_ADIADO = 'trg_estoque_lotes_exigir_entrada';
 const CNPJ = '11222333000181';
@@ -131,7 +132,7 @@ describe('runner real: 042, 043 e 044 numa transação, com saldo em estoque_tam
 
     assert.deepEqual(aplicadas.map((migration) => migration.name), PENDENTES);
     const linhas = await registradas();
-    assert.equal(linhas.length, 96);
+    assert.equal(linhas.length, 97);
     assert.deepEqual(linhas.slice(-PENDENTES.length).map((linha) => linha.name), PENDENTES);
   });
 

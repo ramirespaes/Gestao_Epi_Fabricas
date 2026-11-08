@@ -204,7 +204,7 @@ describe('migration 090 — imagens de produto (biblioteca padrão, biblioteca d
       assert.equal(migrationExiste('088'), false, 'a 088 está suspensa e não pode ser reutilizada');
       const prefixos = [...new Set(todasAsMigrations())];
       assert.equal(prefixos.includes('089'), true);
-      assert.deepEqual(prefixos.filter((p) => p > '089').sort(), ['090', '091', '092', '093', '094', '095', '096'], 'depois da 089, exatamente a 090, a 091 (Dados da Empresa, F1), a 092 (Suporte), a 093 (conversa do Suporte), a 094 (LGPD-1, encarregado) a 095 (CNPJ do encarregado PJ) e a 096 (datas efetivas da situação); nada além');
+      assert.deepEqual(prefixos.filter((p) => p > '089').sort(), ['090', '091', '092', '093', '094', '095', '096', '097'], 'depois da 089, exatamente a 090, a 091 (Dados da Empresa, F1), a 092 (Suporte), a 093 (conversa do Suporte), a 094 (LGPD-1, encarregado) a 095 (CNPJ do encarregado PJ), a 096 (datas efetivas da situação) e a 097 (chave JSON sensível sem separador, PENDENCIA-SEG-TRG04); nada além');
     });
   });
 
