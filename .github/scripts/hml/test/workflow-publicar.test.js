@@ -1,0 +1,52 @@
+'use strict';
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const raiz = path.resolve(__dirname, '../../../..');
+const yaml = fs.readFileSync(path.join(raiz, '.github/workflows/deploy-hml.yml'), 'utf8');
+const job = yaml.split('\n  publicar:\n')[1];
+test('só publicar recebe OIDC e permanece atrás do environment e dos dois interruptores', () => {
+  assert.equal((yaml.match(/id-token: write/g) || []).length, 1);
+  assert.doesNotMatch(yaml.split('\n  publicar:\n')[0], /id-token|aws-actions/);
+  assert.match(job, /needs: \[validar, empacotar\]/);
+  assert.match(job, /environment: homologacao/);
+  for (const requisito of ["inputs.publicar == true", "vars.HML_PUBLICACAO_HABILITADA == 'true'", "github.ref == 'refs/heads/main'", "github.repository == 'ramirespaes/Gestao_Epi_Fabricas'", "github.event_name == 'workflow_dispatch'"]) assert.ok(job.includes(requisito));
+  assert.match(yaml, /publicar:\n\s+description:[^\n]*\n\s+required: false\n\s+type: boolean\n\s+default: false/);
+  assert.doesNotMatch(yaml, /continue-on-error|if:.*always\(|\bsecrets\.|self-hosted/);
+});
+test('controlador e artefato são imutáveis e release conferida antes das credenciais', () => {
+  assert.match(job, /ref: \$\{\{ github.workflow_sha \}\}/);
+  assert.match(job, /artifact-ids: \$\{\{ needs.empacotar.outputs.artifact_id \}\}/);
+  assert.doesNotMatch(job, /ref: main|run-id:|repository:/);
+  assert.match(job, /HML_COMMIT: \$\{\{ needs.validar.outputs.commit \}\}/);
+  assert.match(job, /HML_RELEASE_SHA256: \$\{\{ needs.empacotar.outputs.release_sha256 \}\}/);
+  assert.ok(job.indexOf('p.conferirRelease') < job.indexOf('uses: aws-actions/'));
+  assert.ok(job.indexOf('p.validarDestino') < job.indexOf('uses: aws-actions/'));
+  assert.match(yaml, /release_sha256: \$\{\{ steps.selo.outputs.release_sha256 \}\}/);
+  assert.match(job, /audience: sts.amazonaws.com/);
+  assert.match(job, /unset-current-credentials: true/);
+  assert.match(job, /mask-aws-account-id: true/);
+});
+test('todas as ações estão na allowlist com SHA completo; sem comandos remotos embutidos', () => {
+  const permitidos = new Set(['actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683', 'actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020', 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02', 'actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093', 'aws-actions/configure-aws-credentials@b47578312673ae6fa5b5096b330d9fbac3d116df']);
+  for (const m of yaml.matchAll(/uses: (\S+)/g)) assert.ok(permitidos.has(m[1]), m[1]);
+  assert.doesNotMatch(job, /\bssh\b|\bsudo\b|systemctl|psql|db:migrate|git (push|commit)/);
+  for (const bloco of job.split(/\n\s+run:/).slice(1)) assert.doesNotMatch(bloco.split(/\n\s+- name:/)[0], /\$\{\{/);
+  assert.match(yaml, /group: deploy-hml\n\s+cancel-in-progress: false/);
+});
+test('modelos IAM separam os canais; configuração entregue está desligada', () => {
+  const ler = nome => JSON.parse(fs.readFileSync(path.join(raiz, 'deploy/hml/cd', nome)));
+  const trust = ler('iam-confianca.modelo.json').Statement[0];
+  assert.equal(trust.Condition.StringEquals['token.actions.githubusercontent.com:aud'], 'sts.amazonaws.com');
+  assert.equal(trust.Condition.StringEquals['token.actions.githubusercontent.com:sub'], 'repo:ramirespaes/Gestao_Epi_Fabricas:environment:homologacao');
+  const pub = ler('iam-publicador.modelo.json'), agente = ler('iam-agente.modelo.json');
+  assert.deepEqual(pub.Statement.filter(s => s.Action === 's3:PutObject').flatMap(s => s.Resource), ['arn:aws:s3:::BUCKET/hml/blobs/*', 'arn:aws:s3:::BUCKET/hml/pedidos/*']);
+  assert.deepEqual(agente.Statement.filter(s => s.Action === 's3:PutObject').map(s => s.Resource), ['arn:aws:s3:::BUCKET/hml/recibos/*']);
+  assert.doesNotMatch(JSON.stringify([pub, agente]), /DeleteObject|iam:|lightsail:|ssm:|ec2:|PutObjectAcl/);
+  const cfg = ler('agente.config.exemplo.json');
+  assert.equal(cfg.habilitado, false);
+  assert.equal(cfg.isolamentoRevisado, 'PENDENTE');
+  const bucket = ler('s3-politica.modelo.json');
+  assert.ok(JSON.stringify(bucket).includes('s3:if-none-match'));
+});

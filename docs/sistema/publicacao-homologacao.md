@@ -1,4 +1,11 @@
-# Publicação da homologação (preparação do CD)
+# Publicação da homologação
+
+Atualização da Etapa 52 (07/11/2026): a automação local, ainda desativada, está em
+[publicacao-homologacao-automacao.md](publicacao-homologacao-automacao.md). Ela substitui
+as descrições de ausência de job de publicação e desenho futuro abaixo; as regras
+de validação e empacotamento deste contrato continuam vigentes. Nenhum recurso remoto
+foi alterado nesta entrega. O estado AWS homologado informado por Ramires não foi
+revalidado; pendências antigas de provisionamento abaixo não são diagnóstico atual.
 
 Preparado em 03/11/2026 para revisão. Não comprova GitHub remoto, workflow já
 executado, servidor ou ambiente de homologação ativo. Não autoriza AWS, deploy,
@@ -15,23 +22,23 @@ DNS, certificados nem reinício de serviço: cada um mantém autorização próp
 | `.github/scripts/hml/gerar-release.js` | gera os dois pacotes, os manifestos SHA-256 e `release.json` |
 | `.github/workflows/deploy-hml.yml` | disparo manual que encadeia as duas peças e guarda a release como artefato |
 
-O workflow **só valida e empacota**. Tem dois jobs, `validar` e `empacotar`, sem
-segredos, sem `environment`, sem permissão de escrita e sem nenhum comando de
-transmissão. Isso é provado por `.github/scripts/hml/test/workflow-deploy-hml.test.js`,
-que falha se alguém acrescentar SSH, AWS, segredo, gatilho automático ou ação de terceiros.
+Os jobs `validar` e `empacotar` continuam sem credenciais AWS e sem transmissão.
+O novo job `publicar` depende dos dois, exige interruptores e gate humano do
+environment `homologacao`. Os testes da preparação continuam cobrindo os dois jobs;
+`workflow-publicar.test.js` cobre as restrições da publicação.
 
 ## Componentes locais para a publicação real
 
 Instalador de releases com rollback, compatibilidade com migrations e contratos,
 pacote do backend, verificação pós-publicação, gerador de CSP, modelos Nginx e o
-desenho do futuro job de publicação estão em
+registro histórico do desenho da publicação estão em
 [publicacao-homologacao-componentes.md](publicacao-homologacao-componentes.md). Todos
 foram testados só em ambiente local; nenhum foi instalado ou aplicado em servidor.
 
 ## Regras do disparo manual
 
 Gatilho único `workflow_dispatch`, com `commit` (SHA completo), `confirmacao`
-(literal `HOMOLOGACAO`) e `permitir_commit_anterior` (padrão falso). O job
+(literal `HOMOLOGACAO`), `permitir_commit_anterior` e `publicar` (ambos com padrão falso). O job
 `validar` recusa, nesta ordem:
 
 0. disparo a partir de qualquer ref que não seja `refs/heads/main`: a validação vive no YAML, então só o da `main` vale;
@@ -70,15 +77,19 @@ dias; um repositório definitivo de releases é decisão da etapa de publicaçã
 | `validar`: autoteste e decisão | scripts da cabeça atual da `main` | fatos coletados no momento da execução |
 | `empacotar`: checkout | o commit validado, conferido por `git rev-parse HEAD` e árvore limpa | o commit validado |
 | `empacotar`: provas e `gerar-release.js` | os do commit validado | o commit validado |
+| `publicar`: controlador e protocolo | `github.workflow_sha` desta execução | artefato desta execução, vinculado ao SHA validado e hash externo |
 
 Para um commit anterior, a release é gerada pelo código daquele commit, não pelo
 da `main` atual. O `release.json` registra o commit usado.
 
-## Rollback somente de código (desenho futuro)
+## Rollback somente de código
 
-Previsto para a etapa de publicação real, não implementado aqui. Com o layout
-`releases/<rotulo>/` por origem e um ponteiro `current`, voltar é reapontar para
-a release anterior e conferir o manifesto, sem copiar nada de novo.
+Implementado pelo instalador e pela orquestração do agente, sem ativação remota.
+O layout efetivo é `<base>/.releases/<nome>/<rotulo>/`, com ponteiro `<base>/<nome>`
+e anterior em `<base>/.releases/<nome>/anterior`. O agente só reverte se o atual
+for a release do próprio pedido e o anterior corresponder à baseline capturada,
+com integridade e verificações HTTP antes de liberar a fila. Falha ou incerteza
+mantém estado crítico. O par de componentes não tem troca atômica conjunta.
 
 - Vale **só para o frontend**. Migrations não são revertidas, e o backend não faz parte deste CD.
 - O alvo precisa conter os dois empacotadores. A release é gerada pelo código do próprio commit; um commit anterior à existência de `empacotar-painel.js` e dos scripts de homologação não pode ser empacotado. Para esses casos, o rollback é reapontar para uma release já gerada.
@@ -121,9 +132,9 @@ de qualquer publicação real:
 - Um commit só passa se o CI rodou no push da `main`. Merge sem CI concluído é recusado, por desenho.
 - A verificação de CI é uma consulta à API do GitHub. Falha ou resposta vazia da API recusa, nunca aprova.
 - Os empacotadores inspecionam HTML por expressões regulares. A CSP do servidor estático continua obrigatória e ainda não existe; o `<script>` inline de `painel-privado/index.html` exige hash ou nonce.
-- Os testes do workflow são lidos como texto. Eles garantem a ausência de capacidade de publicar, mas não substituem a revisão de qualquer mudança futura no YAML.
+- Os testes do workflow são estáticos: verificam os jobs sem credenciais e os gates do job protegido; não comprovam as regras remotas nem a execução do GitHub Actions.
 - **Cobertura no CI.** O job sem banco do `ci.yml` executa, em pull requests e em pushes da `main`, os testes de `.github/scripts/hml` num passo próprio, depois dos testes do frontend. Uma alteração que quebre o workflow ou os scripts é detectada antes do merge. Os testes dos dois empacotadores (`frontend/test/publicacao*.test.js`) rodam no `npm test` do mesmo job. Os mesmos testes rodam de novo no job `validar` do disparo manual.
-- **Ações fixadas por versão maior** (`@v4`), como no `ci.yml`. Antes de existir job de publicação, fixar por SHA de commit.
+- **Ações de `deploy-hml.yml` fixadas por SHA completo.** O `ci.yml` mantém suas versões maiores anteriores, sem alteração nesta etapa.
 - **Formato da API.** O campo `path` das execuções do GitHub é tratado com e sem sufixo `@ref`. O comportamento real só é comprovado no primeiro disparo; na dúvida a validação recusa.
 - O `node --test` com diretório como argumento falha no Node 22; os workflows usam glob entre aspas.
 

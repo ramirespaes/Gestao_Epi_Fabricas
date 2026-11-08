@@ -71,9 +71,9 @@ Depois da cópia, o pacote é conferido contra a allowlist e o manifesto SHA-256
 
 **Mesmos limites do pacote do cliente.** A inspeção do HTML é por expressões regulares, e a CSP obrigatória do servidor estático continua sendo a segunda barreira. As páginas do Painel têm `<style>` inline e `index.html` tem um `<script>` inline, que exigem hash ou nonce na CSP do Painel. O Painel depende de a API responder na mesma origem, em `/api/plataforma` (ver `painel-privado/config.js`).
 
-## Release de homologação (preparação)
+## Release de homologação e publicação com aprovação
 
-`.github/workflows/deploy-hml.yml` valida o commit e gera os dois pacotes com manifestos, guardados apenas como artefato da execução. **Nesta etapa ele não publica nada**: sem segredos, sem AWS, sem job de deploy. O procedimento, os releases versionados, o rollback de código e a coordenação com D-ORF-6 estão em `docs/sistema/publicacao-homologacao.md`.
+`.github/workflows/deploy-hml.yml` preserva a validação do commit e os dois pacotes com manifestos. A Etapa 52 acrescenta publicação com interruptor duplo e aprovação do environment `homologacao`, ainda desativada. O procedimento está em `docs/sistema/publicacao-homologacao-automacao.md`. A allowlist do Portal continua incluindo institucional/Totem; o agente exige configuração revisada de raízes exclusivas da homologação, sem vínculo com o site institucional. Empacotadores e allowlists não foram alterados.
 
 ## Fora do pacote do cliente, de propósito
 

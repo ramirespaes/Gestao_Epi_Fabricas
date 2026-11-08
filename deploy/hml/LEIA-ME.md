@@ -1,8 +1,19 @@
 # deploy/hml
 
-Componentes locais do CD de homologação. Nada aqui é executado automaticamente e
-nada foi instalado ou aplicado em servidor. A explicação completa, o desenho do futuro
-job e as pendências estão em `docs/sistema/publicacao-homologacao-componentes.md`.
+Componentes locais do CD de homologação, com workflow manual e aprovação protegida.
+Nenhum agente foi instalado ou aplicado em servidor por esta entrega. O contrato
+atual está em `docs/sistema/publicacao-homologacao-automacao.md`; o histórico do
+desenho e os contratos do instalador ficam em `publicacao-homologacao-componentes.md`.
+
+Etapa 52: `cd/` contém o protocolo, publicador OIDC/S3, agente Linux e modelos inertes
+de configuração/IAM. O job protegido está preparado e desativado. Contrato e ativação:
+`docs/sistema/publicacao-homologacao-automacao.md`. O agente recusa uso antes da revisão
+de raízes exclusivas da homologação, sem vínculo com o site institucional.
+
+Etapa 53A: recusas comprovadas antes de chamar o instalador são terminais e liberam
+a fila somente após registro durável. Estado crítico, registro pendente/ilegível ou
+resultado incerto preservam a trava. `--pedido` é operacional e pode instalar uma
+release; não é um comando de inspeção somente de leitura.
 
 | Pasta ou arquivo | Função |
 |---|---|
