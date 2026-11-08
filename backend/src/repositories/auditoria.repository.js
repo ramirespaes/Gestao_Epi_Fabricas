@@ -1,9 +1,16 @@
 'use strict';
 
 const { ipParaGravar, dispositivoParaGravar } = require('../utils/origem-requisicao');
+const { exigirSemChaveSensivel } = require('../utils/chave-json-sensivel');
 
 /**
  * Repositório de auditoria (logs_auditoria, migrations 012 e 014).
+ *
+ * Rodada A R2 (PENDENCIA-SEG-TRG04, migration 097): a "função central de
+ * redação" prevista pela 014 passou a existir como `exigirSemChaveSensivel`
+ * (src/utils/chave-json-sensivel.js), espelho da função do banco. É a
+ * PRIMEIRA barreira: nome de chave sensível em contexto/dados_anteriores/
+ * dados_novos é TypeError antes de qualquer INSERT; o gatilho é a segunda.
  *
  * Único ponto de escrita nesta tabela — que é append-only por desenho:
  * nenhum UPDATE/DELETE/TRUNCATE é sequer tentado aqui, e o próprio banco
@@ -85,6 +92,9 @@ async function registrar(executor, {
   exigirObjetoOpcional(contexto, 'contexto');
   exigirObjetoOpcional(dadosAnteriores, 'dadosAnteriores');
   exigirObjetoOpcional(dadosNovos, 'dadosNovos');
+  exigirSemChaveSensivel(contexto, 'contexto');
+  exigirSemChaveSensivel(dadosAnteriores, 'dadosAnteriores');
+  exigirSemChaveSensivel(dadosNovos, 'dadosNovos');
   const ipGravado = ipParaGravar(ip);
   const dispositivoGravado = dispositivoParaGravar(dispositivo);
 

@@ -111,14 +111,31 @@ describe('registrar', () => {
     assert.equal(executor.chamadas.length, 0);
   });
 
-  test('propaga sem tradução um erro do PostgreSQL (ex.: rejeição por chave sensível)', async () => {
+  // Rodada A R2 (PENDENCIA-SEG-TRG04): primeira barreira na aplicação, espelho da função do banco (014 + 097), nas três funções de ator.
+  test('chave JSON sensível (inclusive composta sem separador: DBPASSWORD, ACCESSTOKEN) é TypeError ANTES de consultar, em registrar, registrarOperacaoCli e registrarEventoSistema; o valor nunca aparece', async () => {
+    const { registrarOperacaoCli, registrarEventoSistema } = require('../../src/repositories/auditoria-plataforma.repository');
+    const executor = executorFalso([]);
+    const casos = [['contexto', { DBPASSWORD: 'VALOR-SECRETO' }], ['dadosNovos', { aws: { ACCESSTOKEN: 'VALOR-SECRETO' } }], ['dadosAnteriores', { lista: [{ apiKey: 'VALOR-SECRETO' }] }]];
+    for (const [campo, valor] of casos) {
+      const eh = (e) => e instanceof TypeError && new RegExp(`^${campo} contém chave JSON sensível`).test(e.message) && !e.message.includes('VALOR-SECRETO');
+      await assert.rejects(() => registrar(executor, { administradorId: ADMIN_ID, acao: 'X', [campo]: valor }), eh, `registrar ${campo}`);
+      await assert.rejects(() => registrarOperacaoCli(executor, { acao: 'X', [campo]: valor }), eh, `cli ${campo}`);
+      await assert.rejects(() => registrarEventoSistema(executor, { acao: 'X', [campo]: valor }), eh, `sistema ${campo}`);
+    }
+    assert.equal(executor.chamadas.length, 0);
+    const ok = executorFalso([{ id: '9', criado_em: new Date() }]);
+    await registrar(ok, { administradorId: ADMIN_ID, acao: 'X', contexto: { secretaria_id: 1, operacaoId: 'a'.repeat(32), sha256Evidencia: 'b'.repeat(64) } });
+    assert.equal(ok.chamadas.length, 1, 'identificadores legítimos continuam aceitos');
+  });
+
+  test('propaga sem tradução um erro do PostgreSQL (ex.: rejeição pelo gatilho, segunda barreira)', async () => {
     const executor = {
       chamadas: [],
       query: async () => { throw new Error('logs_auditoria: campo JSONB contém chave sensível'); },
     };
 
     await assert.rejects(
-      () => registrar(executor, { administradorId: ADMIN_ID, acao: 'X', contexto: { senha: 'x' } }),
+      () => registrar(executor, { administradorId: ADMIN_ID, acao: 'X', contexto: { origem: 'teste' } }),
       /chave sensível/,
     );
   });

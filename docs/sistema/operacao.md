@@ -234,14 +234,17 @@ papel, o KMS e a auditoria, sem processo, ambiente ou rede. `backup-executor-pro
 (`criarBackupDeProducao`, `criarRestauracaoDeProducao`), reutilizando a supervisão existente (D-LIG-1) sem escritor nem processo novo; a guarda P2 continua verde sem entrada nova. A leitura autenticada do
 manifesto (`lerPacote`) é injetada e a versão real não existe.
 
-**PENDENCIA-SEG-TRG04 (segurança; bloqueia a produção, não a integração).** A função `logs_auditoria_chave_json_e_sensivel` (migration 014, compartilhada pelas três trilhas de auditoria) reconhece chaves por
-segmentos do nome, não por substring: nomes compostos SEM separador e sem fronteira camelCase não são bloqueados (`PGPASSWORD`, `DBPASSWORD`, `ACCESSTOKEN`, `CLIENTSECRET` confirmados aceitos em banco real). Não é
-comportamento seguro e NÃO foi corrigido: o trigger e a migration 014 permanecem intactos; o teste `TRG-04L` só caracteriza a limitação e deve ser invertido quando ela for tratada. Tratamento, em etapa própria e antes
-da produção: nova migration com `CREATE OR REPLACE FUNCTION` (regra adicional por sufixo de segmento, preservando `secretaria_id`, `hashtag`, `hash_arquivo`), testes RED→GREEN em schema temporário, varredura dos
-escritores, `migrations/checksums.json`, contagens de migrations e dicionário de dados (`docs/sistema/dicionario-de-dados.md` ainda não existe). A defesa primária continua sendo gravar só campos explícitos.
+**PENDENCIA-SEG-TRG04 — tratada (Rodada A, R2, 07/11/2026; migration 097).** A função `logs_auditoria_chave_json_e_sensivel` (migration 014, compartilhada pelas três trilhas) reconhecia chaves por
+segmentos do nome: nomes compostos SEM separador e sem fronteira camelCase passavam (`PGPASSWORD`, `DBPASSWORD`, `ACCESSTOKEN`, `CLIENTSECRET` confirmados aceitos em banco real em 06/11/2026). A migration
+aditiva `097_alter_logs_auditoria_chave_sensivel_sem_separador.sql` redefine a função (`CREATE OR REPLACE`, único comando) preservando as regras da 014 e acrescentando compostos conhecidos, sufixos e prefixos
+sensíveis por segmento (`secret` não é prefixo: `secretaria_id`, `hashtag`, `hash_arquivo`, `chave_primaria` e as 15 chaves do executor continuam legítimos). A 014, os gatilhos e as demais funções não mudam; por
+chamarem a função pelo nome, as três trilhas passam à regra nova ao mesmo tempo. Primeira barreira na aplicação: `src/utils/chave-json-sensivel.js` (espelho das listas, igualdade exigida pelo teste estático) é
+chamado pelos três repositórios de auditoria antes do INSERT. Provas: `test/db/migration-097-estatico.test.js` e `test/utils/chave-json-sensivel.test.js` (sem banco), `test/integracao/migration-097-chave-sensivel-sem-separador.integration.js`
+(PostgreSQL em schema temporário, banco × JS sobre corpus gerado), `TRG-04L` invertido (instância efêmera; reexecução pendente de autorização). `checksums.json` registra a 097; `migrations-runner` conta 97.
+Dicionário oficial: `docs/sistema/dicionario-de-dados.md`. Aplicação em banco persistente só pelo gate de migrations autorizado.
 
 **O que continua bloqueando a produção.** DEP-2 (SDK real e `VERSOES_APROVADAS`), fonte real de credenciais e papel do KMS (H9-a), TLS obrigatório por ambiente, dump e restauração reais
-pelo executor, ajuste definitivo do `comTls`, PENDENCIA-SEG-TRG04, RPO e RTO, cerimônia de custódia e listas reais. O `lerPacote` real passou a existir no Bloco C (abaixo). Evidências locais
+pelo executor, ajuste definitivo do `comTls`, aplicação da migration 097 no banco persistente (PENDENCIA-SEG-TRG04 tratada em código; ver abaixo), DEP-3 (dependências), RPO e RTO, cerimônia de custódia e listas reais. O `lerPacote` real passou a existir no Bloco C (abaixo). Evidências locais
 (PostgreSQL efêmero, 14 arquivos com SHA-256) ficam fora do Git, em `~/SafeWorkDados/d-orf-6-l1-bloco-b-evidencias-20261106`.
 
 ### Ligação completa local do executor (D-ORF-6, L2, Bloco C) — implementado localmente, NÃO ativado

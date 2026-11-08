@@ -83,9 +83,11 @@ describe('catálogo: recursos exclusivos do MASTER', () => {
 
   test('migrations 094 (tabela) e 095 (CNPJ do PJ) existem, estão no manifesto e não tocam as colunas legadas de empresas; a 095 é só aditiva', () => {
     const arquivos = fs.readdirSync(path.join(RAIZ, 'migrations')).filter((f) => f.endsWith('.sql')).sort();
-    // A 096 (funcionario_situacoes) é a última desde as datas efetivas; a 095 continua sendo a penúltima, sem nada entre elas.
-    const ultima = arquivos[arquivos.length - 2];
-    assert.match(ultima, /^095_alter_lgpd_encarregados_add_cnpj\.sql$/);
+    // A 095 é seguida diretamente pela 096 (funcionario_situacoes), sem nada entre elas; migrations posteriores (097, PENDENCIA-SEG-TRG04) não mudam isso.
+    const posicao095 = arquivos.findIndex((f) => /^095_alter_lgpd_encarregados_add_cnpj\.sql$/.test(f));
+    assert.ok(posicao095 > 0, 'a 095 existe');
+    const ultima = arquivos[posicao095];
+    assert.match(arquivos[posicao095 + 1], /^096_create_funcionario_situacoes\.sql$/);
     const a094 = arquivos.find((f) => f.startsWith('094_'));
     assert.equal(a094, '094_create_lgpd_encarregados.sql');
     const sql094 = ler(`migrations/${a094}`);
