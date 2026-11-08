@@ -12,5 +12,6 @@
       "painel": { "tipo": "estatico", "base": "/RAIZ_EXCLUSIVA_PAINEL_HML", "nome": "painel" }
     }
   },
-  "urls": { "portal": "https://portal.example.test", "painel": "https://painel.example.test" }
+  "urls": { "portal": "https://portal.example.test", "painel": "https://painel.example.test" },
+  "apiSaude": "https://portal.example.test"
 }

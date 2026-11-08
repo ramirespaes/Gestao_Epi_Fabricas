@@ -92,16 +92,18 @@ test('publisher falha fechado antes de transmitir conteúdo inválido ou depois 
   await assert.rejects(publicar({ ...f, id: '123-1', s3, tentativas: 2, esperar: async () => {} }), /SEM_RECIBO/);
   assert.equal(chamadas.length, 2);
 });
-function simular(f, { falharInstalacao, falharHttp, baselineRuim, bloquearRollback, mudarAntes } = {}) {
+function simular(f, { falharInstalacao, falharHttp, baselineRuim, bloquearRollback, mudarAntes, falharApi, falharApiApos, semApi } = {}) {
   const antes = { rotulo: 'hml-20261106T120000-bbbbbbb', commit: 'b'.repeat(40), instalado: true, integro: true, consistente: true, garantiaContraCorrida: true, anterior: null };
   const estado = { portal: { ...antes }, painel: { ...antes } }, eventos = [], leituras = {};
   const deps = {
     identificar: async c => { leituras[c] = (leituras[c] || 0) + 1; if (mudarAntes && c === 'portal' && leituras[c] === 2) estado[c].commit = 'c'.repeat(40); return { ...estado[c], ...(baselineRuim ? { integro: false } : {}) }; },
     verificar: async (c, s) => { eventos.push(`http:${c}:${s.commit[0]}`); return !(falharHttp === c && s.commit === f.commit); },
+    verificarApi: async () => { eventos.push('http:api'); return !falharApi && !(falharApiApos && estado[falharApiApos].commit === f.commit); },
     instalar: async (c, op) => { eventos.push(`instalar:${c}`); assert.equal(op.releaseSha256Esperado, f.releaseSha256); assert.equal(op.exigirDurabilidade, true); if (falharInstalacao === c) throw new Error('injetada'); estado[c] = { ...antes, rotulo: f.rotulo, commit: f.commit, anterior: antes.rotulo }; },
     reverter: async c => { eventos.push(`reverter:${c}`); if (bloquearRollback) throw new Error('bloqueado'); estado[c] = { ...antes }; },
     registrar: async r => eventos.push(r.fase),
   };
+  if (semApi) delete deps.verificarApi;
   return { deps, estado, eventos };
 }
 test('agente comprova baseline e HTTP antes de instalar, depois comprova ambos e conclui', async t => {
@@ -110,6 +112,25 @@ test('agente comprova baseline e HTTP antes de instalar, depois comprova ambos e
   assert.ok(s.eventos.indexOf('http:painel:b') < s.eventos.indexOf('instalar:portal'));
   assert.equal(s.estado.portal.commit, f.commit);
   assert.equal(s.estado.painel.commit, f.commit);
+});
+test('API é conferida uma vez por fase, fora da verificação por componente; sem ela nada é instalado', async t => {
+  const f = fixture(t), s = simular(f);
+  await aplicar({ pedido: pedido(f), releaseDir: f.dir, deps: s.deps });
+  assert.equal(s.eventos.filter(e => e === 'http:api').length, 4, 'pré, após cada componente e final');
+  assert.ok(s.eventos.indexOf('http:api') > s.eventos.indexOf('http:painel:b') && s.eventos.indexOf('http:api') < s.eventos.indexOf('instalar:portal'));
+  const pre = simular(f, { falharApi: true });
+  await assert.rejects(aplicar({ pedido: pedido(f), releaseDir: f.dir, deps: pre.deps }), /PRE_DEPLOY_HTTP/);
+  assert.ok(!pre.eventos.some(e => e.startsWith('instalar:')));
+  const sem = simular(f, { semApi: true });
+  await assert.rejects(aplicar({ pedido: pedido(f), releaseDir: f.dir, deps: sem.deps }), /DEPENDENCIAS_INCOMPLETAS/);
+  assert.ok(!sem.eventos.some(e => e.startsWith('instalar:') || e.startsWith('http:')));
+});
+test('API indisponível depois da primeira troca recupera o componente alterado; a recuperação é comprovada pelas páginas', async t => {
+  const f = fixture(t), s = simular(f, { falharApiApos: 'portal' });
+  const r = await aplicar({ pedido: pedido(f), releaseDir: f.dir, deps: s.deps });
+  assert.equal(r.estado, 'FALHOU'); assert.equal(r.recuperacaoComprovada, true);
+  assert.ok(s.eventos.includes('reverter:portal') && !s.eventos.includes('instalar:painel'));
+  assert.equal(s.estado.portal.commit, 'b'.repeat(40));
 });
 test('falha no segundo componente ou no HTTP recupera apenas os componentes alterados', async t => {
   const f = fixture(t);
@@ -150,6 +171,14 @@ test('agente recusa configuração desligada, backend, raízes sobrepostas ou se
   assert.equal(validarConfiguracao(cfg), cfg);
   for (const extra of [{ habilitado: false }, { isolamentoRevisado: '' }, { raizesProtegidas: [] }, { raizesProtegidas: [dirs.portal] }, { estadoDir: dirs.portal }, { urls: { ...cfg.urls, portal: 'http://portal.example.test' } }, { instalador: { ...cfg.instalador, componentes: { ...cfg.instalador.componentes, backend: { tipo: 'backend', nome: 'backend', base: dirs.portal } } } }])
     assert.throws(() => validarConfiguracao({ ...cfg, ...extra }));
+  const { origemDaApi } = require(path.join(raiz, 'deploy/hml/cd/agente'));
+  assert.equal(origemDaApi(cfg), cfg.urls.portal, 'sem apiSaude a API é conferida na origem do Portal');
+  for (const apiSaude of ['https://api.example.test', 'http://127.0.0.1:3000', 'http://localhost:3000', 'http://[::1]:3000']) {
+    assert.deepEqual(validarConfiguracao({ ...cfg, apiSaude }), { ...cfg, apiSaude });
+    assert.equal(origemDaApi({ ...cfg, apiSaude }), apiSaude);
+  }
+  for (const apiSaude of ['http://api.example.test', 'https://api.example.test/api', 'https://u:p@api.example.test', 'https://painel.example.test/', 'api.example.test', 42, null])
+    assert.throws(() => validarConfiguracao({ ...cfg, apiSaude }), /API_SAUDE_INVALIDA/);
 });
 test('os pacotes reais dos empacotadores existentes atravessam o protocolo sem mudar arquivos', t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hml-52-real-'));

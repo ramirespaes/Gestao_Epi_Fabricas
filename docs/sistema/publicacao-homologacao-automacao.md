@@ -82,11 +82,17 @@ servidor não operou**: interromper novas publicações e reconciliar o estado/r
 antes de novo disparo. Se a operação já começou, ela termina ou tenta recuperar;
 cancelar o Actions não desfaz uma troca no servidor.
 
-O agente captura identidades anteriores e verifica API `/api/health`, versão HTTP,
-hash de todos os arquivos, CSP, cache, `nosniff` e isolamento nas duas origens. Repete
-as provas depois de cada troca e no final. `/api/health` prova vivacidade, não prontidão
-do banco nem versão do backend. Não há escrita ou autenticação de usuários nos testes
-HTTP. `/versao.json` precisa ser acessível ao agente pela restrição já homologada.
+O agente captura identidades anteriores e verifica, por componente e em cada origem,
+versão HTTP, hash de todos os arquivos, CSP, cache, `nosniff` e isolamento. A API
+(`/api/health`) é conferida **uma vez por fase**, na origem do Portal ou na URL `apiSaude`
+da configuração (origem HTTPS ou `http://127.0.0.1:<porta>`, sem caminho nem credenciais),
+nunca na origem do Painel: o modelo Nginx homologado do Painel devolve 404 em `/api/` fora
+de `/api/plataforma/`, e o backend não expõe `/api/plataforma/health` (correção da Etapa 55;
+antes dela o agente recusaria toda publicação com `PRE_DEPLOY_HTTP`). Repete as provas
+depois de cada troca e no final; a recuperação é comprovada pelas páginas, que são o que o
+agente altera. `/api/health` prova vivacidade, não prontidão do banco nem versão do backend.
+Não há escrita ou autenticação de usuários nos testes HTTP. `/versao.json` precisa ser
+acessível ao agente pela restrição já homologada.
 
 Se uma troca ou prova falhar, só componentes realmente alterados são revertidos,
 em ordem inversa. O atual precisa ser exatamente a release desse pedido e o ponteiro
