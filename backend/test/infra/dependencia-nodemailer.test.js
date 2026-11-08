@@ -9,11 +9,15 @@ const path = require('node:path');
  * A única dependência nova do Bloco 11H, o nodemailer, fica fixada na versão
  * aprovada, sem faixa, sem dependências transitivas e sem scripts de
  * instalação. Uma atualização silenciosa ou uma mudança no pacote reprova aqui.
+ * Rodada A R3 (DEP-3, decisão H-DEP3-a, 08/11/2026): 10.0.13 → 10.1.4, versão que
+ * corrige os três avisos do addressparser; integridade a do ensaio aprovado
+ * (fase2-ensaio-copia-20261108T004718Z). Este teste só fica verde depois do
+ * `fase2-aplicar` (o gate exige esta edição antes de aplicar).
  */
 
 const RAIZ = path.join(__dirname, '..', '..');
-const VERSAO = '10.0.13';
-const INTEGRIDADE = 'sha512-SzG86OlvcW/NNhUFC6uROMwRTL4n7MswfQqC/T8mhkmnY1YVa23zUEMYi4ijSeXSl9GLz9ZeTJDUatEDuY5FeQ==';
+const VERSAO = '10.1.4';
+const INTEGRIDADE = 'sha512-EsMnOR2oRv4LGnWvHgcVYkkQ4O2j8KO4WTw6l+PHR4sOXo8SAgIraxtEnGDmotjbhv0hDsu3IuDIFZm8iXwO4A==';
 const lerJson = (...partes) => JSON.parse(fs.readFileSync(path.join(RAIZ, ...partes), 'utf8'));
 
 describe('dependência nodemailer', () => {

@@ -46,7 +46,7 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",
     "helmet": "^8.3.0",
-    "nodemailer": "10.0.13",
+    "nodemailer": "10.1.4",
     "otpauth": "9.5.2",
     "pdfkit": "0.20.2",
     "pg": "^8.23.0",
@@ -60,5 +60,9 @@
     "node-pg-migrate": "9.0.0",
     "nodemon": "^3.1.14",
     "supertest": "^7.2.2"
+  },
+  "overrides": {
+    "glob": "14.0.2",
+    "minimatch": "11.0.1"
   }
 }
