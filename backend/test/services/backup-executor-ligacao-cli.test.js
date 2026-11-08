@@ -238,3 +238,94 @@ describe('[LIG-CLI] montagem da ligação para o CLI', () => {
     for (const ruim of ruins) await assert.rejects(montar(ruim), TypeError);
   });
 });
+
+describe('[LIG-CLI-V2] montagem com a configuração v2 (B2): os parâmetros vêm da configuração, a autorização continua no validador oficial', () => {
+  const DESTINOS_PARAMETROS = Object.freeze(['destinoLocal', 'protegidos', 'limites', 'prazoMs']);
+  const semParametros = (e) => Object.fromEntries(Object.entries(e.colaboradores).filter(([k]) => !DESTINOS_PARAMETROS.includes(k)));
+  function prepararV2(e, { papeis = ['PUBLICADOR', 'VERIFICADOR'], v2 = {} } = {}) {
+    return preparar({
+      papeis,
+      configExtra: {
+        versao: 2,
+        destinosLocais: { BACKUP: { id: e.x.dlContainers.id, raiz: e.x.dlContainers.raiz } },
+        protegidos: { ...PROTEGIDOS },
+        limites: { arquivosMaximo: 1000, totalBytesMaximo: 2 ** 30 },
+        prazoMs: 1000,
+        ...v2,
+      },
+    });
+  }
+  const opcoesV2 = (e, f, extra = {}) => opcoesDe(e, f, { colaboradores: semParametros(e), registroDeDestinos: e.x.dlContainers.registro, ...extra });
+  const semRegistro = (opcoes) => { const { registroDeDestinos, ...resto } = opcoes; return resto; };
+
+  test('LIG-CLI-V2-01 — ensaio completo com a configuração v2 (destino, áreas, limites e prazo vindos dela) chega a CONCLUIDO; o recibo sai no stderr', async () => {
+    const e = await ambienteDeEnsaio('conjunto-v2-01');
+    const f = prepararV2(e);
+    const portas = await montar(opcoesV2(e, f));
+    const r = await (await portas.compor(e.pedidoCompor)).executar();
+    const ev = lida(r.linha);
+    assert.deepEqual({ estado: ev.estado, conjuntoId: ev.conjuntoId, operacional: ev.operacional }, { estado: 'CONCLUIDO', conjuntoId: 'conjunto-v2-01', operacional: false });
+    assert.equal(e.recibos.length, 1);
+    assert.match(e.recibos[0], /^RECIBO_CONSOLIDADO \{.*\}\n$/s);
+  });
+
+  test('LIG-CLI-V2-02 — a configuração NÃO autoriza destino: sem o registro de teste, o validador oficial (lista vazia) recusa e a execução fica BLOQUEADA, sem tocar no destino durável', async () => {
+    const e = await ambienteDeEnsaio('conjunto-v2-02');
+    const f = prepararV2(e);
+    const portas = await montar(semRegistro(opcoesV2(e, f)));
+    const r = await (await portas.compor(e.pedidoCompor)).executar();
+    const ev = lida(r.linha);
+    assert.equal(ev.estado, 'BLOQUEADO');
+    assert.ok(ev.bloqueios.includes('DESTINO_LOCAL_NAO_AUTORIZADO'), ev.bloqueios.join(','));
+    assert.equal(e.falso.estado.chamadas.length, 0);
+    const { DESTINOS_AUTORIZADOS } = require('../../src/services/imagem-backup-destinos.service');
+    assert.deepEqual({ ...DESTINOS_AUTORIZADOS }, { HOMOLOGACAO: [], PRODUCAO: [] });
+  });
+
+  test('LIG-CLI-V2-03 — o registro de destinos só vale em NODE_ENV=test: fora dele o validador oficial recusa e a montagem para', async () => {
+    const e = await ambienteDeEnsaio('conjunto-v2-03');
+    const f = prepararV2(e);
+    const original = process.env.NODE_ENV;
+    try {
+      process.env.NODE_ENV = 'production';
+      assert.equal(await codigoDe(montar(opcoesV2(e, f))), 'LIGACAO_DESTINO_LOCAL_INVALIDO');
+    } finally { process.env.NODE_ENV = original; }
+    for (const ruim of [null, [], 'x', { HOMOLOGACAO: 1 }]) assert.equal(await codigoDe(montar(opcoesV2(e, f, { registroDeDestinos: ruim }))), 'LIGACAO_DESTINO_LOCAL_INVALIDO', JSON.stringify(ruim));
+  });
+
+  test('LIG-CLI-V2-04 — com a v2, colaboradores que também tragam destino, áreas, limites ou prazo são recusados (um só lugar para cada parâmetro)', async () => {
+    const e = await ambienteDeEnsaio('conjunto-v2-04');
+    const f = prepararV2(e);
+    for (const campo of DESTINOS_PARAMETROS) {
+      assert.equal(await codigoDe(montar(opcoesDe(e, f, { colaboradores: { ...semParametros(e), [campo]: e.colaboradores[campo] }, registroDeDestinos: e.x.dlContainers.registro }))), 'LIGACAO_COLABORADORES_INVALIDOS', campo);
+    }
+    assert.equal(await codigoDe(montar(opcoesDe(e, f, { registroDeDestinos: e.x.dlContainers.registro }))), 'LIGACAO_COLABORADORES_INVALIDOS');
+  });
+
+  test('LIG-CLI-V2-05 — destino da ação ausente na configuração e BACKUP sem arquivosMaximo são recusados com código próprio', async () => {
+    const e = await ambienteDeEnsaio('conjunto-v2-05');
+    const soRestauracao = prepararV2(e, { v2: { destinosLocais: { RESTAURACAO: { id: 'restauracao-teste', raiz: e.x.dlRestauracao.raiz } } } });
+    assert.equal(await codigoDe(montar(opcoesV2(e, soRestauracao))), 'LIGACAO_DESTINO_LOCAL_AUSENTE');
+    const semArquivos = prepararV2(e, { v2: { limites: { totalBytesMaximo: 2 ** 30 } } });
+    assert.equal(await codigoDe(montar(opcoesV2(e, semArquivos))), 'LIGACAO_LIMITES_INVALIDOS');
+  });
+
+  test('LIG-CLI-V2-06 — a verificação do destino não usa destino local, áreas, limites nem prazo: monta com a v2 e sem esses colaboradores', async () => {
+    const e = await ambienteDeEnsaio('conjunto-v2-06');
+    const f = prepararV2(e, { papeis: ['VERIFICADOR'] });
+    const base = { auditoria: e.colaboradores.auditoria, coordenacao: e.colaboradores.coordenacao, fatos: e.colaboradores.fatos, trabalho: { consolidado: { conjuntoId: 'conjunto-v2-06', recibos: [] } }, registro: e.colaboradores.registro };
+    const portas = await montar(opcoesDe(e, f, { pedido: { modo: 'ENSAIO', acao: 'VERIFICACAO_DESTINO', ambiente: 'HOMOLOGACAO' }, colaboradores: base }));
+    assert.equal(typeof portas.compor, 'function');
+  });
+
+  test('LIG-CLI-V2-07 — o CLI real não conhece o registro de destinos; v2 com configuração inválida (marcador, sobreposição) para antes de qualquer montagem', async () => {
+    const cli = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'backup-operar.js'), 'utf8');
+    assert.ok(!/registroDeDestinos/.test(cli));
+    const e = await ambienteDeEnsaio('conjunto-v2-07');
+    const comMarcador = prepararV2(e, { v2: { protegidos: { ...PROTEGIDOS, imagens: '/A_PREENCHER/imagens' } } });
+    assert.equal(await codigoDe(montar(opcoesV2(e, comMarcador))), 'LIGACAO_CONFIGURACAO_FORMA_INVALIDA');
+    const sobreposto = prepararV2(e, { v2: { destinosLocais: { BACKUP: { id: e.x.dlContainers.id, raiz: PROTEGIDOS.dumps } } } });
+    assert.equal(await codigoDe(montar(opcoesV2(e, sobreposto))), 'LIGACAO_CONFIGURACAO_FORMA_INVALIDA');
+    assert.equal(e.falso.estado.chamadas.length, 0);
+  });
+});

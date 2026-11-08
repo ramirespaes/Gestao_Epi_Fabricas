@@ -183,3 +183,132 @@ describe('[CFG] leitor da configuração do executor', () => {
     }
   });
 });
+
+describe('[CFG-V2] configuração v2 (B2): destinos locais, áreas protegidas, limites e prazo', () => {
+  const v2 = (raiz, extra = {}) => ({
+    ...valida(raiz),
+    versao: 2,
+    destinosLocais: { BACKUP: { id: 'containers-teste', raiz: path.join(raiz, 'dest', 'containers') }, RESTAURACAO: { id: 'restauracao-teste', raiz: path.join(raiz, 'dest', 'restauracoes') } },
+    protegidos: { imagens: '/srv/safework/imagens', fiscalizacao: '/srv/safework/fiscalizacao', preparacoes: '/srv/safework/backup/preparacoes', dumps: '/srv/safework/backup/dumps', publicados: '/srv/safework/backup/publicados' },
+    limites: { arquivosMaximo: 1000, totalBytesMaximo: 1073741824 },
+    prazoMs: 5000,
+    ...extra,
+  });
+  const lerV2 = (alterar = () => {}) => {
+    const raiz = novaRaiz();
+    const objeto = v2(raiz);
+    alterar(objeto, raiz);
+    return ler(gravar(path.join(raiz, 'config.json'), JSON.stringify(objeto)));
+  };
+  const recusa = (alterar, codigo = 'CONFIGURACAO_FORMA_INVALIDA') => { const r = lerV2(alterar); assert.deepEqual({ ok: r.ok, codigo: r.codigo }, { ok: false, codigo }, JSON.stringify(r)); };
+
+  test('CFG-V2-01 — v2 válida: devolve os campos novos, congelados em profundidade, com o SHA-256 do conteúdo', () => {
+    const raiz = novaRaiz();
+    const objeto = v2(raiz);
+    const r = ler(gravar(path.join(raiz, 'config.json'), JSON.stringify(objeto)));
+    assert.equal(r.ok, true, JSON.stringify(r));
+    const c = r.configuracao;
+    assert.equal(c.versao, 2);
+    assert.deepEqual(JSON.parse(JSON.stringify(c)), { versao: 2, finalidade: 'ENSAIO_ISOLADO', ambiente: 'HOMOLOGACAO', regiao: 'sa-east-1', papeis: objeto.papeis, destinosLocais: objeto.destinosLocais, protegidos: objeto.protegidos, limites: objeto.limites, prazoMs: 5000 });
+    for (const parte of [c, c.papeis, c.destinosLocais, c.destinosLocais.BACKUP, c.destinosLocais.RESTAURACAO, c.protegidos, c.limites]) assert.ok(Object.isFrozen(parte));
+    assert.match(r.sha256, /^[0-9a-f]{64}$/);
+  });
+
+  test('CFG-V2-02 — a v1 segue exatamente como era: não devolve campos v2, e v1 com campo v2 ou v2 sem campo v2 é recusada; versão desconhecida também', () => {
+    const raiz = novaRaiz();
+    const v1 = ler(gravar(path.join(raiz, 'v1.json'), JSON.stringify(valida(raiz))));
+    assert.equal(v1.ok, true);
+    assert.deepEqual(Object.keys(v1.configuracao).sort(), ['ambiente', 'finalidade', 'papeis', 'regiao', 'versao']);
+    const objeto = v2(raiz);
+    for (const chave of ['destinosLocais', 'protegidos', 'limites', 'prazoMs']) {
+      assert.equal(ler(com({ ...valida(raiz), [chave]: objeto[chave] })).codigo, 'CONFIGURACAO_FORMA_INVALIDA', `v1 com ${chave}`);
+      const sem = { ...objeto }; delete sem[chave];
+      assert.equal(ler(com(sem)).codigo, 'CONFIGURACAO_FORMA_INVALIDA', `v2 sem ${chave}`);
+    }
+    for (const versao of [0, 3, '2', null, true]) assert.equal(ler(com({ ...objeto, versao })).codigo, 'CONFIGURACAO_FORMA_INVALIDA', String(versao));
+  });
+
+  test('CFG-V2-03 — destinosLocais: aceita só BACKUP e/ou RESTAURACAO, com { id, raiz } e id no padrão DEDICADO da ação', () => {
+    assert.equal(lerV2((o) => { delete o.destinosLocais.RESTAURACAO; }).ok, true);
+    assert.equal(lerV2((o) => { delete o.destinosLocais.BACKUP; }).ok, true);
+    recusa((o) => { o.destinosLocais = {}; });
+    recusa((o) => { o.destinosLocais = []; });
+    recusa((o) => { o.destinosLocais = { VERIFICACAO_DESTINO: o.destinosLocais.BACKUP }; });
+    recusa((o) => { o.destinosLocais.BACKUP.id = 'restauracao-teste'; });
+    recusa((o) => { o.destinosLocais.RESTAURACAO.id = 'containers-teste'; });
+    for (const id of ['Containers', 'containers_x', 'containers x', 'qualquer', '', `containers-${'a'.repeat(60)}`, 7]) recusa((o) => { o.destinosLocais.BACKUP.id = id; });
+    recusa((o) => { o.destinosLocais.BACKUP.extra = 1; });
+    recusa((o) => { delete o.destinosLocais.BACKUP.raiz; });
+    recusa((o) => { o.destinosLocais.BACKUP = 'containers-teste'; });
+    for (const raizRuim of ['relativo/containers', '/srv/../containers', '/srv/containers/', '/srv//containers', '/', 7]) recusa((o) => { o.destinosLocais.BACKUP.raiz = raizRuim; });
+  });
+
+  test('CFG-V2-04 — protegidos: exatamente as cinco áreas, caminhos canônicos, sem repetição (nem por caixa) e sem aninhamento', () => {
+    recusa((o) => { delete o.protegidos.dumps; });
+    recusa((o) => { o.protegidos.extra = '/srv/safework/outra'; });
+    recusa((o) => { o.protegidos.imagens = 'imagens'; });
+    recusa((o) => { o.protegidos.imagens = 7; });
+    recusa((o) => { o.protegidos.dumps = o.protegidos.publicados; });
+    recusa((o) => { o.protegidos.dumps = o.protegidos.publicados.toUpperCase(); });
+    recusa((o) => { o.protegidos.dumps = `${o.protegidos.preparacoes}/dentro`; });
+    recusa((o) => { o.protegidos.imagens = '/srv'; });
+    recusa((o) => { o.protegidos = []; });
+  });
+
+  test('CFG-V2-05 — sobreposições: raiz de destino × área, destino × destino, e arquivos (configuração e credenciais) dentro de área ou de raiz', () => {
+    recusa((o) => { o.destinosLocais.BACKUP.raiz = o.protegidos.dumps; });
+    recusa((o) => { o.destinosLocais.BACKUP.raiz = `${o.protegidos.publicados}/sub`; });
+    recusa((o) => { o.destinosLocais.BACKUP.raiz = '/srv/safework/backup'; });
+    recusa((o) => { o.destinosLocais.BACKUP.raiz = o.destinosLocais.RESTAURACAO.raiz; });
+    recusa((o) => { o.destinosLocais.BACKUP.raiz = `${o.destinosLocais.RESTAURACAO.raiz}/containers`; });
+    recusa((o) => { o.papeis.PUBLICADOR = `${o.protegidos.dumps}/publicador.json`; });
+    recusa((o) => { o.papeis.VERIFICADOR = `${o.destinosLocais.BACKUP.raiz}/verificador.json`; });
+    const raiz = novaRaiz();
+    const objeto = v2(raiz, { protegidos: { imagens: raiz, fiscalizacao: '/srv/safework/fiscalizacao', preparacoes: '/srv/safework/backup/preparacoes', dumps: '/srv/safework/backup/dumps', publicados: '/srv/safework/backup/publicados' } });
+    assert.equal(ler(gravar(path.join(raiz, 'config.json'), JSON.stringify(objeto))).codigo, 'CONFIGURACAO_FORMA_INVALIDA');
+  });
+
+  test('CFG-V2-06 — limites: totalBytesMaximo obrigatório e inteiro seguro ≥ 1; arquivosMaximo opcional entre 1 e 400000; nenhuma outra chave', () => {
+    assert.equal(lerV2((o) => { delete o.limites.arquivosMaximo; }).ok, true);
+    assert.equal(lerV2((o) => { o.limites.arquivosMaximo = 400000; }).ok, true);
+    assert.equal(lerV2((o) => { o.limites.totalBytesMaximo = 1; }).ok, true);
+    recusa((o) => { delete o.limites.totalBytesMaximo; });
+    for (const ruim of [0, -1, 1.5, '1024', null, 2 ** 53]) recusa((o) => { o.limites.totalBytesMaximo = ruim; });
+    for (const ruim of [0, -1, 1.5, 400001, '10', null]) recusa((o) => { o.limites.arquivosMaximo = ruim; });
+    recusa((o) => { o.limites.extra = 1; });
+    recusa((o) => { o.limites = []; });
+  });
+
+  test('CFG-V2-07 — prazoMs: inteiro entre 1 e 600000 (o limite do executor)', () => {
+    assert.equal(lerV2((o) => { o.prazoMs = 1; }).ok, true);
+    assert.equal(lerV2((o) => { o.prazoMs = 600000; }).ok, true);
+    for (const ruim of [0, -1, 1.5, 600001, '5000', null, true]) recusa((o) => { o.prazoMs = ruim; });
+  });
+
+  test('CFG-V2-08 — o marcador A_PREENCHER reprova em qualquer chave ou valor (região, caminhos, ids, nomes de campo)', () => {
+    recusa((o) => { o.regiao = 'A_PREENCHER'; });
+    recusa((o) => { o.papeis.PUBLICADOR = '/A_PREENCHER/publicador.json'; });
+    recusa((o) => { o.destinosLocais.BACKUP.raiz = '/A_PREENCHER/containers'; });
+    recusa((o) => { o.destinosLocais.BACKUP.id = 'containers-A_PREENCHER'; });
+    recusa((o) => { o.protegidos.imagens = '/A_PREENCHER/imagens'; });
+    recusa((o) => { o.A_PREENCHER = 1; });
+  });
+
+  test('CFG-V2-09 — a forma é conferida ANTES da finalidade; finalidade ou ambiente errados numa v2 bem formada são FINALIDADE_NAO_AUTORIZADA', () => {
+    recusa((o) => { o.finalidade = 'OPERACAO'; }, 'CONFIGURACAO_FINALIDADE_NAO_AUTORIZADA');
+    recusa((o) => { o.ambiente = 'PRODUCAO'; }, 'CONFIGURACAO_FINALIDADE_NAO_AUTORIZADA');
+    recusa((o) => { o.finalidade = 'OPERACAO'; o.limites.totalBytesMaximo = 0; }, 'CONFIGURACAO_FORMA_INVALIDA');
+  });
+
+  test('CFG-V2-10 — chave sensível ou __proto__ dentro dos campos v2 reprova; nenhum resultado ecoa caminho, id ou valor', () => {
+    recusa((o) => { o.limites.senha = 'x'; });
+    recusa((o) => { o.destinosLocais.BACKUP.token = 'x'; });
+    recusa((o) => { o.protegidos.accessKeyId = 'x'; });
+    const raiz = novaRaiz();
+    const texto = JSON.stringify(v2(raiz)).replace('"limites":{', '"limites":{"__proto__":{"x":1},');
+    assert.equal(ler(gravar(path.join(raiz, 'config.json'), texto)).codigo, 'CONFIGURACAO_FORMA_INVALIDA');
+    const r = lerV2((o) => { o.destinosLocais.BACKUP.id = 'ID-NAO-PODE-APARECER'; o.protegidos.imagens = '/srv/caminho-nao-pode-aparecer'; });
+    assert.ok(!JSON.stringify(r).includes('NAO-PODE-APARECER') && !JSON.stringify(r).includes('nao-pode-aparecer'));
+    assert.deepEqual(Object.keys(r).sort(), ['codigo', 'ok']);
+  });
+});

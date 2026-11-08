@@ -298,8 +298,29 @@ como `LIGACAO_INVALIDA: <código fixo LIGACAO_*>`, a execução fica BLOQUEADA c
 
 **O que não mudou.** `OPERACAO_HABILITADA` e `LIMPEZA_OPERACIONAL_HABILITADA` continuam falsas e únicas; as quatro listas operacionais continuam vazias; a política, a guarda P2, o `--verificar`, o `package.json` e o
 lock estão intactos; os módulos novos não escrevem, não removem, não criam processo e não leem `process.env` (o ambiente chega por parâmetro). `CONCLUIDO` só é alcançável em teste, com colaboradores e SDK falsos: no
-processo real, `NODE_ENV=test` sozinho não monta nada. A montagem real dos adaptadores (produção L2, restauração, chaves, destinos, coordenação com banco) e as decisões H9-b, H9-e, H9-g e H9-h pertencem ao B2 e ao
-B3. Nenhum PostgreSQL, AWS ou serviço foi usado.
+processo real, `NODE_ENV=test` sozinho não monta nada. A montagem real dos adaptadores (produção L2, restauração, chaves, coordenação com banco) pertence ao B3; os parâmetros de destino, áreas, limites e prazo
+foram tratados no B2 (seção seguinte). Nenhum PostgreSQL, AWS ou serviço foi usado.
+
+### Configuração v2 e modelos do executor (D-ORF-6, Rodada B, B2) — implementado localmente, NÃO ativado
+
+Estado (08/11/2026, base `a460f77`): decisões H9-b, H9-e, H9-g e H9-h tratadas SEM habilitar nada. As quatro listas operacionais continuam VAZIAS; `OPERACAO_HABILITADA` e `LIMPEZA_OPERACIONAL_HABILITADA` continuam falsas e únicas; a política, a
+guarda P2, o CLI, os modelos systemd, o `package.json` e o lock estão intactos. H9-b: reutiliza os identificadores já existentes dos provedores (`aws-kms-pre-resolvido-v1` e `recuperacao-offline-v1`), sem incluí-los nas listas; ARNs e blobs são da homologação.
+
+**Configuração v2 (`BACKUP_EXECUTOR_CONFIG`).** `versao: 2` acrescenta à v1 quatro campos, todos obrigatórios: `destinosLocais` (`BACKUP` e/ou `RESTAURACAO`, cada um `{ id, raiz }`, com o id no padrão dedicado da ação, `containers...` ou `restauracao...`),
+`protegidos` (exatamente `imagens`, `fiscalizacao`, `preparacoes`, `dumps` e `publicados`), `limites` (`totalBytesMaximo` obrigatório e `arquivosMaximo` opcional de 1 a 400000) e `prazoMs` (1 a 600000), os mesmos limites do executor. Todos os caminhos são
+absolutos canônicos. Áreas, raízes de destino, arquivo de configuração e arquivos de credencial nunca se repetem nem se sobrepõem, sem diferenciar caixa. O marcador `A_PREENCHER` em qualquer chave ou valor reprova, assim como chave sensível. A v1 continua aceita
+exatamente como era e a v1 com campo v2, ou a v2 sem campo v2, é recusada.
+
+**A configuração só descreve.** Ela não autoriza destino algum: a montagem usa SEMPRE o validador oficial de destinos sobre a lista operacional (hoje vazia), de modo que nada é autorizado. O registro de destinos de teste só existe por injeção em processo, o validador
+oficial o recusa fora de `NODE_ENV=test` e o CLI real não o conhece. Com a v2, colaboradores que também tragam destino, áreas, limites ou prazo são recusados (um só lugar para cada parâmetro); BACKUP sem `arquivosMaximo` e ação sem destino na configuração têm código
+próprio (`LIGACAO_LIMITES_INVALIDOS`, `LIGACAO_DESTINO_LOCAL_AUSENTE`). A verificação do destino não usa esses parâmetros.
+
+**Modelos inertes.** `backend/ops/executor/configuracao-ensaio.json.modelo` traz valores sintéticos (ids, limites e prazo) e o marcador `A_PREENCHER` em tudo que depende do host; o leitor o recusa até o marcador sair. `backend/ops/sql/papel-executor-backup.sql.modelo`
+documenta o papel de banco (H9-h): login sem superusuário, sem criação de banco ou papel, sem replicação, sem senha no arquivo, `INSERT` e `SELECT (id, criado_em)` só em `logs_auditoria_plataforma`, tudo dentro de uma transação que falha de propósito enquanto o
+banco for `A_PREENCHER`. NENHUM privilégio de leitura para o `pg_dump` é concedido, nem o papel predefinido `pg_read_all_data`: a escolha entre ele e concessões por objeto depende de aceite expresso. Nenhum código lê ou executa os modelos.
+
+**Pendências para o B3 e a homologação.** Em PostgreSQL efêmero: provar que o `INSERT` com `RETURNING` funciona com o papel (chaves estrangeiras e gatilhos), definir o menor conjunto de privilégios de leitura com que o `pg_dump` completo e o `pg_restore --list`
+funcionam e provar que o papel não faz DDL nem altera ou apaga a trilha. Na homologação: valores reais de região, raízes (com a identidade `dev` e `ino` do host), áreas e limites medidos pelo `--verificar`, e a criação do papel por decisão humana.
 
 ### Documentos especializados existentes — fonte única
 

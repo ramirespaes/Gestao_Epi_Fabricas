@@ -7,6 +7,7 @@ const { criarConjuntoDeCredenciais, PAPEIS_DA_ACAO } = require('./backup-executo
 const { criarLigacaoDoExecutor } = require('./backup-executor-ligacao.service');
 const { criarCompositor } = require('./backup-executor-compositor.service');
 const { lerLinhaDeEvidencia } = require('./backup-executor-evidencia.service');
+const { criarValidadorDeDestinos } = require('./imagem-backup-destinos.service');
 
 /**
  * D-ORF-6, Rodada B (B1): MONTAGEM DA LIGAÇÃO PARA O CLI. Devolve o `portas.compor` que o `backup-operar` já sabe usar, SOMENTE para ensaio isolado: modo ENSAIO, ambiente HOMOLOGACAO, finalidade
@@ -18,6 +19,8 @@ const { lerLinhaDeEvidencia } = require('./backup-executor-evidencia.service');
  *  - `colaboradores` (coordenação, auditoria, fatos, trabalho, adaptadores de produção e restauração, chaves, destinos) só chegam por injeção de quem chama em processo; nenhum código de produção os
  *    fornece nesta etapa, e o CLI real nunca os passa. Sem eles a montagem para antes de compor: o resultado real é sempre BLOQUEADO. Com eles (testes, adaptadores falsos) o compositor roda,
  *    e ainda assim a política exige destino aprovado, fonte de chaves aprovada e `OPERACAO_HABILITADA` (falsa) para qualquer coisa além do ensaio sintético.
+ *  - configuração v2 (B2): destino local da ação, áreas protegidas, limites e prazo vêm da configuração e entram no compositor; colaboradores que também os tragam são recusados. A configuração só DESCREVE: o validador de
+ *    destinos é sempre o OFICIAL sobre a lista operacional (hoje vazia, logo nada é autorizado); `registroDeDestinos` só existe para teste em processo e o validador oficial o recusa fora de NODE_ENV=test.
  *  - evidência: a linha é conferida por `lerLinhaDeEvidencia` e impressa pelo CLI no stdout (uma linha); recibo consolidado: UMA linha `RECIBO_CONSOLIDADO <json>` entregue a `escreverRecibo` (stderr).
  */
 
@@ -30,6 +33,18 @@ const MODOS_ACOES = Object.freeze(Object.keys(PAPEIS_DA_ACAO));
 
 const ehObjeto = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const recusa = (code) => Object.assign(new TypeError('ligação do CLI inválida'), { code });
+
+/** Parâmetros que a configuração v2 fornece ao compositor, por ação; a verificação do destino não os usa. O validador é sempre o oficial. */
+function parametrosDaConfiguracao(configuracao, acao, registroDeDestinos) {
+  if (acao === 'VERIFICACAO_DESTINO') return {};
+  const destino = configuracao.destinosLocais[acao];
+  if (destino === undefined) throw recusa('LIGACAO_DESTINO_LOCAL_AUSENTE');
+  const { limites } = configuracao;
+  if (acao === 'BACKUP' && limites.arquivosMaximo === undefined) throw recusa('LIGACAO_LIMITES_INVALIDOS');
+  let validador;
+  try { validador = criarValidadorDeDestinos({ ambiente: 'HOMOLOGACAO', ...(registroDeDestinos === undefined ? {} : { registro: registroDeDestinos }) }); } catch { throw recusa('LIGACAO_DESTINO_LOCAL_INVALIDO'); }
+  return { destinoLocal: { validador, destinoLocalId: destino.id, raiz: destino.raiz }, protegidos: { ...configuracao.protegidos }, limites: { ...limites }, prazoMs: configuracao.prazoMs };
+}
 
 function criarRegistradores({ escreverRecibo }) {
   const evidencia = Object.freeze({
@@ -49,8 +64,8 @@ function criarRegistradores({ escreverRecibo }) {
 }
 
 async function montarPortasDoCli(opcoes) {
-  if (!ehObjeto(opcoes) || !Reflect.ownKeys(opcoes).every((k) => ['pedido', 'ambiente', 'relogio', 'carregarSdk', 'escreverRecibo', 'colaboradores', 'lerArquivo', 'uid'].includes(k))) throw new TypeError('opções da montagem inválidas');
-  const { pedido, ambiente, relogio, carregarSdk, escreverRecibo, colaboradores, lerArquivo, uid } = opcoes;
+  if (!ehObjeto(opcoes) || !Reflect.ownKeys(opcoes).every((k) => ['pedido', 'ambiente', 'relogio', 'carregarSdk', 'escreverRecibo', 'colaboradores', 'registroDeDestinos', 'lerArquivo', 'uid'].includes(k))) throw new TypeError('opções da montagem inválidas');
+  const { pedido, ambiente, relogio, carregarSdk, escreverRecibo, colaboradores, registroDeDestinos, lerArquivo, uid } = opcoes;
   if (!ehObjeto(pedido) || typeof pedido.modo !== 'string' || typeof pedido.acao !== 'string' || typeof pedido.ambiente !== 'string' || !ehObjeto(ambiente)
     || typeof relogio !== 'function' || typeof carregarSdk !== 'function' || typeof escreverRecibo !== 'function') throw new TypeError('opções da montagem inválidas');
 
@@ -84,11 +99,13 @@ async function montarPortasDoCli(opcoes) {
   if (colaboradores === undefined) throw recusa('LIGACAO_COLABORADORES_AUSENTES');
   if (!ehObjeto(colaboradores) || PROIBIDOS_NOS_COLABORADORES.some((k) => Object.hasOwn(colaboradores, k)) || !ehObjeto(colaboradores.auditoria) || typeof colaboradores.auditoria.registrar !== 'function') throw recusa('LIGACAO_COLABORADORES_INVALIDOS');
   const { auditoria, ...resto } = colaboradores;
+  const daConfiguracao = configuracao.versao === 2 ? parametrosDaConfiguracao(configuracao, pedido.acao, registroDeDestinos) : {};
+  if (Object.keys(daConfiguracao).some((k) => Object.hasOwn(resto, k))) throw recusa('LIGACAO_COLABORADORES_INVALIDOS');
 
   let ligacao;
   try { ligacao = criarLigacaoDoExecutor({ acao: pedido.acao, modo: 'ENSAIO', sdk, regiao: configuracao.regiao, credenciais: conjunto, auditoria }); } catch { throw recusa('LIGACAO_MONTAGEM_FALHOU'); }
   let compositor;
-  try { compositor = criarCompositor({ ...resto, ligacao, ...criarRegistradores({ escreverRecibo }), relogio }); } catch { throw recusa('LIGACAO_COMPOSITOR_INVALIDO'); }
+  try { compositor = criarCompositor({ ...resto, ...daConfiguracao, ligacao, ...criarRegistradores({ escreverRecibo }), relogio }); } catch { throw recusa('LIGACAO_COMPOSITOR_INVALIDO'); }
   return Object.freeze({ relogio, compor: compositor.compor });
 }
 

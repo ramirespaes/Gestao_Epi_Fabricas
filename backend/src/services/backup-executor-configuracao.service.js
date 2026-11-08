@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { objetoPossuiChaveSensivel } = require('../utils/chave-json-sensivel');
 const { PAPEIS } = require('./backup-executor-credenciais.service');
+const { DEDICADO } = require('./backup-executor-operacional.service');
 
 /**
  * D-ORF-6, Rodada B (B1): LEITOR DA CONFIGURAÇÃO DO EXECUTOR. Lê UM arquivo JSON apontado por `BACKUP_EXECUTOR_CONFIG` e devolve a configuração validada; não abre rede, não cria processo e
@@ -12,7 +13,10 @@ const { PAPEIS } = require('./backup-executor-credenciais.service');
  *
  * `lerConfiguracaoOperacional({ ambiente, lerArquivo?, uid? })` -> `{ ok: true, configuracao, sha256 }` | `{ ok: false, codigo }`.
  *  - variável ausente ou vazia: `CONFIGURACAO_AUSENTE` (não é erro: o CLI mantém o comportamento sem ligação);
- *  - forma exata: `{ versao: 1, finalidade: 'ENSAIO_ISOLADO', ambiente: 'HOMOLOGACAO', regiao, papeis: { PUBLICADOR?, VERIFICADOR?, RESTAURACAO? } }`, `papeis` com caminhos absolutos canônicos e distintos.
+ *  - forma exata v1: `{ versao: 1, finalidade: 'ENSAIO_ISOLADO', ambiente: 'HOMOLOGACAO', regiao, papeis: { PUBLICADOR?, VERIFICADOR?, RESTAURACAO? } }`, `papeis` com caminhos absolutos canônicos e distintos;
+ *  - forma exata v2 (B2): a v1 com `versao: 2` mais `destinosLocais` ({ BACKUP?, RESTAURACAO? } com { id, raiz }, id no padrão DEDICADO da ação), `protegidos` (as cinco áreas), `limites` ({ totalBytesMaximo, arquivosMaximo? })
+ *    e `prazoMs`, com os mesmos limites do executor. Áreas, raízes, configuração e arquivos de credencial nunca se repetem nem se sobrepõem; o marcador A_PREENCHER em qualquer chave ou valor reprova. A v2 só DESCREVE parâmetros:
+ *    não autoriza destino algum (quem autoriza é o validador oficial sobre a lista operacional, hoje vazia), não habilita operação e não substitui nenhuma lista.
  * `lerArquivoRestrito` é o leitor seguro compartilhado com o fornecedor de credenciais: caminho canônico sem link em nenhum componente, diretório pai do dono e sem escrita por grupo ou outros,
  * abertura só de leitura sem seguir link, arquivo comum com um único vínculo, do dono, com permissão EXATAMENTE 0600 e tamanho limitado.
  */
@@ -20,7 +24,12 @@ const { PAPEIS } = require('./backup-executor-credenciais.service');
 const VARIAVEL = 'BACKUP_EXECUTOR_CONFIG';
 const LIMITE_CONFIGURACAO_BYTES = 64 * 1024;
 const REGIAO = /^[a-z]{2}(?:-[a-z]+)+-[0-9]$/;
-const CHAVES = Object.freeze(['versao', 'finalidade', 'ambiente', 'regiao', 'papeis']);
+const CHAVES_V1 = Object.freeze(['versao', 'finalidade', 'ambiente', 'regiao', 'papeis']);
+const CHAVES_V2 = Object.freeze([...CHAVES_V1, 'destinosLocais', 'protegidos', 'limites', 'prazoMs']);
+const AREAS = Object.freeze(['imagens', 'fiscalizacao', 'preparacoes', 'dumps', 'publicados']);
+const MARCADOR_PENDENTE = 'A_PREENCHER';
+const ARQUIVOS_MAXIMO = 400000;
+const PRAZO_MAXIMO_MS = 600000;
 const CODIGOS = Object.freeze([
   'CONFIGURACAO_AUSENTE', 'CONFIGURACAO_CAMINHO_INVALIDO', 'CONFIGURACAO_ARQUIVO_INSEGURO', 'CONFIGURACAO_ARQUIVO_INDISPONIVEL', 'CONFIGURACAO_FORMA_INVALIDA', 'CONFIGURACAO_FINALIDADE_NAO_AUTORIZADA',
 ]);
@@ -51,18 +60,59 @@ function lerArquivoRestrito(caminho, { uid, limiteBytes }) {
   }
 }
 
+const temMarcadorPendente = (v) => {
+  if (typeof v === 'string') return v.includes(MARCADOR_PENDENTE);
+  if (Array.isArray(v)) return v.some(temMarcadorPendente);
+  if (ehObjeto(v)) return Object.keys(v).some((k) => k.includes(MARCADOR_PENDENTE) || temMarcadorPendente(v[k]));
+  return false;
+};
+const dentroDe = (a, b) => a === b || a.startsWith(`${b}/`);
+const sobrepoem = (a, b) => dentroDe(a, b) || dentroDe(b, a);
+const congelar = (o) => { for (const v of Object.values(o)) if (ehObjeto(v)) congelar(v); return Object.freeze(o); };
+
+/** Campos da v2: forma exata e limites do executor; nada se repete nem se sobrepõe (áreas, raízes, configuração e arquivos de credencial, comparados sem diferenciar caixa). */
+function camposV2Validos(objeto, caminhosDeArquivos) {
+  const { destinosLocais, protegidos, limites, prazoMs } = objeto;
+  if (!ehObjeto(destinosLocais) || !ehObjeto(protegidos) || !ehObjeto(limites)) return false;
+  const acoes = Reflect.ownKeys(destinosLocais);
+  if (acoes.length < 1 || !acoes.every((a) => typeof a === 'string' && Object.hasOwn(DEDICADO, a))) return false;
+  const raizes = [];
+  for (const acao of acoes) {
+    const d = destinosLocais[acao];
+    if (!ehObjeto(d)) return false;
+    const chaves = Reflect.ownKeys(d);
+    if (chaves.length !== 2 || !chaves.includes('id') || !chaves.includes('raiz')) return false;
+    if (typeof d.id !== 'string' || d.id.length > 64 || !DEDICADO[acao].test(d.id) || !caminhoCanonico(d.raiz)) return false;
+    raizes.push(d.raiz.toLowerCase());
+  }
+  const nomesDasAreas = Reflect.ownKeys(protegidos);
+  if (nomesDasAreas.length !== AREAS.length || !AREAS.every((a) => nomesDasAreas.includes(a)) || !AREAS.every((a) => caminhoCanonico(protegidos[a]))) return false;
+  const areas = AREAS.map((a) => protegidos[a].toLowerCase());
+  const chavesDeLimite = Reflect.ownKeys(limites);
+  if (!chavesDeLimite.every((k) => k === 'totalBytesMaximo' || k === 'arquivosMaximo') || !chavesDeLimite.includes('totalBytesMaximo')) return false;
+  if (!Number.isSafeInteger(limites.totalBytesMaximo) || limites.totalBytesMaximo < 1) return false;
+  if (chavesDeLimite.includes('arquivosMaximo') && (!Number.isSafeInteger(limites.arquivosMaximo) || limites.arquivosMaximo < 1 || limites.arquivosMaximo > ARQUIVOS_MAXIMO)) return false;
+  if (!Number.isSafeInteger(prazoMs) || prazoMs < 1 || prazoMs > PRAZO_MAXIMO_MS) return false;
+  const diretorios = [...areas, ...raizes];
+  for (let i = 0; i < diretorios.length; i += 1) for (let j = i + 1; j < diretorios.length; j += 1) if (sobrepoem(diretorios[i], diretorios[j])) return false;
+  return !caminhosDeArquivos.some((arquivo) => diretorios.some((d) => sobrepoem(arquivo, d)));
+}
+
 function validarForma(objeto, caminhoDaConfiguracao) {
-  if (!ehObjeto(objeto) || objetoPossuiChaveSensivel(objeto)) return recusa('CONFIGURACAO_FORMA_INVALIDA');
+  if (!ehObjeto(objeto) || objetoPossuiChaveSensivel(objeto) || temMarcadorPendente(objeto)) return recusa('CONFIGURACAO_FORMA_INVALIDA');
+  const chavesEsperadas = objeto.versao === 1 ? CHAVES_V1 : objeto.versao === 2 ? CHAVES_V2 : null;
+  if (chavesEsperadas === null) return recusa('CONFIGURACAO_FORMA_INVALIDA');
   const proprias = Reflect.ownKeys(objeto);
-  if (proprias.length !== CHAVES.length || !CHAVES.every((k) => proprias.includes(k))) return recusa('CONFIGURACAO_FORMA_INVALIDA');
+  if (proprias.length !== chavesEsperadas.length || !chavesEsperadas.every((k) => proprias.includes(k))) return recusa('CONFIGURACAO_FORMA_INVALIDA');
   const { versao, finalidade, ambiente, regiao, papeis } = objeto;
-  if (versao !== 1 || typeof finalidade !== 'string' || typeof ambiente !== 'string' || typeof regiao !== 'string' || !REGIAO.test(regiao) || !ehObjeto(papeis)) return recusa('CONFIGURACAO_FORMA_INVALIDA');
+  if (typeof finalidade !== 'string' || typeof ambiente !== 'string' || typeof regiao !== 'string' || !REGIAO.test(regiao) || !ehObjeto(papeis)) return recusa('CONFIGURACAO_FORMA_INVALIDA');
   const nomes = Reflect.ownKeys(papeis);
   if (nomes.length < 1 || !nomes.every((n) => typeof n === 'string' && PAPEIS.includes(n))) return recusa('CONFIGURACAO_FORMA_INVALIDA');
   const caminhos = nomes.map((n) => papeis[n]);
   if (!caminhos.every(caminhoCanonico)) return recusa('CONFIGURACAO_FORMA_INVALIDA');
   const normalizados = caminhos.map((c) => c.toLowerCase());
   if (new Set(normalizados).size !== normalizados.length || normalizados.includes(caminhoDaConfiguracao.toLowerCase())) return recusa('CONFIGURACAO_FORMA_INVALIDA');
+  if (versao === 2 && !camposV2Validos(objeto, [caminhoDaConfiguracao.toLowerCase(), ...normalizados])) return recusa('CONFIGURACAO_FORMA_INVALIDA');
   if (finalidade !== 'ENSAIO_ISOLADO' || ambiente !== 'HOMOLOGACAO') return recusa('CONFIGURACAO_FINALIDADE_NAO_AUTORIZADA');
   return null;
 }
@@ -82,9 +132,9 @@ function lerConfiguracaoOperacional(opcoes) {
   try { objeto = JSON.parse(lido.texto); } catch { return recusa('CONFIGURACAO_FORMA_INVALIDA'); }
   const problema = validarForma(objeto, caminho);
   if (problema !== null) return problema;
-  const configuracao = Object.freeze({
-    versao: objeto.versao, finalidade: objeto.finalidade, ambiente: objeto.ambiente, regiao: objeto.regiao, papeis: Object.freeze({ ...objeto.papeis }),
-  });
+  const partes = { versao: objeto.versao, finalidade: objeto.finalidade, ambiente: objeto.ambiente, regiao: objeto.regiao, papeis: { ...objeto.papeis } };
+  if (objeto.versao === 2) Object.assign(partes, { destinosLocais: objeto.destinosLocais, protegidos: objeto.protegidos, limites: objeto.limites, prazoMs: objeto.prazoMs });
+  const configuracao = congelar(JSON.parse(JSON.stringify(partes)));
   return Object.freeze({ ok: true, configuracao, sha256: crypto.createHash('sha256').update(lido.texto).digest('hex') });
 }
 
