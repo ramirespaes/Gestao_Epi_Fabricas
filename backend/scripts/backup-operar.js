@@ -10,6 +10,7 @@ const Pol = require('../src/services/backup-executor-politica.service');
 const Ev = require('../src/services/backup-executor-evidencia.service');
 const { avaliarMonitoramento } = require('../src/services/backup-executor-monitoramento.service');
 const { DEDICADO } = require('../src/services/backup-executor-operacional.service');
+const { montarPortasDoCli } = require('../src/services/backup-executor-ligacao-cli.service');
 
 /**
  * Executor operacional do backup (D-ORF-6). Quatro modos, um por execução; nenhum deles escreve em disco, abre conexão ou lança processo por conta própria:
@@ -210,8 +211,14 @@ function executarMonitoramento(i, { escrever, erro, portas }) {
   return relatorio.veredito === 'OK' ? SAIDAS.OK : SAIDAS.ALERTA;
 }
 
-/** Injetável para teste. Devolve o código de saída; escreve só no que receber em `escrever`/`erro`. */
-async function executarComando({ argv, ambiente, raizDoCodigo, escrever, erro, portas }) {
+const codigoDaLigacao = (causa) => (causa !== null && typeof causa === 'object' && typeof causa.code === 'string' && /^LIGACAO_[A-Z0-9_]{3,80}$/.test(causa.code) ? causa.code : 'ERRO_INESPERADO');
+
+/**
+ * Injetável para teste. Devolve o código de saída; escreve só no que receber em `escrever`/`erro`.
+ * `montarPortas` (B1) só é consultado quando `portas` não foi injetado: devolve `undefined` (sem `BACKUP_EXECUTOR_CONFIG`: comportamento sem ligação) ou lança um código `LIGACAO_*`, que vai ao stderr
+ * e deixa a execução BLOQUEADA com todos os motivos. O recibo consolidado sai no stderr, com o prefixo `RECIBO_CONSOLIDADO`; o stdout continua com UMA linha de evidência.
+ */
+async function executarComando({ argv, ambiente, raizDoCodigo, escrever, erro, portas, montarPortas }) {
   const interpretado = interpretarArgumentos(argv);
   if (!interpretado.ok) {
     erro(`${interpretado.erro}\n${USO}`);
@@ -221,7 +228,11 @@ async function executarComando({ argv, ambiente, raizDoCodigo, escrever, erro, p
     try { return executarMonitoramento(interpretado, { escrever, erro, portas }); } catch { erro('ERRO_INESPERADO: o monitoramento não pôde ser concluído\n'); return SAIDAS.FALHA; }
   }
   if (interpretado.modo !== 'VERIFICAR') {
-    try { return await executarExecucao(interpretado, { escrever, erro, portas }); } catch { erro('ERRO_INESPERADO: a execução não pôde ser concluída\n'); return SAIDAS.FALHA; }
+    let portasDaExecucao = portas;
+    if (portasDaExecucao === undefined && typeof montarPortas === 'function') {
+      try { portasDaExecucao = await montarPortas({ pedido: interpretado, escreverRecibo: erro }); } catch (causa) { erro(`LIGACAO_INVALIDA: ${codigoDaLigacao(causa)}\n`); portasDaExecucao = undefined; }
+    }
+    try { return await executarExecucao(interpretado, { escrever, erro, portas: portasDaExecucao }); } catch { erro('ERRO_INESPERADO: a execução não pôde ser concluída\n'); return SAIDAS.FALHA; }
   }
   try {
     const relatorio = await verificarAmbiente({
@@ -239,12 +250,16 @@ async function executarComando({ argv, ambiente, raizDoCodigo, escrever, erro, p
 }
 
 if (require.main === module) {
+  const ambiente = process.env;
   executarComando({
     argv: process.argv.slice(2),
-    ambiente: process.env,
+    ambiente,
     raizDoCodigo: fs.realpathSync(path.resolve(__dirname, '..')),
     escrever: (texto) => process.stdout.write(texto),
     erro: (texto) => process.stderr.write(texto),
+    montarPortas: ({ pedido, escreverRecibo }) => montarPortasDoCli({
+      pedido, ambiente, relogio: () => Date.now(), carregarSdk: () => carregarSdkAws({ requerer: require }), escreverRecibo,
+    }),
   }).then((saida) => { process.exitCode = saida; });
 }
 

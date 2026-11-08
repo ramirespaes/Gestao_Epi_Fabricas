@@ -274,6 +274,33 @@ SDK falso. Contrato L7 (PREP-01): o `lido` do leitor real é reconhecido pelo n�
 **O que falta para o CLI executar.** A injeção do compositor em `scripts/backup-operar.js` depende das decisões H9 (fonte das credenciais por papel, provedor de chaves, destinos autorizados,
 limites e papel de banco): é quem lê ambiente e arquivo, o que estes módulos não fazem. Até lá o processo real continua BLOQUEADO. Nenhuma homologação AWS foi feita.
 
+### Ligação do CLI para ensaio isolado (D-ORF-6, Rodada B, B1) — implementado localmente, NÃO ativado
+
+Estado (08/11/2026, base `2f56159`): o `scripts/backup-operar.js` passou a consultar uma montagem de ligação, só quando a variável `BACKUP_EXECUTOR_CONFIG` existe. Decisões aprovadas por Ramires: H9-a (credenciais por
+arquivo 0600, um por papel, exclusivamente em ensaio isolado; não autoriza credencial real, AWS nem produção), P2-I (registros em stdout e journal, sem novo sumidouro de arquivo e sem alterar a guarda P2),
+credenciais sintéticas `SWBTESTE` e recibo no stderr. Arquivos: `backend/src/services/backup-executor-{configuracao,credenciais-arquivo,ligacao-cli}.service.js`, a injeção em `require.main` do CLI e os testes
+`backup-executor-{configuracao,credenciais-arquivo,ligacao-cli,b1-invariantes}` e `[CLI-EXE]` CLI-40 a CLI-45. Sem variável, o comportamento é exatamente o anterior (BLOQUEADO, `LIGACAO_OPERACIONAL_AUSENTE`, stderr vazio).
+
+**Configuração (`BACKUP_EXECUTOR_CONFIG`).** Caminho absoluto canônico de um JSON de forma exata: `{ versao: 1, finalidade: 'ENSAIO_ISOLADO', ambiente: 'HOMOLOGACAO', regiao, papeis: { PUBLICADOR?, VERIFICADOR?,
+RESTAURACAO? } }`, com `papeis` apontando arquivos de credencial distintos. Só caminhos: qualquer chave sensível reprova (mesmo utilitário da migration 097). A leitura é restrita: nenhum link simbólico em nenhum componente
+do caminho, diretório pai do dono e sem escrita por grupo ou outros, abertura somente de leitura sem seguir link, arquivo comum com um único vínculo, do dono, com permissão EXATAMENTE `0600` (`0400`, `0640` e `0644` são
+recusados) e tamanho limitado. Falhas viram `CONFIGURACAO_AUSENTE` (não é erro), `CONFIGURACAO_CAMINHO_INVALIDO`, `CONFIGURACAO_ARQUIVO_INSEGURO`, `CONFIGURACAO_ARQUIVO_INDISPONIVEL`, `CONFIGURACAO_FORMA_INVALIDA` ou
+`CONFIGURACAO_FINALIDADE_NAO_AUTORIZADA`; nunca com valor, caminho ou conteúdo.
+
+**Credenciais sintéticas por arquivo.** Um arquivo `0600` por papel, relido a cada pedido, com `{ papel, accessKeyId, secretAccessKey, expiration? }`. A chave de acesso só vale com o formato `^SWBTESTE[A-Z0-9]{8,32}$` e o
+segredo com o prefixo `SWBTESTE-`; token de sessão é proibido; os prefixos de identificador da AWS (ABIA, ACCA, AGPA, AIDA, AIPA, AKIA, ANPA, ANVA, APKA, AROA, ASCA, ASIA) são recusados. O marcador prova que a chave de
+acesso não foi emitida pela AWS, mas não prova que o segredo é fictício: a revisão humana dos arquivos antes de cada ensaio continua obrigatória. Nunca usar credencial real.
+
+**Montagem e CLI.** `montarPortasDoCli` só monta em modo ENSAIO e ambiente HOMOLOGACAO; `--operar` e `PRODUCAO` nunca montam. Confere os papéis obrigatórios da ação, a separação das credenciais, o SDK e os colaboradores
+(coordenação, auditoria, adaptadores, chaves e destinos), que só chegam por injeção de quem chama em processo: o CLI real nunca os fornece, então o resultado real é sempre BLOQUEADO. Qualquer falha da montagem sai no stderr
+como `LIGACAO_INVALIDA: <código fixo LIGACAO_*>`, a execução fica BLOQUEADA com todos os motivos da política (saída 4) e o stdout mantém UMA linha de evidência. O recibo consolidado sai no stderr, numa única linha
+`RECIBO_CONSOLIDADO <json com conjuntoId, sha256 e bytes em base64>`, conferido contra o SHA-256 dos bytes; se não puder ser escrito, a execução termina em `FALHOU/RECIBOS_NAO_REGISTRADOS`.
+
+**O que não mudou.** `OPERACAO_HABILITADA` e `LIMPEZA_OPERACIONAL_HABILITADA` continuam falsas e únicas; as quatro listas operacionais continuam vazias; a política, a guarda P2, o `--verificar`, o `package.json` e o
+lock estão intactos; os módulos novos não escrevem, não removem, não criam processo e não leem `process.env` (o ambiente chega por parâmetro). `CONCLUIDO` só é alcançável em teste, com colaboradores e SDK falsos: no
+processo real, `NODE_ENV=test` sozinho não monta nada. A montagem real dos adaptadores (produção L2, restauração, chaves, destinos, coordenação com banco) e as decisões H9-b, H9-e, H9-g e H9-h pertencem ao B2 e ao
+B3. Nenhum PostgreSQL, AWS ou serviço foi usado.
+
 ### Documentos especializados existentes — fonte única
 
 Consultar [os caminhos das fontes únicas](fontes-especializadas.md), sem cópias paralelas. A
