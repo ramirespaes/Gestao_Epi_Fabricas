@@ -1,9 +1,18 @@
 # Publicação da homologação: componentes locais e desenho do job
 
+**Etapa 52, 07/11/2026:** o job protegido e o agente de entrega foram implementados
+localmente, sem ativação. O contrato atual da automação está em
+[publicacao-homologacao-automacao.md](publicacao-homologacao-automacao.md) e substitui
+o desenho de job futuro e as afirmações de incapacidade de publicação desta baseline.
+Os componentes do instalador permanecem inalterados. A-0 a A-11 abaixo são o registro
+da preparação anterior; o environment e a homologação AWS informados pelo responsável
+nesta etapa não foram inspecionados remotamente.
+
 Preparado em 04/11/2026 para revisão. Complementa [publicacao-homologacao.md](publicacao-homologacao.md).
-Tudo aqui foi desenvolvido e testado em ambiente local isolado. **Nada foi executado,
-instalado ou configurado na AWS**, nenhum segredo existe e o workflow `deploy-hml.yml`
-continua incapaz de publicar. Os caminhos de servidor citados são referência de
+Na preparação de 04/11/2026, tudo foi desenvolvido e testado em ambiente local isolado.
+**Nada foi executado, instalado ou configurado na AWS** por aquela entrega, nenhum
+segredo foi incluído, e o workflow então era incapaz de publicar. A implementação
+atual tem job protegido e permanece sem ativação. Os caminhos de servidor citados são referência de
 planejamento recebida do responsável, não autorização para operar neles.
 
 ## Componentes (pasta `deploy/hml/`)
@@ -324,10 +333,15 @@ este CD: onde fica a trava, quem a escreve, como expira e como é provada a aus�
 escrita durante backup. Esta interface não implementa, presume nem substitui nada disso,
 e o backup consistente continua regido por [Operação](operacao.md).
 
-## Desenho do futuro job `publicar` (não adicionado ao workflow)
+## Histórico do desenho do job `publicar` — superado pela Etapa 52
 
-O trecho abaixo é o desenho para revisão e **não existe em `.github/workflows/`**; um teste
-falha se aparecer outro workflow de publicação sem decisão.
+Na preparação anterior, o trecho abaixo era uma proposta e não existia no workflow.
+Ele é preservado como registro histórico, não como procedimento atual. O job real
+está em `.github/workflows/deploy-hml.yml`; o contrato vigente, inclusive a correção
+53A da fila e o caráter operacional de `--pedido`, está em
+`publicacao-homologacao-automacao.md`. As pendências A-0 a A-11 abaixo também são
+fotografias daquela preparação; o environment foi informado como configurado por
+Ramires, sem nova inspeção remota nesta entrega.
 
 ```yaml
 publicar:
