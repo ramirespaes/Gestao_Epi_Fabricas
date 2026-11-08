@@ -322,6 +322,22 @@ banco for `A_PREENCHER`. NENHUM privilégio de leitura para o `pg_dump` é conce
 **Pendências para o B3 e a homologação.** Em PostgreSQL efêmero: provar que o `INSERT` com `RETURNING` funciona com o papel (chaves estrangeiras e gatilhos), definir o menor conjunto de privilégios de leitura com que o `pg_dump` completo e o `pg_restore --list`
 funcionam e provar que o papel não faz DDL nem altera ou apaga a trilha. Na homologação: valores reais de região, raízes (com a identidade `dev` e `ino` do host), áreas e limites medidos pelo `--verificar`, e a criação do papel por decisão humana.
 
+### Montador das peças reais do executor (D-ORF-6, Rodada B, B3A) — implementado localmente, NÃO ativado
+
+Estado (08/11/2026, base `0ae466f`): `backend/src/services/backup-executor-colaboradores-reais.service.js` compõe, só por injeção, as sete fábricas aprovadas: produção e restauração de produção (`criarBackupDeProducao`, `criarRestauracaoDeProducao`), leitor de pacote,
+adaptadores L2 de produção e de restauração, coordenação por advisory locks e auditoria. `montarColaboradoresReais({ acao, executorDeCoordenacao, executorDeAuditoria, registrarEventoSistema, relogio, backup?, restauracao?, fabricas? })` devolve peças congeladas: sempre `coordenacao` e `auditoria`;
+`producao` para BACKUP; `restaurador` para RESTAURACAO. A sessão de coordenação (locks de sessão) e a de auditoria têm de ser objetos distintos. Para BACKUP, a raiz de publicados e a fonte de chaves do leitor são DERIVADAS da configuração da composição, de modo que o leitor lê onde a composição publica,
+com as mesmas chaves. O módulo não lê ambiente, arquivo ou rede, não abre conexão, não cria processo e não escreve; nada em `src/` ou `scripts/` o importa nesta etapa (só testes). Configuração fora da forma é `COLABORADORES_REAIS_CONFIGURACAO_INVALIDA`; fábrica que recusa ou lança é `COLABORADORES_REAIS_MONTAGEM_FALHOU`, sem repassar mensagem.
+Quatro listas operacionais vazias, `OPERACAO_HABILITADA` e `LIMPEZA_OPERACIONAL_HABILITADA` falsas, política, guarda P2 e CLI intactos.
+
+**Testes.** Unidade com fábricas falsas e reais em `test/services/backup-executor-colaboradores-reais.test.js`. Integração, só na instância efêmera local (ignorados sem `SWB_PGDATA`, nunca na CI): `d-orf-6-b3-papel-banco.integration.js` (o modelo SQL como está falha e reverte; com banco e esquema trocados em memória cria papel sem
+privilégio de administração; `INSERT` com `RETURNING`, auditoria e advisory locks funcionam; sem DDL, sem alterar a trilha, sem ler nem escrever fora do previsto; a trigger de dado sensível ainda vale; sem leitura o `pg_dump` falha; medição, só como evidência, de dois candidatos de leitura) e
+`d-orf-6-b3-colaboradores-reais.integration.js` (coordenação e auditoria reais pelo montador). O roteiro `D-ORF-6-RODADA-B-PG-EFEMERO-20261108-V10-B3.sh` roda as duas suítes numa instância efêmera nova, com os limites de 20 GB e 40 GiB livres, e tem os modos `limpar-verificar` e `limpar` para remover, com confirmação,
+só a instância criada por ele, parada e com evidências conferidas. Nada disso foi executado em PostgreSQL.
+
+**LIMITE e decisão pendente: ensaio ponta a ponta com `pg_dump`.** A composição de produção inventaria o esquema `public` do banco (o `planejarNoSnapshot` é chamado sem o parâmetro `esquemaDasMigrations`) e a restauração também lê o `public` do banco restaurado. Um ensaio completo pela composição real exige, portanto, ou aplicar as migrations no
+`public` de um banco dedicado e descartável (exceção à regra de nunca aplicar migrations no `public`, que precisa de autorização própria) ou alterar o módulo aprovado da composição para aceitar o esquema. Os testes P4b, P7 e P12, que rodam `pg_dump` real, só rodam na CI e usam o esquema temporário pelas peças de baixo nível, não pela composição de produção.
+
 ### Documentos especializados existentes — fonte única
 
 Consultar [os caminhos das fontes únicas](fontes-especializadas.md), sem cópias paralelas. A
