@@ -21,6 +21,11 @@ const ha = (dias) => {
   d.setUTCDate(d.getUTCDate() - dias);
   return d.toISOString().slice(0, 10);
 };
+const meioDiaDe = (dia) => new Date(`${dia}T12:00:00-03:00`);
+// O servidor recebe o relógio injetado, fixo no meio-dia de HOJE: o resultado não depende do instante da execução nem do
+// now() do banco (CI 42440594635 atravessou a meia-noite de São Paulo entre o before e as asserções). Os testes de virada
+// movem só este relógio.
+let relogioDoServidor = () => meioDiaDe(HOJE);
 const BASE = '/api/entregas-epi/itens';
 
 describe('EPIs Entregues — histórico real de itens entregues (PostgreSQL real)', () => {
@@ -30,7 +35,7 @@ describe('EPIs Entregues — histórico real de itens entregues (PostgreSQL real
   const ids = {};
   before(async () => {
     g = await montar({ extras: ({ pool, exigirEmpresarial }) => [
-      criarEntregaEpiRoutes({ controller: criarEntregaEpiController({ pool }), exigirSessao: exigirEmpresarial, pool }),
+      criarEntregaEpiRoutes({ controller: criarEntregaEpiController({ pool, relogio: () => relogioDoServidor() }), exigirSessao: exigirEmpresarial, pool }),
     ] });
     master = await g.contaDaEmpresa(g.empresas.A);
     const A = g.empresas.A;
@@ -82,7 +87,7 @@ describe('EPIs Entregues — histórico real de itens entregues (PostgreSQL real
     await registrarEntrega(g.pool, {
       usuarioId: masterB.usuarioId,
       entrega: {
-        empresa_id: B, ficha_id: fichaB, responsavel_id: masterB.usuarioId, data_operacional: HOJE, trabalhador_nome: 'Fulano da B', trabalhador_matricula: 'B-001',
+        empresa_id: B, ficha_id: fichaB, responsavel_id: masterB.usuarioId, data_operacional: HOJE, entregue_em: meioDiaDe(HOJE).toISOString(), trabalhador_nome: 'Fulano da B', trabalhador_matricula: 'B-001',
       },
       itens: [{ material_id: matB, lote_id: loteB, material_nome: 'Sapatão da B', material_tipo: 'Sapato de Segurança' }],
     });
@@ -161,6 +166,29 @@ describe('EPIs Entregues — histórico real de itens entregues (PostgreSQL real
     assert.deepEqual(itensDe(prox).sort(), [ids.proximaLuva, ids.limite0, ids.limite30].sort());
     const valido = await consultar('?status=VALIDO&limite=100');
     assert.deepEqual(itensDe(valido).sort(), [ids.validaOculos, ids.novoSapato, ids.limite31].sort());
+  });
+
+  test('virada da meia-noite durante a suíte: o dia vem do relógio do servidor, não do now() do banco (cenário do CI 42440594635 nos dois sentidos)', async (t) => {
+    t.after(() => { relogioDoServidor = () => meioDiaDe(HOJE); });
+    const porStatus = async (status) => itensDe(await consultar(`?status=${status}&limite=100`)).sort();
+    const por = (r, id) => r.body.itens.find((i) => i.itemId === id);
+    // Servidor já no dia seguinte (00:00:30 de amanhã em São Paulo): todo item perde um dia; limite0 vira VENCIDO.
+    relogioDoServidor = () => new Date(`${ha(-1)}T00:00:30-03:00`);
+    const amanha = await consultar('?limite=100');
+    assert.deepEqual([por(amanha, ids.limite0).diasRestantes, por(amanha, ids.limite0).status, por(amanha, ids.vencida).diasRestantes], [-1, 'VENCIDO', -21]);
+    assert.deepEqual(await porStatus('VENCIDO'), [ids.vencida, ids.limite0, ids.limiteNeg1].sort(), 'a assinatura do CI: 3 vencidos');
+    assert.deepEqual(await porStatus('PROXIMO'), [ids.proximaLuva, ids.limite30, ids.limite31].sort());
+    assert.deepEqual(await porStatus('VALIDO'), [ids.validaOculos, ids.novoSapato].sort());
+    assert.equal((await consultar('?status=VENCIDO&pagina=1&limite=20')).body.total, 3, 'o "só status" que falhou no CI com 3 !== 2');
+    // Servidor ainda no dia anterior (23:59:30 de ontem): todo item ganha um dia; limiteNeg1 volta a PROXIMO e limite30 a VALIDO.
+    relogioDoServidor = () => new Date(`${ha(1)}T23:59:30-03:00`);
+    assert.deepEqual(await porStatus('VENCIDO'), [ids.vencida]);
+    assert.deepEqual(await porStatus('PROXIMO'), [ids.proximaLuva, ids.limite0, ids.limiteNeg1].sort());
+    assert.deepEqual(await porStatus('VALIDO'), [ids.validaOculos, ids.novoSapato, ids.limite30, ids.limite31].sort());
+    // De volta ao meio-dia de HOJE: resultado idêntico ao do teste anterior, sem estado residual.
+    relogioDoServidor = () => meioDiaDe(HOJE);
+    assert.deepEqual(await porStatus('VENCIDO'), [ids.vencida, ids.limiteNeg1].sort());
+    assert.equal((await consultar('?status=VENCIDO&pagina=1&limite=20')).body.total, 2);
   });
 
   test('pesquisa do item/tipo por texto: parcial, sem maiúsculas e sem acentos, no tipo e no nome', async () => {
