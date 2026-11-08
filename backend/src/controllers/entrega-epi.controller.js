@@ -125,6 +125,7 @@ function criarEntregaEpiController({ pool: poolInjetado, relogio = () => new Dat
       } = req.validado.query;
       const resultado = await consultaService.listarItensEntregues(poolInjetado, {
         empresaId: req.empresa.id, item: item ?? null, funcionario: funcionario ?? null, de: de ?? null, ate: ate ?? null, status: status ?? null, pagina, limite,
+        hoje: dataOperacional(relogio()),
       });
       res.status(200).json({ status: 'ok', ...resultado });
     },

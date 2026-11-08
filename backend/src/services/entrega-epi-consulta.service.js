@@ -222,9 +222,10 @@ function padraoParcial(texto) {
  * dias restantes e status. Só leitura, só snapshots congelados, empresa sempre da sessão.
  */
 async function listarItensEntregues(pool, {
-  empresaId, item = null, funcionario = null, de = null, ate = null, status = null, pagina, limite,
+  empresaId, item = null, funcionario = null, de = null, ate = null, status = null, pagina, limite, hoje,
 }) {
   exigirId(empresaId, 'identificador de empresa');
+  exigirDataOperacional(hoje);
   const filtros = {
     padraoItem: padraoParcial(item),
     padraoFuncionario: padraoParcial(funcionario),
@@ -232,6 +233,7 @@ async function listarItensEntregues(pool, {
     ate,
     status,
     diasProximo: DIAS_PROXIMO_VENCIMENTO,
+    hoje,
   };
   const [itens, total] = await Promise.all([
     historicoRepo.listar(pool, empresaId, filtros, { pagina, limite }),

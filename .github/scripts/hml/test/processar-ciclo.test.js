@@ -40,8 +40,20 @@ I.reverter = async ({ componente }) => {
 };
 N.abrirContexto = (A, comp) => ({ comp });
 N.lerMeta = ctx => ({ ...atual.estado[ctx.comp.nome], manifesto: { 'index.html': hash('sintético') }, manifestoSha256: hash('manifesto') });
-V.verificarPublicacao = async ({ baseUrl }) => {
-  const c = baseUrl.includes('portal') ? 'portal' : 'painel';
+// Rede sintética fiel ao HML: só a origem do Portal (ou a URL apiSaude) responde /api/health; o modelo Nginx do Painel
+// devolve 404 em /api/. O tipo "api" atravessa o verificador real com esse fetch; o tipo "estatico" continua simulado.
+const corpoApi = Buffer.from(JSON.stringify({ status: 'ok', service: 'gestao-epi-api' }));
+const resposta = (status, corpo = Buffer.alloc(0)) => ({ status, headers: new Headers(), arrayBuffer: async () => corpo });
+const fetchSintetico = async url => {
+  const u = new URL(url);
+  atual.requisicoes.push(u.href);
+  if (u.pathname !== '/api/health') return resposta(404);
+  if (u.origin !== (atual.cfg.apiSaude || atual.cfg.urls.portal) || atual.falharApi) return resposta(404);
+  return resposta(200, corpoApi);
+};
+V.verificarPublicacao = async opcoes => {
+  if (opcoes.tipo === 'api') return originais.verificar({ ...opcoes, fetchImpl: fetchSintetico });
+  const c = opcoes.baseUrl.includes('portal') ? 'portal' : 'painel';
   return { ok: !atual.falharPre && !(atual.falharHttp === c && atual.estado[c].commit === atual.commit) };
 };
 const agente = modulo('deploy/hml/cd/agente');
@@ -75,7 +87,7 @@ function fixture(t) {
   const objetos = new Map([[`hml/pedidos/${id}.json`, Buffer.from(JSON.stringify(pedido))], [`hml/blobs/${id}.json`, blob]]);
   const baseline = { instalado: true, integro: true, consistente: true, garantiaContraCorrida: true, commit: 'b'.repeat(40), rotulo: 'hml-20261106T120000-bbbbbbb', anterior: null };
   const cfg = { estadoDir, instalador: { raizesPersistentes: [], componentes: { portal: { tipo: 'estatico', nome: 'portal', base: path.join(dir, 'portal') }, painel: { tipo: 'estatico', nome: 'painel', base: path.join(dir, 'painel') } } }, urls: { portal: 'https://portal.example.test', painel: 'https://painel.example.test' } };
-  const f = { dir, cfg, pedido, id, objetos, baseline, commit, chamadas: [], estado: { portal: { ...baseline }, painel: { ...baseline } } };
+  const f = { dir, cfg, pedido, id, objetos, baseline, commit, chamadas: [], requisicoes: [], estado: { portal: { ...baseline }, painel: { ...baseline } } };
   f.s3 = { get: async k => { if (f.falharGet === k) throw Object.assign(new Error('transporte'), { codigo: 'S3_OPERACAO_FALHOU' }); return objetos.get(k) || null; }, put: async (k, b) => { if (f.falharPut) throw Object.assign(new Error('transporte'), { codigo: 'S3_OPERACAO_FALHOU' }); assert.ok(!objetos.has(k)); objetos.set(k, b); } };
   f.salvarPedido = () => objetos.set(`hml/pedidos/${id}.json`, Buffer.from(JSON.stringify(pedido)));
   f.processar = () => { atual = f; return agente.processar({ cfg, id, s3: f.s3 }); };
@@ -132,6 +144,28 @@ test('pré-deploy HTTP recusado não chama instalador e não bloqueia fila', asy
   const f = fixture(t); f.falharPre = true;
   assert.equal((await f.processar()).estado, 'RECUSADO');
   assert.deepEqual(f.chamadas, []); assert.equal(f.trava(), false);
+});
+test('API só é conferida na origem do Portal: o 404 de /api/health do Painel (modelo Nginx) não recusa a publicação', async t => {
+  const f = fixture(t);
+  assert.equal((await f.processar()).estado, 'SUCESSO');
+  const api = f.requisicoes.filter(u => u.endsWith('/api/health'));
+  assert.equal(api.length, 4, 'pré, após cada componente e final');
+  assert.ok(api.every(u => u === 'https://portal.example.test/api/health'));
+  // Contraprova com o verificador real: na origem do Painel, /api/health responde 404 (o defeito anterior recusaria tudo).
+  const r = await originais.verificar({ baseUrl: f.cfg.urls.painel, tipo: 'api', fetchImpl: fetchSintetico });
+  assert.equal(r.ok, false); assert.match(r.verificacoes[0].detalhe, /404/);
+});
+test('API indisponível na origem configurada recusa antes do instalador, com motivo registrado, e libera a fila', async t => {
+  const f = fixture(t); f.falharApi = true;
+  assert.equal((await f.processar()).estado, 'RECUSADO');
+  assert.deepEqual(f.chamadas, []); assert.equal(f.trava(), false);
+  assert.equal(f.registro().resultado.motivo, 'PRE_DEPLOY_HTTP');
+});
+test('apiSaude local configurada substitui a origem do Portal na conferência da API', async t => {
+  const f = fixture(t); f.cfg.apiSaude = 'http://127.0.0.1:3000';
+  assert.equal((await f.processar()).estado, 'SUCESSO');
+  const api = f.requisicoes.filter(u => u.endsWith('/api/health'));
+  assert.equal(api.length, 4); assert.ok(api.every(u => u === 'http://127.0.0.1:3000/api/health'));
 });
 test('falha de recibo preserva terminal local e reenvio não reinstala', async t => {
   const f = fixture(t); f.falharPut = true;

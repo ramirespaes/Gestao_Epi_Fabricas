@@ -12,7 +12,10 @@ function saudavel(s) {
   P.exigir(s && s.instalado === true && s.integro === true && s.consistente === true && s.garantiaContraCorrida === true && N.SHA_COMPLETO.test(s.commit) && N.ROTULO.test(s.rotulo), 'BASELINE_NAO_COMPROVADA');
   return s;
 }
+// A API é uma só e não é alterada pelo agente: conferida uma vez por fase, na origem configurada (Portal ou apiSaude),
+// nunca na origem do Painel, cujo modelo Nginx devolve 404 em /api/ fora de /api/plataforma/.
 async function aplicar({ pedido, releaseDir, deps, agora = Date.now }) {
+  P.exigir(deps && typeof deps.verificarApi === 'function', 'DEPENDENCIAS_INCOMPLETAS');
   P.validarPedido(pedido, agora());
   const rel = P.conferirRelease({ dir: releaseDir, ...pedido });
   const antes = {};
@@ -20,6 +23,7 @@ async function aplicar({ pedido, releaseDir, deps, agora = Date.now }) {
     antes[c] = saudavel(await deps.identificar(c));
     P.exigir(await deps.verificar(c, antes[c]), 'PRE_DEPLOY_HTTP');
   }
+  P.exigir(await deps.verificarApi(), 'PRE_DEPLOY_HTTP');
   P.validarPedido(pedido, agora());
   await deps.registrar({ fase: 'PREPARADO', antes });
   try {
@@ -28,13 +32,14 @@ async function aplicar({ pedido, releaseDir, deps, agora = Date.now }) {
       P.exigir(igual(saudavel(await deps.identificar(c)), antes[c]), 'BASELINE_MUDOU');
       await deps.instalar(c, { releaseSha256Esperado: pedido.releaseSha256, exigirDurabilidade: true, permitirAnterior: pedido.permitirAnterior, permitirRetroativo: pedido.permitirAnterior });
       const atual = saudavel(await deps.identificar(c));
-      P.exigir(igual(atual, rel.release) && await deps.verificar(c, atual), 'POS_DEPLOY_HTTP');
+      P.exigir(igual(atual, rel.release) && await deps.verificar(c, atual) && await deps.verificarApi(), 'POS_DEPLOY_HTTP');
       await deps.registrar({ fase: 'COMPONENTE_VERIFICADO', componente: c, antes });
     }
     for (const c of P.COMPONENTES) {
       const atual = saudavel(await deps.identificar(c));
       P.exigir(igual(atual, rel.release) && await deps.verificar(c, atual), 'POS_DEPLOY_FINAL');
     }
+    P.exigir(await deps.verificarApi(), 'POS_DEPLOY_FINAL');
     return { estado: 'SUCESSO', verificado: true };
   } catch {
     let recuperado = true;
@@ -67,8 +72,16 @@ function validarConfiguracao(cfg) {
     const u = new URL(cfg.urls[c]);
     P.exigir(u.protocol === 'https:' && u.origin === cfg.urls[c] && !u.username && !u.password, 'ORIGENS_INVALIDAS');
   }
+  if (cfg.apiSaude !== undefined) {
+    P.exigir(typeof cfg.apiSaude === 'string', 'API_SAUDE_INVALIDA');
+    let u;
+    try { u = new URL(cfg.apiSaude); } catch { P.exigir(false, 'API_SAUDE_INVALIDA'); }
+    const local = u.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname);
+    P.exigir(u.origin === cfg.apiSaude && !u.username && !u.password && (u.protocol === 'https:' || local), 'API_SAUDE_INVALIDA');
+  }
   return cfg;
 }
+const origemDaApi = cfg => cfg.apiSaude || cfg.urls.portal;
 function dependencias(cfg, releaseDir, registrar) {
   const config = cfg.instalador;
   async function verificar(c, s) {
@@ -87,14 +100,14 @@ function dependencias(cfg, releaseDir, registrar) {
     finally { B.fecharTudo(); }
     const ausentes = Object.keys(outraMeta.manifesto).filter(p => !Object.hasOwn(meta.manifesto, p));
     const estatico = await verificarPublicacao({ baseUrl: cfg.urls[c], tipo: 'estatico', versaoEsperada: { componente: c, commit: meta.commit, rotulo: meta.rotulo, manifestoSha256: meta.manifestoSha256 }, manifesto: meta.manifesto, ausentes });
-    const api = await verificarPublicacao({ baseUrl: cfg.urls[c], tipo: 'api' });
-    return estatico.ok && api.ok;
+    return estatico.ok;
   }
+  const verificarApi = async () => (await verificarPublicacao({ baseUrl: origemDaApi(cfg), tipo: 'api' })).ok;
   return {
     identificar: c => I.identificar({ config, componente: c }),
     instalar: (c, opcoes) => I.instalar({ config, componente: c, release: releaseDir, opcoes }),
     reverter: c => I.reverter({ config, componente: c, opcoes: { exigirDurabilidade: true } }),
-    verificar, registrar,
+    verificar, verificarApi, registrar,
   };
 }
 async function processar({ cfg, id, s3 }) {
@@ -204,4 +217,4 @@ async function principal(argv) {
   }
 }
 if (require.main === module) principal(process.argv.slice(2)).catch(e => { console.error(`Agente recusou: ${e.codigo || 'ERRO'}`); process.exitCode = 1; });
-module.exports = { aplicar, validarConfiguracao, processar, processarFila };
+module.exports = { aplicar, validarConfiguracao, origemDaApi, processar, processarFila };
