@@ -332,11 +332,31 @@ Quatro listas operacionais vazias, `OPERACAO_HABILITADA` e `LIMPEZA_OPERACIONAL_
 
 **Testes.** Unidade com fábricas falsas e reais em `test/services/backup-executor-colaboradores-reais.test.js`. Integração, só na instância efêmera local (ignorados sem `SWB_PGDATA`, nunca na CI): `d-orf-6-b3-papel-banco.integration.js` (o modelo SQL como está falha e reverte; com banco e esquema trocados em memória cria papel sem
 privilégio de administração; `INSERT` com `RETURNING`, auditoria e advisory locks funcionam; sem DDL, sem alterar a trilha, sem ler nem escrever fora do previsto; a trigger de dado sensível ainda vale; sem leitura o `pg_dump` falha; medição, só como evidência, de dois candidatos de leitura) e
-`d-orf-6-b3-colaboradores-reais.integration.js` (coordenação e auditoria reais pelo montador). O roteiro `D-ORF-6-RODADA-B-PG-EFEMERO-20261108-V10-B3.sh` roda as duas suítes numa instância efêmera nova, com os limites de 20 GB e 40 GiB livres, e tem os modos `limpar-verificar` e `limpar` para remover, com confirmação,
-só a instância criada por ele, parada e com evidências conferidas. Nada disso foi executado em PostgreSQL.
+`d-orf-6-b3-colaboradores-reais.integration.js` (coordenação e auditoria reais pelo montador). O roteiro `D-ORF-6-RODADA-B-PG-EFEMERO-20261108-V10-B3.sh` (preservado) foi preparado nesta etapa e SUPERADO pelo V11 (seção B3B): roda as duas suítes numa instância efêmera nova, com os limites de 20 GB e 40 GiB livres, e tem os modos `limpar-verificar` e `limpar` para remover, com confirmação,
+só a instância criada por ele, parada e com evidências conferidas. Na etapa do B3A nada disso foi executado em PostgreSQL; a execução real é a do B3B.
 
-**LIMITE e decisão pendente: ensaio ponta a ponta com `pg_dump`.** A composição de produção inventaria o esquema `public` do banco (o `planejarNoSnapshot` é chamado sem o parâmetro `esquemaDasMigrations`) e a restauração também lê o `public` do banco restaurado. Um ensaio completo pela composição real exige, portanto, ou aplicar as migrations no
-`public` de um banco dedicado e descartável (exceção à regra de nunca aplicar migrations no `public`, que precisa de autorização própria) ou alterar o módulo aprovado da composição para aceitar o esquema. Os testes P4b, P7 e P12, que rodam `pg_dump` real, só rodam na CI e usam o esquema temporário pelas peças de baixo nível, não pela composição de produção.
+**LIMITE do B3A (RESOLVIDO no B3B-2): ensaio ponta a ponta com `pg_dump`.** A composição de produção inventaria o esquema `public` do banco (o `planejarNoSnapshot` é chamado sem o parâmetro `esquemaDasMigrations`) e a restauração também lê o `public` do banco restaurado. Um ensaio completo pela composição real exige, portanto, ou aplicar as migrations no
+`public` de um banco dedicado e descartável (exceção à regra de nunca aplicar migrations no `public`, que precisa de autorização própria) ou alterar o módulo aprovado da composição para aceitar o esquema. Os testes P4b, P7 e P12, que rodam `pg_dump` real, só rodam na CI e usam o esquema temporário pelas peças de baixo nível, não pela composição de produção. Decisão de Ramires (08/11/2026): ensaio em PostgreSQL efêmero, com banco dedicado e descartável, sem alterar a composição; executado no B3B-2 (seção seguinte).
+
+### Ensaio em PostgreSQL efêmero local (D-ORF-6, Rodada B, B3B) — executado localmente, NÃO ativado, NÃO homologado
+
+Estado (08/11/2026, base `82a4593`; teste do B3B-2 no commit `c1389a9`). Os níveis de evidência não se confundem:
+
+1. **Testes com falsos e CI:** unidade e integrações na CI com esquema temporário. As integrações do B3 são IGNORADAS na CI (sem `SWB_PGDATA`).
+2. **PostgreSQL 16 real, efêmero e local (B3B-1 e B3B-2):** instância exclusiva, só por socket Unix, porta 55471 (nunca 5432 nem 55460), diretório `/private/tmp/swb-<AAAAMMDDHHMMSS>-<n>`, criada e encerrada pelo roteiro, com os binários 16 do Postgres.app no macOS. Nenhuma ligação a cluster oficial, dados 100% sintéticos.
+3. **Homologação em host Linux e AWS: NÃO realizada.** Nada abaixo a substitui nem a antecipa.
+
+**B3B-1** (roteiro V11, sha256 `088f0a07b84a964f699bab36a11eb340b8fdb36eaa771468bde4aa15f49982eb`): 13 de 13 (cinco casos `[B3-REAIS]` e oito `[B3-ROLE]`), fail 0, skipped 0, cancelled 0. O V11 acrescenta ao V10 a limpeza endurecida (revalidação antes do `rm`, recusa de links, arquivos especiais, outro dono, vínculos extras, montagens e dispositivos externos, e evidências íntegras
+com manifesto), com 43 testes de bloqueio sem PostgreSQL. Medição do papel de banco (casos 06 a 08): sem leitura concedida o `pg_dump` falha; com `pg_read_all_data` (candidato A) e com `USAGE` mais `SELECT` em todas as tabelas e sequências dos esquemas (candidato B, concessão em bloco no momento da medição, não lista nominal) o `pg_dump` completo e o `pg_restore --list` funcionam.
+A escolha entre A e B continua DECISÃO PENDENTE de Ramires (H9-h).
+
+**B3B-2** (roteiro V12, sha256 `21165f68d29d751907257603c5e72eca36b2d87fac2cd03d80d230298e33f0d5`; teste `backend/test/integracao/d-orf-6-b3-ponta-a-ponta.integration.js`, sha256 `f0ac6240f80a82e10fce463aad079ba3d376a79e7c273beba9a38246db59603b`): 9 de 9, fail 0, skipped 0, cancelled 0. Pela composição REAL de produção, sem alterá-la, em banco de origem dedicado
+(`gepi_b3_origem_<12 hex>`) com as migrations no `public` desse banco (exceção à regra de nunca aplicá-las no `public`, só para bancos criados e removidos pelo próprio teste): `pg_dump` real, pacote layout 2 publicado como NÃO operacional (chaves e relatório `TESTE_CONTROLADO`), `pg_restore` real em banco NOVO e veredito INTEGRO com esquema IGUAL (dump de 492.654 bytes).
+Negativos comprovados: destino fora da política (prefixo e protegidos), host indevido, banco preexistente, pgpass inseguro (modo aberto e link), dump e manifesto adulterados (com cópia de controle) e fábrica de conexões que recusa banco externo sem criar cliente. Só roda com `SWB_PGDATA` e `SWB_B3_PONTA_A_PONTA=1`.
+
+**O B3B-2 foi executado com o usuário administrativo da instância efêmera (`swb_teste`) e NÃO comprovou o funcionamento do papel mínimo de banco de produção pela composição.** O papel só foi exercitado no B3B-1, com `pg_dump` isolado, e a composição com snapshot nunca rodou com ele. O B3B-2 também não usou AWS (sem S3, KMS, Object Lock), TLS (socket Unix), host Linux, `systemd`, credencial real nem volume real, e não promove `recuperavelEmProducao` nem habilita operação.
+
+Evidências preservadas em `~/SafeWorkDados/d-orf-6-rodada-b-evidencias-20261108/b3/` (TAP, manifestos SHA-256, cabeçalho com o hash do roteiro e dos testes, e inventário geral). Quatro listas operacionais vazias, `OPERACAO_HABILITADA` e `LIMPEZA_OPERACIONAL_HABILITADA` falsas, política, guarda P2 e CLI intactos. Documentos de apoio fora do repositório: pacote B4 consolidado, decisão H9-h e auditoria das decisões H9.
 
 ### Documentos especializados existentes — fonte única
 
