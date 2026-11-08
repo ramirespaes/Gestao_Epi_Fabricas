@@ -1,0 +1,17 @@
+{
+  "habilitado": false,
+  "isolamentoRevisado": "PENDENTE",
+  "estadoDir": "/CAMINHO_EXCLUSIVO_ESTADO_HML",
+  "raizesProtegidas": ["/RAIZ_REAL_INSTITUCIONAL", "/RAIZ_REAL_BACKEND", "/RAIZ_REAL_DADOS"],
+  "s3": { "bucket": "SUBSTITUIR", "conta": "SUBSTITUIR", "regiao": "SUBSTITUIR", "executavel": "/usr/local/bin/aws" },
+  "instalador": {
+    "retencao": 5,
+    "raizesPersistentes": [],
+    "componentes": {
+      "portal": { "tipo": "estatico", "base": "/RAIZ_EXCLUSIVA_PORTAL_HML", "nome": "portal" },
+      "painel": { "tipo": "estatico", "base": "/RAIZ_EXCLUSIVA_PAINEL_HML", "nome": "painel" }
+    }
+  },
+  "urls": { "portal": "https://portal.example.test", "painel": "https://painel.example.test" },
+  "apiSaude": "https://portal.example.test"
+}

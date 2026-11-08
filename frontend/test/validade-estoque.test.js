@@ -315,7 +315,7 @@ describe('inspeção estática', () => {
     assert.match(html, /<title>Gestão de EPI<\/title>/);
     assert.match(html, /<h2[^>]*>Validade de estoque<\/h2>/);
     assert.match(html, /Acompanhe, lote a lote, o CA e a validade de cada entrada, o que vence em breve, o que está bloqueado e dê baixa no que não pode mais ser entregue\./);
-    assert.match(html, /<a class="active" href="javascript:void\(0\)" data-pagina="stockValidity" style="display:none"><div class="nav-icon red">event_busy<\/div>Validade de estoque<\/a>/);
+    assert.match(html, /<a class="active" role="link" tabindex="0" aria-current="page" data-pagina="stockValidity" style="display:none"><div class="nav-icon red">event_busy<\/div>Validade de estoque<\/a>/);
     assert.equal(/CA do material|CA mestre/i.test(codigo), false);
   });
 

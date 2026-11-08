@@ -1,0 +1,9 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Effect": "Allow", "Action": "s3:ListBucket", "Resource": "arn:aws:s3:::BUCKET", "Condition": { "StringEquals": { "s3:prefix": "hml/pedidos/" } } },
+    { "Effect": "Allow", "Action": "s3:ListBucket", "Resource": "arn:aws:s3:::BUCKET", "Condition": { "StringLike": { "s3:prefix": "hml/recibos/*" } } },
+    { "Effect": "Allow", "Action": "s3:GetObject", "Resource": ["arn:aws:s3:::BUCKET/hml/blobs/*", "arn:aws:s3:::BUCKET/hml/pedidos/*", "arn:aws:s3:::BUCKET/hml/recibos/*"] },
+    { "Effect": "Allow", "Action": "s3:PutObject", "Resource": "arn:aws:s3:::BUCKET/hml/recibos/*" }
+  ]
+}

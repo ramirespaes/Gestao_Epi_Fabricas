@@ -147,8 +147,8 @@ describe('páginas homologadas e protótipos: nenhuma alteração em massa', () 
     const menu = (f) => ler(`pages/${f}`).match(/<nav class="nav">([\s\S]*?)<\/nav>/)[1];
     const normalizar = (html) => html
       .replace(/<a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon blue">badge<\/div>Autoatendimento \(Totem\)<span class="nav-etiqueta">Em integração<\/span><\/a>/, '[TOKEN]')
-      .replace(/<a class="active" href="javascript:void\(0\)" data-pagina="atendimentoToken" style="display:none"><div class="nav-icon blue">badge<\/div>Atendimento Token<\/a>/, '[TOKEN]')
-      .replace(/<a class="active" href="javascript:void\(0\)" data-pagina="(\w+)"/, '<a href="[PAGINA]" data-pagina="$1"')
+      .replace(/<a class="active" role="link" tabindex="0" aria-current="page" data-pagina="atendimentoToken" style="display:none"><div class="nav-icon blue">badge<\/div>Atendimento Token<\/a>/, '[TOKEN]')
+      .replace(/<a class="active" role="link" tabindex="0" aria-current="page" data-pagina="(\w+)"/, '<a href="[PAGINA]" data-pagina="$1"')
       .replace(/<a href="[^"]+" data-pagina="(\w+)"/g, '<a href="[PAGINA]" data-pagina="$1"');
     const referencia = normalizar(menu('stock-requests.html'));
     assert.ok(referencia.includes('[TOKEN]'));
@@ -158,7 +158,7 @@ describe('páginas homologadas e protótipos: nenhuma alteração em massa', () 
   test('a Central marca a si mesma como página atual e é a única com data-pagina="atendimentoToken"', () => {
     const html = ler(`pages/${CENTRAL}`);
     assert.equal((html.match(/data-pagina="atendimentoToken"/g) || []).length, 1);
-    assert.match(html, /<a class="active" href="javascript:void\(0\)" data-pagina="atendimentoToken"/);
+    assert.match(html, /<a class="active" role="link" tabindex="0" aria-current="page" data-pagina="atendimentoToken"/);
     assert.match(html, /pagina: 'atendimentoToken'/);
   });
 });

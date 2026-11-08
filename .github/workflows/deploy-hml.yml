@@ -1,11 +1,7 @@
-name: Deploy HML (preparação)
+name: Deploy HML (aprovação manual)
 
-# ETAPA DE PREPARAÇÃO: este workflow valida o commit escolhido e gera os dois
-# pacotes do frontend (Portal do Cliente e Painel Privado) com manifestos
-# SHA-256, publicados apenas como artefato da execução. Ele NÃO transmite nada
-# para a AWS, não usa segredos, não reinicia serviços e não toca banco ou
-# backend. A publicação real é etapa futura, com job próprio, environment
-# protegido e autorização específica (docs/sistema/publicacao-homologacao.md).
+# O job publicar só pode começar depois do gate do environment homologacao.
+# Os dois interruptores permanecem desligados até a ativação autorizada.
 
 on:
   workflow_dispatch:
@@ -20,6 +16,11 @@ on:
         type: string
       permitir_commit_anterior:
         description: "Somente rollback de código: aceita commit anterior à cabeça da main; a release sai rotulada como retroativa"
+        required: false
+        type: boolean
+        default: false
+      publicar:
+        description: "Solicitar publicação após aprovação do environment homologacao"
         required: false
         type: boolean
         default: false
@@ -58,14 +59,14 @@ jobs:
           printf '%s' "$COMMIT" | grep -Eq '^[0-9a-f]{40}$' || { echo "o commit precisa ser o SHA completo, 40 hex minúsculos"; exit 1; }
 
       - name: Checkout da main (história completa, sem credenciais persistidas)
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: main
           fetch-depth: 0
           persist-credentials: false
 
       - name: Node 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
 
@@ -111,7 +112,7 @@ jobs:
             echo "- Release: \`$ROTULO\`"
             echo "- Cabeça atual da main: $ATUAL"
             [ "$ATUAL" = "true" ] || echo "- **ATENÇÃO: release retroativa, não é a versão atual da main.**"
-            echo "- Nenhuma publicação foi feita: esta execução só valida e gera artefatos."
+            echo "- A publicação depende dos interruptores e de aprovação no environment homologacao."
           } >> "$GITHUB_STEP_SUMMARY"
 
   empacotar:
@@ -119,9 +120,12 @@ jobs:
     needs: validar
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      release_sha256: ${{ steps.selo.outputs.release_sha256 }}
+      artifact_id: ${{ steps.artefato.outputs.artifact-id }}
     steps:
       - name: Checkout exato do commit validado
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ needs.validar.outputs.commit }}
           persist-credentials: false
@@ -134,7 +138,7 @@ jobs:
           [ -z "$(git status --porcelain)" ] || { echo "árvore de trabalho não está limpa"; exit 1; }
 
       - name: Node 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
 
@@ -155,10 +159,87 @@ jobs:
           cd "$RUNNER_TEMP/release/painel" && sha256sum -c --quiet ../manifesto-painel.sha256
           cat "$RUNNER_TEMP/release/release.json"
 
+      - name: Fixar hash da release antes da aprovação
+        id: selo
+        run: |
+          HASH="$(sha256sum "$RUNNER_TEMP/release/release.json" | cut -d ' ' -f 1)"
+          echo "release_sha256=$HASH" >> "$GITHUB_OUTPUT"
+          echo "Release SHA-256: \`$HASH\`" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Guardar release como artefato da execução
-        uses: actions/upload-artifact@v4
+        id: artefato
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-${{ needs.validar.outputs.rotulo }}
           path: ${{ runner.temp }}/release
           if-no-files-found: error
           retention-days: 14
+
+  publicar:
+    name: Publicar frontend aprovado e aguardar verificações
+    needs: [validar, empacotar]
+    if: ${{ inputs.publicar == true && vars.HML_PUBLICACAO_HABILITADA == 'true' && github.repository == 'ramirespaes/Gestao_Epi_Fabricas' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: homologacao
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - name: Checkout do controlador imutável desta execução
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      - name: Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+
+      - name: Baixar somente o artefato produzido nesta execução
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ needs.empacotar.outputs.artifact_id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/release-aprovada
+
+      - name: Conferir identidade e integridade antes de obter credenciais
+        env:
+          HML_COMMIT: ${{ needs.validar.outputs.commit }}
+          HML_ROTULO: ${{ needs.validar.outputs.rotulo }}
+          HML_RELEASE_SHA256: ${{ needs.empacotar.outputs.release_sha256 }}
+          HML_RELEASE_DIR: ${{ runner.temp }}/release-aprovada
+          HML_ROLE: ${{ vars.HML_AWS_ROLE_ARN }}
+          HML_CONTA: ${{ vars.HML_AWS_ACCOUNT_ID }}
+          HML_REGIAO: ${{ vars.HML_AWS_REGION }}
+          HML_BUCKET: ${{ vars.HML_RELEASE_BUCKET }}
+        run: |
+          node -e 'const p = require("./deploy/hml/cd/protocolo"); const e = process.env; p.validarDestino(e); p.conferirRelease({dir:e.HML_RELEASE_DIR, commit:e.HML_COMMIT, rotulo:e.HML_ROTULO, releaseSha256:e.HML_RELEASE_SHA256});'
+
+      - name: Credenciais AWS temporárias por OIDC
+        uses: aws-actions/configure-aws-credentials@b47578312673ae6fa5b5096b330d9fbac3d116df # v4.2.1
+        with:
+          role-to-assume: ${{ vars.HML_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.HML_AWS_REGION }}
+          audience: sts.amazonaws.com
+          role-session-name: hml-${{ github.run_id }}-${{ github.run_attempt }}
+          role-duration-seconds: 1800
+          unset-current-credentials: true
+          mask-aws-account-id: true
+
+      - name: Entregar pedido aprovado e exigir recibo do agente
+        env:
+          HML_PUBLICAR: ${{ inputs.publicar }}
+          HML_HABILITADA: ${{ vars.HML_PUBLICACAO_HABILITADA }}
+          HML_CONFIRMACAO: ${{ inputs.confirmacao }}
+          HML_PERMITIR_ANTERIOR: ${{ inputs.permitir_commit_anterior }}
+          HML_COMMIT: ${{ needs.validar.outputs.commit }}
+          HML_ROTULO: ${{ needs.validar.outputs.rotulo }}
+          HML_RELEASE_SHA256: ${{ needs.empacotar.outputs.release_sha256 }}
+          HML_RELEASE_DIR: ${{ runner.temp }}/release-aprovada
+          HML_BUCKET: ${{ vars.HML_RELEASE_BUCKET }}
+          HML_CONTA: ${{ vars.HML_AWS_ACCOUNT_ID }}
+          HML_REGIAO: ${{ vars.HML_AWS_REGION }}
+        run: node deploy/hml/cd/publicar.js

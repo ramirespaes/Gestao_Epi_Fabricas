@@ -440,7 +440,7 @@ describe('inspeção estática', () => {
     assert.match(html, /<title>Gestão de EPI<\/title>/);
     assert.match(html, /<h2>Operações de estoque<\/h2>/);
     assert.ok(html.includes(`<p>${SUBTITULO}</p>`));
-    assert.match(html, /<a class="active" href="javascript:void\(0\)" data-pagina="operations" style="display:none"><div class="nav-icon gray">receipt_long<\/div>Operações de estoque<\/a>/);
+    assert.match(html, /<a class="active" role="link" tabindex="0" aria-current="page" data-pagina="operations" style="display:none"><div class="nav-icon gray">receipt_long<\/div>Operações de estoque<\/a>/);
     assert.equal(/Operações \/ Log|Operações e Logs|Logs do Sistema/i.test(codigo), false);
   });
 
