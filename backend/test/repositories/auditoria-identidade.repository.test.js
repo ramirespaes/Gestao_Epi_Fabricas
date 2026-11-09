@@ -118,6 +118,17 @@ describe('auditoria-identidade.repository', () => {
         }
       });
 
+      // Rodada A R2 (PENDENCIA-SEG-TRG04): primeira barreira na aplicação, espelho da função do banco (014 + 097).
+      test('chave JSON sensível (inclusive composta sem separador: CLIENTSECRET) é TypeError antes de qualquer consulta; o valor nunca aparece; identificadores legítimos passam', async () => {
+        const executor = executorFalso();
+        for (const [campo, valor] of [['contexto', { CLIENTSECRET: 'VALOR-SECRETO' }], ['dadosNovos', { sessao: { cookie: 'VALOR-SECRETO' } }], ['dadosAnteriores', { x: [{ PGPASSWORD: 'VALOR-SECRETO' }] }]]) {
+          await assert.rejects(() => repo()[nome](executor, base({ [campo]: valor })), (e) => e instanceof TypeError && new RegExp(`^${campo} contém chave JSON sensível`).test(e.message) && !e.message.includes('VALOR-SECRETO'), campo);
+        }
+        assert.equal(executor.chamadas.length, 0);
+        await repo()[nome](executor, base({ contexto: { origem: 'link', secretaria_id: 2, alterada_em: '2026-10-01T12:00:00Z' } }));
+        assert.equal(executor.chamadas.length, 1);
+      });
+
       test('erro do banco (inclusive a recusa de chave JSON sensível) é propagado sem tradução', async () => {
         const erro = Object.assign(new Error('logs_auditoria: campo JSONB contém chave sensível'), { code: 'P0001' });
         const executor = { query: async () => { throw erro; } };

@@ -1,6 +1,7 @@
 'use strict';
 
 const { ipParaGravar, dispositivoParaGravar } = require('../utils/origem-requisicao');
+const { exigirSemChaveSensivel } = require('../utils/chave-json-sensivel');
 
 /**
  * Repositório de auditoria da PLATAFORMA (logs_auditoria_plataforma,
@@ -9,7 +10,8 @@ const { ipParaGravar, dispositivoParaGravar } = require('../utils/origem-requisi
  * disciplina de "só persiste o que recebe", mesma responsabilidade de quem
  * chama nunca incluir senha/hash/token/segredo em contexto/dados_*
  * (o banco também recusa, pela mesma função `logs_auditoria_bloquear_
- * dado_sensivel` reaproveitada na 029).
+ * dado_sensivel` reaproveitada na 029). Rodada A R2 (migration 097):
+ * `exigirSemChaveSensivel` é a primeira barreira, antes do INSERT.
  *
  * Quem agiu (ator) e sobre quem (alvo) são colunas separadas. Cada função
  * fixa o próprio ator, e nenhuma aceita o tipo de ator de quem chama:
@@ -92,6 +94,9 @@ async function gravar(executor, ator, {
   exigirObjetoOpcional(contexto, 'contexto');
   exigirObjetoOpcional(dadosAnteriores, 'dadosAnteriores');
   exigirObjetoOpcional(dadosNovos, 'dadosNovos');
+  exigirSemChaveSensivel(contexto, 'contexto');
+  exigirSemChaveSensivel(dadosAnteriores, 'dadosAnteriores');
+  exigirSemChaveSensivel(dadosNovos, 'dadosNovos');
   const ipGravado = ipParaGravar(ip);
   const dispositivoGravado = dispositivoParaGravar(dispositivo);
 

@@ -12,6 +12,7 @@ sem necessidade de resolver regra, congelamento, evidência ou divergência.
 | Estrutura/camadas/versões | [Arquitetura](sistema/arquitetura.md) | [Estado datado](sistema/estado-atual.md) |
 | Auth, sessão, senha, MFA, RBAC, privacidade | [Segurança](sistema/seguranca.md) | Pessoas/domínio e testes |
 | SQL, migration, integração, concorrência | [Testes/PostgreSQL](sistema/testes-e-postgresql.md) | Contrato do domínio; operação se persistente |
+| Esquema das tabelas, funções e gatilhos (trilhas de auditoria) | [Dicionário de dados](sistema/dicionario-de-dados.md) | Testes/PostgreSQL; segurança |
 | Estoque, grade, material, entrega, pedidos, relatórios | [Estoque/solicitações](sistema/estoque-e-solicitacoes.md) | Segurança; testes; interface |
 | Pessoas, CPF, conta, permissões, GHE, importação | [Pessoas/GHE/acessos](sistema/pessoas-ghe-e-acessos.md) | Segurança; testes; interface |
 | Frontend, Dashboard, Central, Totem | [Interfaces](sistema/interfaces-e-autoatendimento.md) | Contrato funcional; segurança; padrões existentes |

@@ -13,18 +13,19 @@ const Ev = require('../../src/services/backup-executor-evidencia.service');
 
 /**
  * D-ORF-6, L1 (Bloco B): confronto das chaves REAIS do contexto de auditoria do executor com o trigger `logs_auditoria_bloquear_dado_sensivel` em PostgreSQL real.
- * Só roda na instância efêmera local autorizada (SWB_PGDATA declarado); sem SWB_PGDATA é ignorado com o motivo TRG_SO_NA_INSTANCIA_EFEMERA_LOCAL (ver abaixo). Executado em 06/11/2026: 16/16 GREEN.
- * PENDENCIA-SEG-TRG04 (segurança, bloqueia a produção): o TRG-04L só CARACTERIZA a limitação atual da função de chave sensível (nomes compostos sem separador não são bloqueados); não é correção. Antes de qualquer escrita, uma conexão própria de sondagem exige:
+ * Só roda na instância efêmera local autorizada (SWB_PGDATA declarado); sem SWB_PGDATA é ignorado com o motivo TRG_SO_NA_INSTANCIA_EFEMERA_LOCAL (ver abaixo). Executado em 06/11/2026: 16/16 GREEN (com a 014).
+ * PENDENCIA-SEG-TRG04 (tratada pela migration 097, Rodada A R2): o TRG-04L, que CARACTERIZAVA a limitação (nomes compostos sem separador aceitos), foi INVERTIDO e agora exige a recusa; a 097 entra na lista
+ * de migrations aplicadas. Reexecução na instância efêmera pendente de autorização; o mesmo contrato é provado na CI por `migration-097-chave-sensivel-sem-separador.integration.js`. Antes de qualquer escrita, uma conexão própria de sondagem exige:
  *   - o banco de teste do projeto (gestao_epi_teste_local, trava existente);
  *   - a identidade da instância autorizada: SWB_PGDATA e SWB_PORT do ambiente iguais a SHOW data_directory / SHOW port; porta fora de 5432 e 55460; listen_addresses vazio (só socket);
  *     DB_HOST igual ao diretório de socket da instância; usuário swb_teste;
  *   - schema `public` VAZIO (nenhuma relação, função, tipo, extensão ou ACL padrão): banco recém-criado, nunca um banco com dados.
  * Em seguida registra a IMPRESSÃO do catálogo (schemas, relações, funções, tipos, gatilhos, restrições, extensões, ACLs padrão, bancos e papéis) e a compara DEPOIS das migrations e dos eventos e DEPOIS do DROP SCHEMA:
- * qualquer diferença reprova. As migrations (000..048) rodam por `abrirSchemaTemporario`: schema `test_migration_<hex>` exclusivo, `SET search_path` só nele (sem `public`), DROP SCHEMA CASCADE ao final.
- * Verificação estática das 12 migrations: nenhuma contém CREATE ROLE/DATABASE/EXTENSION/SCHEMA, GRANT/REVOKE, SET search_path nem referência `public.`.
+ * qualquer diferença reprova. As migrations (000..048 e 097) rodam por `abrirSchemaTemporario`: schema `test_migration_<hex>` exclusivo, `SET search_path` só nele (sem `public`), DROP SCHEMA CASCADE ao final.
+ * Verificação estática das 13 migrations: nenhuma contém CREATE ROLE/DATABASE/EXTENSION/SCHEMA, GRANT/REVOKE, SET search_path nem referência `public.`.
  */
 
-const MIGRATIONS = ['000', '001', '002', '005', '012', '014', '027', '028', '029', '030', '031', '048'];
+const MIGRATIONS = ['000', '001', '002', '005', '012', '014', '027', '028', '029', '030', '031', '048', '097'];
 const PORTAS_PROTEGIDAS = [5432, 55460];
 const OP = 'a'.repeat(32);
 
@@ -158,24 +159,36 @@ describe('[L1-TRIGGER] auditoria do executor × trigger de dado sensível (Postg
       ['dadosNovos.password', { dadosNovos: { password: 'x' } }],
       ['dadosAnteriores.cookie', { dadosAnteriores: { cookie: 'x' } }],
     ];
+    // Desde a Rodada A (R2) o repositório tem a PRIMEIRA barreira (espelho JS, TypeError antes do INSERT): por isso cada caso prova as DUAS barreiras —
+    // (a) o repositório recusa antes de consultar; (b) o gatilho do banco recusa um INSERT direto que contorna o repositório. Nenhuma das duas pode faltar.
+    const coluna = { contexto: 'contexto', dadosNovos: 'dados_novos', dadosAnteriores: 'dados_anteriores' };
     for (const [rotulo, campos] of casos) {
-      test(`TRG-04 — ${rotulo} é recusada`, async () => {
-        const r = await tentar(registrarEventoSistema(ctx.cliente, { acao: 'BACKUP_EXECUTOR_TESTE', ...campos }));
-        assert.match(r, /chave sens/i, JSON.stringify(campos));
+      test(`TRG-04 — ${rotulo} é recusada pela primeira barreira (repositório) e pelo gatilho do banco`, async () => {
+        const chamadasAntes = (await ctx.cliente.query("SELECT count(*)::int AS n FROM logs_auditoria_plataforma WHERE acao = 'BACKUP_EXECUTOR_TRG04'")).rows[0].n;
+        const r1 = await tentar(registrarEventoSistema(ctx.cliente, { acao: 'BACKUP_EXECUTOR_TRG04', ...campos }));
+        assert.match(r1, /contém chave JSON sensível/, `primeira barreira: ${JSON.stringify(campos)}`);
+        const [campo, valor] = Object.entries(campos)[0];
+        const r2 = await tentar(ctx.cliente.query(`INSERT INTO logs_auditoria_plataforma (acao, ator_tipo, ${coluna[campo]}) VALUES ('BACKUP_EXECUTOR_TRG04', 'SISTEMA', $1::jsonb)`, [JSON.stringify(valor)]));
+        assert.match(r2, /chave sens/i, `gatilho do banco: ${JSON.stringify(campos)}`);
+        const chamadasDepois = (await ctx.cliente.query("SELECT count(*)::int AS n FROM logs_auditoria_plataforma WHERE acao = 'BACKUP_EXECUTOR_TRG04'")).rows[0].n;
+        assert.equal(chamadasDepois, chamadasAntes, 'nenhuma linha gravada por nenhuma das barreiras');
       });
     }
   });
 
-  // PENDENCIA-SEG-TRG04 (segurança, tratamento separado antes da produção): CARACTERIZAÇÃO DA LIMITAÇÃO ATUAL, NÃO é comportamento seguro nem correção.
-  // `logs_auditoria_chave_json_e_sensivel` não reconhece nomes COMPOSTOS SEM SEPARADOR e sem fronteira camelCase (`PGPASSWORD` vira o segmento único `pgpassword`).
-  // Este teste afirma o comportamento ATUAL (aceita) para documentá-lo; quando a função for endurecida (nova migration), ele DEVE falhar e ser invertido para exigir a recusa.
-  test('TRG-04L — LIMITAÇÃO CONHECIDA (PENDENCIA-SEG-TRG04): nomes compostos sem separador NÃO são bloqueados hoje (não é comportamento seguro)', async () => {
-    const aceitas = [];
+  // PENDENCIA-SEG-TRG04 — TRATADA pela migration 097 (Rodada A R2): nomes COMPOSTOS SEM SEPARADOR (`PGPASSWORD` vira o segmento único `pgpassword`) passam a ser recusados pelo
+  // gatilho, nas três trilhas. Este teste foi INVERTIDO em relação ao TRG-04L original (que caracterizava a aceitação com a 014): a recusa tem de vir do BANCO, por isso a chamada
+  // contorna a primeira barreira da aplicação (INSERT direto) e exige a mensagem do gatilho.
+  test('TRG-04L — PENDENCIA-SEG-TRG04 tratada (097): nomes compostos sem separador são recusados pelo gatilho do banco, nas três trilhas', async () => {
+    const recusadas = [];
     for (const chave of ['PGPASSWORD', 'DBPASSWORD', 'ACCESSTOKEN', 'CLIENTSECRET']) {
-      const r = await tentar(registrarEventoSistema(ctx.cliente, { acao: 'BACKUP_EXECUTOR_TESTE', contexto: { [chave]: 'x' } }));
-      if (r === 'ok') aceitas.push(chave);
+      const r = await tentar(ctx.cliente.query("INSERT INTO logs_auditoria_plataforma (acao, ator_tipo, contexto) VALUES ('BACKUP_EXECUTOR_TESTE', 'SISTEMA', $1::jsonb)", [JSON.stringify({ [chave]: 'x' })]));
+      if (/chave sens/i.test(r)) recusadas.push(chave);
     }
-    assert.deepEqual(aceitas, ['PGPASSWORD', 'DBPASSWORD', 'ACCESSTOKEN', 'CLIENTSECRET'], 'a limitação mudou: se a função foi endurecida, inverta este teste para exigir a recusa e feche a PENDENCIA-SEG-TRG04');
+    assert.deepEqual(recusadas, ['PGPASSWORD', 'DBPASSWORD', 'ACCESSTOKEN', 'CLIENTSECRET']);
+    for (const legitima of ['secretaria_id', 'hashtag', 'chave_primaria']) {
+      assert.equal(await tentar(registrarEventoSistema(ctx.cliente, { acao: 'BACKUP_EXECUTOR_TESTE', contexto: { [legitima]: 'x' } })), 'ok', legitima);
+    }
   });
 
   test('TRG-05 — a trilha é append-only: UPDATE, DELETE e TRUNCATE são recusados e as linhas permanecem', async () => {

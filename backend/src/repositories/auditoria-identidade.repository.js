@@ -1,12 +1,14 @@
 'use strict';
 
 const { ipParaGravar, dispositivoParaGravar } = require('../utils/origem-requisicao');
+const { exigirSemChaveSensivel } = require('../utils/chave-json-sensivel');
 
 /**
  * Trilha de auditoria da identidade global (logs_auditoria_identidade,
  * migration 064). Mesma disciplina de auditoria-plataforma.repository.js,
  * sem empresa: o evento é da identidade. Só insere; a tabela recusa
- * alteração, exclusão e chave JSON sensível.
+ * alteração, exclusão e chave JSON sensível. Rodada A R2 (migration 097):
+ * `exigirSemChaveSensivel` é a primeira barreira, antes do INSERT.
  *
  * `identidadeId` é sempre a identidade afetada. Cada função fixa o próprio
  * ator, e nenhuma aceita o tipo de ator de quem chama:
@@ -71,6 +73,9 @@ function comAtor(ator) {
     exigirObjetoOpcional(contexto, 'contexto');
     exigirObjetoOpcional(dadosAnteriores, 'dadosAnteriores');
     exigirObjetoOpcional(dadosNovos, 'dadosNovos');
+    exigirSemChaveSensivel(contexto, 'contexto');
+    exigirSemChaveSensivel(dadosAnteriores, 'dadosAnteriores');
+    exigirSemChaveSensivel(dadosNovos, 'dadosNovos');
     const ipGravado = ipParaGravar(ip);
     const dispositivoGravado = dispositivoParaGravar(dispositivo);
 

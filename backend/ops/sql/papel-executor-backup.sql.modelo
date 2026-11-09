@@ -1,0 +1,25 @@
+-- MODELO DOCUMENTAL do papel de banco do executor de backup (D-ORF-6, Rodada B, B2, H9-h).
+-- NAO EXECUTAR. Nenhum codigo do repositorio le ou executa este arquivo. Enquanto o marcador A_PREENCHER existir ele FALHA DE PROPOSITO:
+-- o GRANT CONNECT aponta um banco inexistente e a transacao inteira e revertida, inclusive o CREATE ROLE.
+-- Aprovacao, nome do banco e criacao real do papel ficam para a homologacao, por decisao e execucao humanas.
+--
+-- PRIVILEGIOS MINIMOS QUE O EXECUTOR USA NO BANCO (conferidos no codigo em 08/11/2026):
+--   1. conectar ao banco e usar o esquema public;
+--   2. auditoria do executor (D-F13): INSERT em logs_auditoria_plataforma com RETURNING id, criado_em; o RETURNING exige SELECT nessas duas colunas;
+--   3. coordenacao entre operacoes (P10): pg_try_advisory_lock e pg_advisory_unlock nao exigem concessao;
+--   4. dump com snapshot (pg_dump): leitura de TODAS as tabelas e sequencias do banco e USAGE nos esquemas; o sistema nao usa objetos grandes.
+--
+-- NAO CONCEDIDO por este modelo (item 4): nenhum privilegio de leitura para o pg_dump, e nenhum papel predefinido. O papel predefinido pg_read_all_data cobre tabelas, visoes e
+-- sequencias, mas e amplo; a escolha entre ele e concessoes por objeto depende de aceite expresso e de validacao com pg_dump.
+-- PENDENTE DE VALIDACAO NO B3, em PostgreSQL efemero: (a) o INSERT com RETURNING funciona com este papel, inclusive as chaves estrangeiras e os gatilhos da trilha;
+-- (b) o menor conjunto de privilegios de leitura com que o pg_dump completo e o pg_restore --list funcionam; (c) o papel nao consegue DDL, nem alterar ou apagar a trilha.
+--
+-- A senha NAO fica neste arquivo: vem de fora, pelo arquivo de senhas do usuario do servico (PGPASSFILE, modo 0600). Nunca registre senha aqui.
+
+BEGIN;
+CREATE ROLE safework_backup_executor LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS CONNECTION LIMIT 2;
+GRANT CONNECT ON DATABASE A_PREENCHER TO safework_backup_executor;
+GRANT USAGE ON SCHEMA public TO safework_backup_executor;
+GRANT INSERT ON TABLE logs_auditoria_plataforma TO safework_backup_executor;
+GRANT SELECT (id, criado_em) ON TABLE logs_auditoria_plataforma TO safework_backup_executor;
+COMMIT;

@@ -234,14 +234,17 @@ papel, o KMS e a auditoria, sem processo, ambiente ou rede. `backup-executor-pro
 (`criarBackupDeProducao`, `criarRestauracaoDeProducao`), reutilizando a supervisão existente (D-LIG-1) sem escritor nem processo novo; a guarda P2 continua verde sem entrada nova. A leitura autenticada do
 manifesto (`lerPacote`) é injetada e a versão real não existe.
 
-**PENDENCIA-SEG-TRG04 (segurança; bloqueia a produção, não a integração).** A função `logs_auditoria_chave_json_e_sensivel` (migration 014, compartilhada pelas três trilhas de auditoria) reconhece chaves por
-segmentos do nome, não por substring: nomes compostos SEM separador e sem fronteira camelCase não são bloqueados (`PGPASSWORD`, `DBPASSWORD`, `ACCESSTOKEN`, `CLIENTSECRET` confirmados aceitos em banco real). Não é
-comportamento seguro e NÃO foi corrigido: o trigger e a migration 014 permanecem intactos; o teste `TRG-04L` só caracteriza a limitação e deve ser invertido quando ela for tratada. Tratamento, em etapa própria e antes
-da produção: nova migration com `CREATE OR REPLACE FUNCTION` (regra adicional por sufixo de segmento, preservando `secretaria_id`, `hashtag`, `hash_arquivo`), testes RED→GREEN em schema temporário, varredura dos
-escritores, `migrations/checksums.json`, contagens de migrations e dicionário de dados (`docs/sistema/dicionario-de-dados.md` ainda não existe). A defesa primária continua sendo gravar só campos explícitos.
+**PENDENCIA-SEG-TRG04 — tratada (Rodada A, R2, 07/11/2026; migration 097).** A função `logs_auditoria_chave_json_e_sensivel` (migration 014, compartilhada pelas três trilhas) reconhecia chaves por
+segmentos do nome: nomes compostos SEM separador e sem fronteira camelCase passavam (`PGPASSWORD`, `DBPASSWORD`, `ACCESSTOKEN`, `CLIENTSECRET` confirmados aceitos em banco real em 06/11/2026). A migration
+aditiva `097_alter_logs_auditoria_chave_sensivel_sem_separador.sql` redefine a função (`CREATE OR REPLACE`, único comando) preservando as regras da 014 e acrescentando compostos conhecidos, sufixos e prefixos
+sensíveis por segmento (`secret` não é prefixo: `secretaria_id`, `hashtag`, `hash_arquivo`, `chave_primaria` e as 15 chaves do executor continuam legítimos). A 014, os gatilhos e as demais funções não mudam; por
+chamarem a função pelo nome, as três trilhas passam à regra nova ao mesmo tempo. Primeira barreira na aplicação: `src/utils/chave-json-sensivel.js` (espelho das listas, igualdade exigida pelo teste estático) é
+chamado pelos três repositórios de auditoria antes do INSERT. Provas: `test/db/migration-097-estatico.test.js` e `test/utils/chave-json-sensivel.test.js` (sem banco), `test/integracao/migration-097-chave-sensivel-sem-separador.integration.js`
+(PostgreSQL em schema temporário, banco × JS sobre corpus gerado), `TRG-04L` invertido (instância efêmera; reexecução pendente de autorização). `checksums.json` registra a 097; `migrations-runner` conta 97.
+Dicionário oficial: `docs/sistema/dicionario-de-dados.md`. Aplicação em banco persistente só pelo gate de migrations autorizado.
 
 **O que continua bloqueando a produção.** DEP-2 (SDK real e `VERSOES_APROVADAS`), fonte real de credenciais e papel do KMS (H9-a), TLS obrigatório por ambiente, dump e restauração reais
-pelo executor, ajuste definitivo do `comTls`, PENDENCIA-SEG-TRG04, RPO e RTO, cerimônia de custódia e listas reais. O `lerPacote` real passou a existir no Bloco C (abaixo). Evidências locais
+pelo executor, ajuste definitivo do `comTls`, aplicação da migration 097 no banco persistente (PENDENCIA-SEG-TRG04 tratada em código; ver abaixo), DEP-3 (dependências), RPO e RTO, cerimônia de custódia e listas reais. O `lerPacote` real passou a existir no Bloco C (abaixo). Evidências locais
 (PostgreSQL efêmero, 14 arquivos com SHA-256) ficam fora do Git, em `~/SafeWorkDados/d-orf-6-l1-bloco-b-evidencias-20261106`.
 
 ### Ligação completa local do executor (D-ORF-6, L2, Bloco C) — implementado localmente, NÃO ativado
@@ -270,6 +273,90 @@ SDK falso. Contrato L7 (PREP-01): o `lido` do leitor real é reconhecido pelo n�
 
 **O que falta para o CLI executar.** A injeção do compositor em `scripts/backup-operar.js` depende das decisões H9 (fonte das credenciais por papel, provedor de chaves, destinos autorizados,
 limites e papel de banco): é quem lê ambiente e arquivo, o que estes módulos não fazem. Até lá o processo real continua BLOQUEADO. Nenhuma homologação AWS foi feita.
+
+### Ligação do CLI para ensaio isolado (D-ORF-6, Rodada B, B1) — implementado localmente, NÃO ativado
+
+Estado (08/11/2026, base `2f56159`): o `scripts/backup-operar.js` passou a consultar uma montagem de ligação, só quando a variável `BACKUP_EXECUTOR_CONFIG` existe. Decisões aprovadas por Ramires: H9-a (credenciais por
+arquivo 0600, um por papel, exclusivamente em ensaio isolado; não autoriza credencial real, AWS nem produção), P2-I (registros em stdout e journal, sem novo sumidouro de arquivo e sem alterar a guarda P2),
+credenciais sintéticas `SWBTESTE` e recibo no stderr. Arquivos: `backend/src/services/backup-executor-{configuracao,credenciais-arquivo,ligacao-cli}.service.js`, a injeção em `require.main` do CLI e os testes
+`backup-executor-{configuracao,credenciais-arquivo,ligacao-cli,b1-invariantes}` e `[CLI-EXE]` CLI-40 a CLI-45. Sem variável, o comportamento é exatamente o anterior (BLOQUEADO, `LIGACAO_OPERACIONAL_AUSENTE`, stderr vazio).
+
+**Configuração (`BACKUP_EXECUTOR_CONFIG`).** Caminho absoluto canônico de um JSON de forma exata: `{ versao: 1, finalidade: 'ENSAIO_ISOLADO', ambiente: 'HOMOLOGACAO', regiao, papeis: { PUBLICADOR?, VERIFICADOR?,
+RESTAURACAO? } }`, com `papeis` apontando arquivos de credencial distintos. Só caminhos: qualquer chave sensível reprova (mesmo utilitário da migration 097). A leitura é restrita: nenhum link simbólico em nenhum componente
+do caminho, diretório pai do dono e sem escrita por grupo ou outros, abertura somente de leitura sem seguir link, arquivo comum com um único vínculo, do dono, com permissão EXATAMENTE `0600` (`0400`, `0640` e `0644` são
+recusados) e tamanho limitado. Falhas viram `CONFIGURACAO_AUSENTE` (não é erro), `CONFIGURACAO_CAMINHO_INVALIDO`, `CONFIGURACAO_ARQUIVO_INSEGURO`, `CONFIGURACAO_ARQUIVO_INDISPONIVEL`, `CONFIGURACAO_FORMA_INVALIDA` ou
+`CONFIGURACAO_FINALIDADE_NAO_AUTORIZADA`; nunca com valor, caminho ou conteúdo.
+
+**Credenciais sintéticas por arquivo.** Um arquivo `0600` por papel, relido a cada pedido, com `{ papel, accessKeyId, secretAccessKey, expiration? }`. A chave de acesso só vale com o formato `^SWBTESTE[A-Z0-9]{8,32}$` e o
+segredo com o prefixo `SWBTESTE-`; token de sessão é proibido; os prefixos de identificador da AWS (ABIA, ACCA, AGPA, AIDA, AIPA, AKIA, ANPA, ANVA, APKA, AROA, ASCA, ASIA) são recusados. O marcador prova que a chave de
+acesso não foi emitida pela AWS, mas não prova que o segredo é fictício: a revisão humana dos arquivos antes de cada ensaio continua obrigatória. Nunca usar credencial real.
+
+**Montagem e CLI.** `montarPortasDoCli` só monta em modo ENSAIO e ambiente HOMOLOGACAO; `--operar` e `PRODUCAO` nunca montam. Confere os papéis obrigatórios da ação, a separação das credenciais, o SDK e os colaboradores
+(coordenação, auditoria, adaptadores, chaves e destinos), que só chegam por injeção de quem chama em processo: o CLI real nunca os fornece, então o resultado real é sempre BLOQUEADO. Qualquer falha da montagem sai no stderr
+como `LIGACAO_INVALIDA: <código fixo LIGACAO_*>`, a execução fica BLOQUEADA com todos os motivos da política (saída 4) e o stdout mantém UMA linha de evidência. O recibo consolidado sai no stderr, numa única linha
+`RECIBO_CONSOLIDADO <json com conjuntoId, sha256 e bytes em base64>`, conferido contra o SHA-256 dos bytes; se não puder ser escrito, a execução termina em `FALHOU/RECIBOS_NAO_REGISTRADOS`.
+
+**O que não mudou.** `OPERACAO_HABILITADA` e `LIMPEZA_OPERACIONAL_HABILITADA` continuam falsas e únicas; as quatro listas operacionais continuam vazias; a política, a guarda P2, o `--verificar`, o `package.json` e o
+lock estão intactos; os módulos novos não escrevem, não removem, não criam processo e não leem `process.env` (o ambiente chega por parâmetro). `CONCLUIDO` só é alcançável em teste, com colaboradores e SDK falsos: no
+processo real, `NODE_ENV=test` sozinho não monta nada. A montagem real dos adaptadores (produção L2, restauração, chaves, coordenação com banco) pertence ao B3; os parâmetros de destino, áreas, limites e prazo
+foram tratados no B2 (seção seguinte). Nenhum PostgreSQL, AWS ou serviço foi usado.
+
+### Configuração v2 e modelos do executor (D-ORF-6, Rodada B, B2) — implementado localmente, NÃO ativado
+
+Estado (08/11/2026, base `a460f77`): decisões H9-b, H9-e, H9-g e H9-h tratadas SEM habilitar nada. As quatro listas operacionais continuam VAZIAS; `OPERACAO_HABILITADA` e `LIMPEZA_OPERACIONAL_HABILITADA` continuam falsas e únicas; a política, a
+guarda P2, o CLI, os modelos systemd, o `package.json` e o lock estão intactos. H9-b: reutiliza os identificadores já existentes dos provedores (`aws-kms-pre-resolvido-v1` e `recuperacao-offline-v1`), sem incluí-los nas listas; ARNs e blobs são da homologação.
+
+**Configuração v2 (`BACKUP_EXECUTOR_CONFIG`).** `versao: 2` acrescenta à v1 quatro campos, todos obrigatórios: `destinosLocais` (`BACKUP` e/ou `RESTAURACAO`, cada um `{ id, raiz }`, com o id no padrão dedicado da ação, `containers...` ou `restauracao...`),
+`protegidos` (exatamente `imagens`, `fiscalizacao`, `preparacoes`, `dumps` e `publicados`), `limites` (`totalBytesMaximo` obrigatório e `arquivosMaximo` opcional de 1 a 400000) e `prazoMs` (1 a 600000), os mesmos limites do executor. Todos os caminhos são
+absolutos canônicos. Áreas, raízes de destino, arquivo de configuração e arquivos de credencial nunca se repetem nem se sobrepõem, sem diferenciar caixa. O marcador `A_PREENCHER` em qualquer chave ou valor reprova, assim como chave sensível. A v1 continua aceita
+exatamente como era e a v1 com campo v2, ou a v2 sem campo v2, é recusada.
+
+**A configuração só descreve.** Ela não autoriza destino algum: a montagem usa SEMPRE o validador oficial de destinos sobre a lista operacional (hoje vazia), de modo que nada é autorizado. O registro de destinos de teste só existe por injeção em processo, o validador
+oficial o recusa fora de `NODE_ENV=test` e o CLI real não o conhece. Com a v2, colaboradores que também tragam destino, áreas, limites ou prazo são recusados (um só lugar para cada parâmetro); BACKUP sem `arquivosMaximo` e ação sem destino na configuração têm código
+próprio (`LIGACAO_LIMITES_INVALIDOS`, `LIGACAO_DESTINO_LOCAL_AUSENTE`). A verificação do destino não usa esses parâmetros.
+
+**Modelos inertes.** `backend/ops/executor/configuracao-ensaio.json.modelo` traz valores sintéticos (ids, limites e prazo) e o marcador `A_PREENCHER` em tudo que depende do host; o leitor o recusa até o marcador sair. `backend/ops/sql/papel-executor-backup.sql.modelo`
+documenta o papel de banco (H9-h): login sem superusuário, sem criação de banco ou papel, sem replicação, sem senha no arquivo, `INSERT` e `SELECT (id, criado_em)` só em `logs_auditoria_plataforma`, tudo dentro de uma transação que falha de propósito enquanto o
+banco for `A_PREENCHER`. NENHUM privilégio de leitura para o `pg_dump` é concedido, nem o papel predefinido `pg_read_all_data`: a escolha entre ele e concessões por objeto depende de aceite expresso. Nenhum código lê ou executa os modelos.
+
+**Pendências para o B3 e a homologação.** Em PostgreSQL efêmero: provar que o `INSERT` com `RETURNING` funciona com o papel (chaves estrangeiras e gatilhos), definir o menor conjunto de privilégios de leitura com que o `pg_dump` completo e o `pg_restore --list`
+funcionam e provar que o papel não faz DDL nem altera ou apaga a trilha. Na homologação: valores reais de região, raízes (com a identidade `dev` e `ino` do host), áreas e limites medidos pelo `--verificar`, e a criação do papel por decisão humana.
+
+### Montador das peças reais do executor (D-ORF-6, Rodada B, B3A) — implementado localmente, NÃO ativado
+
+Estado (08/11/2026, base `0ae466f`): `backend/src/services/backup-executor-colaboradores-reais.service.js` compõe, só por injeção, as sete fábricas aprovadas: produção e restauração de produção (`criarBackupDeProducao`, `criarRestauracaoDeProducao`), leitor de pacote,
+adaptadores L2 de produção e de restauração, coordenação por advisory locks e auditoria. `montarColaboradoresReais({ acao, executorDeCoordenacao, executorDeAuditoria, registrarEventoSistema, relogio, backup?, restauracao?, fabricas? })` devolve peças congeladas: sempre `coordenacao` e `auditoria`;
+`producao` para BACKUP; `restaurador` para RESTAURACAO. A sessão de coordenação (locks de sessão) e a de auditoria têm de ser objetos distintos. Para BACKUP, a raiz de publicados e a fonte de chaves do leitor são DERIVADAS da configuração da composição, de modo que o leitor lê onde a composição publica,
+com as mesmas chaves. O módulo não lê ambiente, arquivo ou rede, não abre conexão, não cria processo e não escreve; nada em `src/` ou `scripts/` o importa nesta etapa (só testes). Configuração fora da forma é `COLABORADORES_REAIS_CONFIGURACAO_INVALIDA`; fábrica que recusa ou lança é `COLABORADORES_REAIS_MONTAGEM_FALHOU`, sem repassar mensagem.
+Quatro listas operacionais vazias, `OPERACAO_HABILITADA` e `LIMPEZA_OPERACIONAL_HABILITADA` falsas, política, guarda P2 e CLI intactos.
+
+**Testes.** Unidade com fábricas falsas e reais em `test/services/backup-executor-colaboradores-reais.test.js`. Integração, só na instância efêmera local (ignorados sem `SWB_PGDATA`, nunca na CI): `d-orf-6-b3-papel-banco.integration.js` (o modelo SQL como está falha e reverte; com banco e esquema trocados em memória cria papel sem
+privilégio de administração; `INSERT` com `RETURNING`, auditoria e advisory locks funcionam; sem DDL, sem alterar a trilha, sem ler nem escrever fora do previsto; a trigger de dado sensível ainda vale; sem leitura o `pg_dump` falha; medição, só como evidência, de dois candidatos de leitura) e
+`d-orf-6-b3-colaboradores-reais.integration.js` (coordenação e auditoria reais pelo montador). O roteiro `D-ORF-6-RODADA-B-PG-EFEMERO-20261108-V10-B3.sh` (preservado) foi preparado nesta etapa e SUPERADO pelo V11 (seção B3B): roda as duas suítes numa instância efêmera nova, com os limites de 20 GB e 40 GiB livres, e tem os modos `limpar-verificar` e `limpar` para remover, com confirmação,
+só a instância criada por ele, parada e com evidências conferidas. Na etapa do B3A nada disso foi executado em PostgreSQL; a execução real é a do B3B.
+
+**LIMITE do B3A (RESOLVIDO no B3B-2): ensaio ponta a ponta com `pg_dump`.** A composição de produção inventaria o esquema `public` do banco (o `planejarNoSnapshot` é chamado sem o parâmetro `esquemaDasMigrations`) e a restauração também lê o `public` do banco restaurado. Um ensaio completo pela composição real exige, portanto, ou aplicar as migrations no
+`public` de um banco dedicado e descartável (exceção à regra de nunca aplicar migrations no `public`, que precisa de autorização própria) ou alterar o módulo aprovado da composição para aceitar o esquema. Os testes P4b, P7 e P12, que rodam `pg_dump` real, só rodam na CI e usam o esquema temporário pelas peças de baixo nível, não pela composição de produção. Decisão de Ramires (08/11/2026): ensaio em PostgreSQL efêmero, com banco dedicado e descartável, sem alterar a composição; executado no B3B-2 (seção seguinte).
+
+### Ensaio em PostgreSQL efêmero local (D-ORF-6, Rodada B, B3B) — executado localmente, NÃO ativado, NÃO homologado
+
+Estado (08/11/2026, base `82a4593`; teste do B3B-2 no commit `c1389a9`). Os níveis de evidência não se confundem:
+
+1. **Testes com falsos e CI:** unidade e integrações na CI com esquema temporário. As integrações do B3 são IGNORADAS na CI (sem `SWB_PGDATA`).
+2. **PostgreSQL 16 real, efêmero e local (B3B-1 e B3B-2):** instância exclusiva, só por socket Unix, porta 55471 (nunca 5432 nem 55460), diretório `/private/tmp/swb-<AAAAMMDDHHMMSS>-<n>`, criada e encerrada pelo roteiro, com os binários 16 do Postgres.app no macOS. Nenhuma ligação a cluster oficial, dados 100% sintéticos.
+3. **Homologação em host Linux e AWS: NÃO realizada.** Nada abaixo a substitui nem a antecipa.
+
+**B3B-1** (roteiro V11, sha256 `088f0a07b84a964f699bab36a11eb340b8fdb36eaa771468bde4aa15f49982eb`): 13 de 13 (cinco casos `[B3-REAIS]` e oito `[B3-ROLE]`), fail 0, skipped 0, cancelled 0. O V11 acrescenta ao V10 a limpeza endurecida (revalidação antes do `rm`, recusa de links, arquivos especiais, outro dono, vínculos extras, montagens e dispositivos externos, e evidências íntegras
+com manifesto), com 43 testes de bloqueio sem PostgreSQL. Medição do papel de banco (casos 06 a 08): sem leitura concedida o `pg_dump` falha; com `pg_read_all_data` (candidato A) e com `USAGE` mais `SELECT` em todas as tabelas e sequências dos esquemas (candidato B, concessão em bloco no momento da medição, não lista nominal) o `pg_dump` completo e o `pg_restore --list` funcionam.
+A escolha entre A e B continua DECISÃO PENDENTE de Ramires (H9-h).
+
+**B3B-2** (roteiro V12, sha256 `21165f68d29d751907257603c5e72eca36b2d87fac2cd03d80d230298e33f0d5`; teste `backend/test/integracao/d-orf-6-b3-ponta-a-ponta.integration.js`, sha256 `f0ac6240f80a82e10fce463aad079ba3d376a79e7c273beba9a38246db59603b`): 9 de 9, fail 0, skipped 0, cancelled 0. Pela composição REAL de produção, sem alterá-la, em banco de origem dedicado
+(`gepi_b3_origem_<12 hex>`) com as migrations no `public` desse banco (exceção à regra de nunca aplicá-las no `public`, só para bancos criados e removidos pelo próprio teste): `pg_dump` real, pacote layout 2 publicado como NÃO operacional (chaves e relatório `TESTE_CONTROLADO`), `pg_restore` real em banco NOVO e veredito INTEGRO com esquema IGUAL (dump de 492.654 bytes).
+Negativos comprovados: destino fora da política (prefixo e protegidos), host indevido, banco preexistente, pgpass inseguro (modo aberto e link), dump e manifesto adulterados (com cópia de controle) e fábrica de conexões que recusa banco externo sem criar cliente. Só roda com `SWB_PGDATA` e `SWB_B3_PONTA_A_PONTA=1`.
+
+**O B3B-2 foi executado com o usuário administrativo da instância efêmera (`swb_teste`) e NÃO comprovou o funcionamento do papel mínimo de banco de produção pela composição.** O papel só foi exercitado no B3B-1, com `pg_dump` isolado, e a composição com snapshot nunca rodou com ele. O B3B-2 também não usou AWS (sem S3, KMS, Object Lock), TLS (socket Unix), host Linux, `systemd`, credencial real nem volume real, e não promove `recuperavelEmProducao` nem habilita operação.
+
+Evidências preservadas em `~/SafeWorkDados/d-orf-6-rodada-b-evidencias-20261108/b3/` (TAP, manifestos SHA-256, cabeçalho com o hash do roteiro e dos testes, e inventário geral). Quatro listas operacionais vazias, `OPERACAO_HABILITADA` e `LIMPEZA_OPERACIONAL_HABILITADA` falsas, política, guarda P2 e CLI intactos. Documentos de apoio fora do repositório: pacote B4 consolidado, decisão H9-h e auditoria das decisões H9.
 
 ### Documentos especializados existentes — fonte única
 

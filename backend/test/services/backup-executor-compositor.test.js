@@ -295,7 +295,7 @@ describe('[CMP] ligação REAL e coordenação REAL (adaptadores)', () => {
     assert.deepEqual(semConsulta.sqls, []);
   });
 
-  test('CMP-12 — invariantes: o compositor não usa fs, processo, ambiente, rede nem o SDK; é o ÚNICO chamador de criarExecutorOperacional fora do próprio módulo; o CLI não o importa (a ligação operacional continua ausente); a trava da política continua falsa e única', () => {
+  test('CMP-12 — invariantes: o compositor não usa fs, processo, ambiente, rede nem o SDK; é o ÚNICO chamador de criarExecutorOperacional fora do próprio módulo; o CLI não importa diretamente o compositor, o leitor de pacote nem a ligação operacional original (a ligação CLI é permitida); a trava da política continua falsa e única', () => {
     const BACKEND = path.join(__dirname, '..', '..');
     const semComentarios = (arquivo) => fs.readFileSync(path.join(BACKEND, arquivo), 'utf8').split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
     const fonte = semComentarios('src/services/backup-executor-compositor.service.js');
@@ -306,7 +306,7 @@ describe('[CMP] ligação REAL e coordenação REAL (adaptadores)', () => {
     andar('scripts');
     assert.deepEqual(chamadores.sort(), ['src/services/backup-executor-compositor.service.js', 'src/services/backup-executor-operacional.service.js']);
     const cli = semComentarios('scripts/backup-operar.js');
-    assert.doesNotMatch(cli, /backup-executor-compositor|backup-executor-leitor-pacote|backup-executor-ligacao/);
+    assert.doesNotMatch(cli, /backup-executor-compositor|backup-executor-leitor-pacote|backup-executor-ligacao(?!-cli\.service(?:\.js)?['"])/);
     assert.match(cli, /LIGACAO_OPERACIONAL_AUSENTE/);
     assert.equal(Pol.OPERACAO_HABILITADA, false);
   });

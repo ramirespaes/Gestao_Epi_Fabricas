@@ -161,7 +161,7 @@ describe('migration 068 — estrutura', () => {
     exigirMigration068();
     const manifesto = JSON.parse(fs.readFileSync(path.join(DIRETORIO, 'checksums.json'), 'utf8'));
     const arquivos = fs.readdirSync(DIRETORIO).filter((n) => /^\d{3}_.*\.sql$/.test(n)).sort();
-    assert.equal(arquivos.length, 96); // LGPD-1: + 094_create_lgpd_encarregados e 095_alter_lgpd_encarregados_add_cnpj
+    assert.equal(arquivos.length, 97); // LGPD-1: + 094 e 095; Rodada A R2: + 097_alter_logs_auditoria_chave_sensivel_sem_separador
     assert.equal(arquivos[0].slice(0, 3), '000');
     const inicio = arquivos.findIndex((n) => n.startsWith('068_'));
     assert.deepEqual(
@@ -176,7 +176,8 @@ describe('migration 068 — estrutura', () => {
     assert.equal(arquivos[inicio + 25].slice(0, 3), '094');
     assert.equal(arquivos[inicio + 26].slice(0, 3), '095');
     assert.equal(arquivos[inicio + 27].slice(0, 3), '096');
-    assert.equal(arquivos.length, inicio + 28, 'a 096 (datas efetivas da situação) é a última');
+    assert.equal(arquivos[inicio + 28].slice(0, 3), '097');
+    assert.equal(arquivos.length, inicio + 29, 'a 097 (chave JSON sensível sem separador) é a última');
     assert.deepEqual(Object.keys(manifesto.migrations).sort(), arquivos);
     for (const nome of arquivos) {
       const sha = crypto.createHash('sha256').update(fs.readFileSync(path.join(DIRETORIO, nome))).digest('hex');

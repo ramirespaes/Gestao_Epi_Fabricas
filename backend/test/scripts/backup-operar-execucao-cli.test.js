@@ -205,3 +205,121 @@ describe('[CLI-EXE] monitoramento (somente leitura)', () => {
     assert.match(r.stdout, /EVIDENCIA_ILEGIVEL/);
   });
 });
+
+describe('[CLI-EXE] B1: BACKUP_EXECUTOR_CONFIG, ensaio isolado, recibo no stderr e uma única linha de evidência no stdout', () => {
+  const IDS = { PUBLICADOR: 'SWBTESTEPUB12345', VERIFICADOR: 'SWBTESTEVER12345' };
+  const gravar0600 = (caminho, texto, modo = 0o600) => { fs.writeFileSync(caminho, texto, { mode: modo }); fs.chmodSync(caminho, modo); return caminho; };
+  function configuracaoSintetica({ modo = 0o600, extra = {} } = {}) {
+    const pasta = novaPasta();
+    const papeis = {};
+    for (const p of ['PUBLICADOR', 'VERIFICADOR']) papeis[p] = gravar0600(path.join(pasta, `${p}.json`), JSON.stringify({ papel: p, accessKeyId: IDS[p], secretAccessKey: 'SWBTESTE-segredo-falso-0123' }));
+    return { pasta, config: gravar0600(path.join(pasta, 'config.json'), JSON.stringify({ versao: 1, finalidade: 'ENSAIO_ISOLADO', ambiente: 'HOMOLOGACAO', regiao: 'us-east-1', papeis, ...extra }), modo) };
+  }
+  async function rodarComMontagem(argv, { portas, montarPortas } = {}) {
+    let saida = '';
+    let erro = '';
+    const codigo = await cli.executarComando({ argv, ambiente: {}, raizDoCodigo: path.join(__dirname, '..', '..'), escrever: (t) => { saida += t; }, erro: (t) => { erro += t; }, portas, montarPortas });
+    return { codigo, saida, erro };
+  }
+  const umaLinha = (texto) => { assert.equal(texto.split('\n').length, 2, 'uma linha e a quebra final'); return lida(texto); };
+
+  test('CLI-40 — processo real com BACKUP_EXECUTOR_CONFIG vazia: o comportamento sem ligação é preservado (BLOQUEADO, 4, stderr vazio, uma linha)', () => {
+    const r = rodarReal(ARGS_BACKUP, { BACKUP_EXECUTOR_CONFIG: '' });
+    assert.equal(r.status, SAIDAS.BLOQUEADO, `${r.stdout}\n${r.stderr}`);
+    assert.equal(r.stderr, '');
+    assert.ok(umaLinha(r.stdout).bloqueios.includes('LIGACAO_OPERACIONAL_AUSENTE'));
+  });
+
+  test('CLI-41 — processo real com configuração insegura, relativa, inexistente ou de finalidade errada: BLOQUEADO (4), uma linha e UM código fixo no stderr, sem eco de caminho', () => {
+    const { pasta, config } = configuracaoSintetica({ modo: 0o644 });
+    const casos = [
+      [config, 'LIGACAO_CONFIGURACAO_ARQUIVO_INSEGURO'],
+      ['relativo.json', 'LIGACAO_CONFIGURACAO_CAMINHO_INVALIDO'],
+      [path.join(pasta, 'nao-existe.json'), 'LIGACAO_CONFIGURACAO_ARQUIVO_INDISPONIVEL'],
+      [configuracaoSintetica({ extra: { finalidade: 'OPERACAO' } }).config, 'LIGACAO_CONFIGURACAO_FINALIDADE_NAO_AUTORIZADA'],
+      [configuracaoSintetica({ extra: { extra: 1 } }).config, 'LIGACAO_CONFIGURACAO_FORMA_INVALIDA'],
+    ];
+    for (const [caminho, codigo] of casos) {
+      const r = rodarReal(ARGS_BACKUP, { BACKUP_EXECUTOR_CONFIG: caminho });
+      assert.equal(r.status, SAIDAS.BLOQUEADO, codigo);
+      assert.equal(r.stderr, `LIGACAO_INVALIDA: ${codigo}\n`);
+      const e = umaLinha(r.stdout);
+      assert.equal(e.estado, 'BLOQUEADO');
+      assert.ok(e.bloqueios.includes('LIGACAO_OPERACIONAL_AUSENTE'));
+      assert.ok(!r.stderr.includes(pasta) && !r.stdout.includes(pasta), 'o caminho não pode ser ecoado');
+    }
+  });
+
+  test('CLI-42 — processo real com configuração e credenciais sintéticas VÁLIDAS e NODE_ENV=test (ou production): continua BLOQUEADO; sem adaptadores a montagem para antes de compor', () => {
+    const { config } = configuracaoSintetica();
+    for (const nodeEnv of ['test', 'production']) {
+      const r = rodarReal(ARGS_BACKUP, { BACKUP_EXECUTOR_CONFIG: config, NODE_ENV: nodeEnv });
+      assert.equal(r.status, SAIDAS.BLOQUEADO, `${nodeEnv}: ${r.stdout}\n${r.stderr}`);
+      assert.match(r.stderr, /^LIGACAO_INVALIDA: LIGACAO_(?:SDK_NAO_APROVADO|COLABORADORES_AUSENTES)\n$/);
+      const e = umaLinha(r.stdout);
+      assert.equal(e.estado, 'BLOQUEADO');
+      for (const esperado of ['LIGACAO_OPERACIONAL_AUSENTE', 'DESTINO_DURAVEL_NAO_APROVADO', 'FONTE_DE_CHAVES_NAO_APROVADA']) assert.ok(e.bloqueios.includes(esperado), `${nodeEnv}: ${esperado}`);
+      assert.ok(!r.stdout.includes('SWBTESTE') && !r.stderr.includes('SWBTESTE'), 'credencial sintética vazou');
+    }
+  });
+
+  test('CLI-43 — processo real com configuração válida: --operar e ensaio em PRODUCAO nunca montam (finalidade não autorizada) e mantêm os motivos da política', () => {
+    const { config } = configuracaoSintetica();
+    const op = rodarReal(['--operar', '--acao=backup', '--ambiente=HOMOLOGACAO', '--destino=hml-s3-principal', `--confirmo=${Pol.FRASES.OPERACAO.BACKUP}`], { BACKUP_EXECUTOR_CONFIG: config });
+    assert.equal(op.status, SAIDAS.BLOQUEADO);
+    assert.equal(op.stderr, 'LIGACAO_INVALIDA: LIGACAO_FINALIDADE_NAO_AUTORIZADA\n');
+    assert.ok(umaLinha(op.stdout).bloqueios.includes('OPERACAO_NAO_HABILITADA'));
+    const prod = rodarReal(['--ensaio', '--acao=backup', '--ambiente=PRODUCAO', '--destino=prod-s3-principal', `--confirmo=${Pol.FRASES.ENSAIO.BACKUP}`], { BACKUP_EXECUTOR_CONFIG: config });
+    assert.equal(prod.status, SAIDAS.BLOQUEADO);
+    assert.equal(prod.stderr, 'LIGACAO_INVALIDA: LIGACAO_FINALIDADE_NAO_AUTORIZADA\n');
+    assert.ok(umaLinha(prod.stdout).bloqueios.includes('ENSAIO_EM_PRODUCAO_PROIBIDO'));
+  });
+
+  test('CLI-44 — contrato de montarPortas: undefined = sem ligação; erro vira código fixo no stderr e BLOQUEADO; portas injetadas têm precedência; só códigos LIGACAO_* são impressos', async () => {
+    const semLigacao = await rodarComMontagem(ARGS_BACKUP, { montarPortas: async () => undefined });
+    assert.deepEqual({ codigo: semLigacao.codigo, erro: semLigacao.erro }, { codigo: SAIDAS.BLOQUEADO, erro: '' });
+    assert.ok(umaLinha(semLigacao.saida).bloqueios.includes('LIGACAO_OPERACIONAL_AUSENTE'));
+
+    const quebrada = await rodarComMontagem(ARGS_BACKUP, { montarPortas: async () => { throw new Error('SEGREDO-DA-LIGACAO'); } });
+    assert.deepEqual({ codigo: quebrada.codigo, erro: quebrada.erro }, { codigo: SAIDAS.BLOQUEADO, erro: 'LIGACAO_INVALIDA: ERRO_INESPERADO\n' });
+    assert.equal(umaLinha(quebrada.saida).estado, 'BLOQUEADO');
+    assert.ok(!quebrada.saida.includes('SEGREDO') && !quebrada.erro.includes('SEGREDO'));
+
+    const comCodigo = await rodarComMontagem(ARGS_BACKUP, { montarPortas: async () => { throw Object.assign(new Error('x'), { code: 'LIGACAO_CREDENCIAL_EXPIRADA' }); } });
+    assert.equal(comCodigo.erro, 'LIGACAO_INVALIDA: LIGACAO_CREDENCIAL_EXPIRADA\n');
+    for (const code of ['EACCES', 'lig_minusculo', 'LIGACAO_', 'LIGACAO_COM ESPACO', 42, undefined]) {
+      const r = await rodarComMontagem(ARGS_BACKUP, { montarPortas: async () => { throw Object.assign(new Error('x'), { code }); } });
+      assert.equal(r.erro, 'LIGACAO_INVALIDA: ERRO_INESPERADO\n', String(code));
+    }
+
+    let chamadas = 0;
+    const injetadas = await rodarComMontagem(ARGS_BACKUP, { portas: { compor: async () => ({ executar: async () => ({ linha: 'qualquer texto\n', evidenciaRegistrada: true }) }) }, montarPortas: async () => { chamadas += 1; return undefined; } });
+    assert.equal(chamadas, 0, 'portas injetadas têm precedência: a montagem nem é consultada');
+    assert.equal(injetadas.erro, 'EVIDENCIA_INVALIDA\n');
+  });
+
+  test('CLI-45 — o recibo sai no stderr (escreverRecibo) e o stdout mantém EXATAMENTE uma linha de evidência; o pedido da montagem leva modo, ação e ambiente; --verificar nunca consulta a montagem', async () => {
+    const recebido = [];
+    const linhaFalhou = (() => {
+      const ev = Ev.criarEvidencia({ modo: 'ENSAIO', acao: 'BACKUP', ambiente: 'HOMOLOGACAO', destinoId: 'hml-s3-principal', relogio: () => Date.UTC(2026, 10, 8, 12, 0, 0) });
+      ev.etapa('ENVIO', false, 'ENVIO_FALHOU');
+      return ev.encerrar({ estado: 'FALHOU', codigo: 'ENVIO_FALHOU', falhouEm: 'ENVIO' }).linha;
+    })();
+    const RECIBO = 'RECIBO_CONSOLIDADO {"conjuntoId":"c1","sha256":"x","bytes":"eA=="}\n';
+    const r = await rodarComMontagem(ARGS_BACKUP, {
+      montarPortas: async ({ pedido, escreverRecibo }) => {
+        recebido.push(pedido);
+        assert.equal(typeof escreverRecibo, 'function');
+        return { compor: async () => ({ executar: async () => { escreverRecibo(RECIBO); return { linha: linhaFalhou, evidenciaRegistrada: true }; } }) };
+      },
+    });
+    assert.equal(r.saida, linhaFalhou);
+    assert.equal(r.saida.split('\n').length, 2);
+    assert.equal(r.erro, RECIBO);
+    assert.equal(r.codigo, SAIDAS.FALHA);
+    assert.deepEqual({ modo: recebido[0].modo, acao: recebido[0].acao, ambiente: recebido[0].ambiente }, { modo: 'ENSAIO', acao: 'BACKUP', ambiente: 'HOMOLOGACAO' });
+    let consultas = 0;
+    await rodarComMontagem(['--verificar', '--json'], { montarPortas: async () => { consultas += 1; return undefined; } });
+    assert.equal(consultas, 0, '--verificar nunca consulta a montagem');
+  });
+});

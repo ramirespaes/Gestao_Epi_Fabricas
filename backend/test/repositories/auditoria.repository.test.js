@@ -77,6 +77,17 @@ describe('registrar', () => {
     assert.equal(executor.chamadas.length, 0);
   });
 
+  // Rodada A R2 (PENDENCIA-SEG-TRG04): primeira barreira na aplicação, espelho da função do banco (014 + 097).
+  test('chave JSON sensível em qualquer profundidade (inclusive composta sem separador, como PGPASSWORD) é TypeError ANTES de consultar; o valor nunca aparece na mensagem', async () => {
+    const executor = executorFalso();
+    for (const [campo, valor] of [['contexto', { PGPASSWORD: 'VALOR-SECRETO' }], ['dadosAnteriores', { a: { senhaHash: 'VALOR-SECRETO' } }], ['dadosNovos', { itens: [{ clientsecret: 'VALOR-SECRETO' }] }], ['contexto', { refresh_token: 'VALOR-SECRETO' }]]) {
+      await assert.rejects(() => registrar(executor, { empresaId: EMPRESA, acao: 'X', [campo]: valor }), (e) => e instanceof TypeError && new RegExp(`^${campo} contém chave JSON sensível`).test(e.message) && !e.message.includes('VALOR-SECRETO'), `${campo}: ${JSON.stringify(valor)}`);
+    }
+    assert.equal(executor.chamadas.length, 0);
+    await registrar(executor, { empresaId: EMPRESA, acao: 'X', contexto: { secretaria_id: 3, hashtag: 'x', hash_arquivo: 'y', chave_primaria: 1 } });
+    assert.equal(executor.chamadas.length, 1, 'identificadores legítimos continuam aceitos');
+  });
+
   test('erro do banco propaga sem tradução (inclusive rejeição por chave sensível da migration 014)', async () => {
     const erro = new Error('logs_auditoria: campo JSONB contém chave sensível');
     const executor = { query: async () => { throw erro; } };

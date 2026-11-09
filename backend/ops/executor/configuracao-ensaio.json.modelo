@@ -1,0 +1,24 @@
+{
+  "versao": 2,
+  "finalidade": "ENSAIO_ISOLADO",
+  "ambiente": "HOMOLOGACAO",
+  "regiao": "A_PREENCHER",
+  "papeis": {
+    "PUBLICADOR": "/A_PREENCHER/credenciais/publicador.json",
+    "VERIFICADOR": "/A_PREENCHER/credenciais/verificador.json",
+    "RESTAURACAO": "/A_PREENCHER/credenciais/restauracao.json"
+  },
+  "destinosLocais": {
+    "BACKUP": { "id": "containers-hml", "raiz": "/A_PREENCHER/backup/containers" },
+    "RESTAURACAO": { "id": "restauracao-hml", "raiz": "/A_PREENCHER/backup/restauracoes" }
+  },
+  "protegidos": {
+    "imagens": "/A_PREENCHER/imagens",
+    "fiscalizacao": "/A_PREENCHER/fiscalizacao",
+    "preparacoes": "/A_PREENCHER/backup/preparacoes",
+    "dumps": "/A_PREENCHER/backup/dumps",
+    "publicados": "/A_PREENCHER/backup/publicados"
+  },
+  "limites": { "arquivosMaximo": 100000, "totalBytesMaximo": 2147483648 },
+  "prazoMs": 600000
+}

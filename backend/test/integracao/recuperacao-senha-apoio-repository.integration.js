@@ -139,14 +139,23 @@ describe('auditoria-identidade.repository — PostgreSQL real', () => {
     assert.deepEqual(Object.keys(auditoriaRepo()).sort(), ['registrarDaIdentidade', 'registrarEventoSistema'], 'não existe função que aceite o ator de quem chama');
   });
 
-  test('chave JSON sensível é recusada pelo banco e o erro é propagado; nada é gravado', async () => {
+  test('chave JSON sensível é recusada pela primeira barreira do repositório e pelo gatilho do banco; nada é gravado', async () => {
+    // Rodada A (R2): o repositório recusa antes do INSERT (erro de aplicação, sem código do banco); o gatilho é provado por INSERT direto, que contorna o repositório.
+    // erroDe devolve só { code, constraint, message }: a primeira barreira é reconhecida pela mensagem exata e pela ausência de código do PostgreSQL.
     const antes = (await pool.query(`SELECT count(*)::int AS n FROM ${TABELA}`)).rows[0].n;
-    for (const funcao of ['registrarDaIdentidade', 'registrarEventoSistema']) {
-      for (const contexto of [{ senha: 'x' }, { token: 'x' }, { token_hash: 'x' }, { interno: { senha_hash: 'x' } }]) {
+    for (const contexto of [{ senha: 'x' }, { token: 'x' }, { token_hash: 'x' }, { interno: { senha_hash: 'x' } }]) {
+      for (const funcao of ['registrarDaIdentidade', 'registrarEventoSistema']) {
         const erro = await erroDe(auditoriaRepo()[funcao](pool, { identidadeId: identidade, acao: 'SENHA_REDEFINIDA', contexto }));
-        assert.equal(erro?.code, RECUSA_DO_TRIGGER, `${funcao} ${JSON.stringify(contexto)}`);
-        assert.match(erro.message, /chave sensível/);
+        assert.ok(erro !== null, `${funcao} ${JSON.stringify(contexto)}: deveria recusar`);
+        assert.equal(erro.code, undefined, `${funcao} ${JSON.stringify(contexto)}: a recusa vem da primeira barreira, não do banco`);
+        assert.match(erro.message, /contém chave JSON sensível/, `${funcao} ${JSON.stringify(contexto)}`);
       }
+      const doBanco = await erroDe(pool.query(
+        `INSERT INTO ${TABELA} (identidade_id, ator_tipo, acao, contexto) VALUES ($1, 'SISTEMA', 'SENHA_REDEFINIDA', $2::jsonb)`,
+        [identidade, JSON.stringify(contexto)],
+      ));
+      assert.equal(doBanco?.code, RECUSA_DO_TRIGGER, `gatilho do banco ${JSON.stringify(contexto)}`);
+      assert.match(doBanco.message, /chave sensível/);
     }
     assert.equal((await pool.query(`SELECT count(*)::int AS n FROM ${TABELA}`)).rows[0].n, antes);
   });
