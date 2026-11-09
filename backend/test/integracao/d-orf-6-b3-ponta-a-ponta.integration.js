@@ -192,7 +192,7 @@ describe('[B3-E2E] ponta a ponta pela composição real (banco dedicado em publi
     assert.equal(await mostrar('listen_addresses'), '', 'a instância deve ouvir só em socket Unix');
     assert.ok((await mostrar('unix_socket_directories')).split(',').map((s) => s.trim()).includes(DB_HOST), 'DB_HOST não é o socket da instância');
     assert.equal((await admin.query('SELECT count(*)::int AS n FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = \'public\'')).rows[0].n, 0, 'public do banco de teste não está vazio');
-    assert.deepEqual(await bancosDaInstancia(), [...BANCOS_BASE].sort(), 'a instância tem bancos além dos quatro de base');
+    assert.deepEqual(await bancosDaInstancia(), [...BANCOS_BASE].sort((a, b) => a.localeCompare(b)), 'a instância tem bancos além dos quatro de base');
 
     const instancia = path.dirname(SWB_PGDATA);
     const area = path.join(instancia, `b3e2e-${crypto.randomBytes(6).toString('hex')}`);
@@ -263,7 +263,7 @@ describe('[B3-E2E] ponta a ponta pela composição real (banco dedicado em publi
   });
 
   test('B3-E2E-01 — isolamento: instância exclusiva, quatro bancos de base, origem com as migrations no public, restaurado vazio e nomes controlados', async () => {
-    assert.deepEqual((await bancosDaInstancia()).filter((n) => !BANCOS_BASE.includes(n)).sort(), [ctx.nomeOrigem, ctx.nomeRestaurado].sort());
+    assert.deepEqual((await bancosDaInstancia()).filter((n) => !BANCOS_BASE.includes(n)).sort((a, b) => a.localeCompare(b)), [ctx.nomeOrigem, ctx.nomeRestaurado].sort((a, b) => a.localeCompare(b)));
     assert.equal(await tabelasDe(ctx.nomeRestaurado), 0, 'o banco de restauração deve nascer vazio');
     const n = await noBanco(ctx.nomeOrigem, async (c) => (await c.query('SELECT count(*)::int AS n FROM imagens_padrao')).rows[0].n);
     assert.equal(n, 2);
