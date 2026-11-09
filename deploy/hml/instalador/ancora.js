@@ -269,7 +269,9 @@ function criarAncora(opcoes = {}) {
   }
   // Arquivo temporário exclusivo (um link pré-existente com o nome é removido, nunca seguido), conteúdo e renomeação
   // sincronizados em disco.
-  function escreverAtomico(dir, nome, texto, permissao = 0o644) {
+  // `modoFinal`: o open() sofre o umask do processo; quem precisa de um modo exato (arquivo servido pelo Nginx) o fixa
+  // por descritor antes da renomeação. Sem ele, o comportamento anterior (inclusive o 0600 sob umask 077) é mantido.
+  function escreverAtomico(dir, nome, texto, permissao = 0o644, modoFinal = null) {
     exigirEscrita('gravar arquivo');
     const temporario = `${nomeSimples(nome)}.tmp-${pid}`;
     let fd;
@@ -282,6 +284,7 @@ function criarAncora(opcoes = {}) {
     }
     try {
       gravarTudo(fd, texto);
+      if (modoFinal !== null) f.fchmodSync(fd, modoFinal);
       f.fsyncSync(fd);
     } catch (falha) {
       try { f.closeSync(fd); } catch { /* já tratado */ }
