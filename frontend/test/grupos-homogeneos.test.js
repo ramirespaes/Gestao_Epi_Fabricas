@@ -194,7 +194,7 @@ describe('inspeção estática: pages/employee-groups.html e menus', () => {
   });
 
   test('menus das páginas integradas e início do Portal oferecem a página (oculta até a permissão)', () => {
-    assert.match(html, /<a class="active" href="javascript:void\(0\)" data-pagina="employeeGroups" style="display:none">/);
+    assert.match(html, /<a class="active" role="link" tabindex="0" aria-current="page" data-pagina="employeeGroups" style="display:none">/);
     for (const arquivo of ['pages/materials.html', 'pages/available-items.html', 'pages/employee-history.html', 'pages/import-employees.html']) {
       assert.match(ler(arquivo), /<a href="employee-groups\.html" data-pagina="employeeGroups" style="display:none"><div class="nav-icon purple">group_work<\/div>Gestão de GHE<\/a>/, arquivo);
     }

@@ -136,7 +136,7 @@ describe('tabela: coluna GHE mostra só o código da API', () => {
 describe('nomenclatura visual: Cadastro de Colaboradores', () => {
   const COM_MENU = fs.readdirSync(path.join(RAIZ, 'pages')).filter((f) => f.endsWith('.html') && /data-pagina="userAdmin"/.test(ler(`pages/${f}`))).sort();
   const LINK = '<a href="funcionarios.html" data-pagina="funcionarios" style="display:none"><div class="nav-icon teal">people</div>Cadastro de Colaboradores</a>';
-  const LINK_ATIVO = '<a class="active" href="javascript:void(0)" data-pagina="funcionarios" style="display:none"><div class="nav-icon teal">people</div>Cadastro de Colaboradores</a>';
+  const LINK_ATIVO = '<a class="active" role="link" tabindex="0" aria-current="page" data-pagina="funcionarios" style="display:none"><div class="nav-icon teal">people</div>Cadastro de Colaboradores</a>';
 
   test('menu lateral de todas as páginas integradas (inclusive o menu do celular, que é a mesma barra): o item chama "Cadastro de Colaboradores"', () => {
     assert.equal(COM_MENU.length, 21); // + atendimento-token.html (Etapa H) + company-data.html (F2) + support.html (Suporte) + lgpd.html (LGPD)

@@ -5,8 +5,10 @@
  * lida só dos snapshots congelados da entrega (trabalhador, material, prazo, responsável) e do lote (tamanho e CA,
  * imutáveis). Nada aqui usa o cadastro atual do trabalhador. Nenhuma entrega some quando o trabalhador recebe outro EPI.
  *
- * Validade de uso = dia operacional da entrega + prazo de uso congelado do item. Dias restantes = validade - hoje, com
- * "hoje" no dia operacional de São Paulo (o mesmo fuso da entrega). A faixa "próximo do vencimento" vem como parâmetro.
+ * Validade de uso = dia operacional da entrega + prazo de uso congelado do item. Dias restantes = validade - hoje. No
+ * histórico, "hoje" chega como parâmetro ($8): o dia operacional de São Paulo calculado pelo controller com relógio
+ * injetável, e não o now() do banco, para o resultado não depender do instante da consulta. Os relatórios que reutilizam
+ * DIAS/SELECIONAR continuam com o "hoje" do banco. A faixa "próximo do vencimento" vem como parâmetro.
  *
  * Busca de texto sem diferenciar maiúsculas nem acentos (translate, sem extensão nova) e com correspondência parcial; os
  * curingas do usuário são escapados no serviço. O índice de (empresa, entregue_em DESC, id DESC) da 058 atende a ordem.
@@ -16,7 +18,9 @@ const ACENTUADAS = 'áàâãäéèêëíìîïóòôõöúùûüç';
 const SEM_ACENTO = 'aaaaaeeeeiiiiooooouuuuc';
 const SEM = (coluna) => `translate(lower(${coluna}), '${ACENTUADAS}', '${SEM_ACENTO}')`;
 const HOJE = "(now() AT TIME ZONE 'America/Sao_Paulo')::date";
-const DIAS = `((e.data_operacional + i.material_prazo_uso_dias) - ${HOJE})`;
+const diasAte = (hoje) => `((e.data_operacional + i.material_prazo_uso_dias) - ${hoje})`;
+const DIAS = diasAte(HOJE);
+const DIAS_PARAMETRO = diasAte('$8::date');
 
 const DE = `
   FROM entregas_epi_itens i
@@ -24,7 +28,7 @@ const DE = `
   JOIN fichas_epi f ON f.empresa_id = e.empresa_id AND f.id = e.ficha_id
   JOIN estoque_lotes l ON l.empresa_id = i.empresa_id AND l.id = i.lote_id`;
 
-// $1 empresa, $2 padrão do item/tipo, $3 padrão do funcionário, $4 de, $5 até, $6 status, $7 dias do "próximo".
+// $1 empresa, $2 padrão do item/tipo, $3 padrão do funcionário, $4 de, $5 até, $6 status, $7 dias do "próximo", $8 hoje.
 const FILTRO = `
   WHERE e.empresa_id = $1
     AND ($2::text IS NULL OR ${SEM('i.material_nome')} LIKE $2 ESCAPE '\\' OR ${SEM("coalesce(i.material_tipo, '')")} LIKE $2 ESCAPE '\\')
@@ -32,11 +36,11 @@ const FILTRO = `
     AND ($4::date IS NULL OR e.data_operacional >= $4::date)
     AND ($5::date IS NULL OR e.data_operacional <= $5::date)
     AND ($6::text IS NULL
-      OR ($6 = 'VENCIDO' AND ${DIAS} < 0)
-      OR ($6 = 'PROXIMO' AND ${DIAS} BETWEEN 0 AND $7::int)
-      OR ($6 = 'VALIDO' AND ${DIAS} > $7::int))`;
+      OR ($6 = 'VENCIDO' AND ${DIAS_PARAMETRO} < 0)
+      OR ($6 = 'PROXIMO' AND ${DIAS_PARAMETRO} BETWEEN 0 AND $7::int)
+      OR ($6 = 'VALIDO' AND ${DIAS_PARAMETRO} > $7::int))`;
 
-const SELECIONAR = `
+const selecionar = (dias) => `
   SELECT i.id AS item_id, e.id AS entrega_id, f.id AS ficha_id, f.numero AS ficha_numero,
          e.trabalhador_nome, e.trabalhador_matricula, e.trabalhador_setor, e.origem, e.responsavel_nome,
          i.material_id, i.material_nome, i.material_tipo, i.material_grupo_protecao, l.tamanho, i.quantidade, i.motivo, i.previsto_no_ghe,
@@ -44,7 +48,9 @@ const SELECIONAR = `
          to_char(e.data_operacional, 'YYYY-MM-DD') AS data_entrega, e.entregue_em,
          i.material_prazo_uso_dias,
          to_char(e.data_operacional + i.material_prazo_uso_dias, 'YYYY-MM-DD') AS validade_uso,
-         ${DIAS}::int AS dias_restantes`;
+         ${dias}::int AS dias_restantes`;
+const SELECIONAR = selecionar(DIAS);
+const SELECIONAR_PARAMETRO = selecionar(DIAS_PARAMETRO);
 
 const mapear = (r) => ({
   itemId: r.item_id,
@@ -68,12 +74,12 @@ const mapear = (r) => ({
 });
 
 function parametros(empresaId, f) {
-  return [empresaId, f.padraoItem, f.padraoFuncionario, f.de, f.ate, f.status, f.diasProximo];
+  return [empresaId, f.padraoItem, f.padraoFuncionario, f.de, f.ate, f.status, f.diasProximo, f.hoje];
 }
 
 async function listar(executor, empresaId, filtros, { pagina, limite }) {
   const { rows } = await executor.query(
-    `${SELECIONAR} ${DE} ${FILTRO} ORDER BY e.entregue_em DESC, i.id DESC LIMIT $8 OFFSET $9`,
+    `${SELECIONAR_PARAMETRO} ${DE} ${FILTRO} ORDER BY e.entregue_em DESC, i.id DESC LIMIT $9 OFFSET $10`,
     [...parametros(empresaId, filtros), limite, (pagina - 1) * limite],
   );
   return rows.map(mapear);

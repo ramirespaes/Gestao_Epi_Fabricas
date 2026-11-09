@@ -348,7 +348,7 @@ describe('Relatórios — página (DOM simulado, sessão e permissões reais)', 
   });
 
   test('o menu liga Relatórios por permissão (data-pagina) e a página é publicada com o módulo, em ordem', () => {
-    assert.match(ler(ARQUIVO), /<a class="active" href="javascript:void\(0\)" data-pagina="reports" style="display:none"><div class="nav-icon indigo">analytics<\/div>Relatórios<\/a>/);
+    assert.match(ler(ARQUIVO), /<a class="active" role="link" tabindex="0" aria-current="page" data-pagina="reports" style="display:none"><div class="nav-icon indigo">analytics<\/div>Relatórios<\/a>/);
     assert.match(ler('pages/dashboard.html'), /<a href="reports\.html" data-pagina="reports" style="display:none"><div class="nav-icon indigo">analytics<\/div>Relatórios<\/a>/);
     assert.match(ler('portal/inicio.html'), /<a href="\.\.\/pages\/reports\.html" data-pagina="reports" style="display:none">Relatórios<\/a>/);
     const arquivos = JSON.parse(ler('publicacao/allowlist.json')).arquivos;

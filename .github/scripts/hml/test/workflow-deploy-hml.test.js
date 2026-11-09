@@ -6,18 +6,18 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 /**
- * Invariantes do deploy-hml.yml nesta etapa de preparação, lidas como texto:
- * o workflow só valida e gera artefatos, e é incapaz de publicar na AWS
- * independentemente de segredos. Ele não é executado aqui.
+ * Invariantes dos jobs sem credenciais, preservadas na etapa de publicação.
  */
 
 const REPO = path.resolve(__dirname, '..', '..', '..', '..');
 const CAMINHO = path.join(REPO, '.github', 'workflows', 'deploy-hml.yml');
 const texto = fs.readFileSync(CAMINHO, 'utf8');
-const semComentarios = texto.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+const pins = { '11bd71901bbe5b1630ceea73d27597364c9af683': 'v4', '49933ea5288caeca8642d1e84afbd3f7d6820020': 'v4', 'ea165f8d65b6e75b540449e92b4886f43607fa02': 'v4' };
+const preparacao = texto.split('\n  publicar:\n')[0];
+const semComentarios = preparacao.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n').replace(/@([0-9a-f]{40})[^\n]*/g, (_, sha) => `@${pins[sha] || sha}`);
 const ACOES_PERMITIDAS = new Set(['actions/checkout@v4', 'actions/setup-node@v4', 'actions/upload-artifact@v4']);
 
-describe('deploy-hml.yml — preparação sem capacidade de publicar', () => {
+describe('deploy-hml.yml — validar e empacotar continuam sem capacidade de publicar', () => {
   test('o único gatilho é workflow_dispatch, com commit e confirmação obrigatórios', () => {
     const gatilhos = semComentarios.match(/^on:\n([\s\S]*?)^\S/m)[1];
     assert.deepEqual([...gatilhos.matchAll(/^ {2}(\w+):/gm)].map((m) => m[1]), ['workflow_dispatch']);
@@ -115,7 +115,7 @@ describe('deploy-hml.yml — preparação sem capacidade de publicar', () => {
     assert.match(semComentarios, /node --test test\/publicacao\.test\.js test\/publicacao-painel\.test\.js/);
   });
 
-  test('dois jobs apenas, validar e empacotar: nenhum job de publicação', () => {
+  test('preparação mantém dois jobs; publicação tem contrato de segurança próprio', () => {
     const jobs = semComentarios.match(/^jobs:\n([\s\S]*)$/m)[1];
     assert.deepEqual([...jobs.matchAll(/^ {2}(\w+):/gm)].map((m) => m[1]), ['validar', 'empacotar']);
   });
