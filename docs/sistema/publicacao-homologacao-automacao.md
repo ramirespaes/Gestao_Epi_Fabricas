@@ -202,6 +202,35 @@ reais ficam na configuração privada; os artefatos públicos contêm só o fron
 
 ## Verificação local e limites
 
+### Disparo automático após o CI (preparado, não ativado, sem comprovação em fluxo real)
+
+`deploy-hml.yml` também escuta `workflow_run` do workflow `CI` (`types: [completed]`, `branches: [main]`).
+O job `validar` só começa para CI de `push` na `main`, do repositório oficial, concluído com sucesso;
+PR, falha, cancelamento e outra branch nem iniciam o job. O script `validar-automatico.js` é a
+autoridade e recusa (fail-closed):
+
+- payload do evento e consulta à API da mesma execução do CI divergentes em qualquer campo;
+- CI que não seja `ci.yml` de `push` na `main`, concluído e `success`;
+- `head_sha` do CI diferente da cabeça atual da `main` (commit substituído);
+- outra execução do CD, para o mesmo SHA, em andamento, aguardando aprovação ou já bem-sucedida
+  (identificada pelo título `HML automatico <sha>`; execuções falhas ou canceladas não bloqueiam);
+- nova tentativa da mesma execução do CD (`run_attempt` diferente de 1): usar o disparo manual.
+
+O commit é o `head_sha` do CI. `publicar=true` e a confirmação literal não se aplicam ao fluxo
+automático; o CI verde de `push` e o gate `homologacao` os substituem. O job `publicar` mantém o
+interruptor `HML_PUBLICACAO_HABILITADA`, o environment `homologacao` (aprovação humana), o OIDC, o S3,
+o agente e o rollback. Depois da aprovação e antes de qualquer credencial, `--atualidade` consulta a
+cabeça da `main` e recusa se ela avançou durante a espera. `publicar.js` aceita `workflow_run` apenas na
+tentativa 1, sem `permitir_commit_anterior` e sem release retroativa.
+
+O disparo manual (`workflow_dispatch`) permanece como contingência, com SHA completo,
+`HOMOLOGACAO`, `publicar=true` e `permitir_commit_anterior` inalterados.
+
+Limites: os testes são locais e estáticos. A avaliação dos filtros, do gate e da execução do
+`workflow_run` pelo GitHub só se comprova no fluxo real CI → CD → aprovação → AWS HML. Uma execução
+aguardando aprovação mantém o grupo de concorrência `deploy-hml`: um commit mais novo espera até a
+anterior ser aprovada ou rejeitada, e a anterior, se aprovada tarde, é recusada pela reconferência.
+
 Os novos testes ficam em `.github/scripts/hml/test/publicacao-aprovada.test.js`,
 `s3-isolado.test.js`, `workflow-publicar.test.js` e, na 53A, `processar-ciclo.test.js`;
 o glob existente do CI os incorpora sem mudar `ci.yml`.
