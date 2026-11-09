@@ -725,7 +725,7 @@ function verificarPendencias(ctx, rotulo) {
 }
 
 function escreverVersao(ctx, componente, meta) {
-  ctx.A.escreverAtomico(ctx.raiz, 'versao.json', `${JSON.stringify({ componente, rotulo: meta.rotulo, commit: meta.commit, manifestoSha256: meta.manifestoSha256 }, null, 2)}\n`);
+  ctx.A.escreverAtomico(ctx.raiz, 'versao.json', `${JSON.stringify({ componente, rotulo: meta.rotulo, commit: meta.commit, manifestoSha256: meta.manifestoSha256 }, null, 2)}\n`, 0o644, 0o644);
 }
 
 module.exports = {
