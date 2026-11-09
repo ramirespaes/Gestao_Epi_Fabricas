@@ -1,9 +1,17 @@
-name: Deploy HML (aprovação manual)
+name: Deploy HML (CI verde, aprovação humana)
 
 # O job publicar só pode começar depois do gate do environment homologacao.
-# Os dois interruptores permanecem desligados até a ativação autorizada.
+# Disparo automático: somente após CI concluído com sucesso de um push na main (workflow_run);
+# o commit é o head_sha desse CI e precisa ser a cabeça atual da main. O disparo manual continua
+# disponível como contingência, com todos os controles originais.
+
+run-name: ${{ github.event_name == 'workflow_run' && format('HML automatico {0}', github.event.workflow_run.head_sha) || format('HML manual {0}', inputs.commit) }}
 
 on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       commit:
@@ -40,23 +48,31 @@ env:
 jobs:
   validar:
     name: Validar commit, CI verde e posição na main
+    # Filtro barato; a autoridade é validar-automatico.js. CI de PR, falho, cancelado ou de outra branch nem começa.
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      EVENTO: ${{ github.event_name }}
+      COMMIT: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.commit }}
     outputs:
       rotulo: ${{ steps.decisao.outputs.rotulo }}
       atual: ${{ steps.decisao.outputs.atual }}
       commit: ${{ steps.decisao.outputs.commit }}
     steps:
-      - name: Confirmação literal, formato do SHA e execução a partir da main
+      - name: Confirmação literal (manual), formato do SHA e execução a partir da main
         env:
           CONFIRMACAO: ${{ inputs.confirmacao }}
-          COMMIT: ${{ inputs.commit }}
           REF_DO_WORKFLOW: ${{ github.ref }}
         run: |
           # A validação vive neste YAML: só vale o da própria main.
           [ "$REF_DO_WORKFLOW" = "refs/heads/main" ] || { echo "o workflow só pode ser disparado a partir da main (ref: $REF_DO_WORKFLOW)"; exit 1; }
-          [ "$CONFIRMACAO" = "HOMOLOGACAO" ] || { echo "confirmação ausente ou diferente de HOMOLOGACAO"; exit 1; }
           printf '%s' "$COMMIT" | grep -Eq '^[0-9a-f]{40}$' || { echo "o commit precisa ser o SHA completo, 40 hex minúsculos"; exit 1; }
+          case "$EVENTO" in
+            workflow_dispatch) [ "$CONFIRMACAO" = "HOMOLOGACAO" ] || { echo "confirmação ausente ou diferente de HOMOLOGACAO"; exit 1; } ;;
+            workflow_run) ;;
+            *) echo "evento não previsto: $EVENTO"; exit 1 ;;
+          esac
 
       - name: Checkout da main (história completa, sem credenciais persistidas)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -75,9 +91,17 @@ jobs:
 
       - name: Coletar fatos (cabeça da main, ancestralidade, execuções do CI)
         env:
-          COMMIT: ${{ inputs.commit }}
           PERMITIR_ANTERIOR: ${{ inputs.permitir_commit_anterior }}
           GH_TOKEN: ${{ github.token }}
+          CI_ID: ${{ github.event.workflow_run.id }}
+          CI_NAME: ${{ github.event.workflow_run.name }}
+          CI_PATH: ${{ github.event.workflow_run.path }}
+          CI_EVENT: ${{ github.event.workflow_run.event }}
+          CI_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          CI_SHA: ${{ github.event.workflow_run.head_sha }}
+          CI_STATUS: ${{ github.event.workflow_run.status }}
+          CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          CI_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
         run: |
           CABECA="$(git rev-parse HEAD)"
           if git cat-file -e "${COMMIT}^{commit}" 2>/dev/null && git merge-base --is-ancestor "$COMMIT" HEAD; then ANCESTRAL=true; else ANCESTRAL=false; fi
@@ -95,6 +119,31 @@ jobs:
             };
             fs.writeFileSync(process.argv[4], JSON.stringify(fatos, null, 2));
           ' "$CABECA" "$ANCESTRAL" "$RUNNER_TEMP/execucoes-ci.json" "$RUNNER_TEMP/fatos.json"
+          if [ "$EVENTO" = "workflow_run" ]; then
+            printf '%s' "$CI_ID" | grep -Eq '^[0-9]{1,20}$' || { echo "id da execução do CI inválido"; exit 1; }
+            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${CI_ID}" \
+              --jq '{id, name, path, event, head_branch, head_sha, status, conclusion, head_repository: .head_repository.full_name}' > "$RUNNER_TEMP/ci-api.json"
+            gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-hml.yml/runs?per_page=100" \
+              --jq '[.workflow_runs[] | {id, display_title, status, conclusion}]' > "$RUNNER_TEMP/execucoes-cd.json"
+            node -e '
+              const fs = require("node:fs");
+              const e = process.env;
+              const numero = (v) => (/^[0-9]{1,20}$/.test(v || "") ? Number(v) : null);
+              const fatos = {
+                repositorio: e.GITHUB_REPOSITORY,
+                evento: { id: numero(e.CI_ID), name: e.CI_NAME, path: e.CI_PATH, event: e.CI_EVENT, head_branch: e.CI_BRANCH, head_sha: e.CI_SHA, status: e.CI_STATUS, conclusion: e.CI_CONCLUSION, head_repository: e.CI_REPO },
+                api: JSON.parse(fs.readFileSync(process.argv[1], "utf8")),
+                cabecaMain: process.argv[2],
+                execucaoAtual: { id: numero(e.GITHUB_RUN_ID), tentativa: numero(e.GITHUB_RUN_ATTEMPT) },
+                execucoesDeploy: JSON.parse(fs.readFileSync(process.argv[3], "utf8")),
+              };
+              fs.writeFileSync(process.argv[4], JSON.stringify(fatos, null, 2));
+            ' "$RUNNER_TEMP/ci-api.json" "$CABECA" "$RUNNER_TEMP/execucoes-cd.json" "$RUNNER_TEMP/fatos-automaticos.json"
+          fi
+
+      - name: Validar o disparo automático (CI de push na main, payload e API coerentes, sem duplicidade)
+        if: ${{ github.event_name == 'workflow_run' }}
+        run: node .github/scripts/hml/validar-automatico.js --fatos "$RUNNER_TEMP/fatos-automaticos.json"
 
       - name: Decidir (fail-closed)
         id: decisao
@@ -178,7 +227,7 @@ jobs:
   publicar:
     name: Publicar frontend aprovado e aguardar verificações
     needs: [validar, empacotar]
-    if: ${{ inputs.publicar == true && vars.HML_PUBLICACAO_HABILITADA == 'true' && github.repository == 'ramirespaes/Gestao_Epi_Fabricas' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' }}
+    if: ${{ vars.HML_PUBLICACAO_HABILITADA == 'true' && github.repository == 'ramirespaes/Gestao_Epi_Fabricas' && github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.publicar == true) || (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_sha == needs.validar.outputs.commit)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: homologacao
@@ -197,6 +246,16 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
+
+      - name: Reconferir a cabeça da main depois da aprovação, antes de qualquer credencial
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HML_COMMIT: ${{ needs.validar.outputs.commit }}
+          HML_EXIGIR_ATUAL: ${{ needs.validar.outputs.atual }}
+        run: |
+          HML_CABECA_ATUAL="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq .object.sha)"
+          export HML_CABECA_ATUAL
+          node .github/scripts/hml/validar-automatico.js --atualidade
 
       - name: Baixar somente o artefato produzido nesta execução
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0

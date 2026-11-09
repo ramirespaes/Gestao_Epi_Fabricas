@@ -18,10 +18,14 @@ const semComentarios = preparacao.split('\n').filter((l) => !/^\s*#/.test(l)).jo
 const ACOES_PERMITIDAS = new Set(['actions/checkout@v4', 'actions/setup-node@v4', 'actions/upload-artifact@v4']);
 
 describe('deploy-hml.yml — validar e empacotar continuam sem capacidade de publicar', () => {
-  test('o único gatilho é workflow_dispatch, com commit e confirmação obrigatórios', () => {
+  test('gatilhos: somente workflow_run do CI (main, concluído) e o workflow_dispatch manual, com commit e confirmação obrigatórios', () => {
     const gatilhos = semComentarios.match(/^on:\n([\s\S]*?)^\S/m)[1];
-    assert.deepEqual([...gatilhos.matchAll(/^ {2}(\w+):/gm)].map((m) => m[1]), ['workflow_dispatch']);
-    for (const proibido of ['push', 'pull_request', 'pull_request_target', 'schedule', 'workflow_run', 'repository_dispatch', 'release', 'workflow_call']) assert.doesNotMatch(gatilhos, new RegExp(`^ {2}${proibido}:`, 'm'), proibido);
+    assert.deepEqual([...gatilhos.matchAll(/^ {2}(\w+):/gm)].map((m) => m[1]), ['workflow_run', 'workflow_dispatch']);
+    for (const proibido of ['push', 'pull_request', 'pull_request_target', 'schedule', 'repository_dispatch', 'release', 'workflow_call']) assert.doesNotMatch(gatilhos, new RegExp(`^ {2}${proibido}:`, 'm'), proibido);
+    const run = gatilhos.match(/^ {2}workflow_run:\n((?: {4}.*\n)+)/m)[1];
+    assert.match(run, /workflows: \["CI"\]/);
+    assert.match(run, /types: \[completed\]/);
+    assert.match(run, /branches: \[main\]/);
     assert.match(semComentarios, /commit:\n\s+description:[^\n]*\n\s+required: true\n\s+type: string/);
     assert.match(semComentarios, /confirmacao:\n\s+description:[^\n]*\n\s+required: true/);
     assert.match(semComentarios, /permitir_commit_anterior:[\s\S]*?default: false/);
