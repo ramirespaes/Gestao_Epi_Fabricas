@@ -147,7 +147,7 @@ function criarExecutorOperacional(opcoes) {
         try {
           const t = await coordenacao.adquirir({ operacao: acao });
           if (ehObjeto(t) && t.ok === true && typeof t.liberar === 'function') trava = t;
-          else travaRecusada = ehObjeto(t) && t.motivo === 'EM_USO' ? ['RECUSADO', 'COORDENACAO_EM_USO'] : ehObjeto(t) && t.motivo === 'MIGRACAO_EM_CURSO' ? ['RECUSADO', 'MIGRACAO_EM_CURSO'] : ['FALHOU', 'COORDENACAO_INDISPONIVEL'];
+          else travaRecusada = ehObjeto(t) && t.motivo === 'EM_USO' ? ['RECUSADO', 'COORDENACAO_EM_USO'] : ehObjeto(t) && t.motivo === 'MIGRACAO_EM_CURSO' ? ['RECUSADO', 'MIGRACAO_EM_CURSO'] : ehObjeto(t) && t.motivo === 'PRIVILEGIOS_B1_PENDENTES' ? ['RECUSADO', 'PRIVILEGIOS_B1_PENDENTES'] : ehObjeto(t) && t.motivo === 'PRIVILEGIOS_B1_NAO_VERIFICADOS' ? ['FALHOU', 'PRIVILEGIOS_B1_NAO_VERIFICADOS'] : ['FALHOU', 'COORDENACAO_INDISPONIVEL'];
         } catch { travaRecusada = ['FALHOU', 'COORDENACAO_INDISPONIVEL']; }
       }
       if (travaRecusada !== null) {

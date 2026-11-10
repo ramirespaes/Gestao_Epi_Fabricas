@@ -14,6 +14,7 @@ const { ehResultadoDoLeitor } = require('../../src/services/backup-fontes-manife
 const { prepararAmbiente, chavesOffline } = require('../helpers/ambiente-executor');
 const { limparRaizes } = require('../helpers/pacote-l2-sintetico');
 const { criarSdkFalso } = require('../helpers/sdk-aws-falso');
+const B1 = require('../../src/services/backup-privilegios-b1.service');
 
 /**
  * D-ORF-6, L2 (Bloco C) [CMP]: compositor local do executor. Ligação (forma do Bloco A; e a REAL sobre o SDK falso), leitor de pacote REAL, executor operacional real sobre S3 e chaves
@@ -163,7 +164,8 @@ describe('[CMP] backup (ensaio) com o leitor real — contrato L7 ponta a ponta'
   });
 
   test('CMP-05 — coordenação: EM_USO vira RECUSADO sem produzir; MIGRACAO_EM_CURSO idem; coordenação que lança vira FALHOU/COORDENACAO_INDISPONIVEL; em todos a evidência e a auditoria existem', async () => {
-    const casos = [[{ ok: false }, 'RECUSADO', 'COORDENACAO_EM_USO'], [{ ok: false, motivo: 'MIGRACAO_EM_CURSO' }, 'RECUSADO', 'MIGRACAO_EM_CURSO'], [{ lanca: true }, 'FALHOU', 'COORDENACAO_INDISPONIVEL']];
+    const casos = [[{ ok: false }, 'RECUSADO', 'COORDENACAO_EM_USO'], [{ ok: false, motivo: 'MIGRACAO_EM_CURSO' }, 'RECUSADO', 'MIGRACAO_EM_CURSO'], [{ lanca: true }, 'FALHOU', 'COORDENACAO_INDISPONIVEL'],
+      [{ ok: false, motivo: 'PRIVILEGIOS_B1_PENDENTES' }, 'RECUSADO', 'PRIVILEGIOS_B1_PENDENTES'], [{ ok: false, motivo: 'PRIVILEGIOS_B1_NAO_VERIFICADOS' }, 'FALHOU', 'PRIVILEGIOS_B1_NAO_VERIFICADOS']];
     for (const [cfg, estado, cod] of casos) {
       const x = await prepararAmbiente({ conjuntoId: 'conjunto-cmp5' });
       const { lig, recebidas } = ligacaoDeTeste('BACKUP', 'ENSAIO', x);
@@ -309,5 +311,119 @@ describe('[CMP] ligação REAL e coordenação REAL (adaptadores)', () => {
     assert.doesNotMatch(cli, /backup-executor-compositor|backup-executor-leitor-pacote|backup-executor-ligacao(?!-cli\.service(?:\.js)?['"])/);
     assert.match(cli, /LIGACAO_OPERACIONAL_AUSENTE/);
     assert.equal(Pol.OPERACAO_HABILITADA, false);
+  });
+});
+
+describe('[CMP-B1] recusa por privilégios B-1 pendentes: wrapper + coordenação REAL (advisory locks) + compositor real', () => {
+  const PAPEL_B1 = 'safework_backup_executor';
+  /** Sessão falsa do papel: responde às consultas do verificador B-1 e aos advisory locks; guarda todo SQL recebido. */
+  function sessaoDoPapel({ pendentes = [], lancaNasPendencias = false, tomado = true } = {}) {
+    const sqls = [];
+    return {
+      sqls,
+      async query(sql) {
+        sqls.push(sql);
+        switch (sql) {
+          case B1.CONSULTAS.IDENTIDADE: return { rows: [{ usuario: PAPEL_B1, sessao: PAPEL_B1, banco: 'banco_sintetico' }] };
+          case B1.CONSULTAS.PAPEL: return { rows: [{ limite: 5 }] };
+          case B1.CONSULTAS.TOTAL: return { rows: [{ n: 75 }] };
+          case B1.CONSULTAS.PENDENTES: if (lancaNasPendencias) throw new Error('BANCO-INDISPONIVEL'); return { rows: pendentes.map((nome) => ({ nome, tipo: 'r', total: pendentes.length })) };
+          case B1.CONSULTAS.ESQUEMAS: return { rows: [] };
+          case B1.CONSULTAS.ACESSO: return { rows: [{ usage_public: true, connect: true }] };
+          default: return /pg_try_advisory_lock/.test(sql) ? { rows: [{ tomado }] } : { rows: [{ liberado: true }] };
+        }
+      },
+    };
+  }
+  function coordenacaoB1(sessao) {
+    const eventos = [];
+    const auditoria = B1.criarRegistradorDeAuditoria({ executorDeAuditoria: { query: async () => ({ rows: [] }) }, registrarEventoSistema: async (_ex, dados) => { eventos.push(dados); return { id: eventos.length }; }, gerarId: () => 'b'.repeat(32) });
+    const coordenacao = B1.criarPreVerificacaoDaCoordenacao({
+      coordenacao: Cmp.criarCoordenacaoDoExecutor({ executorDeBanco: sessao }),
+      verificador: B1.criarVerificadorDePrivilegios({ executorDeBanco: sessao, papel: PAPEL_B1 }),
+      auditoria,
+    });
+    return { coordenacao, eventos };
+  }
+  const advisory = (sessao) => sessao.sqls.filter((s) => /advisory/.test(s));
+  const arquivosDe = (raiz) => fs.readdirSync(raiz, { recursive: true }).sort((a, b) => a.localeCompare(b));
+  async function backupComB1(conjuntoId, sessao, extra = {}) {
+    const x = await prepararAmbiente({ conjuntoId });
+    const { lig, recebidas } = ligacaoDeTeste('BACKUP', 'ENSAIO', x);
+    const producao = producaoComLeitorReal(x);
+    const b1 = coordenacaoB1(sessao);
+    const antes = arquivosDe(x.raiz);
+    const c = opcoes(x, { lig, producao, coordenacao: b1.coordenacao, trabalho: { conjuntoId, nomeContainer: 'container-1' }, ...extra });
+    const r = await Cmp.criarCompositor(c.o).compor(pedido(x, 'BACKUP', 'ENSAIO')).executar();
+    return { x, recebidas, producao, b1, c, r, antes, depois: arquivosDe(x.raiz) };
+  }
+
+  test('CMP-13 — privilégios B-1 pendentes: RECUSADO/PRIVILEGIOS_B1_PENDENTES na etapa COORDENACAO, ANTES de qualquer trava advisory; produção zero (logo pg_dump zero), nenhum pacote novo, S3 zero; recusa distinta de indisponibilidade; evidência válida e auditoria dos dois lados', async () => {
+    const sessao = sessaoDoPapel({ pendentes: ['tabela_nova'] });
+    const { x, recebidas, producao, b1, c, r, antes, depois } = await backupComB1('conjunto-cmp13', sessao);
+    assert.deepEqual({ estado: r.estado, codigo: r.evidencia.codigo, falhouEm: r.evidencia.falhouEm }, { estado: 'RECUSADO', codigo: 'PRIVILEGIOS_B1_PENDENTES', falhouEm: 'COORDENACAO' });
+    assert.notEqual(r.evidencia.codigo, 'COORDENACAO_INDISPONIVEL');
+    assert.deepEqual(advisory(sessao), [], 'nenhuma trava advisory foi tomada (nem liberada)');
+    assert.ok(sessao.sqls.every((s) => /^SELECT\b/.test(s)), 'a sessão só recebeu leituras');
+    assert.equal(producao.chamadas.length, 0, 'produção zero: pg_dump só é lançado pela produção');
+    assert.deepEqual(depois, antes, 'nenhum arquivo novo (nenhum pacote) onde a produção publicaria');
+    assert.equal(x.a.s3.chamadas.length, 0);
+    assert.deepEqual(r.evidencia.etapas.map((e) => [e.id, e.ok, e.codigo]), [['COORDENACAO', false, 'PRIVILEGIOS_B1_PENDENTES']]);
+    assert.deepEqual(lida(r.linha), r.evidencia);
+    assert.doesNotMatch(r.linha, /tabela_nova|safework_backup_executor/, 'a evidência não leva nomes de objetos nem de papel');
+    // auditoria: um evento do executor (RECUSADO) e um do wrapper (detalhe), ambos gravados
+    assert.deepEqual([c.linhas.length, recebidas.length, r.auditoria.gravado], [1, 1, true]);
+    assert.equal(b1.eventos.length, 1);
+    assert.equal(b1.eventos[0].acao, B1.ACOES.VERIFICACAO_BLOQUEADA);
+    assert.deepEqual(b1.eventos[0].contexto.pendentes, ['tabela_nova']);
+  });
+
+  test('CMP-14 — verificação B-1 que não pôde ser feita (consulta falha): FALHOU/PRIVILEGIOS_B1_NAO_VERIFICADOS, também antes de qualquer trava, sem produção', async () => {
+    const sessao = sessaoDoPapel({ lancaNasPendencias: true });
+    const { producao, b1, r, antes, depois } = await backupComB1('conjunto-cmp14', sessao);
+    assert.deepEqual({ estado: r.estado, codigo: r.evidencia.codigo, falhouEm: r.evidencia.falhouEm }, { estado: 'FALHOU', codigo: 'PRIVILEGIOS_B1_NAO_VERIFICADOS', falhouEm: 'COORDENACAO' });
+    assert.deepEqual(advisory(sessao), []);
+    assert.equal(producao.chamadas.length, 0);
+    assert.deepEqual(depois, antes);
+    assert.equal(b1.eventos[0].acao, B1.ACOES.VERIFICACAO_BLOQUEADA);
+    assert.deepEqual(b1.eventos[0].contexto.motivos, ['VERIFICACAO_FALHOU']);
+  });
+
+  test('CMP-15 — POSITIVO: sem pendência o ciclo completo segue como hoje; a verificação precede a primeira trava e a trava é liberada', async () => {
+    const sessao = sessaoDoPapel({ pendentes: [] });
+    const { producao, b1, r } = await backupComB1('conjunto-cmp15', sessao);
+    assert.equal(r.ok, true, JSON.stringify(r.diagnostico));
+    assert.equal(r.evidencia.estado, 'CONCLUIDO');
+    assert.equal(producao.chamadas.length, 1);
+    const primeiraTrava = sessao.sqls.findIndex((s) => /pg_try_advisory_lock/.test(s));
+    assert.ok(primeiraTrava > sessao.sqls.lastIndexOf(B1.CONSULTAS.ACESSO), 'toda a verificação vem antes da primeira trava');
+    assert.ok(sessao.sqls.some((s) => /pg_advisory_unlock/.test(s)), 'a trava foi liberada');
+    assert.equal(b1.eventos[0].acao, B1.ACOES.VERIFICACAO_OK);
+  });
+
+  test('CMP-16 — EM_USO e MIGRACAO_EM_CURSO continuam RECUSADO com os códigos de sempre quando a coordenação real os devolve por baixo do wrapper (a verificação B-1 passou)', async () => {
+    const sessao = sessaoDoPapel({ pendentes: [], tomado: false });
+    const { producao, r } = await backupComB1('conjunto-cmp16', sessao);
+    assert.equal(r.estado, 'RECUSADO');
+    assert.ok(['COORDENACAO_EM_USO', 'MIGRACAO_EM_CURSO'].includes(r.evidencia.codigo), r.evidencia.codigo);
+    assert.equal(producao.chamadas.length, 0);
+    assert.ok(sessao.sqls.includes(B1.CONSULTAS.PENDENTES), 'a verificação B-1 rodou antes');
+  });
+
+  test('CMP-17 — RESTAURACAO fica intacta: o wrapper não verifica (nenhuma consulta de privilégio), a trava de restauração é tomada e o restaurador roda mesmo com objeto sem concessão', async () => {
+    const { x, r: backup } = await cicloDeBackup('conjunto-cmp17');
+    const { lig } = ligacaoDeTeste('RESTAURACAO', 'ENSAIO', x);
+    const sessao = sessaoDoPapel({ pendentes: ['tabela_nova'] });
+    const b1 = coordenacaoB1(sessao);
+    const relogio = relogioDe();
+    const restaurador = restauradorFalso(relogio);
+    const c = opcoes(x, { acao: 'RESTAURACAO', lig, restaurador, relogio, coordenacao: b1.coordenacao, trabalho: { consolidado: backup.consolidado, nomeContainer: 'baixado-b1', nomeDecifrado: 'restaurado-b1', alvos: ALVOS, ultimoBackupEm: new Date(INICIO - 30 * 60000).toISOString() } });
+    const r = await Cmp.criarCompositor(c.o).compor(pedido(x, 'RESTAURACAO', 'ENSAIO')).executar();
+    assert.equal(r.ok, true, JSON.stringify(r.diagnostico));
+    assert.equal(r.evidencia.estado, 'CONCLUIDO');
+    assert.equal(restaurador.chamadas.length, 1);
+    assert.ok(advisory(sessao).length >= 2, 'a trava de RESTAURACAO foi tomada e liberada');
+    assert.ok(!sessao.sqls.some((s) => Object.values(B1.CONSULTAS).includes(s)), 'nenhuma consulta do verificador B-1 na restauração');
+    assert.equal(b1.eventos.length, 0);
   });
 });

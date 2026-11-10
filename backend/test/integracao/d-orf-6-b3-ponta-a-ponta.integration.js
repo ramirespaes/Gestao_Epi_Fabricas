@@ -9,6 +9,7 @@ const path = require('node:path');
 const { Client } = require('pg');
 
 const { configuracaoDoBancoDeTeste, confirmarBancoDeTeste, BANCO_DE_TESTE } = require('./helpers/banco-de-teste');
+const { localizarBinarios, semearImagensSinteticas } = require('./helpers/backup-ensaio-fixtures');
 const { listarMigrations } = require('../../src/db/checksums');
 const { criarBackupDeProducao, criarRestauracaoDeProducao, classificarEstadoDoBackup } = require('../../src/services/imagem-backup-composicao-producao.service');
 const { criarFonteDeChaves } = require('../../src/services/imagem-backup-manifesto-autenticado.service');
@@ -109,16 +110,6 @@ const pedidoDeRestauracao = (c, extras = {}) => ({
   raizAutorizada: c.dirs.publicados, nome: c.nomeDoPacote, imagens: { raiz: c.dirs.restauradoImagens, nome: `img-${crypto.randomBytes(4).toString('hex')}` },
   destino: { banco: c.nomeRestaurado, host: c.host, porta: c.porta, usuario: c.usuario, arquivoDeSenha: c.arquivoDeSenha }, layoutMinimo: 2, maxBytesPorArquivo: MIB, ...extras,
 });
-
-function localizarBinarios(env) {
-  const dir = env.BACKUP_PG_BINARIOS;
-  assert.ok(typeof dir === 'string' && path.isAbsolute(dir) && fs.realpathSync(dir) === dir, 'BACKUP_PG_BINARIOS ausente ou não canônico');
-  const binarios = { dump: path.join(dir, 'pg_dump'), restore: path.join(dir, 'pg_restore') };
-  for (const b of Object.values(binarios)) fs.accessSync(b, fs.constants.X_OK);
-  const versao = cp.execFileSync(binarios.dump, ['--version'], { env: {}, timeout: 10000, encoding: 'utf8' });
-  assert.match(versao, /^pg_dump \(PostgreSQL\) 16\./);
-  return binarios;
-}
 
 const CODIGO_DO_FILHO = `
 const { Client } = require('pg');
@@ -229,17 +220,7 @@ describe('[B3-E2E] ponta a ponta pela composição real (banco dedicado em publi
 
     // seed sintético: duas imagens padrão com arquivos reais na origem
     const origem = criarArmazenamentoImagens({ diretorio: dirs.imagens });
-    await noBanco(nomeOrigem, async (c) => {
-      for (const n of [1, 2]) {
-        const mestre = Buffer.from(`png-ficticio-${n}-${nomeOrigem}`);
-        const mini = Buffer.from(`webp-mini-${n}-${nomeOrigem}`);
-        const h = sha(mestre);
-        await origem.gravar(`padrao/${h}/mestre.png`, mestre, { maxBytes: 1024 });
-        await origem.gravar(`padrao/${h}/miniatura.webp`, mini, { maxBytes: 1024 });
-        await c.query('INSERT INTO imagens_padrao (nome, arquivo_origem, sha256, sha256_miniatura, formato, largura, altura, bytes_mestre, bytes_miniatura) VALUES ($1, $2, $3, $4, $5, 256, 256, $6, $7)', [`Imagem ${n}`, `imagem-${n}.png`, h, sha(mini), 'PNG', mestre.length, mini.length]);
-        imagens.push({ h, mestre, mini });
-      }
-    });
+    await noBanco(nomeOrigem, async (c) => { imagens.push(...await semearImagensSinteticas({ armazenamento: origem, cliente: c, nomeOrigem })); });
   }, { timeout: 420000 });
 
   after(async () => {
