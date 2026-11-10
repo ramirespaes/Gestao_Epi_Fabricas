@@ -2,7 +2,11 @@
 
 const { describe, test } = require('node:test');
 const assert = require('node:assert/strict');
+const cp = require('node:child_process');
+const fs = require('node:fs');
+const path = require('node:path');
 
+const { criarRaizTemporaria, removerTemporarioSeguro } = require('../storage/helpers/tmp-seguro');
 const { executar, SAIDAS, CONFIRMACAO } = require('../../scripts/backup-privilegios-b1');
 const S = require('../../src/services/backup-privilegios-b1.service');
 const { criarCoordenacaoDoExecutor } = require('../../src/services/backup-executor-compositor.service');
@@ -181,5 +185,41 @@ describe('[PRIV-B1-INTEGRACAO] pré-verificação + a coordenação REAL do exec
     assert.ok(ultimaVerificacao >= 0 && primeiraTrava > ultimaVerificacao, 'verificação antes da primeira trava');
     await r.liberar();
     assert.ok(sessao.chamadas.some((s) => /pg_advisory_unlock/.test(s)));
+  });
+});
+
+describe('[PRIV-B1-ENTRADA] ponto de entrada: a rejeição da Promise de `executar` tem tratamento terminal (javascript:S9383)', () => {
+  const BACKEND = path.join(__dirname, '..', '..');
+  const SCRIPT = path.join(BACKEND, 'scripts', 'backup-privilegios-b1.js');
+  const MARCA = 'FALHA-SINTETICA-DE-SAIDA-NAO-DEVE-VAZAR';
+  /** Processo filho isolado, sem banco: o ambiente é incompleto de propósito, então `executar` só emite uma linha e retorna 2 sem abrir conexão. */
+  const rodarEntrada = (preload) => cp.spawnSync(process.execPath, [...(preload === null ? [] : ['--require', preload]), SCRIPT, '--verificar'], {
+    cwd: BACKEND, env: { PATH: process.env.PATH }, encoding: 'utf8', timeout: 30000,
+  });
+
+  test('NEGATIVO: saída que lança erro sintético (rejeição de `executar`) termina com exit 1, sem exceção não tratada e sem expor o erro', () => {
+    const raiz = criarRaizTemporaria();
+    try {
+      const preload = path.join(raiz, 'saida-quebrada.js');
+      fs.writeFileSync(preload, `process.stdout.write = () => { throw new Error('${MARCA}'); };\n`, { mode: 0o600 });
+      const r = rodarEntrada(preload);
+      assert.equal(r.status, SAIDAS.ERRO, `stderr: ${r.stderr.slice(0, 300)}`);
+      assert.equal(r.stderr, '', 'nenhum detalhe da exceção no stderr (sem rejeição não tratada)');
+      assert.doesNotMatch(`${r.stdout}${r.stderr}`, new RegExp(MARCA));
+    } finally { removerTemporarioSeguro(raiz); }
+  });
+
+  test('POSITIVO: o caminho resolvido mantém o código retornado por `executar` (ambiente incompleto = 2) e imprime uma linha JSON sem erro', () => {
+    const r = rodarEntrada(null);
+    assert.equal(r.status, SAIDAS.ARGUMENTOS);
+    assert.equal(r.stderr, '');
+    assert.deepEqual(JSON.parse(r.stdout.trim()), { ok: false, motivo: 'AMBIENTE_INCOMPLETO' });
+  });
+
+  test('FORMA: a cadeia do ponto de entrada termina em `.catch` que só fixa SAIDAS.ERRO (sem `void`, sem imprimir o erro, sem repetir a saída)', () => {
+    const fonte = fs.readFileSync(SCRIPT, 'utf8');
+    const entrada = fonte.slice(fonte.indexOf('if (require.main === module)'));
+    assert.match(entrada, /executar\(process\.argv\.slice\(2\), process\.env\)\s*\.then\(\(codigo\) => \{ process\.exitCode = codigo; \}\)\s*\.catch\(\(\) => \{ process\.exitCode = SAIDAS\.ERRO; \}\);/);
+    assert.doesNotMatch(entrada, /\bvoid\b|console\.|stdout|stderr|emitir/);
   });
 });

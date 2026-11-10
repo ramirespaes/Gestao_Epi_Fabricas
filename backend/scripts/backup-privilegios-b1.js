@@ -93,5 +93,8 @@ async function executar(argv, env, portas = {}) {
 module.exports = { executar, SAIDAS, CONFIRMACAO };
 
 if (require.main === module) {
-  executar(process.argv.slice(2), process.env).then((codigo) => { process.exitCode = codigo; });
+  // Rejeição residual de `executar` (por exemplo, falha ao escrever a saída): terminal, sem detalhe da exceção e sem repetir a saída.
+  executar(process.argv.slice(2), process.env)
+    .then((codigo) => { process.exitCode = codigo; })
+    .catch(() => { process.exitCode = SAIDAS.ERRO; });
 }
