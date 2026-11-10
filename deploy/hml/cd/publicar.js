@@ -17,13 +17,27 @@ async function publicar({ dir, commit, rotulo, releaseSha256, id, permitirAnteri
   }
   throw Object.assign(new Error('SEM_RECIBO_CONCLUSIVO'), { codigo: 'SEM_RECIBO_CONCLUSIVO' });
 }
+// Manual: exige publicar=true, confirmação literal e decisão explícita sobre commit anterior.
+// Automático (workflow_run do CI verde na main): a validação do workflow já provou CI, SHA e posição na
+// main; aqui só se aceita tentativa 1 e nunca release retroativa.
+function decidirContexto(e) {
+  const base = e.GITHUB_REPOSITORY === P.REPO && e.GITHUB_REF === 'refs/heads/main' && e.HML_HABILITADA === 'true';
+  if (base && e.GITHUB_EVENT_NAME === 'workflow_dispatch' && e.HML_PUBLICAR === 'true' && e.HML_CONFIRMACAO === 'HOMOLOGACAO'
+    && (e.HML_PERMITIR_ANTERIOR === 'true' || e.HML_PERMITIR_ANTERIOR === 'false')) {
+    return { modo: 'manual', permitirAnterior: e.HML_PERMITIR_ANTERIOR === 'true' };
+  }
+  if (base && e.GITHUB_EVENT_NAME === 'workflow_run' && e.GITHUB_RUN_ATTEMPT === '1' && !String(e.HML_ROTULO).endsWith('-retroativo')
+    && !e.HML_PERMITIR_ANTERIOR) {
+    return { modo: 'automatico', permitirAnterior: false };
+  }
+  return P.exigir(false, 'CONTEXTO_BLOQUEADO');
+}
 async function principal() {
   const e = process.env;
-  P.exigir(e.GITHUB_REPOSITORY === P.REPO && e.GITHUB_REF === 'refs/heads/main' && e.GITHUB_EVENT_NAME === 'workflow_dispatch' && e.HML_PUBLICAR === 'true' && e.HML_HABILITADA === 'true' && e.HML_CONFIRMACAO === 'HOMOLOGACAO', 'CONTEXTO_BLOQUEADO');
-  P.exigir(e.HML_PERMITIR_ANTERIOR === 'true' || e.HML_PERMITIR_ANTERIOR === 'false', 'CONTEXTO_BLOQUEADO');
+  const { permitirAnterior } = decidirContexto(e);
   const s3 = criarS3({ bucket: e.HML_BUCKET, conta: e.HML_CONTA, regiao: e.HML_REGIAO });
-  const recibo = await publicar({ dir: e.HML_RELEASE_DIR, commit: e.HML_COMMIT, rotulo: e.HML_ROTULO, releaseSha256: e.HML_RELEASE_SHA256, id: `${e.GITHUB_RUN_ID}-${e.GITHUB_RUN_ATTEMPT}`, permitirAnterior: e.HML_PERMITIR_ANTERIOR === 'true', s3 });
+  const recibo = await publicar({ dir: e.HML_RELEASE_DIR, commit: e.HML_COMMIT, rotulo: e.HML_ROTULO, releaseSha256: e.HML_RELEASE_SHA256, id: `${e.GITHUB_RUN_ID}-${e.GITHUB_RUN_ATTEMPT}`, permitirAnterior, s3 });
   if (e.GITHUB_STEP_SUMMARY) fs.appendFileSync(e.GITHUB_STEP_SUMMARY, `\nPublicação confirmada pelo agente: ${recibo.commit}. Integridade e HTTP aprovados nos dois componentes.\n`);
 }
 if (require.main === module) principal().catch(e => { console.error(`Publicação recusada: ${e.codigo || 'ERRO'}`); process.exitCode = 1; });
-module.exports = { publicar };
+module.exports = { publicar, decidirContexto };

@@ -37,7 +37,9 @@ foram testados só em ambiente local; nenhum foi instalado ou aplicado em servid
 
 ## Regras do disparo manual
 
-Gatilho único `workflow_dispatch`, com `commit` (SHA completo), `confirmacao`
+O disparo automático após o CI verde (`workflow_run`) está descrito em
+[publicacao-homologacao-automacao.md](publicacao-homologacao-automacao.md); estas regras valem para o
+disparo manual de contingência: `workflow_dispatch`, com `commit` (SHA completo), `confirmacao`
 (literal `HOMOLOGACAO`), `permitir_commit_anterior` e `publicar` (ambos com padrão falso). O job
 `validar` recusa, nesta ordem:
 
