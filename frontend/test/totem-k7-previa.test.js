@@ -8,6 +8,8 @@ const crypto = require('node:crypto');
 
 const { abrirPagina, RAIZ, semComentarios } = require('./helpers/dom-pagina');
 const { injetarShim } = require('./helpers/totem-i');
+const { STUB_LEITOR } = require('./helpers/totem-leitor');
+const DATA_URL_WEBP = /^data:image\/webp;base64,[A-Za-z0-9+/]+=*$/;
 
 /**
  * K7 — Prévia visual do Totem (modalidade 1). A página `totem/previa.html` tem o mesmo corpo do `totem/index.html` e o mesmo
@@ -34,7 +36,8 @@ const PINOS = Object.freeze({
   'totem/index.html': '6ec5236ec6673c581332468b2cb2f7b64df8467f260030b9a47b5387a78bd286',
   // GREEN-2A/2C (20/10/2026): fotografias integradas. Pino ANTERIOR (histórico): 9ee5d2f8d66e154c067c0f7a35c5214a1341fcd42899f92ac3c16cdf5a60c33e.
   // FIX-TOTEM-NUMERO (31/10/2026): confirmação do pedido com o número inteiro do backend, autorizada por Ramires. Pino ANTERIOR (histórico): c6728858e0d185cb0331c78099d47f9688ea22d7fdcbca4600bd9ba1478b6afc.
-  'totem/totem.js': 'caa89895eec5660db5cb9b4ca746c6590b7a15575f38a215d4a2b19c61807fc5',
+  // FIX-TOTEM-IMAGENS-DATA (11/2026): a CSP da HML bloqueia blob:; a fotografia passa a ser data:image/webp (FileReader), autorizado por Ramires. Pino ANTERIOR (histórico): caa89895eec5660db5cb9b4ca746c6590b7a15575f38a215d4a2b19c61807fc5.
+  'totem/totem.js': 'e44dd02a4c413b8f563c83b3e366146c862eb33af3948db34762ffb76ab1b87e',
   'totem/totem.css': '3caa1760e92f1c5feddcb211ab09c082f16db2dc4a0eb182f3f02e609d4ebe50',
   'totem/boot.js': '583454fe94c2ed73776fd77b4560eb70c59dd708ad582b2a61ff4878104d6899',
 });
@@ -126,9 +129,10 @@ describe('K7 — arquivos, ordem dos scripts e isolamento declarado', () => {
     assert.equal(diretivas['base-uri'], "'none'");
     assert.equal(diretivas['form-action'], "'none'");
     assert.equal(diretivas['object-src'], "'none'");
-    // IMG-PRÉVIA-01 (20/10/2026): única abertura nova, só para a URL de objeto da fotografia recebida pela ponte; nada de data:, http(s) ou curinga.
-    assert.equal(diretivas['img-src'], 'blob:');
-    assert.doesNotMatch(csp, /data:|\bhttps?:|\*/i);
+    // IMG-PRÉVIA-01 (20/10/2026): única abertura nova, só para a fotografia recebida pela ponte. 11/2026 (HML): era blob:, que a CSP do Portal bloqueia; agora é só data:
+    // (o mesmo que a CSP do Portal já admite em img-src). Nada de blob:, http(s) ou curinga.
+    assert.equal(diretivas['img-src'], 'data:');
+    assert.doesNotMatch(csp, /blob:|\bhttps?:|\*/i);
     assert.doesNotMatch(csp, /unsafe-eval|\bhttps?:|\*/i, 'sem eval, sem host externo, sem curinga');
     assert.doesNotMatch(diretivas['script-src'], /unsafe-inline/);
   });
@@ -404,7 +408,7 @@ describe('DEMO-FOTOS — a Demonstração da Ana (1001) mostra os 8 EPIs com fot
   const STUB = '<script>(function (g) { g.__blobs = []; g.Blob = function Blob2(partes, opcoes) { var n = 0; for (var i = 0; i < partes.length; i += 1) n += partes[i].length; this.size = n; this.type = (opcoes && opcoes.type) || ""; g.__blobs.push(n); }; var Base = g.URL; function U(a, b) { return b === undefined ? new Base(a) : new Base(a, b); } U.prototype = Base.prototype; g.__criadas = []; g.__revogadas = []; U.createObjectURL = function () { var u = "blob:demo/" + (g.__criadas.length + 1); g.__criadas.push(u); return u; }; U.revokeObjectURL = function (u) { g.__revogadas.push(String(u)); }; g.URL = U; })(globalThis)</script>';
   const abrirDemo = () => {
     exigir(PREVIA);
-    const html = injetarShim(lerArquivo(PREVIA)).replace('<script src="previa-adaptador.js"></script>', `${STUB}<script src="previa-adaptador.js"></script>`);
+    const html = injetarShim(lerArquivo(PREVIA)).replace('<script src="previa-adaptador.js"></script>', `${STUB}<script>${STUB_LEITOR}</script><script src="previa-adaptador.js"></script>`);
     assert.match(html, /blob:demo/, 'o STUB foi injetado');
     return abrirPagina(PREVIA, { html });
   };
@@ -418,14 +422,15 @@ describe('DEMO-FOTOS — a Demonstração da Ana (1001) mostra os 8 EPIs com fot
     return p;
   }
 
-  test('DEMO-D3 — 1ª tela: os 8 EPIs do GHE-017 aparecem com miniaturas (URL de objeto), uma por produto, e nada escapa da página', async () => {
+  test('DEMO-D3 — 1ª tela: os 8 EPIs do GHE-017 aparecem com miniaturas (data:image/webp), uma por produto, e nada escapa da página', async () => {
     const p = await ana();
     assert.deepEqual(telaAtual(p), ['telaProdutos']);
     assert.deepEqual(produtos(p), NOMES_DA_DEMO);
     await passar(p, 4000);
     const imgs = fotos(p);
     assert.equal(imgs.length, 8, 'uma fotografia por produto');
-    for (const f of imgs) assert.match(f.getAttribute('src'), /^blob:/);
+    for (const f of imgs) assert.match(f.getAttribute('src'), DATA_URL_WEBP);
+    assert.equal(p.janela.__leituras.length, 8, 'uma leitura (conversão em data:) por miniatura');
     assert.deepEqual(imgs.map((f) => f.getAttribute('alt')).sort(), [...NOMES_DA_DEMO].sort());
     assert.deepEqual([...p.janela.__blobs].sort((a, b) => a - b), bytesMiniatura, 'a 1ª tela usa as miniaturas (tamanhos exatos do registro)');
     assert.equal(p.consulta('#grade .prod-img .vazio').length, 0, 'nenhum placeholder sobra');
@@ -441,7 +446,7 @@ describe('DEMO-FOTOS — a Demonstração da Ana (1001) mostra os 8 EPIs com fot
     await passar(p, 1500);
     assert.deepEqual(telaAtual(p), ['telaTamanhos']);
     assert.equal(fotos(p, '#detImg img').length, 1);
-    assert.match(fotos(p, '#detImg img')[0].getAttribute('src'), /^blob:/);
+    assert.match(fotos(p, '#detImg img')[0].getAttribute('src'), DATA_URL_WEBP);
     assert.equal(fotos(p, '#detImg img')[0].getAttribute('alt'), 'Sapato de Segurança');
     assert.deepEqual([...p.janela.__blobs.slice(antes)], [FOTOS_DEMO[22].exib[1]], 'a ampliada é a exibição do Sapato (41486 bytes)');
     assert.equal(p.consulta('#tams .tam').length, 14, 'tamanhos 33 a 46');

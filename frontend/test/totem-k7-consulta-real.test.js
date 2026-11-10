@@ -7,6 +7,8 @@ const path = require('node:path');
 
 const { abrirPagina, RAIZ, semComentarios } = require('./helpers/dom-pagina');
 const { injetarShim } = require('./helpers/totem-i');
+const { STUB_LEITOR } = require('./helpers/totem-leitor');
+const DATA_URL_WEBP = /^data:image\/webp;base64,[A-Za-z0-9+/]+=*$/;
 
 /**
  * K7 — Consulta real da prévia do Totem (RED), lado do iframe: no modo `?modo=real&pai=<origem da Central>` o adaptador NÃO fala com a API.
@@ -295,7 +297,8 @@ describe('K7 — consulta real: estático', () => {
     assert.equal(sha('totem/index.html'), '6ec5236ec6673c581332468b2cb2f7b64df8467f260030b9a47b5387a78bd286');
     // GREEN-2A/2C (20/10/2026): fotografias integradas. Pino ANTERIOR (histórico): 9ee5d2f8d66e154c067c0f7a35c5214a1341fcd42899f92ac3c16cdf5a60c33e.
     // FIX-TOTEM-NUMERO (31/10/2026): confirmação do pedido com o número inteiro do backend, autorizada por Ramires. Pino ANTERIOR (histórico): c6728858e0d185cb0331c78099d47f9688ea22d7fdcbca4600bd9ba1478b6afc.
-    assert.equal(sha('totem/totem.js'), 'caa89895eec5660db5cb9b4ca746c6590b7a15575f38a215d4a2b19c61807fc5');
+    // FIX-TOTEM-IMAGENS-DATA (11/2026): a CSP da HML bloqueia blob:; a fotografia passa a ser data:image/webp (FileReader), autorizado por Ramires. Pino ANTERIOR (histórico): caa89895eec5660db5cb9b4ca746c6590b7a15575f38a215d4a2b19c61807fc5.
+    assert.equal(sha('totem/totem.js'), 'e44dd02a4c413b8f563c83b3e366146c862eb33af3948db34762ffb76ab1b87e');
     assert.equal(sha('totem/totem.css'), '3caa1760e92f1c5feddcb211ab09c082f16db2dc4a0eb182f3f02e609d4ebe50');
     assert.equal(sha('totem/boot.js'), '583454fe94c2ed73776fd77b4560eb70c59dd708ad582b2a61ff4878104d6899');
   });
@@ -314,7 +317,7 @@ describe('IMG-PRÉVIA — fotografias no iframe da Consulta Real (adaptador)', (
 
   function abrirImg(search = BUSCA_REAL) {
     exigir(PREVIA);
-    const html = injetarShim(lerArquivo(PREVIA)).replace('<script src="previa-adaptador.js"></script>', `${STUB_DO_PAI}${STUB_IMAGENS}<script src="previa-adaptador.js"></script>`);
+    const html = injetarShim(lerArquivo(PREVIA)).replace('<script src="previa-adaptador.js"></script>', `${STUB_DO_PAI}${STUB_IMAGENS}<script>${STUB_LEITOR}</script><script src="previa-adaptador.js"></script>`);
     return abrirPagina(PREVIA, { html, search });
   }
   const passar = async (p, ms, passo = 300) => { let resto = ms; while (resto > 0) { const d = Math.min(passo, resto); p.janela.__relogio.avancar(d); await p.esperar(); resto -= d; } };
@@ -348,14 +351,16 @@ describe('IMG-PRÉVIA — fotografias no iframe da Consulta Real (adaptador)', (
     semEscapes(p);
   });
 
-  test('IMG-I2 — a resposta OK do pai vira <img> (URL de objeto) no espaço .prod-img; o cartão sem foto mantém o placeholder', async () => {
+  test('IMG-I2 — a resposta OK do pai vira <img> (data:image/webp, nunca blob:) no espaço .prod-img; o cartão sem foto mantém o placeholder', async () => {
     const p = await abrirNoCatalogo();
     await passar(p, 1500);
     for (const x of pedidos(p)) await respostaImg(p, x.id, 'OK', { blob: blobOk(p) });
     await p.esperar();
     const fotos = imgs(p);
     assert.equal(fotos.length, 2);
-    for (const f of fotos) assert.match(f.getAttribute('src'), /^blob:/);
+    for (const f of fotos) assert.match(f.getAttribute('src'), DATA_URL_WEBP);
+    assert.equal(p.janela.__criadas.length, 0, 'nenhuma URL de objeto (blob:) foi criada no iframe');
+    assert.deepEqual(Array.from(p.janela.__leituras, (l) => l.tipo), ['image/webp', 'image/webp'], 'o Blob do pai é lido já tipado como image/webp');
     assert.deepEqual(fotos.map((f) => f.getAttribute('alt')).sort(), ['Bota Teste', 'Luva Teste']);
     const sem = p.consulta('#grade .prod').find((c) => c.querySelector('.prod-nome').textContent.trim() === 'Capacete Teste');
     assert.ok(sem.querySelector('.prod-img .vazio'));
@@ -376,7 +381,7 @@ describe('IMG-PRÉVIA — fotografias no iframe da Consulta Real (adaptador)', (
     await respostaImg(p, exib[0].id, 'OK', { blob: blobOk(p) });
     await p.esperar();
     assert.equal(imgs(p, '#detImg img').length, 1);
-    assert.match(imgs(p, '#detImg img')[0].getAttribute('src'), /^blob:/);
+    assert.match(imgs(p, '#detImg img')[0].getAttribute('src'), DATA_URL_WEBP);
     semEscapes(p);
   });
 
@@ -456,7 +461,8 @@ describe('IMG-PRÉVIA — fotografias no iframe da Consulta Real (adaptador)', (
     for (const id of pend) await respostaImg(p, id, 'OK', { blob: blobOk(p) });
     await p.esperar();
     assert.equal(imgs(p, 'img').length, 0, 'resposta tardia ignorada');
-    assert.ok(p.janela.__criadas.length === 0 || p.janela.__criadas.every((u) => p.janela.__revogadas.includes(u)));
+    assert.equal(p.janela.__criadas.length, 0, 'nenhuma URL de objeto (blob:) foi criada');
+    assert.ok(p.janela.__leituras.every((l) => l.concluida || l.abortada), 'nenhuma leitura ficou pendente');
   });
 
   // DEMO-FOTOS (21/10/2026): a demonstração agora mostra as 8 fotografias EMBUTIDAS (previa-imagens-demo.js), servidas em memória pelo adaptador. O isolamento
