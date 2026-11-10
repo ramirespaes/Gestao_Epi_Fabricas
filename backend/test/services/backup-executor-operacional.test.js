@@ -191,6 +191,8 @@ describe('[OPE] backup (ensaio)', () => {
       [{ ok: false, motivo: 'MIGRACAO_EM_CURSO' }, 'RECUSADO', 'MIGRACAO_EM_CURSO'],
       [{ ok: false, motivo: 'CONSULTA_FALHOU' }, 'FALHOU', 'COORDENACAO_INDISPONIVEL'],
       [{ lanca: true }, 'FALHOU', 'COORDENACAO_INDISPONIVEL'],
+      [{ ok: false, motivo: 'PRIVILEGIOS_B1_PENDENTES' }, 'RECUSADO', 'PRIVILEGIOS_B1_PENDENTES'],
+      [{ ok: false, motivo: 'PRIVILEGIOS_B1_NAO_VERIFICADOS' }, 'FALHOU', 'PRIVILEGIOS_B1_NAO_VERIFICADOS'],
     ];
     for (const [opcoes, estado, cod] of quadros) {
       const x = await prepararAmbiente({ conjuntoId: 'conjunto-ope5' });
