@@ -21,7 +21,12 @@ class ErroNginx extends Error {
 const caminhoAbsoluto = (v) => typeof v === 'string' && /^\/[A-Za-z0-9_./-]+$/.test(v) && !v.split('/').includes('..');
 const terminaEm = (sufixo) => (v) => caminhoAbsoluto(v) && v.endsWith(sufixo);
 const dominio = (v) => typeof v === 'string' && /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(v);
-const csp = (v) => typeof v === 'string' && /^[A-Za-z0-9 ;'\-:/.+=_*]+$/.test(v) && avaliarCsp(v).length === 0;
+const cspLimpa = (v) => typeof v === 'string' && /^[A-Za-z0-9 ;'\-:/.+=_*]+$/.test(v);
+const csp = (v) => cspLimpa(v) && avaliarCsp(v).length === 0;
+// Variantes do Totem: a página que hospeda o iframe precisa de 'self' em frame-src (e continua com frame-ancestors 'none');
+// a prévia aceita frame-ancestors 'self' e mais nada além disso.
+const cspAtendimento = (v) => csp(v) && /(?:^|; )frame-src(?: [^;]+)? 'self'(?:[ ;]|$)/.test(v);
+const cspPrevia = (v) => cspLimpa(v) && avaliarCsp(v, { frameAncestorsAceitos: ["'self'"] }).length === 0;
 
 // IP único ou rede estreita: IPv4 a partir de /24 (até 256 endereços) e IPv6 a partir de /64. Os endereços são
 // validados de verdade (octetos, grupos hexadecimais e no máximo um "::"); 0.0.0.0, :: e máscaras que abririam a
@@ -82,6 +87,10 @@ const PLACEHOLDERS = {
   DESTINO_RAIZ_PAINEL: (v) => typeof v === 'string' && /^\/(?!\/)[A-Za-z0-9_./-]*$/.test(v) && !v.split('/').includes('..'),
   CSP_PORTAL: csp,
   CSP_PAINEL: csp,
+  ARQUIVO_SEGURANCA_PORTAL_ATENDIMENTO: terminaEm('.conf'),
+  ARQUIVO_SEGURANCA_PORTAL_PREVIA: terminaEm('.conf'),
+  CSP_PORTAL_ATENDIMENTO: cspAtendimento,
+  CSP_PORTAL_PREVIA: cspPrevia,
 };
 
 function renderizarModelo(texto, valores = {}) {
@@ -95,4 +104,4 @@ function renderizarModelo(texto, valores = {}) {
   return texto.replace(/\{\{([A-Za-z0-9_]+)\}\}/g, (_, nome) => valores[nome]);
 }
 
-module.exports = { renderizarModelo, PLACEHOLDERS, ErroNginx, MODELOS: ['seguranca-portal.conf.modelo', 'seguranca-painel.conf.modelo', 'portal.conf.modelo', 'painel.conf.modelo'].map((n) => path.join(__dirname, n)) };
+module.exports = { renderizarModelo, PLACEHOLDERS, ErroNginx, MODELOS: ['seguranca-portal.conf.modelo', 'seguranca-portal-atendimento.conf.modelo', 'seguranca-portal-previa.conf.modelo', 'seguranca-painel.conf.modelo', 'portal.conf.modelo', 'painel.conf.modelo'].map((n) => path.join(__dirname, n)) };

@@ -69,6 +69,20 @@ server {
         return 302 {{DESTINO_RAIZ_PORTAL}};
     }
 
+    # Previa do Totem: a pagina de atendimento cria um iframe da mesma origem e so a previa aceita ser enquadrada, e apenas
+    # pela mesma origem. Cada location repete o conjunto completo de cabecalhos (arquivos proprios); o resto do site segue em DENY.
+    location = /pages/atendimento-token.html {
+        include {{ARQUIVO_SEGURANCA_PORTAL_ATENDIMENTO}};
+        add_header Cache-Control "no-cache" always;
+        try_files $uri =404;
+    }
+
+    location = /totem/previa.html {
+        include {{ARQUIVO_SEGURANCA_PORTAL_PREVIA}};
+        add_header Cache-Control "no-cache" always;
+        try_files $uri =404;
+    }
+
     location / {
         include {{ARQUIVO_SEGURANCA_PORTAL}};
         add_header Cache-Control "no-cache" always;

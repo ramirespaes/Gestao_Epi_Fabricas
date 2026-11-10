@@ -1,0 +1,10 @@
+# MODELO do Portal do Cliente, SOMENTE para /totem/previa.html (homologacao). Nao aplicado em nenhum servidor.
+# Igual a seguranca-portal.conf.modelo, exceto o enquadramento: so a mesma origem pode embutir a previa
+# (frame-ancestors 'self' e X-Frame-Options SAMEORIGIN). O resto da CSP e dos cabecalhos nao muda.
+add_header Content-Security-Policy "{{CSP_PORTAL_PREVIA}}" always;
+add_header X-Content-Type-Options "nosniff" always;
+add_header X-Frame-Options "SAMEORIGIN" always;
+add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+add_header Permissions-Policy "geolocation=(), microphone=(), payment=()" always;
+add_header Cross-Origin-Opener-Policy "same-origin" always;
+add_header Strict-Transport-Security "max-age={{HSTS_MAX_AGE}}" always;

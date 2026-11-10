@@ -145,6 +145,9 @@ describe('M-6 e M-7 — modelos Nginx: ACME, HTTP/2, redirecionamento e exposiç
     PORTA_BACKEND: '3000', LIMITE_CORPO: '10m', HSTS_MAX_AGE: '300', CERTIFICADO_PORTAL: '/etc/ssl/exemplo/portal.pem', CHAVE_PORTAL: '/etc/ssl/exemplo/portal.key',
     CERTIFICADO_PAINEL: '/etc/ssl/exemplo/painel.pem', CHAVE_PAINEL: '/etc/ssl/exemplo/painel.key', DESTINO_RAIZ_PORTAL: '/portal/index.html', DESTINO_RAIZ_PAINEL: '/painel-privado/index.html',
     CSP_PORTAL: CSP, CSP_PAINEL: CSP, RAIZ_ACME: '/var/www/acme', REDE_VERIFICACAO: '203.0.113.0/24',
+    ARQUIVO_SEGURANCA_PORTAL_ATENDIMENTO: '/etc/nginx/safework/seguranca-portal-atendimento.conf',
+    ARQUIVO_SEGURANCA_PORTAL_PREVIA: '/etc/nginx/safework/seguranca-portal-previa.conf',
+    ...(({ atendimento, previa }) => ({ CSP_PORTAL_ATENDIMENTO: atendimento, CSP_PORTAL_PREVIA: previa }))(require(path.join(REPO, 'deploy/hml/csp/gerar-csp.js')).derivarCspTotem(CSP)),
   };
   const { renderizarModelo, PLACEHOLDERS } = require(path.join(DIR, 'renderizar-modelo.js'));
   const render = (n, v = VALORES) => renderizarModelo(fs.readFileSync(path.join(DIR, n), 'utf8'), v);
@@ -204,7 +207,8 @@ describe('M-6 e M-7 — modelos Nginx: ACME, HTTP/2, redirecionamento e exposiç
     for (const [m, incl] of [['portal.conf.modelo', VALORES.ARQUIVO_SEGURANCA_PORTAL], ['painel.conf.modelo', VALORES.ARQUIVO_SEGURANCA_PAINEL]]) {
       const texto = render(m);
       assert.match(texto, /ssl_protocols TLSv1\.2 TLSv1\.3;/);
-      for (const l of blocos(texto, 'location').filter((x) => /\badd_header\b/.test(x.corpo))) assert.ok(l.corpo.includes(`include ${incl};`), `${m}: ${l.cabecalho}`);
+      const variantes = m === 'portal.conf.modelo' ? [VALORES.ARQUIVO_SEGURANCA_PORTAL_ATENDIMENTO, VALORES.ARQUIVO_SEGURANCA_PORTAL_PREVIA] : [];
+      for (const l of blocos(texto, 'location').filter((x) => /\badd_header\b/.test(x.corpo))) assert.ok([incl, ...variantes].some((i) => l.corpo.includes(`include ${i};`)), `${m}: ${l.cabecalho}`);
       assert.ok(blocos(texto, 'location ~ /\\\\\\.')[0]);
       assert.doesNotMatch(texto, /location \^~ \/ /, 'um prefixo ^~ / desligaria a regra de dotfiles');
     }

@@ -55,6 +55,8 @@ function diretivasDe(politica) {
 }
 
 const DIRETIVAS_DE_RECURSO = ['script-src', 'script-src-elem', 'style-src', 'style-src-elem', 'img-src', 'font-src', 'connect-src', 'frame-src', 'child-src', 'worker-src', 'media-src', 'manifest-src', 'prefetch-src'];
+// Única página que pode ser enquadrada (pela mesma origem): a prévia do Totem. Todas as outras exigem frame-ancestors 'none'.
+const PAGINA_ENQUADRAVEL = 'totem/previa.html';
 const PALAVRAS_SEGURAS = new Set(["'self'", "'none'", "'strict-dynamic'", "'report-sample'"]);
 const HASH_OU_NONCE = /^'(?:(?:sha256|sha384|sha512)-[A-Za-z0-9+/=_-]+|nonce-[A-Za-z0-9+/=_-]+)'$/;
 const ESQUEMA_SOLTO = /^[a-z][a-z0-9+.-]*:$/i;
@@ -65,7 +67,10 @@ const HOST_HTTPS = /^https:\/\/[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::\d{1
  * explícito (sem curinga e sem caminho); esquema solto como https: ou ws: nunca; data: só em img-src.
  * 'unsafe-inline' só em style-src-attr, 'unsafe-hashes' só nos atributos, 'unsafe-eval' nunca.
  */
-function avaliarCsp(politica) {
+function avaliarCsp(politica, { frameAncestorsAceitos = ["'none'"] } = {}) {
+  if (!Array.isArray(frameAncestorsAceitos) || frameAncestorsAceitos.length === 0 || !frameAncestorsAceitos.every((v) => v === "'none'" || v === "'self'")) {
+    throw new TypeError('frameAncestorsAceitos só pode conter \'none\' e \'self\'');
+  }
   if (typeof politica !== 'string' || politica.trim() === '') return ['CSP ausente'];
   const d = diretivasDe(politica);
   const problemas = [];
@@ -74,7 +79,10 @@ function avaliarCsp(politica) {
     if (!t) problemas.push(`${nome} ausente`);
     else if (t.length !== 1 || t[0] !== "'none'") problemas.push(`${nome} precisa ser 'none'`);
   };
-  soNone('object-src'); soNone('base-uri'); soNone('frame-ancestors');
+  soNone('object-src'); soNone('base-uri');
+  const ancestrais = d.get('frame-ancestors');
+  if (!ancestrais) problemas.push('frame-ancestors ausente');
+  else if (ancestrais.length !== 1 || !frameAncestorsAceitos.includes(ancestrais[0])) problemas.push(`frame-ancestors precisa ser ${frameAncestorsAceitos.join(' ou ')}`);
   const padrao = d.get('default-src');
   if (!padrao) problemas.push('default-src ausente');
   else if (!padrao.every((t) => t === "'none'" || t === "'self'")) problemas.push("default-src precisa ser 'none' ou 'self'");
@@ -191,7 +199,7 @@ async function verificarPublicacao({ baseUrl, tipo, versaoEsperada, manifesto = 
     if (String(r.headers.get('x-content-type-options') || '').toLowerCase() !== 'nosniff') cabFalhas.push(`${rel}: sem X-Content-Type-Options nosniff`);
     if (/\.(html|js|css)$/.test(rel) && !/no-cache/i.test(r.headers.get('cache-control') || '')) cabFalhas.push(`${rel}: sem Cache-Control no-cache`);
     if (/\.html$/.test(rel)) {
-      const problemas = avaliarCsp(r.headers.get('content-security-policy'));
+      const problemas = avaliarCsp(r.headers.get('content-security-policy'), { frameAncestorsAceitos: rel === PAGINA_ENQUADRAVEL ? ["'none'", "'self'"] : ["'none'"] });
       if (problemas.length) cabFalhas.push(`${rel}: CSP ${problemas[0]}`);
     }
   }

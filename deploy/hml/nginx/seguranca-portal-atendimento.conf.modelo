@@ -1,0 +1,10 @@
+# MODELO do Portal do Cliente, SOMENTE para /pages/atendimento-token.html (homologacao). Nao aplicado em nenhum servidor.
+# Igual a seguranca-portal.conf.modelo, exceto a CSP: frame-src ganha 'self' para a previa do Totem (iframe da mesma origem).
+# A pagina continua sem poder ser enquadrada (frame-ancestors 'none' e X-Frame-Options DENY).
+add_header Content-Security-Policy "{{CSP_PORTAL_ATENDIMENTO}}" always;
+add_header X-Content-Type-Options "nosniff" always;
+add_header X-Frame-Options "DENY" always;
+add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+add_header Permissions-Policy "geolocation=(), microphone=(), payment=()" always;
+add_header Cross-Origin-Opener-Policy "same-origin" always;
+add_header Strict-Transport-Security "max-age={{HSTS_MAX_AGE}}" always;

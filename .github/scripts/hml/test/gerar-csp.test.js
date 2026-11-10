@@ -166,6 +166,31 @@ describe('gerar-csp — pacotes reais', () => {
     assert.equal(typeof r.politica, 'string');
     for (const p of r.problemas) assert.ok(['JAVASCRIPT_URL', 'ORIGEM_EXTERNA_NAO_DECLARADA'].includes(p.codigo), p.codigo);
   });
+
+  test('a prévia do Totem existe no pacote do Portal e as variantes derivadas da CSP real só mudam frame-src e frame-ancestors; o Painel não tem Totem', () => {
+    const { gerarCsp, derivarCspTotem } = carregar();
+    const { avaliarCsp } = require(path.join(REPO, 'deploy', 'hml', 'verificacao', 'verificar-publicacao.js'));
+    const { empacotar } = require(path.join(REPO, 'frontend', 'publicacao', 'empacotar.js'));
+    const saida = path.join(pacote({}), 'portal');
+    empacotar({ saida });
+    for (const rel of ['totem/previa.html', 'pages/atendimento-token.html']) assert.ok(fs.existsSync(path.join(saida, rel)), rel);
+    const { politica } = gerarCsp({ raiz: saida, perfil: 'portal' });
+    assert.match(politica, /frame-src https:\/\/challenges\.cloudflare\.com(?:;|$)/, 'ponto de partida: só o Turnstile, sem self');
+    const { atendimento, previa } = derivarCspTotem(politica);
+    assert.match(atendimento, /frame-src 'self' https:\/\/challenges\.cloudflare\.com(?:;|$)/);
+    assert.match(atendimento, /frame-ancestors 'none'/);
+    assert.deepEqual(avaliarCsp(atendimento), []);
+    assert.match(previa, /frame-ancestors 'self'(?:;|$)/);
+    assert.match(previa, /frame-src https:\/\/challenges\.cloudflare\.com(?:;|$)/);
+    assert.deepEqual(avaliarCsp(previa, { frameAncestorsAceitos: ["'self'"] }), []);
+    assert.ok(avaliarCsp(previa).length > 0, 'a prévia nunca passa como política global');
+    const semFrame = (p) => p.split('; ').filter((d) => !/^frame-(src|ancestors) /.test(d)).join('; ');
+    assert.equal(semFrame(atendimento), semFrame(politica));
+    assert.equal(semFrame(previa), semFrame(politica));
+    const painel = path.join(pacote({}), 'painel');
+    require(path.join(REPO, 'frontend', 'publicacao', 'empacotar-painel.js')).empacotar({ saida: painel });
+    assert.ok(!fs.existsSync(path.join(painel, 'totem')));
+  });
 });
 
 describe('gerar-csp — linha de comando', () => {
