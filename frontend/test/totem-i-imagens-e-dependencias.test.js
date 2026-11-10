@@ -31,13 +31,20 @@ describe('[IMG] uso seguro do placeholder atual', () => {
 
   test('[IMG-03] nada de upload, fotos embutidas, URLs de imagem ou armazenamento paralelo de fotografias', () => {
     const { semComentarios, html } = H.corpus();
-    assert.ok(!/type="file"|FileReader|FormData|<canvas/i.test(`${semComentarios}\n${html}`), 'upload ou captura de imagem');
-    // GREEN-2C (20/10/2026): `createObjectURL` deixou de ser proibido em geral; só serve para apresentar a fotografia recebida da API (Blob da resposta do fetch).
-    // Antes: proibido em qualquer ponto. A liberação das URLs é coberta pelos testes de comportamento de totem-imagens.test.js, não por presença de texto.
-    const usos = semComentarios.match(/createObjectURL\s*\(\s*[^)]*\)/g) || [];
-    assert.ok(usos.every((u) => /^createObjectURL\s*\(\s*res\.blob\s*\)$/.test(u)), `createObjectURL só com o Blob da resposta de imagem: ${usos}`);
-    assert.ok(!/createObjectURL/i.test(html), 'createObjectURL fora dos scripts do Totem');
-    assert.ok(!/data:image\//i.test(`${semComentarios}\n${html}`), 'imagem embutida');
+    assert.ok(!/type="file"|FormData|<canvas/i.test(`${semComentarios}\n${html}`), 'upload ou captura de imagem');
+    // 11/2026 (HML): a CSP do Portal admite só 'self' e data: em img-src, então `blob:` é BLOQUEADO. A fotografia recebida da API (Blob da resposta do fetch)
+    // passa a ser apresentada como `data:image/webp;base64,`, e `createObjectURL` volta a ser proibido em qualquer ponto. O `FileReader` só existe para essa
+    // conversão: uma única instância, só `readAsDataURL`, só sobre o Blob da resposta já validado e tipado como image/webp. O comportamento (validação, aborto,
+    // falhas) é coberto por totem-imagens.test.js ([IMG-G*]); aqui só a presença de texto.
+    assert.ok(!/createObjectURL|revokeObjectURL|['"`]blob:/i.test(`${semComentarios}\n${html}`), 'blob:/createObjectURL é bloqueado pela CSP da HML e não pode voltar');
+    assert.equal((semComentarios.match(/\bFileReader\b/g) || []).length, 1, 'uma única referência a FileReader');
+    assert.equal((semComentarios.match(/new FileReader\(\)/g) || []).length, 1);
+    assert.deepEqual(semComentarios.match(/\.read[A-Za-z]+\(/g).filter((m) => /^\.read(AsDataURL|AsText|AsArrayBuffer|AsBinaryString)\($/.test(m)), ['.readAsDataURL('], 'só readAsDataURL');
+    assert.equal((semComentarios.match(/readAsDataURL\(blob\.slice\(0, blob\.size, 'image\/webp'\)\)/g) || []).length, 1, 'a leitura é do Blob validado, com tipo fixado');
+    const conversao = /function lerComoDataUrl\([\s\S]*?\n  \}\n/.exec(semComentarios);
+    assert.ok(conversao, 'função de conversão encontrada');
+    assert.equal((semComentarios.match(/data:image\//gi) || []).length, (conversao[0].match(/data:image\//gi) || []).length, 'o prefixo data:image/ só aparece na função de conversão');
+    assert.ok(!/data:image\//i.test(html), 'imagem embutida no HTML');
     assert.ok(!/https?:\/\/[^\s"')]+\.(png|jpe?g|webp|gif)/i.test(`${semComentarios}\n${html}`), 'URL de imagem fixa');
   });
 

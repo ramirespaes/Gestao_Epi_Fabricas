@@ -577,12 +577,13 @@
 
   /* ═══ Fotografias dos EPIs ═══
      O catálogo traz `imagem: { disponivel, origem, id, versao }`; só a referência estritamente válida vira requisição (o id BIGINT
-     segue como TEXTO). A fotografia é buscada por fetch autenticado (cookies do tablet e do atendimento), vira Blob e URL de objeto
-     e ocupa o espaço `.prod-img` / `#detImg`; sem imagem ou com qualquer falha, o placeholder aprovado permanece. As requisições
-     NÃO entram na barreira do atendimento (a rota não define nem remove cookie), nunca renovam a sessão e são abortadas, com as
-     URLs de objeto revogadas, quando a geração muda (Sair, expiração, bloqueio, novo funcionário). */
+     segue como TEXTO). A fotografia é buscada por fetch autenticado (cookies do tablet e do atendimento), vira Blob e, depois de
+     validada (image/webp, até IMAGEM_BYTES_MAXIMOS), URL `data:image/webp;base64,` (a CSP do Portal admite só 'self' e data: em
+     img-src; blob: é bloqueado) e ocupa o espaço `.prod-img` / `#detImg`; sem imagem ou com qualquer falha, o placeholder aprovado
+     permanece. As requisições NÃO entram na barreira do atendimento (a rota não define nem remove cookie), nunca renovam a sessão e
+     são abortadas, com as leituras em andamento, quando a geração muda (Sair, expiração, bloqueio, novo funcionário). */
   function novasImagens() {
-    return { cache: Object.create(null), fila: [], emVoo: 0, ativas: [], inicio: -Infinity, pausaAte: 0, timer: null, repeticoes: [], urls: [], observador: null, visiveis: new Map() };
+    return { cache: Object.create(null), fila: [], emVoo: 0, ativas: [], inicio: -Infinity, pausaAte: 0, timer: null, repeticoes: [], leitores: [], observador: null, visiveis: new Map() };
   }
 
   function referenciaDaImagem(m) {
@@ -601,7 +602,30 @@
     im.repeticoes.forEach(function (t) { clearTimeout(t); });
     if (im.observador !== null) im.observador.disconnect();
     im.ativas.splice(0).forEach(function (c) { c.abort(); });
-    im.urls.splice(0).forEach(function (u) { URL.revokeObjectURL(u); });
+    im.leitores.splice(0).forEach(function (l) { try { l.abort(); } catch (x) { /* leitura já concluída */ } });
+  }
+
+  /* Converte o Blob já validado em `data:image/webp;base64,...`. O tipo é fixado no próprio Blob; qualquer resultado fora do
+     formato ou do tamanho esperado é falha (null). `im` é a geração dona da leitura: ela é abortada junto com a geração. */
+  function lerComoDataUrl(im, blob, aoConcluir) {
+    var leitor;
+    try { leitor = new FileReader(); } catch (x) { aoConcluir(null); return; }
+    im.leitores.push(leitor);
+    var concluida = false;
+    function fim(url) {
+      if (concluida) return; // 'error' seguido de 'abort', por exemplo: só o primeiro vale
+      concluida = true;
+      var i = im.leitores.indexOf(leitor);
+      if (i !== -1) im.leitores.splice(i, 1);
+      aoConcluir(url);
+    }
+    leitor.addEventListener('load', function () {
+      var r = leitor.result;
+      fim(typeof r === 'string' && r.indexOf('data:image/webp;base64,') === 0 && r.length > 23 && r.length <= 23 + Math.ceil(IMAGEM_BYTES_MAXIMOS / 3) * 4 ? r : null);
+    });
+    leitor.addEventListener('error', function () { fim(null); });
+    leitor.addEventListener('abort', function () { fim(null); });
+    try { leitor.readAsDataURL(blob.slice(0, blob.size, 'image/webp')); } catch (x) { fim(null); }
   }
 
   /* Pede a fotografia de um material. `aoPronto(url, entrada)` é chamado quando (ou se) ela chegar; `alta` passa à frente da fila.
@@ -692,15 +716,16 @@
 
   function aoTerminarImagem(e, res) {
     if (res.tipo === 'ok') {
-      var url = null;
-      try { url = URL.createObjectURL(res.blob); } catch (x) { url = null; }
-      if (url === null) { falharImagem(e, true); return; }
-      imagens.urls.push(url);
-      e.url = url;
-      e.situacao = 'pronta';
-      var ouvintes = e.ouvintes;
-      e.ouvintes = [];
-      ouvintes.forEach(function (fn) { try { fn(url, e); } catch (x) { /* um destino com falha não impede os demais */ } });
+      var geracao = imagens;
+      lerComoDataUrl(geracao, res.blob, function (url) {
+        if (geracao !== imagens) return; // a geração mudou durante a leitura: o resultado é descartado
+        if (url === null) { falharImagem(e, true); return; }
+        e.url = url;
+        e.situacao = 'pronta';
+        var ouvintes = e.ouvintes;
+        e.ouvintes = [];
+        ouvintes.forEach(function (fn) { try { fn(url, e); } catch (x) { /* um destino com falha não impede os demais */ } });
+      });
       return;
     }
     if (res.tipo === 'http') {
@@ -750,8 +775,6 @@
       destino.insertBefore(novo, foto);
       destino.removeChild(foto);
       if (imagens.cache[e.chave] === e && e.situacao === 'pronta') {
-        var i = imagens.urls.indexOf(e.url);
-        if (i !== -1) { imagens.urls.splice(i, 1); URL.revokeObjectURL(e.url); }
         e.url = null;
         falharImagem(e, true);
       }

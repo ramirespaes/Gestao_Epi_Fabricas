@@ -3,6 +3,8 @@
 const { describe, test } = require('node:test');
 const assert = require('node:assert/strict');
 const H = require('./helpers/totem-i');
+const { STUB_LEITOR } = require('./helpers/totem-leitor');
+const DATA_URL_WEBP = /^data:image\/webp;base64,[A-Za-z0-9+/]+=*$/;
 
 /**
  * RED-2A (20/10/2026) — fotografias dos EPIs no Totem funcional. Só testes: NENHUM código funcional existe ainda. O Totem lê hoje `material.imagem` do
@@ -105,7 +107,8 @@ const INSTALADOR = String.raw`(function (g) {
 })(globalThis);`;
 
 // O instalador é ANEXADO ao boot.js (primeiro script local): roda antes do totem.js e não tira o 'use strict' do início do boot.js.
-const transformar = (relativo, codigo) => (relativo === 'totem/boot.js' ? `${codigo}\n${INSTALADOR}` : codigo);
+// O stub do leitor vem DEPOIS do instalador (que define o Blob falso); o Totem converte o Blob em data: via FileReader (a CSP da HML bloqueia blob:).
+const transformar = (relativo, codigo) => (relativo === 'totem/boot.js' ? `${codigo}\n${INSTALADOR}\n${STUB_LEITOR}` : codigo);
 
 const imagem = (i, extra = {}) => ({ disponivel: true, origem: 'EMPRESA', id: String(1000 + i), versao: 1, ...extra });
 const material = (i, extra = {}) => ({ id: i, nome: `Item ${i}`, unidade: 'UN', categoria: 'EPI', grupoProtecao: null, tipo: null, exigeTamanho: false, tamanhos: [], imagem: imagem(i), ...extra });
@@ -178,7 +181,7 @@ describe('[IMG-P] preparação do harness desta suíte', () => {
 
 // ═══════════════════ 1 a 4. reconhecimento do contrato, miniatura nos cartões, exibição no detalhe, placeholder ═══════════════════
 describe('[IMG-A] fotografias nos espaços de imagem existentes', () => {
-  test('[IMG-A1] material com imagem válida: UMA miniatura por cartão, pela rota de imagens, com o id e a versão do catálogo; o <img> usa URL de objeto (blob:)', async () => {
+  test('[IMG-A1] material com imagem válida: UMA miniatura por cartão, pela rota de imagens, com o id e a versão do catálogo; o <img> usa data:image/webp (nunca blob:)', async () => {
     const { t, E, servidor } = await abrir({ materiais: [material(7, { imagem: imagem(7, { versao: 3 }) })] });
     await t.passar(3000);
     assert.equal(E.chamadas.length, 1, 'uma requisição de miniatura');
@@ -187,7 +190,9 @@ describe('[IMG-A] fotografias nos espaços de imagem existentes', () => {
     assert.equal(c.metodo, 'GET');
     const imgs = imgsDe(t, '#grade .prod-img img');
     assert.equal(imgs.length, 1);
-    assert.match(srcDe(imgs[0]), /^blob:/);
+    assert.match(srcDe(imgs[0]), DATA_URL_WEBP);
+    assert.equal(t.janela.__dadosDe(srcDe(imgs[0])).tag, 'T1', 'o <img> mostra o Blob da resposta desta requisição');
+    assert.equal(E.criadas.length, 0, 'nenhuma URL de objeto (blob:) foi criada');
     assert.equal(imgs[0].getAttribute('alt'), 'Item 7');
     assert.deepEqual(servidor.violacoes, []);
   });
@@ -238,7 +243,7 @@ describe('[IMG-A] fotografias nos espaços de imagem existentes', () => {
     assert.deepEqual(servidor.violacoes, []);
   });
 
-  test('[IMG-A4] na tela de detalhe a variante é a de EXIBIÇÃO (id e versão do catálogo) e o <img> usa blob:; a miniatura e a exibição de um mesmo material não se repetem na mesma sessão', async () => {
+  test('[IMG-A4] na tela de detalhe a variante é a de EXIBIÇÃO (id e versão do catálogo) e o <img> usa data:image/webp; a miniatura e a exibição de um mesmo material não se repetem na mesma sessão', async () => {
     const { t, E } = await abrir({ materiais: catalogo(3) });
     await t.passar(2000);
     assert.equal(contagem(E, 'exibicao'), 0, 'na listagem só miniaturas');
@@ -247,7 +252,7 @@ describe('[IMG-A] fotografias nos espaços de imagem existentes', () => {
     assert.equal(contagem(E, 'exibicao', '1003'), 1);
     const imgs = imgsDe(t, '#detImg img');
     assert.equal(imgs.length, 1);
-    assert.match(srcDe(imgs[0]), /^blob:/);
+    assert.match(srcDe(imgs[0]), DATA_URL_WEBP);
     assert.ok(E.chamadas.find((c) => c.variante === 'exibicao').url.endsWith(`${ROTA_IMAGENS}/empresa/1003/exibicao?v=1`));
     await t.clicarEl(t.el('btnVoltarProdutos'));
     const miniaturasAntes = contagem(E, 'miniatura', '1003');
@@ -414,7 +419,7 @@ describe('[IMG-E] encerramento do atendimento, limpeza de recursos e isolamento 
     E.liberarTodos();
     await t.esperar();
     assert.equal(t.consulta('img').length, 0);
-    assert.ok(E.criadas.every((c) => E.revogadas.includes(c.url)), 'nenhuma URL de objeto sobrou');
+    assert.equal(E.criadas.length, 0, 'nenhuma URL de objeto foi criada');
   });
 
   test('[IMG-E2] ao expirar a sessão (60 s sem ação), as imagens pendentes são abortadas e a tela volta à identificação', async () => {
@@ -428,14 +433,15 @@ describe('[IMG-E] encerramento do atendimento, limpeza de recursos e isolamento 
     assert.ok(E.aborts >= pendentes);
   });
 
-  test('[IMG-E3] ao encerrar, TODA URL de objeto criada é revogada e a grade é esvaziada', async () => {
+  test('[IMG-E3] ao encerrar, nenhuma leitura fica pendente, nenhuma URL de objeto existiu e a grade é esvaziada', async () => {
     const { t, E } = await abrir({ materiais: catalogo(6) });
     await t.passar(3000);
-    assert.ok(E.criadas.length >= 1, 'houve fotografias aplicadas');
+    assert.ok(t.janela.__leituras.length >= 1, 'houve fotografias aplicadas');
     await t.abrirProduto('Item 2');
     await t.passar(2000);
     await t.clicarEl(t.el('btnSair'));
-    assert.ok(E.criadas.every((c) => E.revogadas.includes(c.url)), `criadas ${E.criadas.length}, revogadas ${E.revogadas.length}`);
+    assert.ok(t.janela.__leituras.every((l) => l.concluida || l.abortada), 'toda leitura foi concluída ou abortada');
+    assert.equal(E.criadas.length, 0, 'nenhuma URL de objeto (blob:) foi criada');
     assert.equal(t.consulta('#grade').length === 0 ? 0 : t.consulta('#grade').reduce((n, g) => n + g.filhos.length, 0), 0);
     assert.equal(t.consulta('#detImg img').length, 0);
   });
@@ -455,9 +461,9 @@ describe('[IMG-E] encerramento do atendimento, limpeza de recursos e isolamento 
     const imgs = imgsDe(t, '#grade .prod-img img');
     assert.ok(imgs.length >= 1, 'o funcionário B recebeu as próprias fotografias');
     for (const img of imgs) {
-      const criada = E.criadas.find((c) => c.url === srcDe(img));
-      assert.ok(criada, 'a fotografia veio de uma URL de objeto observada');
-      assert.ok(Number(String(criada.tag).slice(1)) > chamadasDeA, `a fotografia ${criada.tag} é de uma requisição anterior (do funcionário A)`);
+      const dados = t.janela.__dadosDe(srcDe(img));
+      assert.ok(dados, 'a fotografia veio de uma leitura observada (data:image/webp)');
+      assert.ok(Number(String(dados.tag).slice(1)) > chamadasDeA, `a fotografia ${dados.tag} é de uma requisição anterior (do funcionário A)`);
     }
   });
 
@@ -508,5 +514,75 @@ describe('[IMG-F] a sessão do funcionário e o pedido não são afetados pelas 
     assert.equal(t.el('btnSolicitar').disabled, false);
     await t.clicarEl(t.el('btnVoltarProdutos'));
     assert.ok(t.telaAtual().includes('telaProdutos'));
+  });
+});
+
+// ═══════════════════ G. conversão segura do Blob em data: (a CSP da HML bloqueia blob:; 'self' e data: são os únicos admitidos em img-src) ═══════════════════
+describe('[IMG-G] o Blob validado vira data:image/webp;base64,… e nada mais', () => {
+  test('[IMG-G1] a leitura recebe um Blob tipado image/webp, a rota e as credenciais não mudam, e nenhuma URL de objeto é criada', async () => {
+    const { t, E } = await abrir({ materiais: catalogo(2) });
+    await t.passar(3000);
+    const leituras = t.janela.__leituras;
+    assert.equal(leituras.length, 2, 'uma leitura por fotografia recebida');
+    for (const l of leituras) assert.equal(l.tipo, 'image/webp');
+    assert.deepEqual(Array.from(E.chamadas, (c) => [c.metodo, c.credentials, c.cabecalhos.Accept]), [['GET', 'include', 'image/webp'], ['GET', 'include', 'image/webp']]);
+    assert.equal(E.criadas.length, 0); assert.equal(E.revogadas.length, 0);
+    for (const img of imgsDe(t, '#grade .prod-img img')) assert.match(srcDe(img), DATA_URL_WEBP);
+  });
+
+  test('[IMG-G2] erro de leitura: o placeholder aprovado permanece, a falha é definitiva (a mesma imagem não é pedida de novo na sessão) e o resto da grade segue', async () => {
+    const { t, E } = await abrir({ materiais: catalogo(1), ate: 'abertura' });
+    t.janela.__leitorFalha = true;
+    await t.identificar({ tipo: 'CPF', valor: H.FUNCIONARIOS[0].cpf });
+    await t.irAoCatalogo();
+    await t.passar(3000);
+    assert.equal(t.janela.__leituras.length, 1);
+    assert.equal(t.consulta('#grade .prod-img img').length, 0);
+    assert.equal(t.consulta('#grade .prod-img .vazio').length, 1, 'placeholder preservado');
+    const chamadas = E.chamadas.length;
+    await t.passar(30000);
+    assert.equal(E.chamadas.length, chamadas, 'falha definitiva: sem nova requisição');
+  });
+
+  test('[IMG-G3] resultado da leitura fora do formato esperado (outro tipo, texto solto, URL externa, javascript:, vazio) é recusado: placeholder, nada é aplicado', async () => {
+    const ruins = ['data:text/html;base64,PGI+', 'data:image/png;base64,AAAA', 'texto qualquer', 'https://externo.invalido/a.webp', 'javascript:alert(1)', 'data:image/webp;base64,', '', null, 42];
+    for (const ruim of ruins) {
+      const { t } = await abrir({ materiais: catalogo(1), ate: 'abertura' });
+      t.janela.__leitorResultado = ruim;
+      await t.identificar({ tipo: 'CPF', valor: H.FUNCIONARIOS[0].cpf });
+      await t.irAoCatalogo();
+      await t.passar(3000);
+      assert.equal(t.consulta('#grade .prod-img img').length, 0, `aplicou ${JSON.stringify(ruim)}`);
+      assert.equal(t.consulta('#grade .prod-img .vazio').length, 1, `placeholder ausente para ${JSON.stringify(ruim)}`);
+      assert.deepEqual(t.externas, []);
+    }
+  });
+
+  test('[IMG-G4] leitura ainda em andamento quando o atendimento termina: é ABORTADA e a fotografia nunca aparece (nem para o próximo funcionário)', async () => {
+    const { t, E } = await abrir({ materiais: catalogo(3), ate: 'abertura' });
+    t.janela.__leitorAdiado = true;
+    await t.identificar({ tipo: 'CPF', valor: H.FUNCIONARIOS[0].cpf });
+    await t.irAoCatalogo();
+    await t.passar(3000);
+    assert.ok(t.janela.__leituras.length >= 1 && t.janela.__leituras.every((l) => !l.concluida), 'há leituras pendentes');
+    await t.clicarEl(t.el('btnSair'));
+    assert.ok(t.janela.__leituras.every((l) => l.abortada), 'todas as leituras pendentes foram abortadas pela troca de geração');
+    t.janela.__leitorAdiado = false;
+    t.janela.__liberarLeituras();
+    await t.passar(2000);
+    assert.equal(t.consulta('img').length, 0, 'nada aparece depois do encerramento');
+    E.regras.length = 0;
+    await t.identificar({ tipo: 'MATRICULA', valor: H.FUNCIONARIOS[1].matricula });
+    await t.irAoCatalogo();
+    await t.passar(3000);
+    for (const img of imgsDe(t, '#grade .prod-img img')) assert.ok(t.janela.__leituras.find((l) => !l.abortada && t.janela.__dadosDe(srcDe(img)) !== null), 'só fotografias de leituras válidas da sessão atual');
+  });
+
+  test('[IMG-G5] a fotografia aplicada é um data: autocontido: o <img> não referencia rede', async () => {
+    const { t } = await abrir({ materiais: catalogo(1) });
+    await t.passar(3000);
+    const [img] = imgsDe(t, '#grade .prod-img img');
+    assert.match(srcDe(img), DATA_URL_WEBP);
+    assert.deepEqual(t.externas, [], 'nenhuma requisição externa');
   });
 });
