@@ -928,6 +928,14 @@ const VALORES_NGINX = {
   CSP_PAINEL: "default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'",
   RAIZ_ACME: '/var/www/acme', REDE_VERIFICACAO: '203.0.113.0/24',
 };
+{
+  const { atendimento, previa } = require(path.join(REPO, 'deploy/hml/csp/gerar-csp.js')).derivarCspTotem(VALORES_NGINX.CSP_PORTAL);
+  Object.assign(VALORES_NGINX, {
+    ARQUIVO_SEGURANCA_PORTAL_ATENDIMENTO: '/etc/nginx/hml/seguranca-portal-atendimento.conf',
+    ARQUIVO_SEGURANCA_PORTAL_PREVIA: '/etc/nginx/hml/seguranca-portal-previa.conf',
+    CSP_PORTAL_ATENDIMENTO: atendimento, CSP_PORTAL_PREVIA: previa,
+  });
+}
 
 // ===================================================================================== backend bloqueado
 

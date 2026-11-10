@@ -10,6 +10,12 @@ alterar a infraestrutura.
 | `portal.conf.modelo` | origem do Portal do Cliente; `/api/` vai ao backend, `/api/plataforma/` responde 404 |
 | `painel.conf.modelo` | origem do Painel Privado; só `/api/plataforma/` vai ao backend, o resto de `/api/` responde 404 |
 | `seguranca-portal.conf.modelo`, `seguranca-painel.conf.modelo` | cabeçalhos de segurança, incluídos no servidor e em todo `location` que define `add_header` |
+| `seguranca-portal-atendimento.conf.modelo` | só para `/pages/atendimento-token.html`: igual ao global, mas a CSP tem `'self'` em `frame-src` (o iframe da prévia do Totem é da mesma origem); a página continua em `DENY` |
+| `seguranca-portal-previa.conf.modelo` | só para `/totem/previa.html`: igual ao global, mas a CSP tem `frame-ancestors 'self'` e `X-Frame-Options SAMEORIGIN`; é a única página enquadrável |
+
+As duas CSPs do Totem (`CSP_PORTAL_ATENDIMENTO`, `CSP_PORTAL_PREVIA`) vêm de `derivarCspTotem` em
+`deploy/hml/csp/gerar-csp.js`, aplicado à CSP do Portal: nada é digitado à mão, e só `frame-src` e
+`frame-ancestors` mudam. O resto do Portal segue em `DENY` / `frame-ancestors 'none'`.
 
 `renderizar-modelo.js` troca cada `{{NOME}}` por um valor validado e recusa o que
 puder injetar diretiva (`;`, `{`, `}`, `"`, `\`, `$`, quebra de linha), caminho

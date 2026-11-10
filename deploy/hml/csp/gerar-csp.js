@@ -186,4 +186,28 @@ if (require.main === module) {
   }
 }
 
-module.exports = { gerarCsp, PERFIS, ErroCsp };
+// A prévia do Totem é um iframe criado por JavaScript na mesma origem, que o gerador não enxerga no HTML.
+// Variantes derivadas (nunca digitadas à mão) da política do Portal: a página que hospeda o iframe ganha 'self' em frame-src
+// (mantendo o Turnstile); a prévia aceita ser enquadrada só pela mesma origem. O resto da política não muda.
+function derivarCspTotem(politica) {
+  const partes = String(politica).split('; ');
+  const trocar = (nome, novo) => {
+    const i = partes.findIndex((p) => p === nome || p.startsWith(`${nome} `));
+    if (i < 0) throw invalida(`diretiva ausente: ${nome}`);
+    return [i, novo(partes[i])];
+  };
+  const atendimento = partes.slice();
+  if (partes.some((p) => p.startsWith('frame-src '))) {
+    const [iFrame, frame] = trocar('frame-src', (p) => (p === "frame-src 'none'" ? "frame-src 'self'" : p.replace('frame-src ', "frame-src 'self' ")));
+    atendimento[iFrame] = frame;
+  } else atendimento.push("frame-src 'self'");
+  const previa = partes.slice();
+  const [iAnc, anc] = trocar('frame-ancestors', (p) => {
+    if (p !== "frame-ancestors 'none'") throw invalida('frame-ancestors do Portal precisa ser \'none\'');
+    return "frame-ancestors 'self'";
+  });
+  previa[iAnc] = anc;
+  return { atendimento: atendimento.join('; '), previa: previa.join('; ') };
+}
+
+module.exports = { gerarCsp, derivarCspTotem, PERFIS, ErroCsp };

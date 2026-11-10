@@ -96,6 +96,20 @@ describe('avaliarCsp — política mínima exigida', () => {
     assert.ok(avaliarCsp(undefined).length > 0);
   });
 
+  test("frame-ancestors 'self' só é aceito quando a opção o autoriza; o padrão continua exigindo 'none'", () => {
+    const { avaliarCsp } = carregar();
+    const SELF = CSP_BOA.replace("frame-ancestors 'none'", "frame-ancestors 'self'");
+    assert.ok(avaliarCsp(SELF).length > 0, 'padrão recusa self');
+    assert.deepEqual(avaliarCsp(SELF, { frameAncestorsAceitos: ["'self'"] }), []);
+    assert.ok(avaliarCsp(CSP_BOA, { frameAncestorsAceitos: ["'self'"] }).length > 0, 'só self: none é recusado');
+    assert.deepEqual(avaliarCsp(CSP_BOA, { frameAncestorsAceitos: ["'none'", "'self'"] }), []);
+    for (const ruim of ['frame-ancestors *', "frame-ancestors 'self' 'none'", "frame-ancestors 'self' https://exemplo.test", 'frame-ancestors https:']) {
+      assert.ok(avaliarCsp(CSP_BOA.replace("frame-ancestors 'none'", ruim), { frameAncestorsAceitos: ["'none'", "'self'"] }).length > 0, ruim);
+    }
+    for (const invalido of [[], ['*'], ["'none'", 'https://x.test'], "'self'", null]) assert.throws(() => avaliarCsp(CSP_BOA, { frameAncestorsAceitos: invalido }), TypeError);
+    assert.deepEqual(avaliarCsp(CSP_BOA.replace("form-action 'self'", "form-action 'self'; frame-src 'self' https://challenges.cloudflare.com")), [], "frame-src 'self' e Turnstile passam");
+  });
+
   test("'unsafe-inline' só é aceito em style-src-attr; hashes e hosts https explícitos passam", () => {
     const { avaliarCsp } = carregar();
     assert.deepEqual(avaliarCsp(CSP_BOA.replace("script-src 'self'", "script-src 'self' https://challenges.cloudflare.com")), []);
@@ -144,6 +158,22 @@ describe('verificarPublicacao — frontend estático', () => {
       const r = await verificarPublicacao({ baseUrl: s.url, tipo: 'estatico', versaoEsperada: VERSAO, manifesto: manifestoDe(ARQUIVOS), ausentes: [] });
       assert.deepEqual(falhas(r), ['CABECALHOS'], JSON.stringify(opcoes));
     }
+  });
+
+  test("totem/previa.html é a única página que pode declarar frame-ancestors 'self'; nas demais, e na prévia com 'none' ou outro valor, a verificação falha", async () => {
+    const { verificarPublicacao } = carregar();
+    const CSP_SELF = CSP_BOA.replace("frame-ancestors 'none'", "frame-ancestors 'self'");
+    const arquivos = { ...ARQUIVOS, 'totem/previa.html': '<p>previa</p>' };
+    const rodar = async (opcoes) => {
+      const s = await subir({ arquivos, ...opcoes });
+      return verificarPublicacao({ baseUrl: s.url, tipo: 'estatico', versaoEsperada: VERSAO, manifesto: manifestoDe(arquivos), ausentes: [] });
+    };
+    const so = (caminho, csp) => ({ sobrescrever: { [caminho]: { status: 200, corpo: arquivos[caminho.slice(1)], cabecalhos: { 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': csp } } } });
+    assert.deepEqual(falhas(await rodar({})), [], "prévia ainda em 'none' (antes da correção no Nginx) continua aceita: a ordem de implantação não quebra a verificação");
+    assert.deepEqual(falhas(await rodar(so('/totem/previa.html', CSP_SELF))), [], 'prévia com self passa');
+    assert.deepEqual(falhas(await rodar(so('/index.html', CSP_SELF))), ['CABECALHOS'], 'outra página com self falha');
+    assert.deepEqual(falhas(await rodar(so('/totem/previa.html', CSP_BOA.replace("frame-ancestors 'none'", 'frame-ancestors *')))), ['CABECALHOS'], 'prévia com curinga falha');
+    assert.deepEqual(falhas(await rodar(so('/totem/previa.html', CSP_BOA.replace("frame-ancestors 'none'", "frame-ancestors 'self' https://exemplo.test")))), ['CABECALHOS'], 'prévia com extras falha');
   });
 
   test('isolamento: arquivo de outro componente, dotfiles, .releases e estado.json não podem ser servidos', async () => {

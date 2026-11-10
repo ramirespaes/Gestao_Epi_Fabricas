@@ -16,7 +16,8 @@ const path = require('node:path');
 const REPO = path.resolve(__dirname, '..', '..', '..', '..');
 const DIR = path.join(REPO, 'deploy', 'hml', 'nginx');
 const CSP = "default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'sha256-AAAA'; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self' data:; connect-src 'self'";
-const MODELOS = ['seguranca-portal.conf.modelo', 'seguranca-painel.conf.modelo', 'portal.conf.modelo', 'painel.conf.modelo'];
+const MODELOS = ['seguranca-portal.conf.modelo', 'seguranca-portal-atendimento.conf.modelo', 'seguranca-portal-previa.conf.modelo', 'seguranca-painel.conf.modelo', 'portal.conf.modelo', 'painel.conf.modelo'];
+const { derivarCspTotem } = require(path.join(REPO, 'deploy', 'hml', 'csp', 'gerar-csp.js'));
 
 function carregar() {
   try {
@@ -38,6 +39,9 @@ const VALORES = {
   DESTINO_RAIZ_PORTAL: '/portal/index.html', DESTINO_RAIZ_PAINEL: '/painel-privado/index.html',
   CSP_PORTAL: CSP, CSP_PAINEL: CSP,
   RAIZ_ACME: '/var/www/acme', REDE_VERIFICACAO: '203.0.113.0/24',
+  ARQUIVO_SEGURANCA_PORTAL_ATENDIMENTO: '/etc/nginx/safework/seguranca-portal-atendimento.conf',
+  ARQUIVO_SEGURANCA_PORTAL_PREVIA: '/etc/nginx/safework/seguranca-portal-previa.conf',
+  CSP_PORTAL_ATENDIMENTO: derivarCspTotem(CSP).atendimento, CSP_PORTAL_PREVIA: derivarCspTotem(CSP).previa,
 };
 
 // Extrai blocos "location ... { ... }" e "server { ... }" por contagem de chaves.
@@ -116,10 +120,99 @@ describe('modelos Nginx — decisões de segurança', () => {
       const texto = render(modelo);
       const locs = blocos(texto, 'location');
       assert.ok(locs.length >= 4, modelo);
-      for (const l of locs.filter((x) => /\badd_header\b/.test(x.corpo))) assert.ok(l.corpo.includes(`include ${incl};`), `${modelo}: ${l.cabecalho}`);
+      const permitidos = modelo === 'portal.conf.modelo' ? [incl, VALORES.ARQUIVO_SEGURANCA_PORTAL_ATENDIMENTO, VALORES.ARQUIVO_SEGURANCA_PORTAL_PREVIA] : [incl];
+      for (const l of locs.filter((x) => /\badd_header\b/.test(x.corpo))) assert.ok(permitidos.some((i) => l.corpo.includes(`include ${i};`)), `${modelo}: ${l.cabecalho}`);
       for (const l of blocos(texto, 'server').filter((s) => /listen 443/.test(s.corpo))) assert.ok(l.corpo.includes(`include ${incl};`), `${modelo}: server`);
       for (const linha of texto.split('\n').filter((x) => /^\s*add_header\b/.test(x))) assert.match(linha, /\balways;\s*$/, linha);
     }
+  });
+
+  const cabecalhos = (texto) => new Map(texto.split('\n').filter((l) => /^add_header\b/.test(l)).map((l) => { const m = /^add_header (\S+) (.*) always;$/.exec(l); return [m[1], m[2]]; }));
+  const TURNSTILE = "frame-src https://challenges.cloudflare.com";
+  const CSP_TURNSTILE = CSP.includes('frame-src') ? CSP : `${CSP}; ${TURNSTILE}`;
+  const trocarDiretiva = (politica, antes, depois) => { assert.ok(politica.includes(antes), antes); return politica.replace(antes, depois); };
+
+  describe('prévia do Totem — enquadramento só na mesma origem, DENY no resto', () => {
+    const portal = () => render('portal.conf.modelo');
+    const loc = (cab) => blocos(portal(), 'location').find((l) => l.cabecalho === cab);
+
+    test('só /pages/atendimento-token.html e /totem/previa.html têm conjunto próprio de cabeçalhos; o resto do Portal segue no arquivo global', () => {
+      const proprios = blocos(portal(), 'location').filter((l) => l.corpo.includes(VALORES.ARQUIVO_SEGURANCA_PORTAL_ATENDIMENTO) || l.corpo.includes(VALORES.ARQUIVO_SEGURANCA_PORTAL_PREVIA));
+      assert.deepEqual(proprios.map((l) => l.cabecalho).sort(), ['location = /pages/atendimento-token.html', 'location = /totem/previa.html']);
+      assert.ok(loc('location = /pages/atendimento-token.html').corpo.includes(`include ${VALORES.ARQUIVO_SEGURANCA_PORTAL_ATENDIMENTO};`));
+      assert.ok(loc('location = /totem/previa.html').corpo.includes(`include ${VALORES.ARQUIVO_SEGURANCA_PORTAL_PREVIA};`));
+      for (const c of ['location = /pages/atendimento-token.html', 'location = /totem/previa.html']) {
+        assert.match(loc(c).corpo, /add_header Cache-Control "no-cache" always;/, c);
+        assert.match(loc(c).corpo, /try_files \$uri =404;/, c);
+        assert.doesNotMatch(loc(c).corpo, /\b(?:proxy_pass|alias|return|autoindex)\b/, c);
+      }
+      const geral = blocos(portal(), 'location').filter((l) => l.cabecalho === 'location /' && /try_files/.test(l.corpo))[0];
+      assert.ok(geral.corpo.includes(`include ${VALORES.ARQUIVO_SEGURANCA_PORTAL};`));
+      assert.doesNotMatch(geral.corpo, /previa|atendimento/);
+      assert.ok(blocos(portal(), 'server').filter((s) => /listen 443/.test(s.corpo))[0].corpo.includes(`include ${VALORES.ARQUIVO_SEGURANCA_PORTAL};`));
+    });
+
+    test('regressão de cabeçalhos: a prévia difere do arquivo global só em CSP (frame-ancestors) e X-Frame-Options; a página difere só na CSP (frame-src)', () => {
+      const global = cabecalhos(render('seguranca-portal.conf.modelo'));
+      const previa = cabecalhos(render('seguranca-portal-previa.conf.modelo'));
+      const atend = cabecalhos(render('seguranca-portal-atendimento.conf.modelo'));
+      for (const [nome, v] of global) {
+        if (nome !== 'Content-Security-Policy' && nome !== 'X-Frame-Options') {
+          assert.equal(previa.get(nome), v, `prévia: ${nome}`);
+          assert.equal(atend.get(nome), v, `atendimento: ${nome}`);
+        }
+      }
+      assert.deepEqual([...previa.keys()].sort(), [...global.keys()].sort());
+      assert.deepEqual([...atend.keys()].sort(), [...global.keys()].sort());
+      assert.equal(global.get('X-Frame-Options'), '"DENY"');
+      assert.equal(previa.get('X-Frame-Options'), '"SAMEORIGIN"');
+      assert.equal(atend.get('X-Frame-Options'), '"DENY"');
+      assert.equal(previa.get('Content-Security-Policy'), `"${trocarDiretiva(CSP, "frame-ancestors 'none'", "frame-ancestors 'self'")}"`);
+      assert.match(atend.get('Content-Security-Policy'), /frame-ancestors 'none'/);
+      assert.match(atend.get('Content-Security-Policy'), /frame-src [^;]*'self'/);
+      assert.match(global.get('Content-Security-Policy'), /frame-ancestors 'none'/);
+    });
+
+    test('SAMEORIGIN e frame-ancestors \'self\' existem apenas no modelo da prévia; Painel e arquivo global ficam em DENY/none', () => {
+      for (const m of MODELOS) {
+        const t = render(m);
+        const esperado = m === 'seguranca-portal-previa.conf.modelo';
+        assert.equal(/SAMEORIGIN/.test(t), esperado, `${m}: SAMEORIGIN`);
+        assert.equal(/frame-ancestors 'self'/.test(t), esperado, `${m}: frame-ancestors 'self'`);
+      }
+      assert.doesNotMatch(render('painel.conf.modelo'), /totem|atendimento|previa/);
+      assert.match(render('seguranca-painel.conf.modelo'), /X-Frame-Options "DENY"/);
+    });
+
+    test('derivarCspTotem mantém o Turnstile e o resto da política; só frame-src e frame-ancestors mudam', () => {
+      const d = derivarCspTotem(CSP_TURNSTILE);
+      assert.ok(d.atendimento.includes("frame-src 'self' https://challenges.cloudflare.com") || !CSP.includes('frame-src'), d.atendimento);
+      assert.equal(d.previa, trocarDiretiva(CSP_TURNSTILE, "frame-ancestors 'none'", "frame-ancestors 'self'"));
+      assert.equal(d.atendimento.replace(/frame-src [^;]*/, ''), CSP_TURNSTILE.replace(/frame-src [^;]*/, ''));
+      assert.equal(derivarCspTotem("default-src 'none'; frame-ancestors 'none'; frame-src 'none'").atendimento, "default-src 'none'; frame-ancestors 'none'; frame-src 'self'");
+      assert.equal(derivarCspTotem("default-src 'none'; frame-ancestors 'none'").atendimento, "default-src 'none'; frame-ancestors 'none'; frame-src 'self'");
+      assert.throws(() => derivarCspTotem("default-src 'none'; frame-ancestors 'self'"), (e) => /frame-ancestors/.test(e.message));
+      assert.throws(() => derivarCspTotem("default-src 'none'"), (e) => /frame-ancestors/.test(e.message));
+    });
+
+    test('o renderizador recusa CSPs fora do desenho: prévia só aceita frame-ancestors \'self\'; página só aceita frame-src com \'self\' e ancestrais \'none\'; global nunca aceita \'self\' em frame-ancestors', () => {
+      const { renderizarModelo } = carregar();
+      const ruim = (chave, valor) => assert.throws(() => renderizarModelo(ler('portal.conf.modelo'), { ...VALORES, [chave]: valor }), (e) => e.codigo === 'NGINX_VALOR_INVALIDO', `${chave}=${valor}`);
+      const bom = (chave, valor) => assert.doesNotThrow(() => renderizarModelo(ler('portal.conf.modelo'), { ...VALORES, [chave]: valor }), `${chave}=${valor}`);
+      const previa = VALORES.CSP_PORTAL_PREVIA; const atend = VALORES.CSP_PORTAL_ATENDIMENTO;
+      bom('CSP_PORTAL_PREVIA', previa); bom('CSP_PORTAL_ATENDIMENTO', atend);
+      ruim('CSP_PORTAL_PREVIA', CSP); // frame-ancestors 'none' na prévia não serve
+      ruim('CSP_PORTAL_PREVIA', trocarDiretiva(previa, "frame-ancestors 'self'", "frame-ancestors 'self' https://exemplo.test"));
+      ruim('CSP_PORTAL_PREVIA', trocarDiretiva(previa, "frame-ancestors 'self'", 'frame-ancestors *'));
+      ruim('CSP_PORTAL_PREVIA', trocarDiretiva(previa, "default-src 'none'", "default-src 'none' https:"));
+      ruim('CSP_PORTAL_ATENDIMENTO', CSP.includes('frame-src') ? trocarDiretiva(CSP, /frame-src [^;]*/.exec(CSP)[0], "frame-src https://challenges.cloudflare.com") : CSP);
+      ruim('CSP_PORTAL_ATENDIMENTO', trocarDiretiva(atend, "frame-ancestors 'none'", "frame-ancestors 'self'"));
+      ruim('CSP_PORTAL_ATENDIMENTO', trocarDiretiva(atend, "frame-src 'self'", "frame-src 'self' *"));
+      ruim('CSP_PORTAL_ATENDIMENTO', trocarDiretiva(atend, "frame-src 'self'", "frame-src 'self' http://exemplo.test"));
+      ruim('CSP_PORTAL', trocarDiretiva(CSP, "frame-ancestors 'none'", "frame-ancestors 'self'"));
+      ruim('ARQUIVO_SEGURANCA_PORTAL_PREVIA', '/etc/nginx/previa.txt');
+      ruim('ARQUIVO_SEGURANCA_PORTAL_ATENDIMENTO', 'relativo/atendimento.conf');
+    });
   });
 
   test('porta 80 só redireciona para HTTPS; o servidor TLS exige TLS 1.2+ e não revela a versão', () => {
