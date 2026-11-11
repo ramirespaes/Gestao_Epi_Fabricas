@@ -89,7 +89,7 @@ describe('[P6] composição por fonte do layout 2', () => {
     assert.deepEqual(lido.planos['fiscalizacao-pacotes'].referencias, [{ chave: '7/pacote-3.zip', sha256: sha(fis.zip), bytes: fis.zip.length, empresaId: '7' }]);
     assert.equal(lido.inventario.relacoes.length, 1);
     assert.ok(executor.consultas.length >= 7, 'tudo no mesmo executor');
-    assert.rejects(CP.planejarNoSnapshot({ executor, catalogo: obterCatalogo(), fontes: ['postgres-aplicacao'] }), (e) => e.code === 'ADAPTADOR_INDISPONIVEL');
+    await assert.rejects(CP.planejarNoSnapshot({ executor, catalogo: obterCatalogo(), fontes: ['postgres-aplicacao'] }), (e) => e.code === 'ADAPTADOR_INDISPONIVEL');
     assert.throws(() => A.obterAdaptador('imagens', { ...obterCatalogo(), fontes: obterCatalogo().fontes.map((f) => (f.id === 'imagens' ? { ...f, chave: { formatoChaveId: 'fiscalizacao-v1' } } : f)) }), (e) => e.code === 'ADAPTADOR_INDISPONIVEL');
   });
 
