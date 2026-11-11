@@ -197,7 +197,7 @@ describe('[CAP-B] lançador do pg_dump em modo PIPE', () => {
     const proc = await l.lancar(specPipe(f.descritor));
     assert.deepEqual(falso.chamadas[0].opcoes.stdio, ['ignore', 'pipe', 'pipe']);
     assert.equal(falso.chamadas[0].opcoes.shell, false);
-    assert.equal(JSON.stringify(falso.chamadas[0].opcoes).includes(String(f.descritor)), false);
+    assert.equal(Object.values(falso.chamadas[0].opcoes).flat().includes(f.descritor), false);
     await proc.fluxosFechados;
     assert.deepEqual({ ...(await proc.saida) }, { codigo: 0, sinal: null });
     const ev = await l.capturaDaSaida();

@@ -26,6 +26,7 @@ const TESTES_AUTORIZADOS = Object.freeze([
   'test/services/backup-contencao-destino.test.js',
   'test/services/backup-decifra-chamadores.test.js',
   'test/integracao/d-orf-6-p12-ensaio-dr.integration.js',
+  'test/integracao/d-orf-6-c1-dr-cifrado-b1.integration.js',
 ]);
 const IGNORADOS = new Set(['node_modules', 'coverage', '.git']);
 const EXTENSOES = /\.(?:js|cjs|mjs)$/;
