@@ -22,6 +22,18 @@ const janelaReal = { lerArquivo: J.lerArquivoDaJanela, validar: J.validarArquivo
 const rodar = (m, extras = {}) => verificarAmbiente({ ambiente: extras.ambiente ?? m.ambiente, raizDoCodigo: m.caminhos.codigo, janela: janelaReal, ...extras.resto });
 const achar = (relatorio, id) => relatorio.itens.find((i) => i.id === id);
 const codigos = (relatorio) => Object.fromEntries(relatorio.itens.map((i) => [i.id, `${i.estado}:${i.codigo}`]));
+const MEDICOES_DO_SISTEMA = Object.freeze(['livreBytes', 'dispositivo']);
+/** Relatório em texto sem os dois números MEDIDOS pelo sistema (espaço livre e dispositivo), que nunca vêm de variável de ambiente; todo o restante continua sob busca textual. */
+const semMedicoes = (relatorio) => JSON.stringify(relatorio, (chave, valor) => (MEDICOES_DO_SISTEMA.includes(chave) ? undefined : valor));
+const PORTA_COLIDENTE = '70000';
+/** Porta inválida cujos dígitos coincidem com uma medição injetada: a MESMA constante é a entrada e a agulha da busca textual, para uma não divergir da outra. */
+async function rodarComPortaColidente(portas) {
+  const m = novo();
+  const r = await rodar(m, { ambiente: { ...m.ambiente, BACKUP_PG_PORTA: PORTA_COLIDENTE }, resto: { portas } });
+  assert.equal(achar(r, 'PG_CONEXAO').codigo, 'VALOR_INVALIDO');
+  assert.equal(semMedicoes(r).includes(PORTA_COLIDENTE), false, `eco de ${PORTA_COLIDENTE}`);
+  return r;
+}
 
 describe('[SV] ambiente completo', () => {
   test('SV-01 — ambiente fictício completo: infraestrutura OK, operacional bloqueado, prontidão falsa, nada criado nem alterado em disco', async () => {
@@ -185,10 +197,42 @@ describe('[SV-PG] PostgreSQL, limites e espaço', () => {
     for (const ruim of [{ BACKUP_PG_PORTA: '0' }, { BACKUP_PG_PORTA: '70000' }, { BACKUP_PG_PORTA: '5432x' }, { BACKUP_PG_HOST: 'host com espaço' }, { BACKUP_PG_USUARIO: "x'; drop" }, { BACKUP_PG_BANCO: '-x' }]) {
       const r = await rodar(m, { ambiente: { ...m.ambiente, ...ruim } });
       assert.equal(achar(r, 'PG_CONEXAO').codigo, 'VALOR_INVALIDO', JSON.stringify(ruim));
-      for (const valor of Object.values(ruim).filter((v) => v.length >= 5)) assert.equal(JSON.stringify(r).includes(valor), false, `eco de ${valor}`);
+      for (const valor of Object.values(ruim).filter((v) => v.length >= 5)) assert.equal(semMedicoes(r).includes(valor), false, `eco de ${valor}`);
     }
     const texto = JSON.stringify(ok);
     for (const valor of ['usuario_ficticio', 'banco_ficticio', SEGREDO_NO_ARQUIVO, 'SENHA-QUE-NAO-PODE-VAZAR']) assert.equal(texto.includes(valor), false, `vazou ${valor}`);
+  });
+
+  test('SV-21b — medição injetada: espaço livre medido com os dígitos 70000 não pode contar como eco da porta inválida 70000', async () => {
+    const r = await rodarComPortaColidente({ statfs: () => ({ bavail: 1, bsize: 70000 }) });
+    assert.equal(achar(r, 'ESPACO_LIVRE').detalhe.livreBytes, PORTA_COLIDENTE);
+  });
+
+  test('SV-21c — medição injetada: identificador de dispositivo 70000 não pode contar como eco da porta inválida 70000', async () => {
+    const lstat = (caminho) => Object.create(fs.lstatSync(caminho), { dev: { value: 70000 } });
+    const r = await rodarComPortaColidente({ lstat });
+    assert.equal(achar(r, 'MESMO_DISPOSITIVO').detalhe.dispositivo, 70000);
+  });
+
+  test('SV-21d — controle: com medições que não contêm 70000 a verificação original passa (a falha vem só da coincidência)', async () => {
+    const r = await rodarComPortaColidente({ statfs: () => ({ bavail: 1000, bsize: 4096 }) });
+    assert.equal(achar(r, 'ESPACO_LIVRE').detalhe.livreBytes, '4096000');
+    assert.equal(JSON.stringify(r).includes(PORTA_COLIDENTE), false, `eco de ${PORTA_COLIDENTE} (busca sobre o relatório inteiro, sem exclusões)`);
+  });
+
+  test('SV-21e — contraprova: eco indevido em detalhe, caminho ou código continua detectado; só as chaves livreBytes e dispositivo são ignoradas', async () => {
+    const m = novo();
+    const base = await rodar(m, { ambiente: { ...m.ambiente, BACKUP_PG_PORTA: '70000' } });
+    assert.equal(semMedicoes(base).includes('70000'), false);
+    const detectado = (alterar) => { const copia = structuredClone(base); alterar(copia); return semMedicoes(copia).includes('70000'); };
+    const comCaminho = (copia) => copia.itens.find((i) => i.detalhe?.caminho !== undefined);
+    assert.equal(detectado((c) => { achar(c, 'PG_CONEXAO').detalhe = { porta: 70000 }; }), true, 'porta ecoada em detalhe');
+    assert.equal(detectado((c) => { comCaminho(c).detalhe.caminho = '/x/70000'; }), true, 'valor ecoado em caminho');
+    assert.equal(detectado((c) => { achar(c, 'PG_CONEXAO').codigo = 'ECO_70000'; }), true, 'valor ecoado em código');
+    assert.equal(detectado((c) => { c.itens[0].detalhe = { outroCampo: '70000' }; }), true, 'valor ecoado em outro campo de detalhe');
+    assert.equal(detectado((c) => { achar(c, 'PG_CONEXAO').detalhe = { livre: '70000' }; }), true, 'nome de chave parecido não é ignorado');
+    assert.equal(detectado((c) => { achar(c, 'ESPACO_LIVRE').detalhe = { livreBytes: '70000' }; }), false, 'livreBytes é medição do sistema');
+    assert.equal(detectado((c) => { achar(c, 'MESMO_DISPOSITIVO').detalhe = { dispositivo: 70000 }; }), false, 'dispositivo é medição do sistema');
   });
 
   test('SV-22 — binários: ausentes ou não executáveis são FALHA; nunca são executados; variáveis PG* globais são FALHA e só os nomes aparecem', async () => {
