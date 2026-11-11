@@ -52,16 +52,21 @@ describe('[IN] inventário do banco (executor simulado)', () => {
     assert.ok([inv, inv.relacoes, inv.relacoes[0], inv.outros, inv.extensoes, inv.servidor, inv.migrations].every(Object.isFrozen));
   });
 
-  test('IN-02 — o SQL exclui esquemas de sistema, usa o esquema das migrations validado e nunca contém escrita', () => {
+  test('IN-02 — o SQL exclui esquemas de sistema, usa o esquema das migrations validado e nunca contém escrita', async (t) => {
     for (const sql of [I.SQL.RELACOES, I.SQL.OUTROS, I.SQL.EXTENSOES, I.SQL.SERVIDOR, I.SQL.migrations('public')]) {
       assert.doesNotMatch(sql, /\b(INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|COPY|TRUNCATE|GRANT|lo_import|lo_export|pg_file_write)\b/i);
     }
     assert.match(I.SQL.RELACOES, /pg_catalog.*information_schema.*pg\\_toast.*pg\\_temp/s);
     assert.equal(I.SQL.migrations('outro'), 'SELECT name FROM "outro"."pgmigrations" ORDER BY run_on, id');
-    assert.rejects(I.inventariar(executorFalso(), { esquemaDasMigrations: 'x"; DROP' }), TypeError);
-    assert.rejects(I.inventariar(executorFalso(), { outra: 1 }), TypeError);
-    assert.rejects(I.inventariar({}), TypeError);
-    assert.rejects(I.inventariar(null), TypeError);
+    const ENTRADAS_INVALIDAS = [
+      ['esquema das migrations com injeção', () => I.inventariar(executorFalso(), { esquemaDasMigrations: 'x"; DROP' })],
+      ['opção desconhecida', () => I.inventariar(executorFalso(), { outra: 1 })],
+      ['executor sem query', () => I.inventariar({})],
+      ['executor nulo', () => I.inventariar(null)],
+    ];
+    for (const [rotulo, chamar] of ENTRADAS_INVALIDAS) {
+      await t.test(rotulo, async () => { await assert.rejects(chamar(), TypeError); });
+    }
   });
 
   test('IN-03 — falha fechada: linha com chave a mais, relkind desconhecido, booleano em texto, relação duplicada, categoria faltante, versão ilegível ou migration fora do padrão', async () => {
