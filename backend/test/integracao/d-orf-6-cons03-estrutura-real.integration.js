@@ -59,6 +59,11 @@ const ordenados = (lista) => [...lista].sort((a, b) => a.localeCompare(b));
 const observar = (fase, dados) => process.stdout.write(`C3_OBSERVACAO_JSON ${JSON.stringify({ fase, ...dados })}\n`);
 const nomeValido = (nome) => typeof nome === 'string' && NOME_CONTROLADO.test(nome) && !H.PROTEGIDOS.includes(nome);
 
+/** Atributos exigidos do papel B-1: nenhum privilégio administrativo e com login. */
+const ATRIBUTOS_DO_PAPEL_B1 = Object.freeze({ rolsuper: false, rolcreatedb: false, rolcreaterole: false, rolreplication: false, rolbypassrls: false, rolcanlogin: true });
+const SQL_ATRIBUTOS_DO_PAPEL = 'SELECT rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls, rolcanlogin FROM pg_roles WHERE rolname = $1';
+const SQL_PARAMETROS_DA_INSTANCIA = "SELECT current_setting('data_directory') AS data_directory, current_setting('port') AS port, current_setting('listen_addresses') AS listen_addresses, current_setting('unix_socket_directories') AS unix_socket_directories, current_setting('server_version') AS server_version";
+
 /** Primeiro motivo pelo qual o ambiente NÃO é a instância efêmera exclusiva autorizada para o CONS-03; `null` se tudo confere. */
 function motivoDeRecusaDoAmbiente(env) {
   const pgdata = typeof env.SWB_PGDATA === 'string' ? env.SWB_PGDATA : '';
@@ -86,6 +91,24 @@ function comandosDoModelo(texto, banco) {
   return texto.split('\n').filter((linha) => !/^\s*--/.test(linha)).join('\n').split(';')
     .map((c) => c.replace(/\s+/g, ' ').trim()).filter((c) => c !== '')
     .map((c) => c.replace('DATABASE A_PREENCHER', `DATABASE ${banco}`));
+}
+
+/** Parâmetros que identificam a instância, numa só consulta. `current_setting` é o equivalente funcional do `SHOW`: mesma função interna, mesmo texto e mesma exigência de permissão (erro se o papel não puder ler). */
+async function parametrosDaInstancia(cliente) {
+  const { rows: [parametros] } = await cliente.query(SQL_PARAMETROS_DA_INSTANCIA);
+  return parametros;
+}
+
+/** Cria o papel B-1 pelo modelo SQL e devolve o retrato dos privilégios: objetos sem SELECT antes e depois das concessões e os atributos do papel. */
+async function provisionarPapelB1(cliente, banco) {
+  const modelo = fs.readFileSync(path.join(BACKEND, 'ops', 'sql', 'papel-executor-backup.sql.modelo'), 'utf8');
+  for (const comando of comandosDoModelo(modelo, banco)) await cliente.query(comando);
+  await cliente.query(`ALTER ROLE ${H.PAPEL_B1} CONNECTION LIMIT 6`);
+  const objetosSemSelect = async () => (await cliente.query(H.VERIFICACAO_B1)).rows;
+  const antes = await objetosSemSelect();
+  for (const sql of H.GRANTS_B1) await cliente.query(sql);
+  const { rows: [atributos] } = await cliente.query(SQL_ATRIBUTOS_DO_PAPEL, [H.PAPEL_B1]);
+  return { antes: antes.length, depois: await objetosSemSelect(), atributos };
 }
 
 const limitar = (promessa, rotulo) => {
@@ -203,6 +226,12 @@ describe('[CONS03-REAL] verificação estrutural real do dump (pg_restore --list
     }
   }
 
+  /** Semeia as imagens sintéticas: primeiro o armazenamento da origem, depois as linhas no banco de origem (mesma ordem do ensaio original). */
+  async function semear(diretorio) {
+    const origem = criarArmazenamentoImagens({ diretorio });
+    await noBanco(nomeOrigem, async (c) => { imagens.push(...await semearImagensSinteticas({ armazenamento: origem, cliente: c, nomeOrigem })); });
+  }
+
   before(async () => {
     const motivo = motivoDeRecusaDoAmbiente(process.env);
     assert.equal(motivo, null, `ambiente recusado: ${motivo}`);
@@ -212,10 +241,10 @@ describe('[CONS03-REAL] verificação estrutural real do dump (pg_restore --list
     admin = new Client(base);
     await admin.connect();
     await confirmarBancoDeTeste(admin);
-    const mostrar = async (p) => (await admin.query(`SHOW ${p}`)).rows[0][p];
-    for (const [parametro, valor] of Object.entries({ data_directory: SWB_PGDATA, port: SWB_PORT, listen_addresses: '' })) assert.equal(await mostrar(parametro), valor, `${parametro} difere da instância autorizada`);
-    assert.ok((await mostrar('unix_socket_directories')).split(',').map((s) => s.trim()).includes(DB_HOST), 'DB_HOST não é o socket da instância');
-    assert.match(await mostrar('server_version'), /^16\./);
+    const parametros = await parametrosDaInstancia(admin);
+    assert.deepEqual({ data_directory: parametros.data_directory, port: parametros.port, listen_addresses: parametros.listen_addresses }, { data_directory: SWB_PGDATA, port: SWB_PORT, listen_addresses: '' }, 'a instância difere da autorizada');
+    assert.ok(parametros.unix_socket_directories.split(',').map((s) => s.trim()).includes(DB_HOST), 'DB_HOST não é o socket da instância');
+    assert.match(parametros.server_version, /^16\./);
     assert.deepEqual(await bancosDaInstancia(), ordenados(H.BANCOS_BASE), 'a instância tem bancos além dos quatro de base');
     papeisAntes = (await admin.query('SELECT rolname FROM pg_roles ORDER BY rolname')).rows.map((r) => r.rolname);
     papeisCapturados = true;
@@ -252,11 +281,11 @@ describe('[CONS03-REAL] verificação estrutural real do dump (pg_restore --list
       env: { PATH: process.env.PATH, NODE_ENV: 'test', DB_HOST, DB_PORT: SWB_PORT, DB_NAME: nomeOrigem, DB_USER, ...(process.env.DB_PASSWORD === undefined ? {} : { DB_PASSWORD: process.env.DB_PASSWORD }), C3_NOME: nomeOrigem, C3_PGDATA: SWB_PGDATA, C3_PORTA: SWB_PORT, C3_DIRETORIO: DIRETORIO_MIGRATIONS },
     });
     assert.equal(saida.trim().split('\n').pop(), `C3_MIGRATIONS ${listarMigrations(DIRETORIO_MIGRATIONS).length}`);
-    const origem = criarArmazenamentoImagens({ diretorio: dirs.imagens });
-    await noBanco(nomeOrigem, async (c) => { imagens.push(...await semearImagensSinteticas({ armazenamento: origem, cliente: c, nomeOrigem })); });
+    await semear(dirs.imagens);
   }, { timeout: 420000 });
 
-  after(async () => {
+  /** Remove SÓ o que este ensaio criou, na ordem de sempre; cada falha é acumulada e a limpeza incompleta reprova ao final. */
+  async function limpar() {
     const falhas = [];
     try {
       for (const c of abertos) await c.end().catch(() => {});
@@ -282,24 +311,20 @@ describe('[CONS03-REAL] verificação estrutural real do dump (pg_restore --list
       if (falhas.length > 0) process.stderr.write(`C3_LIMPEZA: ${falhas.join('; ')}\n`);
     }
     assert.deepEqual(falhas, [], 'limpeza do ensaio incompleta');
-  });
+  }
+
+  after(limpar);
 
   test('C3-01 — isolamento e papel B-1: instância exclusiva, origem com migrations e 2 imagens, papel criado pelo modelo SQL, zero objetos sem SELECT depois das concessões', async () => {
     assert.deepEqual((await bancosDaInstancia()).filter((n) => !H.BANCOS_BASE.includes(n)), [nomeOrigem]);
     assert.equal(imagens.length, 2);
     const { antes, depois, atributos } = await noBanco(nomeOrigem, async (c) => {
       assert.equal((await c.query('SELECT count(*)::int AS n FROM imagens_padrao')).rows[0].n, 2);
-      for (const comando of comandosDoModelo(fs.readFileSync(path.join(BACKEND, 'ops', 'sql', 'papel-executor-backup.sql.modelo'), 'utf8'), nomeOrigem)) await c.query(comando);
-      await c.query(`ALTER ROLE ${H.PAPEL_B1} CONNECTION LIMIT 6`);
-      const semLeitura = async () => (await c.query(H.VERIFICACAO_B1)).rows;
-      const sem = await semLeitura();
-      for (const sql of H.GRANTS_B1) await c.query(sql);
-      const attrs = (await c.query('SELECT rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls, rolcanlogin FROM pg_roles WHERE rolname = $1', [H.PAPEL_B1])).rows[0];
-      return { antes: sem.length, depois: await semLeitura(), atributos: attrs };
+      return provisionarPapelB1(c, nomeOrigem);
     });
     assert.ok(antes > 0, 'antes da concessão a verificação precisa listar objetos');
     assert.deepEqual(depois, []);
-    assert.deepEqual({ ...atributos }, { rolsuper: false, rolcreatedb: false, rolcreaterole: false, rolreplication: false, rolbypassrls: false, rolcanlogin: true });
+    assert.deepEqual({ ...atributos }, ATRIBUTOS_DO_PAPEL_B1);
     observar('isolamento-e-papel', { versao: (await admin.query('SHOW server_version')).rows[0].server_version, migrations: listarMigrations(DIRETORIO_MIGRATIONS).length, objetosSemSelectDepois: depois.length, papel: H.PAPEL_B1 });
   });
 
