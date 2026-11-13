@@ -1,0 +1,20 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": { "Service": "rolesanywhere.amazonaws.com" },
+    "Action": [
+      "sts:AssumeRole",
+      "sts:TagSession",
+      "sts:SetSourceIdentity"
+    ],
+    "Condition": {
+      "StringEquals": {
+        "aws:PrincipalTag/x509Subject/CN": "safework-hml-cd-agente"
+      },
+      "ArnEquals": {
+        "aws:SourceArn": "TRUST_ANCHOR_ARN"
+      }
+    }
+  }]
+}

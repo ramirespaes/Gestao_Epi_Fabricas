@@ -1,8 +1,61 @@
 {
   "Version": "2012-10-17",
   "Statement": [
-    { "Sid": "ExigirTLS", "Effect": "Deny", "Principal": "*", "Action": "s3:*", "Resource": ["arn:aws:s3:::BUCKET", "arn:aws:s3:::BUCKET/*"], "Condition": { "Bool": { "aws:SecureTransport": "false" } } },
-    { "Sid": "ExigirCriacaoCondicional", "Effect": "Deny", "Principal": "*", "Action": "s3:PutObject", "Resource": "arn:aws:s3:::BUCKET/hml/*", "Condition": { "Null": { "s3:if-none-match": "true" } } },
-    { "Sid": "ExigirAES256", "Effect": "Deny", "Principal": "*", "Action": "s3:PutObject", "Resource": "arn:aws:s3:::BUCKET/hml/*", "Condition": { "StringNotEquals": { "s3:x-amz-server-side-encryption": "AES256" } } }
+    {
+      "Sid": "ExigirTLS",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::BUCKET",
+        "arn:aws:s3:::BUCKET/*"
+      ],
+      "Condition": {
+        "Bool": { "aws:SecureTransport": "false" }
+      }
+    },
+    {
+      "Sid": "ExigirCriacaoCondicional",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::BUCKET/hml/*",
+      "Condition": {
+        "Null": { "s3:if-none-match": "true" }
+      }
+    },
+    {
+      "Sid": "ExigirAES256",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::BUCKET/hml/*",
+      "Condition": {
+        "StringNotEquals": {
+          "s3:x-amz-server-side-encryption": "AES256"
+        }
+      }
+    },
+    {
+      "Sid": "NegarAgenteForaDoIPv4",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::BUCKET",
+        "arn:aws:s3:::BUCKET/*"
+      ],
+      "Condition": {
+        "ArnEquals": {
+          "aws:PrincipalArn": "arn:aws:iam::CONTA:role/safework-hml-cd-agente"
+        },
+        "NotIpAddress": {
+          "aws:SourceIp": "IPV4_PUBLICO_AGENTE/32"
+        },
+        "Bool": {
+          "aws:ViaAWSService": "false"
+        }
+      }
+    }
   ]
 }
