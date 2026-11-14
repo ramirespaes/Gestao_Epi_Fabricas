@@ -387,3 +387,257 @@ describe('[AWS] ligação com os módulos reais e mínimo por papel', () => {
     assert.equal(x.m.f.estado.chamadas.some((k) => k.papel === 'publicador' && (k.operacao === 's3:ListObjectVersions' || k.operacao === 's3:HeadObject')), false, 'a credencial do publicador não consegue listar nem ler metadados');
   });
 });
+
+describe('[AWS] porta KMS Encrypt (cerimônia de custódia, D3/H9-d F2b)', () => {
+  const CTX = Object.freeze({ 'safework:ambiente': 'HOMOLOGACAO', 'safework:finalidade': 'MAC', 'safework:chave-id': 'mac-hml-v1' });
+  const pedidoDe = (extra = {}) => ({ chaveArn: ficha.chaveMac, contexto: { ...CTX }, segredo: Buffer.alloc(32, 9), ...extra });
+  const porta = (m, extra = {}, papel = 'cerimonia') => P.criarPortaKmsEncrypt({ ...m.base(papel), ...extra });
+  const encrypts = (m) => m.f.estado.chamadas.filter((c) => c.operacao === 'kms:Encrypt');
+  const zerado = (b) => b.length > 0 && b.every((x) => x === 0);
+  const copiasZeradas = (m) => m.f.estado.enviados.every((x) => zerado(x.referencia));
+  const temporizadores = () => process.getActiveResourcesInfo().filter((x) => x === 'Timeout').length;
+  const pausa = (ms) => new Promise((r) => { setTimeout(r, ms); });
+  const FALHA = { code: 'KMS_FALHOU', message: 'falha ao cifrar com o KMS', name: 'Error' };
+  /** O erro da porta só tem código e mensagem fixos: sem causa, sem campo extra e sem nada do pedido ou do fornecedor. */
+  function falhaFixa(e, proibidos = []) {
+    assert.deepEqual({ code: e.code, message: e.message, name: e.name }, FALHA);
+    assert.deepEqual(Reflect.ownKeys(e).sort(), ['code', 'message', 'stack']);
+    assert.equal(e.cause, undefined);
+    for (const p of [...proibidos, ficha.chaveMac, 'safework:', 'AccessDenied', 'Throttling', 'ECONNRESET', 'eco ']) assert.equal(`${e.message}\n${e.stack}`.includes(p), false, p);
+  }
+
+  test('AWS-23 — fábrica estrita: só `cifrar`, cliente próprio com UMA tentativa; a porta de decifragem não muda', () => {
+    const m = montar();
+    const ok = m.base('cerimonia');
+    const c = (o) => { try { P.criarPortaKmsEncrypt(o); } catch (e) { return e.code; } return null; };
+    const clientesAntes = m.f.estado.clientes.length;
+    assert.equal(c(undefined), 'CONFIGURACAO_INVALIDA');
+    assert.equal(c({ ...ok, endpoint: 'http://localhost:4566' }), 'CONFIGURACAO_INVALIDA');
+    assert.equal(c({ ...ok, maxAttempts: 3 }), 'CONFIGURACAO_INVALIDA');
+    assert.equal(c({ ...ok, regiao: 'US_EAST_1' }), 'CONFIGURACAO_INVALIDA');
+    assert.equal(c({ ...ok, credenciais: { accessKeyId: 'AKIA' } }), 'CONFIGURACAO_INVALIDA');
+    for (const prazoMs of [0, -1, 1.5, 60001, '1000', null]) assert.equal(c({ ...ok, prazoMs }), 'CONFIGURACAO_INVALIDA', String(prazoMs));
+    for (const observador of ['x', {}, null]) assert.equal(c({ ...ok, observador }), 'CONFIGURACAO_INVALIDA');
+    const { EncryptCommand: _semEncrypt, ...semEncrypt } = m.f.sdk;
+    assert.equal(c({ ...ok, sdk: semEncrypt }), 'SDK_INCOMPATIVEL');
+    const { KMSClient: _semCliente, ...semCliente } = m.f.sdk;
+    assert.equal(c({ ...ok, sdk: semCliente }), 'SDK_INCOMPATIVEL');
+    assert.equal(m.f.estado.clientes.length, clientesAntes, 'nenhuma recusa cria cliente');
+
+    const p = P.criarPortaKmsEncrypt({ ...ok, prazoMs: 1, observador: () => {} });
+    assert.deepEqual(Object.keys(p), ['cifrar']);
+    assert.ok(Object.isFrozen(p));
+    const config = m.f.estado.clientes.at(-1).config;
+    assert.deepEqual(Object.keys(config).sort(), ['credentials', 'maxAttempts', 'region']);
+    assert.deepEqual([config.maxAttempts, config.region, config.credentials], [1, ficha.regiao, ok.credenciais]);
+    assert.deepEqual(Object.keys(P.criarPortaKms(m.base('publicador'))), ['decifrar']);
+    assert.equal(m.f.estado.clientes.at(-1).config.maxAttempts, 3, 'a porta de decifragem continua com as tentativas de antes');
+    assert.deepEqual([P.PRAZO_PADRAO_DO_ENCRYPT_MS, P.PRAZO_MAXIMO_DO_ENCRYPT_MS], [8000, 60000]);
+    assert.ok(Object.isFrozen(P.CATEGORIAS_DE_FALHA_DO_ENCRYPT));
+    assert.deepEqual([...P.CATEGORIAS_DE_FALHA_DO_ENCRYPT], ['ACESSO_NEGADO', 'CHAVE_INDISPONIVEL', 'LIMITE_DE_TAXA', 'PRAZO', 'RESPOSTA_INVALIDA', 'FALHA_NAO_CLASSIFICADA']);
+  });
+
+  test('AWS-24 — Encrypt com a chave pedida, o contexto copiado e o algoritmo simétrico; devolve SÓ `{ chaveArn, blob }`, com o blob em cópia própria', async () => {
+    const m = montar();
+    const ped = pedidoDe();
+    const r = await porta(m).cifrar(ped);
+    assert.deepEqual(Reflect.ownKeys(r), ['chaveArn', 'blob']);
+    assert.ok(Object.isFrozen(r));
+    assert.equal(r.chaveArn, ficha.chaveMac);
+    assert.ok(Buffer.isBuffer(r.blob) && r.blob.length >= 1 && r.blob.byteOffset === 0 && r.blob.buffer.byteLength === r.blob.length);
+    assert.equal(encrypts(m).length, 1);
+    assert.equal(encrypts(m)[0].papel, 'cerimonia');
+    assert.deepEqual(encrypts(m)[0].input, { KeyId: ficha.chaveMac, EncryptionContext: CTX, EncryptionAlgorithm: 'SYMMETRIC_DEFAULT' });
+    assert.notEqual(encrypts(m)[0].input.EncryptionContext, ped.contexto, 'o contexto vai em cópia');
+    const host = P.criarPortaKms(m.base('publicador'));
+    assert.ok((await host.decifrar({ chaveArn: ficha.chaveMac, contexto: CTX, blob: r.blob })).segredo.equals(Buffer.alloc(32, 9)));
+    assert.equal((await falha(host.decifrar({ chaveArn: ficha.chaveMac, contexto: { ...CTX, 'safework:finalidade': 'CIFRA' }, blob: r.blob }))).code, 'KMS_FALHOU');
+    for (const n of [32, 128]) {
+      const s = Buffer.alloc(n, 4);
+      const g = await porta(m).cifrar(Object.freeze(pedidoDe({ segredo: s })));
+      assert.ok((await host.decifrar({ chaveArn: ficha.chaveMac, contexto: CTX, blob: g.blob })).segredo.equals(s), String(n));
+    }
+  });
+
+  test('AWS-25 — entrada fora do contrato é recusada ANTES do SDK: nenhum comando, nenhum segredo entregue', async () => {
+    const m = montar();
+    const p = porta(m);
+    const longo = 'x'.repeat(129);
+    const mentiroso = Buffer.alloc(16, 1);
+    Object.defineProperty(mentiroso, 'length', { get: () => 32 });
+    const transferido = new Uint8Array(32).fill(1);
+    transferido.buffer.transfer();
+    const ruins = [
+      undefined, null, [], 'texto',
+      { ...pedidoDe(), extra: 1 },
+      { chaveArn: ficha.chaveMac, contexto: { ...CTX } },
+      pedidoDe({ chaveArn: 'alias/safework' }),
+      pedidoDe({ chaveArn: ficha.chaveMac.split('/')[1] }),
+      pedidoDe({ chaveArn: ficha.chaveMac.replace(/key\/.*$/, 'alias/safework') }),
+      pedidoDe({ chaveArn: `${ficha.chaveMac}x` }),
+      pedidoDe({ chaveArn: ficha.chaveMac.replace(ficha.regiao, ficha.regiao === 'eu-west-1' ? 'us-east-1' : 'eu-west-1') }),
+      pedidoDe({ chaveArn: 7 }),
+      pedidoDe({ contexto: [] }), pedidoDe({ contexto: {} }), pedidoDe({ contexto: null }),
+      pedidoDe({ contexto: Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`k${i}`, 'v'])) }),
+      pedidoDe({ contexto: { ...CTX, numero: 7 } }), pedidoDe({ contexto: { ...CTX, longo } }), pedidoDe({ contexto: { [longo]: 'v' } }),
+      pedidoDe({ segredo: 'texto' }), pedidoDe({ segredo: Buffer.alloc(31, 1) }), pedidoDe({ segredo: Buffer.alloc(129, 1) }), pedidoDe({ segredo: Buffer.alloc(0) }),
+      pedidoDe({ segredo: new Uint16Array(32).fill(1) }), pedidoDe({ segredo: Object.create(Uint8Array.prototype) }), pedidoDe({ segredo: new Proxy(Buffer.alloc(32, 1), {}) }),
+      pedidoDe({ segredo: mentiroso }), pedidoDe({ segredo: transferido }),
+    ];
+    for (const [i, ruim] of ruins.entries()) assert.equal((await falha(p.cifrar(ruim))).code, 'ENTRADA_INVALIDA', `caso ${i}`);
+    assert.equal(encrypts(m).length, 0);
+    assert.equal(m.f.estado.enviados.length, 0);
+  });
+
+  test('AWS-26 — consumo imediato e propriedade: o segredo é copiado de forma síncrona, o buffer recebido não é alterado nem entregue ao SDK, e a cópia termina zerada', async () => {
+    const m = montar();
+    const p = porta(m);
+    const host = P.criarPortaKms(m.base('publicador'));
+    const segredo = Buffer.alloc(32, 9);
+    const promessa = p.cifrar(pedidoDe({ segredo }));
+    segredo.fill(0xee);
+    const r = await promessa;
+    assert.equal(m.f.estado.enviados.length, 1);
+    assert.notEqual(m.f.estado.enviados[0].referencia, segredo);
+    assert.equal(m.f.estado.enviados[0].hex, Buffer.alloc(32, 9).toString('hex'));
+    assert.ok((await host.decifrar({ chaveArn: ficha.chaveMac, contexto: CTX, blob: r.blob })).segredo.equals(Buffer.alloc(32, 9)), 'o que foi cifrado é o segredo do instante da chamada');
+    assert.ok(segredo.equals(Buffer.alloc(32, 0xee)), 'a porta não escreve no buffer recebido');
+    const intacto = Buffer.alloc(64, 5);
+    await p.cifrar(pedidoDe({ segredo: intacto }));
+    assert.ok(intacto.equals(Buffer.alloc(64, 5)));
+    const copia = m.f.estado.enviados[1].referencia;
+    assert.ok(copia.byteOffset === 0 && copia.buffer.byteLength === 64, 'a cópia tem memória própria, fora do pool');
+    assert.ok(copiasZeradas(m));
+    let leituras = 0;
+    const contado = { chaveArn: ficha.chaveMac, contexto: { ...CTX }, get segredo() { leituras += 1; return Buffer.alloc(32, 6); } };
+    await p.cifrar(contado);
+    assert.equal(leituras, 1);
+  });
+
+  test('AWS-27 — falha do serviço vira erro fixo, sem causa nem eco; o observador recebe SÓ a categoria; uma única tentativa; cópia zerada', async () => {
+    const casos = [
+      ['NEGAR', 'ACESSO_NEGADO'], ['LIMITE', 'LIMITE_DE_TAXA'], ['CHAVE_DESATIVADA', 'CHAVE_INDISPONIVEL'], ['REDE', 'FALHA_NAO_CLASSIFICADA'], ['ERRO_COM_SEGREDO', 'FALHA_NAO_CLASSIFICADA'],
+    ];
+    for (const [modo, categoria] of casos) {
+      const m = montar();
+      const vistos = [];
+      m.f.programar('Encrypt', modo);
+      const e = await falha(porta(m, { observador: (...args) => { vistos.push(args); } }).cifrar(pedidoDe()));
+      falhaFixa(e, [Buffer.alloc(32, 9).toString('hex')]);
+      assert.deepEqual(vistos, [[categoria]], modo);
+      assert.equal(encrypts(m).length, 1, modo);
+      assert.ok(copiasZeradas(m), modo);
+    }
+    const m = montar();
+    const vistos = [];
+    const obs = { observador: (c) => { vistos.push(c); } };
+    falhaFixa(await falha(porta(m, obs, 'publicador').cifrar(pedidoDe())));
+    const desconhecida = ficha.chaveMac.replace(/[0-9a-f]{12}$/, '0123456789ab');
+    falhaFixa(await falha(porta(m, obs).cifrar(pedidoDe({ chaveArn: desconhecida }))), [desconhecida]);
+    const semCredencial = P.criarPortaKmsEncrypt({ sdk: m.f.sdk, regiao: ficha.regiao, credenciais: async () => { throw Object.assign(new Error('token-secreto'), { name: 'CredentialsProviderError' }); }, ...obs });
+    falhaFixa(await falha(semCredencial.cifrar(pedidoDe())), ['token-secreto']);
+    assert.deepEqual(vistos, ['ACESSO_NEGADO', 'CHAVE_INDISPONIVEL', 'ACESSO_NEGADO']);
+    assert.ok(vistos.every((c) => P.CATEGORIAS_DE_FALHA_DO_ENCRYPT.includes(c)));
+    m.f.programar('Encrypt', 'NEGAR');
+    falhaFixa(await falha(porta(m, { observador: () => { throw new Error('observador quebrado'); } }).cifrar(pedidoDe())), ['observador quebrado']);
+    m.f.programar('Encrypt', 'NEGAR');
+    falhaFixa(await falha(porta(m).cifrar(pedidoDe())));
+    assert.ok(copiasZeradas(m));
+    const calado = [];
+    await porta(m, { observador: (c) => { calado.push(c); } }).cifrar(pedidoDe());
+    assert.deepEqual(calado, [], 'no sucesso o observador não é chamado');
+  });
+
+  test('AWS-28 — resposta fora do contrato (sem KeyId, sem blob, blob que não é binário, vazio ou acima de 4096 bytes, resposta nula) é falha fixa', async () => {
+    for (const modo of ['SEM_KEYID', 'KEYID_NUMERO', 'SEM_BLOB', 'BLOB_TEXTO', 'BLOB_VAZIO', 'BLOB_GRANDE', 'RESPOSTA_NULA']) {
+      const m = montar();
+      const vistos = [];
+      m.f.programar('Encrypt', modo);
+      falhaFixa(await falha(porta(m, { observador: (c) => { vistos.push(c); } }).cifrar(pedidoDe())));
+      assert.deepEqual(vistos, ['RESPOSTA_INVALIDA'], modo);
+      assert.equal(encrypts(m).length, 1, modo);
+      assert.ok(copiasZeradas(m), modo);
+    }
+  });
+
+  test('AWS-29 — prazo próprio: aborta localmente, falha no prazo mesmo se o SDK ignorar o aborto, zera a cópia e ignora a resposta tardia; não repete o pedido', async () => {
+    const naoTratadas = [];
+    const ouvinte = (e) => naoTratadas.push(e);
+    process.on('unhandledRejection', ouvinte);
+    try {
+      for (const modo of ['PENDENTE', 'SURDA', 'SURDA_COM_ERRO']) {
+        const m = montar();
+        const vistos = [];
+        m.f.programar('Encrypt', modo);
+        const antes = temporizadores();
+        const inicio = process.hrtime.bigint();
+        const e = await falha(porta(m, { prazoMs: 30, observador: (c) => { vistos.push(c); } }).cifrar(pedidoDe()));
+        const duracaoMs = Number(process.hrtime.bigint() - inicio) / 1e6;
+        falhaFixa(e);
+        assert.ok(duracaoMs >= 25 && duracaoMs < 900, `${modo}: ${duracaoMs}`);
+        assert.deepEqual(vistos, ['PRAZO'], modo);
+        assert.equal(m.f.estado.sinais.length, 1, modo);
+        assert.equal(m.f.estado.sinais[0].aborted, true, modo);
+        assert.ok(copiasZeradas(m), modo);
+        assert.equal(temporizadores(), antes, modo);
+        for (const responder of m.f.estado.tardias) responder();
+        await pausa(15);
+        assert.deepEqual(vistos, ['PRAZO'], modo);
+        assert.equal(encrypts(m).length, 1, modo);
+        assert.ok(copiasZeradas(m), modo);
+      }
+      assert.deepEqual(naoTratadas, []);
+    } finally {
+      process.off('unhandledRejection', ouvinte);
+    }
+    const m = montar();
+    const antes = temporizadores();
+    await porta(m).cifrar(pedidoDe());
+    assert.equal(m.f.estado.sinais[0] instanceof AbortSignal, true);
+    assert.equal(m.f.estado.sinais[0].aborted, false);
+    assert.equal(temporizadores(), antes, 'no sucesso o temporizador do prazo é desarmado');
+  });
+
+  test('AWS-30 — mínimo por papel: os papéis do host não cifram e o papel da cerimônia não decifra', async () => {
+    const m = montar();
+    for (const papel of ['publicador', 'restauracao', 'verificador']) falhaFixa(await falha(porta(m, {}, papel).cifrar(pedidoDe())));
+    const r = await porta(m).cifrar(pedidoDe());
+    const e = await falha(P.criarPortaKms(m.base('cerimonia')).decifrar({ chaveArn: ficha.chaveMac, contexto: CTX, blob: r.blob }));
+    assert.deepEqual({ code: e.code, message: e.message }, { code: 'KMS_FALHOU', message: 'falha ao decifrar com o KMS' });
+    assert.deepEqual(m.f.comandosUsados('cerimonia'), ['kms:Decrypt', 'kms:Encrypt']);
+    assert.ok(copiasZeradas(m));
+  });
+
+  test('AWS-31 — erro hostil do SDK (`name` com getter que lança ou que muda a cada leitura, Proxy, rejeição que não é objeto): continua KMS_FALHOU, com categoria fixa e sem eco', async () => {
+    const segredoHex = Buffer.alloc(32, 9).toString('hex');
+    const comGetter = (get) => Object.defineProperty(new Error('mensagem-do-fornecedor'), 'name', { get, configurable: true });
+    let leituras = 0;
+    const nomes = ['AccessDeniedException', 'ThrottlingException', 'NotFoundException'];
+    const casos = [
+      ['getter que lança', () => comGetter(() => { throw new Error(`getter-hostil ${segredoHex}`); }), 'FALHA_NAO_CLASSIFICADA'],
+      ['getter que muda a cada leitura', () => { leituras = 0; return comGetter(() => nomes[Math.min(leituras++, 2)]); }, 'ACESSO_NEGADO'],
+      ['Proxy que lança em toda leitura', () => new Proxy({}, { get() { throw new Error(`proxy-hostil ${segredoHex}`); } }), 'FALHA_NAO_CLASSIFICADA'],
+      ['nome que não é texto', () => Object.assign(new Error('x'), { name: { toString() { throw new Error('toString-hostil'); } } }), 'FALHA_NAO_CLASSIFICADA'],
+      ['null', () => null, 'FALHA_NAO_CLASSIFICADA'],
+      ['undefined', () => undefined, 'FALHA_NAO_CLASSIFICADA'],
+      ['texto', () => 'AccessDeniedException', 'FALHA_NAO_CLASSIFICADA'],
+    ];
+    for (const [nome, criar, categoria] of casos) {
+      for (const sincrono of [false, true]) {
+        const enviados = [];
+        const vistos = [];
+        const sdk = {
+          KMSClient: class { send(comando) { enviados.push(comando.input.Plaintext); const motivo = criar(); if (sincrono) throw motivo; return Promise.reject(motivo); } },
+          EncryptCommand: class { constructor(input) { this.input = input; } },
+        };
+        const p = P.criarPortaKmsEncrypt({ sdk, regiao: ficha.regiao, credenciais: async () => ({}), observador: (...args) => { vistos.push(args); } });
+        const onde = `${nome}, ${sincrono ? 'lançado' : 'rejeitado'}`;
+        falhaFixa(await falha(p.cifrar(pedidoDe())), [segredoHex, 'hostil', 'mensagem-do-fornecedor']);
+        assert.deepEqual(vistos, [[categoria]], onde);
+        assert.equal(enviados.length, 1, onde);
+        assert.ok(zerado(enviados[0]), onde);
+      }
+    }
+    assert.equal(leituras, 1, 'o nome do erro é lido uma única vez');
+  });
+});
