@@ -40,7 +40,15 @@ const sdkIncompativel = () => Object.assign(new TypeError('SDK da AWS incompatí
 const entradaInvalida = () => Object.assign(new TypeError('entrada da porta AWS inválida'), { code: 'ENTRADA_INVALIDA' });
 const respostaInvalida = () => Object.assign(new Error('resposta do serviço fora do contrato'), { code: 'RESPOSTA_INVALIDA' });
 const ambiguo = () => Object.assign(new Error('falha ao gravar o objeto no S3'), { code: 'AMBIGUO' });
-const nomeSeguro = (e) => (e !== null && typeof e === 'object' && typeof e.name === 'string' && NOME_DO_ERRO.test(e.name) ? e.name : 'ErroDoServico');
+/** Lê `name` uma única vez e nunca lança: um erro com getter hostil (que lança ou muda a cada leitura) não pode escapar nem escolher o nome depois de conferido. */
+function nomeSeguro(e) {
+  try {
+    const nome = e !== null && typeof e === 'object' ? e.name : undefined;
+    return typeof nome === 'string' && NOME_DO_ERRO.test(nome) ? nome : 'ErroDoServico';
+  } catch {
+    return 'ErroDoServico';
+  }
+}
 const statusDe = (e) => (e !== null && typeof e === 'object' && e.$metadata !== null && typeof e.$metadata === 'object' ? e.$metadata.httpStatusCode : undefined);
 const tentativasDe = (o) => {
   const t = o !== null && typeof o === 'object' && o.$metadata !== null && typeof o.$metadata === 'object' ? o.$metadata.attempts : undefined;
@@ -274,4 +282,105 @@ function criarPortaKms(opcoes) {
   return Object.freeze({ decifrar });
 }
 
-module.exports = { criarPortaDoPublicador, criarPortaDoVerificador, criarPortaDaRestauracao, criarPortaKms };
+/**
+ * D-ORF-6, D3 / H9-d (F2b): PORTA KMS ENCRYPT da cerimônia de custódia — o `cliente` que `backup-custodia-embrulho` espera. Só cifra; não decifra, não gera chave e não
+ * é usada pelo executor do backup nem pela restauração (`criarPortaKms` continua como era). A credencial é a do papel da cerimônia, fornecida por quem chama.
+ *
+ * `criarPortaKmsEncrypt({ sdk, regiao, credenciais, prazoMs?, observador? })` -> `{ cifrar({ chaveArn, contexto, segredo }) -> Promise<{ chaveArn, blob }> }`.
+ *  - A entrada é validada antes do SDK: ARN completo de chave NA REGIÃO da porta (nunca alias), contexto de 1 a 8 pares de texto, segredo de 32 a 128 bytes.
+ *  - O segredo é copiado de forma SÍNCRONA para um buffer próprio, fora do pool; o buffer recebido não é alterado, entregue ao SDK nem guardado. A cópia é zerada quando
+ *    a chamada termina, falha ou o prazo vence. As cópias que o SDK faz (o corpo da requisição) não estão ao alcance desta porta.
+ *  - UMA tentativa (`maxAttempts: 1`): repetir prolongaria a vida do segredo e poderia deixar mais de um criptograma no KMS.
+ *  - PRAZO próprio (`prazoMs`): vencido, a porta aborta a requisição LOCALMENTE e falha, mesmo que o SDK ignore o aborto. Abortar não cancela a operação no KMS, que pode
+ *    ter sido efetivada; a resposta que chegar depois é ignorada.
+ *  - Devolve só `{ chaveArn, blob }` (o `KeyId` e uma cópia do `CiphertextBlob`, de 1 a 4096 bytes), sem metadados do SDK. Conferir se a chave que respondeu é a pedida
+ *    cabe a quem chama (o embrulho o faz).
+ *  - Toda falha é `KMS_FALHOU`, com mensagem fixa e sem causa. O `observador`, se informado, recebe UMA categoria de `CATEGORIAS_DE_FALHA_DO_ENCRYPT` e nada mais
+ *    (nem mensagem do serviço, ARN, contexto ou segredo); o que ele lançar é ignorado.
+ * NÃO prova o comportamento do KMS real nem da política do papel: aqui só há o pedido montado e a tradução das respostas, conferidos contra o SDK falso.
+ */
+const PRAZO_PADRAO_DO_ENCRYPT_MS = 8000;
+const PRAZO_MAXIMO_DO_ENCRYPT_MS = 60000;
+const SEGREDO_MINIMO = 32;
+const SEGREDO_MAXIMO = 128;
+const CATEGORIAS_DE_FALHA_DO_ENCRYPT = Object.freeze(['ACESSO_NEGADO', 'CHAVE_INDISPONIVEL', 'LIMITE_DE_TAXA', 'PRAZO', 'RESPOSTA_INVALIDA', 'FALHA_NAO_CLASSIFICADA']);
+const CATEGORIA_DO_ERRO = new Map([
+  ...['AccessDenied', 'AccessDeniedException', 'UnrecognizedClientException', 'InvalidSignatureException', 'ExpiredTokenException', 'ExpiredToken', 'InvalidClientTokenId', 'CredentialsProviderError'].map((n) => [n, 'ACESSO_NEGADO']),
+  ...['NotFoundException', 'DisabledException', 'KMSInvalidStateException', 'KeyUnavailableException', 'InvalidKeyUsageException'].map((n) => [n, 'CHAVE_INDISPONIVEL']),
+  ...['ThrottlingException', 'LimitExceededException', 'TooManyRequestsException'].map((n) => [n, 'LIMITE_DE_TAXA']),
+]);
+const PRAZO_VENCIDO = Symbol('prazo');
+const RESPOSTA_FORA = Symbol('resposta');
+// Medida, cópia e zeragem pelos campos internos do Uint8Array e por funções guardadas na carga: não dependem de `length`, de `valueOf` nem do `fill` de quem entregou o buffer.
+const PROTOTIPO_TIPADO = Object.getPrototypeOf(Uint8Array.prototype);
+const lerMarca = Object.getOwnPropertyDescriptor(PROTOTIPO_TIPADO, Symbol.toStringTag).get;
+const lerBytes = Object.getOwnPropertyDescriptor(PROTOTIPO_TIPADO, 'byteLength').get;
+const gravarEm = PROTOTIPO_TIPADO.set;
+const preencherBuffer = Buffer.prototype.fill;
+const novoBuffer = Buffer.alloc;
+const ehBinario = (v, minimo, maximo) => lerMarca.call(v) === 'Uint8Array' && lerBytes.call(v) >= minimo && lerBytes.call(v) <= maximo;
+function copiaPropria(bytes) {
+  const copia = novoBuffer(lerBytes.call(bytes));
+  gravarEm.call(copia, bytes);
+  return copia;
+}
+function contextoDoEncrypt(contexto) {
+  if (!ehObjeto(contexto)) return null;
+  const copia = { ...contexto };
+  const nomes = Reflect.ownKeys(copia);
+  const valido = nomes.length >= 1 && nomes.length <= 8 && nomes.every((k) => typeof k === 'string' && k.length >= 1 && k.length <= 128 && typeof copia[k] === 'string' && copia[k].length <= 128);
+  return valido ? copia : null;
+}
+
+function criarPortaKmsEncrypt(opcoes) {
+  if (!ehObjeto(opcoes)) throw configuracaoInvalida();
+  const informadas = Reflect.ownKeys(opcoes);
+  if (!informadas.every((k) => ['sdk', 'regiao', 'credenciais', 'prazoMs', 'observador'].includes(k))) throw configuracaoInvalida();
+  const prazoMs = informadas.includes('prazoMs') ? opcoes.prazoMs : PRAZO_PADRAO_DO_ENCRYPT_MS;
+  const observador = informadas.includes('observador') ? opcoes.observador : undefined;
+  if (!Number.isSafeInteger(prazoMs) || prazoMs < 1 || prazoMs > PRAZO_MAXIMO_DO_ENCRYPT_MS || (informadas.includes('observador') && typeof observador !== 'function')) throw configuracaoInvalida();
+  const { sdk, regiao, credenciais } = validarOpcoes({ sdk: opcoes.sdk, regiao: opcoes.regiao, credenciais: opcoes.credenciais }, ['KMSClient', 'EncryptCommand']);
+  const kms = new sdk.KMSClient({ region: regiao, credentials: credenciais, maxAttempts: 1 });
+
+  function falhou(motivo) {
+    let categoria = CATEGORIA_DO_ERRO.get(nomeSeguro(motivo)) ?? 'FALHA_NAO_CLASSIFICADA';
+    if (motivo === PRAZO_VENCIDO) categoria = 'PRAZO';
+    if (motivo === RESPOSTA_FORA) categoria = 'RESPOSTA_INVALIDA';
+    if (observador !== undefined) { try { observador(categoria); } catch { /* o observador não muda o resultado */ } }
+    return Object.assign(new Error('falha ao cifrar com o KMS'), { code: 'KMS_FALHOU' });
+  }
+
+  async function cifrar(pedido) {
+    if (!ehObjeto(pedido) || !chavesExatas(pedido, ['chaveArn', 'contexto', 'segredo'])) throw entradaInvalida();
+    const { chaveArn, contexto, segredo } = pedido;
+    const contextoCopiado = contextoDoEncrypt(contexto);
+    if (typeof chaveArn !== 'string' || !ARN_CHAVE.test(chaveArn) || chaveArn.split(':')[3] !== regiao || contextoCopiado === null || !ehBinario(segredo, SEGREDO_MINIMO, SEGREDO_MAXIMO)) throw entradaInvalida();
+    // Daqui até o primeiro `await` nada espera: o segredo é consumido já, e a partir desta linha a porta só usa a própria cópia.
+    const claro = copiaPropria(segredo);
+    const controle = new AbortController();
+    let temporizador;
+    try {
+      const resposta = await new Promise((resolver, rejeitar) => {
+        temporizador = setTimeout(() => { controle.abort(); rejeitar(PRAZO_VENCIDO); }, prazoMs);
+        const comando = new sdk.EncryptCommand({ KeyId: chaveArn, Plaintext: claro, EncryptionContext: contextoCopiado, EncryptionAlgorithm: 'SYMMETRIC_DEFAULT' });
+        Promise.resolve(kms.send(comando, { abortSignal: controle.signal })).then(resolver, rejeitar);
+      });
+      const chaveQueRespondeu = ehObjeto(resposta) ? resposta.KeyId : undefined;
+      const cifrado = ehObjeto(resposta) ? resposta.CiphertextBlob : undefined;
+      if (typeof chaveQueRespondeu !== 'string' || !ehBinario(cifrado, 1, BLOB_MAXIMO)) throw RESPOSTA_FORA;
+      return Object.freeze({ chaveArn: chaveQueRespondeu, blob: copiaPropria(cifrado) });
+    } catch (e) {
+      throw falhou(e);
+    } finally {
+      clearTimeout(temporizador);
+      try { preencherBuffer.call(claro, 0); } catch { /* o SDK transferiu a memória: nada a zerar aqui */ }
+    }
+  }
+
+  return Object.freeze({ cifrar });
+}
+
+module.exports = {
+  criarPortaDoPublicador, criarPortaDoVerificador, criarPortaDaRestauracao, criarPortaKms,
+  criarPortaKmsEncrypt, CATEGORIAS_DE_FALHA_DO_ENCRYPT, PRAZO_PADRAO_DO_ENCRYPT_MS, PRAZO_MAXIMO_DO_ENCRYPT_MS,
+};
