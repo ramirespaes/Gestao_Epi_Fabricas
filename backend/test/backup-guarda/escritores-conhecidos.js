@@ -180,7 +180,7 @@ const DEPENDENCIAS_REVISADAS = {
   supertest: { classificacao: 'FERRAMENTA_DE_DESENVOLVIMENTO', justificativa: 'Testes HTTP.', ...APROVADA_A },
   '@aws-sdk/client-kms': {
     classificacao: 'ARMAZENAMENTO_REVISADO',
-    justificativa: 'Cliente do KMS (D-F5): DescribeKey e Decrypt de chaves pré-resolvidas; carregado só por backup-aws-sdk-carregador e usado só por backup-aws-portas; sem arquivo local.',
+    justificativa: 'Cliente do KMS (D-F5): DescribeKey e Decrypt de chaves pré-resolvidas e, só na cerimônia de custódia (D3/H9-d), Encrypt pela porta criarPortaKmsEncrypt; carregado só por backup-aws-sdk-carregador e usado só por backup-aws-portas; sem arquivo local.',
     ...APROVADA_H,
   },
   '@aws-sdk/client-s3': {
