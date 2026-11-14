@@ -157,3 +157,15 @@ describe('[LDR] configuração estrita', () => {
     } finally { process.env.NODE_ENV = anterior; }
   });
 });
+
+describe('[LDR] símbolo da cerimônia de custódia (D3/H9-d F2b)', () => {
+  test('LDR-08 — o cliente KMS passa a entregar também `EncryptCommand`, e só mais ele; sem o símbolo, o SDK é incompatível', () => {
+    assert.deepEqual([...L.SIMBOLOS_POR_PACOTE['@aws-sdk/client-kms']], ['KMSClient', 'DescribeKeyCommand', 'DecryptCommand', 'EncryptCommand']);
+    assert.ok(Object.isFrozen(L.SIMBOLOS_POR_PACOTE['@aws-sdk/client-kms']));
+    assert.equal(L.SIMBOLOS_EXIGIDOS.length, 16);
+    const sdk = L.carregarSdkAws({ requerer: requererFalso().requerer, versoesAprovadas: APROVADAS });
+    assert.equal(sdk.EncryptCommand, SDK.EncryptCommand);
+    for (const proibido of ['GenerateDataKeyCommand', 'ReEncryptCommand', 'ScheduleKeyDeletionCommand', 'DisableKeyCommand', 'CreateGrantCommand', 'PutKeyPolicyCommand']) assert.equal(proibido in sdk, false, proibido);
+    assert.equal(codigo(() => L.carregarSdkAws({ requerer: requererFalso({ semSimbolo: 'EncryptCommand' }).requerer, versoesAprovadas: APROVADAS })), 'SDK_INCOMPATIVEL');
+  });
+});

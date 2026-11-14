@@ -12,7 +12,8 @@ const { ambienteDeTeste } = require('./imagem-backup-durabilidade.service');
 const PACOTES_DO_SDK = Object.freeze(['@aws-sdk/client-s3', '@aws-sdk/client-kms', '@aws-sdk/client-sts']);
 const SIMBOLOS_POR_PACOTE = Object.freeze({
   '@aws-sdk/client-s3': Object.freeze(['S3Client', 'HeadBucketCommand', 'GetBucketVersioningCommand', 'GetObjectLockConfigurationCommand', 'GetBucketEncryptionCommand', 'GetBucketOwnershipControlsCommand', 'PutObjectCommand', 'HeadObjectCommand', 'GetObjectCommand', 'ListObjectVersionsCommand']),
-  '@aws-sdk/client-kms': Object.freeze(['KMSClient', 'DescribeKeyCommand', 'DecryptCommand']),
+  // `EncryptCommand` serve só à cerimônia de custódia (D3/H9-d, `criarPortaKmsEncrypt`); o host do backup não cifra chave, e quem o impede é a política do papel, não este símbolo.
+  '@aws-sdk/client-kms': Object.freeze(['KMSClient', 'DescribeKeyCommand', 'DecryptCommand', 'EncryptCommand']),
   '@aws-sdk/client-sts': Object.freeze(['STSClient', 'GetCallerIdentityCommand']),
 });
 const SIMBOLOS_EXIGIDOS = Object.freeze(PACOTES_DO_SDK.flatMap((p) => SIMBOLOS_POR_PACOTE[p]));

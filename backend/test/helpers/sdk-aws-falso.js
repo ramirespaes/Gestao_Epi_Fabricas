@@ -13,13 +13,15 @@ const { criarKmsFalso } = require('./kms-falso');
 
 const OPERACOES = Object.freeze({
   s3: ['HeadBucket', 'GetBucketVersioning', 'GetObjectLockConfiguration', 'GetBucketEncryption', 'GetBucketOwnershipControls', 'PutObject', 'HeadObject', 'GetObject', 'ListObjectVersions'],
-  kms: ['DescribeKey', 'Decrypt'],
+  kms: ['DescribeKey', 'Decrypt', 'Encrypt'],
   sts: ['GetCallerIdentity'],
 });
+/** `cerimonia` é o papel da cerimônia de custódia (D3/H9-d): só cifra; não decifra, não lê nem grava objeto. */
 const PERMISSOES = Object.freeze({
   publicador: new Set(['sts:GetCallerIdentity', 's3:HeadBucket', 's3:GetBucketVersioning', 's3:GetObjectLockConfiguration', 's3:GetBucketEncryption', 's3:GetBucketOwnershipControls', 's3:PutObject', 'kms:DescribeKey', 'kms:Decrypt']),
   verificador: new Set(['sts:GetCallerIdentity', 's3:ListObjectVersions', 's3:HeadObject']),
   restauracao: new Set(['sts:GetCallerIdentity', 's3:GetObject', 'kms:Decrypt']),
+  cerimonia: new Set(['kms:Encrypt']),
 });
 
 const base64 = (hex) => Buffer.from(hex, 'hex').toString('base64');
@@ -34,7 +36,8 @@ async function lerTudo(corpo) {
 }
 
 function criarSdkFalso({ ficha, relogio = () => Date.now(), identidades = {}, pagina = 1000 }) {
-  const estado = { clientes: [], chamadas: [], plaintexts: [] };
+  // `enviados`: o Plaintext de cada Encrypt (a referência recebida e o conteúdo no momento do envio); `sinais`: o sinal de aborto de cada envio; `tardias`: respostas retidas.
+  const estado = { clientes: [], chamadas: [], plaintexts: [], enviados: [], sinais: [], tardias: [] };
   const kms = criarKmsFalso();
   const objetos = new Map();
   const fila = [];
@@ -160,6 +163,28 @@ function criarSdkFalso({ ficha, relogio = () => Date.now(), identidades = {}, pa
       estado.plaintexts.push(plaintext);
       return { KeyId: r.chaveArn, Plaintext: plaintext, EncryptionAlgorithm: input.EncryptionAlgorithm };
     },
+    'kms:Encrypt': async (input, _cliente, _papel, opcoes) => {
+      const modo = proximoModo('Encrypt');
+      const sinal = opcoes !== null && typeof opcoes === 'object' ? opcoes.abortSignal : undefined;
+      const resposta = () => ({ KeyId: input.KeyId, CiphertextBlob: new Uint8Array(kms.cifrar({ chaveArn: input.KeyId, contexto: input.EncryptionContext, segredo: input.Plaintext })), EncryptionAlgorithm: input.EncryptionAlgorithm });
+      if (modo === 'NEGAR') throw erroAws('AccessDeniedException', 400);
+      if (modo === 'LIMITE') throw erroAws('ThrottlingException', 400);
+      if (modo === 'CHAVE_DESATIVADA') throw erroAws('DisabledException', 400);
+      if (modo === 'REDE') throw semCodigo('ECONNRESET');
+      if (modo === 'ERRO_COM_SEGREDO') throw Object.assign(new Error(`eco ${Buffer.from(input.Plaintext).toString('hex')} ${input.KeyId}`), { name: 'ValidationException', $metadata: { httpStatusCode: 400, attempts: 1 }, segredo: Buffer.from(input.Plaintext) });
+      // PENDENTE respeita o aborto (rejeita com AbortError); SURDA ignora o aborto e só responde quando o teste chama `estado.tardias[i]()`.
+      if (modo === 'PENDENTE') return new Promise((_resolver, rejeitar) => { if (sinal) sinal.addEventListener('abort', () => rejeitar(Object.assign(new Error('Request aborted'), { name: 'AbortError' }))); });
+      if (modo === 'SURDA' || modo === 'SURDA_COM_ERRO') return new Promise((resolver, rejeitar) => { estado.tardias.push(() => (modo === 'SURDA' ? resolver(resposta()) : rejeitar(erroAws('InternalFailureException', 500)))); });
+      if (!chaves.has(input.KeyId)) throw erroAws('NotFoundException', 400);
+      if (modo === 'SEM_KEYID') return { CiphertextBlob: resposta().CiphertextBlob };
+      if (modo === 'KEYID_NUMERO') return { ...resposta(), KeyId: 7 };
+      if (modo === 'SEM_BLOB') return { KeyId: input.KeyId };
+      if (modo === 'BLOB_TEXTO') return { KeyId: input.KeyId, CiphertextBlob: 'YmxvYg==' };
+      if (modo === 'BLOB_VAZIO') return { KeyId: input.KeyId, CiphertextBlob: new Uint8Array(0) };
+      if (modo === 'BLOB_GRANDE') return { KeyId: input.KeyId, CiphertextBlob: new Uint8Array(4097).fill(1) };
+      if (modo === 'RESPOSTA_NULA') return null;
+      return resposta();
+    },
     'sts:GetCallerIdentity': (_input, _cliente, papel) => identidadeDe(papel),
   };
 
@@ -172,14 +197,20 @@ function criarSdkFalso({ ficha, relogio = () => Date.now(), identidades = {}, pa
     const nomeDoCliente = { s3: 'S3Client', kms: 'KMSClient', sts: 'STSClient' }[servico];
     clientes[nomeDoCliente] = class {
       constructor(config) { this.config = config; this.servico = servico; estado.clientes.push({ servico, config }); }
-      async send(comando) {
+      async send(comando, opcoes) {
         const operacao = comando.constructor.operacao;
+        // O Plaintext é registrado antes de qualquer espera, como faria um SDK que serializa o pedido de imediato; ele nunca entra em `chamadas`.
+        if (operacao === 'kms:Encrypt') {
+          estado.enviados.push({ referencia: comando.input.Plaintext, hex: Buffer.from(comando.input.Plaintext).toString('hex') });
+          estado.sinais.push(opcoes !== null && typeof opcoes === 'object' ? opcoes.abortSignal : undefined);
+        }
         const cred = await this.config.credentials();
         const papel = String(cred.accessKeyId).replace(/^FAKE-/, '');
-        const { Body: _corpo, CiphertextBlob: _blob, ...visivel } = comando.input;
+        const { Body: _corpo, CiphertextBlob: _blob, Plaintext: _claro, ...visivel } = comando.input;
         estado.chamadas.push({ papel, operacao, input: { ...visivel, ...(comando.input.Body !== undefined ? { Body: '[corpo]' } : {}) } });
         if (!PERMISSOES[papel]?.has(operacao)) throw erroAws('AccessDenied', 403);
-        const resposta = await manipuladores[operacao](comando.input, this, papel);
+        const resposta = await manipuladores[operacao](comando.input, this, papel, opcoes);
+        if (resposta === null) return null;
         return { ...resposta, $metadata: resposta.$metadata ?? { httpStatusCode: 200, attempts: 1 } };
       }
     };
