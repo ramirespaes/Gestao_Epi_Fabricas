@@ -340,5 +340,7 @@ module.exports = {
 };
 
 if (require.main === module) {
-  principal(process.argv.slice(2)).then((c) => { process.exitCode = c; });
+  principal(process.argv.slice(2))
+    .then((c) => { process.exitCode = c; })
+    .catch(() => { process.exitCode = 5; process.stderr.write('ERRO E_INESPERADO\n'); });
 }
