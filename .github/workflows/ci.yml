@@ -95,6 +95,31 @@ jobs:
         working-directory: backend
         run: npm ci
 
+      # Os testes D-ORF-6 P4b, P7 e P12 procuram pg_dump e pg_restore 16 em /usr/lib/postgresql/16/bin, por caminho absoluto e com ambiente vazio
+      # (PATH não é usado). O runner ubuntu-latest é hoje o ubuntu-26.04, cuja imagem traz só o PostgreSQL 18. Instalo apenas o cliente 16, do
+      # repositório oficial PGDG (o instalador apt.postgresql.org.sh acompanha o pacote postgresql-client-common e já executa o apt-get update),
+      # quando pg_dump e pg_restore 16 não estiverem ambos presentes, e comprovo a versão dos dois binários. Nenhuma variável PG* é definida:
+      # o passo seguinte e os testes recusam o ambiente se existir alguma.
+      - name: PostgreSQL 16 - binários cliente (pg_dump e pg_restore)
+        run: |
+          set -euo pipefail
+          BIN16=/usr/lib/postgresql/16/bin
+          INSTALADOR=/usr/share/postgresql-common/pgdg/apt.postgresql.org.sh
+          versao16() { env -i "${BIN16}/$1" --version 2>/dev/null | grep "^$1 (PostgreSQL) 16\." > /dev/null; }
+          if ! { versao16 pg_dump && versao16 pg_restore; }; then
+            if [ ! -x "${INSTALADOR}" ]; then
+              sudo apt-get update
+              sudo apt-get install -y --no-install-recommends postgresql-client-common
+            fi
+            [ -x "${INSTALADOR}" ] || { echo "Instalador PGDG ausente em ${INSTALADOR}" >&2; exit 1; }
+            sudo "${INSTALADOR}" -y
+            sudo apt-get install -y --no-install-recommends postgresql-client-16
+          fi
+          versao16 pg_dump
+          versao16 pg_restore
+          env -i "${BIN16}/pg_dump" --version
+          env -i "${BIN16}/pg_restore" --version
+
       # Prova de que o banco é o serviço efêmero DESTA execução, exigida pelas suítes J2a no lugar da guarda D1 (que é do cluster dedicado
       # do Mac e não se aplica aqui). Gera um nonce aleatório, recusa banco que já tenha comentário e grava o marcador
       # GEPI_CI_EFEMERO:<run>:<tentativa>:<nonce>; o helper test/integracao/helpers/token-j.js relê e compara antes de qualquer operação.
