@@ -15,7 +15,7 @@ const DOC = 'docs/sistema/publicacao-homologacao-componentes.md';
 
 describe('documentação e invariantes do CD de homologação', () => {
   test('os únicos workflows são os conhecidos, incluindo deploy-hml protegido', () => {
-    const permitidos = new Set(['ci.yml', 'deploy-hml.yml', 'ensaio-d12-sharp.yml']);
+    const permitidos = new Set(['ci.yml', 'deploy-hml.yml', 'deploy-hml-backend.yml', 'ensaio-d12-sharp.yml']);
     for (const arquivo of fs.readdirSync(path.join(REPO, '.github', 'workflows'))) assert.ok(permitidos.has(arquivo), `workflow não previsto: ${arquivo}`);
   });
 
@@ -24,6 +24,7 @@ describe('documentação e invariantes do CD de homologação', () => {
     const andar = (dir) => { for (const e of fs.readdirSync(dir, { withFileTypes: true })) { const abs = path.join(dir, e.name); if (e.isDirectory()) andar(abs); else arquivos.push(abs); } };
     andar(path.join(REPO, 'deploy'));
     arquivos.push(path.join(REPO, '.github', 'workflows', 'deploy-hml.yml'));
+    arquivos.push(path.join(REPO, '.github', 'workflows', 'deploy-hml-backend.yml'));
     for (const abs of arquivos) {
       const texto = fs.readFileSync(abs, 'utf8');
       const rel = path.relative(REPO, abs);

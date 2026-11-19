@@ -26,6 +26,8 @@ planejamento recebida do responsável, não autorização para operar neles.
 | `verificacao/verificar-publicacao.js` | confere commit, hashes, cabeçalhos, isolamento e saúde | `verificar-publicacao.test.js` |
 | `csp/gerar-csp.js` | gera a CSP do pacote por perfil | `gerar-csp.test.js` |
 | `nginx/` | modelos de Portal e Painel e renderizador validado | `nginx-modelos.test.js` |
+| `cd/protocolo.js`, `cd/publicar.js`, `cd/s3.js` | protocolo do pedido (v1 de frontend, v2 com escopo explícito), contexto de autorização por escopo e prefixo S3 por escopo | `protocolo-v2.test.js`, `publicar-backend.test.js`, `s3-prefixo.test.js` |
+| `.github/workflows/deploy-hml-backend.yml` | workflow manual que entrega o PEDIDO de publicação do backend (Etapa 1; nada o executa) | `workflow-backend.test.js`, `backend-bloqueado-etapa1.test.js`, `documentacao-backend-cd.test.js` |
 
 Os testes ficam em `.github/scripts/hml/test/` de propósito: o passo que o `ci.yml` já
 executa os roda em pull requests e na `main`, sem alterar o CI. Os arquivos
@@ -332,6 +334,49 @@ com a origem "nenhuma trava do D-ORF-6 homologada". Decisões que cabem ao D-ORF
 este CD: onde fica a trava, quem a escreve, como expira e como é provada a ausência de
 escrita durante backup. Esta interface não implementa, presume nem substitui nada disso,
 e o backup consistente continua regido por [Operação](operacao.md).
+
+## Protocolo v2 e pedido do backend (Etapa 1 do CD do backend)
+
+Preparado em 18/11/2026. Objetivo: o fluxo GitHub Actions → aprovação humana → **pedido** de publicação do
+backend, sem executar nada. Esta etapa não toca o agente, o instalador, a coordenação, a AWS nem a HML.
+
+**Protocolo.** O pedido v1 (Portal e Painel) continua idêntico e vale **somente** para frontend. O pedido v2
+acrescenta o campo `escopo` (`frontend` ou `backend`) e é a única forma de pedir o backend. Quem valida declara o
+escopo que espera (`validarPedido(pedido, agora, { escopo })` em `cd/protocolo.js`, padrão `frontend`): pedido sem escopo, com escopo
+desconhecido ou de outro escopo é recusado (`PEDIDO_INVALIDO`, `ESCOPO_INVALIDO`, `ESCOPO_DIVERGENTE`). O agente
+atual valida sem declarar escopo, então um pedido de backend seria recusado por `ESCOPO_DIVERGENTE`; uma aprovação de
+frontend nunca autoriza o backend e vice-versa (autorização cruzada). O recibo de um pedido v2 repete o escopo
+(`RECIBO_INVALIDO` se divergir). O backend nunca é retroativo nem aceita commit anterior (`RETROATIVO_BLOQUEADO`).
+
+**Artefato.** A release do backend é a do `empacotar-backend.js` (allowlist, proteção contra segredos, manifesto,
+`release.json` com a seção `backend`). `conferirRelease({ ..., escopo: 'backend' })` exige o diretório exato
+(`backend`, `manifesto-backend.sha256`, `release.json`), o hash externo do `release.json`, as chaves exatas, commit e
+rótulo coerentes, `atual: true` e a integridade de cada arquivo pelo próprio `verificarReleaseBackend`. Frontend e
+backend não se substituem: a release de um escopo conferida como o outro dá `ESCOPO_INVALIDO`.
+
+**Workflow `deploy-hml-backend.yml`.** Só `workflow_dispatch`, a partir da `main`, com confirmação literal
+`HOMOLOGACAO-BACKEND` (a do frontend não vale), SHA completo, CI verde, nunca retroativo, release gerada e selada
+(SHA-256 do `release.json`) **antes** da aprovação. O job `publicar` roda atrás do environment `homologacao-backend`
+e do interruptor próprio `HML_BACKEND_PUBLICACAO_HABILITADA`, com a role própria `HML_BACKEND_AWS_ROLE_ARN`; o
+interruptor e a role do frontend não valem aqui. O pedido é entregue por `cd/publicar.js`, que só aceita o contexto do
+backend (`decidirContexto`) quando o workflow em execução é este, em disparo manual e na tentativa 1. Serializa com o deploy do
+frontend (`concurrency: deploy-hml`).
+
+**Chaves no bucket.** O pedido do backend é gravado em `hml-backend/{blobs,pedidos,recibos}/`, prefixo em que
+**nenhum agente lê**: o cliente S3 do frontend só aceita `hml/` e o do backend só `hml-backend/`. Os modelos de IAM do
+agente e do publicador do frontend não alcançam esse prefixo, e a confiança OIDC do frontend segue restrita ao
+environment `homologacao`.
+
+**O que continua bloqueado (não removido).** O instalador recusa instalar e reverter o backend com
+`COORDENACAO_NAO_HOMOLOGADA`; nenhum provedor de coordenação está homologado; o agente continua só com `portal` e
+`painel` estáticos. Como nenhum agente lê o prefixo do backend, um pedido registrado não é executado e o job termina
+sem recibo (`SEM_RECIBO_CONCLUSIVO`).
+
+**O que NÃO foi feito e depende de autorização (Etapa 2 em diante).**
+- Environment `homologacao-backend` e seus revisores: não foi criado nem validado no GitHub.
+- Variáveis `HML_BACKEND_PUBLICACAO_HABILITADA` e `HML_BACKEND_AWS_ROLE_ARN`: não existem; sem o interruptor o job `publicar` nem começa.
+- Role AWS do backend (confiança restrita ao environment e à `main`), permissão de escrita só em `hml-backend/` e política do bucket: não configuradas.
+- Agente com caminho de backend (instalação, saúde, versão do processo, rollback), provedor de coordenação homologado com o D-ORF-6, sonda do estado observado do banco, gate de migrations e release de compatibilidade para rollback: Etapa 2 e seguintes.
 
 ## Histórico do desenho do job `publicar` — superado pela Etapa 52
 
