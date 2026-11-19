@@ -49,8 +49,11 @@ describe('deploy-hml-backend.yml: YAML bem formado (um parser real, não só exp
     assert.equal(y.jobs.validar.environment, undefined);
     assert.equal(y.jobs.empacotar.environment, undefined);
     assert.equal(y.jobs.publicar.permissions['id-token'], 'write');
-    for (const j of ['validar', 'empacotar']) assert.equal(y.jobs[j].permissions, undefined, `${j} herda só as permissões mínimas do topo`);
-    assert.deepEqual(y.permissions, { contents: 'read', actions: 'read' });
+    // S8264: nenhuma permissão além de contents: read no nível global; actions: read só onde é usada (validar lista as execuções do CI).
+    assert.deepEqual(y.permissions, { contents: 'read' });
+    assert.deepEqual(y.jobs.validar.permissions, { contents: 'read', actions: 'read' });
+    assert.equal(y.jobs.empacotar.permissions, undefined, 'empacotar herda só contents: read do topo');
+    assert.deepEqual(y.jobs.publicar.permissions, { contents: 'read', actions: 'read', 'id-token': 'write' });
     assert.deepEqual(y.jobs.publicar.needs, ['validar', 'empacotar']);
     assert.deepEqual(y.jobs.empacotar.needs, 'validar');
     for (const [nome, job] of Object.entries(y.jobs)) for (const passo of job.steps) assert.ok(passo.name && (passo.uses || passo.run), `${nome}: passo sem nome ou sem ação`);
@@ -71,9 +74,24 @@ describe('deploy-hml-backend.yml: existência e disparo', () => {
     assert.match(yaml, /publicar:\n\s+description:[^\n]*\n\s+required: false\n\s+type: boolean\n\s+default: false/);
     assert.doesNotMatch(yaml, /permitir_commit_anterior|permitir_anterior/);
   });
-  test('permissões mínimas no topo e concorrência serializada com a do frontend, sem cancelar a em andamento', () => {
-    assert.match(yaml, /\npermissions:\n  contents: read\n  actions: read\n/);
+  test('permissões mínimas no topo (só contents: read) e concorrência serializada com a do frontend, sem cancelar a em andamento', () => {
+    assert.match(yaml, /\npermissions:\n  contents: read\n(?!  )/);
     assert.match(yaml, /concurrency:\n  group: deploy-hml\n  cancel-in-progress: false/);
+  });
+  test('S8264: nada de actions: read no nível global; cada job declara o que usa', () => {
+    const topo = yaml.slice(0, yaml.indexOf('\njobs:\n'));
+    assert.doesNotMatch(topo, /^\s*actions:/m, 'actions: read não pode estar no nível do workflow');
+    assert.match(job('validar'), /\n    permissions:\n      contents: read\n      actions: read\n/);
+    assert.doesNotMatch(job('empacotar'), /^\s{4}permissions:/m);
+    assert.match(job('publicar'), /\n    permissions:\n      contents: read\n      actions: read\n      id-token: write\n/);
+  });
+  test('o job que consulta a API de execuções do CI é o que recebe actions: read', () => {
+    assert.match(job('validar'), /gh api "repos\/\$\{GITHUB_REPOSITORY\}\/actions\/workflows\/ci\.yml\/runs/);
+    assert.doesNotMatch(job('empacotar'), /gh api/);
+  });
+  test('nenhuma permissão de escrita no arquivo além de id-token: write (uma única vez, no job publicar)', () => {
+    const escritas = [...yaml.matchAll(/^\s+([a-z-]+): write\s*$/gm)].map((m) => m[1]);
+    assert.deepEqual(escritas, ['id-token']);
   });
 });
 

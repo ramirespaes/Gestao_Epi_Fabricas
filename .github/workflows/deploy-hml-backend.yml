@@ -31,7 +31,6 @@ on:
 
 permissions:
   contents: read
-  actions: read
 
 # Serializado com o deploy do frontend: um por vez, e o que está em andamento nunca é cancelado por outro.
 concurrency:
@@ -45,6 +44,9 @@ jobs:
   validar:
     name: Validar commit, CI verde e posição na main
     if: ${{ github.event_name == 'workflow_dispatch' }}
+    permissions:
+      contents: read
+      actions: read
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:

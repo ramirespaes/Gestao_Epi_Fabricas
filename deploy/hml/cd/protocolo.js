@@ -17,6 +17,9 @@ const MAX = 64 * 1024 * 1024;
 const recusar = codigo => { throw Object.assign(new Error(codigo), { codigo }); };
 const exigir = (ok, codigo) => { if (!ok) recusar(codigo); };
 const json = b => { exigir(b.length <= MAX, 'TAMANHO'); return JSON.parse(b.toString('utf8')); };
+// Chaves de um objeto em ordem alfabética explícita (locale fixo 'en', independente do ambiente do processo), unidas por vírgula.
+// É a ordem canônica das constantes CHAVES_*: serve só para comparar o CONJUNTO de chaves, nunca entra em hash nem em serialização.
+const chavesOrdenadas = o => Object.keys(o).sort((a, b) => a.localeCompare(b, 'en')).join(',');
 function arquivos(dir, prefixo = '') {
   const encontrados = [];
   for (const nome of fs.readdirSync(dir).sort()) {
@@ -40,8 +43,8 @@ function conferirReleaseBackend({ dir, commit, rotulo, releaseSha256 }) {
   exigir(N.sha256(bruto) === releaseSha256, 'HASH_RELEASE');
   const release = json(bruto);
   const objeto = o => o !== null && typeof o === 'object' && !Array.isArray(o);
-  exigir(objeto(release) && Object.keys(release).sort().join(',') === CHAVES_RELEASE_BACKEND, 'ESCOPO_INVALIDO');
-  exigir(objeto(release.backend) && Object.keys(release.backend).sort().join(',') === CHAVES_SECAO_BACKEND, 'ESCOPO_INVALIDO');
+  exigir(objeto(release) && chavesOrdenadas(release) === CHAVES_RELEASE_BACKEND, 'ESCOPO_INVALIDO');
+  exigir(objeto(release.backend) && chavesOrdenadas(release.backend) === CHAVES_SECAO_BACKEND, 'ESCOPO_INVALIDO');
   exigir(release.commit === commit && release.rotulo === rotulo && rotulo.includes('-' + commit.slice(0, 7)), 'COMMIT_DIVERGENTE');
   exigir(release.atual === true && !rotulo.endsWith('-retroativo'), 'RETROATIVO_BLOQUEADO');
   const { verificarReleaseBackend } = require('../empacotar-backend');
@@ -93,7 +96,7 @@ function extrair(b, dir) {
 const escopoDoPedido = p => (p.versao === 1 ? 'frontend' : p.escopo);
 function validarEstruturaPedido(p) {
   exigir(p !== null && typeof p === 'object' && !Array.isArray(p), 'PEDIDO_INVALIDO');
-  const chaves = Object.keys(p).sort().join(',');
+  const chaves = chavesOrdenadas(p);
   exigir((p.versao === 1 && chaves === CHAVES_PEDIDO_V1) || (p.versao === 2 && chaves === CHAVES_PEDIDO_V2 && escopoValido(p.escopo)), 'PEDIDO_INVALIDO');
   exigir(p.repositorio === REPO && ID.test(p.id) && N.SHA_COMPLETO.test(p.commit) && N.ROTULO.test(p.rotulo) && N.HEX64.test(p.releaseSha256) && N.HEX64.test(p.blobSha256) && typeof p.permitirAnterior === 'boolean', 'PEDIDO_INVALIDO');
   return p;
@@ -119,4 +122,4 @@ function validarDestino(e) {
   exigir(/^[0-9]{12}$/.test(e.HML_CONTA || '') && /^[a-z]{2}-[a-z]+-[1-9]$/.test(e.HML_REGIAO || '') && /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(e.HML_BUCKET || ''), 'DESTINO_INVALIDO');
   exigir(typeof e.HML_ROLE === 'string' && new RegExp(`^arn:aws:iam::${e.HML_CONTA}:role/[A-Za-z0-9_+=,.@/-]+$`).test(e.HML_ROLE), 'ROLE_INVALIDA');
 }
-module.exports = { COMPONENTES, ESCOPOS, escopoDoPedido, REPO, ID, MAX, exigir, json, arquivos, conferirRelease, empacotar, extrair, validarEstruturaPedido, validarPedido, validarRecibo, validarDestino };
+module.exports = { COMPONENTES, ESCOPOS, escopoDoPedido, chavesOrdenadas, REPO, ID, MAX, exigir, json, arquivos, conferirRelease, empacotar, extrair, validarEstruturaPedido, validarPedido, validarRecibo, validarDestino };
