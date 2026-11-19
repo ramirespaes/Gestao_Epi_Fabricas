@@ -1,0 +1,261 @@
+name: Deploy HML backend (CI verde, aprovação humana, somente pedido)
+
+# Etapa 1 do CD do backend: valida o commit, gera a release com o empacotador oficial do backend, fixa o SHA-256 do
+# release.json ANTES da aprovação e, só depois do gate do environment homologacao-backend, entrega um PEDIDO de
+# publicação de escopo backend (protocolo v2) no prefixo hml-backend/ do bucket.
+#
+# Nesta etapa nenhum agente lê esse prefixo: o pedido não é executado e a instalação do backend segue bloqueada no
+# instalador (COORDENACAO_NAO_HOMOLOGADA). O disparo é somente manual: não existe publicação automática do backend.
+# O environment, seus revisores, a role AWS e as variáveis abaixo precisam ser criados e validados à parte:
+#   vars.HML_BACKEND_PUBLICACAO_HABILITADA  interruptor próprio (o do frontend não vale aqui)
+#   vars.HML_BACKEND_AWS_ROLE_ARN           role própria, com confiança restrita ao environment homologacao-backend e à main
+
+run-name: ${{ format('HML backend {0}', inputs.commit) }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: "SHA completo (40 hex) de um commit da main com o CI verde"
+        required: true
+        type: string
+      confirmacao:
+        description: "Digite HOMOLOGACAO-BACKEND para confirmar"
+        required: true
+        type: string
+      publicar:
+        description: "Solicitar publicação do backend após aprovação do environment homologacao-backend"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Serializado com o deploy do frontend: um por vez, e o que está em andamento nunca é cancelado por outro.
+concurrency:
+  group: deploy-hml
+  cancel-in-progress: false
+
+env:
+  TZ: America/Sao_Paulo
+
+jobs:
+  validar:
+    name: Validar commit, CI verde e posição na main
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    permissions:
+      contents: read
+      actions: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      COMMIT: ${{ inputs.commit }}
+    outputs:
+      rotulo: ${{ steps.decisao.outputs.rotulo }}
+      atual: ${{ steps.decisao.outputs.atual }}
+      commit: ${{ steps.decisao.outputs.commit }}
+    steps:
+      - name: Confirmação literal do backend, formato do SHA e execução a partir da main
+        env:
+          CONFIRMACAO: ${{ inputs.confirmacao }}
+          REF_DO_WORKFLOW: ${{ github.ref }}
+        run: |
+          # A validação vive neste YAML: só vale o da própria main.
+          [ "$REF_DO_WORKFLOW" = "refs/heads/main" ] || { echo "o workflow só pode ser disparado a partir da main (ref: $REF_DO_WORKFLOW)"; exit 1; }
+          printf '%s' "$COMMIT" | grep -Eq '^[0-9a-f]{40}$' || { echo "o commit precisa ser o SHA completo, 40 hex minúsculos"; exit 1; }
+          [ "$CONFIRMACAO" = "HOMOLOGACAO-BACKEND" ] || { echo "confirmação ausente ou diferente de HOMOLOGACAO-BACKEND"; exit 1; }
+
+      - name: Checkout da main (história completa, sem credenciais persistidas)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+
+      - name: Autoteste dos scripts de homologação
+        run: node --test ".github/scripts/hml/test/*.test.js"
+
+      - name: Coletar fatos (cabeça da main, ancestralidade, execuções do CI)
+        env:
+          PERMITIR_ANTERIOR: "false"
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CABECA="$(git rev-parse HEAD)"
+          if git cat-file -e "${COMMIT}^{commit}" 2>/dev/null && git merge-base --is-ancestor "$COMMIT" HEAD; then ANCESTRAL=true; else ANCESTRAL=false; fi
+          gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${COMMIT}&per_page=50" \
+            --jq '[.workflow_runs[] | {head_sha, path, event, head_branch, status, conclusion}]' > "$RUNNER_TEMP/execucoes-ci.json"
+          node -e '
+            const fs = require("node:fs");
+            const fatos = {
+              commit: process.env.COMMIT,
+              cabecaMain: process.argv[1],
+              ancestral: process.argv[2] === "true",
+              permitirAnterior: process.env.PERMITIR_ANTERIOR === "true",
+              execucoesCi: JSON.parse(fs.readFileSync(process.argv[3], "utf8")),
+              agora: Date.now(),
+            };
+            fs.writeFileSync(process.argv[4], JSON.stringify(fatos, null, 2));
+          ' "$CABECA" "$ANCESTRAL" "$RUNNER_TEMP/execucoes-ci.json" "$RUNNER_TEMP/fatos.json"
+
+      - name: Decidir (fail-closed)
+        id: decisao
+        run: node .github/scripts/hml/validar-commit.js --fatos "$RUNNER_TEMP/fatos.json"
+
+      - name: O backend só publica a cabeça atual da main
+        env:
+          ATUAL: ${{ steps.decisao.outputs.atual }}
+        run: |
+          [ "$ATUAL" = "true" ] || { echo "release retroativa recusada: o backend só publica a cabeça atual da main"; exit 1; }
+
+      - name: Resumo
+        env:
+          ROTULO: ${{ steps.decisao.outputs.rotulo }}
+          COMMIT_VALIDADO: ${{ steps.decisao.outputs.commit }}
+        run: |
+          {
+            echo "## Preparação do backend para homologação"
+            echo "- Commit: \`$COMMIT_VALIDADO\`"
+            echo "- Release: \`$ROTULO\`"
+            echo "- A publicação depende do interruptor próprio e da aprovação no environment homologacao-backend."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  empacotar:
+    name: Gerar a release do backend com manifesto
+    needs: validar
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      release_sha256: ${{ steps.selo.outputs.release_sha256 }}
+      artifact_id: ${{ steps.artefato.outputs.artifact-id }}
+    steps:
+      - name: Checkout exato do commit validado
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.validar.outputs.commit }}
+          persist-credentials: false
+
+      - name: Conferir que o checkout é exatamente o commit validado
+        env:
+          COMMIT: ${{ needs.validar.outputs.commit }}
+        run: |
+          [ "$(git rev-parse HEAD)" = "$COMMIT" ] || { echo "checkout diferente do commit validado"; exit 1; }
+          [ -z "$(git status --porcelain)" ] || { echo "árvore de trabalho não está limpa"; exit 1; }
+
+      - name: Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+
+      - name: Gerar release do backend com o empacotador oficial (allowlist, proteção contra segredos, manifesto e release.json)
+        env:
+          COMMIT: ${{ needs.validar.outputs.commit }}
+          ROTULO: ${{ needs.validar.outputs.rotulo }}
+          ATUAL: ${{ needs.validar.outputs.atual }}
+        run: node deploy/hml/empacotar-backend.js --saida "$RUNNER_TEMP/release" --commit "$COMMIT" --rotulo "$ROTULO" --atual "$ATUAL"
+
+      - name: Conferir manifesto com sha256sum
+        run: |
+          cd "$RUNNER_TEMP/release/backend" && sha256sum -c --quiet ../manifesto-backend.sha256
+          cat "$RUNNER_TEMP/release/release.json"
+
+      - name: Fixar hash da release antes da aprovação
+        id: selo
+        run: |
+          HASH="$(sha256sum "$RUNNER_TEMP/release/release.json" | cut -d ' ' -f 1)"
+          echo "release_sha256=$HASH" >> "$GITHUB_OUTPUT"
+          echo "Release SHA-256: \`$HASH\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Guardar release como artefato da execução
+        id: artefato
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-backend-${{ needs.validar.outputs.rotulo }}
+          path: ${{ runner.temp }}/release
+          if-no-files-found: error
+          retention-days: 14
+
+  publicar:
+    name: Entregar o pedido aprovado de publicação do backend
+    needs: [validar, empacotar]
+    if: ${{ vars.HML_BACKEND_PUBLICACAO_HABILITADA == 'true' && github.repository == 'ramirespaes/Gestao_Epi_Fabricas' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.publicar == true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: homologacao-backend
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - name: Checkout do controlador imutável desta execução
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      - name: Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+
+      - name: Reconferir a cabeça da main depois da aprovação, antes de qualquer credencial
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HML_COMMIT: ${{ needs.validar.outputs.commit }}
+          HML_EXIGIR_ATUAL: ${{ needs.validar.outputs.atual }}
+        run: |
+          HML_CABECA_ATUAL="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq .object.sha)"
+          export HML_CABECA_ATUAL
+          node .github/scripts/hml/validar-automatico.js --atualidade
+
+      - name: Baixar somente o artefato produzido nesta execução
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ needs.empacotar.outputs.artifact_id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/release-aprovada
+
+      - name: Conferir identidade, escopo backend e integridade antes de obter credenciais
+        env:
+          HML_COMMIT: ${{ needs.validar.outputs.commit }}
+          HML_ROTULO: ${{ needs.validar.outputs.rotulo }}
+          HML_RELEASE_SHA256: ${{ needs.empacotar.outputs.release_sha256 }}
+          HML_RELEASE_DIR: ${{ runner.temp }}/release-aprovada
+          HML_ROLE: ${{ vars.HML_BACKEND_AWS_ROLE_ARN }}
+          HML_CONTA: ${{ vars.HML_AWS_ACCOUNT_ID }}
+          HML_REGIAO: ${{ vars.HML_AWS_REGION }}
+          HML_BUCKET: ${{ vars.HML_RELEASE_BUCKET }}
+        run: |
+          node -e 'const p = require("./deploy/hml/cd/protocolo"); const e = process.env; p.validarDestino(e); p.conferirRelease({dir:e.HML_RELEASE_DIR, commit:e.HML_COMMIT, rotulo:e.HML_ROTULO, releaseSha256:e.HML_RELEASE_SHA256, escopo:"backend"});'
+
+      - name: Credenciais AWS temporárias por OIDC (role própria do backend)
+        uses: aws-actions/configure-aws-credentials@b47578312673ae6fa5b5096b330d9fbac3d116df # v4.2.1
+        with:
+          role-to-assume: ${{ vars.HML_BACKEND_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.HML_AWS_REGION }}
+          audience: sts.amazonaws.com
+          role-session-name: hml-backend-${{ github.run_id }}-${{ github.run_attempt }}
+          role-duration-seconds: 1800
+          unset-current-credentials: true
+          mask-aws-account-id: true
+
+      - name: Entregar pedido aprovado de escopo backend e exigir recibo de escopo backend
+        env:
+          HML_ESCOPO: backend
+          HML_PUBLICAR: ${{ inputs.publicar }}
+          HML_BACKEND_HABILITADA: ${{ vars.HML_BACKEND_PUBLICACAO_HABILITADA }}
+          HML_CONFIRMACAO: ${{ inputs.confirmacao }}
+          HML_PERMITIR_ANTERIOR: "false"
+          HML_COMMIT: ${{ needs.validar.outputs.commit }}
+          HML_ROTULO: ${{ needs.validar.outputs.rotulo }}
+          HML_RELEASE_SHA256: ${{ needs.empacotar.outputs.release_sha256 }}
+          HML_RELEASE_DIR: ${{ runner.temp }}/release-aprovada
+          HML_BUCKET: ${{ vars.HML_RELEASE_BUCKET }}
+          HML_CONTA: ${{ vars.HML_AWS_ACCOUNT_ID }}
+          HML_REGIAO: ${{ vars.HML_AWS_REGION }}
+        run: node deploy/hml/cd/publicar.js
