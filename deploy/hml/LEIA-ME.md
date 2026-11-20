@@ -18,6 +18,9 @@ release; não é um comando de inspeção somente de leitura.
 | Pasta ou arquivo | Função |
 |---|---|
 | `empacotar-backend.js`, `allowlist-backend.json` | pacote e release do backend |
+| `cd/agente-backend.js`, `cd/agente.config.backend.exemplo.json` | agente do escopo backend, separado e inerte (`habilitado: false`); o instalador segue recusando o backend (`COORDENACAO_NAO_HOMOLOGADA`) |
+| `cd/iam-confianca-backend.modelo.json`, `cd/iam-publicador-backend.modelo.json`, `cd/iam-agente-backend.modelo.json`, `cd/s3-politica-backend.modelo.json` | modelos inertes de IAM e S3 só para `hml-backend/`, com marcadores `CONTA` e `BUCKET` |
+| `cd/precondicao-migrations.js` | verificador puro de pré-condições de migrations (laudo selado; nunca opera o banco nem restaura) |
 | `contratos-persistentes.json` | versões de contratos de dados (vazio: nenhum homologado) |
 | `instalador/` | instalador de releases (`instalar-release.js`, `nucleo.js`, `ancora.js`, `erros.js`, `compatibilidade.js`, `coordenacao.js`); copiável sozinho para o servidor |
 | `verificacao/` | verificação pós-publicação por GET |
