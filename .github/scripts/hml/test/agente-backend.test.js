@@ -20,7 +20,15 @@ const ID = '123-1';
 let tmp;
 
 beforeEach(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hml-agb-')); });
-afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
+// O instalador real deixa as releases somente leitura: devolve a escrita antes de apagar o diretório do teste.
+function liberarEscrita(dir) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (e.isSymbolicLink()) continue;
+    const abs = path.join(dir, e.name);
+    if (e.isDirectory()) { fs.chmodSync(abs, 0o700); liberarEscrita(abs); }
+  }
+}
+afterEach(() => { liberarEscrita(tmp); fs.rmSync(tmp, { recursive: true, force: true }); });
 
 const blobDe = () => Buffer.from(JSON.stringify([['release.json', Buffer.from('{}').toString('base64')]]));
 function pedidoDe(extra = {}) {
@@ -556,6 +564,159 @@ describe('instalador real: as recusas de ponto único acontecem antes de qualque
     } finally {
       if (antes === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = antes;
     }
+  });
+});
+
+describe('Etapa 3B-1: o agente entrega ao instalador real as dependências da configuração', () => {
+  const INST = path.join(RAIZ, 'deploy/hml/instalador');
+  const I = require(path.join(INST, 'instalar-release'));
+  const C = require(path.join(INST, 'coordenacao'));
+  // Âncora por caminho, a mesma dos testes do instalador: roda fora do Linux, sem a garantia contra corrida.
+  const ancoraPorCaminho = (op) => require(path.join(INST, 'ancora')).criarAncora({ ...op, modo: 'caminho', semGarantiaDeCorrida: true });
+  const rot = (n) => `hml-20261104T1${n}0000-${String(n).repeat(7)}`;
+  const commitDe = (n) => String(n).repeat(40);
+  let nodeEnvAntes;
+  beforeEach(() => { nodeEnvAntes = process.env.NODE_ENV; process.env.NODE_ENV = 'test'; });
+  afterEach(() => { if (nodeEnvAntes === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = nodeEnvAntes; });
+
+  function criarReleaseBackend(n) {
+    const dir = fs.mkdtempSync(path.join(tmp, `rel${n}-`));
+    const lock = '{"lockfileVersion":3}';
+    const migration = '-- 000_a.sql\n';
+    const arquivos = {
+      'package.json': '{"engines":{"node":">=22"}}', 'package-lock.json': lock, 'src/server.js': `// v${n}\n`, 'migrations/000_a.sql': migration,
+      'migrations/checksums.json': JSON.stringify({ algoritmo: 'sha256', migrations: { '000_a.sql': sha(migration) } }),
+    };
+    const manifesto = {};
+    for (const [rel, c] of Object.entries(arquivos)) {
+      fs.mkdirSync(path.dirname(path.join(dir, 'backend', rel)), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'backend', rel), c);
+      manifesto[rel] = sha(c);
+    }
+    const texto = `${Object.keys(manifesto).sort().map((rel) => `${manifesto[rel]}  ${rel}`).join('\n')}\n`;
+    fs.writeFileSync(path.join(dir, 'manifesto-backend.sha256'), texto);
+    const release = { commit: commitDe(n), rotulo: rot(n), atual: true, geradoEm: '2026-11-04T10:00:00.000Z', backend: { arquivos: Object.keys(manifesto).length, manifestoSha256: sha(texto), lockfileSha256: sha(lock), node: '>=22', migrations: [{ nome: '000_a.sql', sha256: sha(migration) }], contratos: {} } };
+    fs.writeFileSync(path.join(dir, 'release.json'), `${JSON.stringify(release, null, 2)}\n`);
+    return dir;
+  }
+  const arquivosDe = (dir, prefixo = '') => fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name, 'en')).flatMap((e) => (e.isDirectory() ? arquivosDe(path.join(dir, e.name), `${prefixo}${e.name}/`) : [`${prefixo}${e.name}`]));
+  const blobDoDiretorio = (dir) => Buffer.from(JSON.stringify(arquivosDe(dir).map((nome) => [nome, fs.readFileSync(path.join(dir, nome)).toString('base64')])));
+
+  // Ambiente com a release 1 já instalada pelo instalador real e um pedido aprovado para a release 2.
+  async function ambiente({ reinicioSai = 0 } = {}) {
+    const raiz = fs.mkdtempSync(path.join(fs.realpathSync(tmp), 'amb-'));
+    const mk = (n) => { const p = path.join(raiz, n); fs.mkdirSync(p); return p; };
+    const app = mk('app'), estadoDir = mk('estado'), protegida = mk('protegida');
+    const registro = path.join(raiz, 'reinicios.log');
+    const roteiro = path.join(raiz, 'reiniciar.js');
+    fs.writeFileSync(roteiro, `require('node:fs').appendFileSync(${JSON.stringify(registro)}, 'reinicio\\n'); process.exit(${reinicioSai});\n`);
+    const cfgAgente = {
+      habilitado: true, isolamentoRevisado: 'RAIZES_EXCLUSIVAS_HOMOLOGACAO_BACKEND', estadoDir, raizesProtegidas: [protegida],
+      s3: { bucket: 'hml-exemplo-teste', conta: '111111111111', regiao: 'us-east-1', executavel: '/usr/local/bin/aws', prefixo: 'hml-backend' },
+      instalador: {
+        retencao: 3, raizesPersistentes: [],
+        componentes: { backend: {
+          tipo: 'backend', base: app, nome: 'backend',
+          dependencias: { comando: ['/usr/bin/npm', 'ci', '--omit=dev', '--ignore-scripts'] },
+          saude: { url: 'http://127.0.0.1:3330/api/health' },
+          reinicio: { comando: [process.execPath, roteiro] },
+          processo: { pidComando: [process.execPath, '-e', 'console.log(process.pid)'] },
+        } },
+      },
+    };
+    A.validarConfiguracao(cfgAgente);
+    const link = path.join(app, 'backend');
+    const provedor = C.homologarProvedorParaTeste(async () => ({ situacao: 'LIVRE', origem: 'teste', consultadoEm: new Date().toISOString() }));
+    let pid = 100;
+    const chamadas = { saude: 0, processo: 0, dependencias: 0 };
+    // Controlado pelo teste: âncora por caminho, npm ci simulado, estado do banco, health e PID. O reinício NÃO é
+    // controlado: vem da configuração, por depsDoConfig, e deixa rastro no arquivo de registro.
+    const controladas = {
+      criarAncora: ancoraPorCaminho,
+      executar: async (cmd, args, opc) => { chamadas.dependencias += 1; fs.mkdirSync(path.join(opc.cwd, 'node_modules', 'zod'), { recursive: true }); fs.writeFileSync(path.join(opc.cwd, 'node_modules', 'zod', 'index.js'), '1'); },
+      lerObservado: async () => ({ banco: 'hml', origem: 'sonda-teste', coletadoEm: new Date().toISOString(), migrations: ['000_a.sql'], contratos: {} }),
+      verificarSaude: async () => { chamadas.saude += 1; return { ok: true, detalhe: 'ok' }; },
+      identificarProcesso: async () => { chamadas.processo += 1; pid += 1; return { pid, cwd: fs.realpathSync(link) }; },
+    };
+    const r1 = criarReleaseBackend(1);
+    await I.instalar({ config: cfgAgente.instalador, componente: 'backend', release: r1, opcoes: { releaseSha256Esperado: sha(fs.readFileSync(path.join(r1, 'release.json'))) }, deps: { ...controladas, reiniciar: async () => {}, consultarCoordenacao: provedor } });
+    Object.assign(chamadas, { saude: 0, processo: 0, dependencias: 0 });
+    const r2 = criarReleaseBackend(2);
+    const blob = blobDoDiretorio(r2);
+    const agora = Date.now();
+    const pedido = { versao: 2, escopo: 'backend', id: ID, repositorio: P.REPO, commit: commitDe(2), rotulo: rot(2), releaseSha256: sha(fs.readFileSync(path.join(r2, 'release.json'))), blobSha256: sha(blob), permitirAnterior: false, criadoEm: new Date(agora - 1000).toISOString(), expiraEm: new Date(agora + 5 * 60000).toISOString() };
+    const s3 = s3Falso({ [`hml-backend/pedidos/${ID}.json`]: Buffer.from(JSON.stringify(pedido)), [`hml-backend/blobs/${ID}.json`]: blob });
+    const armazem = new Map();
+    const identificar = async () => ({ ...(await I.identificar({ config: cfgAgente.instalador, componente: 'backend', deps: { criarAncora: ancoraPorCaminho } })), garantiaContraCorrida: true });
+    const depsDoAgente = (extras) => ({ criarAncora: ancoraFalsa(armazem), conferirRelease: () => ({ release: { commit: commitDe(2), rotulo: rot(2), atual: true } }), identificar, depsExtrasDoInstalador: extras });
+    const instalada = async () => (await identificar()).rotulo;
+    const reinicios = () => (fs.existsSync(registro) ? fs.readFileSync(registro, 'utf8').split('\n').filter(Boolean).length : 0);
+    return { cfgAgente, s3, armazem, controladas, provedor, depsDoAgente, instalada, reinicios, chamadas, pedido };
+  }
+  const reciboDoBackend = (s3) => JSON.parse(s3.dados.get(`hml-backend/recibos/${ID}.json`).toString());
+
+  test('com coordenação de teste, o instalador real troca a release usando reinício, health e prova de processo', async () => {
+    const amb = await ambiente();
+    assert.equal(await amb.instalada(), rot(1));
+    const r = await A.processar({ cfg: amb.cfgAgente, id: ID, s3: amb.s3, deps: amb.depsDoAgente({ ...amb.controladas, consultarCoordenacao: amb.provedor }) });
+    assert.equal(r.estado, 'SUCESSO', JSON.stringify(r));
+    assert.equal(r.verificado, true);
+    assert.equal(await amb.instalada(), rot(2));
+    assert.equal(amb.reinicios(), 1, 'o comando de reinício da configuração foi executado uma vez');
+    assert.ok(amb.chamadas.saude >= 1 && amb.chamadas.processo >= 1 && amb.chamadas.dependencias === 1);
+    assert.equal(P.validarRecibo(reciboDoBackend(amb.s3), amb.pedido).estado, 'SUCESSO');
+    assert.equal(amb.armazem.has('@.trava-cd-backend'), false);
+  });
+
+  test('sem provedor homologado, a mesma operação continua recusada com COORDENACAO_NAO_HOMOLOGADA e nada muda', async () => {
+    const amb = await ambiente();
+    for (const extras of [amb.controladas, { ...amb.controladas, consultarCoordenacao: async () => ({ situacao: 'LIVRE', origem: 'não homologado', consultadoEm: new Date().toISOString() }) }]) {
+      const s3 = s3Falso(Object.fromEntries([...amb.s3.dados].filter(([k]) => !k.includes('/recibos/'))));
+      const armazem = new Map();
+      const r = await A.processar({ cfg: amb.cfgAgente, id: ID, s3, deps: { ...amb.depsDoAgente(extras), criarAncora: ancoraFalsa(armazem) } });
+      assert.equal(r.estado, 'RECUSADO');
+      assert.equal(r.mutacao, 'NENHUMA');
+      assert.equal(r.motivo, 'COORDENACAO_NAO_HOMOLOGADA');
+      assert.equal(armazem.has('@.trava-cd-backend'), false);
+      fs.rmSync(path.join(amb.cfgAgente.estadoDir, `entrada-${ID}`), { recursive: true, force: true });
+    }
+    assert.equal(await amb.instalada(), rot(1));
+    assert.equal(amb.reinicios(), 0);
+  });
+
+  const falhas = [
+    ['o comando de reinício da configuração falha', async () => ({ amb: await ambiente({ reinicioSai: 1 }), extras: {} })],
+    ['o health reprova', async () => ({ amb: await ambiente(), extras: { verificarSaude: async () => ({ ok: false, detalhe: 'HTTP 503' }) } })],
+    ['o processo em execução não usa a release nova', async () => ({ amb: await ambiente(), extras: { identificarProcesso: async () => ({ pid: 999, cwd: os.tmpdir() }) } })],
+    ['a identificação do processo falha', async () => ({ amb: await ambiente(), extras: { identificarProcesso: async () => { throw new Error('sem PID'); } } })],
+  ];
+  for (const [nome, preparar] of falhas) {
+    test(`recusa segura quando ${nome}: nunca SUCESSO, trava preservada, sem recibo de sucesso`, async () => {
+      const { amb, extras } = await preparar();
+      const r = await A.processar({ cfg: amb.cfgAgente, id: ID, s3: amb.s3, deps: amb.depsDoAgente({ ...amb.controladas, consultarCoordenacao: amb.provedor, ...extras }) });
+      assert.equal(r.estado, 'CRITICO', JSON.stringify(r));
+      assert.equal(r.verificado, false);
+      assert.ok(['FALHA_CRITICA_APOS_ALTERACAO', 'RESULTADO_INCERTO'].includes(r.motivo), r.motivo);
+      assert.equal(amb.armazem.has('@.trava-cd-backend'), true, 'a trava do agente fica preservada');
+      assert.equal(reciboDoBackend(amb.s3).estado, 'CRITICO');
+      assert.throws(() => P.validarRecibo(reciboDoBackend(amb.s3), amb.pedido), (e) => e.codigo === 'DEPLOY_NAO_APROVADO');
+    });
+  }
+
+  test('sem o estado observado do banco, o instalador recusa e o agente não declara sucesso', async () => {
+    const amb = await ambiente();
+    const { lerObservado, ...semObservado } = amb.controladas;
+    const r = await A.processar({ cfg: amb.cfgAgente, id: ID, s3: amb.s3, deps: amb.depsDoAgente({ ...semObservado, consultarCoordenacao: amb.provedor }) });
+    assert.equal(r.estado, 'CRITICO');
+    assert.equal(r.diagnostico, 'INCOMPATIVEL');
+    assert.equal(await amb.instalada(), rot(1));
+    assert.equal(amb.reinicios(), 0);
+  });
+
+  test('o agente não fabrica coordenação nem estado observado: só repassa o que depsDoConfig monta', () => {
+    const fonte = fs.readFileSync(AG, 'utf8');
+    assert.match(fonte, /I\.depsDoConfig\(/);
+    assert.doesNotMatch(fonte, /lerObservado|situacao|LIVRE/);
   });
 });
 
