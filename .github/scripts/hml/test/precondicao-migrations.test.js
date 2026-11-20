@@ -531,6 +531,66 @@ describe('rodada consolidada: fidelidade ao lexer do PostgreSQL e ao recorte do 
   });
 });
 
+describe('SonarCloud: custo linear sem mudar o comportamento', () => {
+  const NT = 'SQL_NAO_TRANSACIONAL';
+  const marcador = (direcao) => new RegExp(`^\\s*--[\\s-]*${direcao}\\s+migration`, 'im');
+  const recortaria = (sql) => sql.search(marcador('up')) >= 0 || sql.search(marcador('down')) >= 0;
+
+  test('marcador de seção: mesma decisão da expressão do node-pg-migrate em 30 mil textos gerados', () => {
+    const pecas = ['--', '-- ', '-', ' ', '\n', '\r', '\t', '\f', 'up', 'UP', 'Up', 'down', 'DOWN', ' migration', 'migration', '\nMigration', ' MIGRATION', 'x', "'", ';',
+      String.fromCharCode(0x2028), String.fromCharCode(0x2029), String.fromCharCode(0xa0), String.fromCharCode(0xfeff), 'upx', 'setup', '--up migration', '\n-- down migration'];
+    let semente = 20261120;
+    const sorteio = (n) => { semente = (semente * 1103515245 + 12345) % 2147483648; return semente % n; };
+    const divergentes = [];
+    let positivos = 0;
+    for (let i = 0; i < 30000; i += 1) {
+      let sql = '';
+      for (let k = sorteio(9) + 1; k > 0; k -= 1) sql += pecas[sorteio(pecas.length)];
+      const esperado = recortaria(sql);
+      if (esperado) positivos += 1;
+      if ((V.classificarSql(sql) === 'SQL_RECORTAVEL') !== esperado) divergentes.push(JSON.stringify(sql));
+    }
+    assert.deepEqual(divergentes.slice(0, 5), []);
+    assert.ok(positivos > 500 && positivos < 29500, `amostra desequilibrada: ${positivos} positivos`);
+  });
+
+  test('REINDEX global: mesmas decisões nas bordas da lista de opções', () => {
+    const casos = [
+      ['REINDEX(VERBOSE)DATABASE x', NT], ['REINDEX ( VERBOSE )\n SCHEMA s', NT], ['REINDEX () SYSTEM', NT], ['reindex\tdatabase', NT],
+      ['REINDEX (VERBOSE DATABASE x', 'OK'], ['REINDEX (a) (b) DATABASE x', 'OK'], ['REINDEX TABLE t; SELECT 1 FROM database', 'OK'], ['REINDEXDATABASE x', 'OK'],
+      ['REINDEX DATABASES x', 'OK'], ['REINDEX ( TABLE t; REINDEX SCHEMA s', NT], ['REINDEX (x; REINDEX (y) SYSTEM', NT], ['REINDEX (x) TABLE t; REINDEX INDEX i', 'OK'],
+    ];
+    assert.deepEqual(casos.map(([sql, esperado]) => [sql, V.classificarSql(sql), esperado]).filter(([, obtido, esperado]) => obtido !== esperado), []);
+  });
+
+  test('entradas que provocavam retrocesso quadrático são classificadas em tempo linear', { timeout: 120000 }, () => {
+    const N = 60000;
+    const casos = [
+      [`${'\n'.repeat(N)}x`, 'OK'], [`${' \n'.repeat(N)}-x`, 'OK'], [`x${'-'.repeat(N)}y`, 'OK'], [`${'\n- '.repeat(N)}up migration`, 'OK'], [`${'\n'.repeat(N)}-- up migration`, 'SQL_RECORTAVEL'],
+      [`REINDEX${' '.repeat(N)}x`, 'OK'], [`${'REINDEX ( '.repeat(N / 10)}`, 'OK'], [`${'REINDEX ( '.repeat(N / 10)}) SCHEMA s`, NT], [`REINDEX (${' '.repeat(N)}) ${' '.repeat(N)}x`, 'OK'],
+    ];
+    const inicio = Date.now();
+    assert.deepEqual(casos.map(([sql, esperado]) => [sql.length, V.classificarSql(sql), esperado]).filter(([, obtido, esperado]) => obtido !== esperado), []);
+    const ms = Date.now() - inicio;
+    assert.ok(ms < 3000, `classificação demorou ${ms} ms`);
+  });
+
+  test('o selo do laudo não muda com a ordenação explícita das chaves', () => {
+    assert.equal(V.verificar(cenario()).laudoSha256, 'c1a4addbd39c1a6141a5c4891a1d316418e25a98d6dcb4e9312876d50a96675c');
+    assert.equal(V.selo({ b: 1, a: { d: [1, { z: null, y: 'x' }], c: undefined } }), V.selo({ a: { c: undefined, d: [1, { y: 'x', z: null }] }, b: 1 }));
+  });
+
+  test('a ordem das migrations pendentes continua a de código de caractere, a mesma usada na checagem de ordem', () => {
+    const nomes = ['010_b.sql', '002_a.sql', '100_c.sql', '002_B.sql', '002_a-x.sql'];
+    const sqls = Object.fromEntries(nomes.map((n) => [n, `SELECT '${n}';`]));
+    const release = cenario().release;
+    release.backend.migrations = nomes.map((n) => ({ nome: n, sha256: sha(sqls[n]) }));
+    const l = V.verificar(cenario({ release, estado: { banco: 'safework_hml', coletadoEm: COLETA, aplicadas: [] }, backup: { ...cenario().backup, ultimaMigration: null, migrationsAplicadas: 0 }, restauracao: { ...cenario().restauracao, ultimaMigration: null, migrationsAplicadas: 0 }, sqlPendentes: sqls }));
+    assert.deepEqual(l.pendentes, ['002_B.sql', '002_a-x.sql', '002_a.sql', '010_b.sql', '100_c.sql']);
+    assert.equal(l.resultado, 'APROVADO');
+  });
+});
+
 describe('o verificador não opera: só lê e diagnostica', () => {
   const fonte = fs.readFileSync(ARQ, 'utf8');
   test('não importa processos, rede, banco nem o executor de migrations', () => {

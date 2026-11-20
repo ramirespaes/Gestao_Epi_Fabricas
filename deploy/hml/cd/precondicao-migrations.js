@@ -22,8 +22,29 @@ const VALIDADE_ESTADO_MS = 30 * 60000;
 // Falso positivo conservador documentado: a palavra dentro de um literal ou corpo, como num COMMENT ON.
 const PALAVRAS_NAO_TRANSACIONAIS = [
   /\bCONCURRENTLY\b/i, /\bVACUUM\b/i, /\b(?:CREATE|DROP)\s+(?:DATABASE|TABLESPACE)\b/i, /\bALTER\s+SYSTEM\b/i,
-  /\b(?:CREATE|ALTER|DROP)\s+SUBSCRIPTION\b/i, /\bREINDEX\b\s*(?:\([^)]*\))?\s*(?:DATABASE|SYSTEM|SCHEMA)\b/i,
+  /\b(?:CREATE|ALTER|DROP)\s+SUBSCRIPTION\b/i,
 ];
+const BRANCO = /\s/;
+const ALVO_GLOBAL_DE_REINDEX = /(?:DATABASE|SYSTEM|SCHEMA)\b/iy;
+
+// REINDEX, lista de opções opcional entre parênteses e DATABASE, SYSTEM ou SCHEMA. Feito à mão, em tempo linear: a
+// expressão equivalente (\s*, grupo opcional, \s*) retrocede de forma quadrática em textos longos de espaços.
+function temReindexGlobal(texto) {
+  let fecha = -2; // índice do ')' já localizado; -1 quando não há mais nenhum à frente
+  for (const achado of texto.matchAll(/\bREINDEX\b/gi)) {
+    let k = achado.index + achado[0].length;
+    while (k < texto.length && BRANCO.test(texto[k])) k += 1;
+    if (texto[k] === '(') {
+      if (fecha !== -1 && fecha < k) fecha = texto.indexOf(')', k);
+      if (fecha === -1) continue;
+      k = fecha + 1;
+      while (k < texto.length && BRANCO.test(texto[k])) k += 1;
+    }
+    ALVO_GLOBAL_DE_REINDEX.lastIndex = k;
+    if (ALVO_GLOBAL_DE_REINDEX.test(texto)) return true;
+  }
+  return false;
+}
 // Comandos reprovados pelo início, com literais, identificadores e corpos $$ em branco e o texto separado por ';':
 // controle de transação em qualquer variante (com argumentos ou sem ';' final), SAVEPOINT, RELEASE e CALL (um
 // procedimento pode controlar transação). O END de um bloco procedural fica dentro do corpo e não conta.
@@ -37,9 +58,37 @@ const ABERTURA_DE_CORPO = /\$(?:(?:[A-Za-z_]|[^\x00-\x7f])(?:[A-Za-z0-9_]|[^\x00
 const ESPACO_HORIZONTAL = /[ \t\f\v]/;
 const ESPACO = /[ \t\n\r\f\v]/;
 const fimDeLinha = (c) => c === '\n' || c === '\r';
-// O node-pg-migrate 9.0.0 (sqlMigration.js) procura estes marcadores com esta mesma expressão, sem saber se estão em
-// literal ou comentário, e executa só o trecho recortado. O que ele recortaria não é o texto analisado: reprova.
-const MARCADOR_DE_SECAO = /^\s*--[\s-]*(?:up|down)\s+migration/im;
+// O node-pg-migrate 9.0.0 (sqlMigration.js) procura os marcadores com /^\s*--[\s-]*(up|down)\s+migration/im, sem saber
+// se estão em literal ou comentário, e executa só o trecho recortado. O que ele recortaria não é o texto analisado:
+// reprova. A mesma decisão é tomada aqui à mão, em tempo linear (a expressão retrocede de forma quadrática em textos
+// longos de quebras de linha); um teste compara as duas em textos gerados.
+const SEPARADOR_DE_LINHA = String.fromCharCode(0x2028);
+const SEPARADOR_DE_PARAGRAFO = String.fromCharCode(0x2029);
+const quebraDeLinha = (c) => c === '\n' || c === '\r' || c === SEPARADOR_DE_LINHA || c === SEPARADOR_DE_PARAGRAFO;
+const DIRECAO_E_MIGRATION = /(?:up|down)\s+migration/iy;
+
+function temMarcadorDeSecao(sql) {
+  const n = sql.length;
+  let i = 0;
+  while (i < n) {
+    if (sql[i] !== '-' && !BRANCO.test(sql[i])) { i += 1; continue; }
+    // Trecho máximo de hifens e espaços: o [\s-]* da expressão vai até o fim dele, onde a direção precisa começar.
+    let soEspacosDesdeOInicioDaLinha = i === 0;
+    let candidato = false;
+    while (i < n && (sql[i] === '-' || BRANCO.test(sql[i]))) {
+      if (sql[i] === '-') {
+        if (soEspacosDesdeOInicioDaLinha && sql[i + 1] === '-') candidato = true;
+        soEspacosDesdeOInicioDaLinha = false;
+      } else if (quebraDeLinha(sql[i])) soEspacosDesdeOInicioDaLinha = true;
+      i += 1;
+    }
+    if (candidato) {
+      DIRECAO_E_MIGRATION.lastIndex = i;
+      if (DIRECAO_E_MIGRATION.test(sql)) return true;
+    }
+  }
+  return false;
+}
 
 // Depois da aspa que fecha um literal: se vier quebra de linha e, só com espaços e comentários de linha no meio, outra
 // aspa, o PostgreSQL continua o MESMO literal no mesmo modo (scan.l, quotecontinue). Devolve o índice dessa aspa ou -1.
@@ -129,10 +178,10 @@ function varrerSql(sql) {
 }
 
 function classificarSql(sql) {
-  if (MARCADOR_DE_SECAO.test(sql)) return 'SQL_RECORTAVEL';
+  if (temMarcadorDeSecao(sql)) return 'SQL_RECORTAVEL';
   const v = varrerSql(sql);
   if (v === null) return 'SQL_MALFORMADO';
-  const palavra = PALAVRAS_NAO_TRANSACIONAIS.some((r) => r.test(v.limpo) || r.test(v.semCorpos));
+  const palavra = [v.limpo, v.semCorpos].some((t) => PALAVRAS_NAO_TRANSACIONAIS.some((r) => r.test(t)) || temReindexGlobal(t));
   const inicio = v.semCorpos.split(';').some((comando) => INICIO_DE_COMANDO_PROIBIDO.test(comando));
   return palavra || inicio ? 'SQL_NAO_TRANSACIONAL' : 'OK';
 }
@@ -140,19 +189,26 @@ function classificarSql(sql) {
 const objeto = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const texto = (v) => typeof v === 'string' && v.length > 0;
 const sha256 = (t) => crypto.createHash('sha256').update(t).digest('hex');
-const instante = (v) => (typeof v === 'string' ? Date.parse(v) : NaN);
+const instante = (v) => (typeof v === 'string' ? Date.parse(v) : Number.NaN);
+// Chaves do laudo em ordem alfabética explícita, com locale fixo para não depender do ambiente do processo.
+const porChave = (a, b) => a.localeCompare(b, 'en');
+// Nomes de migrations em ordem de código de caractere: é a mesma relação (<) usada na checagem de ordem das pendentes.
+function porCodigoDeCaractere(a, b) {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
+}
 const iso = (ms) => new Date(ms).toISOString();
 
 function canonico(v) {
   if (Array.isArray(v)) return `[${v.map(canonico).join(',')}]`;
-  if (objeto(v)) return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonico(v[k])}`).join(',')}}`;
+  if (objeto(v)) return `{${Object.keys(v).sort(porChave).map((k) => `${JSON.stringify(k)}:${canonico(v[k])}`).join(',')}}`;
   return JSON.stringify(v === undefined ? null : v);
 }
 function selo(laudo) {
   const { laudoSha256, ...resto } = laudo;
   return sha256(canonico(resto));
 }
-const ultimaDe = (aplicadas) => (aplicadas.length ? aplicadas.map((m) => m.nome).sort().at(-1) : null);
+const ultimaDe = (aplicadas) => (aplicadas.length ? aplicadas.map((m) => m.nome).sort(porCodigoDeCaractere).at(-1) : null);
 
 function verificar(entrada) {
   const e = objeto(entrada) ? entrada : {};
@@ -189,7 +245,7 @@ function verificar(entrada) {
       if (!doRelease.has(nome)) falha('BANCO_A_FRENTE_DO_RELEASE', `${nome} está aplicada e não consta no release`);
       else if (doRelease.get(nome) !== hash) falha('APLICADA_DIVERGENTE', `${nome} foi aplicada com hash diferente do release`);
     }
-    pendentes = [...doRelease.keys()].filter((n) => !aplicadas.has(n)).sort();
+    pendentes = [...doRelease.keys()].filter((n) => !aplicadas.has(n)).sort(porCodigoDeCaractere);
     const maiorAplicada = ultimaDe(estado.aplicadas);
     if (pendentes.some((n) => maiorAplicada !== null && n < maiorAplicada)) falha('PENDENTES_FORA_DE_ORDEM', 'há migration pendente anterior a uma já aplicada');
     for (const nome of pendentes) {
