@@ -229,6 +229,60 @@ describe('sonda: linha de comando', () => {
   });
 });
 
+describe('sonda: encerramento da linha de comando (S9383)', () => {
+  const { spawnSync } = require('node:child_process');
+  const encerramento = (opcoes) => new Promise((resolver) => { S.comoComando({ ...opcoes, encerrar: resolver }); });
+
+  test('causa: principal rejeita quando a própria escrita do erro falha', async () => {
+    await assert.rejects(S.principal({ argv: [], erro: () => { throw new Error('EPIPE segredo-da-sonda'); } }), /EPIPE/);
+  });
+
+  test('encerramento normal: usa o código devolvido por principal', async () => {
+    assert.equal(await encerramento({ rodar: async () => 0 }), 0);
+    assert.equal(await encerramento({ rodar: async () => 3 }), 3);
+  });
+
+  test('rejeição de principal: encerra com 3 e escreve só a mensagem fixa, sem a original nem credencial', async () => {
+    let err = '';
+    const codigo = await encerramento({ rodar: async () => { throw new Error('EPIPE segredo-da-sonda sonda_leitura 127.0.0.1'); }, erro: (t) => { err += t; } });
+    assert.equal(codigo, 3);
+    assert.equal(err, 'sonda recusou: SONDA_ERRO\n');
+  });
+
+  test('rejeição com a saída de erro também indisponível: ainda encerra com 3', async () => {
+    assert.equal(await encerramento({ rodar: async () => { throw new Error('x'); }, erro: () => { throw new Error('EPIPE'); } }), 3);
+  });
+
+  test('não sobra rejeição sem tratamento e a função não devolve Promise solta', async () => {
+    const soltas = [];
+    const ouvir = (motivo) => soltas.push(motivo);
+    process.on('unhandledRejection', ouvir);
+    try {
+      let retorno;
+      const codigo = await new Promise((resolver) => { retorno = S.comoComando({ rodar: async () => { throw new Error('x'); }, erro: () => {}, encerrar: resolver }); });
+      await new Promise((r) => setImmediate(r));
+      assert.equal(codigo, 3);
+      assert.equal(retorno, undefined);
+      assert.deepEqual(soltas, []);
+    } finally { process.off('unhandledRejection', ouvir); }
+  });
+
+  test('linha de comando real, sem credencial: código 3, saída vazia e só o código do erro', () => {
+    for (const [args, codigo] of [[[], 'SONDA_USO'], [['--credencial', '/caminho/que/nao/existe.json'], 'SONDA_CREDENCIAL'], [['--senha', 'segredo-da-sonda'], 'SONDA_USO']]) {
+      const r = spawnSync(process.execPath, [ARQ, ...args], { encoding: 'utf8', env: { PATH: process.env.PATH }, timeout: 30000 });
+      assert.equal(r.status, 3, JSON.stringify(args));
+      assert.equal(r.stdout, '');
+      assert.equal(r.stderr, `sonda recusou: ${codigo}\n`);
+    }
+  });
+
+  test('linha de comando real com a saída de erro fechada: ainda encerra com 3, sem rastro de exceção na saída', () => {
+    const r = spawnSync('/bin/sh', ['-c', '"$0" "$1" 2>&-', process.execPath, ARQ], { encoding: 'utf8', env: { PATH: process.env.PATH }, timeout: 30000 });
+    assert.equal(r.status, 3);
+    assert.equal(r.stdout, '');
+  });
+});
+
 const temPg = (() => { try { require.resolve('pg'); return true; } catch { return false; } })();
 describe('sonda com o inspecionarMigrations real (exige as dependências do backend; roda no CI)', { skip: temPg ? false : 'driver pg não instalado nesta árvore' }, () => {
   test('a fábrica injetada é usada, os chamadores sem fábrica continuam com a conexão padrão, e só há SELECT', async () => {

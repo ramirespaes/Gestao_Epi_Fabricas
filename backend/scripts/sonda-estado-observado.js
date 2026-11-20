@@ -150,9 +150,16 @@ async function principal({ argv = process.argv.slice(2), saida = (t) => process.
   }
 }
 
-if (require.main === module) {
-  // Encerra mesmo que uma conexão presa mantenha o processo vivo depois do limite de execução.
-  principal().then((codigo) => process.exit(codigo));
+// Linha de comando: encerra o processo com o código devolvido, mesmo que uma conexão presa o mantivesse vivo depois do
+// limite de execução. `principal` só rejeita se a própria escrita da mensagem de erro falhar; nesse caso a rejeição é
+// tratada aqui e a sonda ainda encerra como falha, sem repetir a mensagem original.
+function comoComando({ rodar = principal, encerrar = (codigo) => process.exit(codigo), erro = (t) => process.stderr.write(t) } = {}) {
+  rodar().then(encerrar).catch(() => {
+    try { erro('sonda recusou: SONDA_ERRO\n'); } catch { /* sem saída de erro disponível: resta o código de saída */ }
+    encerrar(3);
+  });
 }
 
-module.exports = { observar, principal, validarCredencial, lerCredencial, LIMITES };
+if (require.main === module) comoComando();
+
+module.exports = { observar, principal, comoComando, validarCredencial, lerCredencial, LIMITES };
