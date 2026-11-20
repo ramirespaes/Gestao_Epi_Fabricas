@@ -273,3 +273,67 @@ seguro e não mantêm a fila bloqueada por mera expiração do pedido.
 Referências técnicas consultadas para a implementação: [OIDC GitHub](https://docs.github.com/en/actions/reference/security/oidc),
 [criação condicional S3](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html)
 e [ação oficial de credenciais fixada](https://github.com/aws-actions/configure-aws-credentials/tree/b47578312673ae6fa5b5096b330d9fbac3d116df).
+
+## Backend: agente, identidade e pré-condição de migrations (Etapa 2B)
+
+Estado: **Não ativado.** Esta etapa entrega só código, modelos e testes locais.
+Nada foi executado, instalado ou configurado na AWS nem no GitHub: o environment `homologacao-backend`, a role, as variáveis, o agente no servidor e a
+publicação do backend continuam inexistentes ou desabilitados. O `agente.js` do frontend, o instalador, a coordenação e
+os workflows não foram alterados (hashes conferidos por `frontend-inalterado.test.js`).
+
+**Identidade e prefixo.** Os modelos `iam-confianca-backend.modelo.json`, `iam-publicador-backend.modelo.json`,
+`iam-agente-backend.modelo.json` e `s3-politica-backend.modelo.json` são inertes (só marcadores `CONTA` e `BUCKET`) e usam o
+prefixo `hml-backend/` do bucket existente. A confiança aceita só o `sub` do environment `homologacao-backend`; o publicador
+escreve só blobs e pedidos e lê só recibos; o agente lê pedidos e blobs e escreve só recibos. Nenhum modelo do backend
+alcança `hml/`, e nenhum do frontend alcança `hml-backend/` (`iam-backend-modelos.test.js`).
+
+**Agente do backend.** `agente-backend.js` é um módulo separado, com `agente.config.backend.exemplo.json` nascendo
+`habilitado: false`. Ele só entrega o pedido ao instalador, que recusa o backend com `COORDENACAO_NAO_HOMOLOGADA` enquanto
+não houver provedor homologado com o D-ORF-6. O agente não declara coordenação, não aceita atestado e não pula a prova de
+versão (que é a do processo efetivamente executado, configurada em `processo`).
+
+**Classificação do resultado (conservadora).** Só é `RECUSADO` com `mutacao=NENHUMA`, e libera a trava, a recusa que sai das guardas iniciais do instalador, antes de abrir contexto, trava ou diário: `COORDENACAO_NAO_HOMOLOGADA`, `SAUDE_NAO_CONFIGURADA`, `REINICIO_NAO_CONFIGURADO` e `VERSAO_NAO_COMPROVAVEL` (cada um tem um único ponto de lançamento, fixado por teste), além das recusas do próprio agente antes de chamar o instalador (pedido, escopo, blob, expiração). `OPERACAO_EM_CURSO` e `COORDENACAO_NAO_CONFIRMADA` também são lançadas depois de preparar a release e depois de trocar o link; por isso, depois de iniciada a instalação, resultam em `CRITICO` com `motivo=RESULTADO_INCERTO`. Falha que o instalador declara crítica (`FALHA_POS_TROCA`, `FALHA_POS_REINICIO`, `ESTADO_CRITICO` ou `detalhes.critico`) resulta em `CRITICO` com `motivo=FALHA_CRITICA_APOS_ALTERACAO`. O recibo leva só o código no campo `diagnostico`. Em todo `CRITICO` a trava é preservada, novos processamentos ficam bloqueados e nenhuma reversão automática é executada: o operador recebe o diagnóstico e decide.
+
+**Sucesso exige o resultado do instalador.** `SUCESSO` só com resultado `INSTALADA`, `JA_INSTALADA` ou `CONFIRMADA`, sem aviso `ESTADO_NAO_ATUALIZADO` ou `DURABILIDADE_NAO_GARANTIDA` e com a identidade instalada igual à da release aprovada. Resultado não reconhecido vira `CRITICO` com `motivo=RESULTADO_NAO_RECONHECIDO`; aviso de registro não durável vira `CRITICO` com `motivo=SUCESSO_SEM_REGISTRO_DURAVEL`. `RETENCAO_FALHOU` é só aviso, porque a release já foi comprovada.
+
+**Recuperação interna do instalador.** O instalador possui mecanismo interno de recuperação: depois de falha pós-troca ou pós-reinício ele tenta voltar à release anterior, com reinício e prova, ou fica crítico. O agente não pode desligá-lo e não executa nenhuma reversão adicional nem restauração. Esse mecanismo só passa a atuar depois de uma coordenação homologada com o D-ORF-6, que hoje não existe, e deve entrar na decisão de homologação.
+
+**Migrations continuam separadas do CD.** O CD do backend não aplica migrations. O caminho oficial segue sendo
+`npm run db:migrate` com `DB_NAME` explícito, e o executor não foi alterado (transação única, trava consultiva em modo
+`fail`, ordem verificada, sem `down`).
+
+**Pré-condição obrigatória antes de qualquer migration futura.** `precondicao-migrations.js` é um verificador puro: lê o
+`release.json` (com o hash aprovado), o estado do banco, o recibo de backup, o recibo de restauração e o SQL das
+migrations pendentes, e emite um laudo selado por SHA-256, vinculado a commit, release e dump.
+Ele não aceita um recibo de backup isolado: exige, juntos, (1) backup do banco atual com no máximo 24 horas, (2) restauração do mesmo dump em
+instância nova, nunca sobre o banco de origem, com no máximo 72 horas, integridade do dump e sentinelas aprovadas, e
+reproduzindo a última migration e a contagem do banco, (3) migrations pendentes iguais às do release, em ordem e com o SQL
+conferido por hash e aprovado pelo classificador de SQL descrito abaixo, e (4) estado do banco com carimbo `estado.coletadoEm` de no máximo 30 minutos, sem data futura
+(ausente ou inválido: `ESTADO_INVALIDO`; vencido: `ESTADO_VENCIDO`). O laudo vale no máximo 4 horas e nunca além do vencimento do backup, da
+restauração ou de 30 minutos da coleta do estado.
+
+Nesta etapa a obrigatoriedade é **procedimental**: `db:migrate` só roda com laudo `APROVADO` e válido, e isso não é
+controle técnico, porque o executor não consulta o laudo. Um gate técnico (no workflow, no agente ou no executor) exige
+etapa e autorização próprias.
+
+**Falha.** O verificador sai com código 2, escreve o diagnóstico legível e para. Ele não executa restauração, não
+reverte nada e não altera o banco; só lê arquivos. Backup real, restauração real e ensaio de recuperação seguem
+dependendo do D-ORF-6 e de autorização própria.
+
+**Limites conhecidos do verificador.** O SHA-256 sem autenticação comprova integridade, mas não origem: quem altera o laudo recalcula o hash, e os recibos de backup e de restauração, o `estado.json` e o `coletadoEm` são autodeclarados, porque o verificador não lê o banco nem o dump; o carimbo evita erro por arquivo antigo, não fraude.
+
+**Classificador de SQL das migrations pendentes.** O executor aplica o lote numa única transação, então cada migration pendente é classificada antes, pelo texto do arquivo, em `OK` ou numa de três reprovações:
+
+- `SQL_RECORTAVEL`: o arquivo contém um marcador de seção. O node-pg-migrate 9.0.0 (`sqlMigration.js`) procura, com a expressão `^\s*--[\s-]*(up|down)\s+migration` (por linha, sem distinguir maiúsculas), os marcadores `-- up migration` e `-- down migration`, sem saber se estão dentro de literal, corpo ou comentário de bloco, e executa só o trecho recortado. Como o texto executado não seria o analisado, o arquivo é reprovado com a mesma expressão do executor. Comentários comuns não são afetados: só reprova a linha que começa pelo marcador.
+- `SQL_MALFORMADO`: literal, identificador entre aspas, comentário de bloco ou corpo `$tag$` sem fechamento. O texto não pôde ser varrido com segurança.
+- `SQL_NAO_TRANSACIONAL`, em dois grupos de regras:
+  - palavras procuradas com os comentários removidos, com literais e corpos visíveis e também em branco: `CONCURRENTLY`, `VACUUM`, `CREATE|DROP DATABASE`, `CREATE|DROP TABLESPACE`, `ALTER SYSTEM`, `CREATE|ALTER|DROP SUBSCRIPTION` e `REINDEX` de `DATABASE`, `SYSTEM` ou `SCHEMA` (inclusive com lista de opções entre parênteses);
+  - comandos reprovados pelo início, com literais, identificadores e corpos em branco e o texto separado por ponto e vírgula: `BEGIN`, `START`, `COMMIT`, `END`, `ROLLBACK`, `ABORT`, `PREPARE TRANSACTION`, `SAVEPOINT`, `RELEASE` e `CALL`, em qualquer variante, com argumentos ou sem ponto e vírgula final.
+
+A varredura segue o lexer do PostgreSQL 16: o comentário de linha termina em `\n` ou em `\r`; o comentário de bloco aninha; a continuação de literal em outra linha (quebra de linha, espaços e comentários de linha, e nova aspa) pertence ao mesmo literal e mantém o modo, de forma que um `E'…'` continua com escapes de barra invertida; a marca `$tag$` é reconhecida sem limite de comprimento; e todo caractere não ASCII vale como letra de identificador e de marca. O END de um bloco procedural fica dentro do corpo e não conta como fim de transação.
+
+Falsos positivos conservadores aceitos, que exigem reescrever a migration nova: palavra proibida dentro de literal ou corpo (um `COMMENT ON` que contenha `concurrently`, por exemplo); função ou procedimento com corpo SQL padrão sem aspas (`BEGIN ATOMIC … END`), cujo `END` fica no nível dos comandos; todo `CALL`, `SAVEPOINT` ou `RELEASE`, mesmo legítimo; `PREPARE` de um comando preparado chamado `transaction`; e qualquer arquivo com marcador de seção, mesmo no uso normal do node-pg-migrate.
+
+Limitações remanescentes do classificador: ele não interpreta o SQL nem consulta o banco, e o comportamento do PostgreSQL foi tomado das regras do lexer e da documentação, ou seja, não foi verificado em PostgreSQL real; assume `standard_conforming_strings` ligado (o padrão); não reconhece comandos que só falham dentro da transação e não estão na lista (formas de `CLUSTER`, `DISCARD ALL`, `ALTER DATABASE … SET TABLESPACE` e outros), que geram erro em tempo de execução e desfazem o lote inteiro (falha segura); um corpo de `DO` ou de função que tente controlar a transação passa pelo classificador e falha do mesmo modo; um cifrão logo depois de um número é tratado como parte de identificador, o que só ocorre em SQL sintaticamente inválido; e efeitos que um `ROLLBACK` não desfaz (sequences, `NOTIFY`, funções com efeito externo) não são avaliados. As 97 migrations atuais são classificadas `OK` (testado).
+
+**B4, pendente para a etapa de IAM.** A confiança OIDC do backend se limita ao `sub` do environment `homologacao-backend`; a restrição à `main` depende da política de branch desse environment, que ainda não existe. Avaliar na etapa de IAM uma condição em `job_workflow_ref` e `repository_id`, somente depois de comprovar a compatibilidade com a AWS em execução real. Nada disso foi aplicado nesta etapa.

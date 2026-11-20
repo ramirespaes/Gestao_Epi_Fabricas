@@ -1,0 +1,22 @@
+{
+  "habilitado": false,
+  "isolamentoRevisado": "PENDENTE",
+  "estadoDir": "/CAMINHO_EXCLUSIVO_ESTADO_HML_BACKEND",
+  "raizesProtegidas": ["/RAIZ_REAL_INSTITUCIONAL", "/RAIZ_REAL_PORTAL_PAINEL", "/RAIZ_REAL_DADOS"],
+  "s3": { "bucket": "SUBSTITUIR", "conta": "SUBSTITUIR", "regiao": "SUBSTITUIR", "executavel": "/usr/local/bin/aws", "prefixo": "hml-backend" },
+  "instalador": {
+    "retencao": 5,
+    "raizesPersistentes": [],
+    "componentes": {
+      "backend": {
+        "tipo": "backend",
+        "base": "/RAIZ_EXCLUSIVA_BACKEND_HML",
+        "nome": "backend",
+        "dependencias": { "comando": ["/CAMINHO_ABSOLUTO/npm", "ci", "--omit=dev", "--ignore-scripts"] },
+        "saude": { "url": "http://127.0.0.1:PORTA_BACKEND_HML/api/health", "servicoEsperado": "gestao-epi-api" },
+        "reinicio": { "comando": ["/CAMINHO_ABSOLUTO/systemctl", "--user", "restart", "SERVICO_BACKEND_HML"] },
+        "processo": { "pidComando": ["/CAMINHO_ABSOLUTO/systemctl", "--user", "show", "--property=MainPID", "--value", "SERVICO_BACKEND_HML"] }
+      }
+    }
+  }
+}
