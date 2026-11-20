@@ -24,7 +24,7 @@ const igual = (a, b) => a.rotulo === b.rotulo && a.commit === b.commit;
 // COORDENACAO_NAO_CONFIRMADA ficam de fora de propósito: o instalador também as lança depois de preparar a release e
 // depois de trocar o link, então elas não provam ausência de mutação.
 const RECUSAS_SEM_MUTACAO = new Set(['COORDENACAO_NAO_HOMOLOGADA', 'SAUDE_NAO_CONFIGURADA', 'REINICIO_NAO_CONFIGURADO', 'VERSAO_NAO_COMPROVAVEL']);
-const MOTIVOS_DE_RECUSA = new Set([...RECUSAS_SEM_MUTACAO, 'PEDIDO_EXPIRADO', 'PEDIDO_INVALIDO', 'PEDIDO_AUSENTE', 'ID_DIVERGENTE', 'BLOB_DIVERGENTE', 'ESCOPO_DIVERGENTE', 'RETROATIVO_BLOQUEADO', 'S3_OPERACAO_FALHOU', 'BASELINE_NAO_COMPROVADA', 'BASELINE_MUDOU']);
+const MOTIVOS_DE_RECUSA = new Set([...RECUSAS_SEM_MUTACAO, 'PEDIDO_EXPIRADO', 'PEDIDO_INVALIDO', 'PEDIDO_AUSENTE', 'ID_DIVERGENTE', 'BLOB_DIVERGENTE', 'ESCOPO_DIVERGENTE', 'RETROATIVO_BLOQUEADO', 'S3_OPERACAO_FALHOU', 'BASELINE_NAO_COMPROVADA', 'BASELINE_MUDOU', 'ESTADO_OBSERVADO_INDISPONIVEL', 'ESTADO_OBSERVADO_DIVERGENTE']);
 // Falhas que o próprio instalador declara críticas depois de alterar a release.
 const CODIGOS_CRITICOS = new Set(['FALHA_POS_TROCA', 'FALHA_POS_REINICIO', 'ESTADO_CRITICO']);
 // Resultados do instalador que contam como instalação concluída, e avisos que tiram a afirmação de sucesso.
@@ -44,6 +44,70 @@ function saudavel(s) {
   return s;
 }
 
+const PRAZO_DA_SONDA_MS = 20000;
+const NOME_DE_MIGRATION = /^[A-Za-z0-9_.-]+$/;
+const textoPreenchido = (v) => typeof v === 'string' && v.trim() !== '';
+const IDENTIFICADOR_DO_CLUSTER = /^[1-9]\d{0,19}$/;
+// `credencial` é o CAMINHO do arquivo que só a sonda lê; `sistema` é o identificador único do cluster esperado.
+const sondaValida = (s) => s !== null && typeof s === 'object' && Array.isArray(s.comando) && s.comando.length >= 2
+  && s.comando.every(textoPreenchido) && path.isAbsolute(s.comando[0]) && textoPreenchido(s.banco)
+  && textoPreenchido(s.credencial) && path.isAbsolute(s.credencial) && typeof s.sistema === 'string' && IDENTIFICADOR_DO_CLUSTER.test(s.sistema)
+  && (s.timeoutMs === undefined || (Number.isInteger(s.timeoutMs) && s.timeoutMs >= 100 && s.timeoutMs <= 120000));
+
+const indisponivel = () => Object.assign(new Error('ESTADO_OBSERVADO_INDISPONIVEL'), { codigo: 'ESTADO_OBSERVADO_INDISPONIVEL' });
+const dentroDe = (caminho, dir) => caminho.startsWith(dir + path.sep);
+const SO_OPCAO = /^--?[A-Za-z][A-Za-z0-9=_.-]*$/;
+
+// Prende a sonda à baseline FÍSICA conferida no início da operação: o diretório da release identificada, alcançado
+// por .releases/<nome>/<rótulo> e nunca pelo link corrente, e o roteiro já resolvido dentro dele. O instalador troca
+// o link no meio da operação; com este vínculo a sonda que decide a compatibilidade nunca é a da candidata. Recusa
+// roteiro fora da baseline (inclusive pelo link corrente, por .. ou por link interno), executável vindo da árvore de
+// releases e argumento que não seja opção simples. Vale para uma operação: não há cache nem substituta.
+function vincularSonda(cfg, baseline) {
+  try {
+    P.exigir(sondaValida(cfg.sonda) && baseline !== null && typeof baseline === 'object' && N.ROTULO.test(baseline.rotulo || ''), 'ESTADO_OBSERVADO_INDISPONIVEL');
+    const comp = N.validarConfig(cfg.instalador).componentes[ESCOPO];
+    const raiz = fs.realpathSync(comp.base);
+    const dir = path.join(raiz, '.releases', comp.nome, baseline.rotulo);
+    P.exigir(fs.realpathSync(dir) === dir && fs.statSync(dir).isDirectory(), 'ESTADO_OBSERVADO_INDISPONIVEL');
+    const [executavel, roteiro, ...opcoes] = cfg.sonda.comando;
+    P.exigir(!dentroDe(path.resolve(executavel), raiz) && !dentroDe(fs.realpathSync(executavel), raiz), 'ESTADO_OBSERVADO_INDISPONIVEL');
+    const pretendido = path.resolve(dir, roteiro);
+    P.exigir(dentroDe(pretendido, dir), 'ESTADO_OBSERVADO_INDISPONIVEL');
+    const real = fs.realpathSync(pretendido);
+    P.exigir(dentroDe(real, dir) && fs.statSync(real).isFile() && opcoes.every((o) => SO_OPCAO.test(o)), 'ESTADO_OBSERVADO_INDISPONIVEL');
+    return Object.freeze({ dir, comando: Object.freeze([executavel, real, ...opcoes]) });
+  } catch {
+    throw indisponivel();
+  }
+}
+
+// Estado das migrations aplicadas, lido do PostgreSQL pela sonda vinculada à baseline (comando da configuração local,
+// nunca do pedido). Cada chamada é uma consulta nova ao banco; o que não muda é o código executado. Da saída só se
+// aproveitam o banco, o cluster e os nomes; origem e horário são carimbados aqui. Qualquer falha é recusa: uma leitura
+// que não deu certo nunca vira "banco sem migrations".
+async function coletarObservado(cfg, executar, vinculo) {
+  let dados;
+  let relogio;
+  try {
+    P.exigir(sondaValida(cfg.sonda) && typeof executar === 'function', 'ESTADO_OBSERVADO_INDISPONIVEL');
+    P.exigir(vinculo !== null && typeof vinculo === 'object' && textoPreenchido(vinculo.dir) && Array.isArray(vinculo.comando) && vinculo.comando.length >= 2, 'ESTADO_OBSERVADO_INDISPONIVEL');
+    const prazo = new Promise((_, rejeitar) => { relogio = setTimeout(rejeitar, cfg.sonda.timeoutMs || PRAZO_DA_SONDA_MS); });
+    const saida = await Promise.race([executar(vinculo.comando[0], [...vinculo.comando.slice(1), '--credencial', cfg.sonda.credencial], { cwd: vinculo.dir }), prazo]);
+    dados = JSON.parse(String(saida));
+  } catch {
+    throw indisponivel();
+  } finally {
+    clearTimeout(relogio);
+  }
+  const nomes = dados !== null && typeof dados === 'object' ? dados.migrations : null;
+  if (!textoPreenchido(dados && dados.banco) || typeof dados.sistema !== 'string' || !IDENTIFICADOR_DO_CLUSTER.test(dados.sistema) || !Array.isArray(nomes) || nomes.length === 0
+    || !nomes.every((n) => typeof n === 'string' && NOME_DE_MIGRATION.test(n)) || new Set(nomes).size !== nomes.length) throw indisponivel();
+  // Mesmo nome de banco em outro cluster não serve: o identificador do cluster precisa ser o da configuração local.
+  P.exigir(dados.banco === cfg.sonda.banco && dados.sistema === cfg.sonda.sistema, 'ESTADO_OBSERVADO_DIVERGENTE');
+  return { banco: dados.banco, origem: 'sonda-postgresql', coletadoEm: new Date().toISOString(), migrations: nomes.slice(), contratos: {} };
+}
+
 function validarConfiguracao(cfg) {
   P.exigir(cfg && cfg.habilitado === true && cfg.isolamentoRevisado === ISOLAMENTO, 'AGENTE_DESABILITADO');
   const instalador = N.validarConfig(cfg.instalador);
@@ -51,6 +115,7 @@ function validarConfiguracao(cfg) {
   P.exigir(Object.keys(instalador.componentes).join(',') === ESCOPO && comp.tipo === 'backend', 'ESCOPO_INVALIDO');
   P.exigir(comp.saude && comp.reinicio && comp.processo, 'VERSAO_NAO_COMPROVAVEL');
   P.exigir(cfg.s3 && cfg.s3.prefixo === PREFIXO, 'S3_PREFIXO_INVALIDO');
+  P.exigir(sondaValida(cfg.sonda), 'SONDA_NAO_CONFIGURADA');
   P.exigir(Array.isArray(cfg.raizesProtegidas) && cfg.raizesProtegidas.length > 0 && cfg.raizesProtegidas.every((p) => path.isAbsolute(p)), 'RAIZES_PROTEGIDAS_OBRIGATORIAS');
   const protegidas = cfg.raizesProtegidas.map((p) => fs.realpathSync(p));
   const estado = fs.realpathSync(cfg.estadoDir);
@@ -82,11 +147,19 @@ async function aplicar({ pedido, releaseDir, deps, agora = Date.now }) {
 // injetarem dependências controladas, e a linha de comando nunca o preenche.
 function dependenciasPadrao(cfg, extras) {
   const config = cfg.instalador;
-  const depsDoInstalador = () => ({ ...I.depsDoConfig(N.validarConfig(config).componentes[ESCOPO]), ...extras });
+  // A pré-checagem e o lerObservado do instalador recebem o MESMO vínculo, criado uma vez por operação.
+  const depsDoInstalador = (vinculo) => {
+    const deps = { ...I.depsDoConfig(N.validarConfig(config).componentes[ESCOPO]), ...extras };
+    // O instalador chama lerObservado em cada pré-condição: cada chamada é uma coleta nova pela sonda vinculada.
+    if (typeof deps.lerObservado !== 'function') deps.lerObservado = () => coletarObservado(cfg, deps.executar, vinculo);
+    return deps;
+  };
   return {
     criarAncora: () => criarAncora({ exigirDurabilidade: true }),
+    vincular: (baseline) => vincularSonda(cfg, baseline),
+    observar: (vinculo) => depsDoInstalador(vinculo).lerObservado(),
     identificar: () => I.identificar({ config, componente: ESCOPO }),
-    instalar: (opcoes, release) => I.instalar({ config, componente: ESCOPO, release, opcoes, deps: depsDoInstalador() }),
+    instalar: (opcoes, release, vinculo) => I.instalar({ config, componente: ESCOPO, release, opcoes, deps: depsDoInstalador(vinculo) }),
   };
 }
 
@@ -136,6 +209,11 @@ async function processar({ cfg, id, s3, deps: injetadas = {} }) {
       P.exigir(candidato.id === id, 'ID_DIVERGENTE');
       pedido = candidato;
       P.validarPedido(pedido, Date.now(), { escopo: ESCOPO });
+      // Pré-checagem: sem o estado do banco nada é baixado, extraído nem instalado. A sonda é código da release
+      // instalada, então a integridade dessa release é comprovada (pelo instalador) antes de executá-la.
+      // O vínculo é resolvido aqui, uma única vez, e vale para todas as coletas desta operação.
+      const vinculo = base0.vincular(saudavel(await base0.identificar()));
+      await base0.observar(vinculo);
       const blob = await s3.get(chave('blobs', id));
       P.exigir(blob !== null && N.sha256(blob) === pedido.blobSha256, 'BLOB_DIVERGENTE');
       const dir = path.join(cfg.estadoDir, `entrada-${id}`);
@@ -147,7 +225,7 @@ async function processar({ cfg, id, s3, deps: injetadas = {} }) {
       deps.instalar = async (opcoes, release) => {
         await registrar({ fase: 'INSTALACAO_INICIADA', componente: ESCOPO });
         mutacaoIniciada = true;
-        try { return await instalar(opcoes, release); } catch (falha) {
+        try { return await instalar(opcoes, release, vinculo); } catch (falha) {
           if (RECUSAS_SEM_MUTACAO.has(falha.codigo)) mutacaoIniciada = false;
           throw falha;
         }
@@ -199,4 +277,4 @@ async function principal(argv) {
 }
 
 if (require.main === module) principal(process.argv.slice(2)).catch((e) => { console.error(`Agente do backend recusou: ${e.codigo || 'ERRO'}`); process.exitCode = 1; });
-module.exports = { aplicar, validarConfiguracao, processar, processarFila, principal };
+module.exports = { aplicar, validarConfiguracao, vincularSonda, coletarObservado, processar, processarFila, principal };

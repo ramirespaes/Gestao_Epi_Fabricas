@@ -138,16 +138,20 @@ async function aplicarMigrations({ schema, diretorio, baseline = false }) {
  * @returns {Promise<{controleExiste: boolean, schemaTemObjetos: boolean,
  *   aplicadas: string[], pendentes: string[], semArquivo: string[]}>}
  */
-async function inspecionarMigrations({ schema, diretorio }) {
+async function inspecionarMigrations({ schema, diretorio, criarCliente: fabricaDeCliente = criarCliente }) {
   if (typeof schema !== 'string' || !FORMATO_SCHEMA.test(schema)) {
     throw new TypeError('nome de schema inválido');
   }
   if (typeof diretorio !== 'string' || diretorio.length === 0) {
     throw new TypeError('diretório de migrations inválido');
   }
+  // Só a leitura aceita conexão injetada (a sonda de estado usa credencial própria); aplicar migrations não aceita.
+  if (typeof fabricaDeCliente !== 'function') {
+    throw new TypeError('fábrica de conexão inválida');
+  }
 
   const arquivos = listarMigrations(diretorio).map((migration) => identificadorDe(migration.nome));
-  const cliente = criarCliente();
+  const cliente = fabricaDeCliente();
   await cliente.connect();
 
   try {
