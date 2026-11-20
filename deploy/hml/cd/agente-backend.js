@@ -77,18 +77,22 @@ async function aplicar({ pedido, releaseDir, deps, agora = Date.now }) {
   return { estado: 'SUCESSO', verificado: true };
 }
 
-function dependenciasPadrao(cfg) {
+// O instalador recebe o que o próprio contrato dele monta a partir da configuração validada (depsDoConfig): npm ci,
+// reinício, health e prova de processo. O agente não acrescenta nada por conta própria; `extras` só existe para testes
+// injetarem dependências controladas, e a linha de comando nunca o preenche.
+function dependenciasPadrao(cfg, extras) {
   const config = cfg.instalador;
+  const depsDoInstalador = () => ({ ...I.depsDoConfig(N.validarConfig(config).componentes[ESCOPO]), ...extras });
   return {
     criarAncora: () => criarAncora({ exigirDurabilidade: true }),
     identificar: () => I.identificar({ config, componente: ESCOPO }),
-    instalar: (opcoes, release) => I.instalar({ config, componente: ESCOPO, release, opcoes }),
+    instalar: (opcoes, release) => I.instalar({ config, componente: ESCOPO, release, opcoes, deps: depsDoInstalador() }),
   };
 }
 
 async function processar({ cfg, id, s3, deps: injetadas = {} }) {
   P.exigir(P.ID.test(id), 'ID_INVALIDO');
-  const base0 = { ...dependenciasPadrao(cfg), ...injetadas };
+  const base0 = { ...dependenciasPadrao(cfg, injetadas.depsExtrasDoInstalador), ...injetadas };
   const A = base0.criarAncora();
   let base, trava, liberar = false;
   const seguro = (r) => r && ((r.estado === 'RECUSADO' && r.mutacao === 'NENHUMA') || (r.estado === 'SUCESSO' && r.verificado === true));
