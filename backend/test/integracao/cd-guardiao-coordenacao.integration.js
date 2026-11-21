@@ -34,7 +34,7 @@ const PRAZO_DE_LIMPEZA_MS = 10000;
 // Par (classid, objid) de um advisory lock de chave bigint, calculado aqui em JS: independente da fórmula SQL do guardião.
 const par = (chave) => { const v = BigInt.asUintN(64, BigInt(chave)); return `${v >> 32n}:${v & 0xffffffffn}`; };
 const ESPERADOS = K.cadeadosDe('MIGRACAO').map(par).sort();
-const dormir = (ms) => new Promise((r) => { setTimeout(r, ms).unref(); });
+const dormir = (ms) => new Promise((r) => { setTimeout(r, ms); });
 async function aguardar(condicao, { prazoMs = 15000, intervaloMs = 100, descricao = 'condição' } = {}) {
   const limite = Date.now() + prazoMs;
   for (;;) {
@@ -53,11 +53,12 @@ function decidirExecucao(env) {
   return motivo === null ? { modo: 'EXECUTAR', motivo: null } : { modo: 'FALHAR', motivo };
 }
 
+// O temporizador do prazo fica ativo de propósito: quando a espera é o único trabalho pendente, é ele que mantém o
+// laço de eventos vivo até o prazo vencer. É sempre limpo no finally.
 function comPrazo(promessa, ms, descricao) {
   let relogio;
   const prazo = new Promise((_, rejeitar) => {
     relogio = setTimeout(() => rejeitar(Object.assign(new Error(`${descricao}: prazo de ${ms} ms vencido`), { prazoVencido: true })), ms);
-    relogio.unref();
   });
   return Promise.race([promessa, prazo]).finally(() => clearTimeout(relogio));
 }
@@ -108,7 +109,6 @@ function aguardarSaida(filho, ms) {
   return new Promise((r) => {
     if (!filhoVivo(filho)) { r(true); return; }
     const relogio = setTimeout(() => r(false), ms);
-    relogio.unref();
     filho.once('close', () => { clearTimeout(relogio); r(true); });
   });
 }
@@ -434,7 +434,6 @@ describe('CD 3B-2B-2 — controles do ensaio (simulação local, sem banco)', ()
   const esperarFim = (f, ms) => new Promise((r) => {
     if (!vivo(f)) { r(); return; }
     const t = setTimeout(r, ms);
-    t.unref();
     f.once('close', () => { clearTimeout(t); r(); });
   });
   const derrubar = async (...lista) => {
@@ -553,6 +552,36 @@ describe('CD 3B-2B-2 — controles do ensaio (simulação local, sem banco)', ()
     const imortal = { pid: 1, exitCode: null, signalCode: null, kill: () => true, once: () => {} };
     const f2 = await encerrarFilhos([imortal], 100);
     assert.match(f2[0], /processo 1 ainda vivo/);
+  });
+
+  // PR #121, execução 44944366336 (Node 22.23.5): o teste da limpeza foi cancelado porque a espera pelo prazo era o único
+  // trabalho pendente e o temporizador tinha unref(); o executor do Node 22 viu o laço de eventos vazio e cancelou. O
+  // executor do Node 26 mantém o laço vivo e esconde o defeito. Aqui as funções do arquivo rodam, com o texto exato, num
+  // processo Node à parte, sem executor de testes e sem mais nada no laço: o resultado só sai se o prazo segurar o processo.
+  test('PR #121: os prazos seguram o laço de eventos; num processo só com a espera, o resultado sai (em qualquer versão do Node)', () => {
+    const { spawnSync } = require('node:child_process');
+    const fonte = fs.readFileSync(__filename, 'utf8');
+    const trecho = (inicio, fim) => { const i = fonte.indexOf(inicio); const j = fonte.indexOf(fim, i); assert.ok(i > 0 && j > i, inicio); return fonte.slice(i, j); };
+    const funcoes = [
+      'const PRAZO_DE_LIMPEZA_MS = 10000;',
+      trecho('const dormir = ', '\nasync function aguardar('),
+      trecho('function comPrazo(', '\n// Executa o corpo e depois a limpeza dele.'),
+      trecho('async function encerrarCliente(', '\nconst filhoVivo = '),
+      'const filhoVivo = (f) => f.exitCode === null && f.signalCode === null;',
+      trecho('function aguardarSaida(', '\n// Derruba os que ainda vivem'),
+    ].join('\n');
+    const casos = [
+      ['limpeza com etapa travada', "limparEtapas([{ nome: 'trava', prazoMs: 80, executar: () => new Promise(() => {}) }])", '["trava: trava: prazo de 80 ms vencido"]'],
+      ['client.end() travado', "encerrarCliente({ end: () => new Promise(() => {}), connection: { stream: { destroy() {} } } }, 80).then(() => 'resolveu', (e) => e.message)", '"client.end() não terminou em 80 ms; soquete destruído"'],
+      ['espera por processo que nunca sai', 'aguardarSaida({ exitCode: null, signalCode: null, once() {} }, 80)', 'false'],
+      ['pausa entre consultas', "dormir(80).then(() => 'acordou')", '"acordou"'],
+    ];
+    for (const [nome, chamada, esperado] of casos) {
+      const r = spawnSync(process.execPath, ['-e', `${funcoes}\nPromise.resolve(${chamada}).then((v) => process.stdout.write(JSON.stringify(v)));`], { encoding: 'utf8', timeout: 10000, env: { PATH: process.env.PATH } });
+      assert.equal(r.error, undefined, `${nome}: o processo de prova não terminou no prazo`);
+      assert.equal(r.status, 0, `${nome}: ${r.stderr}`);
+      assert.equal(r.stdout, esperado, `${nome}: o laço de eventos acabou antes do resultado`);
+    }
   });
 
   test('P1/P2: invariantes do arquivo: nenhum sinal por PID, encerramento de sessão só pela identidade ou pelo papel do ensaio, e o papel só é removido se foi criado aqui', () => {
