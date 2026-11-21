@@ -61,17 +61,31 @@ function ancoraFalsa(armazem) {
 const saudavel = (rotulo, commit) => ({ instalado: true, integro: true, consistente: true, garantiaContraCorrida: true, rotulo, commit });
 const BASE = saudavel(`hml-20261118T090000-${'c'.repeat(7)}`, 'c'.repeat(40));
 const ALVO = saudavel(ROTULO, COMMIT);
-function depsDe({ instalar, antes = BASE, depois = ALVO } = {}) {
+// Coordenação falsa no formato do provedor do guardião: { adquirir, consultar, liberar }. Registra a ordem das chamadas
+// numa linha do tempo compartilhada com o restante das dependências.
+function coordenacaoFalsa({ aquisicao = { ok: true }, consultar = async () => ({ situacao: 'DESCONHECIDO', origem: 'falsa', consultadoEm: new Date().toISOString() }), liberacao = { situacao: 'LIBERACAO_INFORMADA', processoEncerrado: true, forcada: false, comprovadaNoBanco: false }, tempo = [] } = {}) {
+  const chamadas = { adquirir: 0, liberar: 0, criada: 0 };
+  const provedor = {
+    adquirir: async () => { chamadas.adquirir += 1; tempo.push('adquirir'); if (aquisicao instanceof Error) throw aquisicao; return aquisicao; },
+    consultar,
+    liberar: async () => { chamadas.liberar += 1; tempo.push('liberar'); if (liberacao instanceof Error) throw liberacao; return liberacao; },
+  };
+  return { chamadas, provedor, tempo };
+}
+function depsDe({ instalar, antes = BASE, depois = ALVO, coordenacao = coordenacaoFalsa() } = {}) {
   const armazem = new Map();
   const chamadas = { instalar: 0, reverter: 0, identificar: 0 };
+  const tempo = coordenacao.tempo;
   return {
-    armazem, chamadas,
+    armazem, chamadas, coordenacao, tempo,
     criarAncora: ancoraFalsa(armazem),
     vincular: () => ({ dir: '/baseline-do-teste', comando: ['/bin/false'] }),
-    observar: async () => { chamadas.observar = (chamadas.observar || 0) + 1; return { banco: 'hml', origem: 'teste', coletadoEm: new Date().toISOString(), migrations: ['000_a'], contratos: {} }; },
+    vincularGuardiao: (baseline) => { tempo.push('vincularGuardiao'); chamadas.baselineDoGuardiao = baseline; return { dir: '/baseline-do-teste', comando: ['/bin/false', '/baseline-do-teste/scripts/guardiao-de-coordenacao.js'] }; },
+    criarCoordenacao: (vinculo) => { coordenacao.chamadas.criada += 1; chamadas.vinculoDoGuardiao = vinculo; return coordenacao.provedor; },
+    observar: async () => { chamadas.observar = (chamadas.observar || 0) + 1; tempo.push('observar'); return { banco: 'hml', origem: 'teste', coletadoEm: new Date().toISOString(), migrations: ['000_a'], contratos: {} }; },
     conferirRelease: () => ({ release: { commit: COMMIT, rotulo: ROTULO, atual: true } }),
     identificar: async () => { chamadas.identificar += 1; return chamadas.instalar > 0 ? depois : antes; },
-    instalar: async (opcoes) => { chamadas.instalar += 1; return instalar(opcoes); },
+    instalar: async (opcoes, release, vinculo, coordenacaoRecebida) => { chamadas.instalar += 1; chamadas.coordenacaoRecebida = coordenacaoRecebida; tempo.push('instalar'); return instalar(opcoes); },
     reverter: async () => { chamadas.reverter += 1; },
   };
 }
@@ -409,6 +423,187 @@ describe('idempotência, recibos e preservação da trava', () => {
   });
 });
 
+describe('Etapa 3B-2B-1: o guardião de coordenação no ciclo do agente', () => {
+  // Fases do registro local na mesma linha do tempo das dependências.
+  const comFases = (deps) => {
+    const set0 = deps.armazem.set.bind(deps.armazem);
+    deps.armazem.set = (k, v) => { if (k === `${ID}.json`) deps.tempo.push(`registro:${JSON.parse(v).fase}`); return set0(k, v); };
+    return deps;
+  };
+
+  test('ordem: vínculo à baseline na pré-checagem; aquisição depois do pacote extraído e antes de INSTALACAO_INICIADA; liberação antes do registro final', async () => {
+    const { s3 } = preparar();
+    const deps = comFases(depsDe({ instalar: async () => INSTALADA }));
+    const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
+    assert.equal(r.estado, 'SUCESSO', JSON.stringify(r));
+    assert.deepEqual(deps.tempo, ['registro:INICIO', 'vincularGuardiao', 'observar', 'registro:PREPARADO', 'adquirir', 'registro:INSTALACAO_INICIADA', 'instalar', 'liberar', 'registro:TERMINAL']);
+    assert.equal(deps.chamadas.baselineDoGuardiao.rotulo, BASE.rotulo, 'o guardião é vinculado à mesma baseline conferida no início');
+    assert.equal(deps.chamadas.coordenacaoRecebida, deps.coordenacao.provedor, 'o instalador recebe o provedor adquirido');
+    assert.deepEqual([deps.coordenacao.chamadas.criada, deps.coordenacao.chamadas.adquirir, deps.coordenacao.chamadas.liberar], [1, 1, 1]);
+    assert.equal(registroLocal(deps).liberacaoDaCoordenacao.situacao, 'LIBERACAO_INFORMADA');
+    assert.equal('liberacaoDaCoordenacao' in reciboPublicado(s3), false, 'o recibo publicado não muda de formato');
+    assert.equal(comTrava(deps), false);
+  });
+
+  for (const motivo of ['EM_USO', 'MIGRACAO_EM_CURSO']) {
+    test(`operação do D-ORF-6 em curso (${motivo}): RECUSADO sem mutação, motivo COORDENACAO_OCUPADA, instalador não chamado`, async () => {
+      const { s3 } = preparar();
+      const deps = comFases(depsDe({ instalar: async () => INSTALADA, coordenacao: coordenacaoFalsa({ aquisicao: { ok: false, motivo } }) }));
+      const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
+      assert.deepEqual([r.estado, r.mutacao, r.motivo], ['RECUSADO', 'NENHUMA', 'COORDENACAO_OCUPADA']);
+      assert.equal(deps.chamadas.instalar, 0);
+      assert.equal(deps.tempo.includes('registro:INSTALACAO_INICIADA'), false);
+      assert.equal(deps.coordenacao.chamadas.liberar, 1, 'liberado mesmo sem aquisição');
+      assert.equal(reciboPublicado(s3).motivo, 'COORDENACAO_OCUPADA');
+      assert.equal(comTrava(deps), false);
+    });
+  }
+
+  test('aquisição sem garantia (indisponível, identidade divergente, resposta fora do formato ou exceção): RECUSADO COORDENACAO_NAO_ADQUIRIDA', async () => {
+    for (const aquisicao of [{ ok: false, motivo: 'GUARDIAO_INDISPONIVEL' }, { ok: false, motivo: 'GUARDIAO_IDENTIDADE_DIVERGENTE' }, { ok: false }, null, { ok: 'true' }, {}, new Error('falhou')]) {
+      const { s3 } = preparar();
+      const deps = depsDe({ instalar: async () => INSTALADA, coordenacao: coordenacaoFalsa({ aquisicao }) });
+      const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
+      assert.deepEqual([r.estado, r.mutacao, r.motivo], ['RECUSADO', 'NENHUMA', 'COORDENACAO_NAO_ADQUIRIDA'], String(JSON.stringify(aquisicao)));
+      assert.equal(deps.chamadas.instalar, 0);
+      assert.equal(deps.coordenacao.chamadas.liberar, 1);
+      fs.rmSync(path.join(tmp, `entrada-${ID}`), { recursive: true, force: true });
+    }
+  });
+
+  test('guardião que não pode ser vinculado à baseline: RECUSADO antes de baixar o pacote, nada é adquirido', async () => {
+    const { s3 } = preparar();
+    const deps = depsDe({ instalar: async () => INSTALADA });
+    deps.vincularGuardiao = () => { throw erroCom('GUARDIAO_NAO_VINCULADO'); };
+    const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
+    assert.deepEqual([r.estado, r.mutacao, r.motivo], ['RECUSADO', 'NENHUMA', 'GUARDIAO_NAO_VINCULADO']);
+    assert.equal(s3.uso.some(([op, k]) => op === 'get' && k.includes('/blobs/')), false);
+    assert.deepEqual([deps.coordenacao.chamadas.criada, deps.coordenacao.chamadas.adquirir], [0, 0]);
+  });
+
+  test('recusa do instalador sem mutação (COORDENACAO_NAO_HOMOLOGADA) depois da aquisição: RECUSADO e guardião liberado', async () => {
+    const { s3 } = preparar();
+    const deps = depsDe({ instalar: async () => { throw erroCom('COORDENACAO_NAO_HOMOLOGADA'); } });
+    const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
+    assert.deepEqual([r.estado, r.mutacao, r.motivo], ['RECUSADO', 'NENHUMA', 'COORDENACAO_NAO_HOMOLOGADA']);
+    assert.deepEqual([deps.coordenacao.chamadas.adquirir, deps.coordenacao.chamadas.liberar], [1, 1]);
+  });
+
+  test('falha depois de iniciada a instalação: CRITICO com a trava preservada, e o guardião é liberado mesmo assim', async () => {
+    const { s3 } = preparar();
+    const deps = depsDe({ instalar: async () => { throw erroCom('FALHA_POS_TROCA'); } });
+    const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
+    assert.equal(r.estado, 'CRITICO');
+    assert.equal(comTrava(deps), true);
+    assert.equal(deps.coordenacao.chamadas.liberar, 1);
+    assert.equal(registroLocal(deps).liberacaoDaCoordenacao.situacao, 'LIBERACAO_INFORMADA');
+  });
+
+  // Correção P1: sem encerramento comprovado do processo do guardião, nenhuma operação termina como SUCESSO.
+  const LIBERACOES_INCERTAS = [
+    ['indeterminada (processo não encerrou nem depois do sinal)', { situacao: 'INDETERMINADA', processoEncerrado: false, forcada: true, comprovadaNoBanco: false }, 'INDETERMINADA'],
+    ['exceção em liberar()', new Error('sem canal'), 'FALHA_NA_LIBERACAO'],
+    ['resposta nula', null, 'RESPOSTA_INVALIDA'],
+    ['resposta sem situação', {}, 'RESPOSTA_INVALIDA'],
+    ['situação desconhecida', { situacao: 'TALVEZ', processoEncerrado: true }, 'RESPOSTA_INVALIDA'],
+    ['situação de encerramento sem processoEncerrado', { situacao: 'LIBERACAO_INFORMADA', processoEncerrado: false }, 'RESPOSTA_INVALIDA'],
+    ['processoEncerrado que não é booleano', { situacao: 'PROCESSO_ENCERRADO', processoEncerrado: 'true' }, 'RESPOSTA_INVALIDA'],
+    ['texto em vez de objeto', 'LIBERACAO_INFORMADA', 'RESPOSTA_INVALIDA'],
+  ];
+
+  for (const [nome, liberacao, causa] of LIBERACOES_INCERTAS) {
+    test(`P1: instalação concluída com liberação incerta (${nome}): CRITICO, sem recibo de sucesso, trava preservada`, async () => {
+      const { pedido, s3 } = preparar();
+      const deps = depsDe({ instalar: async () => INSTALADA, coordenacao: coordenacaoFalsa({ liberacao }) });
+      const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
+      assert.deepEqual([r.estado, r.verificado, r.motivo, r.diagnostico], ['CRITICO', false, 'LIBERACAO_DA_COORDENACAO_INCERTA', causa]);
+      assert.equal(comTrava(deps), true, 'a trava do agente fica para diagnóstico');
+      assert.equal(reciboPublicado(s3).estado, 'CRITICO');
+      assert.throws(() => P.validarRecibo(reciboPublicado(s3), pedido), (e) => e.codigo === 'DEPLOY_NAO_APROVADO');
+      const reg = registroLocal(deps);
+      assert.deepEqual(reg.resultadoAntesDaLiberacao, { estado: 'SUCESSO', verificado: true }, 'o resultado da instalação fica registrado');
+      assert.equal(reg.liberacaoDaCoordenacao.situacao, causa);
+      assert.equal(reg.liberacaoDaCoordenacao.encerramentoComprovado, false);
+      assert.equal(reg.liberacaoDaCoordenacao.comprovadaNoBanco, false);
+      assert.doesNotMatch(JSON.stringify(reg), /credencial|senha|password/i, 'nenhum dado de credencial no registro');
+    });
+  }
+
+  test('P1: liberação com encerramento comprovado (informada, encerrado forçado, sem processo): o resultado original é mantido', async () => {
+    for (const liberacao of [
+      { situacao: 'LIBERACAO_INFORMADA', processoEncerrado: true, forcada: false, comprovadaNoBanco: false },
+      { situacao: 'PROCESSO_ENCERRADO', processoEncerrado: true, forcada: true, comprovadaNoBanco: false },
+      { situacao: 'SEM_PROCESSO', processoEncerrado: true, forcada: false, comprovadaNoBanco: false },
+    ]) {
+      const { s3 } = preparar();
+      const deps = depsDe({ instalar: async () => INSTALADA, coordenacao: coordenacaoFalsa({ liberacao }) });
+      const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
+      assert.equal(r.estado, 'SUCESSO', liberacao.situacao);
+      assert.equal(comTrava(deps), false);
+      const lib = registroLocal(deps).liberacaoDaCoordenacao;
+      assert.deepEqual(lib, { situacao: liberacao.situacao, processoEncerrado: true, forcada: liberacao.forcada, encerramentoComprovado: true, comprovadaNoBanco: false });
+      assert.equal('resultadoAntesDaLiberacao' in registroLocal(deps), false);
+      fs.rmSync(path.join(tmp, `entrada-${ID}`), { recursive: true, force: true });
+    }
+  });
+
+  test('P1: o agente nunca afirma liberação comprovada no banco, mesmo que o provedor diga que sim', async () => {
+    const { s3 } = preparar();
+    const deps = depsDe({ instalar: async () => INSTALADA, coordenacao: coordenacaoFalsa({ liberacao: { situacao: 'LIBERACAO_INFORMADA', processoEncerrado: true, forcada: false, comprovadaNoBanco: true } }) });
+    await A.processar({ cfg: cfg(), id: ID, s3, deps });
+    assert.equal(registroLocal(deps).liberacaoDaCoordenacao.comprovadaNoBanco, false);
+  });
+
+  test('P1: recusa antes da mutação com liberação incerta: CRITICO, trava preservada, resultado original registrado', async () => {
+    const { s3 } = preparar();
+    const deps = depsDe({ instalar: async () => INSTALADA, coordenacao: coordenacaoFalsa({ aquisicao: { ok: false, motivo: 'EM_USO' }, liberacao: { situacao: 'INDETERMINADA', processoEncerrado: false, forcada: true } }) });
+    const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
+    assert.deepEqual([r.estado, r.motivo, r.diagnostico], ['CRITICO', 'LIBERACAO_DA_COORDENACAO_INCERTA', 'INDETERMINADA']);
+    assert.equal(deps.chamadas.instalar, 0);
+    assert.equal(comTrava(deps), true);
+    assert.deepEqual(registroLocal(deps).resultadoAntesDaLiberacao, { estado: 'RECUSADO', verificado: false, mutacao: 'NENHUMA', motivo: 'COORDENACAO_OCUPADA' });
+  });
+
+  test('P1: falha depois da mutação com liberação incerta: continua CRITICO com o motivo original e a liberação registrada', async () => {
+    const { s3 } = preparar();
+    const deps = depsDe({ instalar: async () => { throw erroCom('FALHA_POS_TROCA'); }, coordenacao: coordenacaoFalsa({ liberacao: new Error('sem canal') }) });
+    const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
+    assert.deepEqual([r.estado, r.motivo, r.diagnostico], ['CRITICO', 'FALHA_CRITICA_APOS_ALTERACAO', 'FALHA_POS_TROCA']);
+    assert.equal(comTrava(deps), true);
+    const reg = registroLocal(deps);
+    assert.equal(reg.liberacaoDaCoordenacao.situacao, 'FALHA_NA_LIBERACAO');
+    assert.equal(reg.liberacaoDaCoordenacao.encerramentoComprovado, false);
+  });
+
+  test('P1: liberação pedida uma única vez por operação; a operação incerta não é reprocessada nem cria outro guardião', async () => {
+    const { s3 } = preparar();
+    const deps = depsDe({ instalar: async () => INSTALADA, coordenacao: coordenacaoFalsa({ liberacao: { situacao: 'INDETERMINADA', processoEncerrado: false, forcada: true } }) });
+    const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
+    assert.equal(r.estado, 'CRITICO');
+    assert.equal(deps.coordenacao.chamadas.liberar, 1, 'um único pedido de liberação, apesar dos dois pontos de chamada');
+    deps.armazem.delete('@.trava-cd-backend');
+    await assert.rejects(A.processar({ cfg: cfg(), id: ID, s3, deps }), (e) => e.codigo === 'OPERACAO_PENDENTE_OU_CRITICA');
+    assert.deepEqual([deps.coordenacao.chamadas.criada, deps.coordenacao.chamadas.liberar], [1, 1]);
+  });
+
+  test('P1: na fila, uma liberação incerta interrompe o processamento como operação crítica', async () => {
+    const s3 = s3Com('1-1', '2-1');
+    const deps = depsDe({ instalar: async () => INSTALADA, coordenacao: coordenacaoFalsa({ liberacao: { situacao: 'INDETERMINADA', processoEncerrado: false, forcada: true } }) });
+    await assert.rejects(A.processarFila({ cfg: cfg(), ids: ['1-1', '2-1'], s3, deps }), (e) => e.codigo === 'OPERACAO_CRITICA');
+    assert.equal(deps.coordenacao.chamadas.criada, 1, 'o segundo pedido não começa');
+  });
+
+  test('pedido já concluído (registro TERMINAL anterior): nenhum guardião é criado', async () => {
+    const { s3 } = preparar();
+    const deps = depsDe({ instalar: async () => INSTALADA });
+    await A.processar({ cfg: cfg(), id: ID, s3, deps });
+    const antes = deps.coordenacao.chamadas.criada;
+    const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
+    assert.equal(r.estado, 'SUCESSO');
+    assert.equal(deps.coordenacao.chamadas.criada, antes);
+  });
+});
+
 function configValida() {
   const raiz = fs.mkdtempSync(path.join(tmp, 'cfg-'));
   const mk = (n) => { const p = path.join(raiz, n); fs.mkdirSync(p); return p; };
@@ -417,6 +612,7 @@ function configValida() {
     habilitado: true, isolamentoRevisado: 'RAIZES_EXCLUSIVAS_HOMOLOGACAO_BACKEND', estadoDir, raizesProtegidas: [protegida],
     s3: { bucket: 'hml-exemplo-teste', conta: '111111111111', regiao: 'us-east-1', executavel: '/usr/local/bin/aws', prefixo: 'hml-backend' },
     sonda: { comando: [process.execPath, 'scripts/sonda-estado-observado.js'], credencial: path.join(raiz, 'credencial-da-sonda.json'), banco: 'hml', sistema: SISTEMA_DO_CLUSTER },
+    guardiao: { comando: [process.execPath, 'scripts/guardiao-de-coordenacao.js'], credencial: path.join(raiz, 'credencial-do-guardiao.json') },
     instalador: {
       retencao: 5, raizesPersistentes: [],
       componentes: {
@@ -583,12 +779,13 @@ describe('Etapa 3B-1: o agente entrega ao instalador real as dependências da co
   beforeEach(() => { nodeEnvAntes = process.env.NODE_ENV; process.env.NODE_ENV = 'test'; });
   afterEach(() => { if (nodeEnvAntes === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = nodeEnvAntes; });
 
-  function criarReleaseBackend(n, sondaDaRelease = `// sonda da release ${n}\n`) {
+  function criarReleaseBackend(n, sondaDaRelease = `// sonda da release ${n}\n`, guardiaoDaRelease = `// guardião da release ${n}\n`) {
     const dir = fs.mkdtempSync(path.join(tmp, `rel${n}-`));
     const lock = '{"lockfileVersion":3}';
     const migration = '-- 000_a.sql\n';
     const arquivos = {
       'package.json': '{"engines":{"node":">=22"}}', 'package-lock.json': lock, 'src/server.js': `// v${n}\n`, 'scripts/sonda-estado-observado.js': sondaDaRelease, 'migrations/000_a.sql': migration,
+      'scripts/guardiao-de-coordenacao.js': guardiaoDaRelease,
       'migrations/checksums.json': JSON.stringify({ algoritmo: 'sha256', migrations: { '000_a.sql': sha(migration) } }),
     };
     const manifesto = {};
@@ -610,8 +807,25 @@ describe('Etapa 3B-1: o agente entrega ao instalador real as dependências da co
   // Com sondaReal, cada release leva um roteiro de sonda de verdade (sem banco): ele registra num diário qual release
   // o executou e devolve o "estado" lido de um arquivo. Nada intercepta a chamada: quem executa é o executor real do
   // instalador (depsDoConfig), e a configuração não declara instalação de dependências para não haver npm no teste.
+  // Guardião simulado de verdade: um processo Node na release, que fala o protocolo do canal de controle (sem banco) e
+  // registra num diário com que argumentos, ambiente e diretório foi iniciado e o que recebeu.
+  const roteiroDoGuardiao = (n, diario) => [
+    "'use strict';",
+    "const fs = require('node:fs');",
+    "const readline = require('node:readline');",
+    `const anotar = (o) => fs.appendFileSync(${JSON.stringify(diario)}, JSON.stringify({ marcador: 'release-${n}', ...o }) + '\\n');`,
+    "anotar({ inicio: true, argv: process.argv.slice(2), ambiente: Object.keys(process.env), cwd: process.cwd(), roteiro: __filename });",
+    "process.stdout.write('{\"evento\":\"ADQUIRIDA\",\"cadeados\":4}\\n');",
+    'const linhas = readline.createInterface({ input: process.stdin });',
+    "linhas.on('line', (t) => { anotar({ recebido: t }); const m = /^confirmar ([0-9a-f]{32})$/.exec(t); if (m) process.stdout.write(JSON.stringify({ evento: 'CONFIRMADA', id: m[1] }) + '\\n'); else if (t === 'liberar') { process.stdout.write('{\"evento\":\"LIBERADA\"}\\n'); process.exit(0); } });",
+    "linhas.on('close', () => { anotar({ canalFechado: true }); process.exit(0); });",
+    '',
+  ].join('\n');
+
   async function ambiente({ reinicioSai = 0, sondaReal = false } = {}) {
     const raiz = fs.mkdtempSync(path.join(fs.realpathSync(tmp), 'amb-'));
+    const diarioDoGuardiao = path.join(raiz, 'execucoes-do-guardiao.ndjson');
+    const execucoesDoGuardiao = () => (fs.existsSync(diarioDoGuardiao) ? fs.readFileSync(diarioDoGuardiao, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
     const diarioDaSonda = path.join(raiz, 'execucoes-da-sonda.ndjson');
     const estadoDoBanco = path.join(raiz, 'estado-do-banco.json');
     fs.writeFileSync(estadoDoBanco, JSON.stringify({ banco: 'hml', sistema: SISTEMA_DO_CLUSTER, migrations: ['000_a'] }));
@@ -633,6 +847,7 @@ describe('Etapa 3B-1: o agente entrega ao instalador real as dependências da co
       habilitado: true, isolamentoRevisado: 'RAIZES_EXCLUSIVAS_HOMOLOGACAO_BACKEND', estadoDir, raizesProtegidas: [protegida],
       s3: { bucket: 'hml-exemplo-teste', conta: '111111111111', regiao: 'us-east-1', executavel: '/usr/local/bin/aws', prefixo: 'hml-backend' },
       sonda: { comando: [process.execPath, 'scripts/sonda-estado-observado.js'], credencial: path.join(raiz, 'credencial-da-sonda.json'), banco: 'hml', sistema: SISTEMA_DO_CLUSTER, timeoutMs: sondaReal ? 30000 : 1000 },
+      guardiao: { comando: [process.execPath, 'scripts/guardiao-de-coordenacao.js'], credencial: path.join(raiz, 'credencial-do-guardiao.json') },
       instalador: {
         retencao: 3, raizesPersistentes: [],
         componentes: { backend: {
@@ -664,21 +879,30 @@ describe('Etapa 3B-1: o agente entrega ao instalador real as dependências da co
       identificarProcesso: async () => { chamadas.processo += 1; pid += 1; return { pid, cwd: fs.realpathSync(link) }; },
     };
     if (sondaReal) delete controladas.executar;
-    const r1 = criarReleaseBackend(1, roteiroReal(1));
+    const r1 = criarReleaseBackend(1, roteiroReal(1), roteiroDoGuardiao(1, diarioDoGuardiao));
     await I.instalar({ config: cfgAgente.instalador, componente: 'backend', release: r1, opcoes: { releaseSha256Esperado: sha(fs.readFileSync(path.join(r1, 'release.json'))) }, deps: { ...controladas, lerObservado: async () => ({ banco: 'hml', origem: 'preparo-do-teste', coletadoEm: new Date().toISOString(), migrations: ['000_a'], contratos: {} }), reiniciar: async () => {}, consultarCoordenacao: provedor } });
     sonda.chamadas = 0; sonda.cwds.length = 0;
     Object.assign(chamadas, { saude: 0, processo: 0, dependencias: 0 });
-    const r2 = criarReleaseBackend(2, roteiroReal(2));
+    const r2 = criarReleaseBackend(2, roteiroReal(2), roteiroDoGuardiao(2, diarioDoGuardiao));
     const blob = blobDoDiretorio(r2);
     const agora = Date.now();
     const pedido = { versao: 2, escopo: 'backend', id: ID, repositorio: P.REPO, commit: commitDe(2), rotulo: rot(2), releaseSha256: sha(fs.readFileSync(path.join(r2, 'release.json'))), blobSha256: sha(blob), permitirAnterior: false, criadoEm: new Date(agora - 1000).toISOString(), expiraEm: new Date(agora + 5 * 60000).toISOString() };
     const s3 = s3Falso({ [`hml-backend/pedidos/${ID}.json`]: Buffer.from(JSON.stringify(pedido)), [`hml-backend/blobs/${ID}.json`]: blob });
     const armazem = new Map();
     const identificar = async () => ({ ...(await I.identificar({ config: cfgAgente.instalador, componente: 'backend', deps: { criarAncora: ancoraPorCaminho } })), garantiaContraCorrida: true });
-    const depsDoAgente = (extras) => ({ criarAncora: ancoraFalsa(armazem), conferirRelease: () => ({ release: { commit: commitDe(2), rotulo: rot(2), atual: true } }), identificar, depsExtrasDoInstalador: extras });
+    // A coordenação chega ao instalador SÓ pelo provedor do guardião. Nos testes, um consultarCoordenacao informado nos
+    // extras vira o consultar de um guardião falso, e sai dos extras: o agente não aceita coordenação por outro caminho.
+    const guardioes = [];
+    const depsDoAgente = (extras) => {
+      const { consultarCoordenacao, ...resto } = extras;
+      return {
+        criarAncora: ancoraFalsa(armazem), conferirRelease: () => ({ release: { commit: commitDe(2), rotulo: rot(2), atual: true } }), identificar, depsExtrasDoInstalador: resto,
+        criarCoordenacao: () => { const g = coordenacaoFalsa(consultarCoordenacao ? { consultar: consultarCoordenacao } : {}); guardioes.push(g); return g.provedor; },
+      };
+    };
     const instalada = async () => (await identificar()).rotulo;
     const reinicios = () => (fs.existsSync(registro) ? fs.readFileSync(registro, 'utf8').split('\n').filter(Boolean).length : 0);
-    return { cfgAgente, s3, armazem, controladas, provedor, depsDoAgente, instalada, reinicios, chamadas, pedido, sonda, link, ambienteDoReinicio, raiz, app, fisica: (n) => path.join(app, '.releases', 'backend', rot(n)), execucoesReais, estadoDoBanco, diarioDaSonda };
+    return { cfgAgente, s3, armazem, controladas, provedor, depsDoAgente, guardioes, identificar, instalada, reinicios, chamadas, pedido, sonda, link, ambienteDoReinicio, raiz, app, fisica: (n) => path.join(app, '.releases', 'backend', rot(n)), execucoesReais, estadoDoBanco, diarioDaSonda, execucoesDoGuardiao };
   }
   const reciboDoBackend = (s3) => JSON.parse(s3.dados.get(`hml-backend/recibos/${ID}.json`).toString());
 
@@ -711,6 +935,93 @@ describe('Etapa 3B-1: o agente entrega ao instalador real as dependências da co
     assert.equal(amb.reinicios(), 0);
   });
 
+  describe('3B-2B-1: o instalador real recebe a coordenação só pelo provedor do guardião', () => {
+    const livre = () => ({ situacao: 'LIVRE', origem: 'teste', consultadoEm: new Date().toISOString() });
+
+    test('cada revalidação do instalador pergunta ao guardião adquirido (antes do preparo, da troca e do reinício), e ao fim ele é liberado', async () => {
+      const amb = await ambiente();
+      let consultas = 0;
+      const contador = C.homologarProvedorParaTeste(async () => { consultas += 1; return livre(); });
+      const r = await A.processar({ cfg: amb.cfgAgente, id: ID, s3: amb.s3, deps: amb.depsDoAgente({ ...amb.controladas, consultarCoordenacao: contador }) });
+      assert.equal(r.estado, 'SUCESSO', JSON.stringify(r));
+      assert.ok(consultas >= 3, `consultas: ${consultas}`);
+      assert.equal(amb.guardioes.length, 1);
+      assert.deepEqual([amb.guardioes[0].chamadas.adquirir, amb.guardioes[0].chamadas.liberar], [1, 1]);
+      assert.deepEqual(amb.guardioes[0].tempo, ['adquirir', 'liberar']);
+    });
+
+    test('um consultarCoordenacao homologado nos extras do instalador não substitui o guardião: continua COORDENACAO_NAO_HOMOLOGADA', async () => {
+      const amb = await ambiente();
+      const deps = { ...amb.depsDoAgente(amb.controladas), depsExtrasDoInstalador: { ...amb.controladas, consultarCoordenacao: amb.provedor } };
+      const r = await A.processar({ cfg: amb.cfgAgente, id: ID, s3: amb.s3, deps });
+      assert.deepEqual([r.estado, r.mutacao, r.motivo], ['RECUSADO', 'NENHUMA', 'COORDENACAO_NAO_HOMOLOGADA']);
+      assert.equal(await amb.instalada(), rot(1));
+      assert.equal(amb.reinicios(), 0);
+    });
+
+    test('perda da coordenação depois da troca e antes do reinício: nada é reiniciado, o link volta, nunca SUCESSO, guardião liberado', async () => {
+      const amb = await ambiente();
+      let n = 0;
+      const perdeNoReinicio = C.homologarProvedorParaTeste(async () => { n += 1; return n <= 2 ? livre() : { situacao: 'DESCONHECIDO', origem: 'guardião: sessão perdida' }; });
+      const r = await A.processar({ cfg: amb.cfgAgente, id: ID, s3: amb.s3, deps: amb.depsDoAgente({ ...amb.controladas, consultarCoordenacao: perdeNoReinicio }) });
+      assert.equal(r.estado, 'CRITICO', JSON.stringify(r));
+      assert.equal(r.diagnostico, 'COORDENACAO_NAO_CONFIRMADA');
+      assert.equal(amb.reinicios(), 0, 'nada reiniciado');
+      assert.equal(await amb.instalada(), rot(1), 'o link voltou para a release em uso');
+      assert.equal(amb.guardioes[0].chamadas.liberar, 1);
+      assert.equal(amb.armazem.has('@.trava-cd-backend'), true, 'a trava do agente fica para diagnóstico');
+    });
+
+    test('operação concorrente: o guardião recusa e nada do instalador roda (nem preparo, nem consulta)', async () => {
+      const amb = await ambiente();
+      let consultas = 0;
+      const contador = C.homologarProvedorParaTeste(async () => { consultas += 1; return livre(); });
+      const deps = amb.depsDoAgente({ ...amb.controladas, consultarCoordenacao: contador });
+      deps.criarCoordenacao = () => { const g = coordenacaoFalsa({ aquisicao: { ok: false, motivo: 'MIGRACAO_EM_CURSO' }, consultar: contador }); amb.guardioes.push(g); return g.provedor; };
+      const r = await A.processar({ cfg: amb.cfgAgente, id: ID, s3: amb.s3, deps });
+      assert.deepEqual([r.estado, r.mutacao, r.motivo], ['RECUSADO', 'NENHUMA', 'COORDENACAO_OCUPADA']);
+      assert.equal(consultas, 0);
+      assert.equal(amb.chamadas.dependencias, 0, 'nenhum preparo');
+      assert.equal(await amb.instalada(), rot(1));
+    });
+
+    test('produção (sem dependência injetada): o agente inicia o guardião real na baseline física, sem segredo nem ambiente herdado, e o instalador continua recusando', async () => {
+      const amb = await ambiente();
+      const { criarCoordenacao, ...semGuardiaoFalso } = amb.depsDoAgente(amb.controladas);
+      assert.equal(typeof criarCoordenacao, 'function');
+      const r = await A.processar({ cfg: amb.cfgAgente, id: ID, s3: amb.s3, deps: semGuardiaoFalso });
+      assert.deepEqual([r.estado, r.mutacao, r.motivo], ['RECUSADO', 'NENHUMA', 'COORDENACAO_NAO_HOMOLOGADA']);
+      assert.equal(await amb.instalada(), rot(1));
+      const execucoes = amb.execucoesDoGuardiao();
+      const inicio = execucoes.find((e) => e.inicio);
+      assert.ok(inicio, 'o guardião foi iniciado');
+      assert.equal(inicio.marcador, 'release-1', 'é o roteiro da baseline, não o da candidata');
+      assert.equal(inicio.roteiro, path.join(amb.fisica(1), 'scripts', 'guardiao-de-coordenacao.js'));
+      assert.equal(fs.realpathSync(inicio.cwd), amb.fisica(1));
+      assert.deepEqual(inicio.argv, ['--credencial', amb.cfgAgente.guardiao.credencial, '--sistema', SISTEMA_DO_CLUSTER]);
+      // O macOS acrescenta por conta própria uma variável de codificação a todo processo; nada além dela é admitido.
+      assert.deepEqual(inicio.ambiente.filter((k) => k !== '__CF_USER_TEXT_ENCODING'), []);
+      assert.ok(execucoes.some((e) => e.recebido === 'liberar'), 'o agente pediu a liberação');
+      assert.equal(amb.armazem.has('@.trava-cd-backend'), false);
+    });
+
+    test('vincularGuardiao: prende o roteiro à baseline física e recusa roteiro fora dela, executável na árvore de releases e argumento a mais', async () => {
+      const amb = await ambiente();
+      const v = A.vincularGuardiao(amb.cfgAgente, { rotulo: rot(1) });
+      assert.equal(v.dir, amb.fisica(1));
+      assert.deepEqual(v.comando, [process.execPath, path.join(amb.fisica(1), 'scripts', 'guardiao-de-coordenacao.js')]);
+      assert.ok(Object.isFrozen(v) && Object.isFrozen(v.comando));
+      const recusa = (guardiao, baseline = { rotulo: rot(1) }) => assert.throws(() => A.vincularGuardiao({ ...amb.cfgAgente, guardiao }, baseline), (e) => e.codigo === 'GUARDIAO_NAO_VINCULADO', JSON.stringify(guardiao));
+      const ok = amb.cfgAgente.guardiao;
+      recusa({ ...ok, comando: [process.execPath, '../../../../fora.js'] });
+      recusa({ ...ok, comando: [process.execPath, 'scripts/nao-existe.js'] });
+      recusa({ ...ok, comando: [path.join(amb.fisica(1), 'scripts', 'guardiao-de-coordenacao.js'), 'scripts/guardiao-de-coordenacao.js'] });
+      recusa({ ...ok, comando: [process.execPath, 'scripts/guardiao-de-coordenacao.js', '--extra'] });
+      recusa(ok, { rotulo: 'hml-qualquer' });
+      recusa(ok, null);
+    });
+  });
+
   const falhas = [
     ['o comando de reinício da configuração falha', async () => ({ amb: await ambiente({ reinicioSai: 1 }), extras: {} })],
     ['o health reprova', async () => ({ amb: await ambiente(), extras: { verificarSaude: async () => ({ ok: false, detalhe: 'HTTP 503' }) } })],
@@ -730,11 +1041,19 @@ describe('Etapa 3B-1: o agente entrega ao instalador real as dependências da co
     });
   }
 
-  test('o agente não fabrica coordenação: só repassa o que depsDoConfig monta, mais a leitura da sonda', () => {
+  // 3B-2B-1: o agente passa a ler a "situacao" do resultado da LIBERAÇÃO do guardião; nunca declara estado de coordenação.
+  test('o agente não fabrica coordenação: só repassa o que depsDoConfig monta, a leitura da sonda e o consultar do guardião', () => {
     const fonte = fs.readFileSync(AG, 'utf8');
     assert.match(fonte, /I\.depsDoConfig\(/);
     assert.match(fonte, /lerObservado/);
-    assert.doesNotMatch(fonte, /situacao|LIVRE/);
+    assert.doesNotMatch(fonte, /LIVRE|OCUPADO|DESCONHECIDO/);
+    // Bloco da liberação: do conjunto ENCERRAMENTO_COMPROVADO até o fim de liberarGuardiao. Fora dele, só a leitura do
+    // resultado já classificado (liberacaoDaCoordenacao.situacao).
+    const ini = fonte.indexOf('const ENCERRAMENTO_COMPROVADO');
+    const liberacao = fonte.slice(ini, fonte.indexOf('\n}\n', fonte.indexOf('async function liberarGuardiao(')));
+    assert.ok(ini > 0 && liberacao.includes('async function liberarGuardiao('));
+    const fora = fonte.slice(0, ini) + fonte.slice(ini + liberacao.length);
+    assert.equal((fora.match(/situacao/g) || []).length, (fora.match(/liberacaoDaCoordenacao\.situacao/g) || []).length, 'situacao fora do bloco da liberação só como leitura do resultado da liberação');
   });
 
   describe('estado observado pela sonda', () => {
@@ -1084,6 +1403,32 @@ describe('Etapa 3B-1: o agente entrega ao instalador real as dependências da co
       }
     });
 
+    test('3B-2B-1: a configuração precisa declarar o guardião: executável absoluto e roteiro (só os dois), credencial absoluta e própria', () => {
+      const ok = configValida().guardiao;
+      for (const guardiao of [undefined, null, {}, { ...ok, comando: 'x' }, { ...ok, comando: [process.execPath] }, { ...ok, comando: ['node', 'scripts/guardiao-de-coordenacao.js'] },
+        { ...ok, comando: [process.execPath, 'scripts/guardiao-de-coordenacao.js', '--extra'] }, { ...ok, comando: [process.execPath, ''] },
+        { ...ok, credencial: undefined }, { ...ok, credencial: 'relativo/credencial.json' }, { ...ok, credencial: '' }]) {
+        const c = configValida();
+        c.guardiao = guardiao;
+        recusaConfig(c, 'GUARDIAO_NAO_CONFIGURADO');
+      }
+      const mesma = configValida();
+      mesma.guardiao.credencial = mesma.sonda.credencial;
+      recusaConfig(mesma, 'GUARDIAO_NAO_CONFIGURADO');
+    });
+
+    test('3B-2B-1: o modelo de configuração declara o guardião com marcadores, nasce desabilitado e o roteiro existe no backend', () => {
+      const modelo = JSON.parse(fs.readFileSync(path.join(RAIZ, 'deploy/hml/cd/agente.config.backend.exemplo.json'), 'utf8'));
+      assert.equal(modelo.habilitado, false);
+      assert.deepEqual(Object.keys(modelo.guardiao).sort(), ['comando', 'credencial']);
+      assert.equal(modelo.guardiao.comando.length, 2);
+      assert.ok(path.isAbsolute(modelo.guardiao.comando[0]));
+      assert.equal(modelo.guardiao.comando[1], 'scripts/guardiao-de-coordenacao.js');
+      assert.ok(fs.existsSync(path.join(RAIZ, 'backend', modelo.guardiao.comando[1])));
+      assert.ok(path.isAbsolute(modelo.guardiao.credencial));
+      assert.notEqual(modelo.guardiao.credencial, modelo.sonda.credencial);
+    });
+
     test('o modelo de configuração declara a sonda com marcadores', () => {
       const modelo = JSON.parse(fs.readFileSync(path.join(RAIZ, 'deploy/hml/cd/agente.config.backend.exemplo.json'), 'utf8'));
       assert.equal(modelo.sonda.comando[1], 'scripts/sonda-estado-observado.js');
@@ -1097,10 +1442,16 @@ describe('Etapa 3B-1: o agente entrega ao instalador real as dependências da co
 
 describe('invariantes do código do agente do backend', () => {
   const fonte = fs.readFileSync(AG, 'utf8');
-  test('não contorna a coordenação nem a prova de versão e não importa a coordenação', () => {
-    for (const proibido of ['homologarProvedorParaTeste', 'provedorHomologado', 'consultarCoordenacao', 'atestarSemOperacao', 'semComprovacaoDeVersao', 'permitirRoot', 'coordenacao']) {
+  // 3B-2B-1: a coordenação passa a existir no agente, mas só por um caminho: o provedor do guardião. O agente não homologa,
+  // não consulta o registro de homologados, não importa a coordenação do instalador e não declara estado.
+  test('não contorna a coordenação nem a prova de versão: a coordenação vem só do provedor do guardião', () => {
+    for (const proibido of ['homologarProvedorParaTeste', 'provedorHomologado', 'PROVEDORES_HOMOLOGADOS', 'atestarSemOperacao', 'semComprovacaoDeVersao', 'permitirRoot', 'consultaPadrao']) {
       assert.ok(!fonte.includes(proibido), `não deve citar ${proibido}`);
     }
+    assert.doesNotMatch(fonte, /require\([^)]*instalador\/coordenacao['"]\)/);
+    assert.match(fonte, /require\('\.\/coordenacao-por-guardiao'\)/);
+    assert.deepEqual([...fonte.matchAll(/consultarCoordenacao\s*=\s*([^;\n]+);/g)].map((m) => m[1].trim()), ['coordenacao ? coordenacao.consultar : undefined'], 'a única origem é o consultar do provedor adquirido');
+    assert.equal((fonte.match(/consultarCoordenacao/g) || []).length, 1, 'nenhum outro uso');
   });
   test('não executa processos, rede, banco, migrations, backup nem restauração', () => {
     assert.doesNotMatch(fonte, /child_process|node:(net|http|https|tls|dgram)|require\(['"](pg|node-pg-migrate)['"]\)/);

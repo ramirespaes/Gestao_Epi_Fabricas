@@ -5,6 +5,7 @@
   "raizesProtegidas": ["/RAIZ_REAL_INSTITUCIONAL", "/RAIZ_REAL_PORTAL_PAINEL", "/RAIZ_REAL_DADOS"],
   "s3": { "bucket": "SUBSTITUIR", "conta": "SUBSTITUIR", "regiao": "SUBSTITUIR", "executavel": "/usr/local/bin/aws", "prefixo": "hml-backend" },
   "sonda": { "comando": ["/CAMINHO_ABSOLUTO/node", "scripts/sonda-estado-observado.js"], "credencial": "/CAMINHO_ABSOLUTO/credencial-da-sonda.json", "banco": "SUBSTITUIR", "sistema": "SUBSTITUIR", "timeoutMs": 20000 },
+  "guardiao": { "comando": ["/CAMINHO_ABSOLUTO/node", "scripts/guardiao-de-coordenacao.js"], "credencial": "/CAMINHO_ABSOLUTO/credencial-do-guardiao.json" },
   "instalador": {
     "retencao": 5,
     "raizesPersistentes": [],
