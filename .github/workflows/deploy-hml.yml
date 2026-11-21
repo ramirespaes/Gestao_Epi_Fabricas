@@ -302,3 +302,89 @@ jobs:
           HML_CONTA: ${{ vars.HML_AWS_ACCOUNT_ID }}
           HML_REGIAO: ${{ vars.HML_AWS_REGION }}
         run: node deploy/hml/cd/publicar.js
+
+  # Etapas 3B-3 e 3B-4: prepara o backend a partir do MESMO commit validado e confere o conjunto com o frontend.
+  # Sem environment, sem credenciais e sem pedido: o backend NÃO é publicado por este workflow, e a instalação dele
+  # segue bloqueada no servidor. O job publicar não depende deste: uma falha aqui não impede a publicação de Portal e
+  # Painel. Release retroativa (rollback do frontend) não prepara backend.
+  # Único job não bloqueante do arquivo: a falha dele aparece no job, no log e no resumo (PREPARACAO_CONJUNTO_FALHOU),
+  # mas não reprova a execução. Nenhum passo, de nenhum job, tolera falha.
+  conjunto:
+    name: Preparar e conferir o backend do mesmo commit (sem publicar)
+    needs: [validar, empacotar]
+    if: ${{ needs.validar.outputs.atual == 'true' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository)) }}
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Só a main do próprio repositório (S7631), nunca um ref vindo do evento. O job só roda quando o commit validado é
+      # a cabeça da main; se ela avançou, a conferência seguinte interrompe o job antes de qualquer script.
+      - name: Checkout da main (precisa ser exatamente o commit validado)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Conferir que o checkout é exatamente o commit validado
+        env:
+          COMMIT: ${{ needs.validar.outputs.commit }}
+        run: |
+          [ "$(git rev-parse HEAD)" = "$COMMIT" ] || { echo "checkout diferente do commit validado"; exit 1; }
+          [ -z "$(git status --porcelain)" ] || { echo "árvore de trabalho não está limpa"; exit 1; }
+
+      - name: Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+
+      - name: Gerar release do backend com o empacotador oficial (allowlist, proteção contra segredos, manifesto e release.json)
+        env:
+          COMMIT: ${{ needs.validar.outputs.commit }}
+          ROTULO: ${{ needs.validar.outputs.rotulo }}
+          ATUAL: ${{ needs.validar.outputs.atual }}
+        run: node deploy/hml/empacotar-backend.js --saida "$RUNNER_TEMP/release-backend" --commit "$COMMIT" --rotulo "$ROTULO" --atual "$ATUAL"
+
+      - name: Conferir manifesto do backend com sha256sum
+        run: |
+          cd "$RUNNER_TEMP/release-backend/backend" && sha256sum -c --quiet ../manifesto-backend.sha256
+
+      - name: Baixar somente o artefato do frontend produzido nesta execução
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ needs.empacotar.outputs.artifact_id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/release-frontend
+
+      - name: Conferir o conjunto (mesmo commit, rótulo, integridade e identidade) e fixar o identificador
+        env:
+          HML_COMMIT: ${{ needs.validar.outputs.commit }}
+          HML_ROTULO: ${{ needs.validar.outputs.rotulo }}
+          HML_RELEASE_SHA256: ${{ needs.empacotar.outputs.release_sha256 }}
+          HML_FRONTEND_DIR: ${{ runner.temp }}/release-frontend
+          HML_RELEASE_BACKEND_DIR: ${{ runner.temp }}/release-backend
+          HML_CONJUNTO_SAIDA: ${{ runner.temp }}/conjunto.json
+        run: node .github/scripts/hml/conferir-conjunto.js
+
+      - name: Guardar release do backend e o conjunto como artefato da execução (não é publicação)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-backend-${{ needs.validar.outputs.rotulo }}
+          path: |
+            ${{ runner.temp }}/release-backend
+            ${{ runner.temp }}/conjunto.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Registrar a falha da preparação do conjunto (não afeta a publicação de Portal e Painel)
+        if: failure()
+        run: |
+          echo "::error title=PREPARACAO_CONJUNTO_FALHOU::Falhou a geração, a conferência ou o armazenamento do artefato do backend; veja o passo com erro acima."
+          {
+            echo ""
+            echo "## Conjunto do mesmo commit (frontend e backend)"
+            echo "- Status: \`PREPARACAO_CONJUNTO_FALHOU\`"
+            echo "- A preparação do conjunto NÃO foi concluída: falhou a geração, a conferência ou o armazenamento do artefato."
+            echo "- Este status prevalece: um \`PREPARACAO_CONJUNTO_CONFERIDA\` acima indica só que a conferência terminou e não vale como preparação concluída."
+            echo "- Backend: NÃO publicado."
+            echo "- A publicação de Portal e Painel tem resultado próprio, no job de publicação, e não depende deste job."
+          } >> "$GITHUB_STEP_SUMMARY"
