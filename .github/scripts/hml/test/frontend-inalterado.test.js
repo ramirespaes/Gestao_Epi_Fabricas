@@ -28,7 +28,7 @@ const PROTEGIDOS = {
   '.github/workflows/deploy-hml-backend.yml': 'f1f3afb14770541fa86dfb7f1797fdf15ab30ee257f87a8afabade93ed52b0e1',
   // Etapas 3B-3/3B-4: ganhou só o job final "conjunto" (prepara e confere o backend, sem publicar). Todo o texto
   // anterior a ele continua com o hash 1e4a6bf8…, provado em workflow-unificado.test.js.
-  '.github/workflows/deploy-hml.yml': '69c10c673b9ec66b1f4af81c2dbe192c6d1fc7180f48d2ca040a08aecb7af566',
+  '.github/workflows/deploy-hml.yml': '0c63a0cf22a1399bb2ce50cae9eb632f00a8ddec6175b13235dcb8bbdb1aad5a',
 };
 const sha = (rel) => crypto.createHash('sha256').update(fs.readFileSync(path.join(RAIZ, rel))).digest('hex');
 

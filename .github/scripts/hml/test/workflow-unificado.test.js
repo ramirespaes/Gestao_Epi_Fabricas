@@ -20,6 +20,9 @@ const partes = yaml.split(MARCA);
 const job = partes.length === 2 ? semComentarios(partes[1]) : '';
 const passos = [...job.matchAll(/^ {6}- name: ([^\n]+)/gm)].map((m) => m[1]);
 const blocoDoPasso = (inicio) => { const i = job.indexOf(`- name: ${inicio}`); return i === -1 ? '' : job.slice(i).split(/\n {6}- name: /)[0]; };
+// Guarda de origem do job validar (a expressão inteira dentro de ${{ }}), e o if do job conjunto.
+const GUARDA_DO_VALIDAR = yaml.match(/^ {2}validar:\n[\s\S]*?^ {4}if: \$\{\{ (.+) \}\}$/m)[1];
+const ifDoConjunto = (job.match(/^ {4}if: (.+)$/m) || [])[1];
 
 describe('preservação do frontend e dos controles existentes', () => {
   test('o job novo existe, uma única vez, e é o último do arquivo', () => {
@@ -59,17 +62,100 @@ describe('job conjunto: mesmo commit, sem credenciais e sem publicar', () => {
     assert.match(job, /^ {4}needs: \[validar, empacotar\]$/m);
   });
 
-  test('só roda para a cabeça atual da main: release retroativa não prepara backend', () => {
-    assert.match(job, /^ {4}if: needs\.validar\.outputs\.atual == 'true'$/m);
-    assert.deepEqual(job.match(/^\s*if:.*$/gm).map((l) => l.trim()), ["if: needs.validar.outputs.atual == 'true'", 'if: failure()'], 'só a condição do job e a do passo que registra a falha');
+  test('S7631: o if do job é a condição de "atual" combinada com a guarda de origem do validar, copiada literalmente', () => {
+    assert.equal(ifDoConjunto, `\${{ needs.validar.outputs.atual == 'true' && (${GUARDA_DO_VALIDAR}) }}`);
+    assert.match(GUARDA_DO_VALIDAR, /github\.event\.workflow_run\.head_repository\.full_name == github\.repository/);
+    assert.deepEqual(job.match(/^\s*if:.*$/gm).map((l) => l.trim()), [`if: ${ifDoConjunto}`, 'if: failure()'], 'só a condição do job e a do passo que registra a falha');
   });
 
-  test('o cabeçalho do job não tem expressão ${{ }} nem saídas: nada depende dele e os testes existentes de run: seguem valendo', () => {
+  test('o cabeçalho do job só tem expressão ${{ }} na linha if e não tem saídas: nada depende dele', () => {
     const cabecalho = job.split(/\n {4}steps:\n/)[0];
-    assert.doesNotMatch(cabecalho, /\$\{\{/);
+    assert.deepEqual(cabecalho.split('\n').filter((l) => l.includes('${{')).map((l) => l.trim().split(':')[0]), ['if']);
     assert.doesNotMatch(job, /^ {4}outputs:/m);
     assert.doesNotMatch(yaml, /needs\.conjunto\b/);
   });
+});
+
+describe('S7631: em que situações o job conjunto roda (condições avaliadas, não só lidas)', () => {
+  // Avaliador mínimo do subconjunto de expressões usado nesses if (==, !=, &&, ||, parênteses, textos e caminhos), com a
+  // comparação de textos sem distinção de maiúsculas, como no GitHub. Qualquer outra coisa é erro, não falso.
+  function avaliar(expressao, ctx) {
+    const fonte = expressao.trim().replace(/^\$\{\{([\s\S]*)\}\}$/, '$1');
+    const tokens = fonte.match(/\s*(?:'(?:[^']|'')*'|&&|\|\||==|!=|[()]|[A-Za-z_][\w.-]*)/g);
+    assert.equal((tokens || []).join('').replace(/\s/g, ''), fonte.replace(/\s/g, ''), `expressão fora do subconjunto: ${fonte}`);
+    let i = 0;
+    const proximo = () => tokens[i] && tokens[i].trim();
+    const valor = (t) => {
+      if (t.startsWith("'")) return t.slice(1, -1).replace(/''/g, "'");
+      if (t === 'true' || t === 'false') return t === 'true';
+      return t.split('.').reduce((o, k) => (o == null ? undefined : o[k]), ctx);
+    };
+    const igual = (a, b) => (typeof a === 'string' && typeof b === 'string' ? a.toLowerCase() === b.toLowerCase() : a === b);
+    function primario() {
+      const t = proximo(); i += 1;
+      if (t === '(') { const v = ou(); assert.equal(proximo(), ')'); i += 1; return v; }
+      return valor(t);
+    }
+    function comparacao() {
+      let a = primario();
+      while (proximo() === '==' || proximo() === '!=') { const op = proximo(); i += 1; const b = primario(); a = op === '==' ? igual(a, b) : !igual(a, b); }
+      return a;
+    }
+    function e() { let a = comparacao(); while (proximo() === '&&') { i += 1; const b = comparacao(); a = Boolean(a) && Boolean(b); } return a; }
+    function ou() { let a = e(); while (proximo() === '||') { i += 1; const b = e(); a = Boolean(a) || Boolean(b); } return a; }
+    const resultado = ou();
+    assert.equal(i, tokens.length, 'sobrou texto na expressão');
+    return Boolean(resultado);
+  }
+  const ifDoValidar = yaml.match(/^ {2}validar:\n[\s\S]*?^ {4}if: (.+)$/m)[1];
+  // O job roda se o validar rodou e teve sucesso (success() implícito) e se o if dele próprio for verdadeiro.
+  const rodaConjunto = (ctx, { validarComSucesso = true } = {}) => avaliar(ifDoValidar, ctx) && validarComSucesso && avaliar(ifDoConjunto, ctx);
+  const REPO = 'ramirespaes/Gestao_Epi_Fabricas';
+  const execucao = (sobre = {}) => ({ event: 'push', conclusion: 'success', head_branch: 'main', head_repository: { full_name: REPO }, ...sobre });
+  const contexto = ({ evento = 'workflow_run', run = execucao(), atual = 'true' } = {}) => ({
+    github: { event_name: evento, repository: REPO, event: evento === 'workflow_run' ? { workflow_run: run } : {} },
+    needs: { validar: { outputs: { atual } } },
+  });
+
+  test('push legítimo na main do próprio repositório, com CI verde: roda', () => {
+    assert.equal(avaliar(ifDoConjunto, contexto()), true);
+    assert.equal(rodaConjunto(contexto()), true);
+  });
+
+  test('disparo manual (a confirmação e o commit seguem validados pelo job validar): roda', () => {
+    assert.equal(rodaConjunto(contexto({ evento: 'workflow_dispatch' })), true);
+  });
+
+  test('origem de fork: não roda, pela guarda do próprio job, mesmo que o validar tivesse rodado', () => {
+    const fork = contexto({ run: execucao({ head_repository: { full_name: 'atacante/Gestao_Epi_Fabricas' } }) });
+    assert.equal(avaliar(ifDoConjunto, fork), false, 'a guarda do conjunto, sozinha, já recusa');
+    assert.equal(rodaConjunto(fork, { validarComSucesso: true }), false);
+  });
+
+  test('CI reprovado, cancelado, de PR ou de outra branch: não roda', () => {
+    for (const sobre of [{ conclusion: 'failure' }, { conclusion: 'cancelled' }, { event: 'pull_request' }, { head_branch: 'outra' }]) {
+      assert.equal(avaliar(ifDoConjunto, contexto({ run: execucao(sobre) })), false, JSON.stringify(sobre));
+    }
+  });
+
+  test('release retroativa (atual = false) ou validação sem resultado: não roda, em nenhum evento', () => {
+    for (const evento of ['workflow_run', 'workflow_dispatch']) {
+      assert.equal(rodaConjunto(contexto({ evento, atual: 'false' })), false, evento);
+      assert.equal(rodaConjunto(contexto({ evento, atual: '' })), false, `${evento}: saída ausente chega como texto vazio`);
+    }
+    assert.equal(rodaConjunto(contexto(), { validarComSucesso: false }), false, 'validar falho ou pulado');
+  });
+
+  test('evento não previsto: não roda', () => {
+    for (const evento of ['pull_request_target', 'push', 'schedule', 'issue_comment']) assert.equal(avaliar(ifDoConjunto, contexto({ evento })), false, evento);
+  });
+
+  test('o avaliador do teste recusa expressão fora do subconjunto, em vez de responder falso', () => {
+    assert.throws(() => avaliar("${{ contains(github.ref, 'main') }}", contexto()));
+  });
+});
+
+describe('job conjunto: checkout e conferência antes de qualquer script', () => {
 
   test('S7631: o checkout é da main do próprio repositório, nunca de um ref vindo do evento ou das saídas de outro job', () => {
     const checkout = blocoDoPasso(passos[0]);
@@ -252,7 +338,7 @@ describe('correção P1: a preparação do backend não reprova uma publicação
 
   test('publicação desabilitada e rollback retroativo: as condições do publicar e do conjunto não mudaram', () => {
     assert.match(publicar, /^ {4}if: \$\{\{ vars\.HML_PUBLICACAO_HABILITADA == 'true' && /m);
-    assert.match(cabecalho, /^ {4}if: needs\.validar\.outputs\.atual == 'true'$/m);
+    assert.match(cabecalho, /^ {4}if: \$\{\{ needs\.validar\.outputs\.atual == 'true' && \(/m);
     assert.match(cabecalho, /^ {4}needs: \[validar, empacotar\]$/m);
   });
 

@@ -344,7 +344,7 @@ Limitações remanescentes do classificador: ele não interpreta o SQL nem consu
 
 O `deploy-hml.yml` ganhou um quarto job, `conjunto`, depois de `publicar`. Os gatilhos, os jobs `validar`, `empacotar` e `publicar`, o environment `homologacao` e os controles de autorização não mudaram: o texto do arquivo anterior ao job novo é o mesmo de antes, byte a byte (provado em `workflow-unificado.test.js`).
 
-O job `conjunto` roda só para a cabeça atual da main (`atual == 'true'`); release retroativa, que é rollback do frontend, não prepara backend. Ele:
+O job `conjunto` roda só para a cabeça atual da main (`atual == 'true'`); release retroativa, que é rollback do frontend, não prepara backend. O `if` dele repete, literalmente, a guarda de origem do job `validar` (disparo manual, ou `workflow_run` de push na `main` do próprio repositório com CI verde), além de depender do sucesso do `validar`: a redundância é deliberada, porque a análise estática do SonarCloud (regra S7631) avalia cada job isoladamente. Ele:
 
 1. faz o checkout da `main` do próprio repositório (nunca de um ref vindo do evento, regra S7631 do SonarCloud) e confere que o `HEAD` é exatamente o commit validado, com a árvore limpa; se a `main` avançou depois da validação, o job falha nesse passo, antes de executar qualquer script, e registra `PREPARACAO_CONJUNTO_FALHOU`;
 2. gera a release do backend com `deploy/hml/empacotar-backend.js`, com o mesmo commit e o mesmo rótulo do frontend;

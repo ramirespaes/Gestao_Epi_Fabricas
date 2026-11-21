@@ -312,7 +312,7 @@ jobs:
   conjunto:
     name: Preparar e conferir o backend do mesmo commit (sem publicar)
     needs: [validar, empacotar]
-    if: needs.validar.outputs.atual == 'true'
+    if: ${{ needs.validar.outputs.atual == 'true' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository)) }}
     continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 15
