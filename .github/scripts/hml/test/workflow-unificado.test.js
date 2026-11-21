@@ -71,16 +71,97 @@ describe('job conjunto: mesmo commit, sem credenciais e sem publicar', () => {
     assert.doesNotMatch(yaml, /needs\.conjunto\b/);
   });
 
-  test('checkout exato do commit validado, sem credenciais persistidas, conferido antes de qualquer script', () => {
-    assert.equal(passos[0], 'Checkout exato do commit validado');
-    assert.match(blocoDoPasso(passos[0]), /ref: \$\{\{ needs\.validar\.outputs\.commit \}\}\n\s+persist-credentials: false/);
+  test('S7631: o checkout é da main do próprio repositório, nunca de um ref vindo do evento ou das saídas de outro job', () => {
+    const checkout = blocoDoPasso(passos[0]);
+    assert.equal(passos[0], 'Checkout da main (precisa ser exatamente o commit validado)');
+    assert.match(checkout, /uses: actions\/checkout@11bd71901bbe5b1630ceea73d27597364c9af683[^\n]*\n\s+with:\n\s+ref: main\n\s+persist-credentials: false\n?$/);
+    assert.doesNotMatch(checkout, /\$\{\{|repository:|token:|fetch-depth/, 'nenhuma expressão, outro repositório, credencial ou histórico');
+    assert.equal((job.match(/uses: actions\/checkout@/g) || []).length, 1, 'um único checkout no job');
+    assert.doesNotMatch(job, /github\.workflow_sha|github\.event\.workflow_run\.head_sha|ref: \$\{\{/);
+  });
+
+  test('a conferência HEAD == commit validado e árvore limpa vem logo depois do checkout, antes de qualquer código do repositório', () => {
     assert.equal(passos[1], 'Conferir que o checkout é exatamente o commit validado');
     const confere = blocoDoPasso(passos[1]);
-    assert.match(confere, /\[ "\$\(git rev-parse HEAD\)" = "\$COMMIT" \]/);
-    assert.match(confere, /\[ -z "\$\(git status --porcelain\)" \]/);
+    assert.match(confere, /COMMIT: \$\{\{ needs\.validar\.outputs\.commit \}\}/);
+    assert.match(confere, /\[ "\$\(git rev-parse HEAD\)" = "\$COMMIT" \] \|\| \{[^}]*exit 1; \}/);
+    assert.match(confere, /\[ -z "\$\(git status --porcelain\)" \] \|\| \{[^}]*exit 1; \}/);
     assert.ok(job.indexOf('git rev-parse HEAD') < job.indexOf('node '), 'a conferência vem antes de qualquer script');
-    assert.doesNotMatch(job, /ref: main|github\.workflow_sha|fetch-depth/);
+    // Depois dela só vêm passos sem condição: se ela falhar, nenhum deles roda; só o registro de falha, que não executa código.
+    const seguintes = passos.slice(2, -1).map(blocoDoPasso);
+    assert.ok(seguintes.length >= 5);
+    for (const bloco of seguintes) assert.doesNotMatch(bloco, /^\s*if:|continue-on-error/m);
+    assert.doesNotMatch(blocoDoPasso(passos.at(-1)), /\bnode\b|uses:|\.\/|deploy\/|\.github\/scripts/);
   });
+});
+
+describe('S7631: a conferência do checkout, executada de verdade num repositório git temporário', () => {
+  const { spawnSync } = require('node:child_process');
+  const os = require('node:os');
+  // O corpo do passo exatamente como está no workflow, recortado pela indentação do bloco "run: |".
+  const corpo = (() => {
+    const bloco = blocoDoPasso('Conferir que o checkout é exatamente o commit validado');
+    const i = bloco.indexOf('run: |\n');
+    return i === -1 ? '' : bloco.slice(i + 'run: |\n'.length).split('\n').filter((l) => l.startsWith('          ')).map((l) => l.slice(10)).join('\n');
+  })();
+  const git = (dir, ...args) => {
+    const r = spawnSync('git', ['-c', 'user.name=teste', '-c', 'user.email=teste@exemplo.invalid', '-c', 'commit.gpgsign=false', ...args], { cwd: dir, encoding: 'utf8', env: { PATH: process.env.PATH, HOME: dir, GIT_CONFIG_NOSYSTEM: '1' } });
+    assert.equal(r.status, 0, r.stderr);
+    return r.stdout.trim();
+  };
+  function repositorio() {
+    const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'conferencia-checkout-'));
+    git(dir, 'init', '-q', '-b', 'main');
+    fs.writeFileSync(path.join(dir, 'a.txt'), '1');
+    git(dir, 'add', 'a.txt'); git(dir, 'commit', '-q', '-m', 'primeiro');
+    const validado = git(dir, 'rev-parse', 'HEAD');
+    return { dir, validado };
+  }
+  const conferir = (dir, commit) => spawnSync('bash', ['-eo', 'pipefail', '-c', corpo], { cwd: dir, encoding: 'utf8', env: { PATH: process.env.PATH, HOME: dir, COMMIT: commit }, timeout: 20000 });
+
+  test('o corpo do passo foi encontrado e contém as duas conferências', () => {
+    assert.match(corpo, /git rev-parse HEAD/);
+    assert.match(corpo, /git status --porcelain/);
+  });
+
+  test('main igual ao commit validado e árvore limpa: segue (código 0)', () => {
+    const { dir, validado } = repositorio();
+    try { assert.equal(conferir(dir, validado).status, 0); } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test('main avançou depois da validação (HEAD diferente do commit aprovado): interrompe antes de qualquer script', () => {
+    const { dir, validado } = repositorio();
+    try {
+      fs.writeFileSync(path.join(dir, 'a.txt'), '2');
+      git(dir, 'commit', '-q', '-am', 'main avançou');
+      const r = conferir(dir, validado);
+      assert.equal(r.status, 1);
+      assert.match(r.stdout, /checkout diferente do commit validado/);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test('commit aprovado vazio, abreviado ou de outro histórico: interrompe', () => {
+    const { dir, validado } = repositorio();
+    try {
+      for (const commit of ['', validado.slice(0, 7), 'f'.repeat(40)]) assert.equal(conferir(dir, commit).status, 1, JSON.stringify(commit));
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test('HEAD certo com árvore suja ou arquivo não rastreado: interrompe', () => {
+    const { dir, validado } = repositorio();
+    try {
+      fs.writeFileSync(path.join(dir, 'a.txt'), 'alterado');
+      assert.equal(conferir(dir, validado).status, 1);
+      git(dir, 'checkout', '-q', '--', 'a.txt');
+      fs.writeFileSync(path.join(dir, 'intruso.js'), 'x');
+      const r = conferir(dir, validado);
+      assert.equal(r.status, 1);
+      assert.match(r.stdout, /árvore de trabalho não está limpa/);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+describe('job conjunto: demais contratos', () => {
 
   test('gera a release do backend com o empacotador oficial, com commit, rótulo e marca "atual" da validação', () => {
     const gerar = blocoDoPasso('Gerar release do backend');

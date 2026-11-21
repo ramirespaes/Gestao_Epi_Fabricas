@@ -317,10 +317,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Checkout exato do commit validado
+      # Só a main do próprio repositório (S7631), nunca um ref vindo do evento. O job só roda quando o commit validado é
+      # a cabeça da main; se ela avançou, a conferência seguinte interrompe o job antes de qualquer script.
+      - name: Checkout da main (precisa ser exatamente o commit validado)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ needs.validar.outputs.commit }}
+          ref: main
           persist-credentials: false
 
       - name: Conferir que o checkout é exatamente o commit validado

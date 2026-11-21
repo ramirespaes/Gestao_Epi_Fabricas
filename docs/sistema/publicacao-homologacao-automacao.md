@@ -346,7 +346,7 @@ O `deploy-hml.yml` ganhou um quarto job, `conjunto`, depois de `publicar`. Os ga
 
 O job `conjunto` roda só para a cabeça atual da main (`atual == 'true'`); release retroativa, que é rollback do frontend, não prepara backend. Ele:
 
-1. faz o checkout exato do commit validado e confere que é esse commit, com a árvore limpa;
+1. faz o checkout da `main` do próprio repositório (nunca de um ref vindo do evento, regra S7631 do SonarCloud) e confere que o `HEAD` é exatamente o commit validado, com a árvore limpa; se a `main` avançou depois da validação, o job falha nesse passo, antes de executar qualquer script, e registra `PREPARACAO_CONJUNTO_FALHOU`;
 2. gera a release do backend com `deploy/hml/empacotar-backend.js`, com o mesmo commit e o mesmo rótulo do frontend;
 3. baixa, pelo identificador, o artefato do frontend desta execução;
 4. roda `.github/scripts/hml/conferir-conjunto.js`, que valida cada release com o validador oficial do seu escopo e exige o mesmo commit, o mesmo rótulo, nenhuma retroativa e a lista de migrations do `release.json` do backend igual à do pacote;
