@@ -1,0 +1,260 @@
+'use strict';
+// 3B-4: o deploy-hml.yml passa a preparar e conferir o backend do MESMO commit, num job à parte, sem credenciais, sem
+// environment e sem entregar pedido. Tudo o que já existia (gatilhos, validação, pacotes e publicação do Portal e do
+// Painel) fica byte a byte como estava: o texto anterior ao job novo tem o hash do arquivo original.
+const { describe, test } = require('node:test');
+const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const RAIZ = path.resolve(__dirname, '../../../..');
+const yaml = fs.readFileSync(path.join(RAIZ, '.github/workflows/deploy-hml.yml'), 'utf8');
+// Hash do deploy-hml.yml da main em d0a3011, antes desta etapa (o mesmo que frontend-inalterado.test.js fixava).
+const HASH_ORIGINAL = '1e4a6bf81ff7b50d107a25a23a27d0ccc8ae4ab8b276b0c6dc97f20c2c533320';
+// O nome do job não tem hífen de propósito: os testes existentes reconhecem a fronteira entre jobs por \w+.
+const MARCA = '\n  conjunto:\n';
+const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
+const semComentarios = (t) => t.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+const partes = yaml.split(MARCA);
+const job = partes.length === 2 ? semComentarios(partes[1]) : '';
+const passos = [...job.matchAll(/^ {6}- name: ([^\n]+)/gm)].map((m) => m[1]);
+const blocoDoPasso = (inicio) => { const i = job.indexOf(`- name: ${inicio}`); return i === -1 ? '' : job.slice(i).split(/\n {6}- name: /)[0]; };
+
+describe('preservação do frontend e dos controles existentes', () => {
+  test('o job novo existe, uma única vez, e é o último do arquivo', () => {
+    assert.equal(partes.length, 2, 'falta o job conjunto (RED esperado antes da implementação)');
+    assert.doesNotMatch(job, /^ {2}[\w-]+:\s*$/m, 'nenhum job depois dele');
+    assert.match(MARCA, /^\n {2}\w+:\n$/);
+  });
+
+  test('tudo o que vem antes do job novo é o arquivo original, byte a byte (gatilhos, validar, empacotar e publicar)', () => {
+    const anterior = yaml.slice(0, yaml.indexOf(MARCA) + 1);
+    const semComentarioFinal = anterior.replace(/(\n {2}#[^\n]*)+\n$/, '\n').replace(/\n\n$/, '\n');
+    assert.equal(sha(semComentarioFinal), HASH_ORIGINAL);
+  });
+
+  test('os jobs são exatamente os três de antes mais o novo, nesta ordem', () => {
+    const jobs = yaml.match(/^jobs:\n([\s\S]*)$/m)[1];
+    assert.deepEqual([...jobs.matchAll(/^ {2}([\w-]+):\s*$/gm)].map((m) => m[1]), ['validar', 'empacotar', 'publicar', 'conjunto']);
+  });
+
+  test('o job publicar não depende do job novo: falha na preparação do backend não impede a publicação do frontend', () => {
+    const publicar = semComentarios(yaml.split('\n  publicar:\n')[1].split(MARCA)[0]);
+    assert.match(publicar, /^ {4}needs: \[validar, empacotar\]$/m);
+    assert.doesNotMatch(publicar, /conjunto|backend/i);
+    assert.deepEqual([...semComentarios(yaml).matchAll(/^ {4}needs: (.+)$/gm)].map((m) => m[1]), ['validar', '[validar, empacotar]', '[validar, empacotar]'], 'ninguém depende do job novo');
+  });
+
+  test('continua havendo um único environment, um único id-token e nenhuma outra permissão de escrita', () => {
+    assert.equal((yaml.match(/^\s*environment:/gm) || []).length, 1);
+    assert.equal((yaml.match(/id-token: write/g) || []).length, 1);
+    assert.deepEqual(semComentarios(yaml).match(/^\s*[\w-]+:\s*write\b/gm).map((l) => l.trim()), ['id-token: write']);
+    assert.equal((semComentarios(yaml).match(/^\s*permissions:/gm) || []).length, 2, 'só o topo e o job publicar declaram permissões');
+  });
+});
+
+describe('job conjunto: mesmo commit, sem credenciais e sem publicar', () => {
+  test('depende da validação do commit (CI verde, posição na main) e do pacote do frontend desta execução', () => {
+    assert.match(job, /^ {4}needs: \[validar, empacotar\]$/m);
+  });
+
+  test('só roda para a cabeça atual da main: release retroativa não prepara backend', () => {
+    assert.match(job, /^ {4}if: needs\.validar\.outputs\.atual == 'true'$/m);
+    assert.deepEqual(job.match(/^\s*if:.*$/gm).map((l) => l.trim()), ["if: needs.validar.outputs.atual == 'true'", 'if: failure()'], 'só a condição do job e a do passo que registra a falha');
+  });
+
+  test('o cabeçalho do job não tem expressão ${{ }} nem saídas: nada depende dele e os testes existentes de run: seguem valendo', () => {
+    const cabecalho = job.split(/\n {4}steps:\n/)[0];
+    assert.doesNotMatch(cabecalho, /\$\{\{/);
+    assert.doesNotMatch(job, /^ {4}outputs:/m);
+    assert.doesNotMatch(yaml, /needs\.conjunto\b/);
+  });
+
+  test('checkout exato do commit validado, sem credenciais persistidas, conferido antes de qualquer script', () => {
+    assert.equal(passos[0], 'Checkout exato do commit validado');
+    assert.match(blocoDoPasso(passos[0]), /ref: \$\{\{ needs\.validar\.outputs\.commit \}\}\n\s+persist-credentials: false/);
+    assert.equal(passos[1], 'Conferir que o checkout é exatamente o commit validado');
+    const confere = blocoDoPasso(passos[1]);
+    assert.match(confere, /\[ "\$\(git rev-parse HEAD\)" = "\$COMMIT" \]/);
+    assert.match(confere, /\[ -z "\$\(git status --porcelain\)" \]/);
+    assert.ok(job.indexOf('git rev-parse HEAD') < job.indexOf('node '), 'a conferência vem antes de qualquer script');
+    assert.doesNotMatch(job, /ref: main|github\.workflow_sha|fetch-depth/);
+  });
+
+  test('gera a release do backend com o empacotador oficial, com commit, rótulo e marca "atual" da validação', () => {
+    const gerar = blocoDoPasso('Gerar release do backend');
+    assert.match(gerar, /COMMIT: \$\{\{ needs\.validar\.outputs\.commit \}\}/);
+    assert.match(gerar, /ROTULO: \$\{\{ needs\.validar\.outputs\.rotulo \}\}/);
+    assert.match(gerar, /ATUAL: \$\{\{ needs\.validar\.outputs\.atual \}\}/);
+    assert.match(gerar, /run: node deploy\/hml\/empacotar-backend\.js --saida "\$RUNNER_TEMP\/release-backend" --commit "\$COMMIT" --rotulo "\$ROTULO" --atual "\$ATUAL"\n/);
+    assert.match(job, /cd "\$RUNNER_TEMP\/release-backend\/backend" && sha256sum -c --quiet \.\.\/manifesto-backend\.sha256/);
+  });
+
+  test('baixa somente o artefato do frontend desta execução, pelo identificador', () => {
+    const baixar = blocoDoPasso('Baixar somente o artefato do frontend');
+    assert.match(baixar, /uses: actions\/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093/);
+    assert.match(baixar, /artifact-ids: \$\{\{ needs\.empacotar\.outputs\.artifact_id \}\}/);
+    assert.doesNotMatch(baixar, /run-id:|repository:|github-token|name:\s*release/);
+  });
+
+  test('confere o conjunto com o script testado, contra o commit, o rótulo e o hash do frontend fixado antes da aprovação', () => {
+    const conferir = blocoDoPasso('Conferir o conjunto');
+    assert.match(conferir, /HML_COMMIT: \$\{\{ needs\.validar\.outputs\.commit \}\}/);
+    assert.match(conferir, /HML_ROTULO: \$\{\{ needs\.validar\.outputs\.rotulo \}\}/);
+    assert.match(conferir, /HML_RELEASE_SHA256: \$\{\{ needs\.empacotar\.outputs\.release_sha256 \}\}/);
+    assert.match(conferir, /run: node \.github\/scripts\/hml\/conferir-conjunto\.js\n/);
+    assert.ok(job.indexOf('empacotar-backend.js') < job.indexOf('conferir-conjunto.js'));
+    assert.ok(job.indexOf('download-artifact') < job.indexOf('conferir-conjunto.js'));
+  });
+
+  test('guarda a release do backend e o conjunto só como artefato de retenção curta, depois de conferidos', () => {
+    const guardar = blocoDoPasso('Guardar release do backend');
+    assert.match(guardar, /uses: actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02/);
+    assert.match(guardar, /if-no-files-found: error/);
+    assert.match(guardar, /retention-days: 14/);
+    assert.ok(job.indexOf('conferir-conjunto.js') < job.indexOf('upload-artifact'));
+    assert.equal(passos.at(-2).startsWith('Guardar release do backend'), true, 'depois dele só o registro de falha');
+    assert.doesNotMatch(guardar, /^\s*if:/m, 'só guarda quando tudo antes deu certo');
+  });
+
+  test('não recebe environment, OIDC, permissões próprias, variáveis de repositório, segredos nem credenciais', () => {
+    for (const proibido of [/^\s*environment:/m, /^\s*permissions:/m, /id-token/, /\bvars\./, /\bsecrets\./, /github\.token|GH_TOKEN/, /aws-actions|configure-aws|AWS_/i, /HML_ROLE|HML_BUCKET|HML_CONTA|HML_REGIAO/]) {
+      assert.doesNotMatch(job, proibido, String(proibido));
+    }
+  });
+
+  test('não entrega pedido, não aciona agente nem instalador, não toca banco nem servidor', () => {
+    for (const proibido of [/publicar\.js/, /HML_PUBLICAR|HML_HABILITADA|HML_CONFIRMACAO/, /agente/i, /instalador|instalar-release/, /coordenacao/i, /migrate|psql|db:/i, /\bssh\b|\bscp\b|\bcurl\b|\bwget\b|systemctl|\bsudo\b|\baws\b/, /git (push|commit|tag)/]) {
+      assert.doesNotMatch(job, proibido, String(proibido));
+    }
+  });
+
+  test('não conhece o environment, o interruptor, a role, o escopo de pedido nem o prefixo S3 do backend', () => {
+    assert.doesNotMatch(yaml, /homologacao-backend|HML_BACKEND|HML_ESCOPO|HOMOLOGACAO-BACKEND|hml-backend/);
+  });
+
+  test('sem always(), sem cancelled(), sem runner próprio; failure() só no passo que registra a falha', () => {
+    assert.doesNotMatch(job, /always\(|cancelled\(|self-hosted/);
+    assert.equal((job.match(/failure\(/g) || []).length, 1);
+    assert.match(job, /^ {4}runs-on: ubuntu-latest$/m);
+    assert.match(job, /^ {4}timeout-minutes: 15$/m);
+  });
+});
+
+describe('correção P1: a preparação do backend não reprova uma publicação bem-sucedida do frontend', () => {
+  const publicar = semComentarios(yaml.split('\n  publicar:\n')[1].split(MARCA)[0]);
+  const antesDoConjunto = semComentarios(yaml.split(MARCA)[0]);
+  const cabecalho = job.split(/\n {4}steps:\n/)[0];
+
+  test('o job conjunto é não bloqueante: continue-on-error: true no nível do job, uma única vez em todo o arquivo', () => {
+    assert.match(cabecalho, /^ {4}continue-on-error: true$/m);
+    assert.deepEqual(semComentarios(yaml).match(/^.*continue-on-error.*$/gm), ['    continue-on-error: true']);
+  });
+
+  test('nenhum passo usa continue-on-error: a falha continua aparecendo no passo e no job', () => {
+    assert.doesNotMatch(job.split(/\n {4}steps:\n/)[1], /continue-on-error/);
+  });
+
+  test('validar, empacotar e publicar não ganham continue-on-error: testes obrigatórios, validação e publicação seguem bloqueantes', () => {
+    assert.doesNotMatch(antesDoConjunto, /continue-on-error/);
+    assert.match(antesDoConjunto, /run: node --test "\.github\/scripts\/hml\/test\/\*\.test\.js"/);
+    assert.doesNotMatch(publicar, /continue-on-error|failure\(|always\(|cancelled\(/);
+  });
+
+  test('uma falha no próprio publicar continua reprovando a execução: o job segue igual, sem depender do conjunto', () => {
+    assert.match(publicar, /^ {4}needs: \[validar, empacotar\]$/m);
+    assert.match(publicar, /^ {4}environment: homologacao$/m);
+    assert.match(publicar, /run: node deploy\/hml\/cd\/publicar\.js\n?$/);
+    assert.doesNotMatch(publicar, /conjunto|backend/i);
+  });
+
+  test('publicação desabilitada e rollback retroativo: as condições do publicar e do conjunto não mudaram', () => {
+    assert.match(publicar, /^ {4}if: \$\{\{ vars\.HML_PUBLICACAO_HABILITADA == 'true' && /m);
+    assert.match(cabecalho, /^ {4}if: needs\.validar\.outputs\.atual == 'true'$/m);
+    assert.match(cabecalho, /^ {4}needs: \[validar, empacotar\]$/m);
+  });
+
+  test('a falha fica registrada: último passo, só em falha, escreve PREPARACAO_CONJUNTO_FALHOU no log e no resumo', () => {
+    assert.equal(passos.at(-1).startsWith('Registrar a falha da preparação do conjunto'), true);
+    const registro = blocoDoPasso(passos.at(-1));
+    assert.match(registro, /^ {8}if: failure\(\)$/m);
+    assert.match(registro, /echo "::error[^"]*PREPARACAO_CONJUNTO_FALHOU/);
+    assert.match(registro, />> "\$GITHUB_STEP_SUMMARY"/);
+    assert.ok((registro.match(/PREPARACAO_CONJUNTO_FALHOU/g) || []).length >= 2, 'no log e no resumo');
+    assert.doesNotMatch(registro, /uses:|\bnode\b|\$\{\{/, 'só mensagens: nenhum script, ação ou valor de contexto');
+  });
+
+  test('ajuste P2: falha no armazenamento do artefato também é registrada como PREPARACAO_CONJUNTO_FALHOU, sem ser mascarada', () => {
+    const guardar = blocoDoPasso('Guardar release do backend');
+    const registro = blocoDoPasso(passos.at(-1));
+    assert.ok(job.indexOf('upload-artifact') < job.indexOf('if: failure()'), 'o registro vem depois do armazenamento');
+    assert.doesNotMatch(guardar, /continue-on-error|^\s*if:/m, 'o armazenamento falha de verdade quando falha');
+    assert.match(registro, /geração, a conferência ou o armazenamento do artefato/);
+    // Se a conferência terminou e só o armazenamento falhou, o resumo terá os dois status: o registro diz qual prevalece.
+    assert.match(registro, /PREPARACAO_CONJUNTO_CONFERIDA[^\n]*(não vale|prevalece)/);
+    assert.doesNotMatch(registro, /conferência (do backend )?NÃO foi conclu/, 'não nega uma conferência que pode ter terminado');
+  });
+
+  test('ajuste P2: o comentário do job não diz mais que a falha dele reprova a execução', () => {
+    const comentario = yaml.split(MARCA)[0].split('\n').reverse().filter((l, i, todas) => todas.slice(0, i + 1).every((x) => /^ {2}#/.test(x))).reverse().join('\n');
+    assert.ok(comentario.length > 0);
+    assert.doesNotMatch(comentario, /reprova a execução, mas/);
+    assert.match(comentario, /não reprova/);
+  });
+
+  test('o registro de falha não afirma sucesso da conferência nem publicação do backend, e diz o que a falha não afeta', () => {
+    const registro = blocoDoPasso(passos.at(-1));
+    assert.match(registro, /preparação do conjunto NÃO foi conclu[ií]da/);
+    assert.match(registro, /NÃO (foi )?publicado/);
+    assert.match(registro, /Portal e Painel/);
+    assert.doesNotMatch(registro, /conferid[oa] com sucesso|conjunto (íntegro|aprovado)|\bOK\b/i);
+  });
+});
+
+describe('job conjunto: demais invariantes', () => {
+
+  test('só ações já usadas no arquivo, fixadas pelos mesmos SHAs; valores do contexto nunca são interpolados em run', () => {
+    const original = yaml.split(MARCA)[0];
+    const usos = [...job.matchAll(/uses: (\S+)/g)].map((m) => m[1]);
+    assert.ok(usos.length >= 4);
+    for (const uso of usos) { assert.match(uso, /@[0-9a-f]{40}$/); assert.ok(original.includes(`uses: ${uso}`), `${uso} não era usada antes`); }
+    for (const bloco of job.split(/\n\s+run:/).slice(1)) assert.doesNotMatch(bloco.split(/\n\s+- name:/)[0], /\$\{\{/);
+  });
+
+  test('o nome do job e os comentários dizem que o backend é preparado, não publicado', () => {
+    assert.match(job, /^ {4}name: [^\n]*backend[^\n]*\(sem publicar\)$/m);
+    assert.doesNotMatch(yaml, /três componentes publicados|publica(r|ção) d?os três|backend publicado/i);
+  });
+});
+
+describe('controles de autorização e segurança não mudaram', () => {
+  test('CI inválido e commit fora da main continuam decididos pelos mesmos scripts, antes de qualquer pacote', () => {
+    const validar = yaml.match(/^ {2}validar:\n([\s\S]*?)^ {2}empacotar:/m)[1];
+    assert.match(validar, /node \.github\/scripts\/hml\/validar-automatico\.js --fatos/);
+    assert.match(validar, /node \.github\/scripts\/hml\/validar-commit\.js --fatos/);
+  });
+
+  test('a alteração da main durante a aprovação continua barrando a publicação, antes de qualquer credencial', () => {
+    const publicar = yaml.split('\n  publicar:\n')[1].split(MARCA)[0];
+    assert.ok(publicar.indexOf('validar-automatico.js --atualidade') > 0);
+    assert.ok(publicar.indexOf('validar-automatico.js --atualidade') < publicar.indexOf('uses: aws-actions/'));
+  });
+
+  test('os scripts de validação, o protocolo, o publicador e o workflow do backend seguem com os hashes da main', () => {
+    const esperado = {
+      'deploy/hml/cd/protocolo.js': '759676fa891812e40d7e3720d0dc12b8b0bd7d9204c6c1ea8a70d067e7eb9b58',
+      'deploy/hml/cd/publicar.js': '6b0f84c70827fa75c3caecb4ad70623a06ed149c66f2d19d3ce2fa53c4eec92a',
+      'deploy/hml/instalador/coordenacao.js': 'efea0982ed7a156433c0704bc4a73199e12baa5643a59fec7615a2ad6ae34995',
+      '.github/workflows/deploy-hml-backend.yml': 'f1f3afb14770541fa86dfb7f1797fdf15ab30ee257f87a8afabade93ed52b0e1',
+    };
+    for (const [rel, hash] of Object.entries(esperado)) assert.equal(sha(fs.readFileSync(path.join(RAIZ, rel))), hash, rel);
+  });
+
+  test('o backend continua bloqueado: nenhum provedor homologado e a política ainda responde COORDENACAO_NAO_HOMOLOGADA', () => {
+    const C = require(path.join(RAIZ, 'deploy/hml/instalador/coordenacao'));
+    assert.equal(C.provedorHomologado(async () => ({ situacao: 'LIVRE', origem: 'x', consultadoEm: new Date().toISOString() })), false);
+    assert.match(fs.readFileSync(path.join(RAIZ, 'deploy/hml/instalador/nucleo.js'), 'utf8'), /COORDENACAO_NAO_HOMOLOGADA/);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(RAIZ, 'deploy/hml/cd/agente.config.backend.exemplo.json'), 'utf8')).habilitado, false);
+  });
+});

@@ -339,3 +339,26 @@ Falsos positivos conservadores aceitos, que exigem reescrever a migration nova: 
 Limitações remanescentes do classificador: ele não interpreta o SQL nem consulta o banco, e o comportamento do PostgreSQL foi tomado das regras do lexer e da documentação, ou seja, não foi verificado em PostgreSQL real; assume `standard_conforming_strings` ligado (o padrão); não reconhece comandos que só falham dentro da transação e não estão na lista (formas de `CLUSTER`, `DISCARD ALL`, `ALTER DATABASE … SET TABLESPACE` e outros), que geram erro em tempo de execução e desfazem o lote inteiro (falha segura); um corpo de `DO` ou de função que tente controlar a transação passa pelo classificador e falha do mesmo modo; um cifrão logo depois de um número é tratado como parte de identificador, o que só ocorre em SQL sintaticamente inválido; e efeitos que um `ROLLBACK` não desfaz (sequences, `NOTIFY`, funções com efeito externo) não são avaliados. As 97 migrations atuais são classificadas `OK` (testado).
 
 **B4, pendente para a etapa de IAM.** A confiança OIDC do backend se limita ao `sub` do environment `homologacao-backend`; a restrição à `main` depende da política de branch desse environment, que ainda não existe. Avaliar na etapa de IAM uma condição em `job_workflow_ref` e `repository_id`, somente depois de comprovar a compatibilidade com a AWS em execução real. Nada disso foi aplicado nesta etapa.
+
+## Conjunto do mesmo commit: backend preparado, não publicado (Etapas 3B-3 e 3B-4)
+
+O `deploy-hml.yml` ganhou um quarto job, `conjunto`, depois de `publicar`. Os gatilhos, os jobs `validar`, `empacotar` e `publicar`, o environment `homologacao` e os controles de autorização não mudaram: o texto do arquivo anterior ao job novo é o mesmo de antes, byte a byte (provado em `workflow-unificado.test.js`).
+
+O job `conjunto` roda só para a cabeça atual da main (`atual == 'true'`); release retroativa, que é rollback do frontend, não prepara backend. Ele:
+
+1. faz o checkout exato do commit validado e confere que é esse commit, com a árvore limpa;
+2. gera a release do backend com `deploy/hml/empacotar-backend.js`, com o mesmo commit e o mesmo rótulo do frontend;
+3. baixa, pelo identificador, o artefato do frontend desta execução;
+4. roda `.github/scripts/hml/conferir-conjunto.js`, que valida cada release com o validador oficial do seu escopo e exige o mesmo commit, o mesmo rótulo, nenhuma retroativa e a lista de migrations do `release.json` do backend igual à do pacote;
+5. guarda a release do backend e o `conjunto.json` como artefato de 14 dias.
+
+O identificador do conjunto é o SHA-256 de `safework-hml-conjunto-v1`, commit, rótulo e os SHA-256 dos dois `release.json`, um por linha. O hash do frontend usado é o fixado pelo job `empacotar` antes da aprovação.
+
+Limites desta etapa:
+
+- **O backend não é publicado.** O job não tem environment, OIDC, variáveis de repositório nem credenciais, e não chama `publicar.js`; nenhum pedido chega a `hml-backend/`.
+- **O `conjunto.json` identifica releases preparadas, e só isso.** Traz `tipo: RELEASES_PREPARADAS`, `comprovaPublicacao: false` e `comprovaInstalacao: false`, válidos para os três componentes. Publicação e instalação só são comprovadas pelo recibo de cada publicação; o resumo da execução diz o mesmo.
+- **O frontend não depende do job novo, e o job novo não reprova a execução.** `publicar` continua com `needs: [validar, empacotar]`, sem alteração. O job `conjunto` é o único do arquivo com `continue-on-error: true`, no nível do job: se a preparação ou a conferência do backend falhar, o job aparece como falho, o log e o resumo trazem `PREPARACAO_CONJUNTO_FALHOU`, e a conclusão da execução continua sendo a de `validar`, `empacotar` e `publicar`. Nenhum passo, de nenhum job, tolera falha; uma falha no próprio `publicar` continua reprovando a execução. `PREPARACAO_CONJUNTO_CONFERIDA` no resumo significa só que a conferência terminou; o armazenamento do artefato é o passo seguinte e, se falhar, o resumo traz também `PREPARACAO_CONJUNTO_FALHOU`, que prevalece.
+- **A aprovação não espera o job `conjunto`.** Ele costuma terminar antes, mas quem aprova deve olhar o resultado dele; uma divergência entre as releases não impede a publicação de Portal e Painel.
+- **Migrations seguem no gate existente.** O CI não enxerga o banco. A compatibilidade com o estado observado continua decidida no servidor, pelo instalador, e nenhuma migration é executada pelo CD.
+- **Nada foi ativado.** O agente do backend, o provedor de coordenação e o instalador seguem como estavam, com `COORDENACAO_NAO_HOMOLOGADA`. A entrega do backend pelo fluxo unificado, a aprovação única dos três componentes e a confiança OIDC correspondente ficam para etapa própria, depois da 3B-2B.
