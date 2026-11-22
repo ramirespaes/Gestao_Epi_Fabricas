@@ -479,8 +479,10 @@ describe('provedor: isolado e não homologado', () => {
   test('não lê ambiente, não conhece senha e não repassa mensagem do guardião além dos códigos previstos', () => {
     assert.doesNotMatch(fonte, /process\.env|senha|PASSWORD/);
   });
-  test('ninguém mais no repositório usa o provedor nesta etapa', () => {
-    for (const rel of ['deploy/hml/cd/agente-backend.js', 'deploy/hml/cd/agente.js', 'deploy/hml/instalador/instalar-release.js', 'deploy/hml/instalador/coordenacao.js']) {
+  // 3B-2B-1: o agente do backend passa a usar o provedor. O instalador, a coordenação e o agente do frontend, não.
+  test('só o agente do backend usa o provedor; instalador, coordenação e agente do frontend continuam sem conhecê-lo', () => {
+    assert.match(fs.readFileSync(path.join(RAIZ, 'deploy/hml/cd/agente-backend.js'), 'utf8'), /require\('\.\/coordenacao-por-guardiao'\)/);
+    for (const rel of ['deploy/hml/cd/agente.js', 'deploy/hml/instalador/instalar-release.js', 'deploy/hml/instalador/coordenacao.js', 'deploy/hml/instalador/nucleo.js']) {
       assert.doesNotMatch(fs.readFileSync(path.join(RAIZ, rel), 'utf8'), /coordenacao-por-guardiao|guardiao-de-coordenacao/, rel);
     }
   });

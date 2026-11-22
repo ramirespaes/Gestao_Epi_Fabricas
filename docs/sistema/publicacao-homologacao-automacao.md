@@ -362,3 +362,22 @@ Limites desta etapa:
 - **A aprovação não espera o job `conjunto`.** Ele costuma terminar antes, mas quem aprova deve olhar o resultado dele; uma divergência entre as releases não impede a publicação de Portal e Painel.
 - **Migrations seguem no gate existente.** O CI não enxerga o banco. A compatibilidade com o estado observado continua decidida no servidor, pelo instalador, e nenhuma migration é executada pelo CD.
 - **Nada foi ativado.** O agente do backend, o provedor de coordenação e o instalador seguem como estavam, com `COORDENACAO_NAO_HOMOLOGADA`. A entrega do backend pelo fluxo unificado, a aprovação única dos três componentes e a confiança OIDC correspondente ficam para etapa própria, depois da 3B-2B.
+
+## Guardião de coordenação no agente do backend (Etapa 3B-2B-1)
+
+O agente do backend (`agente-backend.js`) passa a usar o provedor `coordenacao-por-guardiao.js`, que inicia o guardião `backend/scripts/guardiao-de-coordenacao.js` e mantém, numa sessão PostgreSQL dedicada, a exclusão `MIGRACAO` do D-ORF-6 (as quatro chaves de backup, restauração, limpeza e migração).
+
+Configuração (`agente.config.backend.exemplo.json`): seção `guardiao` com `comando` de exatamente dois itens (executável absoluto, fora da árvore de releases, e o roteiro relativo à release) e `credencial` com caminho absoluto, diferente da credencial da sonda. O cluster esperado é o `sistema` da sonda. Sem essa seção, a configuração é recusada com `GUARDIAO_NAO_CONFIGURADO`.
+
+Ciclo de uma operação:
+
+1. Na pré-checagem, o roteiro do guardião é vinculado à mesma baseline física da sonda (`.releases/<nome>/<rótulo>`), pelas mesmas regras; vínculo impossível recusa antes de baixar o pacote (`GUARDIAO_NAO_VINCULADO`).
+2. Depois de o pacote ser extraído e antes de `INSTALACAO_INICIADA`, o agente cria o provedor e adquire a exclusão. Outra operação do D-ORF-6 em curso recusa sem mutação com `COORDENACAO_OCUPADA`; qualquer aquisição sem garantia (indisponível, identidade divergente, resposta fora do formato, exceção) recusa com `COORDENACAO_NAO_ADQUIRIDA`.
+3. O instalador recebe como `consultarCoordenacao` somente o `consultar` desse provedor; nenhuma dependência extra o substitui. Ele continua consultando antes do preparo, antes da troca e antes do reinício. Se a coordenação deixa de ser confirmada antes do reinício, nada é reiniciado, o link volta e o resultado é `CRITICO`, com a trava preservada.
+4. O guardião é liberado antes do registro final, em qualquer resultado (sucesso, recusa ou `CRITICO`), e de novo no `finally` se algo lançar antes. O resultado da liberação fica no registro local (`liberacaoDaCoordenacao`), sempre com `comprovadaNoBanco: false`; o recibo publicado não muda de formato. Só `LIBERACAO_INFORMADA`, `PROCESSO_ENCERRADO` ou `SEM_PROCESSO`, com `processoEncerrado: true`, comprovam o encerramento do guardião. Sem essa comprovação (liberação `INDETERMINADA`, exceção em `liberar()` ou resposta fora do contrato), nenhum resultado seguro se mantém: sucesso ou recusa viram `CRITICO` com motivo `LIBERACAO_DA_COORDENACAO_INCERTA`, sem recibo de sucesso e com a trava local preservada; o resultado anterior fica no registro (`resultadoAntesDaLiberacao`). Um `CRITICO` anterior mantém o próprio motivo. A liberação é pedida uma única vez por operação.
+
+O que continua bloqueado:
+
+- O provedor do guardião **não é homologado**: em produção, o instalador recusa a troca do backend com `COORDENACAO_NAO_HOMOLOGADA`, mesmo com o guardião adquirido. A linha de comando do instalador segue bloqueada para o backend.
+- O agente do backend segue desabilitado no modelo de configuração.
+- Nenhum teste desta etapa usa PostgreSQL real: o guardião é exercitado como processo Node real, com o protocolo do canal de controle e sem banco. A prova em PostgreSQL 16 é a Etapa 3B-2B-2, e a homologação, a 3B-2B-3.
