@@ -34,6 +34,11 @@ const AQUISICAO_OK = Object.freeze({ ok: true, vidaMaximaMs: 45 * 60 * 1000 });
 const DEPLOY_HML = path.join(RAIZ_BACKEND, '..', 'deploy', 'hml');
 const COORDENACAO_DO_INSTALADOR = path.join(DEPLOY_HML, 'instalador', 'coordenacao.js');
 const sha256 = (b) => crypto.createHash('sha256').update(b).digest('hex');
+// Mesma ordem do sort() padrão para textos (unidades de código UTF-16), a do manifesto.
+const porUnidadeDeCodigo = (a, b) => {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
+};
 
 // Par (classid, objid) de um advisory lock de chave bigint, calculado aqui em JS: independente da fórmula SQL do guardião.
 const par = (chave) => { const v = BigInt.asUintN(64, BigInt(chave)); return `${v >> 32n}:${v & 0xffffffffn}`; };
@@ -189,7 +194,7 @@ async function ensaioDeInstalacao({ raiz, criarCoordenacao, aoReiniciar = async 
       fs.writeFileSync(path.join(dir, 'backend', rel), c);
       manifesto[rel] = sha256(c);
     }
-    const texto = `${Object.keys(manifesto).sort().map((rel) => `${manifesto[rel]}  ${rel}`).join('\n')}\n`;
+    const texto = `${Object.keys(manifesto).sort(porUnidadeDeCodigo).map((rel) => `${manifesto[rel]}  ${rel}`).join('\n')}\n`;
     fs.writeFileSync(path.join(dir, 'manifesto-backend.sha256'), texto);
     const meta = { commit: commitDe(n), rotulo: rot(n), atual: true, geradoEm: '2026-11-21T10:00:00.000Z', backend: { arquivos: Object.keys(manifesto).length, manifestoSha256: sha256(texto), lockfileSha256: sha256(lock), node: '>=22', migrations: [{ nome: '000_a.sql', sha256: sha256(migration) }], contratos: {} } };
     fs.writeFileSync(path.join(dir, 'release.json'), `${JSON.stringify(meta, null, 2)}\n`);

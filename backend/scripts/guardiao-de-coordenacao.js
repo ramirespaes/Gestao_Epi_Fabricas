@@ -66,6 +66,11 @@ function posseCompativel(cadeados, esperados) {
     && cadeados.every((chave) => typeof chave === 'string' && previstos.has(chave));
 }
 
+// Mesma ordem do sort() padrão para textos (unidades de código UTF-16): a impressão da sessão depende dela.
+const porUnidadeDeCodigo = (a, b) => {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
+};
 const FORMATO_PID = /^[1-9]\d{0,9}$/;
 const FORMATO_INICIO = /^\d{1,12}(\.\d{1,9})?$/;
 
@@ -109,7 +114,7 @@ function criarGuardiao({ conf, sistema, Client, adquirirExclusao, cadeadosDe, li
     const l = Array.isArray(rows) && rows.length === 1 ? rows[0] : null;
     const valida = l && FORMATO_PID.test(String(l.pid)) && FORMATO_INICIO.test(String(l.inicio)) && Array.isArray(l.chaves) && l.chaves.every((c) => typeof c === 'string');
     if (!valida) throw recusa('GUARDIAO_CONSULTA');
-    return { pid: String(l.pid), inicio: String(l.inicio), chaves: [...l.chaves].sort() };
+    return { pid: String(l.pid), inicio: String(l.inicio), chaves: [...l.chaves].sort(porUnidadeDeCodigo) };
   }
   const impressaoDe = (s) => crypto.createHash('sha256').update(`${sistema}|${s.pid}|${s.inicio}|${s.chaves.join(',')}`).digest('hex');
   const mesmaSessao = (s) => sessao !== null && s.pid === sessao.pid && s.inicio === sessao.inicio;
