@@ -4,6 +4,7 @@
 // com um PostgreSQL simulado dentro dele.
 const { describe, test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -18,7 +19,19 @@ const C = require(path.join(RAIZ, 'deploy/hml/instalador/coordenacao'));
 const SISTEMA = '7412345678901234567';
 const PRAZOS = { adquirirMs: 150, confirmarMs: 150, liberarMs: 150, encerrarMs: 150 };
 const PERGUNTA = /^confirmar ([0-9a-f]{32})\n$/;
-const LIBERACAO = (situacao, forcada = false) => ({ situacao, processoEncerrado: situacao !== 'INDETERMINADA', forcada, comprovadaNoBanco: false });
+// 3B-2B-3A: a liberação separa a soltura conferida dos quatro cadeados (informada pelo guardião, na mesma sessão) da
+// declaração de sessão encerrada, que nunca é comprovação no banco.
+const SEM_CADEADOS_CONFERIDOS = Object.freeze({ confirmada: false, liberados: null, restantes: null });
+const CADEADOS_SOLTOS = Object.freeze({ confirmada: true, liberados: 4, restantes: 0 });
+const LIBERACAO = (situacao, forcada = false, cadeadosLiberados = SEM_CADEADOS_CONFERIDOS, sessaoEncerradaDeclarada = false) => ({
+  situacao, processoEncerrado: situacao !== 'INDETERMINADA', forcada, comprovadaNoBanco: false, cadeadosLiberados, sessaoEncerradaDeclarada,
+});
+const VIDA_MAXIMA_MS = 45 * 60 * 1000;
+const IMPRESSAO = 'a1'.repeat(32);
+const ADQ = Object.freeze({ evento: 'ADQUIRIDA', cadeados: 4, impressao: IMPRESSAO, vidaMaximaMs: VIDA_MAXIMA_MS });
+const AQUISICAO_OK = Object.freeze({ ok: true, vidaMaximaMs: VIDA_MAXIMA_MS });
+const confirmada = (id, comandos = 1, extra = {}) => ({ evento: 'CONFIRMADA', id, impressao: IMPRESSAO, cadeados: 4, comandos, ...extra });
+const LIBERADA = Object.freeze({ evento: 'LIBERADA', impressao: IMPRESSAO, liberados: 4, restantes: 0, sessaoEncerrada: true });
 const BASE = { comando: [process.execPath, '/baseline/scripts/guardiao-de-coordenacao.js'], dir: '/baseline', credencial: '/etc/safework/credencial.json', sistema: SISTEMA, prazos: PRAZOS };
 
 function processoFalso() {
@@ -49,15 +62,17 @@ const criar = (p, extra = {}) => M.criarCoordenacaoPorGuardiao({ ...BASE, inicia
 async function adquirida(p, extra) {
   const coord = criar(p, extra);
   const espera = coord.adquirir();
-  p.emitir({ evento: 'ADQUIRIDA', cadeados: 4 });
-  assert.deepEqual(await espera, { ok: true });
+  p.emitir(ADQ);
+  assert.deepEqual(await espera, AQUISICAO_OK);
   return coord;
 }
-const respondendo = (p) => {
+// Guardião simulado que responde como o real: cada confirmação conta um comando a mais na sessão.
+const respondendo = (p, liberada = LIBERADA) => {
+  let comandos = 0;
   p.aoEscrever = (t) => {
     const m = PERGUNTA.exec(t);
-    if (m) setImmediate(() => p.emitir({ evento: 'CONFIRMADA', id: m[1] }));
-    if (t === 'liberar\n') setImmediate(() => { p.emitir({ evento: 'LIBERADA' }); p.sair(0); });
+    if (m) { comandos += 1; const n = comandos; setImmediate(() => p.emitir(confirmada(m[1], n))); }
+    if (t === 'liberar\n') setImmediate(() => { p.emitir(liberada); p.sair(0); });
   };
 };
 
@@ -70,8 +85,8 @@ describe('provedor: aquisição', () => {
     assert.equal(p.iniciado, null, 'consultar não inicia nada');
     const espera = coord.adquirir();
     assert.deepEqual(p.iniciado, { comando: process.execPath, args: ['/baseline/scripts/guardiao-de-coordenacao.js', '--credencial', '/etc/safework/credencial.json', '--sistema', SISTEMA], opcoes: { cwd: '/baseline' } });
-    p.emitir({ evento: 'ADQUIRIDA', cadeados: 4 });
-    assert.deepEqual(await espera, { ok: true });
+    p.emitir(ADQ);
+    assert.deepEqual(await espera, AQUISICAO_OK);
   });
 
   for (const motivo of ['EM_USO', 'MIGRACAO_EM_CURSO']) {
@@ -121,12 +136,12 @@ describe('provedor: aquisição', () => {
     }
   });
 
-  test('aquisição sem cadeados ou com contagem inválida nunca é aceita', async () => {
-    for (const cadeados of [0, undefined, null, '4', -1, 1.5, [], true]) {
+  test('aquisição sem cadeados ou com contagem diferente de exatamente quatro nunca é aceita', async () => {
+    for (const cadeados of [0, undefined, null, '4', -1, 1.5, [], true, 1, 3, 5]) {
       const p = processoFalso();
       const coord = criar(p);
       const espera = coord.adquirir();
-      p.emitir({ evento: 'ADQUIRIDA', cadeados });
+      p.emitir({ ...ADQ, cadeados });
       assert.deepEqual(await espera, { ok: false, motivo: 'GUARDIAO_INDISPONIVEL' }, JSON.stringify(cadeados));
       assert.equal(p.matou, 1);
       assert.equal((await coord.consultar()).situacao, 'DESCONHECIDO');
@@ -157,7 +172,7 @@ describe('provedor: LIVRE só com confirmação atual', () => {
     await new Promise((r) => setImmediate(r));
     assert.equal(p.escritos.length, 1);
     assert.match(p.escritos[0], PERGUNTA);
-    p.emitir({ evento: 'CONFIRMADA', id: p.perguntas()[0] });
+    p.emitir(confirmada(p.perguntas()[0], 1));
     const estado = await espera;
     assert.equal(estado.situacao, 'LIVRE');
     assert.equal(estado.origem, 'guardiao-postgresql');
@@ -185,17 +200,18 @@ describe('provedor: LIVRE só com confirmação atual', () => {
     assert.equal(new Set(p.perguntas()).size, 5);
   });
 
+  // Cada resposta é uma confirmação completa e válida em tudo, menos no identificador.
   for (const [nome, resposta] of [
-    ['sem identificador', () => ({ evento: 'CONFIRMADA' })],
-    ['identificador de formato inválido', () => ({ evento: 'CONFIRMADA', id: 'abc' })],
-    ['identificador que não é texto', () => ({ evento: 'CONFIRMADA', id: 7 })],
-    ['identificador desconhecido (fora de ordem)', () => ({ evento: 'CONFIRMADA', id: 'f'.repeat(32) })],
-    ['identificador da pergunta em maiúsculas', (id) => ({ evento: 'CONFIRMADA', id: id.toUpperCase().replace(/^\d*$/, 'A'.repeat(32)) })],
+    ['sem identificador', () => ({ id: undefined })],
+    ['identificador de formato inválido', () => ({ id: 'abc' })],
+    ['identificador que não é texto', () => ({ id: 7 })],
+    ['identificador desconhecido (fora de ordem)', () => ({ id: 'f'.repeat(32) })],
+    ['identificador da pergunta em maiúsculas', (id) => ({ id: id.toUpperCase().replace(/^\d*$/, 'A'.repeat(32)) })],
   ]) {
     test(`CONFIRMADA com ${nome}: DESCONHECIDO e guardião encerrado`, async () => {
       const p = processoFalso();
       const coord = await adquirida(p);
-      p.aoEscrever = (t) => { const m = PERGUNTA.exec(t); if (m) setImmediate(() => p.emitir(resposta(m[1]))); };
+      p.aoEscrever = (t) => { const m = PERGUNTA.exec(t); if (m) setImmediate(() => p.emitir(confirmada(m[1], 1, resposta(m[1])))); };
       assert.equal((await coord.consultar()).situacao, 'DESCONHECIDO');
       assert.equal(p.matou, 1);
       assert.equal((await coord.consultar()).situacao, 'DESCONHECIDO');
@@ -207,7 +223,7 @@ describe('provedor: LIVRE só com confirmação atual', () => {
     const p = processoFalso();
     const coord = await adquirida(p);
     const ids = [];
-    p.aoEscrever = (t) => { const m = PERGUNTA.exec(t); if (m) { ids.push(m[1]); setImmediate(() => p.emitir({ evento: 'CONFIRMADA', id: ids[0] })); } };
+    p.aoEscrever = (t) => { const m = PERGUNTA.exec(t); if (m) { ids.push(m[1]); const n = ids.length; setImmediate(() => p.emitir(confirmada(ids[0], n))); } };
     assert.equal((await coord.consultar()).situacao, 'LIVRE');
     assert.equal((await coord.consultar()).situacao, 'DESCONHECIDO', 'a segunda pergunta recebeu o identificador da primeira');
     assert.equal(ids.length, 2);
@@ -220,7 +236,7 @@ describe('provedor: LIVRE só com confirmação atual', () => {
     respondendo(p);
     const coord = await adquirida(p);
     assert.equal((await coord.consultar()).situacao, 'LIVRE');
-    p.emitir({ evento: 'CONFIRMADA', id: p.perguntas()[0] });
+    p.emitir(confirmada(p.perguntas()[0], 1));
     assert.equal(p.matou, 1);
     assert.equal((await coord.consultar()).situacao, 'DESCONHECIDO');
     assert.equal(p.perguntas().length, 1);
@@ -229,7 +245,7 @@ describe('provedor: LIVRE só com confirmação atual', () => {
   test('resposta em duplicidade no mesmo instante: nem a própria consulta é dada como LIVRE', async () => {
     const p = processoFalso();
     const coord = await adquirida(p);
-    p.aoEscrever = (t) => { const m = PERGUNTA.exec(t); if (m) setImmediate(() => { p.emitir({ evento: 'CONFIRMADA', id: m[1] }); p.emitir({ evento: 'CONFIRMADA', id: m[1] }); }); };
+    p.aoEscrever = (t) => { const m = PERGUNTA.exec(t); if (m) setImmediate(() => { p.emitir(confirmada(m[1], 1)); p.emitir(confirmada(m[1], 1)); }); };
     assert.equal((await coord.consultar()).situacao, 'DESCONHECIDO');
     assert.equal(p.matou, 1);
     assert.equal((await coord.consultar()).situacao, 'DESCONHECIDO');
@@ -288,7 +304,7 @@ describe('provedor: liberação', () => {
     const coord = await adquirida(p);
     assert.equal((await coord.consultar()).situacao, 'LIVRE');
     const [a, b] = await Promise.all([coord.liberar(), coord.liberar()]);
-    assert.deepEqual(a, LIBERACAO('LIBERACAO_INFORMADA'));
+    assert.deepEqual(a, LIBERACAO('LIBERACAO_INFORMADA', false, CADEADOS_SOLTOS, true));
     assert.deepEqual(b, a);
     assert.deepEqual(await coord.liberar(), a);
     assert.equal(p.escritos.filter((t) => t === 'liberar\n').length, 1);
@@ -384,8 +400,8 @@ describe('provedor: só o evento close comprova o encerramento de um processo in
   async function adquiridaCom(f, extra) {
     const coord = comFilho(f, extra);
     const espera = coord.adquirir();
-    f.stdout.write('{"evento":"ADQUIRIDA","cadeados":4}\n');
-    assert.deepEqual(await espera, { ok: true });
+    f.stdout.write(`${JSON.stringify(ADQ)}\n`);
+    assert.deepEqual(await espera, AQUISICAO_OK);
     return coord;
   }
 
@@ -531,6 +547,7 @@ class Client {
     if (m) { const dono = locks.get(m[1]); if (dono !== undefined && dono !== this.id) return { rows: [{ tomado: false }] }; locks.set(m[1], this.id); gravar(); return { rows: [{ tomado: true }] }; }
     m = /pg_advisory_unlock\\((\\d+)\\)/.exec(sql);
     if (m) { const meu = locks.get(m[1]) === this.id; if (meu) locks.delete(m[1]); gravar(); return { rows: [{ liberado: meu }] }; }
+    if (/pg_stat_activity/.test(sql) && /FROM pg_locks/.test(sql)) return { rows: [{ pid: String(4000 + Number(this.id.slice(7))), inicio: '1763740000.' + this.id.slice(7), chaves: [...locks].filter(([, d]) => d === this.id).map(([chave]) => chave).sort() }] };
     if (/FROM pg_locks/.test(sql)) return { rows: [...locks].filter(([, d]) => d === this.id).map(([chave]) => ({ chave })) };
     throw new Error('consulta inesperada');
   }
@@ -552,7 +569,7 @@ G.comoComando({ rodar: () => G.executar({ Client, adquirirExclusao: D.adquirirEx
 
   test('guardião real cujo encerramento do cliente nunca responde: termina sozinho no prazo, sem ser derrubado e sem informar liberação', async () => {
     const { coord, lerRegistro } = guardiaoReal({ travarEncerramento: true, limites: { encerramentoMs: 300 }, prazos: { liberarMs: 6000 } });
-    assert.deepEqual(await coord.adquirir(), { ok: true });
+    assert.deepEqual(await coord.adquirir(), AQUISICAO_OK);
     assert.equal((await coord.consultar()).situacao, 'LIVRE');
     assert.deepEqual(await coord.liberar(), LIBERACAO('PROCESSO_ENCERRADO'), 'saiu por conta própria (não forçado) e sem aviso de liberação');
     assert.equal(lerRegistro().destruido, true);
@@ -560,7 +577,7 @@ G.comoComando({ rodar: () => G.executar({ Client, adquirirExclusao: D.adquirirEx
 
   test('guardião real que perde o canal de controle com o encerramento preso não fica vivo', async () => {
     const { coord, alca } = guardiaoReal({ travarEncerramento: true, limites: { encerramentoMs: 300 } });
-    assert.deepEqual(await coord.adquirir(), { ok: true });
+    assert.deepEqual(await coord.adquirir(), AQUISICAO_OK);
     const saiu = new Promise((r) => alca.processo.aoSair(() => r(true)));
     alca.processo.fecharEntrada();
     let relogio;
@@ -572,11 +589,11 @@ G.comoComando({ rodar: () => G.executar({ Client, adquirirExclusao: D.adquirirEx
 
   test('adquire, confirma mais de uma vez e libera com o guardião real: os quatro cadeados são tomados e soltos', async () => {
     const { coord, lerRegistro } = guardiaoReal();
-    assert.deepEqual(await coord.adquirir(), { ok: true });
+    assert.deepEqual(await coord.adquirir(), AQUISICAO_OK);
     assert.equal(lerRegistro().locks.length, 4);
     assert.equal((await coord.consultar()).situacao, 'LIVRE');
     assert.equal((await coord.consultar()).situacao, 'LIVRE');
-    assert.deepEqual(await coord.liberar(), LIBERACAO('LIBERACAO_INFORMADA'));
+    assert.deepEqual(await coord.liberar(), LIBERACAO('LIBERACAO_INFORMADA', false, CADEADOS_SOLTOS, true));
     assert.deepEqual(lerRegistro().locks, []);
     assert.equal((await coord.consultar()).situacao, 'DESCONHECIDO');
     const reg = lerRegistro();
@@ -589,7 +606,7 @@ G.comoComando({ rodar: () => G.executar({ Client, adquirirExclusao: D.adquirirEx
     for (const [k, v] of Object.entries(SINTETICAS)) { antes[k] = process.env[k]; process.env[k] = v; }
     try {
       const { coord, lerRegistro } = guardiaoReal();
-      assert.deepEqual(await coord.adquirir(), { ok: true });
+      assert.deepEqual(await coord.adquirir(), AQUISICAO_OK);
       assert.equal((await coord.consultar()).situacao, 'LIVRE');
       const reg = lerRegistro();
       for (const k of Object.keys(SINTETICAS)) assert.equal(reg.ambiente.includes(k), false, `${k} foi herdada`);
@@ -598,7 +615,7 @@ G.comoComando({ rodar: () => G.executar({ Client, adquirirExclusao: D.adquirirEx
       // O macOS acrescenta por conta própria uma variável de codificação a todo processo; nada além dela é admitido.
       assert.deepEqual(reg.ambiente.filter((k) => k !== '__CF_USER_TEXT_ENCODING'), []);
       assert.deepEqual(reg.argv.filter((a) => /sintetic|AKIASINTETICA/i.test(a)), []);
-      assert.deepEqual(await coord.liberar(), LIBERACAO('LIBERACAO_INFORMADA'));
+      assert.deepEqual(await coord.liberar(), LIBERACAO('LIBERACAO_INFORMADA', false, CADEADOS_SOLTOS, true));
     } finally {
       for (const k of Object.keys(SINTETICAS)) { if (antes[k] === undefined) delete process.env[k]; else process.env[k] = antes[k]; }
     }
@@ -606,11 +623,11 @@ G.comoComando({ rodar: () => G.executar({ Client, adquirirExclusao: D.adquirirEx
 
   test('processo real que ignora o pedido de liberação: é derrubado e só então dado como encerrado, com encerramento forçado', async () => {
     const surdo = path.join(dir, 'surdo.js');
-    fs.writeFileSync(surdo, "'use strict';\nprocess.stdin.resume();\nprocess.stdin.on('end', () => {});\nsetInterval(() => {}, 1000);\nprocess.stdout.write('{\"evento\":\"ADQUIRIDA\",\"cadeados\":4}\\n');\n");
+    fs.writeFileSync(surdo, `'use strict';\nprocess.stdin.resume();\nprocess.stdin.on('end', () => {});\nsetInterval(() => {}, 1000);\nprocess.stdout.write(${JSON.stringify(`${JSON.stringify(ADQ)}\n`)});\n`);
     const alca = {};
     const iniciarProcesso = (...a) => { alca.processo = M.iniciarProcessoReal(...a); iniciados.push(alca.processo); return alca.processo; };
     const coord = M.criarCoordenacaoPorGuardiao({ comando: [process.execPath, surdo], dir, credencial: path.join(dir, 'c.json'), sistema: SISTEMA, prazos: { ...REAIS, liberarMs: 300 }, iniciarProcesso });
-    assert.deepEqual(await coord.adquirir(), { ok: true });
+    assert.deepEqual(await coord.adquirir(), AQUISICAO_OK);
     assert.deepEqual(await coord.liberar(), LIBERACAO('PROCESSO_ENCERRADO', true));
     assert.equal(alca.processo.matar(), false, 'sinalizar um processo já encerrado informa que não entregou');
   });
@@ -633,11 +650,230 @@ G.comoComando({ rodar: () => G.executar({ Client, adquirirExclusao: D.adquirirEx
 
   test('guardião real derrubado no meio: a consulta seguinte é DESCONHECIDO', async () => {
     const { coord, alca } = guardiaoReal();
-    assert.deepEqual(await coord.adquirir(), { ok: true });
+    assert.deepEqual(await coord.adquirir(), AQUISICAO_OK);
     assert.equal((await coord.consultar()).situacao, 'LIVRE');
     alca.processo.matar();
     await new Promise((r) => setTimeout(r, 200));
     assert.equal((await coord.consultar()).situacao, 'DESCONHECIDO');
     assert.deepEqual(await coord.liberar(), LIBERACAO('PROCESSO_ENCERRADO'));
+  });
+});
+
+// 3B-2B-3A: reconhecimento só da instância real (iniciador do próprio módulo), adquirida, ligada à baseline e ao hash
+// do roteiro conferido na hora de iniciar. Nada disso homologa: o instalador continua recusando.
+describe('3B-2B-3A: reconhecimento só da instância real, adquirida, ligada à baseline e ao roteiro conferido', () => {
+  let dir;
+  beforeEach(() => { dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'coord-3a-')); });
+  afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
+  const BASELINE = Object.freeze({ rotulo: 'hml-20261121T120000-ccccccc', commit: 'c'.repeat(40) });
+  const sha256 = (b) => crypto.createHash('sha256').update(b).digest('hex');
+  // Roteiro que fala o protocolo do guardião, executado por um Node de verdade, sem banco.
+  function roteiroSimulado() {
+    const roteiro = path.join(dir, 'guardiao-simulado.js');
+    fs.writeFileSync(roteiro, `'use strict';
+const readline = require('node:readline');
+let comandos = 0;
+const emitir = (m) => process.stdout.write(JSON.stringify(m) + '\\n');
+emitir(${JSON.stringify(ADQ)});
+const linhas = readline.createInterface({ input: process.stdin });
+linhas.on('line', (l) => {
+  const m = /^confirmar ([0-9a-f]{32})$/.exec(l);
+  if (m) { comandos += 1; emitir({ evento: 'CONFIRMADA', id: m[1], impressao: ${JSON.stringify(IMPRESSAO)}, cadeados: 4, comandos }); return; }
+  if (l === 'liberar') { emitir(${JSON.stringify(LIBERADA)}); process.exit(0); }
+});
+linhas.on('close', () => process.exit(0));
+`);
+    return roteiro;
+  }
+  const esperado = (roteiro) => ({ baseline: BASELINE, sha256DoRoteiro: sha256(fs.readFileSync(roteiro)) });
+  const real = (roteiro, extra = {}) => M.criarCoordenacaoPorGuardiao({
+    comando: [process.execPath, roteiro], dir, credencial: path.join(dir, 'c.json'), sistema: SISTEMA,
+    prazos: { adquirirMs: 5000, confirmarMs: 5000, liberarMs: 5000, encerrarMs: 5000 }, ...esperado(roteiro), ...extra,
+  });
+
+  test('função qualquer que responde LIVRE nunca é reconhecida (CA-01)', () => {
+    const qualquer = async () => ({ situacao: 'LIVRE', origem: 'x', consultadoEm: new Date().toISOString() });
+    assert.equal(M.garantiaVigente(qualquer, { baseline: BASELINE, sha256DoRoteiro: 'a'.repeat(64) }), false);
+    assert.equal(M.garantiaVigente(undefined, { baseline: BASELINE, sha256DoRoteiro: 'a'.repeat(64) }), false);
+  });
+
+  test('fábrica com iniciarProcesso injetado: adquire e responde LIVRE, mas nunca é reconhecida (CA-01)', async () => {
+    const roteiro = roteiroSimulado();
+    const p = processoFalso();
+    respondendo(p);
+    const coord = await adquirida(p, { dir, comando: [process.execPath, roteiro], ...esperado(roteiro) });
+    assert.equal((await coord.consultar()).situacao, 'LIVRE');
+    assert.equal(coord.garantiaVigente(), true, 'a garantia local existe');
+    assert.equal(M.garantiaVigente(coord.consultar, esperado(roteiro)), false, 'mas a instância não é real');
+    assert.equal(coord.descrever().instanciaReal, false);
+    await coord.liberar();
+  });
+
+  test('instância real: reconhecida só depois de adquirir, com a baseline e o hash do roteiro esperados, e nunca homologada', async () => {
+    const roteiro = roteiroSimulado();
+    const coord = real(roteiro);
+    try {
+      assert.equal(M.garantiaVigente(coord.consultar, esperado(roteiro)), false, 'antes de adquirir');
+      assert.deepEqual(await coord.adquirir(), AQUISICAO_OK);
+      assert.equal(M.garantiaVigente(coord.consultar, esperado(roteiro)), true);
+      assert.equal((await coord.consultar()).situacao, 'LIVRE');
+      assert.equal(M.garantiaVigente(coord.consultar, { ...esperado(roteiro), baseline: { ...BASELINE, commit: 'd'.repeat(40) } }), false, 'baseline diferente');
+      assert.equal(M.garantiaVigente(coord.consultar, { ...esperado(roteiro), sha256DoRoteiro: 'e'.repeat(64) }), false, 'roteiro diferente');
+      assert.equal(M.garantiaVigente(coord.consultar, {}), false, 'sem expectativa não há reconhecimento');
+      assert.equal(C.provedorHomologado(coord.consultar), false, 'COORDENACAO_NAO_HOMOLOGADA continua');
+      const d = coord.descrever();
+      assert.deepEqual([d.instanciaReal, d.impressao, d.vidaMaximaMs, d.confirmacoes, d.perda], [true, IMPRESSAO, VIDA_MAXIMA_MS, 1, null]);
+    } finally {
+      assert.deepEqual(await coord.liberar(), LIBERACAO('LIBERACAO_INFORMADA', false, CADEADOS_SOLTOS, true));
+    }
+    assert.equal(M.garantiaVigente(coord.consultar, esperado(roteiro)), false, 'depois da liberação');
+    assert.equal(coord.garantiaVigente(), false);
+  });
+
+  test('roteiro com hash diferente do esperado (injetado ou real): nada é iniciado e a aquisição é recusada', async () => {
+    const roteiro = roteiroSimulado();
+    let iniciou = 0;
+    const injetado = M.criarCoordenacaoPorGuardiao({ ...BASE, comando: [process.execPath, roteiro], dir, baseline: BASELINE, sha256DoRoteiro: 'e'.repeat(64), iniciarProcesso: () => { iniciou += 1; throw new Error('não deveria iniciar'); } });
+    assert.deepEqual(await injetado.adquirir(), { ok: false, motivo: 'ROTEIRO_DIVERGENTE' });
+    assert.equal(iniciou, 0);
+    assert.equal(injetado.descrever().perda.motivo, 'ROTEIRO_DIVERGENTE');
+    assert.equal((await injetado.consultar()).situacao, 'DESCONHECIDO');
+    const coord = real(roteiro);
+    fs.appendFileSync(roteiro, '// alterado depois do vínculo\n');
+    assert.deepEqual(await coord.adquirir(), { ok: false, motivo: 'ROTEIRO_DIVERGENTE' });
+    assert.deepEqual(await coord.liberar(), LIBERACAO('SEM_PROCESSO'), 'nenhum processo chegou a existir');
+  });
+
+  test('baseline ou hash do roteiro fora do formato são recusados na criação', () => {
+    for (const ruim of [{ baseline: { rotulo: '', commit: 'c'.repeat(40) } }, { baseline: { rotulo: 'x', commit: 'abc' } }, { baseline: 'x' }, { sha256DoRoteiro: 'abc' }, { sha256DoRoteiro: 'A'.repeat(64) }]) {
+      assert.throws(() => M.criarCoordenacaoPorGuardiao({ ...BASE, iniciarProcesso: processoFalso().iniciar, ...ruim }), (e) => e.codigo === 'COORDENACAO_CONFIG', JSON.stringify(ruim));
+    }
+  });
+});
+
+describe('3B-2B-3A: mesma sessão, contador complementar e primeira perda registrada', () => {
+  test('aquisição sem impressão válida ou sem vida máxima válida nunca é aceita', async () => {
+    for (const ajuste of [{ impressao: undefined }, { impressao: 'abc' }, { impressao: 'A'.repeat(64) }, { vidaMaximaMs: undefined }, { vidaMaximaMs: 0 }, { vidaMaximaMs: 1.5 }, { vidaMaximaMs: '2700000' }]) {
+      const p = processoFalso();
+      const coord = criar(p);
+      const espera = coord.adquirir();
+      p.emitir({ ...ADQ, ...ajuste });
+      assert.deepEqual(await espera, { ok: false, motivo: 'GUARDIAO_INDISPONIVEL' }, JSON.stringify(ajuste));
+      assert.equal(coord.garantiaVigente(), false);
+    }
+  });
+
+  for (const [nome, ajuste, motivo] of [
+    ['impressão diferente da aquisição', { impressao: 'b2'.repeat(32) }, 'IMPRESSAO_DIVERGENTE'],
+    ['cinco cadeados', { cadeados: 5 }, 'CADEADOS_DIVERGENTES'],
+    ['três cadeados', { cadeados: 3 }, 'CADEADOS_DIVERGENTES'],
+    ['contador de comandos maior que o de perguntas', { comandos: 2 }, 'CONTADOR_DIVERGENTE'],
+    ['contador de comandos ausente', { comandos: undefined }, 'CONTADOR_DIVERGENTE'],
+  ]) {
+    test(`CONFIRMADA com ${nome}: DESCONHECIDO, garantia perdida e motivo registrado (CA-02)`, async () => {
+      const p = processoFalso();
+      const coord = await adquirida(p);
+      p.aoEscrever = (t) => { const m = PERGUNTA.exec(t); if (m) setImmediate(() => p.emitir(confirmada(m[1], 1, ajuste))); };
+      assert.equal((await coord.consultar()).situacao, 'DESCONHECIDO');
+      assert.equal(coord.garantiaVigente(), false);
+      assert.equal(coord.descrever().perda.motivo, motivo);
+      assert.equal(p.matou, 1);
+    });
+  }
+
+  test('contador certo não salva uma confirmação de outra sessão: ele é só complementar', async () => {
+    const p = processoFalso();
+    const coord = await adquirida(p);
+    let n = 0;
+    p.aoEscrever = (t) => { const m = PERGUNTA.exec(t); if (m) { n += 1; const k = n; setImmediate(() => p.emitir(confirmada(m[1], k, k === 2 ? { impressao: 'b2'.repeat(32) } : {}))); } };
+    assert.equal((await coord.consultar()).situacao, 'LIVRE');
+    assert.equal((await coord.consultar()).situacao, 'DESCONHECIDO', 'contador 2 correto, impressão de outra sessão');
+    assert.equal(coord.descrever().perda.motivo, 'IMPRESSAO_DIVERGENTE');
+  });
+
+  test('comando a mais na sessão entre duas confirmações: perda por contador', async () => {
+    const p = processoFalso();
+    const coord = await adquirida(p);
+    let n = 0;
+    p.aoEscrever = (t) => { const m = PERGUNTA.exec(t); if (m) { n += 1; const k = n === 1 ? 1 : 3; setImmediate(() => p.emitir(confirmada(m[1], k))); } };
+    assert.equal((await coord.consultar()).situacao, 'LIVRE');
+    assert.equal((await coord.consultar()).situacao, 'DESCONHECIDO');
+    assert.equal(coord.descrever().perda.motivo, 'CONTADOR_DIVERGENTE');
+  });
+
+  test('confirmar(): uma pergunta nova por chamada, verdadeiro só com a posse confirmada, e falso para sempre depois da perda', async () => {
+    const p = processoFalso();
+    respondendo(p);
+    const coord = await adquirida(p);
+    assert.equal(await coord.confirmar(), true);
+    assert.equal(await coord.confirmar(), true);
+    assert.equal(p.perguntas().length, 2);
+    assert.equal(coord.descrever().confirmacoes, 2);
+    p.emitir({ evento: 'PERDIDA' });
+    assert.equal(await coord.confirmar(), false);
+    assert.equal(p.perguntas().length, 2, 'depois da perda não pergunta de novo');
+    const nova = criar(processoFalso());
+    assert.equal(await nova.confirmar(), false, 'sem aquisição');
+  });
+
+  test('a garantia local cai no instante do aviso, e a primeira causa da perda é a que fica', async () => {
+    const p = processoFalso();
+    const coord = await adquirida(p);
+    assert.equal(coord.garantiaVigente(), true);
+    p.emitir({ evento: 'EXPIRADA' });
+    assert.equal(coord.garantiaVigente(), false, 'sem esperar consulta');
+    p.sair(6);
+    const { perda } = coord.descrever();
+    assert.equal(perda.motivo, 'EXPIRADA');
+    assert.ok(!Number.isNaN(Date.parse(perda.em)));
+  });
+
+  test('saída do processo com a garantia ativa e falta de resposta no prazo têm motivos próprios', async () => {
+    const morto = processoFalso();
+    const c1 = await adquirida(morto);
+    morto.sair(137);
+    assert.equal(c1.descrever().perda.motivo, 'PROCESSO_ENCERRADO');
+    const mudo = processoFalso();
+    const c2 = await adquirida(mudo);
+    assert.equal((await c2.consultar()).situacao, 'DESCONHECIDO');
+    assert.equal(c2.descrever().perda.motivo, 'SEM_CONFIRMACAO');
+  });
+});
+
+describe('3B-2B-3A: soltura conferida dos cadeados, separada do encerramento da sessão', () => {
+  for (const [nome, liberada] of [
+    ['impressão diferente da aquisição', { ...LIBERADA, impressao: 'b2'.repeat(32) }],
+    ['sem impressão (posse não conferida antes de soltar)', { ...LIBERADA, impressao: null }],
+    ['só três soltos', { ...LIBERADA, liberados: 3 }],
+    ['um cadeado restante', { ...LIBERADA, restantes: 1 }],
+    ['restantes desconhecidos', { ...LIBERADA, restantes: null }],
+  ]) {
+    test(`LIBERADA com ${nome}: liberação informada, mas os cadeados não são dados como soltos`, async () => {
+      const p = processoFalso();
+      respondendo(p, liberada);
+      const coord = await adquirida(p);
+      const r = await coord.liberar();
+      assert.equal(r.situacao, 'LIBERACAO_INFORMADA');
+      assert.equal(r.cadeadosLiberados.confirmada, false);
+      assert.equal(r.comprovadaNoBanco, false);
+    });
+  }
+
+  test('perda antes do pedido de liberação: os cadeados nunca contam como soltos em continuidade', async () => {
+    const p = processoFalso();
+    respondendo(p);
+    const coord = await adquirida(p);
+    p.emitir({ evento: 'PERDIDA' });
+    const r = await coord.liberar();
+    assert.notEqual(r.situacao, 'LIBERACAO_INFORMADA');
+    assert.equal(r.cadeadosLiberados.confirmada, false);
+  });
+
+  test('sessão encerrada é só declaração do guardião: nunca vira comprovação no banco', async () => {
+    const p = processoFalso();
+    respondendo(p);
+    const coord = await adquirida(p);
+    const r = await coord.liberar();
+    assert.deepEqual([r.sessaoEncerradaDeclarada, r.comprovadaNoBanco, r.cadeadosLiberados.confirmada], [true, false, true]);
   });
 });

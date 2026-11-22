@@ -6,6 +6,10 @@
 // iniciada a instalação vira estado CRITICO com a trava preservada, para diagnóstico humano.
 // Etapa 3B-2B-1: antes de instalar, o agente adquire a exclusão do D-ORF-6 pelo guardião da baseline e entrega ao
 // instalador o consultar desse provedor, que o instalador continua recusando enquanto ele não for homologado.
+// Etapa 3B-2B-3A: a garantia tem de valer do começo ao fim. Cada ação entregue ao instalador (dependências, reinício,
+// identificação do processo, saúde) só começa com a garantia local do provedor, uma confirmação nova e tempo restante
+// para terminar; as ações com processo têm prazo efetivo (executor-com-prazo). Depois da última ação vem a confirmação
+// final; só então o guardião é liberado. SUCESSO exige ainda a soltura conferida dos quatro cadeados.
 const fs = require('node:fs');
 const path = require('node:path');
 const N = require('../instalador/nucleo');
@@ -14,6 +18,7 @@ const { criarAncora } = require('../instalador/ancora');
 const { criarS3 } = require('./s3');
 const P = require('./protocolo');
 const { criarCoordenacaoPorGuardiao } = require('./coordenacao-por-guardiao');
+const { executarComPrazo } = require('./executor-com-prazo');
 
 const ESCOPO = 'backend';
 const PREFIXO = 'hml-backend';
@@ -27,7 +32,7 @@ const igual = (a, b) => a.rotulo === b.rotulo && a.commit === b.commit;
 // COORDENACAO_NAO_CONFIRMADA ficam de fora de propósito: o instalador também as lança depois de preparar a release e
 // depois de trocar o link, então elas não provam ausência de mutação.
 const RECUSAS_SEM_MUTACAO = new Set(['COORDENACAO_NAO_HOMOLOGADA', 'SAUDE_NAO_CONFIGURADA', 'REINICIO_NAO_CONFIGURADO', 'VERSAO_NAO_COMPROVAVEL']);
-const MOTIVOS_DE_RECUSA = new Set([...RECUSAS_SEM_MUTACAO, 'PEDIDO_EXPIRADO', 'PEDIDO_INVALIDO', 'PEDIDO_AUSENTE', 'ID_DIVERGENTE', 'BLOB_DIVERGENTE', 'ESCOPO_DIVERGENTE', 'RETROATIVO_BLOQUEADO', 'S3_OPERACAO_FALHOU', 'BASELINE_NAO_COMPROVADA', 'BASELINE_MUDOU', 'ESTADO_OBSERVADO_INDISPONIVEL', 'ESTADO_OBSERVADO_DIVERGENTE', 'GUARDIAO_NAO_VINCULADO', 'COORDENACAO_OCUPADA', 'COORDENACAO_NAO_ADQUIRIDA']);
+const MOTIVOS_DE_RECUSA = new Set([...RECUSAS_SEM_MUTACAO, 'PEDIDO_EXPIRADO', 'PEDIDO_INVALIDO', 'PEDIDO_AUSENTE', 'ID_DIVERGENTE', 'BLOB_DIVERGENTE', 'ESCOPO_DIVERGENTE', 'RETROATIVO_BLOQUEADO', 'S3_OPERACAO_FALHOU', 'BASELINE_NAO_COMPROVADA', 'BASELINE_MUDOU', 'ESTADO_OBSERVADO_INDISPONIVEL', 'ESTADO_OBSERVADO_DIVERGENTE', 'GUARDIAO_NAO_VINCULADO', 'COORDENACAO_OCUPADA', 'COORDENACAO_NAO_ADQUIRIDA', 'PRAZO_DA_COORDENACAO_INSUFICIENTE']);
 // Recusas do guardião que significam outra operação do D-ORF-6 em curso; qualquer outra recusa é aquisição sem garantia.
 const OCUPACOES_DO_GUARDIAO = new Set(['EM_USO', 'MIGRACAO_EM_CURSO']);
 // Falhas que o próprio instalador declara críticas depois de alterar a release.
@@ -36,6 +41,19 @@ const CODIGOS_CRITICOS = new Set(['FALHA_POS_TROCA', 'FALHA_POS_REINICIO', 'ESTA
 const RESULTADOS_ACEITOS = new Set(['INSTALADA', 'JA_INSTALADA', 'CONFIRMADA']);
 const AVISOS_QUE_IMPEDEM_SUCESSO = new Set(['ESTADO_NAO_ATUALIZADO', 'DURABILIDADE_NAO_GARANTIDA']);
 const codigoSeguro = (e) => (e && typeof e.codigo === 'string' && /^[A-Z0-9_]{1,64}$/.test(e.codigo) ? e.codigo : 'ERRO');
+
+// Prazos da operação (3B-2B-3A). O guardião vive no máximo o que informar na aquisição; a instalação inteira, da
+// aquisição à confirmação final, cabe em 30 min, com 5 min de margem para confirmar, liberar e encerrar e 10 min de
+// reserva. Cada ação só começa se o prazo dela couber no que resta; as ações com processo são encerradas no prazo.
+const MINUTO_MS = 60 * 1000;
+const PRAZOS_DA_OPERACAO = Object.freeze({
+  instalacaoMs: 30 * MINUTO_MS, margemDeEncerramentoMs: 5 * MINUTO_MS, reservaMs: 10 * MINUTO_MS, vidaMinimaDoGuardiaoMs: 45 * MINUTO_MS,
+  acoes: Object.freeze({ executar: 15 * MINUTO_MS, reiniciar: 2 * MINUTO_MS, identificarProcesso: 30 * 1000, verificarSaude: 30 * 1000 }),
+});
+const PERDA_DA_COORDENACAO = 'COORDENACAO_PERDIDA_DURANTE_INSTALACAO';
+// Desfechos de uma ação que impedem qualquer ação seguinte: o processo pode ter ficado vivo ou passou do prazo.
+const ACOES_SEM_FIM_SEGURO = new Set(['PRAZO_DA_ACAO_EXCEDIDO', 'ENCERRAMENTO_DA_ACAO_INCERTO', 'ACAO_DEIXOU_DESCENDENTES']);
+const relogioMonotonico = () => Number(process.hrtime.bigint() / 1000000n);
 // Depois de iniciada a instalação nada é "recusa": ou o estado é incerto, ou o instalador declarou falha crítica.
 function motivoCritico(e) {
   const codigo = codigoSeguro(e);
@@ -99,10 +117,23 @@ const guardiaoValido = (g, sonda) => g !== null && typeof g === 'object' && Arra
   && g.comando.every(textoPreenchido) && path.isAbsolute(g.comando[0]) && textoPreenchido(g.credencial) && path.isAbsolute(g.credencial)
   && !(sonda && sonda.credencial === g.credencial);
 
+// Hash esperado do roteiro do guardião: o do manifesto que o instalador gravou para a release da baseline (meta/<rótulo>)
+// e contra o qual identificar() conferiu a integridade. O arquivo tem de ter esse hash agora; o provedor confere de
+// novo imediatamente antes de iniciar o processo.
+function hashDoRoteiroNaBaseline(vinculo, baseline) {
+  const meta = JSON.parse(fs.readFileSync(path.join(path.dirname(vinculo.dir), 'meta', `${baseline.rotulo}.json`), 'utf8'));
+  P.exigir(meta !== null && typeof meta === 'object' && meta.rotulo === baseline.rotulo && meta.manifesto !== null && typeof meta.manifesto === 'object', 'VINCULO');
+  P.exigir(baseline.commit === undefined || meta.commit === baseline.commit, 'VINCULO');
+  const esperado = meta.manifesto[path.relative(vinculo.dir, vinculo.comando[1]).split(path.sep).join('/')];
+  P.exigir(typeof esperado === 'string' && /^[0-9a-f]{64}$/.test(esperado) && N.sha256(fs.readFileSync(vinculo.comando[1])) === esperado, 'VINCULO');
+  return esperado;
+}
+
 function vincularGuardiao(cfg, baseline) {
   try {
     P.exigir(guardiaoValido(cfg.guardiao, cfg.sonda) && sondaValida(cfg.sonda), 'GUARDIAO_NAO_VINCULADO');
-    return vincularRoteiro(cfg, cfg.guardiao.comando, baseline);
+    const vinculo = vincularRoteiro(cfg, cfg.guardiao.comando, baseline);
+    return Object.freeze({ ...vinculo, sha256DoRoteiro: hashDoRoteiroNaBaseline(vinculo, baseline) });
   } catch {
     throw Object.assign(new Error('GUARDIAO_NAO_VINCULADO'), { codigo: 'GUARDIAO_NAO_VINCULADO' });
   }
@@ -110,18 +141,86 @@ function vincularGuardiao(cfg, baseline) {
 
 const recusaDeCoordenacao = (codigo) => Object.assign(new Error(codigo), { codigo });
 // Só { ok: true } vale como aquisição. Recusa por operação em curso é OCUPADA; o resto, inclusive exceção, é sem garantia.
+// Um guardião que vive menos que a instalação, a margem e a reserva somadas não serve: nada começa.
 async function adquirirGuardiao(coordenacao) {
   let aquisicao;
   try { aquisicao = await coordenacao.adquirir(); } catch { throw recusaDeCoordenacao('COORDENACAO_NAO_ADQUIRIDA'); }
-  if (aquisicao !== null && typeof aquisicao === 'object' && aquisicao.ok === true) return;
+  if (aquisicao !== null && typeof aquisicao === 'object' && aquisicao.ok === true) {
+    P.exigir(Number.isInteger(aquisicao.vidaMaximaMs) && aquisicao.vidaMaximaMs >= PRAZOS_DA_OPERACAO.vidaMinimaDoGuardiaoMs, 'PRAZO_DA_COORDENACAO_INSUFICIENTE');
+    return;
+  }
   const ocupada = aquisicao !== null && typeof aquisicao === 'object' && OCUPACOES_DO_GUARDIAO.has(aquisicao.motivo);
   throw recusaDeCoordenacao(ocupada ? 'COORDENACAO_OCUPADA' : 'COORDENACAO_NAO_ADQUIRIDA');
 }
 
+// Operação protegida pela garantia do guardião. Cada ação só começa se a operação não foi encerrada, não houve perda,
+// o prazo dela cabe no que resta, a garantia local do provedor está de pé e uma confirmação NOVA foi aprovada. Uma
+// ação já iniciada não é interrompida; a perda é vista na próxima conferência, e a partir dela nada mais começa.
+function criarOperacaoProtegida({ coordenacao, relogio }) {
+  const inicio = relogio();
+  const limite = inicio + PRAZOS_DA_OPERACAO.instalacaoMs;
+  const decorrido = () => relogio() - inicio;
+  let encerrada = false;
+  let perda = null;
+  let ultimaAcao = null;
+  let confirmacoes = 0;
+  let confirmacaoFinalEm = null;
+  let janelaFinalMs = null;
+  const interromper = (codigo, causa) => {
+    if (!perda) perda = { codigo, causa, acao: ultimaAcao ? ultimaAcao.nome : null, decorridoMs: decorrido() };
+    return recusaDeCoordenacao(perda.codigo);
+  };
+  const vigente = () => { try { return coordenacao.garantiaVigente() === true; } catch { return false; } };
+  async function conferir(duracaoMs) {
+    if (encerrada) throw recusaDeCoordenacao('OPERACAO_ENCERRADA');
+    if (perda) throw recusaDeCoordenacao(perda.codigo);
+    if (relogio() + duracaoMs > limite) throw interromper('PRAZO_DA_INSTALACAO_EXCEDIDO', 'PRAZO');
+    if (!vigente()) throw interromper(PERDA_DA_COORDENACAO, 'GARANTIA_LOCAL');
+    let confirmada = false;
+    try { confirmada = (await coordenacao.confirmar()) === true; } catch { confirmada = false; }
+    if (!confirmada || !vigente()) throw interromper(PERDA_DA_COORDENACAO, 'SEM_CONFIRMACAO');
+    if (relogio() > limite) throw interromper('PRAZO_DA_INSTALACAO_EXCEDIDO', 'PRAZO');
+    confirmacoes += 1;
+  }
+  const proteger = (nome, duracaoMs, acao) => async (...args) => {
+    await conferir(duracaoMs);
+    const registro = { nome, iniciadaEmMs: decorrido(), terminou: false, desfecho: null };
+    ultimaAcao = registro;
+    try {
+      const valor = await acao(...args);
+      registro.desfecho = 'CONCLUIDA';
+      return valor;
+    } catch (falha) {
+      registro.desfecho = codigoSeguro(falha);
+      if (ACOES_SEM_FIM_SEGURO.has(registro.desfecho)) interromper(registro.desfecho, 'ACAO');
+      throw falha;
+    } finally {
+      registro.terminou = registro.desfecho !== 'ENCERRAMENTO_DA_ACAO_INCERTO';
+      registro.duracaoMs = decorrido() - registro.iniciadaEmMs;
+    }
+  };
+  return {
+    proteger,
+    async confirmarFinal() { await conferir(0); confirmacaoFinalEm = relogio(); encerrada = true; },
+    encerrar() { encerrada = true; },
+    pedirLiberacao() { encerrada = true; if (confirmacaoFinalEm !== null) janelaFinalMs = relogio() - confirmacaoFinalEm; },
+    perda: () => perda,
+    descrever: () => ({
+      prazoMs: PRAZOS_DA_OPERACAO.instalacaoMs, decorridoMs: decorrido(), confirmacoes, confirmacaoFinal: confirmacaoFinalEm !== null, janelaFinalMs, perda,
+      ultimaAcao: ultimaAcao ? { ...ultimaAcao } : null,
+      guardiao: typeof coordenacao.descrever === 'function' ? coordenacao.descrever() : null,
+    }),
+  };
+}
+
 // Situações em que o provedor só responde depois de ver o processo do guardião terminar (evento close) ou de saber que
 // ele nunca existiu. Só elas, com processoEncerrado === true, comprovam o encerramento. Nada aqui comprova o banco.
+// A continuidade até a liberação é outra coisa: só a soltura dos quatro cadeados conferida pelo guardião na mesma sessão
+// (LIBERACAO_INFORMADA com cadeadosLiberados.confirmada) a demonstra. Sessão encerrada é só declaração.
 const ENCERRAMENTO_COMPROVADO = new Set(['LIBERACAO_INFORMADA', 'PROCESSO_ENCERRADO', 'SEM_PROCESSO']);
-const liberacaoIncerta = (situacao, forcada = false) => ({ situacao, processoEncerrado: false, forcada, encerramentoComprovado: false, comprovadaNoBanco: false });
+const liberacaoIncerta = (situacao, forcada = false) => ({
+  situacao, processoEncerrado: false, forcada, encerramentoComprovado: false, comprovadaNoBanco: false, cadeadosLiberadosConfirmados: false, sessaoEncerradaDeclarada: false, continuidadeDemonstrada: false,
+});
 
 async function liberarGuardiao(coordenacao) {
   let r;
@@ -130,7 +229,11 @@ async function liberarGuardiao(coordenacao) {
   const forcada = r.forcada === true;
   if (r.situacao === 'INDETERMINADA' && r.processoEncerrado === false) return liberacaoIncerta('INDETERMINADA', forcada);
   if (!ENCERRAMENTO_COMPROVADO.has(r.situacao) || r.processoEncerrado !== true) return liberacaoIncerta('RESPOSTA_INVALIDA', forcada);
-  return { situacao: r.situacao, processoEncerrado: true, forcada, encerramentoComprovado: true, comprovadaNoBanco: false };
+  const cadeadosLiberadosConfirmados = r.situacao === 'LIBERACAO_INFORMADA' && r.cadeadosLiberados !== null && typeof r.cadeadosLiberados === 'object' && r.cadeadosLiberados.confirmada === true;
+  return {
+    situacao: r.situacao, processoEncerrado: true, forcada, encerramentoComprovado: true, comprovadaNoBanco: false,
+    cadeadosLiberadosConfirmados, sessaoEncerradaDeclarada: r.sessaoEncerradaDeclarada === true, continuidadeDemonstrada: cadeadosLiberadosConfirmados,
+  };
 }
 
 // Estado das migrations aplicadas, lido do PostgreSQL pela sonda vinculada à baseline (comando da configuração local,
@@ -143,8 +246,9 @@ async function coletarObservado(cfg, executar, vinculo) {
   try {
     P.exigir(sondaValida(cfg.sonda) && typeof executar === 'function', 'ESTADO_OBSERVADO_INDISPONIVEL');
     P.exigir(vinculo !== null && typeof vinculo === 'object' && textoPreenchido(vinculo.dir) && Array.isArray(vinculo.comando) && vinculo.comando.length >= 2, 'ESTADO_OBSERVADO_INDISPONIVEL');
-    const prazo = new Promise((_, rejeitar) => { relogio = setTimeout(rejeitar, cfg.sonda.timeoutMs || PRAZO_DA_SONDA_MS); });
-    const saida = await Promise.race([executar(vinculo.comando[0], [...vinculo.comando.slice(1), '--credencial', cfg.sonda.credencial], { cwd: vinculo.dir }), prazo]);
+    const prazoMs = cfg.sonda.timeoutMs || PRAZO_DA_SONDA_MS;
+    const prazo = new Promise((_, rejeitar) => { relogio = setTimeout(rejeitar, prazoMs); });
+    const saida = await Promise.race([executar(vinculo.comando[0], [...vinculo.comando.slice(1), '--credencial', cfg.sonda.credencial], { cwd: vinculo.dir, prazoMs }), prazo]);
     dados = JSON.parse(String(saida));
   } catch {
     throw indisponivel();
@@ -194,28 +298,57 @@ async function aplicar({ pedido, releaseDir, deps, agora = Date.now }) {
   return { estado: 'SUCESSO', verificado: true };
 }
 
-// O instalador recebe o que o próprio contrato dele monta a partir da configuração validada (depsDoConfig): npm ci,
-// reinício, health e prova de processo. O agente não acrescenta nada por conta própria; `extras` só existe para testes
-// injetarem dependências controladas, e a linha de comando nunca o preenche.
+// As mesmas ações que depsDoConfig monta da configuração (npm ci, reinício, PID do serviço), com prazo efetivo: o
+// executor encerra o grupo de processos inteiro no prazo e confere o fim. A saúde continua a do instalador (HTTP com
+// prazo próprio, sem processo).
+function acoesComPrazo(comp) {
+  const { acoes } = PRAZOS_DA_OPERACAO;
+  const r = { executar: (comando, args, opcoes = {}) => executarComPrazo(comando, args, { cwd: opcoes.cwd, prazoMs: Math.min(opcoes.prazoMs || acoes.executar, acoes.executar) }) };
+  if (comp.reinicio) r.reiniciar = () => executarComPrazo(comp.reinicio.comando[0], comp.reinicio.comando.slice(1), { prazoMs: acoes.reiniciar });
+  if (comp.processo) {
+    r.identificarProcesso = async () => {
+      const saida = await executarComPrazo(comp.processo.pidComando[0], comp.processo.pidComando.slice(1), { prazoMs: acoes.identificarProcesso });
+      const pid = Number(String(saida).trim());
+      if (!Number.isInteger(pid) || pid <= 1) throw new Error('PID do serviço inválido');
+      return { pid, cwd: fs.readlinkSync(`/proc/${pid}/cwd`) };
+    };
+  }
+  return r;
+}
+
+// O instalador recebe o que o próprio contrato dele monta a partir da configuração validada (depsDoConfig), com as ações
+// de processo trocadas pelas de prazo efetivo e, durante uma operação, protegidas pela garantia do guardião. `extras` só
+// existe para testes injetarem dependências controladas, e a linha de comando nunca o preenche.
 function dependenciasPadrao(cfg, extras) {
   const config = cfg.instalador;
   // A pré-checagem e o lerObservado do instalador recebem o MESMO vínculo, criado uma vez por operação.
-  const depsDoInstalador = (vinculo, coordenacao) => {
-    const deps = { ...I.depsDoConfig(N.validarConfig(config).componentes[ESCOPO]), ...extras };
-    // O instalador chama lerObservado em cada pré-condição: cada chamada é uma coleta nova pela sonda vinculada.
-    if (typeof deps.lerObservado !== 'function') deps.lerObservado = () => coletarObservado(cfg, deps.executar, vinculo);
+  const depsDoInstalador = (vinculo, coordenacao, operacao) => {
+    const comp = N.validarConfig(config).componentes[ESCOPO];
+    const deps = { ...I.depsDoConfig(comp), ...acoesComPrazo(comp), ...extras };
+    // O instalador chama lerObservado em cada pré-condição: cada chamada é uma coleta nova pela sonda vinculada. A
+    // leitura da sonda não muda nada no servidor e não passa pela proteção das ações.
+    const executarDaSonda = deps.executar;
+    if (typeof deps.lerObservado !== 'function') deps.lerObservado = () => coletarObservado(cfg, executarDaSonda, vinculo);
     // A coordenação vem só do provedor adquirido nesta operação; nada dos extras a substitui.
     deps.consultarCoordenacao = coordenacao ? coordenacao.consultar : undefined;
+    if (operacao) {
+      for (const [nome, prazoMs] of Object.entries(PRAZOS_DA_OPERACAO.acoes)) {
+        if (typeof deps[nome] === 'function') deps[nome] = operacao.proteger(nome, prazoMs, deps[nome]);
+      }
+    }
     return deps;
   };
   return {
     criarAncora: () => criarAncora({ exigirDurabilidade: true }),
     vincular: (baseline) => vincularSonda(cfg, baseline),
     vincularGuardiao: (baseline) => vincularGuardiao(cfg, baseline),
-    criarCoordenacao: (vinculo) => criarCoordenacaoPorGuardiao({ comando: [...vinculo.comando], dir: vinculo.dir, credencial: cfg.guardiao.credencial, sistema: cfg.sonda.sistema }),
+    criarCoordenacao: (vinculo, baseline) => criarCoordenacaoPorGuardiao({
+      comando: [...vinculo.comando], dir: vinculo.dir, credencial: cfg.guardiao.credencial, sistema: cfg.sonda.sistema,
+      baseline: { rotulo: baseline.rotulo, commit: baseline.commit }, sha256DoRoteiro: vinculo.sha256DoRoteiro,
+    }),
     observar: (vinculo) => depsDoInstalador(vinculo).lerObservado(),
     identificar: () => I.identificar({ config, componente: ESCOPO }),
-    instalar: (opcoes, release, vinculo, coordenacao) => I.instalar({ config, componente: ESCOPO, release, opcoes, deps: depsDoInstalador(vinculo, coordenacao) }),
+    instalar: (opcoes, release, vinculo, coordenacao, operacao) => I.instalar({ config, componente: ESCOPO, release, opcoes, deps: depsDoInstalador(vinculo, coordenacao, operacao) }),
   };
 }
 
@@ -226,7 +359,9 @@ async function processar({ cfg, id, s3, deps: injetadas = {} }) {
   let base, trava, liberar = false;
   // Provedor do guardião desta operação: criado só na hora de instalar e sempre liberado (uma vez) antes do fim.
   let coordenacao = null;
+  let operacao = null;
   let liberacaoDaCoordenacao = null;
+  const relogio = typeof base0.relogio === 'function' ? base0.relogio : relogioMonotonico;
   const liberarCoordenacao = async () => {
     if (coordenacao && !liberacaoDaCoordenacao) liberacaoDaCoordenacao = await liberarGuardiao(coordenacao);
     return liberacaoDaCoordenacao;
@@ -289,32 +424,47 @@ async function processar({ cfg, id, s3, deps: injetadas = {} }) {
       const instalar = base0.instalar;
       deps.instalar = async (opcoes, release) => {
         // A exclusão é adquirida antes de qualquer mudança e mantida até o fim da operação; sem ela, nada começa.
-        coordenacao = base0.criarCoordenacao(vinculoDoGuardiao);
+        coordenacao = base0.criarCoordenacao(vinculoDoGuardiao, baseline);
         await adquirirGuardiao(coordenacao);
+        operacao = criarOperacaoProtegida({ coordenacao, relogio });
         await registrar({ fase: 'INSTALACAO_INICIADA', componente: ESCOPO });
         mutacaoIniciada = true;
-        try { return await instalar(opcoes, release, vinculo, coordenacao); } catch (falha) {
+        try { return await instalar(opcoes, release, vinculo, coordenacao, operacao); } catch (falha) {
           if (RECUSAS_SEM_MUTACAO.has(falha.codigo)) mutacaoIniciada = false;
           throw falha;
         }
       };
       resultado = await aplicar({ pedido, releaseDir: dir, deps });
+      // Depois da última ação: a garantia tem de estar de pé agora, numa confirmação nova e dentro do prazo.
+      P.exigir(operacao !== null, 'COORDENACAO_NAO_ADQUIRIDA');
+      await operacao.confirmarFinal();
     } catch (e) {
+      // Uma perda (ou prazo, ou ação sem fim seguro) vista pelo agente é a causa; o código do instalador fica no diagnóstico.
+      const perda = operacao ? operacao.perda() : null;
       resultado = mutacaoIniciada || origemIncerta
-        ? { estado: 'CRITICO', verificado: false, motivo: motivoCritico(e), diagnostico: codigoSeguro(e) }
+        ? { estado: 'CRITICO', verificado: false, motivo: perda ? perda.codigo : motivoCritico(e), diagnostico: codigoSeguro(e) }
         : { estado: 'RECUSADO', verificado: false, mutacao: 'NENHUMA', motivo: MOTIVOS_DE_RECUSA.has(e.codigo) ? e.codigo : 'RECUSA_ANTES_DA_INSTALACAO' };
     }
-    // A liberação fica no registro local; o recibo publicado não muda de formato. Sem encerramento comprovado do
-    // guardião, os cadeados podem continuar presos: nenhum resultado seguro se mantém e a operação vira CRITICO, com a
-    // trava preservada. Um CRITICO anterior continua com o próprio motivo.
+    // Janela final: nenhuma ação começa daqui em diante; o tempo entre a confirmação final e o pedido de liberação fica
+    // registrado. A liberação fica no registro local; o recibo publicado não muda de formato. Sem encerramento comprovado
+    // do guardião, os cadeados podem continuar presos: nenhum resultado seguro se mantém e a operação vira CRITICO, com a
+    // trava preservada. Com encerramento comprovado mas sem a soltura conferida dos quatro cadeados, a continuidade até o
+    // fim não está demonstrada: SUCESSO também vira CRITICO. Um CRITICO anterior continua com o próprio motivo.
+    if (operacao) operacao.pedirLiberacao();
     await liberarCoordenacao();
     let resultadoAntesDaLiberacao;
     if (liberacaoDaCoordenacao && !liberacaoDaCoordenacao.encerramentoComprovado && resultado.estado !== 'CRITICO') {
       resultadoAntesDaLiberacao = resultado;
       resultado = { estado: 'CRITICO', verificado: false, motivo: 'LIBERACAO_DA_COORDENACAO_INCERTA', diagnostico: liberacaoDaCoordenacao.situacao };
+    } else if (liberacaoDaCoordenacao && !liberacaoDaCoordenacao.continuidadeDemonstrada && resultado.estado === 'SUCESSO') {
+      resultadoAntesDaLiberacao = resultado;
+      resultado = { estado: 'CRITICO', verificado: false, motivo: 'CONTINUIDADE_NAO_DEMONSTRADA', diagnostico: liberacaoDaCoordenacao.situacao };
     }
     const recibo = pedido ? { id, commit: pedido.commit, releaseSha256: pedido.releaseSha256, escopo: ESCOPO, ...resultado } : null;
-    await registrar({ fase: 'TERMINAL', resultado, recibo, ...(liberacaoDaCoordenacao ? { liberacaoDaCoordenacao } : {}), ...(resultadoAntesDaLiberacao ? { resultadoAntesDaLiberacao } : {}) });
+    await registrar({
+      fase: 'TERMINAL', resultado, recibo, ...(liberacaoDaCoordenacao ? { liberacaoDaCoordenacao } : {}), ...(resultadoAntesDaLiberacao ? { resultadoAntesDaLiberacao } : {}),
+      ...(operacao ? { coordenacao: operacao.descrever() } : {}),
+    });
     liberar = Boolean(seguro(resultado));
     return { id, ...resultado, ...await publicarRecibo(recibo) };
   } finally {
@@ -357,4 +507,4 @@ async function principal(argv) {
 }
 
 if (require.main === module) principal(process.argv.slice(2)).catch((e) => { console.error(`Agente do backend recusou: ${e.codigo || 'ERRO'}`); process.exitCode = 1; });
-module.exports = { aplicar, validarConfiguracao, vincularSonda, vincularGuardiao, coletarObservado, processar, processarFila, principal };
+module.exports = { aplicar, validarConfiguracao, vincularSonda, vincularGuardiao, coletarObservado, processar, processarFila, principal, PRAZOS_DA_OPERACAO };
