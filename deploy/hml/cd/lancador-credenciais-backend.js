@@ -27,6 +27,11 @@ const ARN_DO_PAPEL = /^arn:aws:iam::(\d{12}):role\/([A-Za-z0-9+=,.@_-]{1,64})$/;
 const PAPEL_DO_BACKEND = /cd-backend/;
 const OUTRA_IDENTIDADE = /d-?orf|frontend|publicador/i;
 
+// Ordem por unidade de código UTF-16 (a mesma do sort() padrão para texto), explícita (S2871).
+const porUnidadeDeCodigo = (a, b) => {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
+};
 const recusa = (codigo) => Object.assign(new Error(codigo), { codigo });
 const codigoSeguro = (e) => (e && typeof e.codigo === 'string' && /^[A-Z0-9_]{1,64}$/.test(e.codigo) ? e.codigo : 'ERRO');
 const absoluto = (p) => typeof p === 'string' && path.isAbsolute(p) && path.normalize(p) === p;
@@ -51,7 +56,7 @@ function arquivoSeguro(caminho, { dono, privado }) {
 // a chave privada é do usuário do agente e só dele. Âncora, perfil e papel são da conta do bucket, e o papel é o do backend.
 function validarSecaoDeCredenciais(cfg, { uidDono }) {
   const c = cfg !== null && typeof cfg === 'object' ? cfg.credenciais : undefined;
-  const forma = c !== null && typeof c === 'object' && !Array.isArray(c) && Object.keys(c).sort().join(',') === CAMPOS_DA_SECAO
+  const forma = c !== null && typeof c === 'object' && !Array.isArray(c) && Object.keys(c).sort(porUnidadeDeCodigo).join(',') === CAMPOS_DA_SECAO
     && absoluto(c.executavel) && absoluto(c.certificado) && absoluto(c.chave)
     && Number.isInteger(c.duracaoSegundos) && c.duracaoSegundos * 1000 >= VALIDADE_MINIMA_MS && c.duracaoSegundos <= 43200;
   if (!forma) throw recusa('CREDENCIAIS_NAO_CONFIGURADAS');
@@ -74,13 +79,13 @@ function validarSecaoDeCredenciais(cfg, { uidDono }) {
 function validarCredenciais(texto, agoraMs) {
   let d;
   try { d = JSON.parse(texto); } catch { throw recusa('CREDENCIAL_INVALIDA'); }
-  if (d === null || typeof d !== 'object' || Array.isArray(d) || Object.keys(d).sort().join(',') !== CAMPOS_DA_CREDENCIAL || d.Version !== 1) throw recusa('CREDENCIAL_INVALIDA');
+  if (d === null || typeof d !== 'object' || Array.isArray(d) || Object.keys(d).sort(porUnidadeDeCodigo).join(',') !== CAMPOS_DA_CREDENCIAL || d.Version !== 1) throw recusa('CREDENCIAL_INVALIDA');
   if (typeof d.AccessKeyId === 'string' && d.AccessKeyId.startsWith('AKIA')) throw recusa('CREDENCIAL_PERMANENTE');
   const forma = typeof d.AccessKeyId === 'string' && /^ASIA[A-Z0-9]{16}$/.test(d.AccessKeyId)
     && typeof d.SecretAccessKey === 'string' && /^[A-Za-z0-9/+=]{40}$/.test(d.SecretAccessKey)
     && typeof d.SessionToken === 'string' && /^[A-Za-z0-9/+=]{16,8192}$/.test(d.SessionToken)
     && typeof d.Expiration === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(d.Expiration);
-  const expira = forma ? Date.parse(d.Expiration) : NaN;
+  const expira = forma ? Date.parse(d.Expiration) : Number.NaN;
   if (!Number.isFinite(expira)) throw recusa('CREDENCIAL_INVALIDA');
   if (expira <= agoraMs) throw recusa('CREDENCIAL_EXPIRADA');
   if (expira - agoraMs < VALIDADE_MINIMA_MS) throw recusa('VALIDADE_INSUFICIENTE');

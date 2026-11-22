@@ -1124,8 +1124,13 @@ async function identificar({ config: bruta, componente, deps = {} } = {}) {
 const TAMANHO_MAXIMO_DA_IDENTIDADE = 4096;
 const FORMATO_DA_IDENTIDADE = /^([1-9]\d{0,9}) (\/[^\s\0]*)\n$/;
 const caminhoNormalizado = (p) => typeof p === 'string' && path.isAbsolute(p) && path.normalize(p) === p && (p === '/' || !p.endsWith('/'));
+// Ordem por unidade de código UTF-16 (a mesma do sort() padrão para texto), explícita (S2871).
+const porUnidadeDeCodigo = (a, b) => {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
+};
 const identidadeDoServicoValida = (d) => d === undefined || (d !== null && typeof d === 'object' && !Array.isArray(d)
-  && Object.keys(d).sort().join(',') === 'arquivo,uid' && caminhoNormalizado(d.arquivo) && d.arquivo !== '/' && Number.isInteger(d.uid) && d.uid >= 0);
+  && Object.keys(d).sort(porUnidadeDeCodigo).join(',') === 'arquivo,uid' && caminhoNormalizado(d.arquivo) && d.arquivo !== '/' && Number.isInteger(d.uid) && d.uid >= 0);
 const identidadeInvalida = () => erro('IDENTIDADE_DO_SERVICO_INVALIDA', 'a identidade do serviço não confere');
 
 // O uid do processo vem de /proc/<pid>/status, legível sem privilégio; os quatro uids (real, efetivo, salvo, fs) iguais.
