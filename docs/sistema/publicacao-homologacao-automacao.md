@@ -381,3 +381,61 @@ O que continua bloqueado:
 - O provedor do guardião **não é homologado**: em produção, o instalador recusa a troca do backend com `COORDENACAO_NAO_HOMOLOGADA`, mesmo com o guardião adquirido. A linha de comando do instalador segue bloqueada para o backend.
 - O agente do backend segue desabilitado no modelo de configuração.
 - Nenhum teste desta etapa usa PostgreSQL real: o guardião é exercitado como processo Node real, com o protocolo do canal de controle e sem banco. A prova em PostgreSQL 16 é a Etapa 3B-2B-2, e a homologação, a 3B-2B-3.
+
+## Garantia contínua da coordenação (Etapa 3B-2B-3A)
+
+A 3B-2B-3A corrige dois pontos antes de qualquer homologação: a identidade da instância de coordenação e a perda da garantia no meio da instalação. O provedor continua **não homologado** e o agente continua desabilitado; o instalador, o D-ORF-6, os workflows e as migrations não mudam.
+
+**Mesma sessão e os quatro cadeados.** O guardião lê, numa única consulta, `pg_backend_pid()`, o início da sessão (`backend_start`, em segundos desde a época) e as chaves de advisory lock concedidas a ela.
+- A aquisição só vale se a sessão mostrar exatamente as quatro chaves de `MIGRACAO`.
+- A **impressão da sessão** é o SHA-256 de sistema, pid, início e chaves. Ela sai na aquisição e em cada confirmação, e o provedor exige que seja sempre a mesma.
+- Cada confirmação também exige quatro cadeados. O **contador de comandos** (comandos SQL da sessão desde a aquisição, inclusive os do D-ORF-6) tem de bater com as perguntas feitas.
+- Divergência em qualquer um desses itens é perda. O contador é só controle complementar: correto, ele não prova continuidade sozinho.
+
+Por que isso demonstra a continuidade:
+- **Mesma sessão.** Locks de sessão só somem quando a sessão termina ou quando ela mesma os solta. Pid e início iguais nas duas pontas de um intervalo mostram que a sessão não terminou.
+- **Nenhuma soltura antes da hora.** O guardião só solta os cadeados em `liberar`. Isso é coberto pela sequência de SQL fixada em teste e pela guarda estática, que é só léxica.
+- **Limite.** Em produção, a continuidade é demonstrada por mesma sessão mais código conferido, e não por histórico do banco, que o PostgreSQL não guarda.
+
+**Reconhecimento da instância.** Cada instância do provedor guarda, numa ficha interna do módulo, se foi iniciada pelo iniciador real, a baseline (`rótulo`, `commit`), o hash esperado do roteiro, a impressão e a **primeira** causa de perda.
+- O agente tira o hash esperado do manifesto que o instalador gravou para a release da baseline (`meta/<rótulo>.json`). O provedor confere esse hash no arquivo imediatamente antes de iniciar o processo; se for diferente, nada é iniciado (`ROTEIRO_DIVERGENTE`).
+- `garantiaVigente(consultar, { baseline, sha256DoRoteiro })` só é verdadeiro para uma instância real, com roteiro conferido, adquirida, sem perda e criada para essa baseline e esse roteiro.
+- Uma função qualquer ou uma fábrica com `iniciarProcesso` injetado nunca são reconhecidas.
+- Reconhecer não libera nada: o instalador continua recusando com `COORDENACAO_NAO_HOMOLOGADA`.
+
+**Ações protegidas.** Durante a instalação, cada ação que o agente entrega ao instalador passa por uma guarda antes de começar. As ações são `executar` (npm ci), `reiniciar`, `identificarProcesso` e `verificarSaude`. A guarda exige, nesta ordem:
+- operação ainda não encerrada;
+- nenhuma perda registrada;
+- o prazo da ação cabendo no que resta;
+- garantia local do provedor (`garantiaVigente()`, que cai no instante de um aviso de perda, expiração ou saída do processo);
+- uma confirmação nova ao guardião (`confirmar()`).
+
+Uma ação já iniciada não é interrompida: um reinício pela metade não tem desfazer seguro. A perda é vista na próxima conferência, e a partir dela nada mais começa, nem o reinício de recuperação. A volta para a release anterior também exige coordenação, então o instalador registra `ROLLBACK_BLOQUEADO`. O resultado é `CRITICO` com motivo `COORDENACAO_PERDIDA_DURANTE_INSTALACAO`. O registro local guarda a primeira causa, a última ação iniciada (e se terminou) e o número de confirmações.
+
+**Prazos efetivos.**
+- Da aquisição à confirmação final, a instalação cabe em **30 min**, com **5 min** de margem de encerramento e **10 min** de reserva.
+- O guardião precisa informar na aquisição uma vida máxima de pelo menos 45 min. Senão, a operação é recusada sem mutação (`PRAZO_DA_COORDENACAO_INSUFICIENTE`) e o guardião é liberado.
+- Cada ação tem prazo próprio: dependências 15 min, reinício 2 min, PID 30 s, saúde 30 s. Ela só começa se o prazo couber no que resta; senão, ou se o limite tiver passado, o resultado é `CRITICO` (`PRAZO_DA_INSTALACAO_EXCEDIDO`).
+- O tempo é medido por relógio monotônico.
+- As ações com processo usam `deploy/hml/cd/executor-com-prazo.js`, que roda cada comando sem shell, num grupo de processos próprio. No prazo, encerra o grupo inteiro (SIGTERM, depois SIGKILL) e **confere** o fim.
+- Fim que não pode ser conferido (`ENCERRAMENTO_DA_ACAO_INCERTO`), prazo vencido ou descendentes deixados para trás impedem as ações seguintes e dão `CRITICO` com esse motivo.
+- Só o grupo do próprio filho é sinalizado.
+
+**Janela final.** Depois da última ação, o agente segue esta ordem:
+1. confirmação final;
+2. operação encerrada (nenhuma ação começa daqui em diante);
+3. pedido de liberação;
+4. registro `TERMINAL`;
+5. recibo.
+
+O tempo entre a confirmação final e o pedido de liberação fica registrado (`janelaFinalMs`). O resultado depende do que sai dessa sequência:
+- **`SUCESSO`** exige a confirmação final aprovada e a liberação `LIBERACAO_INFORMADA` com a soltura dos quatro cadeados conferida pelo guardião na mesma sessão. Conferida quer dizer: impressão igual à da aquisição, quatro soltos e nenhum restante, sem perda antes do pedido.
+- **Encerramento comprovado sem essa conferência** (`PROCESSO_ENCERRADO`, `SEM_PROCESSO` ou aviso incompleto) mostra que nada ficou preso, mas não a continuidade: o resultado vira `CRITICO` com motivo `CONTINUIDADE_NAO_DEMONSTRADA`.
+- **`JA_INSTALADA` com perda** também é `CRITICO`.
+- **Sessão encerrada** é só declaração do guardião (`sessaoEncerradaDeclarada`). O agente nunca afirma comprovação no banco (`comprovadaNoBanco: false`).
+
+**Ensaio com PostgreSQL 16.** O ensaio provedor → instalador real → resultado do agente está preparado em `backend/test/integracao/cd-guardiao-coordenacao.integration.js` e roda só na CI efêmera. Ele cobre:
+- **posse contínua:** dá `SUCESSO`, e no meio do reinício a mesma sessão aparece com as quatro chaves de `MIGRACAO`, bloqueadas para outra sessão, e com a impressão calculada por fora;
+- **sessão do guardião derrubada no reinício:** dá `CRITICO`, sem ação nova e sem reversão.
+
+A mesma montagem roda localmente com uma coordenação simulada. O resultado com o guardião real fica **não verificado** até a execução na CI.

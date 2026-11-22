@@ -3,6 +3,7 @@
 // quando a sessão encerra) e o adquirirExclusao usado é o real do D-ORF-6, com a matriz dele, sem cópia.
 const { describe, test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -26,10 +27,12 @@ const noPrazo = (promessa, ms = 2000) => {
 function servidorFalso({ banco = 'safework_hml', sistema = SISTEMA, emRecuperacao = false } = {}) {
   const locks = new Map(); // chave (texto) -> sessão
   let proxima = 1;
-  const srv = { locks, configs: [], consultas: [], destruicoes: 0, falharConexao: false, travarConexao: false, travarConsulta: false, falharConsulta: false, sessoes: new Set() };
+  const srv = { locks, configs: [], consultas: [], destruicoes: 0, falharConexao: false, travarConexao: false, travarConsulta: false, falharConsulta: false, sessoes: new Set(), chavesExtras: [] };
   srv.Client = class {
     constructor(config) {
       srv.configs.push(config); this.id = proxima++; this.aberta = false; this.ouvintes = {};
+      // Identidade da sessão no servidor (pg_backend_pid e backend_start em segundos desde a época).
+      this.pid = String(4000 + this.id); this.inicio = `1763740000.${100000 + this.id}`;
       // Como no driver: o soquete da conexão pode ser destruído à força; a sessão cai no servidor.
       if (!srv.semSoquete) this.connection = { stream: { destroy: () => { srv.destruicoes += 1; if (srv.falharDestruicao) throw new Error('falha ao destruir'); this.derrubar(false); } } };
     }
@@ -50,6 +53,10 @@ function servidorFalso({ banco = 'safework_hml', sistema = SISTEMA, emRecuperaca
       if (m) { const dono = locks.get(m[1]); if (dono !== undefined && dono !== this.id) return { rows: [{ tomado: false }] }; locks.set(m[1], this.id); return { rows: [{ tomado: true }] }; }
       m = /^SELECT pg_advisory_unlock\((\d+)\) AS liberado$/.exec(sql);
       if (m) { const meu = locks.get(m[1]) === this.id; if (meu) locks.delete(m[1]); return { rows: [{ liberado: meu }] }; }
+      if (/pg_stat_activity/.test(sql) && /FROM pg_locks/.test(sql)) {
+        const chaves = [...[...locks].filter(([, dono]) => dono === this.id).map(([chave]) => chave), ...srv.chavesExtras].sort();
+        return { rows: [{ pid: this.pid, inicio: this.inicio, chaves }] };
+      }
       if (/FROM pg_locks/.test(sql)) return { rows: [...locks].filter(([, dono]) => dono === this.id).map(([chave]) => ({ chave })) };
       throw new Error(`consulta inesperada: ${sql}`);
     }
@@ -65,6 +72,9 @@ const guardiao = (srv, extra = {}) => G.criarGuardiao({ conf: CONF, sistema: SIS
 const ID1 = '0123456789abcdef0123456789abcdef';
 const ID2 = 'fedcba9876543210fedcba9876543210';
 const TODAS = [...new Set(Object.values(D.CHAVE_DORF6).map(String))].sort();
+// Impressão esperada de uma sessão do servidor falso que detém exatamente as quatro chaves.
+const impressaoDe = (sessao) => crypto.createHash('sha256').update(`${SISTEMA}|${sessao.pid}|${sessao.inicio}|${TODAS.join(',')}`).digest('hex');
+const unica = (srv) => { assert.equal(srv.sessoes.size, 1); return [...srv.sessoes][0]; };
 
 describe('guardião: aquisição', () => {
   test('adquire como MIGRACAO pelo adquirirExclusao do D-ORF-6 e segura as quatro chaves numa única sessão dedicada', async () => {
@@ -243,7 +253,7 @@ describe('guardião: falhas, perda e liberação', () => {
     assert.equal(perdas, 1);
     assert.equal(await g.confirmar(), false);
     assert.equal(srv.locks.size, 0);
-    assert.deepEqual(await g.liberar(), { liberados: 0, sessaoEncerrada: true });
+    assert.deepEqual(await g.liberar(), { liberados: 0, restantes: null, impressao: null, sessaoEncerrada: true });
   });
 
   test('confirmar exige a posse comprovada das quatro chaves, não só a sessão viva', async () => {
@@ -271,8 +281,9 @@ describe('guardião: falhas, perda e liberação', () => {
     const srv = servidorFalso();
     const g = guardiao(srv);
     await g.adquirir();
-    assert.deepEqual(await g.liberar(), { liberados: 4, sessaoEncerrada: true });
-    assert.deepEqual(await g.liberar(), { liberados: 0, sessaoEncerrada: true });
+    const impressao = impressaoDe(unica(srv));
+    assert.deepEqual(await g.liberar(), { liberados: 4, restantes: 0, impressao, sessaoEncerrada: true });
+    assert.deepEqual(await g.liberar(), { liberados: 0, restantes: null, impressao: null, sessaoEncerrada: true });
     assert.equal(await g.confirmar(), false);
     assert.equal(srv.locks.size, 0);
     assert.equal(srv.sessoes.size, 0);
@@ -283,12 +294,13 @@ describe('guardião: falhas, perda e liberação', () => {
     const srv = Object.assign(servidorFalso(), { travarEncerramento: true });
     const g = guardiao(srv);
     await g.adquirir();
+    const impressao = impressaoDe(unica(srv));
     const inicio = Date.now();
     const r = await noPrazo(g.liberar());
-    assert.deepEqual(r, { liberados: 4, sessaoEncerrada: false });
+    assert.deepEqual(r, { liberados: 4, restantes: 0, impressao, sessaoEncerrada: false });
     assert.ok(Date.now() - inicio < 1500, 'não espera indefinidamente');
     assert.equal(srv.destruicoes, 1);
-    assert.deepEqual(await noPrazo(g.liberar()), { liberados: 0, sessaoEncerrada: false }, 'a repetição não passa a afirmar o encerramento');
+    assert.deepEqual(await noPrazo(g.liberar()), { liberados: 0, restantes: null, impressao: null, sessaoEncerrada: false }, 'a repetição não passa a afirmar o encerramento');
     assert.equal(await g.confirmar(), false);
   });
 
@@ -358,15 +370,17 @@ describe('guardião: linha de comando e canal de controle', () => {
   test('adquire, confirma quantas vezes for pedido e libera por comando: código 0 e nenhum lock', async () => {
     const srv = servidorFalso();
     const p = iniciar(srv);
-    assert.deepEqual(await p.proximo(1), { evento: 'ADQUIRIDA', cadeados: TODAS.length });
+    const primeiro = await p.proximo(1);
+    const impressao = impressaoDe(unica(srv));
+    assert.deepEqual(primeiro, { evento: 'ADQUIRIDA', cadeados: TODAS.length, impressao, vidaMaximaMs: LIMITES.vidaMaximaMs });
     p.entrada.write(`confirmar ${ID1}\n`);
-    assert.deepEqual(await p.proximo(2), { evento: 'CONFIRMADA', id: ID1 });
+    assert.deepEqual(await p.proximo(2), { evento: 'CONFIRMADA', id: ID1, impressao, cadeados: 4, comandos: 1 });
     p.entrada.write(`confirmar ${ID2}\n`);
-    assert.deepEqual(await p.proximo(3), { evento: 'CONFIRMADA', id: ID2 });
+    assert.deepEqual(await p.proximo(3), { evento: 'CONFIRMADA', id: ID2, impressao, cadeados: 4, comandos: 2 });
     assert.equal(srv.locks.size, 4);
     p.entrada.write('liberar\n');
     assert.equal(await p.fim, 0);
-    assert.deepEqual(p.eventos.at(-1), { evento: 'LIBERADA' });
+    assert.deepEqual(p.eventos.at(-1), { evento: 'LIBERADA', impressao, liberados: 4, restantes: 0, sessaoEncerrada: true });
     assert.equal(srv.locks.size, 0);
     assert.equal(srv.sessoes.size, 0);
   });
@@ -416,9 +430,13 @@ describe('guardião: linha de comando e canal de controle', () => {
     const srv = servidorFalso();
     const p = iniciar(srv);
     await p.proximo(1);
+    const impressao = impressaoDe(unica(srv));
     p.entrada.write(`confirmar ${ID1}\nconfirmar ${ID2}\nconfirmar ${ID1}\n`);
     await p.proximo(4);
-    assert.deepEqual(p.eventos.slice(1), [{ evento: 'CONFIRMADA', id: ID1 }, { evento: 'CONFIRMADA', id: ID2 }, { evento: 'CONFIRMADA', id: ID1 }]);
+    assert.deepEqual(p.eventos.slice(1), [
+      { evento: 'CONFIRMADA', id: ID1, impressao, cadeados: 4, comandos: 1 }, { evento: 'CONFIRMADA', id: ID2, impressao, cadeados: 4, comandos: 2 },
+      { evento: 'CONFIRMADA', id: ID1, impressao, cadeados: 4, comandos: 3 },
+    ]);
     p.entrada.write('liberar\n');
     assert.equal(await p.fim, 0);
   });
@@ -503,8 +521,129 @@ describe('guardião: linha de comando e canal de controle', () => {
   });
 });
 
+// 3B-2B-3A: a continuidade é provada pela MESMA sessão (pid e início no servidor) com EXATAMENTE as quatro chaves em
+// cada ponto de controle, inclusive imediatamente antes de soltar. O contador de comandos é controle complementar.
+describe('3B-2B-3A: mesma sessão e os quatro cadeados do começo ao fim', () => {
+  const tipo = (sql) => {
+    if (/pg_control_system/.test(sql)) return 'IDENTIDADE';
+    if (/pg_try_advisory_lock/.test(sql)) return 'TRAVA';
+    if (/pg_advisory_unlock/.test(sql)) return 'DESTRAVA';
+    if (/pg_stat_activity/.test(sql) && /FROM pg_locks/.test(sql)) return 'POSSE';
+    return 'OUTRA';
+  };
+
+  test('a aquisição devolve a impressão da sessão: sistema, pid, início e as quatro chaves, numa consulta só', async () => {
+    const srv = servidorFalso();
+    const g = guardiao(srv);
+    const r = await g.adquirir();
+    assert.equal(r.ok, true);
+    assert.match(r.impressao, /^[0-9a-f]{64}$/);
+    assert.equal(r.impressao, impressaoDe(unica(srv)));
+    await g.liberar();
+  });
+
+  test('cada confirmação devolve a mesma impressão, as quatro chaves e quantos comandos a sessão executou desde a aquisição', async () => {
+    const srv = servidorFalso();
+    const g = guardiao(srv);
+    const { impressao } = await g.adquirir();
+    assert.deepEqual(await g.confirmarSessao(), { impressao, cadeados: 4, comandos: 1 });
+    assert.deepEqual(await g.confirmarSessao(), { impressao, cadeados: 4, comandos: 2 });
+    assert.equal(await g.confirmar(), true, 'confirmar continua sendo a forma booleana da mesma conferência');
+    await g.liberar();
+  });
+
+  test('sessão com outra identidade (início ou pid diferente) e as mesmas quatro chaves: não confirma', async () => {
+    for (const campo of ['inicio', 'pid']) {
+      const srv = servidorFalso();
+      const g = guardiao(srv);
+      await g.adquirir();
+      unica(srv)[campo] = campo === 'inicio' ? '1763749999.000001' : '9999';
+      assert.equal(await g.confirmarSessao(), null, campo);
+      assert.equal(await g.confirmar(), false, campo);
+      await g.liberar();
+    }
+  });
+
+  test('uma chave a mais concedida à sessão também nega: a posse tem de ser exatamente as quatro', async () => {
+    const srv = servidorFalso();
+    const g = guardiao(srv);
+    await g.adquirir();
+    srv.chavesExtras = ['99'];
+    assert.equal(await g.confirmarSessao(), null);
+    srv.chavesExtras = [];
+    await g.liberar();
+  });
+
+  test('aquisição em que a sessão não mostra exatamente as quatro chaves: recusa com GUARDIAO_CADEADOS e nada fica preso', async () => {
+    const srv = Object.assign(servidorFalso(), { chavesExtras: ['99'] });
+    assert.deepEqual(await guardiao(srv).adquirir(), { ok: false, motivo: 'GUARDIAO_CADEADOS' });
+    assert.equal(srv.locks.size, 0);
+    assert.equal(srv.sessoes.size, 0);
+  });
+
+  test('sequência exata de SQL: identidade, aquisição do D-ORF-6, posse; depois só posse; os desbloqueios só na liberação (CA-14)', async () => {
+    const srv = servidorFalso();
+    const g = guardiao(srv);
+    await g.adquirir();
+    await g.confirmarSessao();
+    await g.confirmarSessao();
+    const antes = srv.consultas.slice();
+    await g.liberar();
+    assert.equal(antes.some((sql) => tipo(sql) === 'DESTRAVA'), false, 'nenhum desbloqueio antes de liberar');
+    assert.deepEqual(srv.consultas.map(tipo), [
+      'IDENTIDADE', 'TRAVA', 'TRAVA', 'TRAVA', 'TRAVA', 'POSSE', 'POSSE', 'POSSE', 'POSSE', 'DESTRAVA', 'DESTRAVA', 'DESTRAVA', 'DESTRAVA', 'POSSE',
+    ]);
+  });
+
+  test('a liberação confere a posse na mesma sessão antes de soltar e informa quantas soltou e quantas restaram', async () => {
+    const srv = servidorFalso();
+    const g = guardiao(srv);
+    const { impressao } = await g.adquirir();
+    assert.deepEqual(await g.liberar(), { liberados: 4, restantes: 0, impressao, sessaoEncerrada: true });
+  });
+
+  test('liberação com a posse já incompleta: sem impressão, para nunca ser tomada como continuidade', async () => {
+    const srv = servidorFalso();
+    const g = guardiao(srv);
+    await g.adquirir();
+    srv.locks.delete(String(D.CHAVE_DORF6.BACKUP));
+    const r = await g.liberar();
+    assert.equal(r.impressao, null);
+    assert.equal(r.liberados, 3);
+    assert.equal(r.restantes, 0);
+  });
+
+  test('linha de comando: uma chave a mais descoberta na confirmação responde PERDIDA, nunca CONFIRMADA', async () => {
+    const srv = servidorFalso();
+    const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'guardiao-3a-'));
+    const entrada = new PassThrough();
+    try {
+      const credencial = path.join(dir, 'credencial.json');
+      fs.writeFileSync(credencial, JSON.stringify({ host: CONF.host, porta: CONF.porta, banco: CONF.banco, usuario: CONF.usuario, senha: CONF.senha }), { mode: 0o600 });
+      const eventos = [];
+      const fim = G.executar({ argv: ['--credencial', credencial, '--sistema', SISTEMA], entrada, saida: (t) => { for (const l of t.split('\n').filter(Boolean)) eventos.push(JSON.parse(l)); }, Client: srv.Client, adquirirExclusao: D.adquirirExclusao, cadeadosDe: D.cadeadosDe, limites: LIMITES });
+      const inicio = Date.now();
+      while (eventos.length < 1 && Date.now() - inicio < 2000) await new Promise((r) => { setTimeout(r, 10); });
+      assert.equal(eventos[0].evento, 'ADQUIRIDA');
+      srv.chavesExtras = ['99'];
+      entrada.write(`confirmar ${ID1}\n`);
+      assert.equal(await noPrazo(fim), 5);
+      assert.equal(eventos.some((e) => e.evento === 'CONFIRMADA'), false);
+      assert.deepEqual(eventos.at(-1), { evento: 'PERDIDA' });
+    } finally {
+      entrada.end();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('guardião: invariantes do código', () => {
   const fonte = fs.readFileSync(ARQ, 'utf8');
+  test('3B-2B-3A: a posse é lida com a identidade da sessão (pid e backend_start) na mesma consulta', () => {
+    assert.match(fonte, /pg_backend_pid\(\)/);
+    assert.match(fonte, /backend_start/);
+    assert.match(fonte, /pg_stat_activity/);
+  });
   test('não redefine a matriz nem as chaves do D-ORF-6 e só pede a operação MIGRACAO', () => {
     assert.doesNotMatch(fonte, /7241865325823|INCOMPATIBILIDADES|pg_try_advisory_lock|pg_advisory_unlock|pg_advisory_lock/);
     assert.match(fonte, /backup-fontes-coordenacao-operacoes\.service/);

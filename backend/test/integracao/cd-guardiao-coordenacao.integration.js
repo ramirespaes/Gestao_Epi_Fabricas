@@ -30,6 +30,15 @@ const APLICACAO = 'safework-guardiao-cd';
 const OPERACOES = ['BACKUP', 'RESTAURACAO', 'LIMPEZA', 'MIGRACAO'];
 const PRAZOS = Object.freeze({ adquirirMs: 20000, confirmarMs: 10000, liberarMs: 10000, encerrarMs: 5000 });
 const PRAZO_DE_LIMPEZA_MS = 10000;
+const AQUISICAO_OK = Object.freeze({ ok: true, vidaMaximaMs: 45 * 60 * 1000 });
+const DEPLOY_HML = path.join(RAIZ_BACKEND, '..', 'deploy', 'hml');
+const COORDENACAO_DO_INSTALADOR = path.join(DEPLOY_HML, 'instalador', 'coordenacao.js');
+const sha256 = (b) => crypto.createHash('sha256').update(b).digest('hex');
+// Mesma ordem do sort() padrão para textos (unidades de código UTF-16), a do manifesto.
+const porUnidadeDeCodigo = (a, b) => {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
+};
 
 // Par (classid, objid) de um advisory lock de chave bigint, calculado aqui em JS: independente da fórmula SQL do guardião.
 const par = (chave) => { const v = BigInt.asUintN(64, BigInt(chave)); return `${v >> 32n}:${v & 0xffffffffn}`; };
@@ -141,6 +150,118 @@ async function encerrarSessaoIdentificada(admin, id) {
   );
   if (rows.length !== 1) throw new Error('a identidade da sessão não confere mais: nada encerrado');
   if (rows[0].encerrada !== true) throw new Error('a sessão identificada não foi encerrada');
+}
+
+// ---------------------------------------------------------------- ensaio provedor → instalador → resultado (3B-2B-3A)
+
+// O instalador real deixa as releases somente leitura: devolve a escrita antes de apagar o diretório do ensaio.
+function removerDiretorioDoEnsaio(dir) {
+  const liberarEscrita = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      if (e.isSymbolicLink() || !e.isDirectory()) continue;
+      fs.chmodSync(path.join(d, e.name), 0o700);
+      liberarEscrita(path.join(d, e.name));
+    }
+  };
+  if (!fs.existsSync(dir)) return;
+  fs.chmodSync(dir, 0o700);
+  liberarEscrita(dir);
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+// Agente do backend com o instalador REAL, numa raiz temporária: a release 1 já instalada e um pedido aprovado para a
+// release 2. S3 e âncora do agente são falsos; dependências, reinício, saúde e PID do serviço são simulados (sem npm,
+// systemd nem HTTP). Só a coordenação vem de fora, por criarCoordenacao; aoReiniciar roda no meio do reinício.
+async function ensaioDeInstalacao({ raiz, criarCoordenacao, aoReiniciar = async () => {} }) {
+  const A = require(path.join(DEPLOY_HML, 'cd', 'agente-backend.js'));
+  const I = require(path.join(DEPLOY_HML, 'instalador', 'instalar-release.js'));
+  const C = require(COORDENACAO_DO_INSTALADOR);
+  const Pr = require(path.join(DEPLOY_HML, 'cd', 'protocolo.js'));
+  const ancora = (op) => require(path.join(DEPLOY_HML, 'instalador', 'ancora.js')).criarAncora({ ...op, modo: 'caminho', semGarantiaDeCorrida: true });
+  const rot = (n) => `hml-20261121T1${n}0000-${String(n).repeat(7)}`;
+  const commitDe = (n) => String(n).repeat(40);
+  const release = (n) => {
+    const dir = path.join(raiz, `rel${n}`);
+    const migration = '-- 000_a.sql\n';
+    const lock = '{"lockfileVersion":3}';
+    const arquivos = {
+      'package.json': '{"engines":{"node":">=22"}}', 'package-lock.json': lock, 'src/server.js': `// v${n}\n`, 'migrations/000_a.sql': migration,
+      'migrations/checksums.json': JSON.stringify({ algoritmo: 'sha256', migrations: { '000_a.sql': sha256(migration) } }),
+    };
+    const manifesto = {};
+    for (const [rel, c] of Object.entries(arquivos)) {
+      fs.mkdirSync(path.dirname(path.join(dir, 'backend', rel)), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'backend', rel), c);
+      manifesto[rel] = sha256(c);
+    }
+    const texto = `${Object.keys(manifesto).sort(porUnidadeDeCodigo).map((rel) => `${manifesto[rel]}  ${rel}`).join('\n')}\n`;
+    fs.writeFileSync(path.join(dir, 'manifesto-backend.sha256'), texto);
+    const meta = { commit: commitDe(n), rotulo: rot(n), atual: true, geradoEm: '2026-11-21T10:00:00.000Z', backend: { arquivos: Object.keys(manifesto).length, manifestoSha256: sha256(texto), lockfileSha256: sha256(lock), node: '>=22', migrations: [{ nome: '000_a.sql', sha256: sha256(migration) }], contratos: {} } };
+    fs.writeFileSync(path.join(dir, 'release.json'), `${JSON.stringify(meta, null, 2)}\n`);
+    return dir;
+  };
+  const arquivosDe = (d, prefixo = '') => fs.readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name, 'en'))
+    .flatMap((e) => (e.isDirectory() ? arquivosDe(path.join(d, e.name), `${prefixo}${e.name}/`) : [`${prefixo}${e.name}`]));
+
+  const app = path.join(raiz, 'app');
+  const estadoDir = path.join(raiz, 'estado');
+  fs.mkdirSync(app);
+  fs.mkdirSync(estadoDir);
+  const link = path.join(app, 'backend');
+  // Comandos só para a configuração ser válida: o reinício e o PID são simulados abaixo e nunca executam estes roteiros.
+  const semEfeito = path.join(raiz, 'sem-efeito.js');
+  fs.writeFileSync(semEfeito, 'process.exit(0);\n');
+  const config = {
+    retencao: 3, raizesPersistentes: [],
+    componentes: { backend: {
+      tipo: 'backend', base: app, nome: 'backend', saude: { url: 'http://127.0.0.1:9/api/health' },
+      reinicio: { comando: [process.execPath, semEfeito] }, processo: { pidComando: [process.execPath, '-e', 'console.log(process.pid)'] },
+    } },
+  };
+  const observado = () => ({ banco: 'hml', origem: 'ensaio', coletadoEm: new Date().toISOString(), migrations: ['000_a'], contratos: {} });
+  const contagem = { reinicios: 0, saude: 0, processo: 0 };
+  let pid = 100;
+  const simuladas = {
+    criarAncora: ancora, lerObservado: async () => observado(), esperar: async () => {}, executar: async () => '',
+    verificarSaude: async () => { contagem.saude += 1; return { ok: true, detalhe: 'ok' }; },
+    identificarProcesso: async () => { contagem.processo += 1; pid += 1; return { pid, cwd: fs.realpathSync(link) }; },
+  };
+  const r1 = release(1);
+  const preparo = C.homologarProvedorParaTeste(async () => ({ situacao: 'LIVRE', origem: 'preparo-do-ensaio', consultadoEm: new Date().toISOString() }));
+  await I.instalar({ config, componente: 'backend', release: r1, opcoes: { releaseSha256Esperado: sha256(fs.readFileSync(path.join(r1, 'release.json'))) }, deps: { ...simuladas, reiniciar: async () => {}, consultarCoordenacao: preparo } });
+  Object.assign(contagem, { saude: 0, processo: 0 });
+
+  const r2 = release(2);
+  const blob = Buffer.from(JSON.stringify(arquivosDe(r2).map((nome) => [nome, fs.readFileSync(path.join(r2, nome)).toString('base64')])));
+  const id = '321-1';
+  const agora = Date.now();
+  const pedido = {
+    versao: 2, escopo: 'backend', id, repositorio: Pr.REPO, commit: commitDe(2), rotulo: rot(2), releaseSha256: sha256(fs.readFileSync(path.join(r2, 'release.json'))),
+    blobSha256: sha256(blob), permitirAnterior: false, criadoEm: new Date(agora - 1000).toISOString(), expiraEm: new Date(agora + 5 * 60000).toISOString(),
+  };
+  const dados = new Map([[`hml-backend/pedidos/${id}.json`, Buffer.from(JSON.stringify(pedido))], [`hml-backend/blobs/${id}.json`, blob]]);
+  const s3 = { get: async (k) => (dados.has(k) ? dados.get(k) : null), put: async (k, b) => { if (dados.has(k)) throw new Error('S3_PUT_FALHOU'); dados.set(k, b); } };
+  const armazem = new Map();
+  const ancoraDoAgente = () => ({
+    abrirBase: (d) => ({ d }),
+    criarExclusivo: (b, nome) => { if (armazem.has(`@${nome}`)) throw Object.assign(new Error('EEXIST'), { code: 'EEXIST' }); armazem.set(`@${nome}`, true); return { nome }; },
+    lerTexto: (b, nome) => (armazem.has(nome) ? armazem.get(nome) : null),
+    escreverAtomico: (b, nome, texto) => { armazem.set(nome, texto); },
+    identidade: (h) => h.nome, fechar: () => {}, removerArvore: (b, nome) => { armazem.delete(`@${nome}`); }, fecharTudo: () => {},
+  });
+  const identificar = async () => ({ ...(await I.identificar({ config, componente: 'backend', deps: { criarAncora: ancora } })), garantiaContraCorrida: true });
+  const deps = {
+    criarAncora: ancoraDoAgente, conferirRelease: () => ({ release: { commit: commitDe(2), rotulo: rot(2), atual: true } }), identificar,
+    vincular: () => ({ dir: raiz, comando: [process.execPath, 'sonda-nao-usada'] }), vincularGuardiao: () => ({ dir: RAIZ_BACKEND, comando: [process.execPath, GUARDIAO] }),
+    observar: async () => observado(), criarCoordenacao,
+    depsExtrasDoInstalador: { ...simuladas, reiniciar: async () => { contagem.reinicios += 1; await aoReiniciar(); } },
+  };
+  const r = await A.processar({ cfg: { estadoDir, instalador: config }, id, s3, deps });
+  const recibo = dados.get(`hml-backend/recibos/${id}.json`);
+  return {
+    r, contagem, alvo: rot(2), instalada: (await identificar()).rotulo, trava: armazem.has('@.trava-cd-backend'),
+    registro: JSON.parse(armazem.get(`${id}.json`)), recibo: recibo ? JSON.parse(recibo.toString()) : null,
+  };
 }
 
 // ---------------------------------------------------------------- PostgreSQL 16 real
@@ -268,7 +389,7 @@ describe('CD 3B-2B-2 — guardião de coordenação com PostgreSQL 16 real (só 
   test('aquisição: as quatro chaves do D-ORF-6 numa única sessão do guardião, confirmadas pela consulta de posse e bloqueadas para outra sessão', { timeout: 60000 }, async () => {
     const { coord, alca } = novoProvedor();
     await comLimpeza(async () => {
-      assert.deepEqual(await coord.adquirir(), { ok: true });
+      assert.deepEqual(await coord.adquirir(), AQUISICAO_OK);
       assert.equal((await sessoesDoGuardiao()).length, 1, 'uma única sessão dedicada');
       assert.deepEqual(await paresDoGuardiao(), ESPERADOS, 'as chaves de 64 bits, remontadas em JS, são exatamente as quatro de MIGRACAO');
       assert.deepEqual(await cadeadosLivresParaOutraSessao(), [false, false, false, false], 'nenhuma das quatro disponível para outra sessão');
@@ -286,7 +407,7 @@ describe('CD 3B-2B-2 — guardião de coordenação com PostgreSQL 16 real (só 
     const etapas = [liberarProvedor(coord), derrubarFilho(alca), removerDiretorio(diretorio)];
     await comLimpeza(async () => {
       fs.writeFileSync(path.join(diretorio, '001_alfa.sql'), 'CREATE TABLE alfa_cd_guardiao (id INTEGER PRIMARY KEY);\n');
-      assert.deepEqual(await coord.adquirir(), { ok: true });
+      assert.deepEqual(await coord.adquirir(), AQUISICAO_OK);
       const recusas = {};
       for (const operacao of OPERACOES) {
         const inicio = Date.now();
@@ -336,9 +457,13 @@ describe('CD 3B-2B-2 — guardião de coordenação com PostgreSQL 16 real (só 
   test('liberação normal: o guardião informa a liberação, o processo termina, a sessão cai e as quatro chaves voltam a ficar livres', { timeout: 60000 }, async () => {
     const { coord, alca } = novoProvedor();
     await comLimpeza(async () => {
-      assert.deepEqual(await coord.adquirir(), { ok: true });
+      assert.deepEqual(await coord.adquirir(), AQUISICAO_OK);
       const lib = await coord.liberar();
-      assert.deepEqual(lib, { situacao: 'LIBERACAO_INFORMADA', processoEncerrado: true, forcada: false, comprovadaNoBanco: false });
+      // 3B-2B-3A: a soltura das quatro chaves é conferida pelo guardião na mesma sessão; o encerramento dela, só declarado.
+      assert.deepEqual(lib, {
+        situacao: 'LIBERACAO_INFORMADA', processoEncerrado: true, forcada: false, comprovadaNoBanco: false,
+        cadeadosLiberados: { confirmada: true, liberados: 4, restantes: 0 }, sessaoEncerradaDeclarada: true,
+      });
       assert.equal(alca.filho.exitCode, 0);
       await semRestos('depois da liberação normal');
       assert.deepEqual(await coord.liberar(), lib, 'idempotente');
@@ -352,7 +477,7 @@ describe('CD 3B-2B-2 — guardião de coordenação com PostgreSQL 16 real (só 
   test('perda da sessão PostgreSQL: encerrada pela identidade completa, o guardião avisa, termina e nada fica preso', { timeout: 60000 }, async () => {
     const { coord, alca } = novoProvedor();
     await comLimpeza(async () => {
-      assert.deepEqual(await coord.adquirir(), { ok: true });
+      assert.deepEqual(await coord.adquirir(), AQUISICAO_OK);
       const identidade = await identificarSessaoUnica(admin, papel, APLICACAO);
       await encerrarSessaoIdentificada(admin, identidade);
       assert.equal(await aguardarSaida(alca.filho, 15000), true, 'o processo do guardião terminou');
@@ -367,7 +492,7 @@ describe('CD 3B-2B-2 — guardião de coordenação com PostgreSQL 16 real (só 
   test('encerramento forçado do processo: com o guardião morto por SIGKILL, o servidor derruba a sessão e solta as quatro chaves', { timeout: 60000 }, async () => {
     const { coord, alca } = novoProvedor();
     await comLimpeza(async () => {
-      assert.deepEqual(await coord.adquirir(), { ok: true });
+      assert.deepEqual(await coord.adquirir(), AQUISICAO_OK);
       sinalizarFilho(alca.filho, 'SIGKILL', filhos);
       assert.equal(await aguardarSaida(alca.filho, 15000), true);
       assert.equal((await coord.consultar()).situacao, 'DESCONHECIDO');
@@ -381,7 +506,7 @@ describe('CD 3B-2B-2 — guardião de coordenação com PostgreSQL 16 real (só 
   test('encerramento tardio: guardião parado não responde à liberação; o provedor o derruba e só então informa o encerramento, forçado', { timeout: 60000 }, async () => {
     const { coord, alca } = novoProvedor({ prazos: { ...PRAZOS, liberarMs: 1500, encerrarMs: 8000 } });
     await comLimpeza(async () => {
-      assert.deepEqual(await coord.adquirir(), { ok: true });
+      assert.deepEqual(await coord.adquirir(), AQUISICAO_OK);
       sinalizarFilho(alca.filho, 'SIGSTOP', filhos);
       assert.deepEqual(await paresDoGuardiao(), ESPERADOS, 'parado, o guardião ainda segura as quatro chaves');
       const lib = await coord.liberar();
@@ -394,7 +519,7 @@ describe('CD 3B-2B-2 — guardião de coordenação com PostgreSQL 16 real (só 
   test('liberação indeterminada: sem o sinal entregue, o provedor responde INDETERMINADA e o PostgreSQL confirma que as chaves continuam presas', { timeout: 60000 }, async () => {
     const { coord, alca } = novoProvedor({ prazos: { ...PRAZOS, liberarMs: 1000, encerrarMs: 1000 }, sinalNaoEntregue: true });
     await comLimpeza(async () => {
-      assert.deepEqual(await coord.adquirir(), { ok: true });
+      assert.deepEqual(await coord.adquirir(), AQUISICAO_OK);
       sinalizarFilho(alca.filho, 'SIGSTOP', filhos);
       const lib = await coord.liberar();
       assert.deepEqual([lib.situacao, lib.processoEncerrado, lib.comprovadaNoBanco], ['INDETERMINADA', false, false]);
@@ -408,6 +533,75 @@ describe('CD 3B-2B-2 — guardião de coordenação com PostgreSQL 16 real (só 
       await semRestos('depois do encerramento tardio da liberação indeterminada');
       observacao.liberacaoIndeterminada = { primeira: lib.situacao, depoisDoEncerramento: depois.situacao };
     }, [derrubarFilho(alca), liberarProvedor(coord)], falhasDeLimpeza);
+  });
+
+  // 3B-2B-3A (CA-13): provedor real → instalador real → resultado do agente. A continuidade é observada também por fora:
+  // no meio do reinício, a sessão do guardião (pid e backend_start), as quatro chaves dela e a recusa de outra sessão.
+  function provedoresDoEnsaio() {
+    const criados = [];
+    const criarCoordenacao = () => {
+      const p = novoProvedor();
+      criados.push(p);
+      require(COORDENACAO_DO_INSTALADOR).homologarProvedorParaTeste(p.coord.consultar);
+      return p.coord;
+    };
+    const etapas = (raiz) => [
+      { nome: 'liberar os provedores do ensaio', prazoMs: 30000, executar: async () => { for (const p of criados) { await p.coord.liberar(); provedores.delete(p.coord); } } },
+      { nome: 'encerrar os processos do ensaio', executar: async () => { const f = await encerrarFilhos(criados.map((p) => p.alca.filho).filter(Boolean), 5000); if (f.length) throw new Error(f.join('; ')); } },
+      { nome: 'remover o diretório do ensaio', executar: () => removerDiretorioDoEnsaio(raiz) },
+    ];
+    return { criados, criarCoordenacao, etapas };
+  }
+  const pontoDeControle = async () => {
+    const sessao = await identificarSessaoUnica(admin, papel, APLICACAO);
+    const { rows: [{ inicio }] } = await admin.query('SELECT extract(epoch FROM backend_start)::text AS inicio FROM pg_stat_activity WHERE pid = $1', [sessao.pid]);
+    return { sessao, epoca: inicio, pares: await paresDoGuardiao(), livres: await cadeadosLivresParaOutraSessao() };
+  };
+
+  test('CA-13: ensaio provedor → instalador → resultado: com a posse contínua do guardião real, SUCESSO; mesma sessão e as quatro chaves do começo ao fim', { timeout: 120000 }, async () => {
+    const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'gepi-cd-ensaio-inst-')));
+    const { criados, criarCoordenacao, etapas } = provedoresDoEnsaio();
+    const pontos = [];
+    await comLimpeza(async () => {
+      const e = await ensaioDeInstalacao({ raiz, criarCoordenacao, aoReiniciar: async () => { pontos.push(await pontoDeControle()); } });
+      assert.equal(e.r.estado, 'SUCESSO', JSON.stringify(e.r));
+      assert.equal(e.instalada, e.alvo);
+      assert.equal(criados.length, 1, 'um único guardião na operação');
+      assert.equal(pontos.length, 1);
+      assert.deepEqual(pontos[0].pares, ESPERADOS, 'no meio do reinício, a sessão do guardião segura exatamente as quatro chaves de MIGRACAO');
+      assert.deepEqual(pontos[0].livres, [false, false, false, false], 'e nenhuma está disponível para outra sessão');
+      const chaves = K.cadeadosDe('MIGRACAO').map(String).sort().join(',');
+      const impressao = sha256(`${sistema}|${pontos[0].sessao.pid}|${pontos[0].epoca}|${chaves}`);
+      assert.equal(e.registro.coordenacao.guardiao.impressao, impressao, 'a impressão da aquisição é a da sessão vista por fora no meio da operação');
+      assert.equal(e.registro.coordenacao.confirmacaoFinal, true);
+      assert.ok(e.registro.coordenacao.confirmacoes >= 3, 'uma confirmação por ação, mais a final');
+      assert.deepEqual([e.registro.liberacaoDaCoordenacao.cadeadosLiberadosConfirmados, e.registro.liberacaoDaCoordenacao.continuidadeDemonstrada, e.registro.liberacaoDaCoordenacao.comprovadaNoBanco], [true, true, false]);
+      assert.equal(e.recibo.estado, 'SUCESSO');
+      assert.equal(e.trava, false);
+      observacao.ensaioDeInstalacao = { resultado: e.r.estado, confirmacoes: e.registro.coordenacao.confirmacoes, janelaFinalMs: e.registro.coordenacao.janelaFinalMs };
+    }, etapas(raiz), falhasDeLimpeza);
+    await semRestos('depois do ensaio de instalação');
+  });
+
+  test('CA-13: ensaio provedor → instalador → resultado: sessão do guardião derrubada no meio do reinício dá CRITICO, sem ação nova e sem reversão', { timeout: 120000 }, async () => {
+    const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'gepi-cd-ensaio-inst-')));
+    const { criados, criarCoordenacao, etapas } = provedoresDoEnsaio();
+    await comLimpeza(async () => {
+      const aoReiniciar = async () => {
+        await encerrarSessaoIdentificada(admin, await identificarSessaoUnica(admin, papel, APLICACAO));
+        assert.equal(await aguardarSaida(criados[0].alca.filho, 15000), true, 'o guardião percebeu a perda e terminou');
+      };
+      const e = await ensaioDeInstalacao({ raiz, criarCoordenacao, aoReiniciar });
+      assert.deepEqual([e.r.estado, e.r.verificado, e.r.motivo], ['CRITICO', false, 'COORDENACAO_PERDIDA_DURANTE_INSTALACAO'], JSON.stringify(e.r));
+      assert.deepEqual([e.contagem.reinicios, e.contagem.processo, e.contagem.saude], [1, 1, 0], 'nenhuma ação depois da perda, nem reinício de recuperação');
+      assert.equal(e.instalada, e.alvo, 'sem coordenação, nada é revertido');
+      assert.equal(e.registro.coordenacao.ultimaAcao.nome, 'reiniciar');
+      assert.ok(['PERDIDA', 'PROCESSO_ENCERRADO'].includes(e.registro.coordenacao.guardiao.perda.motivo), JSON.stringify(e.registro.coordenacao.guardiao.perda));
+      assert.equal(e.recibo.estado, 'CRITICO');
+      assert.equal(e.trava, true, 'a trava do agente fica para diagnóstico');
+      observacao.ensaioDeInstalacaoComPerda = { resultado: e.r.estado, motivo: e.r.motivo, perda: e.registro.coordenacao.guardiao.perda.motivo };
+    }, etapas(raiz), falhasDeLimpeza);
+    await semRestos('depois do ensaio com perda no reinício');
   });
 
   test('ao fim: nenhum processo do guardião vivo, nenhuma sessão do papel e nenhum cadeado do D-ORF-6 preso', { timeout: 30000 }, async () => {
@@ -581,6 +775,43 @@ describe('CD 3B-2B-2 — controles do ensaio (simulação local, sem banco)', ()
       assert.equal(r.error, undefined, `${nome}: o processo de prova não terminou no prazo`);
       assert.equal(r.status, 0, `${nome}: ${r.stderr}`);
       assert.equal(r.stdout, esperado, `${nome}: o laço de eventos acabou antes do resultado`);
+    }
+  });
+
+  // A mesma montagem do ensaio de CA-13, com uma coordenação simulada no lugar do guardião real: prova sem banco a
+  // ligação provedor → instalador real → resultado. O guardião real e o PostgreSQL ficam para a CI.
+  test('3B-2B-3A: o ensaio provedor → instalador → resultado funciona sem banco: posse contínua dá SUCESSO, perda no reinício dá CRITICO', { timeout: 60000 }, async () => {
+    const nodeEnvAntes = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'test';
+    const C = require(COORDENACAO_DO_INSTALADOR);
+    const simulada = () => {
+      const estado = { vigente: true };
+      const consultar = C.homologarProvedorParaTeste(async () => ({ situacao: estado.vigente ? 'LIVRE' : 'DESCONHECIDO', origem: 'simulada', consultadoEm: new Date().toISOString() }));
+      const coord = {
+        adquirir: async () => AQUISICAO_OK, consultar, confirmar: async () => (await consultar()).situacao === 'LIVRE', garantiaVigente: () => estado.vigente,
+        descrever: () => ({ impressao: null, perda: estado.vigente ? null : { motivo: 'PERDIDA' } }),
+        liberar: async () => ({ situacao: 'LIBERACAO_INFORMADA', processoEncerrado: true, forcada: false, comprovadaNoBanco: false, cadeadosLiberados: { confirmada: estado.vigente, liberados: 4, restantes: 0 }, sessaoEncerradaDeclarada: true }),
+      };
+      return { estado, coord };
+    };
+    const raizes = [];
+    const novaRaiz = () => { const r = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'gepi-cd-ensaio-local-'))); raizes.push(r); return r; };
+    try {
+      const continua = simulada();
+      const ok = await ensaioDeInstalacao({ raiz: novaRaiz(), criarCoordenacao: () => continua.coord });
+      assert.equal(ok.r.estado, 'SUCESSO', JSON.stringify(ok.r));
+      assert.equal(ok.instalada, ok.alvo);
+      assert.equal(ok.registro.coordenacao.confirmacaoFinal, true);
+      const perde = simulada();
+      const ruim = await ensaioDeInstalacao({ raiz: novaRaiz(), criarCoordenacao: () => perde.coord, aoReiniciar: async () => { perde.estado.vigente = false; } });
+      assert.deepEqual([ruim.r.estado, ruim.r.motivo], ['CRITICO', 'COORDENACAO_PERDIDA_DURANTE_INSTALACAO'], JSON.stringify(ruim.r));
+      assert.deepEqual([ruim.contagem.reinicios, ruim.contagem.processo, ruim.contagem.saude], [1, 1, 0]);
+      assert.equal(ruim.instalada, ruim.alvo);
+      assert.equal(ruim.recibo.estado, 'CRITICO');
+      assert.equal(ruim.trava, true);
+    } finally {
+      for (const r of raizes) removerDiretorioDoEnsaio(r);
+      if (nodeEnvAntes === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = nodeEnvAntes;
     }
   });
 

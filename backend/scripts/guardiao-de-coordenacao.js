@@ -15,17 +15,24 @@
  *
  * Canal de controle (uma linha por mensagem):
  *   entrada: "confirmar <id>" (32 hexadecimais minúsculos, escolhidos por quem pergunta) | "liberar"
- *   saída:   {"evento":"ADQUIRIDA","cadeados":n} | {"evento":"RECUSADA","motivo"} | {"evento":"CONFIRMADA","id"}
- *            | {"evento":"PERDIDA"} | {"evento":"LIBERADA"} | {"evento":"CANAL_FECHADO"} | {"evento":"EXPIRADA"}
- *            | {"evento":"PROTOCOLO"} | {"evento":"SESSAO_INCERTA"}
+ *   saída:   {"evento":"ADQUIRIDA","cadeados":n,"impressao","vidaMaximaMs"} | {"evento":"RECUSADA","motivo"}
+ *            | {"evento":"CONFIRMADA","id","impressao","cadeados","comandos"} | {"evento":"PERDIDA"}
+ *            | {"evento":"LIBERADA","impressao","liberados","restantes","sessaoEncerrada"} | {"evento":"CANAL_FECHADO"}
+ *            | {"evento":"EXPIRADA"} | {"evento":"PROTOCOLO"} | {"evento":"SESSAO_INCERTA"}
  * "SESSAO_INCERTA" substitui qualquer evento de fim quando o encerramento da conexão não foi confirmado no prazo.
- * "CONFIRMADA" só sai depois de consultar, agora, que a sessão está viva e detém todos os cadeados, e devolve o id da
- * pergunta que respondeu. A aquisição só vale se os cadeados recebidos forem exatamente os que o módulo do D-ORF-6
- * declara para a operação. Só códigos são escritos: nenhuma credencial, host ou mensagem do driver. A senha vem do
- * arquivo de credencial, nunca do ambiente.
+ * "CONFIRMADA" só sai depois de consultar, agora, que a sessão é a MESMA da aquisição (pid e backend_start) e detém
+ * exatamente os cadeados da aquisição, e devolve o id da pergunta que respondeu. A aquisição só vale se os cadeados
+ * recebidos forem exatamente os que o módulo do D-ORF-6 declara para a operação. Só códigos são escritos: nenhuma
+ * credencial, host ou mensagem do driver. A senha vem do arquivo de credencial, nunca do ambiente.
+ *
+ * "impressao" é o SHA-256 de sistema, pid, início da sessão e chaves: igual em todas as mensagens enquanto a sessão
+ * e a posse forem as mesmas. "comandos" conta os comandos SQL enviados na sessão desde a aquisição (controle
+ * complementar: não prova continuidade sozinho). Em "LIBERADA", "impressao" é a da posse conferida imediatamente
+ * antes de soltar (null se não conferiu) e "sessaoEncerrada" é apenas a declaração deste processo.
  */
 
 const path = require('node:path');
+const crypto = require('node:crypto');
 const readline = require('node:readline');
 
 const LIMITES = Object.freeze({ conexaoMs: 5000, consultaMs: 5000, aquisicaoMs: 15000, encerramentoMs: 5000, vidaMaximaMs: 45 * 60 * 1000 });
@@ -33,10 +40,13 @@ const OPERACAO = 'MIGRACAO';
 const FORMATO_SISTEMA = /^[1-9]\d{0,19}$/;
 const FORMATO_CONFIRMAR = /^confirmar ([0-9a-f]{32})$/;
 const CONSULTA_DE_IDENTIDADE = 'SELECT current_database() AS banco, pg_is_in_recovery() AS em_recuperacao, (SELECT system_identifier::text FROM pg_control_system()) AS sistema';
-// Cadeados de sessão desta conexão, neste banco, com a chave de 64 bits remontada como o PostgreSQL a guarda.
-const CONSULTA_DE_POSSE = 'SELECT ((classid::bigint << 32) | objid::bigint)::text AS chave FROM pg_locks '
+// Uma linha só: identidade desta sessão no servidor (pid e backend_start) e os cadeados de sessão dela neste banco,
+// com a chave de 64 bits remontada como o PostgreSQL a guarda.
+const CONSULTA_DE_POSSE = 'SELECT pg_backend_pid()::text AS pid, '
+  + '(SELECT extract(epoch FROM backend_start)::text FROM pg_stat_activity WHERE pid = pg_backend_pid()) AS inicio, '
+  + 'ARRAY(SELECT ((classid::bigint << 32) | objid::bigint)::text FROM pg_locks '
   + "WHERE locktype = 'advisory' AND objsubid = 1 AND granted AND pid = pg_backend_pid() "
-  + 'AND database = (SELECT oid FROM pg_database WHERE datname = current_database())';
+  + 'AND database = (SELECT oid FROM pg_database WHERE datname = current_database()) ORDER BY 1) AS chaves';
 const SAIDAS = Object.freeze({ LIBERADA: 0, CANAL_FECHADO: 0, RECUSADA: 4, PERDIDA: 5, EXPIRADA: 6, PROTOCOLO: 7, SESSAO_INCERTA: 8 });
 
 const recusa = (codigo) => Object.assign(new Error(codigo), { codigo });
@@ -56,9 +66,19 @@ function posseCompativel(cadeados, esperados) {
     && cadeados.every((chave) => typeof chave === 'string' && previstos.has(chave));
 }
 
+// Mesma ordem do sort() padrão para textos (unidades de código UTF-16): a impressão da sessão depende dela.
+const porUnidadeDeCodigo = (a, b) => {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
+};
+const FORMATO_PID = /^[1-9]\d{0,9}$/;
+const FORMATO_INICIO = /^\d{1,12}(\.\d{1,9})?$/;
+
 function criarGuardiao({ conf, sistema, Client, adquirirExclusao, cadeadosDe, limites = LIMITES, opcoesTls = {} }) {
   let cliente = null;
   let posse = null;
+  let sessao = null; // { pid, inicio } da sessão que fez a aquisição
+  let comandos = null; // comandos SQL enviados desde a aquisição; null antes dela
   let viva = false;
   let iniciado = false;
   let encerrado = false;
@@ -84,9 +104,20 @@ function criarGuardiao({ conf, sistema, Client, adquirirExclusao, cadeadosDe, li
       try { c.connection.stream.destroy(); } catch { /* sem soquete acessível: resta o fim do processo */ }
     }
   };
+  // Todo comando da sessão passa por aqui, inclusive os do D-ORF-6, e é contado a partir da aquisição.
+  const executarSql = (sql) => { if (comandos !== null) comandos += 1; return cliente.query(sql); };
   const consultar = async (sql) => {
-    try { return await cliente.query(sql); } catch { throw recusa('GUARDIAO_CONSULTA'); }
+    try { return await executarSql(sql); } catch { throw recusa('GUARDIAO_CONSULTA'); }
   };
+  async function lerPosse() {
+    const { rows } = await consultar(CONSULTA_DE_POSSE);
+    const l = Array.isArray(rows) && rows.length === 1 ? rows[0] : null;
+    const valida = l && FORMATO_PID.test(String(l.pid)) && FORMATO_INICIO.test(String(l.inicio)) && Array.isArray(l.chaves) && l.chaves.every((c) => typeof c === 'string');
+    if (!valida) throw recusa('GUARDIAO_CONSULTA');
+    return { pid: String(l.pid), inicio: String(l.inicio), chaves: [...l.chaves].sort(porUnidadeDeCodigo) };
+  }
+  const impressaoDe = (s) => crypto.createHash('sha256').update(`${sistema}|${s.pid}|${s.inicio}|${s.chaves.join(',')}`).digest('hex');
+  const mesmaSessao = (s) => sessao !== null && s.pid === sessao.pid && s.inicio === sessao.inicio;
 
   async function conectarEAdquirir() {
     cliente = new Client({
@@ -99,14 +130,19 @@ function criarGuardiao({ conf, sistema, Client, adquirirExclusao, cadeadosDe, li
     viva = true;
     const linha = (await consultar(CONSULTA_DE_IDENTIDADE)).rows[0];
     if (!linha || linha.banco !== conf.banco || linha.em_recuperacao !== false || linha.sistema !== sistema) throw recusa('GUARDIAO_IDENTIDADE_DIVERGENTE');
-    const r = await adquirirExclusao({ query: (sql) => cliente.query(sql) }, { operacao: OPERACAO });
+    const r = await adquirirExclusao({ query: (sql) => executarSql(sql) }, { operacao: OPERACAO });
     if (r.ok !== true) return { ok: false, motivo: typeof r.motivo === 'string' ? r.motivo : 'GUARDIAO_CONSULTA' };
     let esperados = null;
     try { esperados = cadeadosDe(OPERACAO); } catch { esperados = null; }
     // A recusa encerra a sessão logo abaixo, e com ela cai qualquer cadeado que tenha sido tomado.
     if (!posseCompativel(r.cadeados, esperados)) throw recusa('GUARDIAO_CADEADOS');
+    // O servidor tem de mostrar esta sessão com exatamente esses cadeados: é a referência de todas as conferências.
+    const s = await lerPosse();
+    if (!posseCompativel(s.chaves, esperados)) throw recusa('GUARDIAO_CADEADOS');
     posse = r;
-    return { ok: true, cadeados: r.cadeados };
+    sessao = { pid: s.pid, inicio: s.inicio };
+    comandos = 0;
+    return { ok: true, cadeados: r.cadeados, impressao: impressaoDe(s) };
   }
 
   async function adquirir() {
@@ -124,29 +160,45 @@ function criarGuardiao({ conf, sistema, Client, adquirirExclusao, cadeadosDe, li
     return resultado;
   }
 
-  // Verdadeiro só com a sessão viva E todos os cadeados da aquisição ainda concedidos a ela, consultado agora.
-  async function confirmar() {
-    if (!posse || !viva || encerrado) return false;
+  // Só com a sessão viva, a MESMA da aquisição e com exatamente os cadeados da aquisição, consultado agora. Devolve a
+  // impressão, a contagem e o número de comandos desde a aquisição (incluindo esta consulta); senão, null.
+  async function confirmarSessao() {
+    if (!posse || !viva || encerrado) return null;
     try {
-      const { rows } = await comLimite(consultar(CONSULTA_DE_POSSE), limites.consultaMs, 'GUARDIAO_TIMEOUT');
-      const meus = new Set(rows.map((l) => l.chave));
-      return viva && posse.cadeados.length > 0 && posse.cadeados.every((chave) => meus.has(chave));
+      const s = await comLimite(lerPosse(), limites.consultaMs, 'GUARDIAO_TIMEOUT');
+      if (!viva || !mesmaSessao(s) || !posseCompativel(s.chaves, posse.cadeados)) return null;
+      return { impressao: impressaoDe(s), cadeados: s.chaves.length, comandos };
     } catch {
-      return false;
+      return null;
     }
   }
+  const confirmar = async () => (await confirmarSessao()) !== null;
 
+  // Antes de soltar, a posse é conferida na mesma sessão (impressão só se conferiu); depois, conta-se o que restou.
   async function liberar() {
-    if (encerrado) return { liberados: 0, sessaoEncerrada };
+    if (encerrado) return { liberados: 0, restantes: null, impressao: null, sessaoEncerrada };
     encerrado = true;
     let liberados = 0;
-    if (posse && viva) { try { liberados = (await comLimite(posse.liberar(), limites.consultaMs, 'GUARDIAO_TIMEOUT')).liberados; } catch { /* a sessão encerrada abaixo solta o que restar */ } }
+    let restantes = null;
+    let impressao = null;
+    if (posse && viva) {
+      const cadeados = posse.cadeados;
+      try {
+        const s = await comLimite(lerPosse(), limites.consultaMs, 'GUARDIAO_TIMEOUT');
+        if (mesmaSessao(s) && posseCompativel(s.chaves, cadeados)) impressao = impressaoDe(s);
+      } catch { /* sem conferência: impressão fica nula */ }
+      try { liberados = (await comLimite(posse.liberar(), limites.consultaMs, 'GUARDIAO_TIMEOUT')).liberados; } catch { /* a sessão encerrada abaixo solta o que restar */ }
+      try {
+        const s = await comLimite(lerPosse(), limites.consultaMs, 'GUARDIAO_TIMEOUT');
+        if (mesmaSessao(s)) restantes = s.chaves.filter((c) => cadeados.includes(c)).length;
+      } catch { /* sem contagem: restantes fica nulo */ }
+    }
     posse = null;
     await fechar();
-    return { liberados, sessaoEncerrada };
+    return { liberados, restantes, impressao, sessaoEncerrada };
   }
 
-  return { adquirir, confirmar, liberar, aoPerder: (cb) => { ouvintes.push(cb); } };
+  return { adquirir, confirmar, confirmarSessao, liberar, aoPerder: (cb) => { ouvintes.push(cb); } };
 }
 
 // O driver, o módulo do D-ORF-6 e a leitura da credencial só são carregados na execução real.
@@ -189,8 +241,11 @@ async function executar({ argv = process.argv.slice(2), entrada = process.stdin,
       terminou = true;
       clearTimeout(relogio);
       linhas.close();
-      const concluir = (final) => { emitir({ evento: final }); resolver(SAIDAS[final]); };
-      guardiao.liberar().then((r) => concluir(r && r.sessaoEncerrada === true ? evento : 'SESSAO_INCERTA'), () => concluir('SESSAO_INCERTA'));
+      const concluir = (final, r) => {
+        emitir(final === 'LIBERADA' ? { evento: final, impressao: r.impressao, liberados: r.liberados, restantes: r.restantes, sessaoEncerrada: true } : { evento: final });
+        resolver(SAIDAS[final]);
+      };
+      guardiao.liberar().then((r) => concluir(r && r.sessaoEncerrada === true ? evento : 'SESSAO_INCERTA', r), () => concluir('SESSAO_INCERTA'));
     };
     const relogio = setTimeout(() => fim('EXPIRADA'), limites.vidaMaximaMs);
     guardiao.aoPerder(() => fim('PERDIDA'));
@@ -200,11 +255,12 @@ async function executar({ argv = process.argv.slice(2), entrada = process.stdin,
         if (linha === 'liberar') { fim('LIBERADA'); return; }
         const pergunta = FORMATO_CONFIRMAR.exec(linha);
         if (!pergunta) { fim('PROTOCOLO'); return; }
-        if (await guardiao.confirmar()) { if (!terminou) emitir({ evento: 'CONFIRMADA', id: pergunta[1] }); } else fim('PERDIDA');
+        const conferida = await guardiao.confirmarSessao();
+        if (conferida) { if (!terminou) emitir({ evento: 'CONFIRMADA', id: pergunta[1], ...conferida }); } else fim('PERDIDA');
       });
     });
     linhas.on('close', () => fim('CANAL_FECHADO'));
-    emitir({ evento: 'ADQUIRIDA', cadeados: aquisicao.cadeados.length });
+    emitir({ evento: 'ADQUIRIDA', cadeados: aquisicao.cadeados.length, impressao: aquisicao.impressao, vidaMaximaMs: limites.vidaMaximaMs });
   });
 }
 

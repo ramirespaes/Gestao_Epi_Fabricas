@@ -61,18 +61,35 @@ function ancoraFalsa(armazem) {
 const saudavel = (rotulo, commit) => ({ instalado: true, integro: true, consistente: true, garantiaContraCorrida: true, rotulo, commit });
 const BASE = saudavel(`hml-20261118T090000-${'c'.repeat(7)}`, 'c'.repeat(40));
 const ALVO = saudavel(ROTULO, COMMIT);
-// Coordenação falsa no formato do provedor do guardião: { adquirir, consultar, liberar }. Registra a ordem das chamadas
-// numa linha do tempo compartilhada com o restante das dependências.
-function coordenacaoFalsa({ aquisicao = { ok: true }, consultar = async () => ({ situacao: 'DESCONHECIDO', origem: 'falsa', consultadoEm: new Date().toISOString() }), liberacao = { situacao: 'LIBERACAO_INFORMADA', processoEncerrado: true, forcada: false, comprovadaNoBanco: false }, tempo = [] } = {}) {
-  const chamadas = { adquirir: 0, liberar: 0, criada: 0 };
+// Coordenação falsa no formato do provedor do guardião: { adquirir, consultar, confirmar, liberar, garantiaVigente,
+// descrever }. Registra a ordem das chamadas numa linha do tempo compartilhada com o restante das dependências.
+// O padrão da consulta continua DESCONHECIDO; perder() simula a perda (aviso do guardião): a garantia local cai na hora.
+const VIDA_DO_GUARDIAO_MS = 45 * 60 * 1000;
+const LIBERACAO_CONFERIDA = Object.freeze({ situacao: 'LIBERACAO_INFORMADA', processoEncerrado: true, forcada: false, comprovadaNoBanco: false, cadeadosLiberados: { confirmada: true, liberados: 4, restantes: 0 }, sessaoEncerradaDeclarada: true });
+function coordenacaoFalsa({ aquisicao = { ok: true, vidaMaximaMs: VIDA_DO_GUARDIAO_MS }, consultar = async () => ({ situacao: 'DESCONHECIDO', origem: 'falsa', consultadoEm: new Date().toISOString() }), liberacao = LIBERACAO_CONFERIDA, tempo = [], estado = { vigente: true, perda: null } } = {}) {
+  const chamadas = { adquirir: 0, liberar: 0, criada: 0, confirmar: 0 };
   const provedor = {
     adquirir: async () => { chamadas.adquirir += 1; tempo.push('adquirir'); if (aquisicao instanceof Error) throw aquisicao; return aquisicao; },
     consultar,
+    confirmar: async () => { chamadas.confirmar += 1; return (await consultar()).situacao === 'LIVRE'; },
     liberar: async () => { chamadas.liberar += 1; tempo.push('liberar'); if (liberacao instanceof Error) throw liberacao; return liberacao; },
+    garantiaVigente: () => estado.vigente,
+    descrever: () => ({ instanciaReal: false, perda: estado.perda }),
   };
-  return { chamadas, provedor, tempo };
+  const perder = (motivo = 'PERDIDA') => { estado.vigente = false; if (!estado.perda) estado.perda = { motivo, em: new Date().toISOString() }; };
+  return { chamadas, provedor, tempo, estado, perder };
 }
-function depsDe({ instalar, antes = BASE, depois = ALVO, coordenacao = coordenacaoFalsa() } = {}) {
+// Simulador de sucesso: guardião que mantém a posse (LIVRE) até perder(). Cada consulta entra na linha do tempo.
+function coordenacaoLivre(opcoes = {}) {
+  const tempo = opcoes.tempo || [];
+  const estado = { vigente: true, perda: null };
+  const consultar = async () => {
+    tempo.push('consultar');
+    return estado.vigente ? { situacao: 'LIVRE', origem: 'falsa', consultadoEm: new Date().toISOString() } : { situacao: 'DESCONHECIDO', origem: 'falsa: perdida', consultadoEm: new Date().toISOString() };
+  };
+  return coordenacaoFalsa({ ...opcoes, tempo, estado, consultar });
+}
+function depsDe({ instalar, antes = BASE, depois = ALVO, coordenacao = coordenacaoLivre() } = {}) {
   const armazem = new Map();
   const chamadas = { instalar: 0, reverter: 0, identificar: 0 };
   const tempo = coordenacao.tempo;
@@ -85,7 +102,7 @@ function depsDe({ instalar, antes = BASE, depois = ALVO, coordenacao = coordenac
     observar: async () => { chamadas.observar = (chamadas.observar || 0) + 1; tempo.push('observar'); return { banco: 'hml', origem: 'teste', coletadoEm: new Date().toISOString(), migrations: ['000_a'], contratos: {} }; },
     conferirRelease: () => ({ release: { commit: COMMIT, rotulo: ROTULO, atual: true } }),
     identificar: async () => { chamadas.identificar += 1; return chamadas.instalar > 0 ? depois : antes; },
-    instalar: async (opcoes, release, vinculo, coordenacaoRecebida) => { chamadas.instalar += 1; chamadas.coordenacaoRecebida = coordenacaoRecebida; tempo.push('instalar'); return instalar(opcoes); },
+    instalar: async (opcoes, release, vinculo, coordenacaoRecebida, operacao) => { chamadas.instalar += 1; chamadas.coordenacaoRecebida = coordenacaoRecebida; chamadas.operacao = operacao; tempo.push('instalar'); return instalar(opcoes, operacao); },
     reverter: async () => { chamadas.reverter += 1; },
   };
 }
@@ -436,7 +453,8 @@ describe('Etapa 3B-2B-1: o guardião de coordenação no ciclo do agente', () =>
     const deps = comFases(depsDe({ instalar: async () => INSTALADA }));
     const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
     assert.equal(r.estado, 'SUCESSO', JSON.stringify(r));
-    assert.deepEqual(deps.tempo, ['registro:INICIO', 'vincularGuardiao', 'observar', 'registro:PREPARADO', 'adquirir', 'registro:INSTALACAO_INICIADA', 'instalar', 'liberar', 'registro:TERMINAL']);
+    // 3B-2B-3A: a confirmação final (consultar) fica entre a instalação e a liberação.
+    assert.deepEqual(deps.tempo, ['registro:INICIO', 'vincularGuardiao', 'observar', 'registro:PREPARADO', 'adquirir', 'registro:INSTALACAO_INICIADA', 'instalar', 'consultar', 'liberar', 'registro:TERMINAL']);
     assert.equal(deps.chamadas.baselineDoGuardiao.rotulo, BASE.rotulo, 'o guardião é vinculado à mesma baseline conferida no início');
     assert.equal(deps.chamadas.coordenacaoRecebida, deps.coordenacao.provedor, 'o instalador recebe o provedor adquirido');
     assert.deepEqual([deps.coordenacao.chamadas.criada, deps.coordenacao.chamadas.adquirir, deps.coordenacao.chamadas.liberar], [1, 1, 1]);
@@ -514,7 +532,7 @@ describe('Etapa 3B-2B-1: o guardião de coordenação no ciclo do agente', () =>
   for (const [nome, liberacao, causa] of LIBERACOES_INCERTAS) {
     test(`P1: instalação concluída com liberação incerta (${nome}): CRITICO, sem recibo de sucesso, trava preservada`, async () => {
       const { pedido, s3 } = preparar();
-      const deps = depsDe({ instalar: async () => INSTALADA, coordenacao: coordenacaoFalsa({ liberacao }) });
+      const deps = depsDe({ instalar: async () => INSTALADA, coordenacao: coordenacaoLivre({ liberacao }) });
       const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
       assert.deepEqual([r.estado, r.verificado, r.motivo, r.diagnostico], ['CRITICO', false, 'LIBERACAO_DA_COORDENACAO_INCERTA', causa]);
       assert.equal(comTrava(deps), true, 'a trava do agente fica para diagnóstico');
@@ -529,27 +547,49 @@ describe('Etapa 3B-2B-1: o guardião de coordenação no ciclo do agente', () =>
     });
   }
 
-  test('P1: liberação com encerramento comprovado (informada, encerrado forçado, sem processo): o resultado original é mantido', async () => {
+  // 3B-2B-3A (CA-20): o SUCESSO passou a exigir a soltura conferida dos quatro cadeados. Encerramento do processo sem
+  // esse aviso (PROCESSO_ENCERRADO, SEM_PROCESSO) comprova que nada ficou preso, mas não a continuidade até o fim: antes
+  // mantinha o SUCESSO, agora é CRITICO com CONTINUIDADE_NAO_DEMONSTRADA (endurecimento deliberado).
+  test('P1: liberação com encerramento comprovado e soltura conferida dos cadeados: o resultado original é mantido', async () => {
+    const { s3 } = preparar();
+    const deps = depsDe({ instalar: async () => INSTALADA, coordenacao: coordenacaoLivre({ liberacao: LIBERACAO_CONFERIDA }) });
+    const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
+    assert.equal(r.estado, 'SUCESSO');
+    assert.equal(comTrava(deps), false);
+    const lib = registroLocal(deps).liberacaoDaCoordenacao;
+    assert.deepEqual(lib, {
+      situacao: 'LIBERACAO_INFORMADA', processoEncerrado: true, forcada: false, encerramentoComprovado: true, comprovadaNoBanco: false,
+      cadeadosLiberadosConfirmados: true, sessaoEncerradaDeclarada: true, continuidadeDemonstrada: true,
+    });
+    assert.equal('resultadoAntesDaLiberacao' in registroLocal(deps), false);
+  });
+
+  test('CA-20: encerramento comprovado sem soltura conferida (encerrado forçado, sem processo, aviso incompleto): CRITICO CONTINUIDADE_NAO_DEMONSTRADA', async () => {
     for (const liberacao of [
-      { situacao: 'LIBERACAO_INFORMADA', processoEncerrado: true, forcada: false, comprovadaNoBanco: false },
       { situacao: 'PROCESSO_ENCERRADO', processoEncerrado: true, forcada: true, comprovadaNoBanco: false },
       { situacao: 'SEM_PROCESSO', processoEncerrado: true, forcada: false, comprovadaNoBanco: false },
+      { situacao: 'LIBERACAO_INFORMADA', processoEncerrado: true, forcada: false, comprovadaNoBanco: false },
+      { ...LIBERACAO_CONFERIDA, cadeadosLiberados: { confirmada: false, liberados: 3, restantes: 0 } },
     ]) {
-      const { s3 } = preparar();
-      const deps = depsDe({ instalar: async () => INSTALADA, coordenacao: coordenacaoFalsa({ liberacao }) });
+      const { pedido, s3 } = preparar();
+      const deps = depsDe({ instalar: async () => INSTALADA, coordenacao: coordenacaoLivre({ liberacao }) });
       const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
-      assert.equal(r.estado, 'SUCESSO', liberacao.situacao);
-      assert.equal(comTrava(deps), false);
-      const lib = registroLocal(deps).liberacaoDaCoordenacao;
-      assert.deepEqual(lib, { situacao: liberacao.situacao, processoEncerrado: true, forcada: liberacao.forcada, encerramentoComprovado: true, comprovadaNoBanco: false });
-      assert.equal('resultadoAntesDaLiberacao' in registroLocal(deps), false);
+      assert.deepEqual([r.estado, r.verificado, r.motivo, r.diagnostico], ['CRITICO', false, 'CONTINUIDADE_NAO_DEMONSTRADA', liberacao.situacao], JSON.stringify(liberacao));
+      assert.equal(comTrava(deps), true, 'a trava do agente fica para diagnóstico');
+      assert.equal(reciboPublicado(s3).estado, 'CRITICO');
+      assert.throws(() => P.validarRecibo(reciboPublicado(s3), pedido), (e) => e.codigo === 'DEPLOY_NAO_APROVADO');
+      const reg = registroLocal(deps);
+      assert.deepEqual(reg.resultadoAntesDaLiberacao, { estado: 'SUCESSO', verificado: true });
+      assert.equal(reg.liberacaoDaCoordenacao.encerramentoComprovado, true, 'nada ficou preso: o problema é a continuidade');
+      assert.equal(reg.liberacaoDaCoordenacao.continuidadeDemonstrada, false);
+      deps.armazem.delete('@.trava-cd-backend');
       fs.rmSync(path.join(tmp, `entrada-${ID}`), { recursive: true, force: true });
     }
   });
 
   test('P1: o agente nunca afirma liberação comprovada no banco, mesmo que o provedor diga que sim', async () => {
     const { s3 } = preparar();
-    const deps = depsDe({ instalar: async () => INSTALADA, coordenacao: coordenacaoFalsa({ liberacao: { situacao: 'LIBERACAO_INFORMADA', processoEncerrado: true, forcada: false, comprovadaNoBanco: true } }) });
+    const deps = depsDe({ instalar: async () => INSTALADA, coordenacao: coordenacaoLivre({ liberacao: { ...LIBERACAO_CONFERIDA, comprovadaNoBanco: true } }) });
     await A.processar({ cfg: cfg(), id: ID, s3, deps });
     assert.equal(registroLocal(deps).liberacaoDaCoordenacao.comprovadaNoBanco, false);
   });
@@ -577,9 +617,10 @@ describe('Etapa 3B-2B-1: o guardião de coordenação no ciclo do agente', () =>
 
   test('P1: liberação pedida uma única vez por operação; a operação incerta não é reprocessada nem cria outro guardião', async () => {
     const { s3 } = preparar();
-    const deps = depsDe({ instalar: async () => INSTALADA, coordenacao: coordenacaoFalsa({ liberacao: { situacao: 'INDETERMINADA', processoEncerrado: false, forcada: true } }) });
+    const deps = depsDe({ instalar: async () => INSTALADA, coordenacao: coordenacaoLivre({ liberacao: { situacao: 'INDETERMINADA', processoEncerrado: false, forcada: true } }) });
     const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
     assert.equal(r.estado, 'CRITICO');
+    assert.equal(r.motivo, 'LIBERACAO_DA_COORDENACAO_INCERTA');
     assert.equal(deps.coordenacao.chamadas.liberar, 1, 'um único pedido de liberação, apesar dos dois pontos de chamada');
     deps.armazem.delete('@.trava-cd-backend');
     await assert.rejects(A.processar({ cfg: cfg(), id: ID, s3, deps }), (e) => e.codigo === 'OPERACAO_PENDENTE_OU_CRITICA');
@@ -588,7 +629,7 @@ describe('Etapa 3B-2B-1: o guardião de coordenação no ciclo do agente', () =>
 
   test('P1: na fila, uma liberação incerta interrompe o processamento como operação crítica', async () => {
     const s3 = s3Com('1-1', '2-1');
-    const deps = depsDe({ instalar: async () => INSTALADA, coordenacao: coordenacaoFalsa({ liberacao: { situacao: 'INDETERMINADA', processoEncerrado: false, forcada: true } }) });
+    const deps = depsDe({ instalar: async () => INSTALADA, coordenacao: coordenacaoLivre({ liberacao: { situacao: 'INDETERMINADA', processoEncerrado: false, forcada: true } }) });
     await assert.rejects(A.processarFila({ cfg: cfg(), ids: ['1-1', '2-1'], s3, deps }), (e) => e.codigo === 'OPERACAO_CRITICA');
     assert.equal(deps.coordenacao.chamadas.criada, 1, 'o segundo pedido não começa');
   });
@@ -601,6 +642,185 @@ describe('Etapa 3B-2B-1: o guardião de coordenação no ciclo do agente', () =>
     const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
     assert.equal(r.estado, 'SUCESSO');
     assert.equal(deps.coordenacao.chamadas.criada, antes);
+  });
+});
+
+// 3B-2B-3A: a garantia vale do começo ao fim. Cada ação protegida exige, antes de começar, a garantia local do provedor,
+// uma confirmação nova e tempo suficiente; depois da última ação vem a confirmação final, e só então a liberação.
+describe('3B-2B-3A: garantia contínua, prazos e janela final (instalador simulado)', () => {
+  const comFases = (deps) => {
+    const set0 = deps.armazem.set.bind(deps.armazem);
+    deps.armazem.set = (k, v) => { if (k === `${ID}.json`) deps.tempo.push(`registro:${JSON.parse(v).fase}`); return set0(k, v); };
+    return deps;
+  };
+  const MIN = 60 * 1000;
+
+  test('CA-06: perda na conclusão, depois da última ação: CRITICO, recibo CRITICO, trava preservada e uma liberação', async () => {
+    const { pedido, s3 } = preparar();
+    const coordenacao = coordenacaoLivre();
+    const deps = depsDe({ instalar: async () => { coordenacao.perder('PERDIDA'); return INSTALADA; }, coordenacao });
+    const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
+    assert.deepEqual([r.estado, r.verificado, r.motivo], ['CRITICO', false, 'COORDENACAO_PERDIDA_DURANTE_INSTALACAO'], JSON.stringify(r));
+    assert.equal(comTrava(deps), true);
+    assert.equal(reciboPublicado(s3).estado, 'CRITICO');
+    assert.throws(() => P.validarRecibo(reciboPublicado(s3), pedido), (e) => e.codigo === 'DEPLOY_NAO_APROVADO');
+    assert.equal(coordenacao.chamadas.liberar, 1);
+    const reg = registroLocal(deps);
+    assert.equal(reg.coordenacao.confirmacaoFinal, false);
+    assert.equal(reg.coordenacao.guardiao.perda.motivo, 'PERDIDA');
+  });
+
+  test('CA-10: confirmação final DESCONHECIDO com a garantia local intacta (perda silenciosa): CRITICO', async () => {
+    const { s3 } = preparar();
+    const coordenacao = coordenacaoFalsa();
+    const deps = depsDe({ instalar: async () => INSTALADA, coordenacao });
+    const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
+    assert.deepEqual([r.estado, r.motivo], ['CRITICO', 'COORDENACAO_PERDIDA_DURANTE_INSTALACAO']);
+    assert.equal(coordenacao.chamadas.confirmar, 1, 'a confirmação final perguntou ao guardião');
+  });
+
+  test('CA-08: JA_INSTALADA com posse contínua: SUCESSO, com a confirmação final feita', async () => {
+    const { s3 } = preparar();
+    const coordenacao = coordenacaoLivre();
+    const deps = depsDe({ instalar: async () => ({ resultado: 'JA_INSTALADA', avisos: [] }), antes: ALVO, coordenacao });
+    const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
+    assert.equal(r.estado, 'SUCESSO', JSON.stringify(r));
+    assert.equal(coordenacao.chamadas.confirmar, 1);
+    assert.equal(registroLocal(deps).coordenacao.confirmacaoFinal, true);
+  });
+
+  test('CA-08: JA_INSTALADA com perda: CRITICO, sem recibo de sucesso, e a fila para como operação crítica', async () => {
+    const { pedido, s3 } = preparar();
+    const coordenacao = coordenacaoLivre();
+    const deps = depsDe({ instalar: async () => { coordenacao.perder('EXPIRADA'); return { resultado: 'JA_INSTALADA', avisos: [] }; }, antes: ALVO, coordenacao });
+    const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
+    assert.deepEqual([r.estado, r.motivo], ['CRITICO', 'COORDENACAO_PERDIDA_DURANTE_INSTALACAO']);
+    assert.equal(reciboPublicado(s3).estado, 'CRITICO');
+    assert.throws(() => P.validarRecibo(reciboPublicado(s3), pedido), (e) => e.codigo === 'DEPLOY_NAO_APROVADO');
+    assert.equal(comTrava(deps), true);
+    const fila = s3Com('1-1', '2-1');
+    const c2 = coordenacaoLivre();
+    const d2 = depsDe({ instalar: async () => { c2.perder('EXPIRADA'); return { resultado: 'JA_INSTALADA', avisos: [] }; }, antes: ALVO, coordenacao: c2 });
+    await assert.rejects(A.processarFila({ cfg: cfg(), ids: ['1-1', '2-1'], s3: fila, deps: d2 }), (e) => e.codigo === 'OPERACAO_CRITICA');
+    assert.equal(c2.chamadas.criada, 1, 'o segundo pedido não começa');
+  });
+
+  test('CA-16: vida máxima do guardião menor que 45 min, ausente ou inválida: RECUSADO sem mutação, guardião liberado, nada instalado', async () => {
+    for (const aquisicao of [{ ok: true, vidaMaximaMs: 44 * MIN }, { ok: true }, { ok: true, vidaMaximaMs: '2700000' }, { ok: true, vidaMaximaMs: 45 * MIN + 0.5 }]) {
+      const { s3 } = preparar();
+      const coordenacao = coordenacaoLivre({ aquisicao });
+      const deps = depsDe({ instalar: async () => INSTALADA, coordenacao });
+      const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
+      assert.deepEqual([r.estado, r.mutacao, r.motivo], ['RECUSADO', 'NENHUMA', 'PRAZO_DA_COORDENACAO_INSUFICIENTE'], JSON.stringify(aquisicao));
+      assert.equal(deps.chamadas.instalar, 0);
+      assert.equal(coordenacao.chamadas.liberar, 1);
+      assert.equal(comTrava(deps), false);
+      fs.rmSync(path.join(tmp, `entrada-${ID}`), { recursive: true, force: true });
+    }
+  });
+
+  test('CA-09: janela final: última ação, confirmação final, liberação e registro, nesta ordem; nada do instalador depois da confirmação final', async () => {
+    const { s3 } = preparar();
+    const deps = comFases(depsDe({ instalar: async () => INSTALADA }));
+    const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
+    assert.equal(r.estado, 'SUCESSO', JSON.stringify(r));
+    assert.deepEqual(deps.tempo.slice(-4), ['instalar', 'consultar', 'liberar', 'registro:TERMINAL']);
+    let executou = false;
+    await assert.rejects(deps.chamadas.operacao.proteger('reiniciar', 1000, async () => { executou = true; })(), (e) => e.codigo === 'OPERACAO_ENCERRADA');
+    assert.equal(executou, false);
+    const reg = registroLocal(deps);
+    assert.equal(reg.coordenacao.confirmacaoFinal, true);
+    assert.ok(Number.isInteger(reg.coordenacao.janelaFinalMs) && reg.coordenacao.janelaFinalMs >= 0, 'tempo entre a confirmação final e o pedido de liberação registrado');
+    assert.equal(reg.coordenacao.perda, null);
+  });
+
+  test('CA-02 no agente: garantia local caída antes de uma ação: a ação não começa e o guardião nem é consultado', async () => {
+    const { s3 } = preparar();
+    const coordenacao = coordenacaoLivre();
+    let executou = false;
+    let confirmacoesAntes = null;
+    const deps = depsDe({
+      coordenacao,
+      instalar: async (_opcoes, operacao) => {
+        coordenacao.perder('PERDIDA');
+        confirmacoesAntes = coordenacao.chamadas.confirmar;
+        await assert.rejects(operacao.proteger('reiniciar', 1000, async () => { executou = true; })(), (e) => e.codigo === 'COORDENACAO_PERDIDA_DURANTE_INSTALACAO');
+        assert.equal(coordenacao.chamadas.confirmar, confirmacoesAntes);
+        return INSTALADA;
+      },
+    });
+    const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
+    assert.equal(executou, false);
+    assert.deepEqual([r.estado, r.motivo], ['CRITICO', 'COORDENACAO_PERDIDA_DURANTE_INSTALACAO']);
+  });
+
+  test('CA-17: ação que não cabe no tempo restante não começa, e nada começa depois disso', async () => {
+    const { s3 } = preparar();
+    let agora = 1000;
+    let executou = 0;
+    const deps = depsDe({
+      instalar: async (_opcoes, operacao) => {
+        await operacao.proteger('identificarProcesso', 30 * 1000, async () => { executou += 1; })();
+        agora += 16 * MIN;
+        await assert.rejects(operacao.proteger('executar', 15 * MIN, async () => { executou += 1; })(), (e) => e.codigo === 'PRAZO_DA_INSTALACAO_EXCEDIDO');
+        await assert.rejects(operacao.proteger('identificarProcesso', 1000, async () => { executou += 1; })(), (e) => e.codigo === 'PRAZO_DA_INSTALACAO_EXCEDIDO');
+        return INSTALADA;
+      },
+    });
+    deps.relogio = () => agora;
+    const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
+    assert.equal(executou, 1, 'só a ação que cabia');
+    assert.deepEqual([r.estado, r.motivo], ['CRITICO', 'PRAZO_DA_INSTALACAO_EXCEDIDO']);
+    assert.equal(registroLocal(deps).coordenacao.perda.codigo, 'PRAZO_DA_INSTALACAO_EXCEDIDO');
+  });
+
+  test('CA-18: limite de 30 min ultrapassado até a conclusão: CRITICO PRAZO_DA_INSTALACAO_EXCEDIDO', async () => {
+    const { s3 } = preparar();
+    let agora = 1000;
+    const coordenacao = coordenacaoLivre();
+    const deps = depsDe({ coordenacao, instalar: async () => { agora += 31 * MIN; return INSTALADA; } });
+    deps.relogio = () => agora;
+    const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
+    assert.deepEqual([r.estado, r.motivo], ['CRITICO', 'PRAZO_DA_INSTALACAO_EXCEDIDO']);
+    assert.equal(coordenacao.chamadas.confirmar, 0, 'nem a confirmação final é tentada fora do prazo');
+    assert.equal(coordenacao.chamadas.liberar, 1);
+  });
+
+  test('CA-19: ajuste do relógio do sistema no meio da instalação não muda o resultado (prazos por relógio monotônico)', async () => {
+    const { s3 } = preparar();
+    const original = Date.now;
+    const deps = depsDe({ instalar: async () => { Date.now = () => original() + 2 * 60 * MIN; return INSTALADA; } });
+    try {
+      const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
+      assert.equal(r.estado, 'SUCESSO', JSON.stringify(r));
+    } finally {
+      Date.now = original;
+    }
+  });
+
+  for (const codigo of ['ENCERRAMENTO_DA_ACAO_INCERTO', 'PRAZO_DA_ACAO_EXCEDIDO', 'ACAO_DEIXOU_DESCENDENTES']) {
+    test(`ação que termina com ${codigo} bloqueia as seguintes e o resultado é CRITICO com esse motivo`, async () => {
+      const { s3 } = preparar();
+      let seguinte = false;
+      const deps = depsDe({
+        instalar: async (_opcoes, operacao) => {
+          await assert.rejects(operacao.proteger('reiniciar', 1000, async () => { throw erroCom(codigo); })(), (e) => e.codigo === codigo);
+          await assert.rejects(operacao.proteger('verificarSaude', 1000, async () => { seguinte = true; })(), (e) => e.codigo === codigo);
+          return INSTALADA;
+        },
+      });
+      const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
+      assert.equal(seguinte, false);
+      assert.deepEqual([r.estado, r.motivo], ['CRITICO', codigo]);
+      assert.equal(comTrava(deps), true);
+    });
+  }
+
+  test('prazos declarados: instalação 30 min, margem 5 min, reserva 10 min, guardião com pelo menos 45 min, e toda ação cabe na instalação', () => {
+    const p = A.PRAZOS_DA_OPERACAO;
+    assert.deepEqual([p.instalacaoMs, p.margemDeEncerramentoMs, p.reservaMs, p.vidaMinimaDoGuardiaoMs], [30 * MIN, 5 * MIN, 10 * MIN, 45 * MIN]);
+    assert.equal(p.instalacaoMs + p.margemDeEncerramentoMs + p.reservaMs, p.vidaMinimaDoGuardiaoMs);
+    for (const [nome, ms] of Object.entries(p.acoes)) assert.ok(Number.isInteger(ms) && ms > 0 && ms < p.instalacaoMs, nome);
   });
 });
 
@@ -815,9 +1035,11 @@ describe('Etapa 3B-1: o agente entrega ao instalador real as dependências da co
     "const readline = require('node:readline');",
     `const anotar = (o) => fs.appendFileSync(${JSON.stringify(diario)}, JSON.stringify({ marcador: 'release-${n}', ...o }) + '\\n');`,
     "anotar({ inicio: true, argv: process.argv.slice(2), ambiente: Object.keys(process.env), cwd: process.cwd(), roteiro: __filename });",
-    "process.stdout.write('{\"evento\":\"ADQUIRIDA\",\"cadeados\":4}\\n');",
+    `const IMPRESSAO = '${'c3'.repeat(32)}';`,
+    'let comandos = 0;',
+    `process.stdout.write(JSON.stringify({ evento: 'ADQUIRIDA', cadeados: 4, impressao: IMPRESSAO, vidaMaximaMs: ${45 * 60 * 1000} }) + '\\n');`,
     'const linhas = readline.createInterface({ input: process.stdin });',
-    "linhas.on('line', (t) => { anotar({ recebido: t }); const m = /^confirmar ([0-9a-f]{32})$/.exec(t); if (m) process.stdout.write(JSON.stringify({ evento: 'CONFIRMADA', id: m[1] }) + '\\n'); else if (t === 'liberar') { process.stdout.write('{\"evento\":\"LIBERADA\"}\\n'); process.exit(0); } });",
+    "linhas.on('line', (t) => { anotar({ recebido: t }); const m = /^confirmar ([0-9a-f]{32})$/.exec(t); if (m) { comandos += 1; process.stdout.write(JSON.stringify({ evento: 'CONFIRMADA', id: m[1], impressao: IMPRESSAO, cadeados: 4, comandos }) + '\\n'); } else if (t === 'liberar') { process.stdout.write(JSON.stringify({ evento: 'LIBERADA', impressao: IMPRESSAO, liberados: 4, restantes: 0, sessaoEncerrada: true }) + '\\n'); process.exit(0); } });",
     "linhas.on('close', () => { anotar({ canalFechado: true }); process.exit(0); });",
     '',
   ].join('\n');
@@ -961,8 +1183,8 @@ describe('Etapa 3B-1: o agente entrega ao instalador real as dependências da co
 
     test('perda da coordenação depois da troca e antes do reinício: nada é reiniciado, o link volta, nunca SUCESSO, guardião liberado', async () => {
       const amb = await ambiente();
-      let n = 0;
-      const perdeNoReinicio = C.homologarProvedorParaTeste(async () => { n += 1; return n <= 2 ? livre() : { situacao: 'DESCONHECIDO', origem: 'guardião: sessão perdida' }; });
+      // 3B-2B-3A: o agente também confirma antes de cada ação; a perda passa a ser disparada pela própria troca do link.
+      const perdeNoReinicio = C.homologarProvedorParaTeste(async () => (fs.realpathSync(amb.link) === amb.fisica(2) ? { situacao: 'DESCONHECIDO', origem: 'guardião: sessão perdida' } : livre()));
       const r = await A.processar({ cfg: amb.cfgAgente, id: ID, s3: amb.s3, deps: amb.depsDoAgente({ ...amb.controladas, consultarCoordenacao: perdeNoReinicio }) });
       assert.equal(r.estado, 'CRITICO', JSON.stringify(r));
       assert.equal(r.diagnostico, 'COORDENACAO_NAO_CONFIRMADA');
@@ -1020,6 +1242,93 @@ describe('Etapa 3B-1: o agente entrega ao instalador real as dependências da co
       recusa(ok, { rotulo: 'hml-qualquer' });
       recusa(ok, null);
     });
+  });
+
+  // 3B-2B-3A: com o instalador real, a garantia é conferida antes de cada ação dele; a perda no meio de uma ação já
+  // iniciada deixa essa ação terminar, impede qualquer outra (inclusive o reinício de recuperação) e termina em CRITICO.
+  describe('3B-2B-3A: perda da coordenação durante a instalação, com o instalador real', () => {
+    const livre = () => ({ situacao: 'LIVRE', origem: 'teste', consultadoEm: new Date().toISOString() });
+    // Consulta homologada só para o teste cuja posse cai quando o teste mandar; perder() derruba também a garantia local.
+    function guardiaoQuePerde(amb, linha = []) {
+      const sinal = { perdida: false };
+      const consultar = C.homologarProvedorParaTeste(async () => { linha.push('consultar'); return sinal.perdida ? { situacao: 'DESCONHECIDO', origem: 'guardião: sessão perdida', consultadoEm: new Date().toISOString() } : livre(); });
+      const perder = (motivo = 'PERDIDA') => { sinal.perdida = true; amb.guardioes.at(-1).perder(motivo); };
+      return { consultar, perder, linha };
+    }
+    const registro = (amb) => JSON.parse(amb.armazem.get(`${ID}.json`));
+    const semEspera = { esperar: async () => {} };
+
+    test('CA-03: com posse contínua, cada ação do instalador vem logo depois de uma confirmação, e a confirmação final vem depois da última', async () => {
+      const amb = await ambiente();
+      const linha = [];
+      const g = guardiaoQuePerde(amb, linha);
+      const c = amb.controladas;
+      const extras = {
+        ...c, ...semEspera, consultarCoordenacao: g.consultar,
+        executar: async (cmd, args, opc) => { if (!args.some((a) => a.endsWith('scripts/sonda-estado-observado.js'))) linha.push('dependencias'); return c.executar(cmd, args, opc); },
+        identificarProcesso: async () => { linha.push('processo'); return c.identificarProcesso(); },
+        verificarSaude: async () => { linha.push('saude'); return c.verificarSaude(); },
+        reiniciar: async () => { linha.push('reiniciar'); },
+      };
+      const r = await A.processar({ cfg: amb.cfgAgente, id: ID, s3: amb.s3, deps: amb.depsDoAgente(extras) });
+      assert.equal(r.estado, 'SUCESSO', JSON.stringify(r));
+      const acoes = linha.map((e, i) => [e, i]).filter(([e]) => e !== 'consultar');
+      assert.ok(acoes.length >= 4, linha.join(','));
+      for (const [nome, i] of acoes) assert.equal(linha[i - 1], 'consultar', `${nome} sem confirmação imediatamente antes: ${linha.join(',')}`);
+      assert.equal(linha.at(-1), 'consultar', 'a confirmação final vem depois da última ação');
+      assert.equal(amb.guardioes[0].chamadas.confirmar, acoes.length + 1, 'uma confirmação do agente por ação, mais a final');
+      assert.equal(registro(amb).coordenacao.confirmacaoFinal, true);
+    });
+
+    test('CA-04: perda durante o reinício: o reinício em curso termina, nenhuma ação nova começa, nada é revertido sem coordenação e o resultado é CRITICO', async () => {
+      const amb = await ambiente();
+      const g = guardiaoQuePerde(amb);
+      let reinicios = 0;
+      const extras = { ...amb.controladas, ...semEspera, consultarCoordenacao: g.consultar, reiniciar: async () => { reinicios += 1; g.perder('PERDIDA'); } };
+      const r = await A.processar({ cfg: amb.cfgAgente, id: ID, s3: amb.s3, deps: amb.depsDoAgente(extras) });
+      assert.deepEqual([r.estado, r.verificado, r.motivo], ['CRITICO', false, 'COORDENACAO_PERDIDA_DURANTE_INSTALACAO'], JSON.stringify(r));
+      assert.equal(reinicios, 1, 'nenhum reinício além do que já estava em curso (nem o de recuperação)');
+      assert.equal(amb.chamadas.processo, 1, 'só a identificação anterior à troca');
+      assert.equal(amb.chamadas.saude, 0, 'nenhuma verificação de saúde depois da perda');
+      assert.equal(await amb.instalada(), rot(2), 'sem coordenação, nada é revertido');
+      assert.equal(amb.armazem.has('@.trava-cd-backend'), true);
+      assert.equal(reciboDoBackend(amb.s3).estado, 'CRITICO');
+      const reg = registro(amb);
+      assert.equal(reg.coordenacao.perda.codigo, 'COORDENACAO_PERDIDA_DURANTE_INSTALACAO');
+      assert.deepEqual([reg.coordenacao.ultimaAcao.nome, reg.coordenacao.ultimaAcao.terminou], ['reiniciar', true]);
+      assert.equal(reg.coordenacao.guardiao.perda.motivo, 'PERDIDA');
+      assert.equal(amb.guardioes[0].chamadas.liberar, 1);
+    });
+
+    test('CA-05: perda durante a verificação de saúde: nenhuma tentativa nova depois da perda e o resultado é CRITICO', async () => {
+      const amb = await ambiente();
+      const g = guardiaoQuePerde(amb);
+      let saude = 0;
+      const extras = { ...amb.controladas, ...semEspera, consultarCoordenacao: g.consultar, verificarSaude: async () => { saude += 1; g.perder('PERDIDA'); return { ok: false, detalhe: 'HTTP 503' }; } };
+      const r = await A.processar({ cfg: amb.cfgAgente, id: ID, s3: amb.s3, deps: amb.depsDoAgente(extras) });
+      assert.deepEqual([r.estado, r.motivo], ['CRITICO', 'COORDENACAO_PERDIDA_DURANTE_INSTALACAO'], JSON.stringify(r));
+      assert.equal(saude, 1, 'o instalador tenta 3 vezes; só a primeira chegou a acontecer');
+      assert.equal(amb.reinicios(), 1, 'só o reinício da instalação, nenhum de recuperação');
+      assert.equal(amb.armazem.has('@.trava-cd-backend'), true);
+      assert.equal(registro(amb).coordenacao.ultimaAcao.nome, 'verificarSaude');
+    });
+
+    for (const motivo of ['PERDIDA', 'EXPIRADA']) {
+      test(`CA-06/CA-07: ${motivo} depois da última consulta do instalador (saúde aprovada): a confirmação final reprova e o resultado é CRITICO`, async () => {
+        const amb = await ambiente();
+        const g = guardiaoQuePerde(amb);
+        const extras = { ...amb.controladas, ...semEspera, consultarCoordenacao: g.consultar, verificarSaude: async () => { g.perder(motivo); return { ok: true, detalhe: 'ok' }; } };
+        const r = await A.processar({ cfg: amb.cfgAgente, id: ID, s3: amb.s3, deps: amb.depsDoAgente(extras) });
+        assert.deepEqual([r.estado, r.verificado, r.motivo], ['CRITICO', false, 'COORDENACAO_PERDIDA_DURANTE_INSTALACAO'], JSON.stringify(r));
+        assert.equal(reciboDoBackend(amb.s3).estado, 'CRITICO');
+        assert.throws(() => P.validarRecibo(reciboDoBackend(amb.s3), amb.pedido), (e) => e.codigo === 'DEPLOY_NAO_APROVADO');
+        const reg = registro(amb);
+        assert.deepEqual(reg.resultadoAntesDaLiberacao, undefined);
+        assert.equal(reg.coordenacao.confirmacaoFinal, false);
+        assert.equal(reg.coordenacao.guardiao.perda.motivo, motivo);
+        assert.equal(amb.armazem.has('@.trava-cd-backend'), true);
+      });
+    }
   });
 
   const falhas = [
@@ -1465,5 +1774,93 @@ describe('invariantes do código do agente do backend', () => {
   test('o uso exige --config com --pedido ou --pendentes', async () => {
     await assert.rejects(A.principal([]), (e) => e.codigo === 'USO');
     await assert.rejects(A.principal(['--config', '/x']), (e) => e.codigo === 'USO');
+  });
+
+  test('3B-2B-3A: os processos das ações do agente só são executados pelo executor com prazo', () => {
+    assert.match(fonte, /require\('\.\/executor-com-prazo'\)/);
+    const executor = fs.readFileSync(path.join(RAIZ, 'deploy/hml/cd/executor-com-prazo.js'), 'utf8');
+    assert.doesNotMatch(executor, /shell:\s*true|exec\(|execSync|spawnSync/);
+    assert.doesNotMatch(executor, /process\.kill\(\s*-?1\s*[,)]/, 'nunca sinaliza todos os processos');
+  });
+});
+
+// 3B-2B-3A: executor das ações do agente (dependências, reinício, identificação do processo) com prazo efetivo. Cada
+// comando roda num grupo de processos próprio; no prazo, o grupo inteiro é encerrado (SIGTERM, depois SIGKILL) e o fim é
+// CONFERIDO, não presumido pelo envio do sinal. Os testes usam processos Node reais e conferem que nada sobrevive.
+describe('3B-2B-3A: executor com prazo efetivo', () => {
+  const E = () => require(path.join(RAIZ, 'deploy/hml/cd/executor-com-prazo.js'));
+  const vivo = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code !== 'ESRCH'; } };
+  const lerPids = (arquivo) => { try { return fs.readFileSync(arquivo, 'utf8').split('\n').filter(Boolean).map(Number); } catch { return []; } };
+  const esperarAte = async (cond, ms = 3000) => { const fim = Date.now() + ms; while (!cond() && Date.now() < fim) await new Promise((r) => { setTimeout(r, 20); }); return cond(); };
+  // Pai que registra o próprio pid e o de um neto (no mesmo grupo) e fica preso; opcionalmente ignora SIGTERM.
+  function roteiroPreso(arquivo, { ignorarTerm = false, paiSai = false } = {}) {
+    const roteiro = path.join(tmp, 'preso.js');
+    fs.writeFileSync(roteiro, `'use strict';
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+${ignorarTerm ? "process.on('SIGTERM', () => {});" : ''}
+const neto = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);"], { stdio: 'ignore' });
+fs.writeFileSync(${JSON.stringify(arquivo)}, process.pid + '\\n' + neto.pid + '\\n');
+${paiSai ? 'neto.unref(); setTimeout(() => process.exit(0), 100);' : 'setInterval(() => {}, 1000);'}
+`);
+    return roteiro;
+  }
+
+  test('comando que termina bem: devolve a saída padrão', async () => {
+    assert.equal(await E().executarComPrazo(process.execPath, ['-e', "process.stdout.write('ok')"], { prazoMs: 5000 }), 'ok');
+  });
+
+  test('comando que falha: ACAO_FALHOU com o começo do erro, sem prazo envolvido', async () => {
+    await assert.rejects(E().executarComPrazo(process.execPath, ['-e', "process.stderr.write('quebrou'); process.exit(3)"], { prazoMs: 5000 }), (e) => e.codigo === 'ACAO_FALHOU' && /quebrou/.test(e.message));
+  });
+
+  test('prazo vencido: o grupo inteiro (pai e neto que ignoram SIGTERM) é encerrado e o fim é conferido', async () => {
+    const arquivo = path.join(tmp, 'pids');
+    const roteiro = roteiroPreso(arquivo, { ignorarTerm: true });
+    const inicio = Date.now();
+    await assert.rejects(E().executarComPrazo(process.execPath, [roteiro], { prazoMs: 400, gracaMs: 300 }), (e) => e.codigo === 'PRAZO_DA_ACAO_EXCEDIDO');
+    assert.ok(Date.now() - inicio < 4000, 'termina dentro do prazo somado à graça');
+    const pids = lerPids(arquivo);
+    assert.equal(pids.length, 2, 'pai e neto chegaram a existir');
+    for (const pid of pids) assert.equal(vivo(pid), false, `processo ${pid} sobreviveu`);
+  });
+
+  test('comando que sai deixando um descendente no grupo: o descendente é encerrado e a ação não vale', async () => {
+    const arquivo = path.join(tmp, 'pids');
+    const roteiro = roteiroPreso(arquivo, { paiSai: true });
+    await assert.rejects(E().executarComPrazo(process.execPath, [roteiro], { prazoMs: 5000, gracaMs: 300 }), (e) => e.codigo === 'ACAO_DEIXOU_DESCENDENTES');
+    const pids = lerPids(arquivo);
+    assert.equal(pids.length, 2);
+    for (const pid of pids) assert.equal(vivo(pid), false, `processo ${pid} sobreviveu`);
+  });
+
+  test('o envio do sinal não prova o fim: grupo que continua aparecendo vira ENCERRAMENTO_DA_ACAO_INCERTO, no prazo', async () => {
+    const arquivo = path.join(tmp, 'pids');
+    const roteiro = roteiroPreso(arquivo);
+    // Os sinais chegam de verdade ao grupo; só a conferência (sinal 0) mente que ainda há alguém vivo.
+    const sinalizar = (alvo, sinal) => { if (sinal === 0) return true; return process.kill(alvo, sinal); };
+    const inicio = Date.now();
+    await assert.rejects(E().executarComPrazo(process.execPath, [roteiro], { prazoMs: 300, gracaMs: 200, sinalizar }), (e) => e.codigo === 'ENCERRAMENTO_DA_ACAO_INCERTO');
+    assert.ok(Date.now() - inicio < 4000, 'não espera indefinidamente');
+    for (const pid of lerPids(arquivo)) assert.equal(await esperarAte(() => !vivo(pid)), true, `processo ${pid} sobreviveu`);
+  });
+
+  test('só o grupo do próprio filho é sinalizado; falha ao iniciar não sinaliza nada', async () => {
+    const alvos = [];
+    const sinalizar = (alvo, sinal) => { alvos.push(alvo); return process.kill(alvo, sinal); };
+    const arquivo = path.join(tmp, 'pids');
+    await assert.rejects(E().executarComPrazo(process.execPath, [roteiroPreso(arquivo)], { prazoMs: 300, gracaMs: 300, sinalizar }), (e) => e.codigo === 'PRAZO_DA_ACAO_EXCEDIDO');
+    const [pai] = lerPids(arquivo);
+    assert.ok(alvos.length > 0);
+    assert.deepEqual([...new Set(alvos)], [-pai], 'todo sinal vai ao grupo do filho, e a nada além dele');
+    alvos.length = 0;
+    await assert.rejects(E().executarComPrazo('/nao/existe/comando', [], { prazoMs: 300, sinalizar }), (e) => e.codigo === 'ACAO_NAO_INICIOU');
+    assert.deepEqual(alvos, []);
+  });
+
+  test('prazo inválido: nada é iniciado', async () => {
+    for (const prazoMs of [undefined, 0, -1, 1.5, '1000']) {
+      await assert.rejects(E().executarComPrazo(process.execPath, ['-e', ''], { prazoMs }), (e) => e.codigo === 'PRAZO_INVALIDO', String(prazoMs));
+    }
   });
 });
