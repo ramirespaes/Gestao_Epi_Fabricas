@@ -1,0 +1,13 @@
+#!/bin/sh
+# Modelo INERTE (Etapa 4C, D-H2). Não instalar sem autorização própria.
+# Destino previsto: /usr/local/lib/safework-cd/gravar-identidade-do-servico (root:root 0755), chamado pelo
+# ExecStartPost do drop-in 91, com o usuário do serviço. Grava "<pid> <caminho real do diretório>" do processo principal,
+# 0644, trocado por rename. Lê só o cwd do próprio processo do serviço (mesmo usuário); nenhuma variável nem segredo.
+set -eu
+umask 022
+pid="${MAINPID:?}"
+cwd=$(readlink -f "/proc/$pid/cwd")
+t=$(mktemp /run/safework-hml/.identidade.XXXXXX)
+printf '%s %s\n' "$pid" "$cwd" > "$t"
+chmod 0644 "$t"
+mv -f "$t" /run/safework-hml/identidade

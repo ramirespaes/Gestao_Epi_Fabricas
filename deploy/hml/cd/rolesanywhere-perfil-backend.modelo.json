@@ -1,0 +1,7 @@
+{
+  "name": "safework-hml-cd-backend-agente",
+  "roleArns": ["arn:aws:iam::CONTA:role/safework-hml-cd-backend-agente"],
+  "durationSeconds": 7200,
+  "requireInstanceProperties": false,
+  "enabled": false
+}

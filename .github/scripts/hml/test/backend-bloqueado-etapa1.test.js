@@ -37,6 +37,31 @@ describe('Etapa 1: o backend continua bloqueado no instalador', () => {
       fs.rmSync(base, { recursive: true, force: true });
     }
   });
+  // 4C (D-H1): a adoção é uma operação separada, que só cria a primeira release; ela não abre outro caminho para
+  // instalar sobre uma release em uso, reiniciar ou reverter o backend.
+  test('4C (D-H1): a adoção não abre caminho para instalar, reiniciar ou reverter o backend; a política da linha de comando não muda', () => {
+    assert.deepEqual([...N.POLITICA_DE_COMPONENTES.backend.cli].sort(), ['identificar', 'reconciliar'], 'adotar não entra na linha de comando do instalador');
+    const cli = ler('deploy/hml/instalador/adotar-backend.js');
+    assert.match(cli, /I\.adotarBaselineDoBackend\(/);
+    assert.doesNotMatch(cli, /\.instalar\(|\.reverter\(|\.reconciliar\(|consultarCoordenacao|reiniciar|permitir|semAutenticacao|semComprovacao|resolverEstadoCritico/);
+    const fonte = ler('deploy/hml/instalador/instalar-release.js');
+    const adocao = fonte.slice(fonte.indexOf('async function adotarBaselineDoBackend('), fonte.indexOf('async function identificar('));
+    assert.doesNotMatch(adocao, /reiniciarEComprovar|comprovarExecucao|\.reiniciar\(|identificarProcesso|verificarSaude|consultarCoordenacao|avaliarPreCondicoes|naoHomologada|provedorHomologado/);
+    assert.match(adocao, /const depsDaAdocao = \{ executar: deps\.executar \|\| executarComando, usuario: deps\.usuario \};/, 'só a instalação de dependências segue adiante');
+    assert.match(fonte, /const naoHomologada = \(mensagem\) => erro\('COORDENACAO_NAO_HOMOLOGADA', mensagem\);/);
+    assert.equal((fonte.match(/erro\('COORDENACAO_NAO_HOMOLOGADA'/g) || []).length, 1, 'continua um único ponto de lançamento');
+  });
+  // 4C (D-H1, opção 1): a confirmação da release adotada só lê (processo, PID, saúde) e grava o estado uma vez.
+  test('4C (D-H1): a confirmação da adoção não reinicia, não instala, não executa comandos, não consulta coordenação nem migrations', () => {
+    const fonte = ler('deploy/hml/instalador/instalar-release.js');
+    const inicio = fonte.indexOf('async function confirmarBaselineAdotada(');
+    assert.ok(inicio > 0);
+    const confirmacao = fonte.slice(inicio, fonte.indexOf('// ------------------------------------------------------------ linha de comando', inicio));
+    assert.doesNotMatch(confirmacao, /reiniciarEComprovar|\.reiniciar\(|preparar\(|trocarAtual|trocarAnterior|removerAtual|avaliarPreCondicoes|lerObservado|consultarCoordenacao|\.executar\(|naoHomologada|migrat/);
+    assert.match(confirmacao, /comprovarExecucao\(\{ ctx, deps, alvoRotulo: rotulo, procAntes: null/);
+    assert.equal((confirmacao.match(/gravarEstado\(/g) || []).length, 1, 'uma única escrita do estado');
+    assert.doesNotMatch(ler('deploy/hml/instalador/adotar-backend.js'), /\.instalar\(|\.reverter\(|reiniciar|consultarCoordenacao/);
+  });
   test('nenhum provedor de coordenação está homologado: nem o padrão, nem um injetado que declare LIVRE', () => {
     assert.equal(provedorHomologado(consultaPadrao), false);
     assert.equal(provedorHomologado(async () => ({ situacao: 'LIVRE', origem: 'teste', consultadoEm: new Date().toISOString() })), false);

@@ -1,0 +1,12 @@
+# Modelo INERTE (Etapa 4C, D-H3). Não instalar nem ativar sem autorização própria.
+# Destino previsto: /etc/systemd/system/safework-cd-backend.timer (root:root 0644). Separado do timer do frontend.
+[Unit]
+Description=SafeWork HML: consulta periódica da fila do CD do backend
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=2min
+Unit=safework-cd-backend.service
+
+[Install]
+WantedBy=timers.target

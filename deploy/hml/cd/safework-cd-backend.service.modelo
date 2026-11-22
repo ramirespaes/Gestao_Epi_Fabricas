@@ -1,0 +1,22 @@
+# Modelo INERTE (Etapa 4C, D-H3). Não instalar nem ativar sem autorização própria.
+# Destino previsto: /etc/systemd/system/safework-cd-backend.service (root:root 0644).
+# O lançador obtém as credenciais temporárias pelo aws_signing_helper e inicia o agente; nenhuma credencial fica no
+# ambiente da unidade, em arquivo ou em log. O /proc não é escondido (ProtectProc padrão): o agente lê o
+# /proc/<pid>/status do serviço para conferir o dono do processo, nunca o environ nem o cwd.
+[Unit]
+Description=SafeWork HML: agente do CD do backend (lançador com credenciais temporárias)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=USUARIO_DO_AGENTE_BACKEND
+Group=USUARIO_DO_AGENTE_BACKEND
+ExecStart=/usr/bin/node /usr/local/lib/safework-cd/cd/lancador-credenciais-backend.js --config /etc/safework/cd/agente-backend.json --pendentes
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=BASE_DO_CD_BACKEND ESTADO_DO_AGENTE_BACKEND
+TimeoutStartSec=50min

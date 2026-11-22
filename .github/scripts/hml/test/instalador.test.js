@@ -884,6 +884,382 @@ describe('3B-2B-3B: backend pelo provedor do guardião (fluxo de produção do i
     const rev = await codigoDe(ctx.reverter({ config: ctx.amb.config, componente: 'backend', opcoes: ctx.obs, deps: { ...ctx.deps, consultarCoordenacao: coord.consultar } }));
     assert.equal(rev.codigo, 'COORDENACAO_NAO_HOMOLOGADA');
   });
+
+  // Etapa 4C (D-H1): adoção da primeira release do backend. Reaproveita o preparo do instalador (cópia ancorada,
+  // dependências, links persistentes, verificação e metadado) e cria link, versao.json e estado com comprovada:false e
+  // o evento ADOCAO. Nunca reinicia nem consulta processo, saúde ou coordenação, e nunca substitui nada: a base precisa
+  // estar vazia. comprovada:false não é comprovação operacional (identificar não a dá como íntegra).
+  describe('4C (D-H1): adoção da primeira release do backend', () => {
+    const SONDA = '// sonda de teste\n';
+    function criarReleaseAdotavel(n = 1, { guardiao = true, sonda = true, atual = true } = {}) {
+      const lock = '{"lockfileVersion":3}';
+      const sql = '-- 000_a.sql\n';
+      return criarRelease({
+        componente: 'backend', n, atual,
+        arquivos: {
+          'package.json': '{"engines":{"node":">=22"}}', 'package-lock.json': lock, 'src/server.js': `// v${n}\n`, 'migrations/000_a.sql': sql,
+          'migrations/checksums.json': JSON.stringify({ algoritmo: 'sha256', migrations: { '000_a.sql': sha256(sql) } }),
+          ...(guardiao ? { 'scripts/guardiao-de-coordenacao.js': GUARDIAO } : {}), ...(sonda ? { 'scripts/sonda-estado-observado.js': SONDA } : {}),
+        },
+        secao: { lockfileSha256: sha256(lock), node: '>=22', migrations: [{ nome: '000_a.sql', sha256: sha256(sql) }], contratos: {} },
+      });
+    }
+    const hashDe = (rel) => sha256(fs.readFileSync(path.join(rel, 'release.json')));
+    function depsDaAdocao() {
+      const chamadas = { executar: 0, proibidas: [] };
+      const proibida = (nome) => async () => { chamadas.proibidas.push(nome); throw new Error(`${nome} não pode ser chamado na adoção`); };
+      const deps = {
+        criarAncora: criarAncoraPorCaminho, agora: Date.now,
+        executar: async (cmd, args, opc) => { chamadas.executar += 1; fs.mkdirSync(path.join(opc.cwd, 'node_modules', 'zod'), { recursive: true }); fs.writeFileSync(path.join(opc.cwd, 'node_modules', 'zod', 'index.js'), '1'); },
+        reiniciar: proibida('reiniciar'), identificarProcesso: proibida('identificarProcesso'), verificarSaude: proibida('verificarSaude'), consultarCoordenacao: proibida('consultarCoordenacao'),
+      };
+      return { chamadas, deps };
+    }
+    const adotar = (amb, rel, opcoes, deps) => require(MODULO).adotarBaselineDoBackend({ config: amb.config, componente: 'backend', release: rel, opcoes, deps });
+    const foraDaBase = (amb) => [hashDaArvore(amb.data), hashDaArvore(amb.secrets), hashDaArvore(amb.www)];
+    const diarioDe = (amb) => fs.readFileSync(path.join(amb.releases('backend'), 'diario.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+
+    test('adota a release oficial íntegra: release, metadado, link, versao.json e estado com comprovada:false e evento ADOCAO, sem reiniciar nem consultar nada', async () => {
+      const amb = criarAmbiente();
+      const rel = criarReleaseAdotavel(1);
+      const antesFora = foraDaBase(amb);
+      const { deps, chamadas } = depsDaAdocao();
+      const r = await adotar(amb, rel, { releaseSha256Esperado: hashDe(rel) }, deps);
+      assert.equal(r.resultado, 'ADOTADA');
+      assert.equal(r.rotulo, R(1));
+      assert.equal(r.comprovada, false);
+      assert.equal(fs.readlinkSync(amb.link('backend')), `.releases/backend/${R(1)}`);
+      const raiz = amb.releases('backend');
+      const meta = lerJson(path.join(raiz, 'meta', `${R(1)}.json`));
+      assert.equal(meta.commit, COMMIT(1));
+      assert.equal(meta.releaseSha256, hashDe(rel));
+      assert.equal(typeof meta.manifesto['scripts/guardiao-de-coordenacao.js'], 'string');
+      assert.equal(typeof meta.manifesto['scripts/sonda-estado-observado.js'], 'string');
+      const estado = lerJson(path.join(raiz, 'estado.json'));
+      assert.deepEqual({ rotulo: estado.atual.rotulo, commit: estado.atual.commit, comprovada: estado.atual.comprovada }, { rotulo: R(1), commit: COMMIT(1), comprovada: false });
+      assert.equal(estado.anterior, null);
+      const evento = estado.historico.at(-1);
+      assert.equal(evento.evento, 'ADOCAO');
+      assert.equal(evento.rotulo, R(1));
+      assert.equal(evento.releaseSha256, hashDe(rel));
+      assert.equal(evento.comprovada, false);
+      assert.equal(evento.reiniciou, false);
+      assert.equal(lerJson(path.join(raiz, 'versao.json')).rotulo, R(1));
+      assert.equal(fs.readlinkSync(path.join(raiz, R(1), '.env')), path.join(amb.secrets, 'backend.env'), 'link persistente criado sem ler o destino');
+      assert.equal(chamadas.executar, 1, 'dependências instaladas uma vez');
+      assert.deepEqual(chamadas.proibidas, [], 'nenhum reinício, processo, saúde ou coordenação');
+      assert.deepEqual(foraDaBase(amb), antesFora, 'nada fora da base nova mudou');
+      assert.deepEqual(diarioDe(amb).map((e) => e.passo), ['INICIO', 'PREPARADA', 'CONCLUIDA']);
+      assert.equal(diarioDe(amb)[0].operacao, 'adotar');
+      const id = await require(MODULO).identificar({ config: amb.config, componente: 'backend', deps: { criarAncora: criarAncoraPorCaminho } });
+      assert.equal(id.instalado, true);
+      assert.equal(id.consistente, true, JSON.stringify(id.problemas));
+      assert.equal(id.integro, false, 'comprovada:false não é comprovação operacional');
+      assert.ok(id.problemas.some((p) => /não teve processo e saúde comprovados/.test(p)));
+    });
+
+    test('recusa antes de qualquer mudança: componente estático, sem hash, hash divergente, retroativa, sem guardião, sem sonda e release inválida', async () => {
+      const amb = criarAmbiente();
+      const { deps } = depsDaAdocao();
+      const valida = criarReleaseAdotavel(1);
+      const comHash = (rel) => ({ releaseSha256Esperado: hashDe(rel) });
+      const casos = [
+        ['componente estático', 'ADOCAO_RECUSADA', () => { const p = criarRelease({}); return require(MODULO).adotarBaselineDoBackend({ config: amb.config, componente: 'portal', release: p, opcoes: comHash(p), deps }); }],
+        ['componente desconhecido', 'COMPONENTE_DESCONHECIDO', () => require(MODULO).adotarBaselineDoBackend({ config: amb.config, componente: 'x', release: valida, opcoes: comHash(valida), deps })],
+        ['sem hash', 'ADOCAO_RECUSADA', () => adotar(amb, valida, {}, deps)],
+        ['sem hash, com opt-out de autenticidade', 'ADOCAO_RECUSADA', () => adotar(amb, valida, { semAutenticacao: true }, deps)],
+        ['hash divergente', 'RELEASE_NAO_AUTENTICADA', () => adotar(amb, valida, { releaseSha256Esperado: 'f'.repeat(64) }, deps)],
+        ['retroativa', 'ADOCAO_RECUSADA', () => { const r = criarReleaseAdotavel(2, { atual: false }); return adotar(amb, r, comHash(r), deps); }],
+        ['sem o guardião', 'ADOCAO_RECUSADA', () => { const r = criarReleaseAdotavel(3, { guardiao: false }); return adotar(amb, r, comHash(r), deps); }],
+        ['sem a sonda', 'ADOCAO_RECUSADA', () => { const r = criarReleaseAdotavel(4, { sonda: false }); return adotar(amb, r, comHash(r), deps); }],
+        ['release inválida', 'RELEASE_INVALIDA', () => adotar(amb, tmp(), { releaseSha256Esperado: 'f'.repeat(64) }, deps)],
+      ];
+      for (const [nome, codigo, executar] of casos) {
+        const erro = await codigoDe(executar());
+        assert.equal(erro.codigo, codigo, nome);
+        assert.deepEqual(fs.readdirSync(amb.app), [], `${nome}: nada criado na base do backend`);
+        assert.deepEqual(fs.readdirSync(amb.www), [], `${nome}: nada criado na base do frontend`);
+      }
+    });
+
+    test('nunca substitui: adoção repetida, base com link, com diretório no lugar do link ou com árvore de releases existente é recusada sem mudança', async () => {
+      let amb = criarAmbiente();
+      const rel = criarReleaseAdotavel(1);
+      await adotar(amb, rel, { releaseSha256Esperado: hashDe(rel) }, depsDaAdocao().deps);
+      const adotada = hashDaArvore(amb.app);
+      const rel2 = criarReleaseAdotavel(2);
+      assert.equal((await codigoDe(adotar(amb, rel2, { releaseSha256Esperado: hashDe(rel2) }, depsDaAdocao().deps))).codigo, 'ADOCAO_RECUSADA', 'outra release');
+      assert.equal((await codigoDe(adotar(amb, rel, { releaseSha256Esperado: hashDe(rel) }, depsDaAdocao().deps))).codigo, 'ADOCAO_RECUSADA', 'a mesma release');
+      assert.equal(hashDaArvore(amb.app), adotada);
+      const ocupacoes = [
+        ['diretório no lugar do link (implantação atual fora do layout)', (a) => { fs.mkdirSync(path.join(a.app, 'backend')); fs.writeFileSync(path.join(a.app, 'backend', 'server.js'), 'atual'); }],
+        ['link qualquer no lugar', (a) => fs.symlinkSync(a.raiz, path.join(a.app, 'backend'))],
+        ['árvore de releases com release', (a) => fs.mkdirSync(path.join(a.app, '.releases', 'backend', R(5)), { recursive: true })],
+        ['árvore de releases com metadado', (a) => { fs.mkdirSync(path.join(a.app, '.releases', 'backend', 'meta'), { recursive: true }); fs.writeFileSync(path.join(a.app, '.releases', 'backend', 'meta', `${R(5)}.json`), '{}'); }],
+        ['árvore de releases com estado', (a) => { fs.mkdirSync(path.join(a.app, '.releases', 'backend', 'meta'), { recursive: true }); fs.writeFileSync(path.join(a.app, '.releases', 'backend', 'estado.json'), '{"versao":1,"atual":null,"anterior":null,"historico":[]}'); }],
+      ];
+      for (const [nome, ocupar] of ocupacoes) {
+        amb = criarAmbiente();
+        ocupar(amb);
+        const antes = hashDaArvore(amb.app);
+        assert.equal((await codigoDe(adotar(amb, rel, { releaseSha256Esperado: hashDe(rel) }, depsDaAdocao().deps))).codigo, 'ADOCAO_RECUSADA', nome);
+        assert.equal(hashDaArvore(amb.app), antes, `${nome}: nada mudou`);
+      }
+    });
+
+    test('falha parcial: nas dependências ou depois de publicar, nada fica (release, metadado, link, versao.json, estado); uma nova adoção funciona', async () => {
+      const amb = criarAmbiente();
+      const rel = criarReleaseAdotavel(1);
+      const raiz = amb.releases('backend');
+      const restos = () => fs.readdirSync(raiz).filter((n) => n !== 'diario.jsonl' && n !== 'meta').sort();
+      const { deps } = depsDaAdocao();
+      deps.executar = async () => { throw new Error('npm falhou'); };
+      assert.equal((await codigoDe(adotar(amb, rel, { releaseSha256Esperado: hashDe(rel) }, deps))).codigo, 'DEPENDENCIAS_FALHARAM');
+      assert.equal(existeLink(amb.link('backend')), false);
+      assert.deepEqual(restos(), []);
+      assert.deepEqual(fs.readdirSync(path.join(raiz, 'meta')), []);
+      assert.equal(diarioDe(amb).at(-1).passo, 'FALHOU');
+      // Falha de E/S ao gravar o versao.json, depois de publicar a release e trocar o link: tudo é desfeito.
+      const falhaNoVersao = depsDaAdocao().deps;
+      falhaNoVersao.criarAncora = (op) => {
+        const A = criarAncoraPorCaminho(op);
+        return { ...A, escreverAtomico: (dir, nome, ...resto) => { if (nome === 'versao.json') throw Object.assign(new Error('EIO'), { code: 'EIO' }); return A.escreverAtomico(dir, nome, ...resto); } };
+      };
+      const erro = await codigoDe(adotar(amb, rel, { releaseSha256Esperado: hashDe(rel) }, falhaNoVersao));
+      assert.ok(erro, 'recusada');
+      assert.equal(existeLink(amb.link('backend')), false, 'link desfeito');
+      assert.deepEqual(restos(), [], 'release, versao.json e estado desfeitos');
+      assert.deepEqual(fs.readdirSync(path.join(raiz, 'meta')), [], 'metadado desfeito');
+      assert.equal(diarioDe(amb).at(-1).passo, 'FALHOU');
+      const r = await adotar(amb, rel, { releaseSha256Esperado: hashDe(rel) }, depsDaAdocao().deps);
+      assert.equal(r.resultado, 'ADOTADA');
+    });
+
+    test('encadeamento: a release adotada é a baseline do guardião real; com C1 e C2 o instalador instala a seguinte, sem eles recusa, e a reversão manual segue bloqueada', async () => {
+      const amb = criarAmbiente();
+      const r1 = criarReleaseAdotavel(1);
+      await adotar(amb, r1, { releaseSha256Esperado: hashDe(r1) }, depsDaAdocao().deps);
+      const { instalar, reverter } = carregar();
+      const alvo = criarReleaseBackendComGuardiao(2);
+      const { deps, chamadas } = criarDeps();
+      deps.agora = Date.now;
+      const ctx = { instalar, reverter, amb, obs: { observado: observadoAgora('000_a.sql') }, alvo, releaseSha256: hashDe(alvo), deps, chamadas };
+      const coord = await guardiaoDaBaseline(amb);
+      ctx.deps.consultarCoordenacao = coord.consultar;
+      assert.equal((await recusada(ctx, { autorizacao: autorizar(coord, ctx) })).codigo, 'COORDENACAO_NAO_HOMOLOGADA', 'sem a configuração oficial (C1)');
+      configuracaoOficial(ctx);
+      assert.equal((await recusada(ctx, {})).codigo, 'COORDENACAO_NAO_HOMOLOGADA', 'sem autorização (C2)');
+      const r = await ctx.instalar({ config: amb.config, componente: 'backend', release: alvo, opcoes: { ...ctx.obs, idDoPedido: ID_DO_PEDIDO, autorizacao: autorizar(coord, ctx) }, deps: ctx.deps });
+      assert.equal(r.resultado, 'INSTALADA', JSON.stringify(r));
+      assert.equal(path.basename(fs.readlinkSync(amb.link('backend'))), R(2));
+      assert.equal(lerJson(path.join(amb.releases('backend'), 'estado.json')).anterior.rotulo, R(1), 'a adotada passa a ser o destino de reversão');
+      assert.equal((await codigoDe(ctx.reverter({ config: amb.config, componente: 'backend', opcoes: ctx.obs, deps: ctx.deps }))).codigo, 'COORDENACAO_NAO_HOMOLOGADA', 'reversão manual bloqueada');
+    });
+
+    test('linha de comando da adoção: só --config, --release e --release-sha256; fora de teste só a configuração oficial; no Linux adota', () => {
+      const CLI = path.join(REPO, 'deploy', 'hml', 'instalador', 'adotar-backend.js');
+      const rodar = (args, env = { PATH: process.env.PATH, NODE_ENV: 'test' }) => spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', env });
+      for (const args of [[], ['--config', 'x'], ['--config', 'x', '--release', 'y'], ['--config', 'x', '--release', 'y', '--release-sha256'],
+        ['--config', 'x', '--release', 'y', '--release-sha256', 'z', '--sem-autenticacao-de-origem'], ['--release', 'y', '--config', 'x', '--release-sha256', 'z', '--permitir-execucao-como-root']]) {
+        const r = rodar(args);
+        assert.equal(r.status, 1, JSON.stringify(args));
+        assert.match(r.stderr, /Adoção recusada \(USO\)/, JSON.stringify(args));
+      }
+      const foraDeTeste = rodar(['--config', '/tmp/x.json', '--release', '/tmp/r', '--release-sha256', 'a'.repeat(64)], { PATH: process.env.PATH });
+      assert.equal(foraDeTeste.status, 1);
+      assert.match(foraDeTeste.stderr, /Adoção recusada \(CONFIG_NAO_OFICIAL\)/);
+      // Configuração oficial de teste: a seção instalador do agente (backend sem dependências, sem npm de verdade).
+      const amb = criarAmbiente();
+      const { dependencias, ...backendSemNpm } = amb.config.componentes.backend;
+      const caminho = path.join(tmp(), 'agente-backend.json');
+      fs.writeFileSync(caminho, JSON.stringify({ habilitado: false, isolamentoRevisado: 'PENDENTE', instalador: { ...amb.config, componentes: { backend: backendSemNpm } } }));
+      fs.chmodSync(caminho, 0o640);
+      const rel = criarReleaseAdotavel(1);
+      const r = rodar(['--config', caminho, '--release', rel, '--release-sha256', hashDe(rel)]);
+      if (process.platform === 'linux') {
+        assert.equal(r.status, 0, r.stderr);
+        assert.equal(JSON.parse(r.stdout).resultado, 'ADOTADA');
+        assert.equal(fs.readlinkSync(amb.link('backend')), `.releases/backend/${R(1)}`);
+      } else {
+        assert.equal(r.status, 1);
+        assert.match(r.stderr, /Adoção recusada \(PLATAFORMA_SEM_ANCORA\)/);
+        assert.deepEqual(fs.readdirSync(amb.app), []);
+      }
+    });
+
+    // Opção 1 da 4C: confirmação explícita da release adotada, por processo (caminho real e PID, pela identidade do
+    // serviço) e saúde, sem reinício. Só para a release do evento ADOCAO ainda não comprovada; o estado só muda depois
+    // de todas as provas, numa única escrita atômica.
+    function depsDaConfirmacao(amb, { cwd, pid = 4242, saude = { ok: true, detalhe: 'ok' }, falhaNaIdentidade } = {}) {
+      const chamadas = { identificar: 0, saude: 0, proibidas: [] };
+      const proibida = (nome) => async () => { chamadas.proibidas.push(nome); throw new Error(`${nome} não pode ser chamado na confirmação`); };
+      const deps = {
+        criarAncora: criarAncoraPorCaminho, agora: Date.now, esperar: async () => {},
+        identificarProcesso: async () => { chamadas.identificar += 1; if (falhaNaIdentidade) throw falhaNaIdentidade; return { pid, cwd: cwd === undefined ? fs.realpathSync(amb.link('backend')) : cwd }; },
+        verificarSaude: async () => { chamadas.saude += 1; return saude; },
+        reiniciar: proibida('reiniciar'), executar: proibida('executar'), consultarCoordenacao: proibida('consultarCoordenacao'), lerObservado: proibida('lerObservado'),
+      };
+      return { deps, chamadas };
+    }
+    const confirmar = (amb, deps) => require(MODULO).confirmarBaselineAdotada({ config: amb.config, componente: 'backend', deps });
+    async function adotada() {
+      const amb = criarAmbiente();
+      const rel = criarReleaseAdotavel(1);
+      await adotar(amb, rel, { releaseSha256Esperado: hashDe(rel) }, depsDaAdocao().deps);
+      return { amb, rel, estadoArq: path.join(amb.releases('backend'), 'estado.json') };
+    }
+
+    test('confirmação: processo da release adotada, PID e saúde gravam comprovada:true e CONFIRMACAO_DA_ADOCAO, sem reiniciar, instalar, executar nem consultar coordenação', async () => {
+      const { amb, estadoArq } = await adotada();
+      const { deps, chamadas } = depsDaConfirmacao(amb);
+      const r = await confirmar(amb, deps);
+      assert.equal(r.resultado, 'ADOCAO_CONFIRMADA');
+      assert.equal(r.rotulo, R(1));
+      assert.equal(r.comprovada, true);
+      assert.equal(r.pid, 4242);
+      const estado = lerJson(estadoArq);
+      assert.equal(estado.atual.comprovada, true);
+      const evento = estado.historico.at(-1);
+      assert.deepEqual([evento.evento, evento.rotulo, evento.commit, evento.pid, evento.reiniciou], ['CONFIRMACAO_DA_ADOCAO', R(1), COMMIT(1), 4242, false]);
+      assert.equal(chamadas.identificar, 1);
+      assert.ok(chamadas.saude >= 1);
+      assert.deepEqual(chamadas.proibidas, [], 'nenhum reinício, instalação, comando, migration ou coordenação');
+      assert.equal(fs.readlinkSync(amb.link('backend')), `.releases/backend/${R(1)}`, 'o link não muda');
+      const id = await require(MODULO).identificar({ config: amb.config, componente: 'backend', deps: { criarAncora: criarAncoraPorCaminho } });
+      assert.equal(id.integro, true, JSON.stringify(id.problemas));
+    });
+
+    test('confirmação recusada sem mudar o estado: processo em outra release, identidade ausente ou de outro PID, e saúde reprovada', async () => {
+      const identidadeInvalida = Object.assign(new Error('IDENTIDADE_DO_SERVICO_INVALIDA'), { codigo: 'IDENTIDADE_DO_SERVICO_INVALIDA' });
+      const casos = [
+        ['processo em outra release', 'VERSAO_NAO_COMPROVADA', (amb) => depsDaConfirmacao(amb, { cwd: amb.raiz })],
+        ['identidade ausente, antiga ou de outro PID', 'VERSAO_NAO_COMPROVADA', (amb) => depsDaConfirmacao(amb, { falhaNaIdentidade: identidadeInvalida })],
+        ['saúde reprovada', 'SAUDE_FALHOU', (amb) => depsDaConfirmacao(amb, { saude: { ok: false, detalhe: 'HTTP 503' } })],
+      ];
+      for (const [nome, codigo, montar] of casos) {
+        const { amb, estadoArq } = await adotada();
+        const antes = fs.readFileSync(estadoArq);
+        const { deps, chamadas } = montar(amb);
+        assert.equal((await codigoDe(confirmar(amb, deps))).codigo, codigo, nome);
+        assert.deepEqual(fs.readFileSync(estadoArq), antes, `${nome}: estado intacto`);
+        assert.deepEqual(chamadas.proibidas, [], nome);
+        assert.equal(existeLink(path.join(amb.releases('backend'), '.trava')), false, `${nome}: trava liberada`);
+      }
+    });
+
+    test('release modificada, metadado divergente do evento ADOCAO ou operação aberta no diário: recusa antes de consultar o processo', async () => {
+      const preparos = [
+        ['arquivo da release alterado', (amb) => { const arq = path.join(amb.releases('backend'), R(1), 'src', 'server.js'); fs.chmodSync(path.dirname(arq), 0o755); fs.chmodSync(arq, 0o644); fs.writeFileSync(arq, '// adulterado\n'); }],
+        ['arquivo a mais na release', (amb) => { const dir = path.join(amb.releases('backend'), R(1), 'src'); fs.chmodSync(dir, 0o755); fs.writeFileSync(path.join(dir, 'extra.js'), '1'); }],
+        ['metadado com outro hash do release.json', (amb) => { const arq = path.join(amb.releases('backend'), 'meta', `${R(1)}.json`); const m = lerJson(arq); m.releaseSha256 = 'e'.repeat(64); fs.writeFileSync(arq, JSON.stringify(m)); }],
+        ['operação aberta no diário', (amb) => fs.appendFileSync(path.join(amb.releases('backend'), 'diario.jsonl'), `${JSON.stringify({ em: new Date().toISOString(), id: 'x', passo: 'INICIO', operacao: 'instalar' })}\n`)],
+      ];
+      for (const [nome, adulterar] of preparos) {
+        const { amb, estadoArq } = await adotada();
+        adulterar(amb);
+        const antes = fs.readFileSync(estadoArq);
+        const { deps, chamadas } = depsDaConfirmacao(amb);
+        assert.equal((await codigoDe(confirmar(amb, deps))).codigo, 'CONFIRMACAO_RECUSADA', nome);
+        assert.equal(chamadas.identificar, 0, `${nome}: o processo nem é consultado`);
+        assert.deepEqual(fs.readFileSync(estadoArq), antes, `${nome}: estado intacto`);
+      }
+    });
+
+    test('release não adotada ou já comprovada: recusa sem mudança; a confirmação repetida é recusada sempre do mesmo jeito', async () => {
+      const amb = criarAmbiente();
+      await carregar().instalar({ config: amb.config, componente: 'backend', release: criarReleaseBackend({ n: 1 }), opcoes: { observado: observadoDe('000_a.sql') }, deps: criarDeps().deps });
+      const estadoArq = path.join(amb.releases('backend'), 'estado.json');
+      assert.equal((await codigoDe(confirmar(amb, depsDaConfirmacao(amb).deps))).codigo, 'CONFIRMACAO_RECUSADA', 'instalada e comprovada pelo caminho normal');
+      const estado = lerJson(estadoArq);
+      estado.atual.comprovada = false;
+      fs.writeFileSync(estadoArq, JSON.stringify(estado));
+      const antes = fs.readFileSync(estadoArq);
+      const { deps, chamadas } = depsDaConfirmacao(amb);
+      assert.equal((await codigoDe(confirmar(amb, deps))).codigo, 'CONFIRMACAO_RECUSADA', 'não comprovada, mas sem o evento ADOCAO');
+      assert.equal(chamadas.identificar, 0);
+      assert.deepEqual(fs.readFileSync(estadoArq), antes);
+      const { amb: a2, estadoArq: estado2 } = await adotada();
+      assert.equal((await confirmar(a2, depsDaConfirmacao(a2).deps)).resultado, 'ADOCAO_CONFIRMADA');
+      const confirmado = fs.readFileSync(estado2);
+      for (let i = 0; i < 2; i += 1) {
+        const c = depsDaConfirmacao(a2);
+        assert.equal((await codigoDe(confirmar(a2, c.deps))).codigo, 'CONFIRMACAO_RECUSADA', `repetição ${i + 1}`);
+        assert.equal(c.chamadas.identificar, 0);
+        assert.deepEqual(fs.readFileSync(estado2), confirmado, 'nada muda');
+      }
+    });
+
+    test('falha ao gravar o estado: estado.json intacto com comprovada:false, trava liberada, e a confirmação seguinte funciona', async () => {
+      const { amb, estadoArq } = await adotada();
+      const antes = fs.readFileSync(estadoArq);
+      const { deps } = depsDaConfirmacao(amb);
+      deps.criarAncora = (op) => {
+        const A = criarAncoraPorCaminho(op);
+        return { ...A, escreverAtomico: (dir, nome, ...resto) => { if (nome === 'estado.json') throw Object.assign(new Error('EIO'), { code: 'EIO' }); return A.escreverAtomico(dir, nome, ...resto); } };
+      };
+      assert.ok(await codigoDe(confirmar(amb, deps)));
+      assert.deepEqual(fs.readFileSync(estadoArq), antes);
+      assert.equal(lerJson(estadoArq).atual.comprovada, false);
+      assert.equal(existeLink(path.join(amb.releases('backend'), '.trava')), false);
+      assert.equal((await confirmar(amb, depsDaConfirmacao(amb).deps)).resultado, 'ADOCAO_CONFIRMADA');
+    });
+
+    test('linha de comando: confirmar só com --config oficial e a identidade do serviço; no Linux confirma pelo processo real e recusa outro PID', async () => {
+      const CLI = path.join(REPO, 'deploy', 'hml', 'instalador', 'adotar-backend.js');
+      const rodar = (args, env = { PATH: process.env.PATH, NODE_ENV: 'test' }) => spawnSync(process.execPath, [CLI, ...args], { encoding: 'utf8', env, timeout: 60000 });
+      for (const args of [['confirmar'], ['confirmar', '--config'], ['confirmar', '--config', 'x', 'y'], ['confirmar', '--release', 'x'], ['confirmar', '--config', 'x', '--release-sha256', 'z']]) {
+        const r = rodar(args);
+        assert.equal(r.status, 1, JSON.stringify(args));
+        assert.match(r.stderr, /Adoção recusada \(USO\)/, JSON.stringify(args));
+      }
+      assert.match(rodar(['confirmar', '--config', '/tmp/x.json'], { PATH: process.env.PATH }).stderr, /Adoção recusada \(CONFIG_NAO_OFICIAL\)/);
+      const { amb } = await adotada();
+      const { dependencias, ...backend } = amb.config.componentes.backend;
+      const pidArq = path.join(tmp(), 'servico.pid');
+      const componenteCom = (porta) => ({ ...backend, saude: { url: `http://127.0.0.1:${porta}/api/health` }, reinicio: { comando: ['/bin/false'] }, processo: { pidComando: [process.execPath, '-e', `process.stdout.write(require('node:fs').readFileSync(${JSON.stringify(pidArq)}, 'utf8'))`] } });
+      const dirIdentidade = tmp();
+      fs.chmodSync(dirIdentidade, 0o755);
+      const arquivoIdentidade = path.join(dirIdentidade, 'identidade');
+      const config = (extra, porta) => {
+        const caminho = path.join(tmp(), 'agente-backend.json');
+        fs.writeFileSync(caminho, JSON.stringify({ habilitado: false, isolamentoRevisado: 'PENDENTE', instalador: { ...amb.config, componentes: { backend: componenteCom(porta) } }, ...extra }));
+        fs.chmodSync(caminho, 0o640);
+        return caminho;
+      };
+      // Até a recusa (sem identidade, ou fora do Linux sem âncora real) a saúde nunca é consultada: a porta só precisa
+      // existir na configuração. A reserva de uma porta real acontece só no ramo Linux, onde o serviço sobe.
+      const PORTA_NAO_CONSULTADA = 9;
+      const identidade = { identidadeDoServico: { arquivo: arquivoIdentidade, uid: process.getuid() } };
+      const semIdentidade = rodar(['confirmar', '--config', config({}, PORTA_NAO_CONSULTADA)]);
+      assert.equal(semIdentidade.status, 1);
+      assert.match(semIdentidade.stderr, /Adoção recusada \(CONFIRMACAO_RECUSADA\)/);
+      if (process.platform !== 'linux') {
+        assert.match(rodar(['confirmar', '--config', config(identidade, PORTA_NAO_CONSULTADA)]).stderr, /Adoção recusada \(PLATAFORMA_SEM_ANCORA\)/);
+        assert.equal(lerJson(path.join(amb.releases('backend'), 'estado.json')).atual.comprovada, false);
+        return;
+      }
+      const porta = await new Promise((ok) => { const s = require('node:net').createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => ok(p)); }); });
+      const comIdentidade = config(identidade, porta);
+      const servico = require('node:child_process').spawn(process.execPath, ['-e', `require('node:http').createServer((q, r) => { r.setHeader('content-type', 'application/json'); r.end(JSON.stringify({ status: 'ok', service: 'gestao-epi-api' })); }).listen(${porta}, '127.0.0.1');`], { cwd: fs.realpathSync(amb.link('backend')), stdio: 'ignore' });
+      try {
+        fs.writeFileSync(pidArq, String(servico.pid));
+        for (let i = 0; i < 50; i += 1) { try { if ((await fetch(`http://127.0.0.1:${porta}/api/health`)).ok) break; } catch { /* ainda subindo */ } await new Promise((ok) => setTimeout(ok, 100)); }
+        const escrever = (pid) => { fs.writeFileSync(`${arquivoIdentidade}.t`, `${pid} ${fs.realpathSync(amb.link('backend'))}\n`, { mode: 0o644 }); fs.renameSync(`${arquivoIdentidade}.t`, arquivoIdentidade); };
+        escrever(servico.pid + 100000);
+        const outroPid = rodar(['confirmar', '--config', comIdentidade]);
+        assert.equal(outroPid.status, 1);
+        assert.match(outroPid.stderr, /Adoção recusada \(VERSAO_NAO_COMPROVADA\)/);
+        assert.equal(lerJson(path.join(amb.releases('backend'), 'estado.json')).atual.comprovada, false);
+        escrever(servico.pid);
+        const ok = rodar(['confirmar', '--config', comIdentidade]);
+        assert.equal(ok.status, 0, ok.stderr);
+        assert.equal(JSON.parse(ok.stdout).resultado, 'ADOCAO_CONFIRMADA');
+        assert.equal(lerJson(path.join(amb.releases('backend'), 'estado.json')).atual.comprovada, true);
+      } finally {
+        servico.kill('SIGKILL');
+      }
+    });
+  });
 });
 
 describe('instalador — integração com as releases reais e linha de comando', () => {
