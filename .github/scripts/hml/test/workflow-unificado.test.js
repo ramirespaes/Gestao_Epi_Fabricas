@@ -412,7 +412,7 @@ describe('controles de autorização e segurança não mudaram', () => {
     const esperado = {
       'deploy/hml/cd/protocolo.js': '759676fa891812e40d7e3720d0dc12b8b0bd7d9204c6c1ea8a70d067e7eb9b58',
       'deploy/hml/cd/publicar.js': '6b0f84c70827fa75c3caecb4ad70623a06ed149c66f2d19d3ce2fa53c4eec92a',
-      'deploy/hml/instalador/coordenacao.js': 'efea0982ed7a156433c0704bc4a73199e12baa5643a59fec7615a2ad6ae34995',
+      'deploy/hml/instalador/coordenacao.js': '6db83ae382318b0a6f415de46de11b900f42d18a6b28387e9c99ca4d1f8db404', // 3B-2B-3B (D1)
       '.github/workflows/deploy-hml-backend.yml': 'f1f3afb14770541fa86dfb7f1797fdf15ab30ee257f87a8afabade93ed52b0e1',
     };
     for (const [rel, hash] of Object.entries(esperado)) assert.equal(sha(fs.readFileSync(path.join(RAIZ, rel))), hash, rel);

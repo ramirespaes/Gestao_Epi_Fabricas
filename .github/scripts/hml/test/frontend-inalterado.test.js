@@ -19,9 +19,10 @@ const PROTEGIDOS = {
   'deploy/hml/cd/agente.config.exemplo.json': '2fdfb589a3b8f6d844979f1687272b63852ce5c803dbe66f7b9afee613e64c1c',
   'deploy/hml/instalador/ancora.js': 'a70287a8c5de2ba8e898b7b6c4f31345471ed1f121665db7d093431f6adf8d3b',
   'deploy/hml/instalador/compatibilidade.js': 'ec9e0888aa9f065cb1aa34606efc64b7c8a97e41f29ea06cc9cc2f39d31c2857',
-  'deploy/hml/instalador/coordenacao.js': 'efea0982ed7a156433c0704bc4a73199e12baa5643a59fec7615a2ad6ae34995',
+  // 3B-2B-3B (D1): coordenacao.js e instalar-release.js mudaram só pela homologação do provedor do guardião.
+  'deploy/hml/instalador/coordenacao.js': '6db83ae382318b0a6f415de46de11b900f42d18a6b28387e9c99ca4d1f8db404',
   'deploy/hml/instalador/erros.js': 'fed004c3471a32d1000b98ce070a78d22e8d5a43e601dc9b873f60216cc4b3ac',
-  'deploy/hml/instalador/instalar-release.js': '62600085145c9f02983004533ced9337edc56862e281a8f05117bd234bb35db1',
+  'deploy/hml/instalador/instalar-release.js': '2e46613aec04d80b426ffca9b49cafe0c1c33d7afb2c9a841377ff800ca64152',
   'deploy/hml/instalador/nucleo.js': '144a1194d9a7e2fc4b8c0b73dfc7afae3b4a5a267efe122736788b3e2f28d716',
   'deploy/hml/empacotar-backend.js': 'cf040b49a11401a9fd854e83f36ab51090d18b76cb1b9898a9cfd0ad250ad336',
   '.github/workflows/ci.yml': '1a977e2aaf68e06d9f212ed8fc573bb3d2ed852c7c219e0b976b63dc5beb5a68',

@@ -439,3 +439,38 @@ O tempo entre a confirmação final e o pedido de liberação fica registrado (`
 - **sessão do guardião derrubada no reinício:** dá `CRITICO`, sem ação nova e sem reversão.
 
 A mesma montagem roda localmente com uma coordenação simulada. O resultado com o guardião real fica **não verificado** até a execução na CI.
+
+## Homologação do provedor do guardião (Etapa 3B-2B-3B)
+
+Na biblioteca do instalador, e só para `instalar` do backend, o provedor do guardião passa a ser aceito. Para isso, três condições têm de valer juntas, e todas são conferidas antes de qualquer mudança. Qualquer falha recusa com `COORDENACAO_NAO_HOMOLOGADA`, pelo mesmo ponto único de lançamento que o agente trata como recusa sem mutação.
+
+1. **Ativação oficial (C1).** A configuração do agente do backend é lida só de `/etc/safework/cd/agente-backend.json`, com estas conferências:
+   - em todo o caminho, diretórios reais (sem link simbólico) de dono root e sem escrita por grupo ou outros;
+   - o arquivo é aberto sem seguir link e conferido no próprio descritor: arquivo regular, dono root, sem escrita por grupo ou outros e um único link físico;
+   - o arquivo precisa declarar `habilitado: true` e `isolamentoRevisado`.
+
+   O modo previsto é `0640 root:<grupo do agente>`, sem credenciais. A linha de comando do agente (`principal`) só aceita esse caminho e passa a mesma origem ao instalador, que lê o arquivo de novo. O provisionamento real é verificado na ativação HML.
+2. **Guardião reconhecido.** A instância tem de ser a real (iniciada pelo próprio provedor), adquirida e sem perda, do roteiro fixo `scripts/guardiao-de-coordenacao.js` da **baseline que o próprio instalador lê**: rótulo e commit do metadado, caminho real e hash do manifesto. O reconhecimento é reconferido em cada ponto protegido; perda, expiração ou liberação revogam (`COORDENACAO_NAO_CONFIRMADA`). Sob a trava, a release em uso precisa ser essa baseline (`COORDENACAO_BASELINE_DIVERGENTE`, que o agente trata como `CRITICO`).
+3. **Autorização da operação (C2).**
+   - Fica num registro privado do provedor. O emissor é entregue uma única vez por processo, e o agente o pega ao ser carregado.
+   - O agente só emite no fluxo oficial (C3): pedido lido de um cliente S3 criado por `principal` a partir da configuração oficial, validado e com o blob conferido. A autorização fica presa ao pedido (commit, rótulo, SHA-256 da release, validade) e à instância do guardião desta operação.
+   - O instalador a consome uma única vez, numa transição síncrona: de chamadas concorrentes, só uma passa. Qualquer tentativa que não confira a revoga.
+   - O agente revoga a autorização no fim, em qualquer resultado.
+   - `processar` com um S3 injetado roda, mas não emite autorização.
+
+**Continuam bloqueados:** a linha de comando do instalador para o backend, `reverter` do backend e a primeira instalação sem baseline. O agente continua desabilitado (`habilitado: false` no exemplo).
+
+**Exceção nominal da pasta `instalador/`.** `coordenacao.js` carrega o provedor só no momento da conferência, dentro de `try/catch`. Com o provedor ausente ou com falha ao carregar, o frontend instala e o backend recusa ([publicacao-homologacao-componentes.md](publicacao-homologacao-componentes.md)). Não há ciclo de importação entre agente, instalador e provedor.
+
+**Mecanismos de teste (não são barreira).** Existem três, todos dependentes de `NODE_ENV=test`:
+- `homologarProvedorParaTeste`, que já existia;
+- a origem da configuração oficial por parâmetro (`deps.configuracaoOficial` ou o argumento de `principal`), com as mesmas conferências do leitor e o dono esperado igual ao usuário do teste;
+- o emissor obtido por um processo de teste que não carrega o agente.
+
+**Limite de segurança (D9).** Estes controles organizam as interfaces oficiais e impedem configuração não provisionada. Eles não impedem código arbitrário executado com a identidade e as permissões do agente: esse código pode ativar os mecanismos de teste, reproduzir a lógica ou usar a credencial IAM do agente. A proteção operacional vem da separação de usuários Linux (configuração e releases com dono root, agente com usuário próprio) e do IAM, pelo qual o agente não grava pedidos. As duas coisas são validadas na ativação HML.
+
+**Provas.**
+- Locais: instalador no fluxo de produção, com o guardião real simulado em processo e sem `homologarProvedorParaTeste` na operação; cópia isolada de `instalador/`; ausência de ciclo; registro e consumo concorrente de autorizações.
+- Só no Linux da CI (pendentes até execução real):
+  - o caminho completo pelo `principal`, com cliente S3 real diante de um `aws` simulado e reinício, PID e saúde reais da configuração;
+  - o ensaio de produção do instalador com o guardião real e PostgreSQL 16.

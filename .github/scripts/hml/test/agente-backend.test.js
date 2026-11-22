@@ -824,6 +824,19 @@ describe('3B-2B-3A: garantia contínua, prazos e janela final (instalador simula
   });
 });
 
+// 3B-2B-3B (C3): fora do fluxo oficial (S3 injetado), processar nunca emite autorização para o instalador.
+describe('3B-2B-3B: processar sem o cliente S3 oficial não emite autorização', () => {
+  test('C3-01: com S3 injetado, o instalador não recebe autorização, mesmo com o guardião adquirido', async () => {
+    const { s3 } = preparar();
+    let recebidas;
+    const deps = depsDe({ instalar: async (opcoes) => { recebidas = opcoes; return INSTALADA; } });
+    const r = await A.processar({ cfg: cfg(), id: ID, s3, deps });
+    assert.equal(r.estado, 'SUCESSO', JSON.stringify(r));
+    assert.ok(recebidas);
+    assert.equal('autorizacao' in recebidas, false);
+  });
+});
+
 function configValida() {
   const raiz = fs.mkdtempSync(path.join(tmp, 'cfg-'));
   const mk = (n) => { const p = path.join(raiz, n); fs.mkdirSync(p); return p; };
@@ -951,6 +964,10 @@ describe('instalador real: as recusas de ponto único acontecem antes de qualque
     const iDeps = fonte.indexOf('exigirDeps(comp, deps, opcoes)', ini);
     const iAncora = fonte.indexOf('criarAncoraDaOperacao(deps, opcoes)', ini);
     assert.ok(ini > 0 && iCoord > ini && iCoord < iDeps && iDeps < iAncora, 'ordem das guardas em instalar()');
+    // 3B-2B-3B: a verificação do guardião de produção também lança só pelo ponto único, e também antes da âncora.
+    const iGuardiao = fonte.indexOf('exigirGuardiaoHomologado({', ini);
+    assert.ok(iGuardiao > iDeps && iGuardiao < iAncora, 'verificação do guardião antes da âncora');
+    assert.equal((fonte.match(/naoHomologada\(/g) || []).length, 2, 'só as duas guardas usam o ponto único');
   });
 
   test('sem coordenação homologada o instalador real recusa o backend sem criar nada, mesmo com atestado', async () => {
@@ -1328,6 +1345,78 @@ describe('Etapa 3B-1: o agente entrega ao instalador real as dependências da co
         assert.equal(reg.coordenacao.guardiao.perda.motivo, motivo);
         assert.equal(amb.armazem.has('@.trava-cd-backend'), true);
       });
+    }
+  });
+
+  // 3B-2B-3B (D8-B): ponta a ponta pelo principal, sem dependência injetada e sem homologarProvedorParaTeste na
+  // operação: configuração oficial (caminho de teste, mesmas conferências), cliente S3 real (criarS3) diante de um
+  // executável aws simulado, guardião real da baseline, instalador real com reinício, PID e saúde da configuração
+  // (um serviço HTTP simulado). Exige Linux (LINUX_OBRIGATORIO e /proc): executa na CI.
+  test('D8-B: fluxo de produção completo pelo principal, com C1, C2 e C3 de verdade, termina em SUCESSO', { skip: process.platform !== 'linux' ? 'exige Linux (LINUX_OBRIGATORIO e /proc): executa na CI' : false, timeout: 120000 }, async () => {
+    const I2 = require(path.join(RAIZ, 'deploy/hml/instalador/instalar-release'));
+    const amb = await ambiente({ sondaReal: true });
+    const raiz = amb.raiz;
+    const porta = await new Promise((ok) => { const s = require('node:net').createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => ok(p)); }); });
+    const pidDoServico = path.join(raiz, 'servico.pid');
+    const servico = path.join(raiz, 'servico.js');
+    fs.writeFileSync(servico, `require('node:http').createServer((q, r) => { r.setHeader('content-type', 'application/json'); r.end(JSON.stringify({ status: 'ok', service: 'gestao-epi-api' })); }).listen(${porta}, '127.0.0.1');\n`);
+    const reiniciar = path.join(raiz, 'reiniciar-servico.js');
+    fs.writeFileSync(reiniciar, [
+      "'use strict';",
+      "const fs = require('node:fs');",
+      "const { spawn } = require('node:child_process');",
+      `const filho = spawn(${JSON.stringify(process.execPath)}, [${JSON.stringify(servico)}], { cwd: fs.realpathSync(${JSON.stringify(amb.link)}), detached: true, stdio: 'ignore' });`,
+      `fs.writeFileSync(${JSON.stringify(pidDoServico)}, String(filho.pid));`,
+      'filho.unref();',
+      'setTimeout(() => process.exit(0), 300);',
+      '',
+    ].join('\n'));
+    const bucket = path.join(raiz, 'bucket');
+    for (const [k, v] of amb.s3.dados) { fs.mkdirSync(path.dirname(path.join(bucket, k)), { recursive: true }); fs.writeFileSync(path.join(bucket, k), v); }
+    const aws = path.join(raiz, 'aws-simulado');
+    fs.writeFileSync(aws, [
+      `#!${process.execPath}`,
+      "'use strict';",
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      'const a = process.argv.slice(2);',
+      'const valor = (n) => a[a.indexOf(n) + 1];',
+      `const BUCKET = ${JSON.stringify(bucket)};`,
+      "if (a[0] === 'sts') { process.stdout.write(JSON.stringify({ Account: '111111111111' })); process.exit(0); }",
+      "const op = a[1]; const chave = valor('--key');",
+      "if (op === 'get-object') { const f = path.join(BUCKET, chave); if (!fs.existsSync(f)) { process.stderr.write('An error occurred (NoSuchKey)'); process.exit(255); } fs.copyFileSync(f, a[a.indexOf('--expected-bucket-owner') + 2]); process.stdout.write('{}'); process.exit(0); }",
+      "if (op === 'put-object') { const f = path.join(BUCKET, chave); if (fs.existsSync(f)) { process.stderr.write('(PreconditionFailed)'); process.exit(255); } fs.mkdirSync(path.dirname(f), { recursive: true }); fs.copyFileSync(valor('--body'), f); process.stdout.write('{}'); process.exit(0); }",
+      "if (op === 'list-objects-v2') { const p = valor('--prefix'); const d = path.join(BUCKET, path.dirname(p)); const itens = fs.existsSync(d) ? fs.readdirSync(d).map((n) => path.posix.join(path.posix.dirname(p), n)).filter((k) => k.startsWith(p)) : []; process.stdout.write(JSON.stringify({ Contents: itens.map((Key) => ({ Key, LastModified: new Date().toISOString() })), IsTruncated: false })); process.exit(0); }",
+      'process.exit(2);',
+      '',
+    ].join('\n'), { mode: 0o755 });
+    const cfgOficial = JSON.parse(JSON.stringify(amb.cfgAgente));
+    Object.assign(cfgOficial.instalador.componentes.backend, {
+      reinicio: { comando: [process.execPath, reiniciar] },
+      processo: { pidComando: [process.execPath, '-e', `process.stdout.write(require('node:fs').readFileSync(${JSON.stringify(pidDoServico)}, 'utf8'))`] },
+      saude: { url: `http://127.0.0.1:${porta}/api/health` },
+    });
+    cfgOficial.s3 = { ...cfgOficial.s3, executavel: aws };
+    const caminho = path.join(fs.mkdtempSync(path.join(fs.realpathSync(tmp), 'oficial-')), 'agente-backend.json');
+    fs.writeFileSync(caminho, JSON.stringify(cfgOficial), { mode: 0o640 });
+    assert.equal(I2.lerConfiguracaoOficial(I2.origemDaConfiguracaoOficial(caminho)).habilitado, true, 'a configuração passa pelas conferências do leitor oficial');
+    const credenciais = { AWS_ACCESS_KEY_ID: 'AKIASIMULADA00000000', AWS_SECRET_ACCESS_KEY: 'simulada', AWS_SESSION_TOKEN: 'simulada' };
+    const antes = {};
+    for (const [k, v] of Object.entries(credenciais)) { antes[k] = process.env[k]; process.env[k] = v; }
+    try {
+      await A.principal(['--config', caminho, '--pedido', ID]);
+      const recibo = JSON.parse(fs.readFileSync(path.join(bucket, `hml-backend/recibos/${ID}.json`), 'utf8'));
+      assert.equal(P.validarRecibo(recibo, amb.pedido).estado, 'SUCESSO');
+      assert.equal(await amb.instalada(), rot(2));
+      const execucoes = amb.execucoesDoGuardiao();
+      assert.equal(execucoes.find((e) => e.inicio).marcador, 'release-1', 'o guardião real da baseline');
+      assert.ok(execucoes.some((e) => e.recebido === 'liberar'));
+      // A mesma autorização não serve para outra execução: o pedido já tem recibo e a operação não se repete.
+      await A.principal(['--config', caminho, '--pedido', ID]);
+      assert.equal(execucoes.filter((e) => e.inicio).length, amb.execucoesDoGuardiao().filter((e) => e.inicio).length, 'nenhum guardião novo');
+    } finally {
+      for (const k of Object.keys(credenciais)) { if (antes[k] === undefined) delete process.env[k]; else process.env[k] = antes[k]; }
+      try { process.kill(Number(fs.readFileSync(pidDoServico, 'utf8')), 'SIGKILL'); } catch { /* serviço não chegou a subir */ }
     }
   });
 
@@ -1716,6 +1805,8 @@ describe('Etapa 3B-1: o agente entrega ao instalador real as dependências da co
       const ok = configValida().guardiao;
       for (const guardiao of [undefined, null, {}, { ...ok, comando: 'x' }, { ...ok, comando: [process.execPath] }, { ...ok, comando: ['node', 'scripts/guardiao-de-coordenacao.js'] },
         { ...ok, comando: [process.execPath, 'scripts/guardiao-de-coordenacao.js', '--extra'] }, { ...ok, comando: [process.execPath, ''] },
+        // 3B-2B-3B (H-08): o roteiro é o caminho fixo que o instalador confere na baseline.
+        { ...ok, comando: [process.execPath, 'scripts/outro-guardiao.js'] }, { ...ok, comando: [process.execPath, './scripts/guardiao-de-coordenacao.js'] },
         { ...ok, credencial: undefined }, { ...ok, credencial: 'relativo/credencial.json' }, { ...ok, credencial: '' }]) {
         const c = configValida();
         c.guardiao = guardiao;
@@ -1774,6 +1865,39 @@ describe('invariantes do código do agente do backend', () => {
   test('o uso exige --config com --pedido ou --pendentes', async () => {
     await assert.rejects(A.principal([]), (e) => e.codigo === 'USO');
     await assert.rejects(A.principal(['--config', '/x']), (e) => e.codigo === 'USO');
+  });
+
+  // 3B-2B-3B: C1 e C3 no agente. A configuração só vem do caminho oficial; o cliente S3 oficial só nasce em principal;
+  // a autorização da operação só é emitida para esse cliente, e o emissor (de uso único) é pego ao carregar o módulo.
+  // Fora do Linux, LINUX_OBRIGATORIO continua vindo antes (comportamento protegido); no Linux, fora de testes, um
+  // caminho que não seja o oficial é recusado antes de qualquer leitura.
+  test('3B-2B-3B: principal só aceita a configuração do caminho oficial', async () => {
+    const I = require(path.join(RAIZ, 'deploy/hml/instalador/instalar-release'));
+    const esperado = process.platform === 'linux' ? 'CONFIG_NAO_OFICIAL' : 'LINUX_OBRIGATORIO';
+    const antes = process.env.NODE_ENV;
+    delete process.env.NODE_ENV;
+    try {
+      await assert.rejects(A.principal(['--config', '/tmp/qualquer.json', '--pedido', '1-1']), (e) => e.codigo === esperado);
+      await assert.rejects(A.principal(['--config', path.join(tmp, 'x.json'), '--pendentes']), (e) => e.codigo === esperado);
+      assert.throws(() => I.origemDaConfiguracaoOficial('/tmp/qualquer.json'), (e) => e.codigo === 'CONFIG_NAO_OFICIAL');
+    } finally {
+      if (antes !== undefined) process.env.NODE_ENV = antes;
+    }
+    const fonte = fs.readFileSync(AG, 'utf8');
+    const principal = fonte.slice(fonte.indexOf('async function principal('));
+    assert.ok(principal.indexOf("'LINUX_OBRIGATORIO'") < principal.indexOf('I.origemDaConfiguracaoOficial(argv[1])'));
+    assert.ok(principal.indexOf('I.origemDaConfiguracaoOficial(argv[1])') < principal.indexOf('criarS3('), 'a origem é conferida antes de criar o cliente S3');
+  });
+
+  test('3B-2B-3B: só principal registra cliente S3 oficial, a emissão exige esse cliente e o emissor é pego uma vez, no carregamento', () => {
+    assert.equal((fonte.match(/CLIENTES_S3_OFICIAIS\.add\(/g) || []).length, 1);
+    const principal = fonte.slice(fonte.indexOf('async function principal('));
+    assert.match(principal, /CLIENTES_S3_OFICIAIS\.add\(s3\)/);
+    assert.match(fonte, /CLIENTES_S3_OFICIAIS\.has\(s3\)[\s\S]{0,200}EMISSOR\.emitir\(/);
+    assert.equal((fonte.match(/EMISSOR\.emitir\(/g) || []).length, 1);
+    assert.match(fonte, /^const EMISSOR = obterEmissorDeAutorizacoes\(\);$/m);
+    assert.throws(() => require(path.join(RAIZ, 'deploy/hml/cd/coordenacao-por-guardiao')).obterEmissorDeAutorizacoes(), (e) => e.codigo === 'AUTORIZACAO_EMISSOR_INDISPONIVEL', 'o agente já pegou o emissor');
+    assert.doesNotMatch(fonte, /lerConfigSegura\(argv/);
   });
 
   test('3B-2B-3A: os processos das ações do agente só são executados pelo executor com prazo', () => {

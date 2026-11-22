@@ -264,6 +264,101 @@ async function ensaioDeInstalacao({ raiz, criarCoordenacao, aoReiniciar = async 
   };
 }
 
+// ---------------------------------------------------------------- ensaio de produção do instalador (3B-2B-3B)
+
+// Roda num processo Node próprio: o emissor de autorizações é de uso único por processo, e este arquivo já carrega o
+// agente (que o pega). Sem homologarProvedorParaTeste na operação: configuração oficial (origem de teste, mesmas
+// conferências), instância REAL do provedor com o roteiro da baseline e autorização desta operação. O roteiro da
+// baseline é um invólucro do guardião real (a release de ensaio não tem pg nem os serviços do D-ORF-6) ou, nos
+// controles locais, um guardião simulado. A baseline é preparada pelo caminho de teste (só o preparo).
+const ROTEIRO_DO_ENSAIO_DE_PRODUCAO = `'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const p = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const I = require(path.join(p.deploy, 'instalador', 'instalar-release.js'));
+const C = require(path.join(p.deploy, 'instalador', 'coordenacao.js'));
+const M = require(path.join(p.deploy, 'cd', 'coordenacao-por-guardiao.js'));
+const ancora = (op) => require(path.join(p.deploy, 'instalador', 'ancora.js')).criarAncora({ ...op, modo: 'caminho', semGarantiaDeCorrida: true });
+const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
+const rot = (n) => 'hml-20261122T1' + n + '0000-' + String(n).repeat(7);
+const commitDe = (n) => String(n).repeat(40);
+function release(n) {
+  const dir = path.join(p.raiz, 'rel' + n);
+  const migration = '-- 000_a.sql\\n';
+  const lock = '{"lockfileVersion":3}';
+  const arquivos = { 'package.json': '{"engines":{"node":">=22"}}', 'package-lock.json': lock, 'src/server.js': '// v' + n + '\\n', 'migrations/000_a.sql': migration,
+    'migrations/checksums.json': JSON.stringify({ algoritmo: 'sha256', migrations: { '000_a.sql': sha(migration) } }), 'scripts/guardiao-de-coordenacao.js': p.roteiroDoGuardiao };
+  const manifesto = {};
+  for (const [rel, c] of Object.entries(arquivos)) { fs.mkdirSync(path.dirname(path.join(dir, 'backend', rel)), { recursive: true }); fs.writeFileSync(path.join(dir, 'backend', rel), c); manifesto[rel] = sha(c); }
+  const texto = Object.keys(manifesto).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)).map((rel) => manifesto[rel] + '  ' + rel).join('\\n') + '\\n';
+  fs.writeFileSync(path.join(dir, 'manifesto-backend.sha256'), texto);
+  fs.writeFileSync(path.join(dir, 'release.json'), JSON.stringify({ commit: commitDe(n), rotulo: rot(n), atual: true, geradoEm: '2026-11-22T10:00:00.000Z', backend: { arquivos: Object.keys(manifesto).length, manifestoSha256: sha(texto), lockfileSha256: sha(lock), node: '>=22', migrations: [{ nome: '000_a.sql', sha256: sha(migration) }], contratos: {} } }, null, 2) + '\\n');
+  return dir;
+}
+(async () => {
+  const app = path.join(p.raiz, 'app');
+  fs.mkdirSync(app);
+  const link = path.join(app, 'backend');
+  const semEfeito = path.join(p.raiz, 'sem-efeito.js');
+  fs.writeFileSync(semEfeito, 'process.exit(0);\\n');
+  const config = { retencao: 3, raizesPersistentes: [], componentes: { backend: { tipo: 'backend', base: app, nome: 'backend', saude: { url: 'http://127.0.0.1:9/api/health' }, reinicio: { comando: [process.execPath, semEfeito] }, processo: { pidComando: [process.execPath, semEfeito] } } } };
+  let pid = 100;
+  const observado = () => ({ banco: 'hml', origem: 'ensaio', coletadoEm: new Date().toISOString(), migrations: ['000_a'], contratos: {} });
+  const simuladas = { criarAncora: ancora, esperar: async () => {}, executar: async () => '', reiniciar: async () => {}, verificarSaude: async () => ({ ok: true, detalhe: 'ok' }), identificarProcesso: async () => { pid += 1; return { pid, cwd: fs.realpathSync(link) }; } };
+  const r1 = release(1);
+  const preparo = C.homologarProvedorParaTeste(async () => ({ situacao: 'LIVRE', origem: 'preparo', consultadoEm: new Date().toISOString() }));
+  await I.instalar({ config, componente: 'backend', release: r1, opcoes: { releaseSha256Esperado: sha(fs.readFileSync(path.join(r1, 'release.json'))), observado: observado() }, deps: { ...simuladas, consultarCoordenacao: preparo } });
+  const oficial = path.join(p.raiz, 'oficial');
+  fs.mkdirSync(oficial, { mode: 0o700 });
+  const caminho = path.join(oficial, 'agente-backend.json');
+  fs.writeFileSync(caminho, JSON.stringify({ habilitado: true, isolamentoRevisado: 'RAIZES_EXCLUSIVAS_HOMOLOGACAO_BACKEND' }), { mode: 0o640 });
+  const dir = fs.realpathSync(path.join(app, '.releases', 'backend', rot(1)));
+  const roteiro = path.join(dir, 'scripts', 'guardiao-de-coordenacao.js');
+  const coord = M.criarCoordenacaoPorGuardiao({ comando: [process.execPath, roteiro], dir, credencial: p.credencial, sistema: p.sistema, baseline: { rotulo: rot(1), commit: commitDe(1) }, sha256DoRoteiro: sha(fs.readFileSync(roteiro)) });
+  const aquisicao = await coord.adquirir();
+  const r2 = release(2);
+  const releaseSha256 = sha(fs.readFileSync(path.join(r2, 'release.json')));
+  const autorizacao = p.comAutorizacao ? M.obterEmissorDeAutorizacoes().emitir({ id: '7-1', commit: commitDe(2), rotulo: rot(2), releaseSha256, expiraEm: new Date(Date.now() + 5 * 60000).toISOString(), consultar: coord.consultar }) : undefined;
+  let resultado = null;
+  let erro = null;
+  try {
+    resultado = (await I.instalar({ config, componente: 'backend', release: r2, opcoes: { releaseSha256Esperado: releaseSha256, observado: observado(), autorizacao, idDoPedido: '7-1' }, deps: { ...simuladas, consultarCoordenacao: coord.consultar, configuracaoOficial: caminho } })).resultado;
+  } catch (e) { erro = e.codigo || 'ERRO'; }
+  const instalada = fs.readlinkSync(link);
+  const descricao = coord.descrever();
+  const liberacao = await coord.liberar();
+  process.stdout.write(JSON.stringify({ aquisicao, resultado, erro, instalada: path.basename(instalada), alvo: rot(2), impressao: descricao.impressao, instanciaReal: descricao.instanciaReal, liberacao }));
+})().catch((e) => { process.stdout.write(JSON.stringify({ falha: e.codigo || e.message })); process.exitCode = 1; });
+`;
+// Guardião da baseline do ensaio: invólucro do guardião real (CI) ou guardião simulado no protocolo (controles locais).
+const roteiroQueCarregaOGuardiaoReal = () => `'use strict';\nrequire(${JSON.stringify(GUARDIAO)}).comoComando();\n`;
+const GUARDIAO_SIMULADO = [
+  "'use strict';",
+  "const readline = require('node:readline');",
+  "const IMPRESSAO = 'c3'.repeat(32);",
+  'let comandos = 0;',
+  "const emitir = (m) => process.stdout.write(JSON.stringify(m) + '\\n');",
+  "emitir({ evento: 'ADQUIRIDA', cadeados: 4, impressao: IMPRESSAO, vidaMaximaMs: 2700000 });",
+  'const linhas = readline.createInterface({ input: process.stdin });',
+  "linhas.on('line', (l) => { const m = /^confirmar ([0-9a-f]{32})$/.exec(l); if (m) { comandos += 1; emitir({ evento: 'CONFIRMADA', id: m[1], impressao: IMPRESSAO, cadeados: 4, comandos }); } else if (l === 'liberar') { emitir({ evento: 'LIBERADA', impressao: IMPRESSAO, liberados: 4, restantes: 0, sessaoEncerrada: true }); process.exit(0); } });",
+  "linhas.on('close', () => process.exit(0));",
+  '',
+].join('\n');
+function executarEnsaioDeProducao({ raiz, credencial, sistema, comAutorizacao, roteiroDoGuardiao }) {
+  const { spawnSync } = require('node:child_process');
+  fs.mkdirSync(raiz, { recursive: true });
+  const roteiro = path.join(raiz, 'ensaio-de-producao.js');
+  const parametros = path.join(raiz, 'parametros.json');
+  fs.writeFileSync(roteiro, ROTEIRO_DO_ENSAIO_DE_PRODUCAO);
+  fs.writeFileSync(parametros, JSON.stringify({ deploy: DEPLOY_HML, raiz, credencial, sistema, comAutorizacao, roteiroDoGuardiao }));
+  const r = spawnSync(process.execPath, [roteiro, parametros], { encoding: 'utf8', timeout: 90000, env: { PATH: process.env.PATH, NODE_ENV: 'test' } });
+  assert.equal(r.error, undefined, 'o ensaio de produção terminou no prazo');
+  let saida;
+  try { saida = JSON.parse(r.stdout); } catch { assert.fail(`saída inesperada do ensaio de produção: ${r.stdout} ${r.stderr}`); }
+  return saida;
+}
+
 // ---------------------------------------------------------------- PostgreSQL 16 real
 
 const decisao = decidirExecucao(process.env);
@@ -604,6 +699,24 @@ describe('CD 3B-2B-2 — guardião de coordenação com PostgreSQL 16 real (só 
     await semRestos('depois do ensaio com perda no reinício');
   });
 
+  // 3B-2B-3B: fluxo de PRODUÇÃO do instalador com o guardião real e PostgreSQL 16, sem homologarProvedorParaTeste na
+  // operação. Sem autorização: recusa sem mutação. Com ela: instala, e a soltura dos quatro cadeados é conferida.
+  test('3B-2B-3B: instalador em produção com o guardião real (sem homologação de teste): sem autorização recusa; com ela instala e solta os quatro cadeados', { timeout: 240000 }, async () => {
+    const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'gepi-cd-ensaio-prod-')));
+    await comLimpeza(async () => {
+      const sem = executarEnsaioDeProducao({ raiz: path.join(raiz, 'sem'), credencial, sistema, comAutorizacao: false, roteiroDoGuardiao: roteiroQueCarregaOGuardiaoReal() });
+      assert.deepEqual([sem.aquisicao, sem.instanciaReal, sem.erro, sem.resultado], [AQUISICAO_OK, true, 'COORDENACAO_NAO_HOMOLOGADA', null], JSON.stringify(sem));
+      assert.notEqual(sem.instalada, sem.alvo, 'nada trocado');
+      await semRestos('depois do ensaio de produção sem autorização');
+      const com = executarEnsaioDeProducao({ raiz: path.join(raiz, 'com'), credencial, sistema, comAutorizacao: true, roteiroDoGuardiao: roteiroQueCarregaOGuardiaoReal() });
+      assert.deepEqual([com.aquisicao, com.instanciaReal, com.erro, com.resultado, com.instalada], [AQUISICAO_OK, true, null, 'INSTALADA', com.alvo], JSON.stringify(com));
+      assert.match(com.impressao, /^[0-9a-f]{64}$/);
+      assert.deepEqual([com.liberacao.situacao, com.liberacao.cadeadosLiberados.confirmada, com.liberacao.comprovadaNoBanco], ['LIBERACAO_INFORMADA', true, false]);
+      await semRestos('depois do ensaio de produção com autorização');
+      observacao.ensaioDeProducao = { semAutorizacao: sem.erro, comAutorizacao: com.resultado, cadeadosSoltos: com.liberacao.cadeadosLiberados.confirmada };
+    }, [{ nome: 'remover o diretório do ensaio de produção', executar: () => removerDiretorioDoEnsaio(raiz) }], falhasDeLimpeza);
+  });
+
   test('ao fim: nenhum processo do guardião vivo, nenhuma sessão do papel e nenhum cadeado do D-ORF-6 preso', { timeout: 30000 }, async () => {
     assert.ok(filhos.length >= 9);
     assert.deepEqual(filhos.filter(filhoVivo).map((f) => f.pid), []);
@@ -812,6 +925,23 @@ describe('CD 3B-2B-2 — controles do ensaio (simulação local, sem banco)', ()
     } finally {
       for (const r of raizes) removerDiretorioDoEnsaio(r);
       if (nodeEnvAntes === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = nodeEnvAntes;
+    }
+  });
+
+  // O mesmo processo do ensaio de produção, com um guardião simulado no lugar do real: prova sem banco a ligação
+  // configuração oficial → guardião reconhecido → autorização → instalador. O guardião real e o PostgreSQL ficam para a CI.
+  test('3B-2B-3B: o ensaio de produção do instalador funciona sem banco: sem autorização recusa; com ela instala', { timeout: 120000 }, () => {
+    const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'gepi-cd-ensaio-prod-local-')));
+    try {
+      const credencial = path.join(raiz, 'credencial.json');
+      const sem = executarEnsaioDeProducao({ raiz: path.join(raiz, 'sem'), credencial, sistema: '7412345678901234567', comAutorizacao: false, roteiroDoGuardiao: GUARDIAO_SIMULADO });
+      assert.deepEqual([sem.aquisicao, sem.instanciaReal, sem.erro, sem.resultado], [AQUISICAO_OK, true, 'COORDENACAO_NAO_HOMOLOGADA', null], JSON.stringify(sem));
+      assert.notEqual(sem.instalada, sem.alvo);
+      const com = executarEnsaioDeProducao({ raiz: path.join(raiz, 'com'), credencial, sistema: '7412345678901234567', comAutorizacao: true, roteiroDoGuardiao: GUARDIAO_SIMULADO });
+      assert.deepEqual([com.erro, com.resultado, com.instalada], [null, 'INSTALADA', com.alvo], JSON.stringify(com));
+      assert.equal(com.liberacao.cadeadosLiberados.confirmada, true);
+    } finally {
+      removerDiretorioDoEnsaio(raiz);
     }
   });
 

@@ -161,6 +161,8 @@ function criarDeps(sobrescrever = {}) {
   return { deps, chamadas };
 }
 const observadoDe = (...migrations) => ({ banco: 'hml', origem: 'sonda-teste', coletadoEm: new Date(AGORA0).toISOString(), migrations, contratos: {} });
+// Para os testes que usam a hora real (o provedor real do guardião carimba as consultas com ela).
+const observadoAgora = (...migrations) => ({ ...observadoDe(...migrations), coletadoEm: new Date().toISOString() });
 const lerJson = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
 
 afterEach(() => {
@@ -675,6 +677,215 @@ describe('instalador — coordenação com D-ORF-6 (interface; nenhuma trava hom
   });
 });
 
+// 3B-2B-3B: fluxo de PRODUÇÃO do backend no instalador, sem homologarProvedorParaTeste. Só três condições juntas
+// liberam: configuração oficial do agente habilitada (C1), guardião real reconhecido para a baseline que o próprio
+// instalador lê (baseline, commit, roteiro e hash) e uma autorização desta operação, consumida uma única vez (C2).
+// O único mecanismo de teste é a origem da configuração oficial passada em deps.configuracaoOficial, aceita só com
+// NODE_ENV=test: todas as conferências do leitor continuam valendo sobre esse arquivo, com o dono esperado sendo o
+// usuário do teste (ou o informado).
+describe('3B-2B-3B: backend pelo provedor do guardião (fluxo de produção do instalador)', () => {
+  const PROVEDOR = path.join(REPO, 'deploy', 'hml', 'cd', 'coordenacao-por-guardiao.js');
+  const ISOLAMENTO = 'RAIZES_EXCLUSIVAS_HOMOLOGACAO_BACKEND';
+  const VIDA = 45 * 60 * 1000;
+  // Guardião simulado de verdade (processo Node), no protocolo do canal de controle, sem banco.
+  const GUARDIAO = [
+    "'use strict';",
+    "const readline = require('node:readline');",
+    "const IMPRESSAO = 'c3'.repeat(32);",
+    'let comandos = 0;',
+    "const emitir = (m) => process.stdout.write(JSON.stringify(m) + '\\n');",
+    `emitir({ evento: 'ADQUIRIDA', cadeados: 4, impressao: IMPRESSAO, vidaMaximaMs: ${VIDA} });`,
+    'const linhas = readline.createInterface({ input: process.stdin });',
+    "linhas.on('line', (l) => { const m = /^confirmar ([0-9a-f]{32})$/.exec(l); if (m) { comandos += 1; emitir({ evento: 'CONFIRMADA', id: m[1], impressao: IMPRESSAO, cadeados: 4, comandos }); } else if (l === 'liberar') { emitir({ evento: 'LIBERADA', impressao: IMPRESSAO, liberados: 4, restantes: 0, sessaoEncerrada: true }); process.exit(0); } });",
+    "linhas.on('close', () => process.exit(0));",
+    '',
+  ].join('\n');
+  let emissor = null;
+  const emissorDoTeste = () => { if (!emissor) emissor = require(PROVEDOR).obterEmissorDeAutorizacoes(); return emissor; };
+  const abertos = [];
+  afterEach(async () => {
+    for (const c of abertos.splice(0)) await c.liberar();
+  });
+
+  function criarReleaseBackendComGuardiao(n) {
+    const lock = '{"lockfileVersion":3}';
+    const sql = '-- 000_a.sql\n';
+    return criarRelease({
+      componente: 'backend', n,
+      arquivos: { 'package.json': '{"engines":{"node":">=22"}}', 'package-lock.json': lock, 'src/server.js': `// v${n}\n`, 'migrations/000_a.sql': sql, 'migrations/checksums.json': JSON.stringify({ algoritmo: 'sha256', migrations: { '000_a.sql': sha256(sql) } }), 'scripts/guardiao-de-coordenacao.js': GUARDIAO },
+      secao: { lockfileSha256: sha256(lock), node: '>=22', migrations: [{ nome: '000_a.sql', sha256: sha256(sql) }], contratos: {} },
+    });
+  }
+  // Configuração oficial num diretório de teste: as mesmas conferências do caminho real, com o dono = usuário do teste.
+  function configuracaoOficial(ctx, { habilitado = true, isolamentoRevisado = ISOLAMENTO, modo = 0o640, uidDono = process.getuid() } = {}) {
+    const caminho = path.join(tmp(), 'agente-backend.json');
+    fs.writeFileSync(caminho, JSON.stringify({ habilitado, isolamentoRevisado }));
+    fs.chmodSync(caminho, modo);
+    ctx.deps.configuracaoOficial = { caminho, uidDono };
+    return caminho;
+  }
+  async function preparar({ comBaseline = true } = {}) {
+    const { instalar, reverter } = carregar();
+    const amb = criarAmbiente();
+    const obs = { observado: observadoAgora('000_a.sql') };
+    // Baseline pelo caminho de teste (só o preparo), com a hora real.
+    const livreAgora = async () => ({ situacao: 'LIVRE', origem: 'teste', consultadoEm: new Date().toISOString() });
+    if (comBaseline) await instalar({ config: amb.config, componente: 'backend', release: criarReleaseBackendComGuardiao(1), opcoes: obs, deps: { ...criarDeps({ consultarCoordenacao: livreAgora }).deps, agora: Date.now } });
+    const alvo = criarReleaseBackendComGuardiao(2);
+    const releaseSha256 = sha256(fs.readFileSync(path.join(alvo, 'release.json')));
+    const { deps, chamadas } = criarDeps();
+    deps.agora = Date.now; // o provedor real carimba a hora real nas consultas
+    return { instalar, reverter, amb, obs, alvo, releaseSha256, deps, chamadas };
+  }
+  // Instância REAL do provedor (iniciador do próprio módulo) com o roteiro da baseline instalada.
+  async function guardiaoDaBaseline(amb, { roteiro, baseline = { rotulo: R(1), commit: COMMIT(1) } } = {}) {
+    const dir = fs.realpathSync(path.join(amb.releases('backend'), R(1)));
+    const caminho = roteiro || path.join(dir, 'scripts', 'guardiao-de-coordenacao.js');
+    const coord = require(PROVEDOR).criarCoordenacaoPorGuardiao({
+      comando: [process.execPath, caminho], dir, credencial: path.join(amb.raiz, 'credencial.json'), sistema: '7412345678901234567',
+      prazos: { adquirirMs: 5000, confirmarMs: 5000, liberarMs: 5000, encerrarMs: 5000 }, baseline, sha256DoRoteiro: sha256(fs.readFileSync(caminho)),
+    });
+    abertos.push(coord);
+    assert.deepEqual(await coord.adquirir(), { ok: true, vidaMaximaMs: VIDA });
+    return coord;
+  }
+  const autorizar = (coord, ctx, extra = {}) => emissorDoTeste().emitir({ id: '9-1', commit: COMMIT(2), rotulo: R(2), releaseSha256: ctx.releaseSha256, expiraEm: new Date(Date.now() + 5 * 60000).toISOString(), consultar: coord.consultar, ...extra });
+  const ID_DO_PEDIDO = '9-1';
+  const recusada = async (ctx, opcoes, deps = ctx.deps) => {
+    const erro = await codigoDe(ctx.instalar({ config: ctx.amb.config, componente: 'backend', release: ctx.alvo, opcoes: { ...ctx.obs, idDoPedido: ID_DO_PEDIDO, ...opcoes }, deps }));
+    assert.equal(path.basename(fs.readlinkSync(ctx.amb.link('backend'))), R(1), 'nada trocado');
+    assert.equal(ctx.chamadas.reiniciar, 0, 'nada reiniciado');
+    return erro;
+  };
+
+  test('H-04/CB-01: configuração oficial habilitada, guardião real reconhecido e autorização desta operação: instala', async () => {
+    const ctx = await preparar();
+    configuracaoOficial(ctx);
+    const coord = await guardiaoDaBaseline(ctx.amb);
+    ctx.deps.consultarCoordenacao = coord.consultar;
+    const r = await ctx.instalar({ config: ctx.amb.config, componente: 'backend', release: ctx.alvo, opcoes: { ...ctx.obs, idDoPedido: ID_DO_PEDIDO, autorizacao: autorizar(coord, ctx) }, deps: ctx.deps });
+    assert.equal(r.resultado, 'INSTALADA', JSON.stringify(r));
+    assert.equal(path.basename(fs.readlinkSync(ctx.amb.link('backend'))), R(2));
+    assert.equal(ctx.chamadas.reiniciar, 1);
+  });
+
+  test('C2-01: sem autorização, ou com um objeto igual fabricado à mão: COORDENACAO_NAO_HOMOLOGADA, sem mutação', async () => {
+    const ctx = await preparar();
+    configuracaoOficial(ctx);
+    const coord = await guardiaoDaBaseline(ctx.amb);
+    ctx.deps.consultarCoordenacao = coord.consultar;
+    assert.equal((await recusada(ctx, {})).codigo, 'COORDENACAO_NAO_HOMOLOGADA');
+    const fabricada = Object.freeze({ id: '9-1', commit: COMMIT(2), rotulo: R(2), releaseSha256: ctx.releaseSha256 });
+    assert.equal((await recusada(ctx, { autorizacao: fabricada })).codigo, 'COORDENACAO_NAO_HOMOLOGADA');
+  });
+
+  test('C2-02/C2-03: autorização de outra release, de outra instância, revogada ou já consumida: recusa', async () => {
+    const ctx = await preparar();
+    configuracaoOficial(ctx);
+    const coord = await guardiaoDaBaseline(ctx.amb);
+    const outra = await guardiaoDaBaseline(ctx.amb);
+    ctx.deps.consultarCoordenacao = coord.consultar;
+    assert.equal((await recusada(ctx, { autorizacao: autorizar(coord, ctx, { releaseSha256: 'f'.repeat(64) }) })).codigo, 'COORDENACAO_NAO_HOMOLOGADA', 'outra release');
+    assert.equal((await recusada(ctx, { autorizacao: autorizar(outra, ctx) })).codigo, 'COORDENACAO_NAO_HOMOLOGADA', 'outra instância');
+    const revogada = autorizar(coord, ctx);
+    emissorDoTeste().revogar(revogada);
+    assert.equal((await recusada(ctx, { autorizacao: revogada })).codigo, 'COORDENACAO_NAO_HOMOLOGADA', 'revogada');
+    const valida = autorizar(coord, ctx);
+    assert.equal((await ctx.instalar({ config: ctx.amb.config, componente: 'backend', release: ctx.alvo, opcoes: { ...ctx.obs, idDoPedido: ID_DO_PEDIDO, autorizacao: valida }, deps: ctx.deps })).resultado, 'INSTALADA');
+    const reuso = await codigoDe(ctx.instalar({ config: ctx.amb.config, componente: 'backend', release: ctx.alvo, opcoes: { ...ctx.obs, idDoPedido: ID_DO_PEDIDO, autorizacao: valida }, deps: ctx.deps }));
+    assert.equal(reuso.codigo, 'COORDENACAO_NAO_HOMOLOGADA', 'reuso, mesmo para a mesma release');
+  });
+
+  test('P2: autorização emitida para outro pedido (outro ID), com a release idêntica: recusa, e não serve mais nem para o próprio pedido', async () => {
+    const ctx = await preparar();
+    configuracaoOficial(ctx);
+    const coord = await guardiaoDaBaseline(ctx.amb);
+    ctx.deps.consultarCoordenacao = coord.consultar;
+    const deOutroPedido = autorizar(coord, ctx);
+    assert.equal((await recusada(ctx, { autorizacao: deOutroPedido, idDoPedido: '9-2' })).codigo, 'COORDENACAO_NAO_HOMOLOGADA', 'outro ID');
+    assert.equal((await recusada(ctx, { autorizacao: deOutroPedido })).codigo, 'COORDENACAO_NAO_HOMOLOGADA', 'revogada pela tentativa');
+    assert.equal((await recusada(ctx, { autorizacao: autorizar(coord, ctx), idDoPedido: undefined })).codigo, 'COORDENACAO_NAO_HOMOLOGADA', 'sem ID do pedido');
+  });
+
+  test('C1-01/C1-02: configuração oficial ausente, desabilitada, com outro isolamento, gravável, de outro dono, link simbólico ou com dois links: recusa', async () => {
+    const ctx = await preparar();
+    const coord = await guardiaoDaBaseline(ctx.amb);
+    ctx.deps.consultarCoordenacao = coord.consultar;
+    const casos = [
+      ['ausente', () => { ctx.deps.configuracaoOficial = { caminho: path.join(tmp(), 'nao-existe.json'), uidDono: process.getuid() }; }],
+      ['desabilitada', () => configuracaoOficial(ctx, { habilitado: false })],
+      ['outro isolamento', () => configuracaoOficial(ctx, { isolamentoRevisado: 'OUTRO' })],
+      ['gravável por outros', () => configuracaoOficial(ctx, { modo: 0o646 })],
+      ['gravável pelo grupo', () => configuracaoOficial(ctx, { modo: 0o660 })],
+      ['dono diferente do esperado', () => configuracaoOficial(ctx, { uidDono: 0 })],
+      ['link simbólico', () => { const real = configuracaoOficial(ctx); const link = path.join(tmp(), 'link.json'); fs.symlinkSync(real, link); ctx.deps.configuracaoOficial = { caminho: link, uidDono: process.getuid() }; }],
+      ['dois links físicos', () => { const real = configuracaoOficial(ctx); fs.linkSync(real, path.join(path.dirname(real), 'outro.json')); }],
+      ['diretório gravável por outros', () => { const real = configuracaoOficial(ctx); fs.chmodSync(path.dirname(real), 0o777); }],
+    ];
+    for (const [nome, preparo] of casos) {
+      preparo();
+      const erro = await recusada(ctx, { autorizacao: autorizar(coord, ctx) });
+      assert.equal(erro.codigo, 'COORDENACAO_NAO_HOMOLOGADA', nome);
+    }
+  });
+
+  test('C1: sem origem informada vale a constante oficial (dono root); fora de NODE_ENV=test nenhum outro caminho é aceito', () => {
+    const I = require(MODULO);
+    assert.equal(I.CAMINHO_DA_CONFIGURACAO_OFICIAL, '/etc/safework/cd/agente-backend.json');
+    assert.deepEqual({ ...I.origemDaConfiguracaoOficial() }, { caminho: '/etc/safework/cd/agente-backend.json', uidDono: 0 });
+    assert.deepEqual({ ...I.origemDaConfiguracaoOficial('/etc/safework/cd/agente-backend.json') }, { caminho: '/etc/safework/cd/agente-backend.json', uidDono: 0 });
+    assert.deepEqual({ ...I.origemDaConfiguracaoOficial('/tmp/x.json') }, { caminho: '/tmp/x.json', uidDono: process.getuid() }, 'em teste, outro caminho com o dono = usuário do teste');
+    const antes = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      for (const valor of ['/tmp/x.json', { caminho: '/tmp/x.json', uidDono: 0 }]) {
+        assert.throws(() => I.origemDaConfiguracaoOficial(valor), (e) => e.codigo === 'CONFIG_NAO_OFICIAL', JSON.stringify(valor));
+      }
+      assert.deepEqual({ ...I.origemDaConfiguracaoOficial() }, { caminho: '/etc/safework/cd/agente-backend.json', uidDono: 0 });
+    } finally {
+      process.env.NODE_ENV = antes;
+    }
+  });
+
+  test('H-02/H-03: guardião sem posse, com roteiro fora da baseline ou criado para outra baseline: recusa', async () => {
+    const ctx = await preparar();
+    configuracaoOficial(ctx);
+    const perdido = await guardiaoDaBaseline(ctx.amb);
+    const autorizacaoDoPerdido = autorizar(perdido, ctx);
+    await perdido.liberar();
+    assert.equal((await recusada(ctx, { autorizacao: autorizacaoDoPerdido }, { ...ctx.deps, consultarCoordenacao: perdido.consultar })).codigo, 'COORDENACAO_NAO_HOMOLOGADA', 'sem posse');
+    const copia = path.join(tmp(), 'guardiao-de-coordenacao.js');
+    fs.writeFileSync(copia, GUARDIAO);
+    const fora = await guardiaoDaBaseline(ctx.amb, { roteiro: copia });
+    assert.equal((await recusada(ctx, { autorizacao: autorizar(fora, ctx) }, { ...ctx.deps, consultarCoordenacao: fora.consultar })).codigo, 'COORDENACAO_NAO_HOMOLOGADA', 'roteiro fora da baseline');
+    const outraBaseline = await guardiaoDaBaseline(ctx.amb, { baseline: { rotulo: R(1), commit: COMMIT(9) } });
+    assert.equal((await recusada(ctx, { autorizacao: autorizar(outraBaseline, ctx) }, { ...ctx.deps, consultarCoordenacao: outraBaseline.consultar })).codigo, 'COORDENACAO_NAO_HOMOLOGADA', 'outra baseline');
+  });
+
+  test('H-06: perda da garantia depois do reconhecimento e antes da troca: COORDENACAO_NAO_CONFIRMADA, nada trocado', async () => {
+    const ctx = await preparar();
+    configuracaoOficial(ctx);
+    const coord = await guardiaoDaBaseline(ctx.amb);
+    const executar = ctx.deps.executar;
+    const deps = { ...ctx.deps, consultarCoordenacao: coord.consultar, executar: async (...a) => { const r = await executar(...a); await coord.liberar(); return r; } };
+    const erro = await recusada(ctx, { autorizacao: autorizar(coord, ctx) }, deps);
+    assert.equal(erro.codigo, 'COORDENACAO_NAO_CONFIRMADA');
+  });
+
+  test('CB-07: primeira instalação sem baseline e reversão manual do backend continuam bloqueadas com o guardião real', async () => {
+    const semBaseline = await preparar({ comBaseline: false });
+    configuracaoOficial(semBaseline);
+    const p = semBaseline;
+    const erro = await codigoDe(p.instalar({ config: p.amb.config, componente: 'backend', release: p.alvo, opcoes: { ...p.obs }, deps: { ...p.deps, consultarCoordenacao: async () => ({}) } }));
+    assert.equal(erro.codigo, 'COORDENACAO_NAO_HOMOLOGADA');
+    assert.equal(existeLink(p.amb.link('backend')), false);
+    const ctx = await preparar();
+    const coord = await guardiaoDaBaseline(ctx.amb);
+    const rev = await codigoDe(ctx.reverter({ config: ctx.amb.config, componente: 'backend', opcoes: ctx.obs, deps: { ...ctx.deps, consultarCoordenacao: coord.consultar } }));
+    assert.equal(rev.codigo, 'COORDENACAO_NAO_HOMOLOGADA');
+  });
+});
+
 describe('instalador — integração com as releases reais e linha de comando', () => {
   test('releases reais do Portal, Painel e backend são instaladas e identificadas com integridade', async () => {
     const { instalar, identificar } = carregar();
@@ -699,15 +910,114 @@ describe('instalador — integração com as releases reais e linha de comando',
     }
   });
 
-  test('o módulo usa só o núcleo do Node e módulos irmãos (copiável sozinho para o servidor)', () => {
+  // 3B-2B-3B (Opção 1): única exceção nominal, o provedor do guardião carregado sob demanda por coordenacao.js, com
+  // recusa em qualquer falha. Sem ele, a pasta continua copiável sozinha (provado abaixo, com execução real).
+  const DEPENDENCIA_EXTERNA_PERMITIDA = Object.freeze({ arquivo: 'coordenacao.js', modulo: '../cd/coordenacao-por-guardiao' });
+  test('o módulo usa só o núcleo do Node e módulos irmãos (copiável sozinho para o servidor), salvo a exceção nominal do provedor', () => {
     carregar();
     const dir = path.dirname(MODULO);
+    const externas = [];
     for (const arquivo of fs.readdirSync(dir).filter((f) => f.endsWith('.js'))) {
       const fonte = fs.readFileSync(path.join(dir, arquivo), 'utf8');
       for (const m of fonte.matchAll(/require\(\s*['"]([^'"]+)['"]\s*\)/g)) {
-        assert.ok(m[1].startsWith('node:') || m[1].startsWith('./'), `${arquivo} requer ${m[1]}`);
+        if (m[1].startsWith('node:') || m[1].startsWith('./')) continue;
+        externas.push({ arquivo, modulo: m[1] });
       }
       assert.doesNotMatch(fonte, /\bsudo\b|child_process'\)\.exec\(|shell:\s*true/, `${arquivo}: sem shell nem sudo`);
+    }
+    assert.deepEqual(externas, [DEPENDENCIA_EXTERNA_PERMITIDA], 'nenhuma outra dependência fora da pasta');
+    const fonte = fs.readFileSync(path.join(dir, 'coordenacao.js'), 'utf8');
+    const linha = fonte.split('\n').find((l) => l.includes(DEPENDENCIA_EXTERNA_PERMITIDA.modulo));
+    assert.ok(/^\s+return require\(/.test(linha), 'carregada dentro de função, nunca no topo do módulo');
+  });
+
+  // Cópia de deploy/hml/instalador/ SOZINHA num diretório temporário, carregada de lá (outra instância dos módulos).
+  function instaladorIsolado({ provedor } = {}) {
+    const base = tmp();
+    const destino = path.join(base, 'instalador');
+    fs.mkdirSync(destino);
+    for (const f of fs.readdirSync(path.dirname(MODULO)).filter((x) => x.endsWith('.js'))) fs.copyFileSync(path.join(path.dirname(MODULO), f), path.join(destino, f));
+    if (provedor !== undefined) { fs.mkdirSync(path.join(base, 'cd')); fs.writeFileSync(path.join(base, 'cd', 'coordenacao-por-guardiao.js'), provedor); }
+    return { I: comAutenticidade(require(path.join(destino, 'instalar-release.js'))), C: require(path.join(destino, 'coordenacao.js')), destino };
+  }
+  // Baseline com o roteiro do guardião no manifesto: a recusa tem de vir da falta do provedor, não da falta do roteiro.
+  function releaseBackendComRoteiro(n) {
+    const lock = '{"lockfileVersion":3}';
+    const sql = '-- 000_a.sql\n';
+    return criarRelease({
+      componente: 'backend', n,
+      arquivos: { 'package.json': '{"engines":{"node":">=22"}}', 'package-lock.json': lock, 'src/server.js': `// v${n}\n`, 'migrations/000_a.sql': sql, 'migrations/checksums.json': JSON.stringify({ algoritmo: 'sha256', migrations: { '000_a.sql': sha256(sql) } }), 'scripts/guardiao-de-coordenacao.js': '// roteiro\n' },
+      secao: { lockfileSha256: sha256(lock), node: '>=22', migrations: [{ nome: '000_a.sql', sha256: sha256(sql) }], contratos: {} },
+    });
+  }
+  function depsIsoladas(C) {
+    let pid = 100;
+    const homologado = C.homologarProvedorParaTeste(async () => ({ situacao: 'LIVRE', origem: 'teste', consultadoEm: new Date().toISOString() }));
+    return {
+      criarAncora: criarAncoraPorCaminho, esperar: async () => {}, reiniciar: async () => {}, verificarSaude: async () => ({ ok: true, detalhe: 'ok' }),
+      executar: async (cmd, args, opc) => { fs.mkdirSync(path.join(opc.cwd, 'node_modules', 'zod'), { recursive: true }); fs.writeFileSync(path.join(opc.cwd, 'node_modules', 'zod', 'index.js'), '1'); },
+      identificarProcesso: async () => { pid += 1; return { pid, cwd: fs.realpathSync(ambienteAtual.link('backend')) }; },
+      homologado,
+    };
+  }
+  // O provedor sob demanda pode faltar (pasta copiada sozinha) ou falhar ao carregar: em ambos, o backend recusa
+  // antes de qualquer mudança, mesmo com configuração oficial válida, baseline íntegra e um "provedor" que diz LIVRE.
+  for (const [nome, provedor] of [['provedor ausente (pasta copiada sozinha)', undefined], ['provedor que falha ao carregar', "throw new Error('falha simulada ao carregar o provedor');\n"]]) {
+    test(`Opção 1, ${nome}: o frontend instala de verdade; o backend recusa com COORDENACAO_NAO_HOMOLOGADA, sem mutação`, async () => {
+      const { I, C, destino } = instaladorIsolado({ provedor });
+      assert.ok(!fs.existsSync(path.join(destino, '..', 'cd', 'coordenacao-por-guardiao.js')) || provedor !== undefined);
+      const amb = criarAmbiente();
+      const deps = depsIsoladas(C);
+      const { homologado, ...semConsulta } = deps;
+      const portal = await I.instalar({ config: amb.config, componente: 'portal', release: criarRelease({ n: 1 }), opcoes: {}, deps: semConsulta });
+      assert.equal(portal.resultado, 'INSTALADA');
+      assert.equal(path.basename(fs.readlinkSync(amb.link('portal'))), R(1));
+      const obs = { observado: observadoAgora('000_a.sql') };
+      // Baseline pelo caminho de teste da própria cópia; depois, a tentativa de produção sem o provedor.
+      await I.instalar({ config: amb.config, componente: 'backend', release: releaseBackendComRoteiro(1), opcoes: obs, deps: { ...semConsulta, consultarCoordenacao: homologado } });
+      const caminho = path.join(tmp(), 'agente-backend.json');
+      fs.writeFileSync(caminho, JSON.stringify({ habilitado: true, isolamentoRevisado: 'RAIZES_EXCLUSIVAS_HOMOLOGACAO_BACKEND' }), { mode: 0o640 });
+      assert.equal(I.lerConfiguracaoOficial(I.origemDaConfiguracaoOficial(caminho)).habilitado, true, 'a configuração oficial em si é válida');
+      assert.equal(C.guardiaoReconhecido(async () => ({}), { baseline: { rotulo: R(1), commit: COMMIT(1) }, sha256DoRoteiro: 'a'.repeat(64), roteiro: '/x' }), false);
+      assert.equal(C.consumirAutorizacaoDoGuardiao(Object.freeze({}), {}), false);
+      const antes = hashDaArvore(amb.app);
+      const livre = async () => ({ situacao: 'LIVRE', origem: 'diz que é o guardião', consultadoEm: new Date().toISOString() });
+      const erro = await codigoDe(I.instalar({ config: amb.config, componente: 'backend', release: releaseBackendComRoteiro(2), opcoes: { ...obs, autorizacao: Object.freeze({ id: '9-1' }) }, deps: { ...semConsulta, consultarCoordenacao: livre, configuracaoOficial: caminho } }));
+      assert.match(erro.message, /guardião real/, 'a recusa vem do provedor não reconhecido, depois de configuração e baseline aprovadas');
+      assert.equal(erro.codigo, 'COORDENACAO_NAO_HOMOLOGADA');
+      assert.equal(hashDaArvore(amb.app), antes, 'nada mudou em disco');
+      assert.equal(path.basename(fs.readlinkSync(amb.link('backend'))), R(1));
+    });
+  }
+
+  test('Opção 1: sem ciclo de importação entre agente, instalador e provedor; cada um carrega sozinho, em qualquer ordem, num processo novo', () => {
+    // Grafo estático dos requires relativos de deploy/hml (cd e instalador): nenhum ciclo.
+    const raiz = path.join(REPO, 'deploy', 'hml');
+    const grafo = new Map();
+    for (const sub of ['cd', 'instalador', '.']) {
+      const dir = path.join(raiz, sub);
+      for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.js'))) {
+        const abs = path.join(dir, f);
+        const deps = [...fs.readFileSync(abs, 'utf8').matchAll(/require\(\s*['"](\.{1,2}\/[^'"]+)['"]\s*\)/g)].map((m) => { const p = path.resolve(dir, m[1]); return p.endsWith('.js') ? p : `${p}.js`; });
+        grafo.set(abs, deps);
+      }
+    }
+    const estado = new Map();
+    const visitar = (no, trilha) => {
+      if (estado.get(no) === 'feito') return;
+      assert.notEqual(estado.get(no), 'visitando', `ciclo: ${[...trilha, no].map((p) => path.relative(raiz, p)).join(' -> ')}`);
+      estado.set(no, 'visitando');
+      for (const d of grafo.get(no) || []) visitar(d, [...trilha, no]);
+      estado.set(no, 'feito');
+    };
+    for (const no of grafo.keys()) visitar(no, []);
+    // Carga real em processos novos, nas duas ordens, sem aviso de dependência circular.
+    const mods = ['deploy/hml/cd/agente-backend.js', 'deploy/hml/instalador/instalar-release.js', 'deploy/hml/instalador/coordenacao.js', 'deploy/hml/cd/coordenacao-por-guardiao.js'].map((m) => path.join(REPO, m));
+    for (const ordem of [mods, [...mods].reverse()]) {
+      const r = spawnSync(process.execPath, ['--trace-warnings', '-e', `for (const m of ${JSON.stringify(ordem)}) { const e = require(m); if (!e || Object.keys(e).length === 0) throw new Error('exportação vazia: ' + m); } require(${JSON.stringify(mods[2])}).guardiaoReconhecido(async () => ({}), {}); process.stdout.write('ok');`], { encoding: 'utf8', timeout: 20000, env: { PATH: process.env.PATH } });
+      assert.equal(r.status, 0, r.stderr);
+      assert.equal(r.stdout, 'ok');
+      assert.doesNotMatch(r.stderr, /circular|Warning/i);
     }
   });
 

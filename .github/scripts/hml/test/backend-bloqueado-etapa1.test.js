@@ -17,8 +17,25 @@ describe('Etapa 1: o backend continua bloqueado no instalador', () => {
     assert.deepEqual([...backend.cli].sort(), ['identificar', 'reconciliar']);
     assert.match(backend.bloqueios.instalar, /bloqueado/);
     assert.match(backend.bloqueios.reverter, /bloqueado/);
-    assert.match(ler('deploy/hml/instalador/instalar-release.js'), /throw erro\('COORDENACAO_NAO_HOMOLOGADA'/);
+    // 3B-2B-3B: o código sai de um ponto único (naoHomologada), usado pelas duas guardas anteriores à âncora.
+    assert.match(ler('deploy/hml/instalador/instalar-release.js'), /const naoHomologada = \(mensagem\) => erro\('COORDENACAO_NAO_HOMOLOGADA', mensagem\);/);
     assert.match(ler('deploy/hml/instalador/nucleo.js'), /'COORDENACAO_NAO_HOMOLOGADA'/);
+  });
+  test('3B-2B-3B: só instalar segue para a conferência do guardião; reverter e a linha de comando seguem bloqueados, e uma função qualquer é recusada', async () => {
+    const I = require(path.join(RAIZ, 'deploy/hml/instalador/instalar-release'));
+    const os = require('node:os');
+    const base = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'bloqueado-3b-'));
+    try {
+      const config = { raizesPersistentes: [], componentes: { backend: { tipo: 'backend', base, nome: 'backend', saude: { url: 'http://127.0.0.1:9/api/health' }, reinicio: { comando: ['/bin/true'] }, processo: { pidComando: ['/bin/true'] } } } };
+      const livre = async () => ({ situacao: 'LIVRE', origem: 'qualquer', consultadoEm: new Date().toISOString() });
+      const deps = { consultarCoordenacao: livre, reiniciar: async () => {}, verificarSaude: async () => ({ ok: true }), identificarProcesso: async () => ({ pid: 2, cwd: base }) };
+      await assert.rejects(I.reverter({ config, componente: 'backend', deps }), (e) => e.codigo === 'COORDENACAO_NAO_HOMOLOGADA');
+      for (const op of ['instalar', 'reverter']) assert.throws(() => N.verificarOperacaoNaInterface('backend', op, 'cli'), (e) => e.codigo === 'COORDENACAO_NAO_HOMOLOGADA', op);
+      assert.equal(provedorHomologado(livre), false);
+      assert.deepEqual(fs.readdirSync(base), [], 'nada criado');
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
   });
   test('nenhum provedor de coordenação está homologado: nem o padrão, nem um injetado que declare LIVRE', () => {
     assert.equal(provedorHomologado(consultaPadrao), false);
