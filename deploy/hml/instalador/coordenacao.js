@@ -110,4 +110,22 @@ function homologarProvedorParaTeste(consultar) {
   return consultar;
 }
 
-module.exports = { avaliarCoordenacao, consultaPadrao, SITUACOES, anexarEvidencia, evidenciaDe, provedorHomologado, homologarProvedorParaTeste };
+// 3B-2B-3B: o provedor do guardião (deploy/hml/cd/coordenacao-por-guardiao.js) é o único provedor de produção. O
+// instalador o aceita para o backend só com a instância real reconhecida para a expectativa que ELE calcula (baseline,
+// commit, roteiro e hash lidos da release instalada) e com uma autorização da operação consumida uma única vez. O
+// módulo do provedor é carregado só aqui, no momento da verificação; qualquer falha vale como não reconhecido.
+const ROTEIRO_DO_GUARDIAO = 'scripts/guardiao-de-coordenacao.js';
+function provedorDoGuardiao() {
+  return require('../cd/coordenacao-por-guardiao');
+}
+function guardiaoReconhecido(consultar, expectativa) {
+  try { return provedorDoGuardiao().garantiaVigente(consultar, expectativa) === true; } catch { return false; }
+}
+function consumirAutorizacaoDoGuardiao(autorizacao, contexto) {
+  try { return provedorDoGuardiao().consumirAutorizacao(autorizacao, contexto) === true; } catch { return false; }
+}
+
+module.exports = {
+  avaliarCoordenacao, consultaPadrao, SITUACOES, anexarEvidencia, evidenciaDe, provedorHomologado, homologarProvedorParaTeste,
+  ROTEIRO_DO_GUARDIAO, guardiaoReconhecido, consumirAutorizacaoDoGuardiao,
+};

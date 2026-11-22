@@ -17,8 +17,15 @@ const I = require('../instalador/instalar-release');
 const { criarAncora } = require('../instalador/ancora');
 const { criarS3 } = require('./s3');
 const P = require('./protocolo');
-const { criarCoordenacaoPorGuardiao } = require('./coordenacao-por-guardiao');
+const { criarCoordenacaoPorGuardiao, obterEmissorDeAutorizacoes } = require('./coordenacao-por-guardiao');
 const { executarComPrazo } = require('./executor-com-prazo');
+
+// 3B-2B-3B: o emissor de autorizações (uso único por processo) é pego aqui, ao carregar o módulo. Só emite no fluxo
+// oficial: pedido lido de um cliente S3 criado por principal a partir da configuração oficial. Organiza o fluxo; não é
+// barreira contra código executado com a identidade do agente (contrato, D9).
+const EMISSOR = obterEmissorDeAutorizacoes();
+const CLIENTES_S3_OFICIAIS = new WeakSet();
+const ROTEIRO_DO_GUARDIAO = 'scripts/guardiao-de-coordenacao.js';
 
 const ESCOPO = 'backend';
 const PREFIXO = 'hml-backend';
@@ -32,7 +39,7 @@ const igual = (a, b) => a.rotulo === b.rotulo && a.commit === b.commit;
 // COORDENACAO_NAO_CONFIRMADA ficam de fora de propósito: o instalador também as lança depois de preparar a release e
 // depois de trocar o link, então elas não provam ausência de mutação.
 const RECUSAS_SEM_MUTACAO = new Set(['COORDENACAO_NAO_HOMOLOGADA', 'SAUDE_NAO_CONFIGURADA', 'REINICIO_NAO_CONFIGURADO', 'VERSAO_NAO_COMPROVAVEL']);
-const MOTIVOS_DE_RECUSA = new Set([...RECUSAS_SEM_MUTACAO, 'PEDIDO_EXPIRADO', 'PEDIDO_INVALIDO', 'PEDIDO_AUSENTE', 'ID_DIVERGENTE', 'BLOB_DIVERGENTE', 'ESCOPO_DIVERGENTE', 'RETROATIVO_BLOQUEADO', 'S3_OPERACAO_FALHOU', 'BASELINE_NAO_COMPROVADA', 'BASELINE_MUDOU', 'ESTADO_OBSERVADO_INDISPONIVEL', 'ESTADO_OBSERVADO_DIVERGENTE', 'GUARDIAO_NAO_VINCULADO', 'COORDENACAO_OCUPADA', 'COORDENACAO_NAO_ADQUIRIDA', 'PRAZO_DA_COORDENACAO_INSUFICIENTE']);
+const MOTIVOS_DE_RECUSA = new Set([...RECUSAS_SEM_MUTACAO, 'PEDIDO_EXPIRADO', 'PEDIDO_INVALIDO', 'PEDIDO_AUSENTE', 'ID_DIVERGENTE', 'BLOB_DIVERGENTE', 'ESCOPO_DIVERGENTE', 'RETROATIVO_BLOQUEADO', 'S3_OPERACAO_FALHOU', 'BASELINE_NAO_COMPROVADA', 'BASELINE_MUDOU', 'ESTADO_OBSERVADO_INDISPONIVEL', 'ESTADO_OBSERVADO_DIVERGENTE', 'GUARDIAO_NAO_VINCULADO', 'COORDENACAO_OCUPADA', 'COORDENACAO_NAO_ADQUIRIDA', 'PRAZO_DA_COORDENACAO_INSUFICIENTE', 'AUTORIZACAO_NAO_EMITIDA']);
 // Recusas do guardião que significam outra operação do D-ORF-6 em curso; qualquer outra recusa é aquisição sem garantia.
 const OCUPACOES_DO_GUARDIAO = new Set(['EM_USO', 'MIGRACAO_EM_CURSO']);
 // Falhas que o próprio instalador declara críticas depois de alterar a release.
@@ -113,8 +120,9 @@ function vincularSonda(cfg, baseline) {
 // O guardião é código da baseline, como a sonda, e fica preso a ela pelas mesmas regras: o processo segue vivo durante
 // toda a instalação, inclusive depois da troca do link, e nunca é o da candidata.
 // `credencial` é o CAMINHO do arquivo que só o guardião lê, distinto do da sonda; o cluster esperado é o da sonda.
+// O roteiro é o caminho fixo que o instalador confere na baseline (3B-2B-3B).
 const guardiaoValido = (g, sonda) => g !== null && typeof g === 'object' && Array.isArray(g.comando) && g.comando.length === 2
-  && g.comando.every(textoPreenchido) && path.isAbsolute(g.comando[0]) && textoPreenchido(g.credencial) && path.isAbsolute(g.credencial)
+  && g.comando.every(textoPreenchido) && path.isAbsolute(g.comando[0]) && g.comando[1] === ROTEIRO_DO_GUARDIAO && textoPreenchido(g.credencial) && path.isAbsolute(g.credencial)
   && !(sonda && sonda.credencial === g.credencial);
 
 // Hash esperado do roteiro do guardião: o do manifesto que o instalador gravou para a release da baseline (meta/<rótulo>)
@@ -319,7 +327,7 @@ function acoesComPrazo(comp) {
 // O instalador recebe o que o próprio contrato dele monta a partir da configuração validada (depsDoConfig), com as ações
 // de processo trocadas pelas de prazo efetivo e, durante uma operação, protegidas pela garantia do guardião. `extras` só
 // existe para testes injetarem dependências controladas, e a linha de comando nunca o preenche.
-function dependenciasPadrao(cfg, extras) {
+function dependenciasPadrao(cfg, extras, configuracaoOficial) {
   const config = cfg.instalador;
   // A pré-checagem e o lerObservado do instalador recebem o MESMO vínculo, criado uma vez por operação.
   const depsDoInstalador = (vinculo, coordenacao, operacao) => {
@@ -331,6 +339,8 @@ function dependenciasPadrao(cfg, extras) {
     if (typeof deps.lerObservado !== 'function') deps.lerObservado = () => coletarObservado(cfg, executarDaSonda, vinculo);
     // A coordenação vem só do provedor adquirido nesta operação; nada dos extras a substitui.
     deps.consultarCoordenacao = coordenacao ? coordenacao.consultar : undefined;
+    // A origem da configuração oficial é a que principal leu; o instalador a confere e a lê de novo.
+    deps.configuracaoOficial = configuracaoOficial;
     if (operacao) {
       for (const [nome, prazoMs] of Object.entries(PRAZOS_DA_OPERACAO.acoes)) {
         if (typeof deps[nome] === 'function') deps[nome] = operacao.proteger(nome, prazoMs, deps[nome]);
@@ -352,14 +362,15 @@ function dependenciasPadrao(cfg, extras) {
   };
 }
 
-async function processar({ cfg, id, s3, deps: injetadas = {} }) {
+async function processar({ cfg, id, s3, deps: injetadas = {}, configuracaoOficial }) {
   P.exigir(P.ID.test(id), 'ID_INVALIDO');
-  const base0 = { ...dependenciasPadrao(cfg, injetadas.depsExtrasDoInstalador), ...injetadas };
+  const base0 = { ...dependenciasPadrao(cfg, injetadas.depsExtrasDoInstalador, configuracaoOficial), ...injetadas };
   const A = base0.criarAncora();
   let base, trava, liberar = false;
   // Provedor do guardião desta operação: criado só na hora de instalar e sempre liberado (uma vez) antes do fim.
   let coordenacao = null;
   let operacao = null;
+  let autorizacao = null;
   let liberacaoDaCoordenacao = null;
   const relogio = typeof base0.relogio === 'function' ? base0.relogio : relogioMonotonico;
   const liberarCoordenacao = async () => {
@@ -427,9 +438,16 @@ async function processar({ cfg, id, s3, deps: injetadas = {} }) {
         coordenacao = base0.criarCoordenacao(vinculoDoGuardiao, baseline);
         await adquirirGuardiao(coordenacao);
         operacao = criarOperacaoProtegida({ coordenacao, relogio });
+        // Autorização desta operação: só para o pedido lido do cliente S3 oficial, presa ao pedido validado e à
+        // instância do guardião adquirida aqui; o instalador a consome uma vez e ela é revogada no fim.
+        if (CLIENTES_S3_OFICIAIS.has(s3)) {
+          try {
+            autorizacao = EMISSOR.emitir({ id, commit: pedido.commit, rotulo: pedido.rotulo, releaseSha256: pedido.releaseSha256, expiraEm: pedido.expiraEm, consultar: coordenacao.consultar });
+          } catch { throw recusaDeCoordenacao('AUTORIZACAO_NAO_EMITIDA'); }
+        }
         await registrar({ fase: 'INSTALACAO_INICIADA', componente: ESCOPO });
         mutacaoIniciada = true;
-        try { return await instalar(opcoes, release, vinculo, coordenacao, operacao); } catch (falha) {
+        try { return await instalar(autorizacao ? { ...opcoes, autorizacao, idDoPedido: id } : opcoes, release, vinculo, coordenacao, operacao); } catch (falha) {
           if (RECUSAS_SEM_MUTACAO.has(falha.codigo)) mutacaoIniciada = false;
           throw falha;
         }
@@ -451,6 +469,7 @@ async function processar({ cfg, id, s3, deps: injetadas = {} }) {
     // trava preservada. Com encerramento comprovado mas sem a soltura conferida dos quatro cadeados, a continuidade até o
     // fim não está demonstrada: SUCESSO também vira CRITICO. Um CRITICO anterior continua com o próprio motivo.
     if (operacao) operacao.pedirLiberacao();
+    if (autorizacao) EMISSOR.revogar(autorizacao);
     await liberarCoordenacao();
     let resultadoAntesDaLiberacao;
     if (liberacaoDaCoordenacao && !liberacaoDaCoordenacao.encerramentoComprovado && resultado.estado !== 'CRITICO') {
@@ -468,14 +487,15 @@ async function processar({ cfg, id, s3, deps: injetadas = {} }) {
     liberar = Boolean(seguro(resultado));
     return { id, ...resultado, ...await publicarRecibo(recibo) };
   } finally {
-    // Se algo lançou antes do registro final, o guardião ainda é liberado: os cadeados nunca ficam presos ao agente.
+    // Se algo lançou antes do registro final, o guardião ainda é liberado e a autorização revogada.
+    if (autorizacao) EMISSOR.revogar(autorizacao);
     try { await liberarCoordenacao(); } finally {
       try { if (trava && liberar) { const identidade = A.identidade(trava); A.fechar(trava); A.removerArvore(base, TRAVA, { identidade }); } } finally { A.fecharTudo(); }
     }
   }
 }
 
-async function processarFila({ cfg, ids, s3, deps }) {
+async function processarFila({ cfg, ids, s3, deps, configuracaoOficial }) {
   let ok = true;
   for (const id of ids) {
     P.exigir(P.ID.test(id), 'ID_INVALIDO');
@@ -485,7 +505,7 @@ async function processarFila({ cfg, ids, s3, deps }) {
       P.exigir(r.id === id && r.escopo === ESCOPO && ['SUCESSO', 'RECUSADO'].includes(r.estado), 'RECIBO_INVALIDO_OU_CRITICO');
       continue;
     }
-    const r = await processar({ cfg, id, s3, deps });
+    const r = await processar({ cfg, id, s3, deps, configuracaoOficial });
     P.exigir(r.estado !== 'CRITICO', 'OPERACAO_CRITICA');
     if (r.estado !== 'SUCESSO' || r.reciboPendente) ok = false;
     if (r.reciboPendente && r.estado !== 'RECUSADO') break;
@@ -497,11 +517,15 @@ async function principal(argv) {
   P.exigir(argv[0] === '--config' && ((argv.length === 4 && argv[2] === '--pedido') || (argv.length === 3 && argv[2] === '--pendentes')), 'USO');
   N.verificarContextoDeExecucao();
   P.exigir(process.platform === 'linux', 'LINUX_OBRIGATORIO');
-  const cfg = validarConfiguracao(N.lerConfigSegura(argv[1]));
+  // C1: só a configuração oficial (dono root, sem escrita por grupo ou outros em todo o caminho) ativa o agente; a
+  // mesma origem segue para o instalador, que a lê de novo.
+  const origem = I.origemDaConfiguracaoOficial(argv[1]);
+  const cfg = validarConfiguracao(I.lerConfiguracaoOficial(origem));
   const s3 = criarS3(cfg.s3);
-  if (argv[2] === '--pendentes') P.exigir((await processarFila({ cfg, ids: await s3.listarPedidos(), s3 })).ok, 'FILA_COM_FALHAS');
+  CLIENTES_S3_OFICIAIS.add(s3);
+  if (argv[2] === '--pendentes') P.exigir((await processarFila({ cfg, ids: await s3.listarPedidos(), s3, configuracaoOficial: argv[1] })).ok, 'FILA_COM_FALHAS');
   else {
-    const r = await processar({ cfg, id: argv[3], s3 });
+    const r = await processar({ cfg, id: argv[3], s3, configuracaoOficial: argv[1] });
     P.exigir(r.estado === 'SUCESSO' && !r.reciboPendente, 'PUBLICACAO_FALHOU');
   }
 }

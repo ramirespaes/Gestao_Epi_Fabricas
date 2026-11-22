@@ -75,12 +75,54 @@ function iniciarProcessoReal(comando, args, { cwd, criarFilho = spawn }) {
   };
 }
 
-// Reconhecimento de uma instância: real, roteiro conferido, adquirida sem perda e criada para a expectativa dada.
+// Reconhecimento de uma instância: real, roteiro conferido (no caminho esperado), adquirida sem perda e criada para a
+// expectativa dada.
 function garantiaVigente(consultar, expectativa) {
   const ficha = typeof consultar === 'function' ? INSTANCIAS.get(consultar) : undefined;
-  if (!ficha || expectativa === null || typeof expectativa !== 'object' || !baselineValida(expectativa.baseline) || !hashValido(expectativa.sha256DoRoteiro)) return false;
+  if (!ficha || expectativa === null || typeof expectativa !== 'object' || !baselineValida(expectativa.baseline) || !hashValido(expectativa.sha256DoRoteiro)
+    || !texto(expectativa.roteiro) || !path.isAbsolute(expectativa.roteiro)) return false;
   return ficha.real && ficha.baseline !== null && ficha.baseline.rotulo === expectativa.baseline.rotulo && ficha.baseline.commit === expectativa.baseline.commit
-    && ficha.sha256DoRoteiro === expectativa.sha256DoRoteiro && ficha.roteiroConferido() && ficha.vigente();
+    && ficha.sha256DoRoteiro === expectativa.sha256DoRoteiro && ficha.roteiroConferido() && ficha.roteiroReal() === expectativa.roteiro && ficha.vigente();
+}
+
+// 3B-2B-3B: autorizações por operação. Registro privado: só a ficha guardada aqui vale, nunca o objeto em si. O emissor
+// é entregue UMA vez por processo (o agente do backend o pega ao ser carregado) e só emite para a instância real
+// adquirida e sem perda, com o pedido no formato e ainda válido. Isto organiza o fluxo oficial; não é barreira contra
+// código executado com a identidade do agente (ver o contrato).
+const AUTORIZACOES = new WeakMap();
+const FORMATO_ID = /^[1-9][0-9]{0,19}-[1-9][0-9]{0,5}$/;
+let emissorEntregue = false;
+const recusaDeAutorizacao = (codigo) => Object.assign(new Error(codigo), { codigo });
+const instanciaVigente = (consultar) => {
+  const ficha = typeof consultar === 'function' ? INSTANCIAS.get(consultar) : undefined;
+  return Boolean(ficha && ficha.real && ficha.roteiroConferido() && ficha.vigente());
+};
+
+function obterEmissorDeAutorizacoes() {
+  if (emissorEntregue) throw recusaDeAutorizacao('AUTORIZACAO_EMISSOR_INDISPONIVEL');
+  emissorEntregue = true;
+  const emitir = ({ id, commit, rotulo, releaseSha256, expiraEm, consultar } = {}) => {
+    const expiraEmMs = typeof expiraEm === 'string' ? Date.parse(expiraEm) : NaN;
+    const valida = typeof id === 'string' && FORMATO_ID.test(id) && typeof commit === 'string' && FORMATO_COMMIT.test(commit) && texto(rotulo)
+      && hashValido(releaseSha256) && Number.isFinite(expiraEmMs) && expiraEmMs > Date.now() && instanciaVigente(consultar);
+    if (!valida) throw recusaDeAutorizacao('AUTORIZACAO_RECUSADA');
+    const autorizacao = Object.freeze({ id, commit, rotulo, releaseSha256 });
+    AUTORIZACOES.set(autorizacao, { id, commit, rotulo, releaseSha256, expiraEmMs, consultar, estado: 'EMITIDA' });
+    return autorizacao;
+  };
+  const revogar = (autorizacao) => { const r = AUTORIZACOES.get(autorizacao); if (r) r.estado = 'REVOGADA'; };
+  return Object.freeze({ emitir, revogar });
+}
+
+// Consumo único e síncrono (nenhum await entre conferir e marcar): de chamadas concorrentes, só a primeira consome.
+// Qualquer tentativa que não confira revoga a autorização.
+function consumirAutorizacao(autorizacao, { id, commit, rotulo, releaseSha256, consultar } = {}) {
+  const r = autorizacao !== null && typeof autorizacao === 'object' ? AUTORIZACOES.get(autorizacao) : undefined;
+  if (!r || r.estado !== 'EMITIDA') return false;
+  const confere = Date.now() < r.expiraEmMs && r.id === id && r.commit === commit && r.rotulo === rotulo && r.releaseSha256 === releaseSha256
+    && r.consultar === consultar && instanciaVigente(consultar);
+  r.estado = confere ? 'CONSUMIDA' : 'REVOGADA';
+  return confere;
 }
 
 function criarCoordenacaoPorGuardiao({ comando, dir, credencial, sistema, prazos = PRAZOS, iniciarProcesso = iniciarProcessoReal, baseline, sha256DoRoteiro } = {}) {
@@ -104,6 +146,7 @@ function criarCoordenacaoPorGuardiao({ comando, dir, credencial, sistema, prazos
   let forcada = false;
   let nuncaIniciou = false;
   let roteiroConferido = false;
+  let roteiroReal = null;
   let impressao = null;
   let vidaMaximaMs = null;
   let confirmacoes = 0;
@@ -153,9 +196,15 @@ function criarCoordenacaoPorGuardiao({ comando, dir, credencial, sistema, prazos
     const relogio = setTimeout(() => resolver(false), ms);
     esperandoSaida.push(() => { clearTimeout(relogio); resolver(true); });
   });
-  // O roteiro que vai ser executado tem de ser, agora, o do hash esperado; senão nada é iniciado.
+  // O roteiro que vai ser executado tem de ser, agora, o do hash esperado; senão nada é iniciado. O caminho real fica
+  // na ficha, para o reconhecimento conferir que é o roteiro da baseline.
   const roteiroConfere = () => {
-    try { return crypto.createHash('sha256').update(fs.readFileSync(path.resolve(dir, comando[1]))).digest('hex') === sha256DoRoteiro; } catch { return false; }
+    try {
+      const real = fs.realpathSync(path.resolve(dir, comando[1]));
+      if (crypto.createHash('sha256').update(fs.readFileSync(real)).digest('hex') !== sha256DoRoteiro) return false;
+      roteiroReal = real;
+      return true;
+    } catch { return false; }
   };
 
   async function adquirir() {
@@ -224,6 +273,7 @@ function criarCoordenacaoPorGuardiao({ comando, dir, credencial, sistema, prazos
     baseline: baseline === undefined ? null : Object.freeze({ rotulo: baseline.rotulo, commit: baseline.commit }),
     sha256DoRoteiro: sha256DoRoteiro === undefined ? null : sha256DoRoteiro,
     roteiroConferido: () => roteiroConferido,
+    roteiroReal: () => roteiroReal,
     vigente,
   }));
 
@@ -282,4 +332,4 @@ function criarCoordenacaoPorGuardiao({ comando, dir, credencial, sistema, prazos
   return { adquirir, consultar, confirmar, liberar, garantiaVigente: vigente, descrever };
 }
 
-module.exports = { criarCoordenacaoPorGuardiao, iniciarProcessoReal, garantiaVigente, PRAZOS, ORIGEM };
+module.exports = { criarCoordenacaoPorGuardiao, iniciarProcessoReal, garantiaVigente, obterEmissorDeAutorizacoes, consumirAutorizacao, PRAZOS, ORIGEM };

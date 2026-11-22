@@ -495,12 +495,19 @@ describe('provedor: isolado e não homologado', () => {
   test('não lê ambiente, não conhece senha e não repassa mensagem do guardião além dos códigos previstos', () => {
     assert.doesNotMatch(fonte, /process\.env|senha|PASSWORD/);
   });
-  // 3B-2B-1: o agente do backend passa a usar o provedor. O instalador, a coordenação e o agente do frontend, não.
-  test('só o agente do backend usa o provedor; instalador, coordenação e agente do frontend continuam sem conhecê-lo', () => {
+  // 3B-2B-1: o agente do backend passa a usar o provedor. 3B-2B-3B (D2): a coordenação do instalador também, só para
+  // verificar o reconhecimento e consumir autorizações, carregando o provedor no momento da verificação. O instalador,
+  // o núcleo e o agente do frontend continuam sem conhecê-lo.
+  test('só o agente do backend e a coordenação do instalador usam o provedor; instalador, núcleo e agente do frontend não', () => {
     assert.match(fs.readFileSync(path.join(RAIZ, 'deploy/hml/cd/agente-backend.js'), 'utf8'), /require\('\.\/coordenacao-por-guardiao'\)/);
-    for (const rel of ['deploy/hml/cd/agente.js', 'deploy/hml/instalador/instalar-release.js', 'deploy/hml/instalador/coordenacao.js', 'deploy/hml/instalador/nucleo.js']) {
+    const coordenacao = fs.readFileSync(path.join(RAIZ, 'deploy/hml/instalador/coordenacao.js'), 'utf8');
+    assert.deepEqual([...coordenacao.matchAll(/require\(([^)]*coordenacao-por-guardiao[^)]*)\)/g)].map((m) => m[1]), ["'../cd/coordenacao-por-guardiao'"]);
+    assert.doesNotMatch(coordenacao.split('\n').filter((l) => /^(const|let|var) /.test(l)).join('\n'), /coordenacao-por-guardiao/, 'carregado só na verificação, nunca no topo do módulo');
+    for (const rel of ['deploy/hml/cd/agente.js', 'deploy/hml/instalador/nucleo.js']) {
       assert.doesNotMatch(fs.readFileSync(path.join(RAIZ, rel), 'utf8'), /coordenacao-por-guardiao|guardiao-de-coordenacao/, rel);
     }
+    // O instalador conhece só o caminho do roteiro na release (para calcular a expectativa), nunca o módulo do provedor.
+    assert.doesNotMatch(fs.readFileSync(path.join(RAIZ, 'deploy/hml/instalador/instalar-release.js'), 'utf8'), /coordenacao-por-guardiao/);
   });
 });
 
@@ -685,7 +692,8 @@ linhas.on('close', () => process.exit(0));
 `);
     return roteiro;
   }
-  const esperado = (roteiro) => ({ baseline: BASELINE, sha256DoRoteiro: sha256(fs.readFileSync(roteiro)) });
+  // 3B-2B-3B: a expectativa inclui o caminho real do roteiro que foi iniciado.
+  const esperado = (roteiro) => ({ baseline: BASELINE, sha256DoRoteiro: sha256(fs.readFileSync(roteiro)), roteiro: fs.realpathSync(roteiro) });
   const real = (roteiro, extra = {}) => M.criarCoordenacaoPorGuardiao({
     comando: [process.execPath, roteiro], dir, credencial: path.join(dir, 'c.json'), sistema: SISTEMA,
     prazos: { adquirirMs: 5000, confirmarMs: 5000, liberarMs: 5000, encerrarMs: 5000 }, ...esperado(roteiro), ...extra,
@@ -742,6 +750,123 @@ linhas.on('close', () => process.exit(0));
     fs.appendFileSync(roteiro, '// alterado depois do vínculo\n');
     assert.deepEqual(await coord.adquirir(), { ok: false, motivo: 'ROTEIRO_DIVERGENTE' });
     assert.deepEqual(await coord.liberar(), LIBERACAO('SEM_PROCESSO'), 'nenhum processo chegou a existir');
+  });
+
+  test('3B-2B-3B: roteiro diferente do iniciado (outro caminho, ainda que com o mesmo conteúdo) não é reconhecido', async () => {
+    const roteiro = roteiroSimulado();
+    const copia = path.join(dir, 'outro-guardiao.js');
+    fs.copyFileSync(roteiro, copia);
+    const coord = real(roteiro);
+    try {
+      assert.deepEqual(await coord.adquirir(), AQUISICAO_OK);
+      assert.equal(M.garantiaVigente(coord.consultar, esperado(roteiro)), true);
+      assert.equal(M.garantiaVigente(coord.consultar, { ...esperado(roteiro), roteiro: fs.realpathSync(copia) }), false, 'outro caminho');
+      assert.equal(M.garantiaVigente(coord.consultar, { ...esperado(roteiro), roteiro: undefined }), false, 'sem roteiro esperado');
+    } finally {
+      await coord.liberar();
+    }
+  });
+
+  // 3B-2B-3B: registro privado de autorizações. O emissor é entregue uma única vez por processo (neste arquivo, nenhum
+  // agente o pegou); o consumo é único e síncrono, e qualquer tentativa divergente revoga a autorização.
+  describe('3B-2B-3B: autorizações por operação', () => {
+    let emissor = null;
+    const pegarEmissor = () => { if (!emissor) emissor = M.obterEmissorDeAutorizacoes(); return emissor; };
+    const daqui = (ms) => new Date(Date.now() + ms).toISOString();
+    const IDENTIDADE = Object.freeze({ id: '123-1', commit: 'd'.repeat(40), rotulo: 'hml-20261122T120000-ddddddd', releaseSha256: 'e'.repeat(64) });
+    const contexto = (coord, extra = {}) => ({ id: IDENTIDADE.id, commit: IDENTIDADE.commit, rotulo: IDENTIDADE.rotulo, releaseSha256: IDENTIDADE.releaseSha256, consultar: coord.consultar, ...extra });
+    async function adquiridaReal() {
+      const coord = real(roteiroSimulado());
+      assert.deepEqual(await coord.adquirir(), AQUISICAO_OK);
+      return coord;
+    }
+
+    test('o emissor é entregue uma única vez por processo', () => {
+      pegarEmissor();
+      assert.throws(() => M.obterEmissorDeAutorizacoes(), (e) => e.codigo === 'AUTORIZACAO_EMISSOR_INDISPONIVEL');
+      assert.equal(typeof M.emitirAutorizacao, 'undefined', 'nenhuma função exportada emite autorização');
+    });
+
+    test('emissão só para a instância real adquirida e sem perda, com pedido no formato e ainda válido', async () => {
+      const e = pegarEmissor();
+      const p = processoFalso();
+      respondendo(p);
+      const injetada = await adquirida(p);
+      assert.throws(() => e.emitir({ ...IDENTIDADE, expiraEm: daqui(60000), consultar: injetada.consultar }), (x) => x.codigo === 'AUTORIZACAO_RECUSADA', 'instância com iniciador injetado');
+      assert.throws(() => e.emitir({ ...IDENTIDADE, expiraEm: daqui(60000), consultar: async () => ({}) }), (x) => x.codigo === 'AUTORIZACAO_RECUSADA', 'função qualquer');
+      const coord = await adquiridaReal();
+      try {
+        for (const ruim of [{ commit: 'abc' }, { rotulo: '' }, { releaseSha256: 'x' }, { id: 'a' }, { expiraEm: daqui(-1000) }, { expiraEm: 'ontem' }]) {
+          assert.throws(() => e.emitir({ ...IDENTIDADE, expiraEm: daqui(60000), consultar: coord.consultar, ...ruim }), (x) => x.codigo === 'AUTORIZACAO_RECUSADA', JSON.stringify(ruim));
+        }
+        const t = e.emitir({ ...IDENTIDADE, expiraEm: daqui(60000), consultar: coord.consultar });
+        assert.ok(Object.isFrozen(t));
+        assert.deepEqual({ ...t }, IDENTIDADE);
+      } finally {
+        await coord.liberar();
+      }
+      assert.throws(() => e.emitir({ ...IDENTIDADE, expiraEm: daqui(60000), consultar: coord.consultar }), (x) => x.codigo === 'AUTORIZACAO_RECUSADA', 'depois da liberação');
+      await injetada.liberar();
+    });
+
+    test('consumo único e atômico: com duas chamadas concorrentes, só uma consome', async () => {
+      const coord = await adquiridaReal();
+      try {
+        const t = pegarEmissor().emitir({ ...IDENTIDADE, expiraEm: daqui(60000), consultar: coord.consultar });
+        const r = await Promise.all([1, 2, 3].map(() => Promise.resolve().then(() => M.consumirAutorizacao(t, contexto(coord)))));
+        assert.deepEqual(r.filter(Boolean).length, 1, JSON.stringify(r));
+        assert.equal(M.consumirAutorizacao(t, contexto(coord)), false, 'reuso recusado');
+      } finally {
+        await coord.liberar();
+      }
+    });
+
+    test('objeto fabricado igual, outra release, outro commit, outro rótulo ou outra instância: recusa, e a tentativa divergente revoga', async () => {
+      const coord = await adquiridaReal();
+      const outra = await adquiridaReal();
+      try {
+        const e = pegarEmissor();
+        assert.equal(M.consumirAutorizacao(Object.freeze({ ...IDENTIDADE }), contexto(coord)), false, 'objeto fabricado');
+        for (const divergente of [{ releaseSha256: 'f'.repeat(64) }, { commit: 'c'.repeat(40) }, { rotulo: 'hml-20261122T130000-ddddddd' }, { consultar: outra.consultar }]) {
+          const t = e.emitir({ ...IDENTIDADE, expiraEm: daqui(60000), consultar: coord.consultar });
+          assert.equal(M.consumirAutorizacao(t, contexto(coord, divergente)), false, JSON.stringify(Object.keys(divergente)));
+          assert.equal(M.consumirAutorizacao(t, contexto(coord)), false, 'a tentativa divergente revogou a autorização');
+        }
+      } finally {
+        await coord.liberar();
+        await outra.liberar();
+      }
+    });
+
+    test('P2: autorização de outro pedido (outro ID) não consome, mesmo com a release idêntica; e a tentativa a revoga', async () => {
+      const coord = await adquiridaReal();
+      try {
+        const t = pegarEmissor().emitir({ ...IDENTIDADE, expiraEm: daqui(60000), consultar: coord.consultar });
+        assert.equal(M.consumirAutorizacao(t, contexto(coord, { id: '124-1' })), false, 'outro ID, mesma release');
+        assert.equal(M.consumirAutorizacao(t, contexto(coord)), false, 'revogada pela tentativa divergente');
+        const semId = pegarEmissor().emitir({ ...IDENTIDADE, expiraEm: daqui(60000), consultar: coord.consultar });
+        assert.equal(M.consumirAutorizacao(semId, contexto(coord, { id: undefined })), false, 'sem ID esperado');
+        const certa = pegarEmissor().emitir({ ...IDENTIDADE, expiraEm: daqui(60000), consultar: coord.consultar });
+        assert.equal(M.consumirAutorizacao(certa, contexto(coord)), true, 'o mesmo ID consome');
+      } finally {
+        await coord.liberar();
+      }
+    });
+
+    test('revogada, expirada ou com a coordenação perdida: não consome', async () => {
+      const e = pegarEmissor();
+      const coord = await adquiridaReal();
+      const revogada = e.emitir({ ...IDENTIDADE, expiraEm: daqui(60000), consultar: coord.consultar });
+      e.revogar(revogada);
+      assert.equal(M.consumirAutorizacao(revogada, contexto(coord)), false, 'revogada');
+      const curta = e.emitir({ ...IDENTIDADE, expiraEm: daqui(150), consultar: coord.consultar });
+      await new Promise((r) => { setTimeout(r, 250); });
+      assert.equal(M.consumirAutorizacao(curta, contexto(coord)), false, 'expirada');
+      const antesDaPerda = e.emitir({ ...IDENTIDADE, expiraEm: daqui(60000), consultar: coord.consultar });
+      await coord.liberar();
+      assert.equal(M.consumirAutorizacao(antesDaPerda, contexto(coord)), false, 'a garantia acabou');
+      assert.equal(M.consumirAutorizacao(undefined, contexto(coord)), false);
+    });
   });
 
   test('baseline ou hash do roteiro fora do formato são recusados na criação', () => {
