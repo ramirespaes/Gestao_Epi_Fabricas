@@ -1,0 +1,14 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": { "Service": "rolesanywhere.amazonaws.com" },
+      "Action": ["sts:AssumeRole", "sts:TagSession", "sts:SetSourceIdentity"],
+      "Condition": {
+        "ArnEquals": { "aws:SourceArn": "arn:aws:rolesanywhere:REGIAO:CONTA:trust-anchor/ANCORA_DO_CD_BACKEND" },
+        "StringEquals": { "aws:PrincipalTag/x509Subject/CN": "safework-hml-cd-backend-agente" }
+      }
+    }
+  ]
+}

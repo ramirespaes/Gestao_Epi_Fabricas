@@ -123,6 +123,36 @@ própria, fora do fluxo de release, porque é a âncora de confiança da verific
 arquivo de configuração é uma superfície de execução de comandos: deve pertencer ao
 usuário de implantação, com modo 0600 ou 0640.
 
+**Adoção da primeira release do backend (Etapa 4C, D-H1).** `adotarBaselineDoBackend`
+(biblioteca) e `adotar-backend.js` (linha de comando própria, só com `--config` oficial,
+`--release` e `--release-sha256`) criam a primeira release do backend numa base vazia, pelo
+mesmo preparo do instalador (cópia ancorada, dependências, links persistentes, verificação e
+metadado), e gravam link, `versao.json` e estado com `comprovada: false` e o evento `ADOCAO`.
+Exigem o hash aprovado do `release.json` (sem opt-out), release não retroativa e o guardião e a
+sonda no manifesto. Nunca reiniciam, nunca consultam processo, saúde ou coordenação e nunca
+substituem nada: link, diretório no lugar do link, release, metadado, estado ou operação aberta
+na base recusam com `ADOCAO_RECUSADA`, sem mudança. Falha depois de publicar desfaz release,
+metadado, link, `versao.json` e estado; o esqueleto de uma adoção desfeita aceita nova
+tentativa. A linha de comando do instalador continua recusando `instalar` e `reverter` do
+backend. `comprovada: false` não é comprovação: `identificar` não dá a release como íntegra e o
+agente recusa os pedidos com `BASELINE_NAO_COMPROVADA` até a release ser comprovada.
+
+**Confirmação da release adotada (Etapa 4C, D-H1, opção 1).** `confirmarBaselineAdotada` e
+`adotar-backend.js confirmar --config <oficial>` comprovam a release adotada pela prova do próprio
+instalador (`comprovarExecucao`): o caminho real do processo em execução, obtido pelo `MainPID` e
+pela identidade do serviço em `/run` (o mesmo leitor do agente, que confere arquivo, diretório,
+formato, pid e o `Uid` de `/proc/<pid>/status`), tem de ser o da release, e a saúde tem de passar.
+Vale só para a release do último evento `ADOCAO`, ainda não comprovada, sem estado crítico nem
+anterior, íntegra, consistente e sem operação aberta; qualquer outra (instalada pelo caminho normal,
+já comprovada, alterada, com metadado divergente do evento) é recusada com `CONFIRMACAO_RECUSADA`
+antes de consultar o processo. Processo em outra release, identidade ausente ou de outro PID dão
+`VERSAO_NAO_COMPROVADA`; saúde reprovada, `SAUDE_FALHOU`. Não reinicia, não instala, não executa
+comandos além do que lê o `MainPID`, não consulta coordenação nem migrations. O estado só muda
+depois de todas as provas, numa única escrita atômica (`comprovada: true` e o evento
+`CONFIRMACAO_DA_ADOCAO`); se a escrita falhar, nada muda e a confirmação pode ser repetida. Uma
+confirmação repetida é recusada sem mudança. A linha de comando exige a seção `identidadeDoServico`
+na configuração oficial.
+
 Limites conhecidos: a autenticidade depende de quem entrega o hash aprovado (pendência
 A-3); a prova de versão e as âncoras por descritor usam `/proc` e só valem em Linux, e fora dele o instalador fica bloqueado; uma trava deixada por queda
 brusca exige remoção manual, de propósito; o conteúdo de `node_modules` depois

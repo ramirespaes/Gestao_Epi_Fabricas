@@ -975,6 +975,96 @@ async function reverterSobTrava({ comp, componente, reaisPersistentes, opcoes, d
 
 // Somente leitura: sem âncora por descritor (fora do Linux) a identificação ainda funciona, mas declara que não tem
 // garantia contra substituição concorrente (garantiaContraCorrida: false). Nunca escreve nem remove nada.
+// ------------------------------------------------------------ adoção da primeira release do backend
+
+// Etapa 4C (D-H1): sem release anterior o backend não instala (o guardião vem da baseline) e a linha de comando do
+// instalador o recusa. A adoção cria a primeira release pelo mesmo preparo e registra comprovada:false. Não reinicia,
+// não consulta processo, saúde nem coordenação, não escreve fora da base e nunca substitui nada: a base precisa estar
+// vazia. O serviço só passa a usar a release quando o operador aponta a unidade para o link, fora desta operação.
+const ROTEIRO_DA_SONDA = 'scripts/sonda-estado-observado.js';
+const ENTRADAS_DE_UMA_ADOCAO_DESFEITA = new Set(['meta', 'diario.jsonl', '.trava']);
+const recusaDeAdocao = (mensagem) => erro('ADOCAO_RECUSADA', mensagem);
+
+// Vazia: sem o link, sem release, metadado, estado ou versão, e sem operação aberta no diário. Só o esqueleto deixado
+// por uma adoção anterior que falhou e foi desfeita é aceito.
+function exigirArvoreSemReleases(ctx) {
+  const sobras = ctx.A.listar(ctx.raiz).map((e) => e.nome).filter((n) => !ENTRADAS_DE_UMA_ADOCAO_DESFEITA.has(n));
+  if (sobras.length > 0 || ctx.A.listar(ctx.meta).length > 0 || lerLinkAtual(ctx) || operacaoAberta(ctx)) {
+    throw recusaDeAdocao('a árvore de releases do backend não está vazia: a adoção só cria, nunca substitui');
+  }
+}
+function exigirBaseVaziaParaAdocao(A, comp) {
+  if (A.tipo(A.abrirBase(comp.base), comp.nome)) throw recusaDeAdocao(`${path.join(comp.base, comp.nome)} já existe: a adoção só cria, nunca substitui`);
+  let ctx;
+  try { ctx = abrirContextoSeExistir(A, comp); } catch { throw recusaDeAdocao('a árvore de releases do backend existe e não é o esqueleto de uma adoção desfeita'); }
+  if (ctx) exigirArvoreSemReleases(ctx);
+}
+
+async function adotarBaselineDoBackend({ config: bruta, componente, release, opcoes = {}, deps = {} } = {}) {
+  const cfg = validarConfig(bruta);
+  const comp = cfg.componentes[componente];
+  if (!comp) throw erro('COMPONENTE_DESCONHECIDO', `componente desconhecido: ${componente}`);
+  if (comp.tipo !== 'backend') throw recusaDeAdocao('a adoção existe só para o backend');
+  if (typeof opcoes.releaseSha256Esperado !== 'string') throw recusaDeAdocao('a adoção exige o SHA-256 aprovado do release.json');
+  const rel = lerRelease(release, componente, comp, { releaseSha256Esperado: opcoes.releaseSha256Esperado });
+  if (rel.atual !== true) throw recusaDeAdocao('release retroativa não é adotada');
+  for (const roteiro of [ROTEIRO_DO_GUARDIAO, ROTEIRO_DA_SONDA]) {
+    if (typeof rel.manifesto[roteiro] !== 'string') throw recusaDeAdocao(`a release não traz ${roteiro}, exigido da baseline`);
+  }
+  const reaisPersistentes = revalidarCaminhos(cfg, comp);
+  const agora = deps.agora || Date.now;
+  // Só a instalação de dependências segue adiante: reinício, processo, saúde e coordenação não existem nesta operação.
+  const depsDaAdocao = { executar: deps.executar || executarComando, usuario: deps.usuario };
+  const A = criarAncoraDaOperacao(deps, opcoes);
+  try {
+    exigirBaseVaziaParaAdocao(A, comp);
+    const ctx = abrirContexto(A, comp, { criar: true });
+    const resultado = await comTrava(ctx, 'adotar', () => adotarSobTrava({ ctx, comp, componente, rel, reaisPersistentes, deps: depsDaAdocao, agora }));
+    return finalizarResultado(A, resultado);
+  } finally { A.fecharTudo(); }
+}
+
+async function adotarSobTrava({ ctx, comp, componente, rel, reaisPersistentes, deps, agora }) {
+  exigirArvoreSemReleases(ctx);
+  const avisos = [];
+  const estado = lerEstado(ctx);
+  const journal = criarDiario({ ctx, agora, avisos });
+  journal.abrir({ operacao: 'adotar', de: null, para: rel.rotulo, commit: rel.commit });
+  let publicada = false;
+  try {
+    const meta = await preparar({ ctx, comp, componente, rel, reaisPersistentes, deps, agora });
+    publicada = true;
+    journal.passo('PREPARADA');
+    trocarAtual(ctx, rel.rotulo);
+    escreverVersao(ctx, componente, meta);
+    estado.atual = { rotulo: rel.rotulo, commit: rel.commit, instaladoEm: meta.instaladoEm, comprovada: false };
+    estado.anterior = null;
+    estado.critico = null;
+    estado.historico.push({
+      evento: 'ADOCAO', rotulo: rel.rotulo, commit: rel.commit, releaseSha256: rel.releaseSha256, autenticidade: rel.autenticidade,
+      comprovada: false, reiniciou: false, em: iso(agora()), usuario: usuarioDe(deps),
+    });
+    gravarEstado(ctx, estado);
+    journal.encerrar('CONCLUIDA');
+    return { resultado: 'ADOTADA', componente, rotulo: rel.rotulo, commit: rel.commit, comprovada: false, avisos };
+  } catch (falha) {
+    // Depois de publicada, tudo o que esta operação criou é desfeito; o preparo já limpa o que for anterior a isso.
+    let desfeito = true;
+    if (publicada) {
+      const etapas = [
+        () => { if (ctx.A.tipo(ctx.base, comp.nome)) removerAtual(ctx); },
+        () => { if (ctx.A.tipo(ctx.raiz, 'versao.json')) removerVersao(ctx); },
+        () => { if (ctx.A.tipo(ctx.raiz, 'estado.json')) ctx.A.removerEntrada(ctx.raiz, 'estado.json'); },
+        () => { if (ctx.A.tipo(ctx.raiz, rel.rotulo)) ctx.A.removerArvore(ctx.raiz, rel.rotulo); },
+        () => { if (lerMeta(ctx, rel.rotulo)) removerMeta(ctx, rel.rotulo); },
+      ];
+      for (const etapa of etapas) { try { etapa(); } catch { desfeito = false; } }
+    }
+    fecharFalha(journal, desfeito, { motivo: falha.codigo || falha.code || 'ERRO' });
+    throw falha;
+  }
+}
+
 async function identificar({ config: bruta, componente, deps = {} } = {}) {
   const cfg = validarConfig(bruta);
   const comp = cfg.componentes[componente];
@@ -1023,6 +1113,118 @@ async function identificar({ config: bruta, componente, deps = {} } = {}) {
       diarioLinhasIlegiveis: linhasIlegiveis, garantiaContraCorrida: A.garantiaContraCorrida,
     };
   } finally { A.fecharTudo(); }
+}
+
+// ------------------------------------------------------------ identidade do serviço
+
+// Etapa 4C (D-H2): o agente e a confirmação da adoção rodam com usuário próprio e não leem o /proc/<pid>/cwd de um
+// serviço de outro usuário. O systemd grava a identidade do serviço em /run (ExecStartPost, com o usuário do serviço):
+// "<pid> <caminho real do diretório>\n". Evidência condicionada: só o usuário do serviço e root a escrevem. Aqui se
+// confere o diretório, o arquivo, o formato, o pid igual ao MainPID e o dono do processo.
+const TAMANHO_MAXIMO_DA_IDENTIDADE = 4096;
+const FORMATO_DA_IDENTIDADE = /^([1-9]\d{0,9}) (\/[^\s\0]*)\n$/;
+const caminhoNormalizado = (p) => typeof p === 'string' && path.isAbsolute(p) && path.normalize(p) === p && (p === '/' || !p.endsWith('/'));
+// Ordem por unidade de código UTF-16 (a mesma do sort() padrão para texto), explícita (S2871).
+const porUnidadeDeCodigo = (a, b) => {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
+};
+const identidadeDoServicoValida = (d) => d === undefined || (d !== null && typeof d === 'object' && !Array.isArray(d)
+  && Object.keys(d).sort(porUnidadeDeCodigo).join(',') === 'arquivo,uid' && caminhoNormalizado(d.arquivo) && d.arquivo !== '/' && Number.isInteger(d.uid) && d.uid >= 0);
+const identidadeInvalida = () => erro('IDENTIDADE_DO_SERVICO_INVALIDA', 'a identidade do serviço não confere');
+
+// O uid do processo vem de /proc/<pid>/status, legível sem privilégio; os quatro uids (real, efetivo, salvo, fs) iguais.
+function uidDoProcessoPeloProc(pid) {
+  const linha = fs.readFileSync(`/proc/${pid}/status`, 'utf8').split('\n').find((l) => l.startsWith('Uid:'));
+  const uids = linha ? linha.slice(4).trim().split(/\s+/).map(Number) : [];
+  if (uids.length !== 4 || !uids.every((u) => Number.isInteger(u) && u === uids[0])) throw identidadeInvalida();
+  return uids[0];
+}
+
+function lerIdentidadeDoServico(identidade, pid, { uidDoProcesso = uidDoProcessoPeloProc } = {}) {
+  let fd;
+  try {
+    const dir = path.dirname(identidade.arquivo);
+    if (fs.realpathSync(dir) !== dir) throw identidadeInvalida();
+    const d = fs.lstatSync(dir);
+    if (!d.isDirectory() || (d.uid !== identidade.uid && d.uid !== 0) || (d.mode & 0o022) !== 0) throw identidadeInvalida();
+    fd = fs.openSync(identidade.arquivo, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+    const st = fs.fstatSync(fd);
+    if (!st.isFile() || st.nlink !== 1 || st.uid !== identidade.uid || (st.mode & 0o022) !== 0 || st.size < 1 || st.size > TAMANHO_MAXIMO_DA_IDENTIDADE) throw identidadeInvalida();
+    const buffer = Buffer.alloc(TAMANHO_MAXIMO_DA_IDENTIDADE + 1);
+    const lidos = fs.readSync(fd, buffer, 0, buffer.length, 0);
+    const m = FORMATO_DA_IDENTIDADE.exec(buffer.subarray(0, lidos).toString('utf8'));
+    if (!m || Number(m[1]) !== pid || !caminhoNormalizado(m[2])) throw identidadeInvalida();
+    if (uidDoProcesso(pid) !== identidade.uid) throw identidadeInvalida();
+    return { pid, cwd: m[2] };
+  } catch {
+    throw identidadeInvalida();
+  } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch { /* o fechamento não muda o resultado */ } }
+  }
+}
+
+// MainPID pelo comando da configuração (systemctl show) e o caminho do processo pela identidade do serviço.
+function identificacaoPorIdentidade(comp, identidade) {
+  return async () => {
+    const saida = await executarComando(comp.processo.pidComando[0], comp.processo.pidComando.slice(1));
+    const pid = Number(String(saida).trim());
+    if (!Number.isInteger(pid) || pid <= 1) throw new Error('PID do serviço inválido');
+    return lerIdentidadeDoServico(identidade, pid);
+  };
+}
+
+// ------------------------------------------------------------ confirmação da release adotada
+
+// Etapa 4C (D-H1, opção 1): a release adotada nasce comprovada:false e o agente a recusa até ela ser comprovada. A
+// confirmação vale só para a release do último evento ADOCAO, ainda não comprovada, sem estado crítico nem anterior,
+// íntegra, consistente e sem operação aberta. A prova é a do instalador (caminho real do processo, pela identidade do
+// serviço, e saúde), sem reinício. O estado muda numa única escrita atômica, depois de todas as provas: se ela falhar,
+// nada mudou e a confirmação pode ser repetida.
+const recusaDeConfirmacao = (mensagem) => erro('CONFIRMACAO_RECUSADA', mensagem);
+
+async function confirmarBaselineAdotada({ config: bruta, componente, opcoes = {}, deps = {} } = {}) {
+  const cfg = validarConfig(bruta);
+  const comp = cfg.componentes[componente];
+  if (!comp) throw erro('COMPONENTE_DESCONHECIDO', `componente desconhecido: ${componente}`);
+  if (comp.tipo !== 'backend') throw recusaDeConfirmacao('a confirmação existe só para o backend');
+  if (typeof deps.identificarProcesso !== 'function' || typeof deps.verificarSaude !== 'function') throw recusaDeConfirmacao('a confirmação exige a identificação do processo e a verificação de saúde');
+  const reaisPersistentes = revalidarCaminhos(cfg, comp);
+  const agora = deps.agora || Date.now;
+  // Só a prova de execução segue adiante.
+  const provas = { identificarProcesso: deps.identificarProcesso, verificarSaude: deps.verificarSaude, esperar: deps.esperar, usuario: deps.usuario };
+  const A = criarAncoraDaOperacao(deps, opcoes);
+  try {
+    let ctx = null;
+    try { ctx = abrirContextoSeExistir(A, comp); } catch { ctx = null; }
+    if (!ctx) throw recusaDeConfirmacao('não há release adotada do backend');
+    const resultado = await comTrava(ctx, 'confirmar-adocao', () => confirmarAdocaoSobTrava({ ctx, comp, componente, reaisPersistentes, opcoes, provas, agora }));
+    return finalizarResultado(A, resultado);
+  } finally { A.fecharTudo(); }
+}
+
+async function confirmarAdocaoSobTrava({ ctx, comp, componente, reaisPersistentes, opcoes, provas, agora }) {
+  const rotulo = lerLinkAtual(ctx);
+  const estado = lerEstado(ctx);
+  const adocao = estado.historico.at(-1);
+  const meta = rotulo ? lerMeta(ctx, rotulo) : null;
+  const pendente = Boolean(rotulo) && Boolean(estado.atual) && estado.atual.rotulo === rotulo && estado.atual.comprovada === false && !estado.critico && !estado.anterior
+    && Boolean(adocao) && adocao.evento === 'ADOCAO' && adocao.rotulo === rotulo && Boolean(meta) && meta.commit === adocao.commit && meta.releaseSha256 === adocao.releaseSha256;
+  if (!pendente) throw recusaDeConfirmacao('só a release do evento ADOCAO, ainda não comprovada, é confirmada');
+  const v = verificarInstalacao(ctx, rotulo, { persistentesReais: reaisPersistentes });
+  const inconsistencias = verificarConsistencia(ctx, comp, componente, rotulo);
+  if (!v.integro || inconsistencias.length > 0) throw recusaDeConfirmacao(`a release adotada não confere: ${[...v.problemas, ...inconsistencias].slice(0, 3).join('; ')}`);
+  let identificado = null;
+  const deps = { ...provas, identificarProcesso: async () => { identificado = await provas.identificarProcesso(); return identificado; } };
+  const prova = await comprovarExecucao({ ctx, deps, alvoRotulo: rotulo, procAntes: null, tentativas: tentativasDe(opcoes), intervaloMs: intervaloDe(opcoes) });
+  if (!prova.ok || !identificado) throw erro(CODIGO_DA_FALHA[prova.motivo] || 'CONFIRMACAO_RECUSADA', motivoDe(RESUMO_DA_FALHA[prova.motivo] || 'a prova de execução falhou', prova));
+  estado.atual = { ...estado.atual, comprovada: true };
+  estado.historico.push({
+    evento: 'CONFIRMACAO_DA_ADOCAO', rotulo, commit: meta.commit, releaseSha256: meta.releaseSha256, pid: identificado.pid,
+    reiniciou: false, tentativasDeSaude: prova.tentativas, em: iso(agora()), usuario: usuarioDe(provas),
+  });
+  gravarEstado(ctx, estado);
+  return { resultado: 'ADOCAO_CONFIRMADA', componente, rotulo, commit: meta.commit, comprovada: true, pid: identificado.pid, avisos: [] };
 }
 
 // ------------------------------------------------------------ linha de comando
@@ -1143,7 +1345,8 @@ if (require.main === module) {
 }
 
 module.exports = {
-  instalar, reverter, identificar, reconciliar, validarConfig, verificarInstalacao, lerConfigSegura, verificarContextoDeExecucao,
+  instalar, reverter, identificar, reconciliar, adotarBaselineDoBackend, confirmarBaselineAdotada, validarConfig, verificarInstalacao, lerConfigSegura, verificarContextoDeExecucao,
+  lerIdentidadeDoServico, identidadeDoServicoValida, identificacaoPorIdentidade,
   depsDoConfig, criarConsultaPorArquivo, ErroInstalador, ROTULO,
   CAMINHO_DA_CONFIGURACAO_OFICIAL, origemDaConfiguracaoOficial, lerConfiguracaoOficial,
 };

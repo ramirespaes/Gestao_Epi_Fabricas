@@ -1061,7 +1061,7 @@ describe('Etapa 3B-1: o agente entrega ao instalador real as dependências da co
     '',
   ].join('\n');
 
-  async function ambiente({ reinicioSai = 0, sondaReal = false } = {}) {
+  async function ambiente({ reinicioSai = 0, sondaReal = false, adotar = false } = {}) {
     const raiz = fs.mkdtempSync(path.join(fs.realpathSync(tmp), 'amb-'));
     const diarioDoGuardiao = path.join(raiz, 'execucoes-do-guardiao.ndjson');
     const execucoesDoGuardiao = () => (fs.existsSync(diarioDoGuardiao) ? fs.readFileSync(diarioDoGuardiao, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
@@ -1119,7 +1119,9 @@ describe('Etapa 3B-1: o agente entrega ao instalador real as dependências da co
     };
     if (sondaReal) delete controladas.executar;
     const r1 = criarReleaseBackend(1, roteiroReal(1), roteiroDoGuardiao(1, diarioDoGuardiao));
-    await I.instalar({ config: cfgAgente.instalador, componente: 'backend', release: r1, opcoes: { releaseSha256Esperado: sha(fs.readFileSync(path.join(r1, 'release.json'))) }, deps: { ...controladas, lerObservado: async () => ({ banco: 'hml', origem: 'preparo-do-teste', coletadoEm: new Date().toISOString(), migrations: ['000_a'], contratos: {} }), reiniciar: async () => {}, consultarCoordenacao: provedor } });
+    // 4C (D-H1): com `adotar`, a release 1 entra pela adoção (comprovada:false), não por uma instalação comprovada.
+    if (adotar) await I.adotarBaselineDoBackend({ config: cfgAgente.instalador, componente: 'backend', release: r1, opcoes: { releaseSha256Esperado: sha(fs.readFileSync(path.join(r1, 'release.json'))) }, deps: { criarAncora: ancoraPorCaminho, executar: controladas.executar } });
+    else await I.instalar({ config: cfgAgente.instalador, componente: 'backend', release: r1, opcoes: { releaseSha256Esperado: sha(fs.readFileSync(path.join(r1, 'release.json'))) }, deps: { ...controladas, lerObservado: async () => ({ banco: 'hml', origem: 'preparo-do-teste', coletadoEm: new Date().toISOString(), migrations: ['000_a'], contratos: {} }), reiniciar: async () => {}, consultarCoordenacao: provedor } });
     sonda.chamadas = 0; sonda.cwds.length = 0;
     Object.assign(chamadas, { saude: 0, processo: 0, dependencias: 0 });
     const r2 = criarReleaseBackend(2, roteiroReal(2), roteiroDoGuardiao(2, diarioDoGuardiao));
@@ -1156,6 +1158,35 @@ describe('Etapa 3B-1: o agente entrega ao instalador real as dependências da co
     assert.ok(amb.chamadas.saude >= 1 && amb.chamadas.processo >= 1 && amb.chamadas.dependencias === 1);
     assert.equal(P.validarRecibo(reciboDoBackend(amb.s3), amb.pedido).estado, 'SUCESSO');
     assert.equal(amb.armazem.has('@.trava-cd-backend'), false);
+  });
+
+  test('4C (D-H1): depois da adoção (comprovada:false), o agente recusa com BASELINE_NAO_COMPROVADA, sem guardião e sem mutação', async () => {
+    const amb = await ambiente({ adotar: true });
+    const r = await A.processar({ cfg: amb.cfgAgente, id: ID, s3: amb.s3, deps: amb.depsDoAgente({ ...amb.controladas, consultarCoordenacao: amb.provedor }) });
+    assert.equal(r.estado, 'RECUSADO', JSON.stringify(r));
+    assert.equal(r.motivo, 'BASELINE_NAO_COMPROVADA');
+    assert.equal(r.mutacao, 'NENHUMA');
+    assert.equal(amb.guardioes.length, 0, 'nenhum guardião foi criado');
+    assert.equal(amb.reinicios(), 0);
+    assert.equal(amb.chamadas.dependencias, 0);
+    const id = await amb.identificar();
+    assert.equal(id.rotulo, rot(1));
+    assert.equal(id.integro, false);
+  });
+
+  test('4C (D-H1): depois da adoção confirmada por processo e saúde, o agente segue normalmente e instala a release seguinte', async () => {
+    const amb = await ambiente({ adotar: true });
+    const confirmacao = await I.confirmarBaselineAdotada({
+      config: amb.cfgAgente.instalador, componente: 'backend',
+      deps: { criarAncora: ancoraPorCaminho, esperar: async () => {}, identificarProcesso: async () => ({ pid: 4242, cwd: fs.realpathSync(amb.link) }), verificarSaude: async () => ({ ok: true }) },
+    });
+    assert.equal(confirmacao.resultado, 'ADOCAO_CONFIRMADA');
+    assert.equal(amb.reinicios(), 0, 'a confirmação não reinicia');
+    const r = await A.processar({ cfg: amb.cfgAgente, id: ID, s3: amb.s3, deps: amb.depsDoAgente({ ...amb.controladas, consultarCoordenacao: amb.provedor }) });
+    assert.equal(r.estado, 'SUCESSO', JSON.stringify(r));
+    assert.equal(await amb.instalada(), rot(2));
+    assert.equal(amb.reinicios(), 1);
+    assert.equal(P.validarRecibo(reciboDoBackend(amb.s3), amb.pedido).estado, 'SUCESSO');
   });
 
   test('sem provedor homologado, a mesma operação continua recusada com COORDENACAO_NAO_HOMOLOGADA e nada muda', async () => {
@@ -1352,23 +1383,43 @@ describe('Etapa 3B-1: o agente entrega ao instalador real as dependências da co
   // operação: configuração oficial (caminho de teste, mesmas conferências), cliente S3 real (criarS3) diante de um
   // executável aws simulado, guardião real da baseline, instalador real com reinício, PID e saúde da configuração
   // (um serviço HTTP simulado). Exige Linux (LINUX_OBRIGATORIO e /proc): executa na CI.
-  test('D8-B: fluxo de produção completo pelo principal, com C1, C2 e C3 de verdade, termina em SUCESSO', { skip: process.platform !== 'linux' ? 'exige Linux (LINUX_OBRIGATORIO e /proc): executa na CI' : false, timeout: 120000 }, async () => {
+  // Etapa 4C (D-H2): com `identidade`, o reinício simulado faz o papel do ExecStartPost do modelo e grava a identidade
+  // do serviço (pid e caminho real do diretório; 0644, trocada por rename) num diretório próprio. `identidade` escolhe
+  // o que é declarado: 'valida', 'ausente', 'antiga' (outro pid) ou 'outraRelease' (o diretório da release 1).
+  // O reinício encerra o serviço anterior antes de subir o novo, como um restart; todos os pids são encerrados no fim.
+  async function executarD8B({ identidade } = {}) {
     const I2 = require(path.join(RAIZ, 'deploy/hml/instalador/instalar-release'));
     const amb = await ambiente({ sondaReal: true });
     const raiz = amb.raiz;
     const porta = await new Promise((ok) => { const s = require('node:net').createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => ok(p)); }); });
     const pidDoServico = path.join(raiz, 'servico.pid');
+    const todosOsPids = path.join(raiz, 'servicos.pids');
     const servico = path.join(raiz, 'servico.js');
     fs.writeFileSync(servico, `require('node:http').createServer((q, r) => { r.setHeader('content-type', 'application/json'); r.end(JSON.stringify({ status: 'ok', service: 'gestao-epi-api' })); }).listen(${porta}, '127.0.0.1');\n`);
+    const dirIdentidade = path.join(raiz, 'run-safework-hml');
+    const arquivoIdentidade = path.join(dirIdentidade, 'identidade');
+    if (identidade) { fs.mkdirSync(dirIdentidade); fs.chmodSync(dirIdentidade, 0o755); }
+    const gravarIdentidade = !identidade || identidade === 'ausente' ? [] : [
+      `const declarado = ${identidade === 'antiga' ? 'filho.pid + 100000' : 'filho.pid'};`,
+      `const cwd = fs.realpathSync(${JSON.stringify(identidade === 'outraRelease' ? amb.fisica(1) : amb.link)});`,
+      `const t = ${JSON.stringify(path.join(dirIdentidade, '.identidade.tmp'))};`,
+      'fs.writeFileSync(t, `${declarado} ${cwd}\\n`, { mode: 0o644 });',
+      `fs.renameSync(t, ${JSON.stringify(arquivoIdentidade)});`,
+    ];
     const reiniciar = path.join(raiz, 'reiniciar-servico.js');
     fs.writeFileSync(reiniciar, [
       "'use strict';",
       "const fs = require('node:fs');",
       "const { spawn } = require('node:child_process');",
-      `const filho = spawn(${JSON.stringify(process.execPath)}, [${JSON.stringify(servico)}], { cwd: fs.realpathSync(${JSON.stringify(amb.link)}), detached: true, stdio: 'ignore' });`,
-      `fs.writeFileSync(${JSON.stringify(pidDoServico)}, String(filho.pid));`,
-      'filho.unref();',
-      'setTimeout(() => process.exit(0), 300);',
+      `try { process.kill(Number(fs.readFileSync(${JSON.stringify(pidDoServico)}, 'utf8')), 'SIGKILL'); } catch { /* primeiro início */ }`,
+      'setTimeout(() => {',
+      `  const filho = spawn(${JSON.stringify(process.execPath)}, [${JSON.stringify(servico)}], { cwd: fs.realpathSync(${JSON.stringify(amb.link)}), detached: true, stdio: 'ignore' });`,
+      `  fs.writeFileSync(${JSON.stringify(pidDoServico)}, String(filho.pid));`,
+      `  fs.appendFileSync(${JSON.stringify(todosOsPids)}, \`\${filho.pid}\\n\`);`,
+      ...gravarIdentidade.map((l) => `  ${l}`),
+      '  filho.unref();',
+      '  setTimeout(() => process.exit(0), 300);',
+      '}, 200);',
       '',
     ].join('\n'));
     const bucket = path.join(raiz, 'bucket');
@@ -1397,28 +1448,64 @@ describe('Etapa 3B-1: o agente entrega ao instalador real as dependências da co
       saude: { url: `http://127.0.0.1:${porta}/api/health` },
     });
     cfgOficial.s3 = { ...cfgOficial.s3, executavel: aws };
+    if (identidade) cfgOficial.identidadeDoServico = { arquivo: arquivoIdentidade, uid: process.getuid() };
     const caminho = path.join(fs.mkdtempSync(path.join(fs.realpathSync(tmp), 'oficial-')), 'agente-backend.json');
     fs.writeFileSync(caminho, JSON.stringify(cfgOficial), { mode: 0o640 });
     assert.equal(I2.lerConfiguracaoOficial(I2.origemDaConfiguracaoOficial(caminho)).habilitado, true, 'a configuração passa pelas conferências do leitor oficial');
     const credenciais = { AWS_ACCESS_KEY_ID: 'AKIASIMULADA00000000', AWS_SECRET_ACCESS_KEY: 'simulada', AWS_SESSION_TOKEN: 'simulada' };
     const antes = {};
     for (const [k, v] of Object.entries(credenciais)) { antes[k] = process.env[k]; process.env[k] = v; }
+    // Toda leitura de /proc/<pid>/cwd feita neste processo durante a operação fica registrada.
+    const leiturasDeCwd = [];
+    const readlinkOriginal = fs.readlinkSync;
+    fs.readlinkSync = function espiao(alvo, ...resto) { if (/^\/proc\/\d+\/cwd$/.test(String(alvo))) leiturasDeCwd.push(String(alvo)); return readlinkOriginal.call(this, alvo, ...resto); };
+    try {
+      await A.principal(['--config', caminho, '--pedido', ID]).catch((e) => { if (!identidade || identidade === 'valida') throw e; });
+      const recibo = JSON.parse(fs.readFileSync(path.join(bucket, `hml-backend/recibos/${ID}.json`), 'utf8'));
+      return { amb, recibo, leiturasDeCwd: [...leiturasDeCwd], caminho, bucket };
+    } finally {
+      fs.readlinkSync = readlinkOriginal;
+      for (const k of Object.keys(credenciais)) { if (antes[k] === undefined) delete process.env[k]; else process.env[k] = antes[k]; }
+      const pids = fs.existsSync(todosOsPids) ? fs.readFileSync(todosOsPids, 'utf8').split('\n').filter(Boolean).map(Number) : [];
+      for (const pid of pids) { try { process.kill(pid, 'SIGKILL'); } catch { /* já encerrado */ } }
+    }
+  }
+  const SO_LINUX = { skip: process.platform !== 'linux' ? 'exige Linux (LINUX_OBRIGATORIO e /proc): executa na CI' : false, timeout: 120000 };
+
+  test('D8-B: fluxo de produção completo pelo principal, com C1, C2 e C3 de verdade, termina em SUCESSO', SO_LINUX, async () => {
+    const { amb, recibo, caminho } = await executarD8B();
+    assert.equal(P.validarRecibo(recibo, amb.pedido).estado, 'SUCESSO');
+    assert.equal(await amb.instalada(), rot(2));
+    const execucoes = amb.execucoesDoGuardiao();
+    assert.equal(execucoes.find((e) => e.inicio).marcador, 'release-1', 'o guardião real da baseline');
+    assert.ok(execucoes.some((e) => e.recebido === 'liberar'));
+    // A mesma autorização não serve para outra execução: o pedido já tem recibo e a operação não se repete.
+    const credenciais = { AWS_ACCESS_KEY_ID: 'AKIASIMULADA00000000', AWS_SECRET_ACCESS_KEY: 'simulada', AWS_SESSION_TOKEN: 'simulada' };
+    const antes = {};
+    for (const [k, v] of Object.entries(credenciais)) { antes[k] = process.env[k]; process.env[k] = v; }
     try {
       await A.principal(['--config', caminho, '--pedido', ID]);
-      const recibo = JSON.parse(fs.readFileSync(path.join(bucket, `hml-backend/recibos/${ID}.json`), 'utf8'));
-      assert.equal(P.validarRecibo(recibo, amb.pedido).estado, 'SUCESSO');
-      assert.equal(await amb.instalada(), rot(2));
-      const execucoes = amb.execucoesDoGuardiao();
-      assert.equal(execucoes.find((e) => e.inicio).marcador, 'release-1', 'o guardião real da baseline');
-      assert.ok(execucoes.some((e) => e.recebido === 'liberar'));
-      // A mesma autorização não serve para outra execução: o pedido já tem recibo e a operação não se repete.
-      await A.principal(['--config', caminho, '--pedido', ID]);
-      assert.equal(execucoes.filter((e) => e.inicio).length, amb.execucoesDoGuardiao().filter((e) => e.inicio).length, 'nenhum guardião novo');
     } finally {
       for (const k of Object.keys(credenciais)) { if (antes[k] === undefined) delete process.env[k]; else process.env[k] = antes[k]; }
-      try { process.kill(Number(fs.readFileSync(pidDoServico, 'utf8')), 'SIGKILL'); } catch { /* serviço não chegou a subir */ }
     }
+    assert.equal(execucoes.filter((e) => e.inicio).length, amb.execucoesDoGuardiao().filter((e) => e.inicio).length, 'nenhum guardião novo');
   });
+
+  test('4C (D-H2): D8-B com a identidade do serviço em /run termina em SUCESSO sem ler /proc/<pid>/cwd', SO_LINUX, async () => {
+    const { amb, recibo, leiturasDeCwd } = await executarD8B({ identidade: 'valida' });
+    assert.equal(P.validarRecibo(recibo, amb.pedido).estado, 'SUCESSO');
+    assert.equal(await amb.instalada(), rot(2));
+    assert.deepEqual(leiturasDeCwd, [], 'com a identidade configurada, o agente não lê o cwd do processo do serviço');
+  });
+
+  for (const [identidade, descricao] of [['ausente', 'ausente'], ['antiga', 'antiga (outro pid)'], ['outraRelease', 'que declara outra release']]) {
+    test(`4C (D-H2): identidade ${descricao} impede a prova de versão: nunca SUCESSO, recibo CRITICO`, SO_LINUX, async () => {
+      const { amb, recibo, leiturasDeCwd } = await executarD8B({ identidade });
+      assert.equal(recibo.estado, 'CRITICO');
+      assert.throws(() => P.validarRecibo(recibo, amb.pedido), (e) => e.codigo === 'DEPLOY_NAO_APROVADO');
+      assert.deepEqual(leiturasDeCwd, []);
+    });
+  }
 
   const falhas = [
     ['o comando de reinício da configuração falha', async () => ({ amb: await ambiente({ reinicioSai: 1 }), extras: {} })],
@@ -1766,6 +1853,25 @@ describe('Etapa 3B-1: o agente entrega ao instalador real as dependências da co
       assert.doesNotMatch(fs.readFileSync(path.join(RAIZ, 'deploy/hml/cd/agente.config.backend.exemplo.json'), 'utf8'), /senha|password/i);
     });
 
+    // 4C (D-H3): as credenciais temporárias da AWS chegam ao processo do agente só pelo contrato do s3.js. As ações do
+    // agente (npm ci, sonda, reinício, PID) recebem um ambiente fixo e mínimo, sem nenhuma variável AWS_.
+    test('4C (D-H3): as ações do agente recebem ambiente fixo e mínimo, sem as credenciais AWS do processo do agente', async () => {
+      const amb = await ambiente();
+      const credenciais = { AWS_ACCESS_KEY_ID: 'ASIASIMULADA00000000', AWS_SECRET_ACCESS_KEY: 'segredo-aws-simulado', AWS_SESSION_TOKEN: 'token-aws-simulado' };
+      const antes = {};
+      for (const [k, v] of Object.entries(credenciais)) { antes[k] = process.env[k]; process.env[k] = v; }
+      try {
+        const r = await A.processar({ cfg: amb.cfgAgente, id: ID, s3: amb.s3, deps: comCoordenacao(amb) });
+        assert.equal(r.estado, 'SUCESSO', JSON.stringify(r));
+      } finally {
+        for (const k of Object.keys(credenciais)) { if (antes[k] === undefined) delete process.env[k]; else process.env[k] = antes[k]; }
+      }
+      const filho = JSON.parse(fs.readFileSync(amb.ambienteDoReinicio, 'utf8'));
+      assert.deepEqual(Object.keys(filho.env).filter((k) => !/^(__CF_USER_TEXT_ENCODING|LC_CTYPE)$/.test(k)).sort(), ['HOME', 'PATH'], 'só PATH e HOME');
+      assert.equal(filho.env.PATH, '/usr/local/bin:/usr/bin:/bin');
+      assert.doesNotMatch(JSON.stringify(filho), /AWS_|segredo-aws-simulado|token-aws-simulado/);
+    });
+
     test('P1-3: servidor PostgreSQL diferente do esperado (outro cluster) é recusado, mesmo com o mesmo nome de banco', async () => {
       for (const sistema of ['7499999999999999999', undefined, '', 7412345678901234567, 'abc']) {
         const amb = await ambiente();
@@ -1905,6 +2011,240 @@ describe('invariantes do código do agente do backend', () => {
     const executor = fs.readFileSync(path.join(RAIZ, 'deploy/hml/cd/executor-com-prazo.js'), 'utf8');
     assert.doesNotMatch(executor, /shell:\s*true|exec\(|execSync|spawnSync/);
     assert.doesNotMatch(executor, /process\.kill\(\s*-?1\s*[,)]/, 'nunca sinaliza todos os processos');
+  });
+});
+
+// Etapa 4C (D-H2): o agente roda com usuário próprio e não lê o /proc/<pid>/cwd de um serviço de outro usuário. O
+// systemd grava a identidade do serviço em /run (ExecStartPost, modelo inerte) e o agente a confere: arquivo, dono,
+// permissões, formato, pid igual ao MainPID e uid do processo. É evidência condicionada ao modelo de confiança (só o
+// usuário do serviço e root escrevem), não atestação independente.
+describe('Etapa 4C (D-H2): identidade do serviço em /run', () => {
+  const uidDoTeste = typeof process.getuid === 'function' ? process.getuid() : 0;
+  const mesmoUid = () => uidDoTeste;
+  function cenario({ texto, modo = 0o644, modoDoDir = 0o755 } = {}) {
+    const dir = path.join(fs.realpathSync(tmp), 'run-safework-hml');
+    fs.mkdirSync(dir);
+    fs.chmodSync(dir, modoDoDir);
+    const release = fs.mkdtempSync(path.join(fs.realpathSync(tmp), 'release-'));
+    const arquivo = path.join(dir, 'identidade');
+    if (texto !== null) {
+      fs.writeFileSync(arquivo, texto === undefined ? `4242 ${release}\n` : texto);
+      fs.chmodSync(arquivo, modo);
+    }
+    return { dir, arquivo, release, identidade: { arquivo, uid: uidDoTeste } };
+  }
+  const recusa = (e) => e.codigo === 'IDENTIDADE_DO_SERVICO_INVALIDA';
+
+  test('identidade válida: devolve o pid e o caminho declarados para a prova de versão do instalador', () => {
+    const c = cenario();
+    assert.deepEqual(A.lerIdentidadeDoServico(c.identidade, 4242, { uidDoProcesso: mesmoUid }), { pid: 4242, cwd: c.release });
+  });
+
+  test('recusa o arquivo ausente, vazio, grande demais, com link simbólico, de outro dono, gravável por grupo ou outros e com dois links físicos', () => {
+    assert.throws(() => A.lerIdentidadeDoServico(cenario({ texto: null }).identidade, 4242, { uidDoProcesso: mesmoUid }), recusa, 'ausente');
+    fs.rmSync(path.join(tmp, 'run-safework-hml'), { recursive: true, force: true });
+    assert.throws(() => A.lerIdentidadeDoServico(cenario({ texto: '' }).identidade, 4242, { uidDoProcesso: mesmoUid }), recusa, 'vazio');
+    fs.rmSync(path.join(tmp, 'run-safework-hml'), { recursive: true, force: true });
+    assert.throws(() => A.lerIdentidadeDoServico(cenario({ texto: `4242 /${'a'.repeat(5000)}\n` }).identidade, 4242, { uidDoProcesso: mesmoUid }), recusa, 'grande demais');
+    for (const modo of [0o664, 0o646, 0o666]) {
+      fs.rmSync(path.join(tmp, 'run-safework-hml'), { recursive: true, force: true });
+      assert.throws(() => A.lerIdentidadeDoServico(cenario({ modo }).identidade, 4242, { uidDoProcesso: mesmoUid }), recusa, `modo ${modo.toString(8)}`);
+    }
+    fs.rmSync(path.join(tmp, 'run-safework-hml'), { recursive: true, force: true });
+    const c = cenario();
+    assert.throws(() => A.lerIdentidadeDoServico({ ...c.identidade, uid: uidDoTeste + 1 }, 4242, { uidDoProcesso: () => uidDoTeste + 1 }), recusa, 'outro dono');
+    const real = path.join(c.dir, 'real');
+    fs.renameSync(c.arquivo, real);
+    fs.symlinkSync(real, c.arquivo);
+    assert.throws(() => A.lerIdentidadeDoServico(c.identidade, 4242, { uidDoProcesso: mesmoUid }), recusa, 'link simbólico');
+    fs.rmSync(c.arquivo);
+    fs.linkSync(real, c.arquivo);
+    assert.throws(() => A.lerIdentidadeDoServico(c.identidade, 4242, { uidDoProcesso: mesmoUid }), recusa, 'dois links físicos');
+  });
+
+  test('recusa formato fora do contrato: sem quebra final, caminho relativo ou não normalizado, pid inválido, campos a mais e NUL', () => {
+    const casos = ['4242 /x', '4242 x/y\n', '4242 /x/../y\n', '4242 /x/\n', '0 /x\n', '-1 /x\n', '04242 /x\n', '4242 /x extra\n', '4242  /x\n', '4242 /x\n\n', '4242 /x\u0000\n', ' 4242 /x\n', '4242\t/x\n'];
+    for (const texto of casos) {
+      fs.rmSync(path.join(tmp, 'run-safework-hml'), { recursive: true, force: true });
+      assert.throws(() => A.lerIdentidadeDoServico(cenario({ texto }).identidade, 4242, { uidDoProcesso: mesmoUid }), recusa, JSON.stringify(texto));
+    }
+  });
+
+  test('recusa identidade antiga: o pid declarado não é o MainPID informado pelo systemd', () => {
+    const c = cenario();
+    assert.throws(() => A.lerIdentidadeDoServico(c.identidade, 4243, { uidDoProcesso: mesmoUid }), recusa);
+  });
+
+  test('recusa diretório da identidade gravável por grupo ou outros, de outro dono ou alcançado por link simbólico', () => {
+    assert.throws(() => A.lerIdentidadeDoServico(cenario({ modoDoDir: 0o777 }).identidade, 4242, { uidDoProcesso: mesmoUid }), recusa, 'gravável');
+    fs.rmSync(path.join(tmp, 'run-safework-hml'), { recursive: true, force: true });
+    const c = cenario();
+    const atalho = path.join(fs.realpathSync(tmp), 'atalho');
+    fs.symlinkSync(c.dir, atalho);
+    assert.throws(() => A.lerIdentidadeDoServico({ ...c.identidade, arquivo: path.join(atalho, 'identidade') }, 4242, { uidDoProcesso: mesmoUid }), recusa, 'link no caminho');
+  });
+
+  test('recusa quando o processo do MainPID não pertence ao usuário do serviço', () => {
+    const c = cenario();
+    assert.throws(() => A.lerIdentidadeDoServico(c.identidade, 4242, { uidDoProcesso: () => uidDoTeste + 7 }), recusa);
+    assert.throws(() => A.lerIdentidadeDoServico(c.identidade, 4242, { uidDoProcesso: () => { throw new Error('sem /proc'); } }), recusa);
+  });
+
+  test('configuração: identidadeDoServico é opcional; presente, precisa de caminho absoluto normalizado fora das releases e uid numérico', () => {
+    const base = path.join(fs.realpathSync(tmp), 'base');
+    const estadoDir = path.join(fs.realpathSync(tmp), 'estado');
+    const protegida = path.join(fs.realpathSync(tmp), 'protegida');
+    for (const d of [base, estadoDir, protegida]) fs.mkdirSync(d);
+    const cfgValida = {
+      habilitado: true, isolamentoRevisado: 'RAIZES_EXCLUSIVAS_HOMOLOGACAO_BACKEND', estadoDir, raizesProtegidas: [protegida],
+      s3: { bucket: 'hml-exemplo-teste', conta: '111111111111', regiao: 'us-east-1', executavel: '/usr/local/bin/aws', prefixo: 'hml-backend' },
+      sonda: { comando: ['/usr/bin/node', 'scripts/sonda-estado-observado.js'], credencial: '/c/sonda.json', banco: 'hml', sistema: SISTEMA_DO_CLUSTER },
+      guardiao: { comando: ['/usr/bin/node', 'scripts/guardiao-de-coordenacao.js'], credencial: '/c/guardiao.json' },
+      instalador: { retencao: 3, raizesPersistentes: [], componentes: { backend: { tipo: 'backend', base, nome: 'backend', saude: { url: 'http://127.0.0.1:3000/api/health' }, reinicio: { comando: ['/bin/true'] }, processo: { pidComando: ['/bin/true'] } } } },
+    };
+    assert.equal(A.validarConfiguracao(cfgValida), cfgValida, 'sem a seção: comportamento anterior');
+    assert.doesNotThrow(() => A.validarConfiguracao({ ...cfgValida, identidadeDoServico: { arquivo: '/run/safework-hml/identidade', uid: 1000 } }));
+    const invalidas = [null, 'x', {}, { arquivo: 'run/identidade', uid: 1000 }, { arquivo: '/run/x/../identidade', uid: 1000 }, { arquivo: '/run/identidade/', uid: 1000 },
+      { arquivo: '/run/identidade', uid: '1000' }, { arquivo: '/run/identidade', uid: -1 }, { arquivo: '/run/identidade', uid: 1.5 }, { arquivo: '/run/identidade', uid: 1000, extra: true },
+      { arquivo: path.join(base, '.releases', 'identidade'), uid: 1000 }, { arquivo: path.join(estadoDir, 'identidade'), uid: 1000 }, { arquivo: path.join(protegida, 'identidade'), uid: 1000 }];
+    for (const identidadeDoServico of invalidas) {
+      assert.throws(() => A.validarConfiguracao({ ...cfgValida, identidadeDoServico }), (e) => e.codigo === 'IDENTIDADE_DO_SERVICO_INVALIDA', JSON.stringify(identidadeDoServico));
+    }
+  });
+
+  test('o código nunca lê o environ de outro processo; o /proc/<pid>/cwd só é lido sem a identidade configurada', () => {
+    const fonte = fs.readFileSync(AG, 'utf8');
+    assert.doesNotMatch(fonte, /environ/);
+    assert.doesNotMatch(fonte, /CAP_SYS_PTRACE|ptrace/i);
+    const ocorrencias = [...fonte.matchAll(/\/proc\/\$\{pid\}\/cwd/g)];
+    assert.equal(ocorrencias.length, 1, 'um único ponto de leitura do cwd');
+    // 4C (D-H1, opção 1): o leitor da identidade fica no instalador, usado pelo agente e pela confirmação da adoção.
+    const instalador = fs.readFileSync(path.join(RAIZ, 'deploy/hml/instalador/instalar-release.js'), 'utf8');
+    assert.doesNotMatch(instalador, /environ|CAP_SYS_PTRACE/);
+    const inicio = instalador.indexOf('function lerIdentidadeDoServico(');
+    assert.ok(inicio > 0, 'o leitor existe no instalador');
+    const funcao = instalador.slice(inicio, instalador.indexOf('\n}\n', inicio));
+    assert.doesNotMatch(funcao, /readlink|\/cwd/);
+    assert.equal(fonte.includes('function lerIdentidadeDoServico('), false, 'uma única implementação');
+    const identificacao = fonte.slice(fonte.indexOf('function criarIdentificacaoDoProcesso('), fonte.indexOf('\n}\n', fonte.indexOf('function criarIdentificacaoDoProcesso(')));
+    assert.match(identificacao, /if \(identidade\) return I\.lerIdentidadeDoServico\(identidade, pid\);\s*return \{ pid, cwd: fs\.readlinkSync\(`\/proc\/\$\{pid\}\/cwd`\) \};/);
+  });
+
+  // Opção A da 4C: UIDs distintos de verdade, só no runner efêmero do GitHub Actions (sudo sem senha). O usuário é
+  // temporário, criado e removido aqui; fora do Linux ou fora do Actions o teste não roda, e no Actions a falta de sudo
+  // reprova em vez de pular. Nada disso roda no Mac nem na HML.
+  const NO_ACTIONS = process.platform === 'linux' && process.env.GITHUB_ACTIONS === 'true';
+  test('4C (D-H2): com UIDs distintos, o cwd e o environ do serviço são inacessíveis e só a identidade do dono do serviço é aceita', {
+    skip: NO_ACTIONS ? false : 'só no runner efêmero do GitHub Actions (Linux, usuário temporário)', timeout: 60000,
+  }, async () => {
+    const { execFileSync, spawn } = require('node:child_process');
+    assert.notEqual(process.getuid(), 0, 'o agente do teste não é root');
+    execFileSync('sudo', ['-n', 'true'], { stdio: 'ignore' });
+    const nome = `swcd4c${crypto.randomBytes(4).toString('hex')}`;
+    const base = fs.mkdtempSync('/tmp/cd4c-');
+    fs.chmodSync(base, 0o755);
+    const release = path.join(base, 'release');
+    fs.mkdirSync(release, { mode: 0o755 });
+    fs.chmodSync(release, 0o755);
+    const dirIdentidade = `/tmp/cd4c-run-${nome}`;
+    const roteiro = path.join(base, 'servico.js');
+    fs.writeFileSync(roteiro, [
+      "'use strict';",
+      "const fs = require('node:fs');",
+      'const [dir, release] = process.argv.slice(2);',
+      'process.chdir(release);',
+      'process.umask(0o022);',
+      'fs.mkdirSync(dir, { mode: 0o755 });',
+      "fs.writeFileSync(dir + '/.t', `${process.pid} ${fs.realpathSync(process.cwd())}\\n`, { mode: 0o644 });",
+      "fs.renameSync(dir + '/.t', dir + '/identidade');",
+      'process.stdout.write(`PRONTO ${process.pid}\\n`);',
+      "process.stdin.on('data', () => {});",
+      "process.stdin.on('end', () => { try { fs.rmSync(dir + '/identidade'); fs.rmdirSync(dir); } finally { process.exit(0); } });",
+      '',
+    ].join('\n'), { mode: 0o644 });
+    let filho;
+    let pid;
+    let criado = false;
+    try {
+      execFileSync('sudo', ['-n', 'useradd', '--system', '--no-create-home', '--shell', '/usr/sbin/nologin', nome], { stdio: 'ignore' });
+      criado = true;
+      const uidDoServico = Number(execFileSync('id', ['-u', nome], { encoding: 'utf8' }).trim());
+      assert.notEqual(uidDoServico, process.getuid());
+      filho = spawn('sudo', ['-n', '-u', nome, '--', process.execPath, roteiro, dirIdentidade, release], { stdio: ['pipe', 'pipe', 'inherit'] });
+      pid = await new Promise((ok, falhou) => {
+        let saida = '';
+        filho.stdout.on('data', (b) => { saida += b; const m = /PRONTO (\d+)\n/.exec(saida); if (m) ok(Number(m[1])); });
+        filho.on('exit', (c) => falhou(new Error(`serviço encerrou antes de ficar pronto (${c})`)));
+      });
+      // O método anterior não funciona entre usuários: o agente não lê o cwd nem o environ do serviço.
+      assert.throws(() => fs.readlinkSync(`/proc/${pid}/cwd`), (e) => e.code === 'EACCES' || e.code === 'EPERM');
+      assert.throws(() => fs.readFileSync(`/proc/${pid}/environ`), (e) => e.code === 'EACCES' || e.code === 'EPERM');
+      const identidade = { arquivo: path.join(dirIdentidade, 'identidade'), uid: uidDoServico };
+      // Pela identidade, com o uid real do processo lido de /proc/<pid>/status (sem privilégio).
+      assert.deepEqual(A.lerIdentidadeDoServico(identidade, pid), { pid, cwd: fs.realpathSync(release) });
+      const identificar = A.criarIdentificacaoDoProcesso({ pidComando: [process.execPath, '-e', `process.stdout.write('${pid}')`] }, identidade);
+      assert.deepEqual(await identificar(), { pid, cwd: fs.realpathSync(release) });
+      assert.throws(() => A.lerIdentidadeDoServico(identidade, pid + 1), (e) => e.codigo === 'IDENTIDADE_DO_SERVICO_INVALIDA', 'identidade antiga');
+      assert.throws(() => A.lerIdentidadeDoServico({ ...identidade, uid: process.getuid() }, pid), (e) => e.codigo === 'IDENTIDADE_DO_SERVICO_INVALIDA', 'dono do arquivo diferente do configurado');
+      // O usuário do agente não consegue escrever no diretório do serviço, e uma identidade forjada por ele é recusada.
+      assert.throws(() => fs.writeFileSync(path.join(dirIdentidade, 'identidade'), `${pid} /\n`), (e) => e.code === 'EACCES');
+      const forjada = fs.mkdtempSync('/tmp/cd4c-forjada-');
+      fs.chmodSync(forjada, 0o755);
+      fs.writeFileSync(path.join(forjada, 'identidade'), `${pid} ${fs.realpathSync(release)}\n`, { mode: 0o644 });
+      assert.throws(() => A.lerIdentidadeDoServico({ arquivo: path.join(forjada, 'identidade'), uid: uidDoServico }, pid), (e) => e.codigo === 'IDENTIDADE_DO_SERVICO_INVALIDA', 'forjada pelo agente');
+      fs.rmSync(forjada, { recursive: true, force: true });
+    } finally {
+      if (filho && filho.exitCode === null) {
+        const fim = new Promise((ok) => filho.on('exit', ok));
+        filho.stdin.end();
+        await Promise.race([fim, new Promise((ok) => setTimeout(ok, 5000))]);
+        if (filho.exitCode === null && pid) { try { execFileSync('sudo', ['-n', 'kill', '-9', String(pid)], { stdio: 'ignore' }); } catch { /* já encerrado */ } }
+      }
+      if (criado) execFileSync('sudo', ['-n', 'userdel', nome], { stdio: 'ignore' });
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+    assert.equal(fs.existsSync(dirIdentidade), false, 'o serviço removeu o próprio diretório');
+  });
+
+  describe('modelos inertes do systemd e do polkit', () => {
+    const ler = (rel) => fs.readFileSync(path.join(RAIZ, 'deploy/hml/cd', rel), 'utf8');
+    test('regra polkit: só o usuário do agente, só restart, só safework-hml.service; o resto segue a política padrão', () => {
+      const vm = require('node:vm');
+      const texto = ler('polkit-safework-cd-backend.rules.modelo');
+      assert.match(texto, /INERTE/);
+      const regras = [];
+      const Result = { YES: 'yes', NOT_HANDLED: 'nh' };
+      vm.runInNewContext(texto.replace(/USUARIO_DO_AGENTE_BACKEND/g, 'safework-cd-backend'), { polkit: { addRule: (f) => regras.push(f), Result } });
+      assert.equal(regras.length, 1);
+      const decidir = (id, unit, verb, user) => regras[0]({ id, lookup: (k) => ({ unit, verb })[k] }, { user });
+      const ID = 'org.freedesktop.systemd1.manage-units';
+      assert.equal(decidir(ID, 'safework-hml.service', 'restart', 'safework-cd-backend'), 'yes');
+      for (const verb of ['start', 'stop', 'reload', 'reload-or-restart', 'try-restart', 'kill', undefined]) assert.notEqual(decidir(ID, 'safework-hml.service', verb, 'safework-cd-backend'), 'yes', `verbo ${verb}`);
+      for (const unit of ['nginx.service', 'postgresql@16-main.service', 'safework-cd-agente.service', 'safework-hml.service.d', undefined]) assert.notEqual(decidir(ID, unit, 'restart', 'safework-cd-backend'), 'yes', `unidade ${unit}`);
+      for (const user of ['ubuntu', 'safework-deploy', 'root', undefined]) assert.notEqual(decidir(ID, 'safework-hml.service', 'restart', user), 'yes', `usuário ${user}`);
+      for (const id of ['org.freedesktop.systemd1.manage-unit-files', 'org.freedesktop.systemd1.reload-daemon', 'org.freedesktop.systemd1.set-environment']) assert.notEqual(decidir(id, 'safework-hml.service', 'restart', 'safework-cd-backend'), 'yes', id);
+    });
+    test('drop-in 91 e o gravador da identidade: identidade em /run, removida no stop, sem ler environ nem .env', () => {
+      const dropin = ler('safework-hml-91-cd-backend.conf.modelo');
+      assert.match(dropin, /INERTE/);
+      assert.match(dropin, /^\[Service\]$/m);
+      assert.match(dropin, /^WorkingDirectory=BASE_DO_CD_BACKEND\/backend$/m);
+      assert.match(dropin, /^RuntimeDirectory=safework-hml$/m);
+      assert.match(dropin, /^RuntimeDirectoryMode=0755$/m);
+      assert.match(dropin, /^ExecStartPost=-\/usr\/local\/lib\/safework-cd\/gravar-identidade-do-servico$/m);
+      assert.doesNotMatch(dropin, /^(User|Group|EnvironmentFile|Environment|ExecStart)=/m, 'não muda usuário, ambiente nem o comando do serviço');
+      const gravador = ler('gravar-identidade-do-servico.modelo');
+      assert.match(gravador, /^#!\/bin\/sh$/m);
+      assert.match(gravador, /INERTE/);
+      assert.match(gravador, /^set -eu$/m);
+      assert.match(gravador, /^umask 022$/m);
+      assert.match(gravador, /"\$\{MAINPID:\?\}"/);
+      assert.match(gravador, /readlink -f "\/proc\/\$pid\/cwd"/);
+      assert.match(gravador, /mktemp \/run\/safework-hml\/\.identidade\.XXXXXX/);
+      assert.match(gravador, /chmod 0644 "\$t"/);
+      assert.match(gravador, /mv -f "\$t" \/run\/safework-hml\/identidade/);
+      assert.doesNotMatch(gravador, /environ|\.env\b|sudo|curl|wget/);
+    });
   });
 });
 

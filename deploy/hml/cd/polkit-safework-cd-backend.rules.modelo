@@ -1,0 +1,13 @@
+// Modelo INERTE (Etapa 4C, D-H2). Não instalar sem autorização própria.
+// Destino previsto: /etc/polkit-1/rules.d/60-safework-cd-backend.rules (root:root 0644).
+// Só o usuário do agente do backend, só o verbo restart e só a unidade safework-hml.service. Qualquer outro pedido segue
+// a política padrão. O reinício chega ao systemd pelo D-Bus, o que funciona com NoNewPrivileges=yes (sudo não funcionaria).
+polkit.addRule(function (action, subject) {
+  if (action.id === "org.freedesktop.systemd1.manage-units"
+      && subject.user === "USUARIO_DO_AGENTE_BACKEND"
+      && action.lookup("unit") === "safework-hml.service"
+      && action.lookup("verb") === "restart") {
+    return polkit.Result.YES;
+  }
+  return polkit.Result.NOT_HANDLED;
+});

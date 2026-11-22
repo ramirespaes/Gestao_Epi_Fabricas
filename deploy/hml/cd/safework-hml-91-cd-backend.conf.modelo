@@ -1,0 +1,10 @@
+# Modelo INERTE (Etapa 4C, D-H2). Não instalar sem autorização própria.
+# Destino previsto: /etc/systemd/system/safework-hml.service.d/91-cd-backend.conf (root:root 0644).
+# Sobrepõe só o diretório de trabalho do 90-release-*.conf, que fica intacto: remover este arquivo, daemon-reload e um
+# restart voltam à release anterior. O usuário, o ambiente e o comando do serviço não mudam aqui.
+# O RuntimeDirectory é removido quando o serviço para: uma identidade antiga não sobrevive a um restart.
+[Service]
+WorkingDirectory=BASE_DO_CD_BACKEND/backend
+RuntimeDirectory=safework-hml
+RuntimeDirectoryMode=0755
+ExecStartPost=-/usr/local/lib/safework-cd/gravar-identidade-do-servico

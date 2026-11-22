@@ -11,6 +11,7 @@
 // para terminar; as ações com processo têm prazo efetivo (executor-com-prazo). Depois da última ação vem a confirmação
 // final; só então o guardião é liberado. SUCESSO exige ainda a soltura conferida dos quatro cadeados.
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const N = require('../instalador/nucleo');
 const I = require('../instalador/instalar-release');
@@ -285,6 +286,11 @@ function validarConfiguracao(cfg) {
   const estado = fs.realpathSync(cfg.estadoDir);
   const base = fs.realpathSync(comp.base);
   P.exigir(!protegidas.some((p) => N.sobrepoe(p, base)) && !N.sobrepoe(estado, base) && !protegidas.some((p) => N.sobrepoe(p, estado)), 'RAIZ_PROTEGIDA');
+  P.exigir(I.identidadeDoServicoValida(cfg.identidadeDoServico), 'IDENTIDADE_DO_SERVICO_INVALIDA');
+  if (cfg.identidadeDoServico) {
+    const arquivo = cfg.identidadeDoServico.arquivo;
+    P.exigir(![base, estado, ...protegidas].some((r) => N.sobrepoe(arquivo, r)), 'IDENTIDADE_DO_SERVICO_INVALIDA');
+  }
   return cfg;
 }
 
@@ -306,21 +312,36 @@ async function aplicar({ pedido, releaseDir, deps, agora = Date.now }) {
   return { estado: 'SUCESSO', verificado: true };
 }
 
+// Etapa 4C (D-H2): o agente roda com usuário próprio e não pode ler o /proc/<pid>/cwd de um serviço de outro usuário.
+// A identidade do serviço em /run é lida e conferida pelo instalador (I.lerIdentidadeDoServico), a mesma usada na
+// confirmação da adoção. Sem a seção identidadeDoServico, vale o comportamento anterior.
+
+// Etapa 4C (D-H3): as credenciais temporárias da AWS existem no processo do agente só pelo contrato do s3.js, que monta
+// o ambiente do aws por conta própria. As ações (npm ci, sonda, reinício, PID) recebem este ambiente fixo, sem nada
+// herdado do agente.
+const AMBIENTE_DAS_ACOES = Object.freeze({ PATH: '/usr/local/bin:/usr/bin:/bin', HOME: os.homedir() });
+const ambienteDasAcoes = () => ({ ...AMBIENTE_DAS_ACOES });
+
+// MainPID pelo comando da configuração (systemctl show), com prazo; o caminho do processo vem da identidade quando ela
+// está configurada, e só sem ela do /proc/<pid>/cwd (mesmo usuário, comportamento anterior).
+function criarIdentificacaoDoProcesso(processo, identidade) {
+  return async () => {
+    const saida = await executarComPrazo(processo.pidComando[0], processo.pidComando.slice(1), { prazoMs: PRAZOS_DA_OPERACAO.acoes.identificarProcesso, env: ambienteDasAcoes() });
+    const pid = Number(String(saida).trim());
+    if (!Number.isInteger(pid) || pid <= 1) throw new Error('PID do serviço inválido');
+    if (identidade) return I.lerIdentidadeDoServico(identidade, pid);
+    return { pid, cwd: fs.readlinkSync(`/proc/${pid}/cwd`) };
+  };
+}
+
 // As mesmas ações que depsDoConfig monta da configuração (npm ci, reinício, PID do serviço), com prazo efetivo: o
 // executor encerra o grupo de processos inteiro no prazo e confere o fim. A saúde continua a do instalador (HTTP com
 // prazo próprio, sem processo).
-function acoesComPrazo(comp) {
+function acoesComPrazo(comp, identidade) {
   const { acoes } = PRAZOS_DA_OPERACAO;
-  const r = { executar: (comando, args, opcoes = {}) => executarComPrazo(comando, args, { cwd: opcoes.cwd, prazoMs: Math.min(opcoes.prazoMs || acoes.executar, acoes.executar) }) };
-  if (comp.reinicio) r.reiniciar = () => executarComPrazo(comp.reinicio.comando[0], comp.reinicio.comando.slice(1), { prazoMs: acoes.reiniciar });
-  if (comp.processo) {
-    r.identificarProcesso = async () => {
-      const saida = await executarComPrazo(comp.processo.pidComando[0], comp.processo.pidComando.slice(1), { prazoMs: acoes.identificarProcesso });
-      const pid = Number(String(saida).trim());
-      if (!Number.isInteger(pid) || pid <= 1) throw new Error('PID do serviço inválido');
-      return { pid, cwd: fs.readlinkSync(`/proc/${pid}/cwd`) };
-    };
-  }
+  const r = { executar: (comando, args, opcoes = {}) => executarComPrazo(comando, args, { cwd: opcoes.cwd, prazoMs: Math.min(opcoes.prazoMs || acoes.executar, acoes.executar), env: ambienteDasAcoes() }) };
+  if (comp.reinicio) r.reiniciar = () => executarComPrazo(comp.reinicio.comando[0], comp.reinicio.comando.slice(1), { prazoMs: acoes.reiniciar, env: ambienteDasAcoes() });
+  if (comp.processo) r.identificarProcesso = criarIdentificacaoDoProcesso(comp.processo, identidade);
   return r;
 }
 
@@ -332,7 +353,7 @@ function dependenciasPadrao(cfg, extras, configuracaoOficial) {
   // A pré-checagem e o lerObservado do instalador recebem o MESMO vínculo, criado uma vez por operação.
   const depsDoInstalador = (vinculo, coordenacao, operacao) => {
     const comp = N.validarConfig(config).componentes[ESCOPO];
-    const deps = { ...I.depsDoConfig(comp), ...acoesComPrazo(comp), ...extras };
+    const deps = { ...I.depsDoConfig(comp), ...acoesComPrazo(comp, cfg.identidadeDoServico), ...extras };
     // O instalador chama lerObservado em cada pré-condição: cada chamada é uma coleta nova pela sonda vinculada. A
     // leitura da sonda não muda nada no servidor e não passa pela proteção das ações.
     const executarDaSonda = deps.executar;
@@ -531,4 +552,4 @@ async function principal(argv) {
 }
 
 if (require.main === module) principal(process.argv.slice(2)).catch((e) => { console.error(`Agente do backend recusou: ${e.codigo || 'ERRO'}`); process.exitCode = 1; });
-module.exports = { aplicar, validarConfiguracao, vincularSonda, vincularGuardiao, coletarObservado, processar, processarFila, principal, PRAZOS_DA_OPERACAO };
+module.exports = { aplicar, validarConfiguracao, vincularSonda, vincularGuardiao, coletarObservado, processar, processarFila, principal, PRAZOS_DA_OPERACAO, lerIdentidadeDoServico: I.lerIdentidadeDoServico, criarIdentificacaoDoProcesso };
