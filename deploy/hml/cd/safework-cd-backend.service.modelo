@@ -3,6 +3,8 @@
 # O lançador obtém as credenciais temporárias pelo aws_signing_helper e inicia o agente; nenhuma credencial fica no
 # ambiente da unidade, em arquivo ou em log. O /proc não é escondido (ProtectProc padrão): o agente lê o
 # /proc/<pid>/status do serviço para conferir o dono do processo, nunca o environ nem o cwd.
+# O npm ci do instalador grava cache e logs em $HOME/.npm: o home do usuário do agente é /var/cache/safework-cd-backend
+# (useradd --home-dir), o CacheDirectory dedicado, 0700. É o único caminho gravável além da base e do estado.
 [Unit]
 Description=SafeWork HML: agente do CD do backend (lançador com credenciais temporárias)
 After=network-online.target
@@ -19,4 +21,6 @@ ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
 ReadWritePaths=BASE_DO_CD_BACKEND ESTADO_DO_AGENTE_BACKEND
+CacheDirectory=safework-cd-backend
+CacheDirectoryMode=0700
 TimeoutStartSec=50min
