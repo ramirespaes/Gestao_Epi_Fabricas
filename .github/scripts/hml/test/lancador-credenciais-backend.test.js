@@ -298,6 +298,18 @@ describe('4C (D-H3): modelos inertes da unidade, do timer e do Roles Anywhere', 
     assert.doesNotMatch(u, /^(Environment|EnvironmentFile|PassEnvironment|LoadCredential|SetCredential)=/m);
     assert.doesNotMatch(u, /ProtectProc=invisible|AmbientCapabilities|CapabilityBoundingSet=.*SYS_PTRACE|AWS_/);
   });
+  // Fase 1 (cache do npm): o npm ci do instalador grava cache e logs em $HOME/.npm. Com ProtectSystem=strict e
+  // ProtectHome=yes, o único lugar gravável a mais é o CacheDirectory dedicado, que é o home do usuário do agente.
+  test('cache do npm: diretório de cache dedicado (0700) e nada mais gravável; ProtectSystem e ProtectHome mantidos', () => {
+    const u = fs.readFileSync(CD('safework-cd-backend.service.modelo'), 'utf8');
+    assert.match(u, /^CacheDirectory=safework-cd-backend$/m);
+    assert.match(u, /^CacheDirectoryMode=0700$/m);
+    assert.equal((u.match(/^ReadWritePaths=/gm) || []).length, 1, 'uma única linha de escrita explícita');
+    assert.match(u, /^ReadWritePaths=BASE_DO_CD_BACKEND ESTADO_DO_AGENTE_BACKEND$/m, 'o cache não entra nos caminhos graváveis explícitos');
+    assert.doesNotMatch(u, /^(StateDirectory|LogsDirectory|RuntimeDirectory|ConfigurationDirectory)=/m, 'nenhum outro diretório gerenciado');
+    assert.doesNotMatch(u, /^ProtectHome=(no|read-only|tmpfs)$/m);
+    assert.match(u, /home do usuário do agente é \/var\/cache\/safework-cd-backend/, 'o modelo documenta o home dedicado');
+  });
   test('timer do agente: só dispara a unidade do backend', () => {
     const t = fs.readFileSync(CD('safework-cd-backend.timer.modelo'), 'utf8');
     assert.match(t, /INERTE/);
