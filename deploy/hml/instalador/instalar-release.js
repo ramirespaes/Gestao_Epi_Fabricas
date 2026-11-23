@@ -365,6 +365,26 @@ const comExcecoes = (extras, excecoes) => (excecoes.length > 0 ? { ...extras, ex
 
 // ------------------------------------------------------------ preparo, órfãs e reconciliação
 
+// O npm ci herda o umask do agente (UMask=0077) e o node_modules nasce legível só por ele; o serviço roda com outro
+// usuário. Já inspecionada, a árvore é selada como o pacote: diretórios 0555, arquivos 0444 (0555 se executáveis),
+// sem setuid nem escrita. Links não são seguidos e um inode compartilhado com outro caminho é recusado.
+function selarDependencias(A, pai, nome) {
+  const dir = A.abrirFilho(pai, nome, { confiavel: false });
+  try {
+    for (const e of A.listar(dir)) {
+      if (e.ehLink) continue;
+      if (e.ehDiretorio) selarDependencias(A, dir, e.nome);
+      else if (e.ehArquivo) {
+        A.comArquivo(dir, e.nome, (a) => {
+          if (!a) throw erro('DEPENDENCIAS_INSEGURAS', `${nome}/${e.nome} desapareceu durante a selagem`);
+          a.chmod((a.info.mode & 0o111) === 0 ? 0o444 : 0o555);
+        });
+      } else throw erro('DEPENDENCIAS_INSEGURAS', `${nome}/${e.nome} não é arquivo regular, diretório nem link`);
+    }
+    A.tornarSomenteLeitura(dir);
+  } finally { A.fechar(dir); }
+}
+
 // Todo o preparo é ancorado (ver ancora.js e nucleo.js): cada escrita, chmod, fsync, remoção e o rename final usam
 // descritores abertos e verificados, inclusive depois da espera pelas dependências, e o npm recebe o inode já
 // verificado como diretório de trabalho. A ordem de durabilidade é: arquivos e diretórios do preparo sincronizados,
@@ -397,6 +417,11 @@ function preparar({ ctx, comp, componente, rel, reaisPersistentes, deps, agora }
       }
       const problemasDeps = inspecionarDependencias(A, preparo, 'node_modules');
       if (problemasDeps.length > 0) throw erro('DEPENDENCIAS_INSEGURAS', `as dependências instaladas não são uma árvore própria: ${problemasDeps.slice(0, 3).join('; ')}`);
+      try {
+        if (A.tipo(preparo, 'node_modules')) selarDependencias(A, preparo, 'node_modules');
+      } catch (falha) {
+        throw erro('DEPENDENCIAS_INSEGURAS', `as dependências instaladas não puderam ser seladas: ${falha.message}`);
+      }
       ignorados.push('node_modules');
     }
     finalizarPreparo({ A, preparo, arquivos, diretorios, manifesto: rel.manifesto, subarvores: comp.dependencias ? ['node_modules'] : [] });

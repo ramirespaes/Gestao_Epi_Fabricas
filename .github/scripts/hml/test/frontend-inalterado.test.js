@@ -24,7 +24,8 @@ const PROTEGIDOS = {
   // pelo leitor da identidade do serviço.
   'deploy/hml/instalador/coordenacao.js': '6db83ae382318b0a6f415de46de11b900f42d18a6b28387e9c99ca4d1f8db404',
   'deploy/hml/instalador/erros.js': 'fed004c3471a32d1000b98ce070a78d22e8d5a43e601dc9b873f60216cc4b3ac',
-  'deploy/hml/instalador/instalar-release.js': '020214155a10d026ac08f5bce915dffb9b83c5c25d663aac85139d6b68c83dfb',
+  // Correção A (pedido 45240585273-1): instalar-release.js mudou só pela selagem do node_modules no preparo.
+  'deploy/hml/instalador/instalar-release.js': 'aafba9d679ffbdf624612077ad759da7676fae157dec6d9848336cc439bf61f2',
   'deploy/hml/instalador/nucleo.js': '144a1194d9a7e2fc4b8c0b73dfc7afae3b4a5a267efe122736788b3e2f28d716',
   'deploy/hml/empacotar-backend.js': 'cf040b49a11401a9fd854e83f36ab51090d18b76cb1b9898a9cfd0ad250ad336',
   '.github/workflows/ci.yml': '1a977e2aaf68e06d9f212ed8fc573bb3d2ed852c7c219e0b976b63dc5beb5a68',
