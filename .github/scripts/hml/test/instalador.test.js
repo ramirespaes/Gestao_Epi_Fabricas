@@ -1429,3 +1429,113 @@ describe('instalador — integração com as releases reais e linha de comando',
     assert.equal(backend.status, 1, 'backend sem saude e reinicio na configuração');
   });
 });
+
+// Correção A (pedido 45240585273-1): o npm ci roda com o UMask=0077 do agente e o node_modules nascia 0700/0600, ilegível
+// para o usuário do serviço (Cannot find module 'dotenv/config'). A release publicada tem de trazer as dependências
+// seladas como o pacote: legíveis por todos, graváveis por ninguém, com o bit de execução preservado.
+describe('Correção A: dependências seladas e legíveis pelo usuário do serviço', () => {
+  const modo = (p) => (fs.lstatSync(p).mode & 0o7777).toString(8);
+  function modosDaArvore(raiz) {
+    const m = { '.': modo(raiz) };
+    const andar = (abs, rel) => {
+      for (const e of fs.readdirSync(abs, { withFileTypes: true })) {
+        const a = path.join(abs, e.name);
+        const r = rel ? `${rel}/${e.name}` : e.name;
+        if (e.isSymbolicLink()) m[r] = `link:${fs.readlinkSync(a)}`;
+        else { m[r] = modo(a); if (e.isDirectory()) andar(a, r); }
+      }
+    };
+    andar(raiz, '');
+    return m;
+  }
+  // Árvore como o npm ci a deixa sob umask 077, mais casos que não podem sobreviver: executável, binário nativo, setuid
+  // e itens graváveis por grupo e outros. Os modos são fixados por chmod para não depender do umask de quem testa.
+  async function npmSobUmask077(cmd, args, opc) {
+    const nm = path.join(opc.cwd, 'node_modules');
+    const dirs = ['', 'dotenv', 'dotenv/lib', '.bin', 'argon2', 'argon2/prebuilds', 'argon2/prebuilds/linux-x64', 'aberto'];
+    for (const d of dirs) fs.mkdirSync(path.join(nm, d), { recursive: true });
+    const arquivos = { 'dotenv/package.json': ['{}', 0o600], 'dotenv/config.js': ['1', 0o600], 'dotenv/lib/cli.js': ['#!/usr/bin/env node\n', 0o700],
+      'argon2/prebuilds/linux-x64/argon2.node': ['bin', 0o700], 'aberto/a.js': ['a', 0o666], 'aberto/suid': ['s', 0o4755] };
+    for (const [rel, [c, m]] of Object.entries(arquivos)) { fs.writeFileSync(path.join(nm, rel), c); fs.chmodSync(path.join(nm, rel), m); }
+    fs.symlinkSync('../dotenv/lib/cli.js', path.join(nm, '.bin', 'dotenv'));
+    for (const d of dirs) fs.chmodSync(path.join(nm, d), d === 'aberto' ? 0o777 : 0o700);
+  }
+  const ESPERADO = {
+    '.': '555', '.bin': '555', '.bin/dotenv': 'link:../dotenv/lib/cli.js',
+    dotenv: '555', 'dotenv/package.json': '444', 'dotenv/config.js': '444', 'dotenv/lib': '555', 'dotenv/lib/cli.js': '555',
+    argon2: '555', 'argon2/prebuilds': '555', 'argon2/prebuilds/linux-x64': '555', 'argon2/prebuilds/linux-x64/argon2.node': '555',
+    aberto: '555', 'aberto/a.js': '444', 'aberto/suid': '555',
+  };
+  const obs = { observado: observadoDe('000_a.sql') };
+
+  test('instalar: node_modules publicado com diretórios 0555, arquivos 0444, executáveis 0555, sem setuid e links intactos', async () => {
+    const { instalar } = carregar();
+    const amb = criarAmbiente();
+    const r = await instalar({ config: amb.config, componente: 'backend', release: criarReleaseBackend({ n: 1 }), opcoes: obs, deps: criarDeps({ executar: npmSobUmask077 }).deps });
+    assert.equal(r.resultado, 'INSTALADA');
+    const nm = path.join(amb.releases('backend'), R(1), 'node_modules');
+    assert.deepEqual(modosDaArvore(nm), ESPERADO);
+    assert.equal(fs.readFileSync(path.join(amb.link('backend'), 'node_modules', '.bin', 'dotenv'), 'utf8'), '#!/usr/bin/env node\n', 'o link continua levando ao alvo dentro da árvore');
+  });
+
+  test('instalar: árvore criada por um processo real sob umask 077 também é selada', async () => {
+    const { instalar } = carregar();
+    const amb = criarAmbiente();
+    const executar = async (cmd, args, opc) => {
+      const r = spawnSync('/bin/sh', ['-c', 'umask 077 && mkdir -p node_modules/dotenv && printf 1 > node_modules/dotenv/config.js'], { cwd: opc.cwd });
+      assert.equal(r.status, 0);
+      assert.equal(modo(path.join(opc.cwd, 'node_modules', 'dotenv', 'config.js')), '600', 'o processo externo deixou o arquivo ilegível para outros');
+    };
+    await instalar({ config: amb.config, componente: 'backend', release: criarReleaseBackend({ n: 1 }), opcoes: obs, deps: criarDeps({ executar }).deps });
+    assert.deepEqual(modosDaArvore(path.join(amb.releases('backend'), R(1), 'node_modules')), { '.': '555', dotenv: '555', 'dotenv/config.js': '444' });
+  });
+
+  test('instalar: arquivo de dependência que compartilha o inode com um caminho de fora é recusado e o caminho de fora não muda', async () => {
+    const { instalar } = carregar();
+    const amb = criarAmbiente();
+    const segredo = path.join(amb.secrets, 'backend.env');
+    fs.chmodSync(segredo, 0o600);
+    const executar = async (cmd, args, opc) => {
+      fs.mkdirSync(path.join(opc.cwd, 'node_modules', 'p'), { recursive: true });
+      fs.linkSync(segredo, path.join(opc.cwd, 'node_modules', 'p', 'index.js'));
+    };
+    const erro = await codigoDe(instalar({ config: amb.config, componente: 'backend', release: criarReleaseBackend({ n: 1 }), opcoes: obs, deps: criarDeps({ executar }).deps }));
+    assert.equal(erro.codigo, 'DEPENDENCIAS_INSEGURAS');
+    assert.equal(modo(segredo), '600', 'o modo do arquivo de fora não foi alterado');
+    assert.equal(fs.readFileSync(segredo, 'utf8'), 'SEGREDO=nao-mexer\n');
+    assert.equal(existeLink(amb.link('backend')), false, 'nada foi publicado');
+    assert.deepEqual(fs.readdirSync(amb.releases('backend')).filter((n) => /^hml-|^\.preparo-/.test(n)), []);
+  });
+
+  test('adotar: a release adotada também traz as dependências seladas', async () => {
+    const lock = '{"lockfileVersion":3}';
+    const sql = '-- 000_a.sql\n';
+    const rel = criarRelease({
+      componente: 'backend', n: 1,
+      arquivos: {
+        'package.json': '{"engines":{"node":">=22"}}', 'package-lock.json': lock, 'src/server.js': '// v1\n', 'migrations/000_a.sql': sql,
+        'migrations/checksums.json': JSON.stringify({ algoritmo: 'sha256', migrations: { '000_a.sql': sha256(sql) } }),
+        'scripts/guardiao-de-coordenacao.js': '// guardião de teste\n', 'scripts/sonda-estado-observado.js': '// sonda de teste\n',
+      },
+      secao: { lockfileSha256: sha256(lock), node: '>=22', migrations: [{ nome: '000_a.sql', sha256: sha256(sql) }], contratos: {} },
+    });
+    const amb = criarAmbiente();
+    const proibida = (nome) => async () => { throw new Error(`${nome} não pode ser chamado na adoção`); };
+    const deps = { criarAncora: criarAncoraPorCaminho, agora: Date.now, executar: npmSobUmask077,
+      reiniciar: proibida('reiniciar'), identificarProcesso: proibida('identificarProcesso'), verificarSaude: proibida('verificarSaude'), consultarCoordenacao: proibida('consultarCoordenacao') };
+    const r = await require(MODULO).adotarBaselineDoBackend({ config: amb.config, componente: 'backend', release: rel, opcoes: { releaseSha256Esperado: sha256(fs.readFileSync(path.join(rel, 'release.json'))) }, deps });
+    assert.equal(r.resultado, 'ADOTADA');
+    assert.deepEqual(modosDaArvore(path.join(amb.releases('backend'), R(1), 'node_modules')), ESPERADO);
+  });
+
+  test('retenção: releases com dependências seladas são removidas com segurança e as que ficam continuam seladas', async () => {
+    const { instalar } = carregar();
+    const amb = criarAmbiente();
+    const { deps } = criarDeps({ executar: npmSobUmask077 });
+    const antes = { data: hashDaArvore(amb.data), secrets: hashDaArvore(amb.secrets) };
+    for (const n of [1, 2, 3, 4]) await instalar({ config: amb.config, componente: 'backend', release: criarReleaseBackend({ n }), opcoes: obs, deps });
+    assert.deepEqual(fs.readdirSync(amb.releases('backend')).filter((n) => /^hml-/.test(n)).sort(), [R(2), R(3), R(4)], 'R1, selada, foi removida pela retenção');
+    for (const n of [2, 3, 4]) assert.deepEqual(modosDaArvore(path.join(amb.releases('backend'), R(n), 'node_modules')), ESPERADO);
+    assert.deepEqual({ data: hashDaArvore(amb.data), secrets: hashDaArvore(amb.secrets) }, antes);
+  });
+});
