@@ -176,6 +176,58 @@ describe('4C (D-H3): principal do lançador', () => {
     assert.deepEqual(ag.chamadas[1].argv, ['--config', amb.caminho, '--pedido', '12-1']);
   });
 
+  // Correção B (B2): o encerramento auditável de um CRITICO precisa das mesmas credenciais temporárias do agente; o
+  // lançador aceita `--resolver-critico <id>` e o repassa sem alteração, com o mesmo helper e o mesmo ambiente mínimo.
+  test('--resolver-critico <id>: chama o helper uma vez e inicia o agente com os argumentos idênticos e o ambiente mínimo', async () => {
+    const amb = ambiente();
+    const ag = agenteFalso(1);
+    const argv = ['--config', amb.caminho, '--resolver-critico', '45240585273-1'];
+    assert.equal(await L.principal(argv, { iniciarAgente: ag.iniciarAgente }), 1, 'o código do agente (TRAVA_LEGADA_PRESERVADA sai com 1) chega ao lançador');
+    assert.equal(amb.chamadas().length, 1);
+    assert.deepEqual(amb.chamadas()[0].argv, ESPERADO_HELPER(amb));
+    assert.equal(ag.chamadas.length, 1);
+    assert.deepEqual(ag.chamadas[0].argv, argv);
+    assert.deepEqual(Object.keys(ag.chamadas[0].env).sort(), ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN', 'HOME', 'NODE_ENV', 'PATH']);
+    const { env } = ag.chamadas[0];
+    assert.deepEqual([env.AWS_ACCESS_KEY_ID, env.AWS_SECRET_ACCESS_KEY, env.AWS_SESSION_TOKEN], ['ASIAQWERTYUIOPASDFGH', SEGREDO, TOKEN], 'os valores efetivos são os da credencial do helper');
+  });
+
+  test('--resolver-critico fora da forma exata é USO, sem chamar o helper nem iniciar o agente', async () => {
+    const ID = '45240585273-1';
+    for (const montar of [
+      (c) => ['--config', c, '--resolver-critico'],
+      (c) => ['--config', c, '--resolver-critico', ID, 'extra'],
+      (c) => ['--config', c, '--resolver-critico', ID, '--pendentes'],
+      (c) => ['--config', c, '--resolver-critico', ID, '--pedido', ID],
+      (c) => ['--config', c, '--pendentes', '--resolver-critico', ID],
+      (c) => ['--resolver-critico', ID, '--config', c],
+      (c) => ['--config', c, '--resolver', ID],
+      (c) => ['--config', c, '--resolver-critico=' + ID],
+      (c) => ['--config', c, '--resolver-critico', 45240585273],
+      (c) => ['--config', c, '--RESOLVER-CRITICO', ID],
+      (c) => ['--config', c, '--resolver-critico ', ID],
+      (c) => ['--config', c, ' --resolver-critico', ID],
+      (c) => ['--config', c, '--pendentes', 'extra'],
+      (c) => ['--config', c, '--pendentes', ID, 'extra'],
+      (c) => ['--x', c, '--resolver-critico', ID],
+      (c) => ['--x', c, '--pendentes'],
+      (c) => [c, '--config', '--resolver-critico', ID],
+      (c) => ['--config', Buffer.from(c), '--resolver-critico', ID],
+      (c) => ['--config', { toString: () => c }, '--pendentes'],
+      (c) => ({ 0: '--config', 1: c, 2: '--resolver-critico', 3: ID, length: 4 }),
+      (c) => ({ 0: '--config', 1: c, 2: '--pendentes', length: 3 }),
+      (c) => `--config ${c} --resolver-critico ${ID}`,
+    ]) {
+      const amb = ambiente();
+      const ag = agenteFalso(0);
+      const argv = montar(amb.caminho);
+      await assert.rejects(L.principal(argv, { iniciarAgente: ag.iniciarAgente }), recusa('USO'), JSON.stringify(argv));
+      assert.equal(amb.chamadas().length, 0, `${JSON.stringify(argv)}: o helper não foi chamado`);
+      assert.equal(ag.chamadas.length, 0, `${JSON.stringify(argv)}: o agente não foi iniciado`);
+      fs.rmSync(path.join(tmp, 'amb'), { recursive: true, force: true }); fs.rmSync(path.join(tmp, 'oficial'), { recursive: true, force: true });
+    }
+  });
+
   test('o código de saída do agente é o do lançador', async () => {
     const amb = ambiente();
     assert.equal(await L.principal(['--config', amb.caminho, '--pendentes'], { iniciarAgente: agenteFalso(3).iniciarAgente }), 3);

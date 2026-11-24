@@ -108,8 +108,9 @@ function iniciarAgentePadrao(argv, env) {
   });
 }
 
+// `--resolver-critico <id>` (Correção B, B2) usa as mesmas credenciais; o id é validado pelo agente, como o do --pedido.
 const usoValido = (argv) => Array.isArray(argv) && argv[0] === '--config' && typeof argv[1] === 'string'
-  && ((argv.length === 3 && argv[2] === '--pendentes') || (argv.length === 4 && argv[2] === '--pedido' && typeof argv[3] === 'string'));
+  && ((argv.length === 3 && argv[2] === '--pendentes') || (argv.length === 4 && ['--pedido', '--resolver-critico'].includes(argv[2]) && typeof argv[3] === 'string'));
 
 async function principal(argv, { iniciarAgente = iniciarAgentePadrao, agora = Date.now, prazoDoHelperMs = PRAZO_DO_HELPER_MS } = {}) {
   if (!usoValido(argv)) throw recusa('USO');

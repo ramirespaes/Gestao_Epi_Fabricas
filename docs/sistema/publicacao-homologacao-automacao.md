@@ -140,7 +140,14 @@ diários individuais e registro do par, decidir recuperação manual com autoriz
 verificar as duas origens e só então liberar trava/registro. Não usar `rm` automático.
 
 Correção B do backend: depois da confirmação da recuperação no instalador (B1), o encerramento auditável de um
-`CRITICO` é `agente-backend.js --config <oficial> --resolver-critico <id>` (B2). Só o `CRITICO` da reversão
+`CRITICO` é `lancador-credenciais-backend.js --config <oficial> --resolver-critico <id>` (B2), executado como o
+usuário do agente: o lançador obtém as credenciais temporárias, como no `--pendentes`, e repassa os argumentos ao
+`agente-backend.js` sem alteração; o agente não tem outra origem de credencial. Comando oficial, só com autorização
+explícita e com o timer desativado:
+`sudo -u <usuário do agente> -H env -i PATH=/usr/bin:/bin /usr/bin/node /usr/local/lib/safework-cd/cd/lancador-credenciais-backend.js --config /etc/safework/cd/agente-backend.json --resolver-critico <id>`.
+O `env -i` impede herdar variáveis do operador: o lançador recusa qualquer `AWS_` no próprio ambiente
+(`AMBIENTE_COM_CREDENCIAL`) e monta o do agente do zero. Não usar `sudo -E` nem executar como root (a chave é do
+usuário do agente e o agente recusa root). Só o `CRITICO` da reversão
 automática é resolvível (`RESULTADO_INCERTO` com diagnóstico `REINICIO_FALHOU`, `VERSAO_NAO_COMPROVADA` ou
 `SAUDE_FALHOU`); qualquer outro é `CRITICO_FORA_DO_ESCOPO`. Sob uma trava própria (`.trava-resolucao-cd-backend`;
 outra execução recebe `RESOLUCAO_EM_CURSO`, e uma deixada por queda exige conferência manual), ele confere:
