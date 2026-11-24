@@ -204,7 +204,7 @@ const puts = (s3) => s3.uso.filter(([op]) => op === 'put').length;
 // Âncora em memória: arquivos da base pelo nome, diretórios como '@nome' e arquivos dentro deles como '@nome/arquivo'.
 // falhas.escrever(nome) e falhas.remover(nome) devolvem 'antes' ou 'depois' para simular a queda imediatamente antes ou
 // depois da gravação ou da remoção.
-function ancoraMemoria(armazem, falhas = {}, contagem = { escritas: 0, remocoes: 0 }) {
+function ancoraMemoria(armazem, falhas = {}, contagem = { escritas: 0, remocoes: 0, fechamentos: 0 }) {
   const quebra = (o) => Object.assign(new Error(o), { code: 'EIO' });
   const chave = (dir, nome) => (dir && dir.nome ? `@${dir.nome}/${nome}` : nome);
   return () => ({
@@ -234,7 +234,7 @@ function ancoraMemoria(armazem, falhas = {}, contagem = { escritas: 0, remocoes:
       contagem.remocoes += 1;
       if (fase === 'depois') throw quebra('remoção');
     },
-    fecharTudo: () => {},
+    fecharTudo: () => { contagem.fechamentos = (contagem.fechamentos || 0) + 1; if (falhas.fechar) throw quebra('fechamento'); },
   });
 }
 const LIBERACAO = Object.freeze({ situacao: 'LIBERACAO_INFORMADA', processoEncerrado: true, forcada: false, comprovadaNoBanco: false, cadeadosLiberados: { confirmada: true, liberados: 4, restantes: 0 }, sessaoEncerradaDeclarada: true });
@@ -300,7 +300,7 @@ async function outroCritico(c, { instalar = FALHA_DA_REVERSAO, liberacao } = {})
 }
 const reciboEsperadoDe = (registroTexto) => Buffer.from(JSON.stringify(JSON.parse(registroTexto).recibo));
 function depsDaResolucao(c, extra = {}, id = ID) {
-  const contagem = { escritas: 0, remocoes: 0 };
+  const contagem = { escritas: 0, remocoes: 0, fechamentos: 0 };
   const falhas = {};
   const deps = {
     criarAncora: ancoraMemoria(c.armazem, falhas, contagem),
@@ -829,6 +829,134 @@ describe('T5b — B2: execuções concorrentes e trava da resolução', () => {
     assert.deepEqual([contagem.escritas, contagem.remocoes], [0, 0]);
     assert.equal(c.armazem.has(TRAVA_DA_RESOLUCAO), true);
     assert.equal(c.armazem.has(TRAVA), true);
+    assert.equal(contagem.fechamentos, 1);
+  });
+});
+
+// ------------------------------------------------------------ S1143: liberação da trava da resolução sem salto em finally
+
+// Analisa a árvore sintática (acorn embutido no Node, sem dependência instalada), não o texto: lista os throw, return,
+// break e continue dentro de um bloco finally da função pedida, sem entrar em funções aninhadas.
+function saltosEmFinally(fonte, nomeDaFuncao) {
+  const roteiro = `
+    const { parse } = require('internal/deps/acorn/acorn/dist/acorn');
+    const fonte = require('node:fs').readFileSync(0, 'utf8');
+    const arvore = parse(fonte, { ecmaVersion: 'latest', sourceType: 'script', locations: true, allowHashBang: true });
+    const FUNCOES = new Set(['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression']);
+    const SALTOS = new Set(['ThrowStatement', 'ReturnStatement', 'BreakStatement', 'ContinueStatement']);
+    const achados = [];
+    let encontrada = false;
+    const visitar = (no, emFinally, dentroDaAlvo) => {
+      if (!no || typeof no.type !== 'string') return;
+      if (FUNCOES.has(no.type)) {
+        if (dentroDaAlvo) return;
+        if (no.type === 'FunctionDeclaration' && no.id && no.id.name === ${JSON.stringify(nomeDaFuncao)}) { encontrada = true; visitar(no.body, false, true); }
+        else for (const v of Object.values(no)) filhos(v, false, false);
+        return;
+      }
+      if (dentroDaAlvo && emFinally && SALTOS.has(no.type)) achados.push(no.type + ':' + no.loc.start.line);
+      if (no.type === 'TryStatement') {
+        visitar(no.block, emFinally, dentroDaAlvo);
+        visitar(no.handler, emFinally, dentroDaAlvo);
+        visitar(no.finalizer, true, dentroDaAlvo);
+        return;
+      }
+      for (const [k, v] of Object.entries(no)) if (k !== 'loc') filhos(v, emFinally, dentroDaAlvo);
+    };
+    const filhos = (v, emFinally, dentroDaAlvo) => { if (Array.isArray(v)) v.forEach((x) => visitar(x, emFinally, dentroDaAlvo)); else if (v && typeof v === 'object') visitar(v, emFinally, dentroDaAlvo); };
+    visitar(arvore, false, false);
+    process.stdout.write(JSON.stringify({ encontrada, achados }));
+  `;
+  const { spawnSync } = require('node:child_process');
+  const r = spawnSync(process.execPath, ['--expose-internals', '-e', roteiro], { input: fonte, encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  return JSON.parse(r.stdout);
+}
+
+describe('T5c — S1143: resolverCritico sem salto em finally, com a falha original prevalecendo', () => {
+  test('controle: o analisador acusa throw e return em finally e ignora funções aninhadas', () => {
+    const exemplo = 'function alvo() { try { a(); } finally { try { b(); } catch (e) { if (x) throw e; } finally { c(); } } }\n'
+      + 'function outra() { try {} finally { return 1; } }\nfunction alvo2() { try {} finally { const f = () => { throw 1; }; } }';
+    assert.deepEqual(saltosEmFinally(exemplo, 'alvo'), { encontrada: true, achados: ['ThrowStatement:1'] });
+    assert.deepEqual(saltosEmFinally(exemplo, 'alvo2'), { encontrada: true, achados: [] });
+    assert.deepEqual(saltosEmFinally(exemplo, 'nenhuma'), { encontrada: false, achados: [] });
+  });
+  test('resolverCritico não tem throw, return, break nem continue dentro de finally', () => {
+    const fonte = fs.readFileSync(path.join(REPO, 'deploy', 'hml', 'cd', 'agente-backend.js'), 'utf8');
+    assert.deepEqual(saltosEmFinally(fonte, 'resolverCritico'), { encontrada: true, achados: [] });
+  });
+
+  const remocaoDaTravaDaResolucao = (fase) => (n) => (n === '.trava-resolucao-cd-backend' ? fase : null);
+  test('resolução e liberação bem-sucedidas: RESOLVIDA, trava da resolução removida, âncora fechada uma vez', async () => {
+    const c = await cenarioCritico();
+    const d = depsDaResolucao(c);
+    assert.equal((await resolver(c, d.deps)).estado, 'RESOLVIDA');
+    assert.equal(c.armazem.has(TRAVA_DA_RESOLUCAO), false);
+    assert.equal(d.contagem.fechamentos, 1);
+  });
+  test('resolução bem-sucedida e liberação que falha: a falha da liberação é relatada, nunca sucesso; a trava da resolução fica e a próxima execução recusa', async () => {
+    const c = await cenarioCritico();
+    const d = depsDaResolucao(c);
+    d.falhas.remover = remocaoDaTravaDaResolucao('antes');
+    const e = await falha(resolver(c, d.deps));
+    assert.equal(e.message, 'remoção');
+    assert.equal(c.s3.dados.get(CHAVE_DA_RESOLUCAO).toString(), c.armazem.get(`resolucao-${ID}.json`), 'a resolução ficou publicada');
+    assert.equal(c.armazem.has(TRAVA), false, 'a trava do pedido saiu antes');
+    assert.equal(c.armazem.has(TRAVA_DA_RESOLUCAO), true);
+    assert.equal(d.contagem.fechamentos, 1);
+    const seguinte = depsDaResolucao(c);
+    assert.equal((await falha(resolver(c, seguinte.deps))).codigo, 'RESOLUCAO_EM_CURSO');
+    assert.equal(seguinte.contagem.escritas, 0);
+  });
+  test('resolução que falha e liberação bem-sucedida: a falha original, trava da resolução removida, trava do pedido preservada', async () => {
+    const c = await cenarioCritico();
+    const d = depsDaResolucao(c, { confirmacaoDaRecuperacao: async () => null });
+    assert.equal((await falha(resolver(c, d.deps))).codigo, 'RECUPERACAO_NAO_CONFIRMADA');
+    assert.equal(c.armazem.has(TRAVA_DA_RESOLUCAO), false);
+    assert.equal(c.armazem.has(TRAVA), true);
+    assert.equal(d.contagem.fechamentos, 1);
+  });
+  test('resolução que falha e liberação que falha: a falha original prevalece', async () => {
+    const c = await cenarioCritico();
+    const d = depsDaResolucao(c, { confirmacaoDaRecuperacao: async () => null });
+    d.falhas.remover = remocaoDaTravaDaResolucao('antes');
+    assert.equal((await falha(resolver(c, d.deps))).codigo, 'RECUPERACAO_NAO_CONFIRMADA');
+    assert.equal(c.armazem.has(TRAVA_DA_RESOLUCAO), true);
+    assert.equal(c.armazem.has(TRAVA), true);
+    assert.equal(d.contagem.fechamentos, 1);
+  });
+  test('fechamento da âncora que falha depois de uma resolução bem-sucedida é relatado, nunca sucesso', async () => {
+    const c = await cenarioCritico();
+    const d = depsDaResolucao(c);
+    d.falhas.fechar = true;
+    assert.equal((await falha(resolver(c, d.deps))).message, 'fechamento');
+    assert.equal(c.armazem.has(TRAVA_DA_RESOLUCAO), false, 'a liberação acontece antes do fechamento');
+    assert.equal(d.contagem.fechamentos, 1);
+  });
+  test('fechamento que falha não esconde a falha original', async () => {
+    const c = await cenarioCritico();
+    const d = depsDaResolucao(c, { confirmacaoDaRecuperacao: async () => null });
+    d.falhas.fechar = true;
+    assert.equal((await falha(resolver(c, d.deps))).codigo, 'RECUPERACAO_NAO_CONFIRMADA');
+    assert.equal(c.armazem.has(TRAVA_DA_RESOLUCAO), false);
+  });
+  test('fechamento que falha não esconde a falha da liberação', async () => {
+    const c = await cenarioCritico();
+    const d = depsDaResolucao(c);
+    d.falhas.remover = remocaoDaTravaDaResolucao('antes');
+    d.falhas.fechar = true;
+    assert.equal((await falha(resolver(c, d.deps))).message, 'remoção');
+    assert.equal(c.armazem.has(TRAVA_DA_RESOLUCAO), true);
+  });
+  test('trava da resolução já existente: RESOLUCAO_EM_CURSO, nada é removido e a âncora é fechada', async () => {
+    const c = await cenarioCritico();
+    c.armazem.set(TRAVA_DA_RESOLUCAO, true);
+    const d = depsDaResolucao(c);
+    d.falhas.fechar = true;
+    assert.equal((await falha(resolver(c, d.deps))).codigo, 'RESOLUCAO_EM_CURSO');
+    assert.equal(d.contagem.remocoes, 0);
+    assert.equal(c.armazem.has(TRAVA_DA_RESOLUCAO), true);
+    assert.equal(d.contagem.fechamentos, 1);
   });
 });
 

@@ -747,20 +747,22 @@ async function resolverCritico({ cfg, id, s3, deps: injetadas = {}, configuracao
   P.exigir(P.ID.test(id), 'ID_INVALIDO');
   const base0 = { ...dependenciasPadrao(cfg, undefined, configuracaoOficial), ...injetadas };
   const A = base0.criarAncora();
-  let base, travaDaResolucao = null, falhou = false;
+  let base, travaDaResolucao = null, resultado;
+  // Falhas na ordem em que acontecem; a primeira prevalece (a da resolução, depois a da liberação, depois a do
+  // fechamento) e nenhuma vira sucesso.
+  const falhas = [];
   try {
     base = A.abrirBase(cfg.estadoDir);
     // Exclusão entre execuções: uma trava própria, criada aqui e sempre removida por esta execução.
     try { travaDaResolucao = A.criarExclusivo(base, TRAVA_DA_RESOLUCAO); } catch (e) { P.exigir(e.code !== 'EEXIST', 'RESOLUCAO_EM_CURSO'); throw e; }
-    return await resolverSobTrava({ A, base, s3, id, base0 });
-  } catch (e) {
-    falhou = true;
-    throw e;
-  } finally {
-    try {
-      if (travaDaResolucao) { const identidade = A.identidade(travaDaResolucao); A.fechar(travaDaResolucao); A.removerArvore(base, TRAVA_DA_RESOLUCAO, { identidade }); }
-    } catch (e) { if (!falhou) throw e; } finally { A.fecharTudo(); }
-  }
+    resultado = await resolverSobTrava({ A, base, s3, id, base0 });
+  } catch (e) { falhas.push(e); }
+  try {
+    if (travaDaResolucao) { const identidade = A.identidade(travaDaResolucao); A.fechar(travaDaResolucao); A.removerArvore(base, TRAVA_DA_RESOLUCAO, { identidade }); }
+  } catch (e) { falhas.push(e); }
+  try { A.fecharTudo(); } catch (e) { falhas.push(e); }
+  if (falhas.length > 0) throw falhas[0];
+  return resultado;
 }
 
 async function resolverSobTrava({ A, base, s3, id, base0 }) {
