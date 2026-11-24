@@ -139,6 +139,45 @@ Em estado crítico: identificar processo e ponteiros, preservar evidência, conf
 diários individuais e registro do par, decidir recuperação manual com autorização,
 verificar as duas origens e só então liberar trava/registro. Não usar `rm` automático.
 
+Correção B do backend: depois da confirmação da recuperação no instalador (B1), o encerramento auditável de um
+`CRITICO` é `agente-backend.js --config <oficial> --resolver-critico <id>` (B2). Só o `CRITICO` da reversão
+automática é resolvível (`RESULTADO_INCERTO` com diagnóstico `REINICIO_FALHOU`, `VERSAO_NAO_COMPROVADA` ou
+`SAUDE_FALHOU`); qualquer outro é `CRITICO_FORA_DO_ESCOPO`. Sob uma trava própria (`.trava-resolucao-cd-backend`;
+outra execução recebe `RESOLUCAO_EM_CURSO`, e uma deixada por queda exige conferência manual), ele confere:
+a trava do agente, que guarda o id do pedido que a criou (`pedido.json`; com outro id ou outro conteúdo é
+`TRAVA_DE_OUTRO_PEDIDO`; vazia é legada, de antes desta correção, e sua propriedade não se prova); o registro
+`TERMINAL` `CRITICO` original; a liberação do guardião registrada (encerramento
+comprovado, soltura dos cadeados conferida e sem força; senão `GUARDIAO_NAO_LIBERADO`); a ausência de outro registro
+pendente ou de outro `CRITICO` sem resolução íntegra; o pedido do S3; a baseline em uso igual à registrada antes da
+operação; e a confirmação do instalador presa a este incidente (reversão da release deste pedido, depois de o pedido
+ser criado e dentro do prazo da operação, recuperação `REINICIO`, `VERSAO` ou `SAUDE`, crítico resolvido
+`RECUPERACAO_NAO_CONFIRMADA` da baseline). Publica o recibo original se faltar; grava a resolução
+(`resolucao-<id>.json` local e `hml-backend/recibos/<id>.resolucao.json` com gravação única), presa por hash e
+identidade ao pedido, à reversão, ao recibo, ao registro e ao guardião; relê o publicado e só então remove a trava
+conferida, se ela tiver o id deste pedido. Nenhuma trava sai, por caminho algum, enquanto houver outro registro
+pendente ou outro `CRITICO` sem resolução íntegra (`OUTRA_OPERACAO_PENDENTE`). Repetir é seguro: uma resolução gravada
+é reaproveitada; com a resolução completa, só resta a trava; sem a trava, só a resolução completa é reconhecida
+(`JA_RESOLVIDA`). Nada original é reescrito.
+
+Trava legada vazia: o agente nunca a remove. O B2 ainda conclui o que é seguro (recibo original, resolução íntegra
+local e no S3, releitura), devolve `RESOLVIDA_COM_TRAVA_PRESERVADA` (motivo `TRAVA_SEM_DONO`) e mantém a trava; repetir
+não grava nada. A linha de comando `--resolver-critico` sai com falha `TRAVA_LEGADA_PRESERVADA`: a resolução fica
+registrada, mas a recuperação operacional não está concluída e o agente continua bloqueado. A remoção da trava legada
+é procedimento manual separado, fora do agente, que só ocorre com autorização explícita do responsável, depois de
+comprovar e registrar: timer desativado, serviço do agente inativo e nenhum processo dele; B1 executado; trava
+existente e vazia, com inode e mtime registrados (o mtime de um diretório vazio é o da criação, e deve cair entre o
+`criadoEm` do pedido e a reversão; é indício para a decisão humana, não prova automática); todos os registros do
+`estadoDir` `TERMINAL`, com o único `CRITICO` sendo o do pedido e a resolução local idêntica à do S3; SHA-256 do
+registro, do recibo e das resoluções. A remoção é `rmdir` (falha se o diretório não estiver vazio), como o usuário do
+agente, com o `stat` antes e depois; em seguida o B2 é repetido e tem de devolver `JA_RESOLVIDA`. Nenhum recibo,
+registro, pedido ou resolução é editado ou removido nesse procedimento, e as validações do guardião não são
+dispensadas. Um `--pedido` sobre
+o `CRITICO` já resolvido recusa com `CRITICO_JA_RESOLVIDO` e solta a trava que acabou de criar. A fila (B3) só pula um
+recibo `CRITICO` com essa resolução íntegra no S3 e com as cópias locais, se existirem, coincidindo; sem ela continua
+`RECIBO_INVALIDO_OU_CRITICO`. Sem registro local, um pedido com recibo já publicado recusa antes de qualquer registro
+(B3b): `RECIBO_PREEXISTENTE`, sem ler o pedido, baixar, instalar ou publicar, e com a trava solta; sem saber se o
+recibo existe (falha do S3), também nada começa.
+
 ## Autenticação e configurações futuras
 
 Modelos JSON são inertes, com `CONTA` e `BUCKET` a substituir e revisar; não aplicar

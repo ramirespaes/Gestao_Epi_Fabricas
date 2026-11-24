@@ -369,16 +369,17 @@ describe('idempotência, recibos e preservação da trava', () => {
     assert.equal(comTrava(deps), false);
   });
 
-  test('RECIBO_DIVERGENTE: recibo diferente já publicado vira CRITICO local e preserva a trava', async () => {
+  // Correção B (B3b): o recibo já publicado sem registro local é visto antes de qualquer registro ou mudança: nada é
+  // instalado nem publicado, o recibo existente não é sobrescrito e nenhum CRITICO novo prende a trava.
+  test('RECIBO_PREEXISTENTE: recibo já publicado sem registro local recusa antes de registrar, sem instalar nem sobrescrever o recibo', async () => {
     const { s3 } = preparar();
     s3.dados.set(`hml-backend/recibos/${ID}.json`, Buffer.from(JSON.stringify({ id: ID, estado: 'SUCESSO' })));
     const deps = depsDe({ instalar: async () => { throw erroCom('COORDENACAO_NAO_HOMOLOGADA'); } });
-    await assert.rejects(A.processar({ cfg: cfg(), id: ID, s3, deps }), (e) => e.codigo === 'RECIBO_DIVERGENTE');
-    assert.equal(comTrava(deps), true);
-    const reg = registroLocal(deps);
-    assert.equal(reg.fase, 'TERMINAL');
-    assert.equal(reg.resultado.estado, 'CRITICO');
-    assert.equal(reg.resultado.motivo, 'RECIBO_DIVERGENTE');
+    await assert.rejects(A.processar({ cfg: cfg(), id: ID, s3, deps }), (e) => e.codigo === 'RECIBO_PREEXISTENTE');
+    assert.equal(deps.chamadas.instalar, 0);
+    assert.equal(deps.armazem.has(`${ID}.json`), false, 'nenhum registro é gravado');
+    assert.equal(comTrava(deps), false, 'nada mudou: a trava é solta');
+    assert.equal(s3.uso.some(([op]) => op === 'put'), false);
     assert.equal(s3.dados.get(`hml-backend/recibos/${ID}.json`).toString().includes('SUCESSO'), true, 'o recibo existente não é sobrescrito');
   });
 

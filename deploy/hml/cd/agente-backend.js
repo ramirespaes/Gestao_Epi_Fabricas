@@ -32,6 +32,9 @@ const ESCOPO = 'backend';
 const PREFIXO = 'hml-backend';
 const ISOLAMENTO = 'RAIZES_EXCLUSIVAS_HOMOLOGACAO_BACKEND';
 const TRAVA = '.trava-cd-backend';
+// Correção B: arquivo dentro da trava com o id do pedido que a criou, e a trava própria do encerramento de um CRITICO.
+const DONO_DA_TRAVA = 'pedido.json';
+const TRAVA_DA_RESOLUCAO = '.trava-resolucao-cd-backend';
 const chave = (tipo, id) => `${PREFIXO}/${tipo}/${id}.json`;
 const igual = (a, b) => a.rotulo === b.rotulo && a.commit === b.commit;
 
@@ -379,9 +382,12 @@ function dependenciasPadrao(cfg, extras, configuracaoOficial) {
     }),
     observar: (vinculo) => depsDoInstalador(vinculo).lerObservado(),
     identificar: () => I.identificar({ config, componente: ESCOPO }),
-    instalar: (opcoes, release, vinculo, coordenacao, operacao) => I.instalar({ config, componente: ESCOPO, release, opcoes, deps: depsDoInstalador(vinculo, coordenacao, operacao) }),
+    confirmacaoDaRecuperacao: () => I.confirmacaoDaRecuperacao({ config, componente: ESCOPO }),
+    instalar:(opcoes, release, vinculo, coordenacao, operacao) => I.instalar({ config, componente: ESCOPO, release, opcoes, deps: depsDoInstalador(vinculo, coordenacao, operacao) }),
   };
 }
+
+const resultadoSeguro = (r) => Boolean(r) && ((r.estado === 'RECUSADO' && r.mutacao === 'NENHUMA') || (r.estado === 'SUCESSO' && r.verificado === true));
 
 async function processar({ cfg, id, s3, deps: injetadas = {}, configuracaoOficial }) {
   P.exigir(P.ID.test(id), 'ID_INVALIDO');
@@ -398,10 +404,14 @@ async function processar({ cfg, id, s3, deps: injetadas = {}, configuracaoOficia
     if (coordenacao && !liberacaoDaCoordenacao) liberacaoDaCoordenacao = await liberarGuardiao(coordenacao);
     return liberacaoDaCoordenacao;
   };
-  const seguro = (r) => r && ((r.estado === 'RECUSADO' && r.mutacao === 'NENHUMA') || (r.estado === 'SUCESSO' && r.verificado === true));
+  const seguro = resultadoSeguro;
   try {
     base = A.abrirBase(cfg.estadoDir);
     trava = A.criarExclusivo(base, TRAVA);
+    // Correção B: a trava diz de qual pedido é. Se essa identidade não puder ser gravada, nada mudou e a trava é solta.
+    liberar = true;
+    A.escreverAtomico(trava, DONO_DA_TRAVA, JSON.stringify({ versao: 1, id }));
+    liberar = false;
     const anterior = A.lerTexto(base, `${id}.json`);
     let pedido = null, mutacaoIniciada = false, origemIncerta = false, resultado, rastro = {};
     const registrar = async (detalhe) => {
@@ -426,11 +436,24 @@ async function processar({ cfg, id, s3, deps: injetadas = {}, configuracaoOficia
     };
     if (anterior !== null) {
       const registro = JSON.parse(anterior);
+      // Correção B: um CRITICO já resolvido (resolução íntegra, local e no S3) não é refeito, e a trava criada agora,
+      // sem nenhuma mudança, é solta. Sem essa prova, o CRITICO continua bloqueando com a trava.
+      if (registro.versao === 2 && registro.id === id && registro.fase === 'TERMINAL' && ehObjeto(registro.resultado) && registro.resultado.estado === 'CRITICO'
+        && await criticoComResolucao({ A, base, s3, id, texto: anterior })) {
+        liberar = true;
+        P.exigir(false, 'CRITICO_JA_RESOLVIDO');
+      }
       P.exigir(registro.versao === 2 && registro.id === id && registro.fase === 'TERMINAL' && seguro(registro.resultado), 'OPERACAO_PENDENTE_OU_CRITICA');
       pedido = registro.pedido; rastro = registro;
       liberar = true;
       return { id, ...registro.resultado, ...await publicarRecibo(registro.recibo) };
     }
+    // Correção B (B3b): sem registro local (estadoDir perdido), um recibo já publicado mostra que o pedido foi
+    // processado. A recusa vem antes de qualquer registro: nada é lido do pedido, baixado, instalado nem publicado, e a
+    // trava é solta. Sem saber se o recibo existe, também nada começa.
+    let reciboPrevio;
+    try { reciboPrevio = await s3.get(chave('recibos', id)); } catch { liberar = true; P.exigir(false, 'S3_OPERACAO_FALHOU'); }
+    if (reciboPrevio !== null) { liberar = true; P.exigir(false, 'RECIBO_PREEXISTENTE'); }
     await registrar({ fase: 'INICIO', mutacao: 'NENHUMA' });
     try {
       const b = await s3.get(chave('pedidos', id));
@@ -516,6 +539,303 @@ async function processar({ cfg, id, s3, deps: injetadas = {}, configuracaoOficia
   }
 }
 
+// ------------------------------------------------------------ Correção B: CRITICO resolvido (B2) e fila (B3)
+
+// Um CRITICO só sai por decisão humana auditável, e só o da reversão automática cujo reinício de volta não foi
+// confirmado, depois que o instalador confirmou a recuperação (B1) daquela reversão. resolverCritico, sob uma trava
+// própria, confere a trava do pedido, o registro original, a liberação do guardião, o pedido e o recibo publicados, a
+// baseline em uso e a confirmação do instalador presa a este pedido; publica o recibo original se faltar; grava a
+// resolução (cópia local, depois o S3 com gravação única), presa por hash e por identidade ao pedido, à reversão, ao
+// recibo, ao registro e ao guardião; relê o que publicou e só então remove a trava. Nada original é reescrito, e o
+// pedido não volta a ser processado: a fila (B3) só pula esse CRITICO com a resolução íntegra no S3, e a cópia local,
+// se existir, tem de coincidir com ela.
+const chaveDaResolucao = (id) => `${PREFIXO}/recibos/${id}.resolucao.json`;
+const arquivoDaResolucao = (id) => `resolucao-${id}.json`;
+const REGISTRO_DE_PEDIDO = /^([1-9]\d{0,19}-[1-9]\d{0,5})\.json$/;
+const DATA_ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const ehObjeto = (o) => o !== null && typeof o === 'object' && !Array.isArray(o);
+const ordemFixa = (a, b) => a.localeCompare(b, 'en');
+const chavesExatas = (o, nomes) => ehObjeto(o) && P.chavesOrdenadas(o) === [...nomes].sort(ordemFixa).join(',');
+const canonico = (v) => JSON.stringify(v, (k, x) => (ehObjeto(x) ? Object.fromEntries(Object.keys(x).sort(ordemFixa).map((c) => [c, x[c]])) : x));
+const dataValida = (t) => typeof t === 'string' && DATA_ISO.test(t) && !Number.isNaN(Date.parse(t));
+const mesmosBytes = (a, b) => Buffer.isBuffer(a) && Buffer.isBuffer(b) && Buffer.compare(a, b) === 0;
+const CAMPOS_DA_RESOLUCAO = ['versao', 'tipo', 'id', 'escopo', 'pedido', 'recibo', 'registro', 'guardiao', 'baseline', 'instalador', 'resolvidoEm', 'uid'];
+// O CRITICO resolvível: o agente classificou como incerto o reinício que falhou depois da troca (reverteu, mas a
+// recuperação não foi confirmada), e o instalador registrou a recuperação como REINICIO, VERSAO ou SAUDE.
+const DIAGNOSTICOS_DA_REVERSAO = new Set(['REINICIO_FALHOU', 'VERSAO_NAO_COMPROVADA', 'SAUDE_FALHOU']);
+const RECUPERACOES_CONFIRMAVEIS = new Set(['REINICIO', 'VERSAO', 'SAUDE']);
+const crono = (t) => Date.parse(t);
+
+function pedidoDoS3(bytes, id) {
+  P.exigir(bytes !== null, 'PEDIDO_AUSENTE');
+  const pedido = P.validarEstruturaPedido(P.json(bytes));
+  P.exigir(pedido.id === id && P.escopoDoPedido(pedido) === ESCOPO, 'PEDIDO_INVALIDO');
+  return pedido;
+}
+
+// O recibo CRITICO tem de ser deste pedido: mesmo id, commit, release e escopo.
+function reciboCriticoDe(bytes, pedido) {
+  const r = P.json(bytes);
+  P.exigir(ehObjeto(r) && r.id === pedido.id && r.commit === pedido.commit && r.releaseSha256 === pedido.releaseSha256 && r.escopo === ESCOPO
+    && r.estado === 'CRITICO' && r.verificado === false, 'RECIBO_INVALIDO');
+  return r;
+}
+
+// O registro local é o TERMINAL CRITICO do próprio pedido, com a baseline conferida antes da operação e o recibo que
+// ele mesmo montou.
+function registroCriticoDe(texto, id) {
+  let r = null;
+  try { r = JSON.parse(texto); } catch { r = null; }
+  const ok = ehObjeto(r) && r.versao === 2 && r.id === id && r.escopo === ESCOPO && r.fase === 'TERMINAL' && ehObjeto(r.resultado) && r.resultado.estado === 'CRITICO'
+    && ehObjeto(r.pedido) && ehObjeto(r.recibo) && ehObjeto(r.antes) && N.ROTULO.test(r.antes.rotulo || '') && N.SHA_COMPLETO.test(r.antes.commit || '')
+    && canonico(r.recibo) === canonico({ id, commit: r.pedido.commit, releaseSha256: r.pedido.releaseSha256, escopo: ESCOPO, ...r.resultado });
+  P.exigir(ok, 'REGISTRO_NAO_CRITICO');
+  P.exigir(r.resultado.motivo === 'RESULTADO_INCERTO' && DIAGNOSTICOS_DA_REVERSAO.has(r.resultado.diagnostico), 'CRITICO_FORA_DO_ESCOPO');
+  return r;
+}
+
+// O guardião da operação foi encerrado e confirmou a soltura dos cadeados, sem encerramento forçado. A resolução guarda
+// a classificação já feita por liberarGuardiao, sem reinterpretá-la.
+const liberacaoComprovada = (l) => ehObjeto(l) && l.encerramentoComprovado === true && l.cadeadosLiberadosConfirmados === true && l.forcada === false;
+const guardiaoDe = (registro) => ({ liberacao: registro.liberacaoDaCoordenacao.situacao, encerramentoComprovado: true, cadeadosLiberadosConfirmados: true, forcada: false });
+const guardiaoConfere = (g) => chavesExatas(g, ['liberacao', 'encerramentoComprovado', 'cadeadosLiberadosConfirmados', 'forcada']) && typeof g.liberacao === 'string' && liberacaoComprovada(g);
+
+// A confirmação do instalador pertence a este incidente: a reversão é da release deste pedido, aconteceu depois de o
+// pedido ser criado e dentro do prazo da operação, a recuperação foi REINICIO, VERSAO ou SAUDE, o crítico resolvido é o
+// RECUPERACAO_NAO_CONFIRMADA da baseline e a confirmação veio depois da reversão.
+function confirmacaoDoIncidente(c, { pedido, baseline }) {
+  if (!ehObjeto(c) || !ehObjeto(c.reversao) || !ehObjeto(c.criticoResolvido)) return false;
+  const r = c.reversao;
+  return c.evento === 'CONFIRMACAO_RECUPERACAO' && c.rotulo === baseline.rotulo && dataValida(c.em)
+    && r.rotulo === pedido.rotulo && RECUPERACOES_CONFIRMAVEIS.has(r.recuperacao) && dataValida(r.em)
+    && crono(r.em) >= crono(pedido.criadoEm) && crono(r.em) <= crono(pedido.expiraEm) + PRAZOS_DA_OPERACAO.instalacaoMs && crono(c.em) >= crono(r.em)
+    && c.criticoResolvido.motivo === 'RECUPERACAO_NAO_CONFIRMADA' && c.criticoResolvido.release === baseline.rotulo;
+}
+const instaladorDe = (c) => ({
+  evento: c.evento, em: c.em, rotulo: c.rotulo,
+  reversao: { rotulo: c.reversao.rotulo, em: c.reversao.em, recuperacao: c.reversao.recuperacao },
+  criticoResolvido: { motivo: c.criticoResolvido.motivo, release: c.criticoResolvido.release },
+});
+
+const pedidoConfere = (p, { pedidoBytes, pedido }) => chavesExatas(p, ['sha256', 'commit', 'rotulo', 'releaseSha256', 'blobSha256', 'criadoEm', 'expiraEm'])
+  && p.sha256 === N.sha256(pedidoBytes) && p.commit === pedido.commit && p.rotulo === pedido.rotulo && p.releaseSha256 === pedido.releaseSha256
+  && p.blobSha256 === pedido.blobSha256 && p.criadoEm === pedido.criadoEm && p.expiraEm === pedido.expiraEm;
+const reciboConfere = (r, { reciboBytes, recibo }) => chavesExatas(r, ['sha256', 'estado', 'motivo', 'diagnostico'])
+  && r.sha256 === N.sha256(reciboBytes) && r.estado === recibo.estado && r.motivo === recibo.motivo && r.diagnostico === (recibo.diagnostico ?? null);
+const baselineConfere = (res, pedido) => chavesExatas(res.registro, ['sha256', 'fase', 'antes']) && N.HEX64.test(res.registro.sha256) && res.registro.fase === 'TERMINAL'
+  && chavesExatas(res.registro.antes, ['rotulo', 'commit']) && chavesExatas(res.baseline, ['rotulo', 'commit'])
+  && res.baseline.rotulo === res.registro.antes.rotulo && res.baseline.commit === res.registro.antes.commit
+  && N.ROTULO.test(res.baseline.rotulo) && N.SHA_COMPLETO.test(res.baseline.commit) && res.baseline.rotulo !== pedido.rotulo;
+const instaladorConfere = (i, res, pedido) => chavesExatas(i, ['evento', 'em', 'rotulo', 'reversao', 'criticoResolvido'])
+  && chavesExatas(i.reversao, ['rotulo', 'em', 'recuperacao']) && chavesExatas(i.criticoResolvido, ['motivo', 'release'])
+  && confirmacaoDoIncidente(i, { pedido, baseline: res.baseline });
+
+// Identidade completa da resolução contra o pedido e o recibo lidos agora; não basta coincidir um hash.
+function validarResolucao(bytes, contexto) {
+  let r = null;
+  try { r = JSON.parse(bytes.toString('utf8')); } catch { r = null; }
+  const ok = chavesExatas(r, CAMPOS_DA_RESOLUCAO) && r.versao === 1 && r.tipo === 'RESOLUCAO_CRITICO' && r.id === contexto.id && r.escopo === ESCOPO
+    && pedidoConfere(r.pedido, contexto) && reciboConfere(r.recibo, contexto) && baselineConfere(r, contexto.pedido) && guardiaoConfere(r.guardiao)
+    && instaladorConfere(r.instalador, r, contexto.pedido) && dataValida(r.resolvidoEm) && Number.isInteger(r.uid) && r.uid >= 0;
+  P.exigir(ok, 'RESOLUCAO_INVALIDA');
+  return r;
+}
+
+// Além da identidade, a resolução tem de ser desta operação: este registro, este guardião, esta baseline e esta
+// confirmação.
+function conferirResolucaoDaOperacao(bytes, op) {
+  let r;
+  try { r = validarResolucao(bytes, op); } catch { P.exigir(false, 'RESOLUCAO_DIVERGENTE'); }
+  P.exigir(r.registro.sha256 === op.registroSha256 && r.registro.antes.rotulo === op.registro.antes.rotulo && r.registro.antes.commit === op.registro.antes.commit
+    && canonico(r.guardiao) === canonico(guardiaoDe(op.registro))
+    && r.baseline.rotulo === op.baseline.rotulo && r.baseline.commit === op.baseline.commit
+    && canonico(r.instalador) === canonico(instaladorDe(op.confirmacao)), 'RESOLUCAO_DIVERGENTE');
+  return r;
+}
+
+const novaResolucao = (op, resolvidoEm, uid) => ({
+  versao: 1, tipo: 'RESOLUCAO_CRITICO', id: op.id, escopo: ESCOPO,
+  pedido: {
+    sha256: N.sha256(op.pedidoBytes), commit: op.pedido.commit, rotulo: op.pedido.rotulo, releaseSha256: op.pedido.releaseSha256, blobSha256: op.pedido.blobSha256,
+    criadoEm: op.pedido.criadoEm, expiraEm: op.pedido.expiraEm,
+  },
+  recibo: { sha256: N.sha256(op.reciboBytes), estado: op.recibo.estado, motivo: op.recibo.motivo, diagnostico: op.recibo.diagnostico ?? null },
+  registro: { sha256: op.registroSha256, fase: 'TERMINAL', antes: { rotulo: op.registro.antes.rotulo, commit: op.registro.antes.commit } },
+  guardiao: guardiaoDe(op.registro),
+  baseline: { rotulo: op.baseline.rotulo, commit: op.baseline.commit },
+  instalador: instaladorDe(op.confirmacao),
+  resolvidoEm, uid,
+});
+
+// Gravação única: se o objeto falta, tenta gravar e relê; o que vale é o que a releitura mostra.
+async function garantirPublicado(s3, k, bytes, codigo) {
+  let atual = await s3.get(k);
+  if (atual === null) {
+    try { await s3.put(k, bytes); } catch { /* a releitura decide: o objeto pode ter sido gravado */ }
+    atual = await s3.get(k);
+    P.exigir(atual !== null, 'PUBLICACAO_NAO_CONFIRMADA');
+  }
+  P.exigir(mesmosBytes(atual, bytes), codigo);
+}
+
+// Resolução completa de um CRITICO: cópia local igual à do S3, recibo publicado igual ao do registro e identidade
+// íntegra contra o pedido do S3 e o registro local. Só lê; qualquer falha, inclusive de leitura, é "não resolvido".
+async function resolucaoCompleta(A, base, s3, op) {
+  try {
+    const local = A.lerTexto(base, arquivoDaResolucao(op.id));
+    if (local === null) return false;
+    const remota = await s3.get(chaveDaResolucao(op.id));
+    const recibo = await s3.get(chave('recibos', op.id));
+    return remota !== null && local === remota.toString('utf8') && mesmosBytes(recibo, op.reciboBytes) && validarResolucao(remota, op).registro.sha256 === op.registroSha256;
+  } catch { return false; }
+}
+
+// O mesmo para um CRITICO dado pelo texto do registro local (o próprio pedido no processar, ou outro na pendência).
+async function criticoComResolucao({ A, base, s3, id, texto }) {
+  try {
+    const registro = JSON.parse(texto);
+    const pedidoBytes = await s3.get(chave('pedidos', id));
+    const pedido = pedidoDoS3(pedidoBytes, id);
+    const reciboBytes = Buffer.from(JSON.stringify(registro.recibo));
+    const recibo = reciboCriticoDe(reciboBytes, pedido);
+    return await resolucaoCompleta(A, base, s3, { id, pedidoBytes, pedido, reciboBytes, recibo, registroSha256: N.sha256(texto) });
+  } catch { return false; }
+}
+
+async function semOutraPendencia(A, base, s3, id) {
+  for (const e of A.listar(base)) {
+    const m = e.ehArquivo ? REGISTRO_DE_PEDIDO.exec(e.nome) : null;
+    if (!m || m[1] === id) continue;
+    let r = null, texto = null;
+    try { texto = A.lerTexto(base, e.nome); r = JSON.parse(texto); } catch { r = null; }
+    const encerrado = ehObjeto(r) && r.fase === 'TERMINAL' && (resultadoSeguro(r.resultado)
+      || (ehObjeto(r.resultado) && r.resultado.estado === 'CRITICO' && await criticoComResolucao({ A, base, s3, id: m[1], texto })));
+    P.exigir(encerrado, 'OUTRA_OPERACAO_PENDENTE');
+  }
+}
+
+// Retomada depois da remoção da trava: só reconhece a resolução completa, sem gravar nada nem recriar a trava.
+async function jaResolvida(A, base, s3, op) {
+  P.exigir(await resolucaoCompleta(A, base, s3, op), 'TRAVA_AUSENTE');
+  return { id: op.id, estado: 'JA_RESOLVIDA' };
+}
+
+// A trava tem de ser a deste pedido: só o arquivo com o id dele. Uma trava vazia é a de antes da Correção B, que não
+// gravava o dono: ela não prova de quem é (pode ser de outro incidente) e nunca é removida aqui (legada). Devolve a
+// identidade conferida, usada na remoção.
+function conferirTrava(A, base, id) {
+  const aberta = A.abrirFilho(base, TRAVA);
+  try {
+    const conteudo = A.listar(aberta).map((e) => e.nome);
+    if (conteudo.length > 0) {
+      let dono = null;
+      try { dono = conteudo.length === 1 && conteudo[0] === DONO_DA_TRAVA ? JSON.parse(A.lerTexto(aberta, DONO_DA_TRAVA)) : null; } catch { dono = null; }
+      P.exigir(chavesExatas(dono, ['versao', 'id']) && dono.versao === 1 && dono.id === id, 'TRAVA_DE_OUTRO_PEDIDO');
+    }
+    return { identidade: A.identidade(aberta), legada: conteudo.length === 0 };
+  } finally { A.fechar(aberta); }
+}
+
+// Só a trava com o id deste pedido sai; a legada fica, para a remoção manual conferida fora do agente.
+function removerTravaDoPedido(A, base, id, travaConferida, resolucaoSha256) {
+  if (travaConferida.legada) return { id, estado: 'RESOLVIDA_COM_TRAVA_PRESERVADA', motivo: 'TRAVA_SEM_DONO', resolucaoSha256 };
+  A.removerArvore(base, TRAVA, { identidade: travaConferida.identidade });
+  return { id, estado: 'RESOLVIDA', resolucaoSha256 };
+}
+
+async function resolverCritico({ cfg, id, s3, deps: injetadas = {}, configuracaoOficial }) {
+  P.exigir(P.ID.test(id), 'ID_INVALIDO');
+  const base0 = { ...dependenciasPadrao(cfg, undefined, configuracaoOficial), ...injetadas };
+  const A = base0.criarAncora();
+  let base, travaDaResolucao = null, falhou = false;
+  try {
+    base = A.abrirBase(cfg.estadoDir);
+    // Exclusão entre execuções: uma trava própria, criada aqui e sempre removida por esta execução.
+    try { travaDaResolucao = A.criarExclusivo(base, TRAVA_DA_RESOLUCAO); } catch (e) { P.exigir(e.code !== 'EEXIST', 'RESOLUCAO_EM_CURSO'); throw e; }
+    return await resolverSobTrava({ A, base, s3, id, base0 });
+  } catch (e) {
+    falhou = true;
+    throw e;
+  } finally {
+    try {
+      if (travaDaResolucao) { const identidade = A.identidade(travaDaResolucao); A.fechar(travaDaResolucao); A.removerArvore(base, TRAVA_DA_RESOLUCAO, { identidade }); }
+    } catch (e) { if (!falhou) throw e; } finally { A.fecharTudo(); }
+  }
+}
+
+async function resolverSobTrava({ A, base, s3, id, base0 }) {
+  const agora = typeof base0.agora === 'function' ? base0.agora : Date.now;
+  const uid = Number.isInteger(base0.uid) ? base0.uid : process.getuid();
+  const textoDoRegistro = A.lerTexto(base, `${id}.json`);
+  P.exigir(textoDoRegistro !== null, 'REGISTRO_AUSENTE');
+  const registro = registroCriticoDe(textoDoRegistro, id);
+  const pedidoBytes = await s3.get(chave('pedidos', id));
+  const pedido = pedidoDoS3(pedidoBytes, id);
+  P.exigir(canonico(pedido) === canonico(registro.pedido), 'REGISTRO_DIVERGENTE');
+  const reciboBytes = Buffer.from(JSON.stringify(registro.recibo));
+  const recibo = reciboCriticoDe(reciboBytes, pedido);
+  const op = { id, pedidoBytes, pedido, reciboBytes, recibo, registro, registroSha256: N.sha256(textoDoRegistro) };
+  const trava = A.tipo(base, TRAVA);
+  if (trava === null) return jaResolvida(A, base, s3, op);
+  P.exigir(trava.isDirectory(), 'TRAVA_INVALIDA');
+  const travaConferida = conferirTrava(A, base, id);
+  // Nenhuma trava sai, por nenhum caminho, enquanto houver outra operação pendente ou outro CRITICO sem resolução.
+  await semOutraPendencia(A, base, s3, id);
+  // Retomada com tudo já publicado (queda antes da remoção, ou trava recriada depois): só resta a trava.
+  if (await resolucaoCompleta(A, base, s3, op)) {
+    return removerTravaDoPedido(A, base, id, travaConferida, N.sha256(Buffer.from(A.lerTexto(base, arquivoDaResolucao(id)), 'utf8')));
+  }
+  P.exigir(liberacaoComprovada(registro.liberacaoDaCoordenacao), 'GUARDIAO_NAO_LIBERADO');
+  op.baseline = saudavel(await base0.identificar());
+  P.exigir(op.baseline.rotulo === registro.antes.rotulo && op.baseline.commit === registro.antes.commit && op.baseline.rotulo !== pedido.rotulo, 'BASELINE_DIVERGENTE');
+  op.confirmacao = await base0.confirmacaoDaRecuperacao();
+  P.exigir(confirmacaoDoIncidente(op.confirmacao, { pedido, baseline: op.baseline }), 'RECUPERACAO_NAO_CONFIRMADA');
+  // E1: o recibo original, publicado se faltar.
+  await garantirPublicado(s3, chave('recibos', id), reciboBytes, 'RECIBO_DIVERGENTE');
+  // E2: a cópia local; uma resolução já gravada é reaproveitada, nunca gerada de novo.
+  const nome = arquivoDaResolucao(id);
+  if (A.lerTexto(base, nome) === null) {
+    const remota = await s3.get(chaveDaResolucao(id));
+    if (remota === null) A.escreverAtomico(base, nome, JSON.stringify(novaResolucao(op, new Date(agora()).toISOString(), uid)));
+    else { conferirResolucaoDaOperacao(remota, op); A.escreverAtomico(base, nome, remota.toString('utf8')); }
+  }
+  const local = A.lerTexto(base, nome);
+  P.exigir(local !== null, 'RESOLUCAO_NAO_GRAVADA');
+  const bytes = Buffer.from(local, 'utf8');
+  conferirResolucaoDaOperacao(bytes, op);
+  // E3: a resolução no S3, com gravação única.
+  await garantirPublicado(s3, chaveDaResolucao(id), bytes, 'RESOLUCAO_DIVERGENTE');
+  // E4: relê o que foi publicado; só então sai a trava conferida no início (a mesma identidade), se for deste pedido.
+  P.exigir(mesmosBytes(await s3.get(chave('recibos', id)), reciboBytes) && mesmosBytes(await s3.get(chaveDaResolucao(id)), bytes), 'PUBLICACAO_NAO_CONFIRMADA');
+  return removerTravaDoPedido(A, base, id, travaConferida, N.sha256(bytes));
+}
+
+// B3: o CRITICO é pulado só com a resolução íntegra no S3 para este pedido e este recibo, e com as cópias locais (se
+// existirem) coincidindo. Qualquer falha mantém o bloqueio de sempre.
+async function conferirCriticoResolvido({ cfg, id, s3, reciboBytes, deps }) {
+  try {
+    const resolucao = await s3.get(chaveDaResolucao(id));
+    P.exigir(resolucao !== null, 'RESOLUCAO_AUSENTE');
+    const pedidoBytes = await s3.get(chave('pedidos', id));
+    const pedido = pedidoDoS3(pedidoBytes, id);
+    const recibo = reciboCriticoDe(reciboBytes, pedido);
+    const r = validarResolucao(resolucao, { id, pedidoBytes, pedido, reciboBytes, recibo });
+    const A = (deps && typeof deps.criarAncora === 'function' ? deps.criarAncora : () => criarAncora({ exigirDurabilidade: true }))();
+    try {
+      const base = A.abrirBase(cfg.estadoDir);
+      const local = A.lerTexto(base, arquivoDaResolucao(id));
+      P.exigir(local === null || local === resolucao.toString('utf8'), 'RESOLUCAO_DIVERGENTE');
+      const texto = A.lerTexto(base, `${id}.json`);
+      if (texto !== null) {
+        const reg = JSON.parse(texto);
+        P.exigir(N.sha256(texto) === r.registro.sha256 && canonico(reg.pedido) === canonico(pedido) && canonico(reg.recibo) === canonico(recibo), 'REGISTRO_DIVERGENTE');
+      }
+    } finally { A.fecharTudo(); }
+  } catch {
+    P.exigir(false, 'RECIBO_INVALIDO_OU_CRITICO');
+  }
+}
+
 async function processarFila({ cfg, ids, s3, deps, configuracaoOficial }) {
   let ok = true;
   for (const id of ids) {
@@ -523,7 +843,8 @@ async function processarFila({ cfg, ids, s3, deps, configuracaoOficial }) {
     const existente = await s3.get(chave('recibos', id));
     if (existente !== null) {
       const r = P.json(existente);
-      P.exigir(r.id === id && r.escopo === ESCOPO && ['SUCESSO', 'RECUSADO'].includes(r.estado), 'RECIBO_INVALIDO_OU_CRITICO');
+      P.exigir(r.id === id && r.escopo === ESCOPO && ['SUCESSO', 'RECUSADO', 'CRITICO'].includes(r.estado), 'RECIBO_INVALIDO_OU_CRITICO');
+      if (r.estado === 'CRITICO') await conferirCriticoResolvido({ cfg, id, s3, reciboBytes: existente, deps });
       continue;
     }
     const r = await processar({ cfg, id, s3, deps, configuracaoOficial });
@@ -535,7 +856,7 @@ async function processarFila({ cfg, ids, s3, deps, configuracaoOficial }) {
 }
 
 async function principal(argv) {
-  P.exigir(argv[0] === '--config' && ((argv.length === 4 && argv[2] === '--pedido') || (argv.length === 3 && argv[2] === '--pendentes')), 'USO');
+  P.exigir(argv[0] === '--config' && ((argv.length === 4 && ['--pedido', '--resolver-critico'].includes(argv[2])) || (argv.length === 3 && argv[2] === '--pendentes')), 'USO');
   N.verificarContextoDeExecucao();
   P.exigir(process.platform === 'linux', 'LINUX_OBRIGATORIO');
   // C1: só a configuração oficial (dono root, sem escrita por grupo ou outros em todo o caminho) ativa o agente; a
@@ -545,11 +866,16 @@ async function principal(argv) {
   const s3 = criarS3(cfg.s3);
   CLIENTES_S3_OFICIAIS.add(s3);
   if (argv[2] === '--pendentes') P.exigir((await processarFila({ cfg, ids: await s3.listarPedidos(), s3, configuracaoOficial: argv[1] })).ok, 'FILA_COM_FALHAS');
-  else {
+  else if (argv[2] === '--resolver-critico') {
+    const r = await resolverCritico({ cfg, id: argv[3], s3, configuracaoOficial: argv[1] });
+    // RESOLVIDA_COM_TRAVA_PRESERVADA: recibo e resolução publicados, mas a trava legada fica e o agente segue bloqueado.
+    P.exigir(r.estado !== 'RESOLVIDA_COM_TRAVA_PRESERVADA', 'TRAVA_LEGADA_PRESERVADA');
+    P.exigir(r.estado === 'RESOLVIDA' || r.estado === 'JA_RESOLVIDA', 'RESOLUCAO_FALHOU');
+  } else {
     const r = await processar({ cfg, id: argv[3], s3, configuracaoOficial: argv[1] });
     P.exigir(r.estado === 'SUCESSO' && !r.reciboPendente, 'PUBLICACAO_FALHOU');
   }
 }
 
 if (require.main === module) principal(process.argv.slice(2)).catch((e) => { console.error(`Agente do backend recusou: ${e.codigo || 'ERRO'}`); process.exitCode = 1; });
-module.exports = { aplicar, validarConfiguracao, vincularSonda, vincularGuardiao, coletarObservado, processar, processarFila, principal, PRAZOS_DA_OPERACAO, lerIdentidadeDoServico: I.lerIdentidadeDoServico, criarIdentificacaoDoProcesso };
+module.exports = { aplicar, validarConfiguracao, vincularSonda, vincularGuardiao, coletarObservado, processar, processarFila, resolverCritico, principal, PRAZOS_DA_OPERACAO, lerIdentidadeDoServico: I.lerIdentidadeDoServico, criarIdentificacaoDoProcesso };
