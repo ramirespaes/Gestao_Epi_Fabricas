@@ -55,7 +55,7 @@ const {
   copiarParaPreparo, criarLinkNoPreparo, finalizarPreparo, publicarPreparo,
   exigirDependenciasAusentes, inspecionarDependencias, conferirArvorePreparo, confirmarDestinoDoLink,
   lerEstado, gravarEstado, lerMeta, gravarMeta, removerMeta, registrarDiario, lerDiarioDetalhado, lerLinkAtual, lerLinkAnterior,
-  verificarInstalacao, verificarConsistencia, verificarPendencias, escreverVersao, sha256, dentroDe, caminhoReal, operacaoAberta,
+  verificarInstalacao, verificarConsistencia, verificarPendencias, escreverVersao, sha256, dentroDe, caminhoReal, operacaoAberta, ehObjeto,
 } = N;
 
 const iso = (ms) => new Date(ms).toISOString();
@@ -1199,6 +1199,97 @@ function identificacaoPorIdentidade(comp, identidade) {
   };
 }
 
+// ------------------------------------------------------------ confirmação da recuperação
+
+// Correção B (B1): depois de uma reversão automática cujo reinício de recuperação não foi confirmado, a release anterior
+// fica em uso com o crítico RECUPERACAO_NAO_CONFIRMADA e nada mais é aceito. A confirmação vale só para esse estado,
+// com o último evento REVERSAO_AUTOMATICA não recuperado, a release íntegra, consistente e sem operação aberta. A prova
+// é a da confirmação da adoção (caminho real do processo pela identidade do serviço e saúde), sem reinício nem
+// coordenação: nada no servidor muda além do estado, gravado uma vez depois de todas as provas, com o crítico copiado.
+const recusaDaRecuperacao = (mensagem) => erro('CONFIRMACAO_RECUPERACAO_RECUSADA', mensagem);
+// Só o reinício de volta que falhou ou não provou versão ou saúde; COORDENACAO (reinício barrado pela pré-condição) fica
+// de fora, porque nesse caso a compatibilidade da release anterior nunca foi reavaliada.
+const RECUPERACOES_CONFIRMAVEIS = new Set(['REINICIO', 'VERSAO', 'SAUDE']);
+
+async function confirmarRecuperacaoDoBackend({ config: bruta, componente, opcoes = {}, deps = {} } = {}) {
+  const cfg = validarConfig(bruta);
+  const comp = cfg.componentes[componente];
+  if (!comp) throw erro('COMPONENTE_DESCONHECIDO', `componente desconhecido: ${componente}`);
+  if (comp.tipo !== 'backend') throw recusaDaRecuperacao('a confirmação da recuperação existe só para o backend');
+  if (typeof deps.identificarProcesso !== 'function' || typeof deps.verificarSaude !== 'function') throw recusaDaRecuperacao('a confirmação exige a identificação do processo e a verificação de saúde');
+  const reaisPersistentes = revalidarCaminhos(cfg, comp);
+  const agora = deps.agora || Date.now;
+  const provas = { identificarProcesso: deps.identificarProcesso, verificarSaude: deps.verificarSaude, esperar: deps.esperar, usuario: deps.usuario };
+  const A = criarAncoraDaOperacao(deps, opcoes);
+  try {
+    let ctx = null;
+    try { ctx = abrirContextoSeExistir(A, comp); } catch { ctx = null; }
+    if (!ctx) throw recusaDaRecuperacao('não há release instalada do backend');
+    const resultado = await comTrava(ctx, 'confirmar-recuperacao', () => confirmarRecuperacaoSobTrava({ ctx, comp, componente, reaisPersistentes, opcoes, provas, agora }));
+    return finalizarResultado(A, resultado);
+  } finally { A.fecharTudo(); }
+}
+
+async function confirmarRecuperacaoSobTrava({ ctx, comp, componente, reaisPersistentes, opcoes, provas, agora }) {
+  const rotulo = lerLinkAtual(ctx);
+  const estado = lerEstado(ctx);
+  const critico = estado.critico;
+  const reversao = estado.historico.at(-1);
+  const meta = rotulo ? lerMeta(ctx, rotulo) : null;
+  const pendente = Boolean(rotulo) && Boolean(meta) && ehObjeto(critico) && critico.motivo === 'RECUPERACAO_NAO_CONFIRMADA' && critico.release === rotulo
+    && ehObjeto(estado.atual) && estado.atual.rotulo === rotulo && estado.atual.comprovada === false && estado.atual.commit === meta.commit
+    && ehObjeto(reversao) && reversao.evento === 'REVERSAO_AUTOMATICA' && reversao.rotulo !== rotulo && RECUPERACOES_CONFIRMAVEIS.has(reversao.recuperacao) && reversao.recuperacao === critico.recuperacao;
+  if (!pendente) throw recusaDaRecuperacao('só a release em uso com o crítico RECUPERACAO_NAO_CONFIRMADA da última reversão automática (REINICIO, VERSAO ou SAUDE) é confirmada');
+  const v = verificarInstalacao(ctx, rotulo, { persistentesReais: reaisPersistentes });
+  const inconsistencias = verificarConsistencia(ctx, comp, componente, rotulo);
+  if (!v.integro || inconsistencias.length > 0) throw recusaDaRecuperacao(`a release em uso não confere: ${[...v.problemas, ...inconsistencias].slice(0, 3).join('; ')}`);
+  let identificado = null;
+  const deps = { ...provas, identificarProcesso: async () => { identificado = await provas.identificarProcesso(); return identificado; } };
+  const prova = await comprovarExecucao({ ctx, deps, alvoRotulo: rotulo, procAntes: null, tentativas: tentativasDe(opcoes), intervaloMs: intervaloDe(opcoes) });
+  if (!prova.ok || !identificado) throw erro(CODIGO_DA_FALHA[prova.motivo] || 'CONFIRMACAO_RECUPERACAO_RECUSADA', motivoDe(RESUMO_DA_FALHA[prova.motivo] || 'a prova de execução falhou', prova));
+  estado.atual = { ...estado.atual, comprovada: true };
+  estado.critico = null;
+  estado.historico.push({
+    evento: 'CONFIRMACAO_RECUPERACAO', rotulo, commit: meta.commit, releaseSha256: meta.releaseSha256, pid: identificado.pid,
+    reiniciou: false, tentativasDeSaude: prova.tentativas, criticoResolvido: clonar(critico),
+    reversao: { rotulo: reversao.rotulo, em: reversao.em, recuperacao: reversao.recuperacao }, em: iso(agora()), usuario: usuarioDe(provas),
+  });
+  gravarEstado(ctx, estado);
+  return { resultado: 'RECUPERACAO_CONFIRMADA', componente, rotulo, commit: meta.commit, comprovada: true, pid: identificado.pid, avisos: [] };
+}
+
+// Leitura para o agente (B2): a confirmação da recuperação vale enquanto for o último evento, sobre a release em uso
+// comprovada e sem crítico. Devolve também a reversão e o crítico que ela resolveu, para o agente prender a confirmação
+// ao próprio pedido. Só lê; nada é gravado.
+async function confirmacaoDaRecuperacao({ config: bruta, componente, deps = {} } = {}) {
+  const cfg = validarConfig(bruta);
+  const comp = cfg.componentes[componente];
+  if (!comp) throw erro('COMPONENTE_DESCONHECIDO', `componente desconhecido: ${componente}`);
+  let A;
+  try {
+    A = criarAncoraDaOperacao(deps);
+  } catch (falha) {
+    if (falha.codigo !== 'PLATAFORMA_SEM_ANCORA') throw falha;
+    A = criarAncora({ modo: 'leitura' });
+  }
+  try {
+    const ctx = abrirContextoSeExistir(A, comp);
+    if (!ctx) return null;
+    const rotulo = lerLinkAtual(ctx);
+    const estado = lerEstado(ctx);
+    const e = estado.historico.at(-1);
+    const vale = Boolean(rotulo) && !estado.critico && ehObjeto(estado.atual) && estado.atual.rotulo === rotulo && estado.atual.comprovada === true
+      && ehObjeto(e) && e.evento === 'CONFIRMACAO_RECUPERACAO' && e.rotulo === rotulo && typeof e.em === 'string'
+      && ehObjeto(e.reversao) && ehObjeto(e.criticoResolvido);
+    if (!vale) return null;
+    return {
+      evento: e.evento, em: e.em, rotulo: e.rotulo,
+      reversao: { rotulo: e.reversao.rotulo, em: e.reversao.em, recuperacao: e.reversao.recuperacao },
+      criticoResolvido: { motivo: e.criticoResolvido.motivo, release: e.criticoResolvido.release },
+    };
+  } finally { A.fecharTudo(); }
+}
+
 // ------------------------------------------------------------ confirmação da release adotada
 
 // Etapa 4C (D-H1, opção 1): a release adotada nasce comprovada:false e o agente a recusa até ela ser comprovada. A
@@ -1370,7 +1461,7 @@ if (require.main === module) {
 }
 
 module.exports = {
-  instalar, reverter, identificar, reconciliar, adotarBaselineDoBackend, confirmarBaselineAdotada, validarConfig, verificarInstalacao, lerConfigSegura, verificarContextoDeExecucao,
+  instalar, reverter, identificar, reconciliar, adotarBaselineDoBackend, confirmarBaselineAdotada, confirmarRecuperacaoDoBackend, confirmacaoDaRecuperacao, validarConfig, verificarInstalacao, lerConfigSegura, verificarContextoDeExecucao,
   lerIdentidadeDoServico, identidadeDoServicoValida, identificacaoPorIdentidade,
   depsDoConfig, criarConsultaPorArquivo, ErroInstalador, ROTULO,
   CAMINHO_DA_CONFIGURACAO_OFICIAL, origemDaConfiguracaoOficial, lerConfiguracaoOficial,
