@@ -6,6 +6,7 @@ const {
   abrirAmbiente, cookieDoTabletNaResposta, CAMINHO_TABLET, varrer,
 } = require('./helpers/token-tablet');
 const { hashTokenSessao, gerarTokenSessao } = require('../../src/security/token');
+const { aguardarEsperaDaTrava, contarBloqueadosPor } = require('./helpers/aguardar-espera-trava');
 const credencialRepo = require('../../src/repositories/token-credencial.repository');
 const ativacaoRepo = require('../../src/repositories/token-ativacao.repository');
 const dispositivoRepo = require('../../src/repositories/token-dispositivo.repository');
@@ -44,7 +45,7 @@ describe('Atendimento Token — C: corridas determinísticas S1 a S5 (PostgreSQL
   beforeEach(async () => { await a.redes(a.redeDeTeste); });
 
   const estado = (credencial) => a.comoTablet(app, credencial).get(ESTADO);
-  const esperando = async (pidDoConcorrente) => (await a.q('SELECT count(*)::int AS n FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))', [pidDoConcorrente])).rows[0].n;
+  const esperando = (pidDoConcorrente) => contarBloqueadosPor(a.ctx.pool, pidDoConcorrente);
 
   /**
    * Executa `disparar()` (a requisição sob teste) enquanto uma transação concorrente SEGURA a trava da linha do tablet; quando a
@@ -57,13 +58,13 @@ describe('Atendimento Token — C: corridas determinísticas S1 a S5 (PostgreSQL
       await concorrente.query('BEGIN');
       await concorrente.query('SELECT id FROM token_dispositivos WHERE id = $1 FOR UPDATE', [tabletId]);
       const pid = (await concorrente.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
-      let encerrada = false;
-      const resposta = disparar().then((r) => { encerrada = true; return r; });
-      const prazo = Date.now() + LIMITE_DE_SEGURANCA_MS;
-      while (!encerrada && (await esperando(pid)) === 0) {
-        if (Date.now() > prazo) assert.fail('a requisição não chegou a esperar a trava nem terminou (limite de segurança do teste)');
-        await new Promise((resolver) => setImmediate(resolver));
-      }
+      const resposta = disparar();
+      const encerrada = await aguardarEsperaDaTrava({
+        operacao: resposta,
+        contarEsperando: () => esperando(pid),
+        limiteMs: LIMITE_DE_SEGURANCA_MS,
+        mensagem: 'a requisição não chegou a esperar a trava nem terminou (limite de segurança do teste)',
+      });
       assert.equal(encerrada, false, 'a operação deveria ESPERAR a trava do tablet, e não prosseguir com uma leitura já velha');
       await mudanca(concorrente);
       await concorrente.query('COMMIT');

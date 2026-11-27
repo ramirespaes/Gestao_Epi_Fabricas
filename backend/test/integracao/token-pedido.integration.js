@@ -7,6 +7,7 @@ const { ATENDIMENTO_INVALIDO, COOKIE_ATENDIMENTO, cabecalhoCookie, cookieDoAtend
 const { PEDIDO, CHAVES_DO_PEDIDO, CHAVES_DO_ITEM, abrirAmbientePedido } = require('./helpers/token-pedido');
 const { lerSetCookie, cookieDoTabletNaResposta, ORIGEM, IP_TESTE, sha256 } = require('./helpers/token-tablet');
 const { criarLote, transacao } = require('./helpers/entrega-epi');
+const { aguardarEsperaDaTrava, contarBloqueadosPor } = require('./helpers/aguardar-espera-trava');
 const { hashTokenSessao } = require('../../src/security/token');
 const tokenTabletService = require('../../src/services/token-tablet.service');
 const solicitacaoSvc = require('../../src/services/solicitacao-epi.service');
@@ -59,7 +60,7 @@ describe('Atendimento Token — F: pedido do tablet pelo fluxo de solicitações
   const A = () => a.d.empresaA;
   const forcarRestante = (id, segundos) => a.q(`UPDATE token_atendimentos SET iniciado_em = LEAST(iniciado_em, now() - interval '200 seconds'), expira_em = now() + make_interval(secs => $2::int) WHERE id = $1`, [id, segundos]);
   const gerarCodigo = async (tabletId) => (await a.comoAdmin(app, gestor).post(`/api/atendimento-token/dispositivos/${tabletId}/ativacao`)).body.ativacao.codigo;
-  const esperando = async (pid) => (await a.q('SELECT count(*)::int AS n FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))', [pid])).rows[0].n;
+  const esperando = (pid) => contarBloqueadosPor(a.ctx.pool, pid);
 
   /** Cenário padrão: GHE, funcionário e atendimento; devolve também materiais autorizados (grade P/M/G, único e do tipo ativo). */
   async function montar({ funcionario = {} } = {}) {
@@ -528,13 +529,12 @@ describe('Atendimento Token — F: pedido do tablet pelo fluxo de solicitações
       try {
         await Promise.race([instr.pausado('gravando'), primeira.then((x) => assert.fail(`a primeira terminou sem gravar: ${aviso(x)}`)), new Promise((_, rej) => setTimeout(() => rej(new Error('a primeira não chegou a gravar')), LIMITE_DE_SEGURANCA_MS))]);
         segunda = a.finalizar(app, c.t, c.token, payload).then((x) => x);
-        const prazo = Date.now() + LIMITE_DE_SEGURANCA_MS;
-        let terminou = false;
-        segunda.then(() => { terminou = true; });
-        while (!terminou && (await esperando(instr.pid('gravando'))) === 0) {
-          if (Date.now() > prazo) assert.fail('a segunda finalização não chegou a esperar a primeira');
-          await new Promise((resolver) => setImmediate(resolver));
-        }
+        const terminou = await aguardarEsperaDaTrava({
+          operacao: segunda,
+          contarEsperando: () => esperando(instr.pid('gravando')),
+          limiteMs: LIMITE_DE_SEGURANCA_MS,
+          mensagem: 'a segunda finalização não chegou a esperar a primeira',
+        });
         assert.equal(terminou, false, 'a segunda deveria ESPERAR a primeira terminar');
       } finally { instr.liberar('gravando'); }
       const [r1, r2] = [await primeira, await segunda];
@@ -573,13 +573,13 @@ describe('Atendimento Token — F: pedido do tablet pelo fluxo de solicitações
         await concorrente.query('BEGIN');
         await concorrente.query('SELECT id FROM token_dispositivos WHERE id = $1 FOR UPDATE', [d.t.id]);
         const pid = (await concorrente.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
-        let terminou = false;
-        const resposta = enviar(d, [a.item(d.unico)]).then((r) => { terminou = true; return r; });
-        const prazo = Date.now() + LIMITE_DE_SEGURANCA_MS;
-        while (!terminou && (await esperando(pid)) === 0) {
-          if (Date.now() > prazo) assert.fail('a finalização não chegou a esperar a trava do tablet');
-          await new Promise((resolver) => setImmediate(resolver));
-        }
+        const resposta = enviar(d, [a.item(d.unico)]);
+        const terminou = await aguardarEsperaDaTrava({
+          operacao: resposta,
+          contarEsperando: () => esperando(pid),
+          limiteMs: LIMITE_DE_SEGURANCA_MS,
+          mensagem: 'a finalização não chegou a esperar a trava do tablet',
+        });
         assert.equal(terminou, false, 'a finalização deveria esperar a trava do tablet');
         await concorrente.query("UPDATE token_atendimentos SET encerrado_em = clock_timestamp(), motivo_encerramento = 'SUBSTITUIDO' WHERE id = $1", [d.atendimentoId]);
         await concorrente.query('COMMIT');
@@ -598,13 +598,12 @@ describe('Atendimento Token — F: pedido do tablet pelo fluxo de solicitações
       try {
         await Promise.race([instr.pausado('gravando'), primeira.then((x) => assert.fail(`a primeira terminou sem gravar: ${aviso(x)}`)), new Promise((_, rej) => setTimeout(() => rej(new Error('a primeira não chegou a gravar')), LIMITE_DE_SEGURANCA_MS))]);
         segunda = a.finalizar(app, c.t, c.token, a.corpo([a.item(c.comGrade, { tamanho: 'M', quantidade: 3, motivo: 'PERDA_EXTRAVIO' })])).then((x) => x);
-        const prazo = Date.now() + LIMITE_DE_SEGURANCA_MS;
-        let terminou = false;
-        segunda.then(() => { terminou = true; });
-        while (!terminou && (await esperando(instr.pid('gravando'))) === 0) {
-          if (Date.now() > prazo) assert.fail('a segunda finalização não chegou a esperar a primeira');
-          await new Promise((resolver) => setImmediate(resolver));
-        }
+        const terminou = await aguardarEsperaDaTrava({
+          operacao: segunda,
+          contarEsperando: () => esperando(instr.pid('gravando')),
+          limiteMs: LIMITE_DE_SEGURANCA_MS,
+          mensagem: 'a segunda finalização não chegou a esperar a primeira',
+        });
         assert.equal(terminou, false, 'a segunda deveria ESPERAR a primeira terminar');
       } finally { instr.liberar('gravando'); }
       const [r1, r2] = [await primeira, await segunda];
@@ -697,13 +696,13 @@ describe('Atendimento Token — F: pedido do tablet pelo fluxo de solicitações
         await concorrente.query('BEGIN');
         await concorrente.query('SELECT id FROM token_dispositivos WHERE id = $1 FOR UPDATE', [c.t.id]);
         const pid = (await concorrente.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
-        let terminou = false;
-        const resposta = enviar(c, [a.item(c.unico)]).then((r) => { terminou = true; return r; });
-        const prazo = Date.now() + LIMITE_DE_SEGURANCA_MS;
-        while (!terminou && (await esperando(pid)) === 0) {
-          if (Date.now() > prazo) assert.fail('a finalização não chegou a esperar a trava do tablet');
-          await new Promise((resolver) => setImmediate(resolver));
-        }
+        const resposta = enviar(c, [a.item(c.unico)]);
+        const terminou = await aguardarEsperaDaTrava({
+          operacao: resposta,
+          contarEsperando: () => esperando(pid),
+          limiteMs: LIMITE_DE_SEGURANCA_MS,
+          mensagem: 'a finalização não chegou a esperar a trava do tablet',
+        });
         assert.equal(terminou, false);
         await forcarRestante(c.atendimentoId, -5);
         await concorrente.query('COMMIT');
@@ -925,13 +924,13 @@ describe('Atendimento Token — F: pedido do tablet pelo fluxo de solicitações
         await concorrente.query('BEGIN');
         await concorrente.query('SELECT id FROM token_atendimentos WHERE id = $1 FOR UPDATE', [c.atendimentoId]);
         const pid = (await concorrente.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
-        let terminou = false;
-        const resposta = enviar(c, [a.item(c.unico)]).then((r) => { terminou = true; return r; });
-        const prazo = Date.now() + LIMITE_DE_SEGURANCA_MS;
-        while (!terminou && (await esperando(pid)) === 0) {
-          if (Date.now() > prazo) assert.fail('a finalização não chegou a esperar a trava do atendimento');
-          await new Promise((resolver) => setImmediate(resolver));
-        }
+        const resposta = enviar(c, [a.item(c.unico)]);
+        const terminou = await aguardarEsperaDaTrava({
+          operacao: resposta,
+          contarEsperando: () => esperando(pid),
+          limiteMs: LIMITE_DE_SEGURANCA_MS,
+          mensagem: 'a finalização não chegou a esperar a trava do atendimento',
+        });
         assert.equal(terminou, false, 'a finalização deveria esperar o atendimento');
         await concorrente.query("UPDATE token_atendimentos SET encerrado_em = clock_timestamp(), motivo_encerramento = 'SAIDA' WHERE id = $1", [c.atendimentoId]);
         await concorrente.query('COMMIT');

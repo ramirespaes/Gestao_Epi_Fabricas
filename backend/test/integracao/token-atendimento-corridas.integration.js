@@ -4,6 +4,7 @@ const { describe, test, before, beforeEach, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { ATENDIMENTO_INVALIDO, cookieDoAtendimentoNaResposta, abrirAmbienteAtendimento } = require('./helpers/token-atendimento');
 const { cookieDoTabletNaResposta } = require('./helpers/token-tablet');
+const { aguardarEsperaDaTrava, contarBloqueadosPor } = require('./helpers/aguardar-espera-trava');
 const { hashTokenSessao, gerarTokenSessao } = require('../../src/security/token');
 const credencialRepo = require('../../src/repositories/token-credencial.repository');
 const eventoRepo = require('../../src/repositories/token-dispositivo-evento.repository');
@@ -47,7 +48,7 @@ describe('Atendimento Token — D: corridas entre a reativação do tablet e o a
     return { f, t, token: cookieDoAtendimentoNaResposta(r).valor, id: linha.id };
   }
   const forcarRestante = (id, segundos) => a.q(`UPDATE token_atendimentos SET iniciado_em = LEAST(iniciado_em, now() - interval '200 seconds'), expira_em = now() + make_interval(secs => $2::int) WHERE id = $1`, [id, segundos]);
-  const esperando = async (pid) => (await a.q('SELECT count(*)::int AS n FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))', [pid])).rows[0].n;
+  const esperando = (pid) => contarBloqueadosPor(a.ctx.pool, pid);
 
   /** `disparar()` espera a trava do tablet segurada por uma transação que, então, grava `mudanca` e confirma. */
   async function corrida(tabletId, disparar, mudanca) {
@@ -57,13 +58,13 @@ describe('Atendimento Token — D: corridas entre a reativação do tablet e o a
       await concorrente.query('BEGIN');
       await concorrente.query('SELECT id FROM token_dispositivos WHERE id = $1 FOR UPDATE', [tabletId]);
       const pid = (await concorrente.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
-      let encerrada = false;
-      const resposta = disparar().then((r) => { encerrada = true; return r; });
-      const prazo = Date.now() + LIMITE_DE_SEGURANCA_MS;
-      while (!encerrada && (await esperando(pid)) === 0) {
-        if (Date.now() > prazo) assert.fail('a requisição não chegou a esperar a trava nem terminou (limite de segurança do teste)');
-        await new Promise((resolver) => setImmediate(resolver));
-      }
+      const resposta = disparar();
+      const encerrada = await aguardarEsperaDaTrava({
+        operacao: resposta,
+        contarEsperando: () => esperando(pid),
+        limiteMs: LIMITE_DE_SEGURANCA_MS,
+        mensagem: 'a requisição não chegou a esperar a trava nem terminou (limite de segurança do teste)',
+      });
       assert.equal(encerrada, false, 'a operação deveria ESPERAR a trava do tablet');
       await mudanca(concorrente);
       await concorrente.query('COMMIT');
