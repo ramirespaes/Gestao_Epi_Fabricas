@@ -91,7 +91,7 @@ function documentoValido(texto) {
   let documento;
   try { documento = JSON.parse(texto); } catch { return null; }
   if (documento === null || typeof documento !== 'object' || Array.isArray(documento)) return null;
-  const chaves = Object.keys(documento).sort();
+  const chaves = Object.keys(documento).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   if (chaves.length !== CAMPOS.length || chaves.some((chave, i) => chave !== CAMPOS[i])) return null;
   const { versao, tipo, pid, hospedeiro, iniciadoEm, token } = documento;
   const valido = versao === VERSAO && Object.values(TIPOS).includes(tipo) && Number.isSafeInteger(pid) && pid >= 1
