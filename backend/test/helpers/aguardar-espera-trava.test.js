@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { aguardarEsperaDaTrava, contarBloqueadosPor } = require('../integracao/helpers/aguardar-espera-trava');
+const { aguardarEsperaDaTrava, contarBloqueadosPor, corridaSobTravaDoTablet } = require('../integracao/helpers/aguardar-espera-trava');
 
 const nunca = () => new Promise(() => {});
 const timersAtivos = () => process.getActiveResourcesInfo().filter((r) => r === 'Timeout').length;
@@ -119,6 +119,67 @@ test('contarBloqueadosPor: com a consulta cancelada, desfaz a transação e desc
   assert.equal(f.comandos.at(-1), 'ROLLBACK');
   assert.equal(f.liberacoes.length, 1);
   assert.ok(f.liberacoes[0] instanceof Error);
+});
+
+function poolDaCorrida({ esperando = 1 } = {}) {
+  const log = [];
+  let conexoes = 0;
+  const pool = {
+    connect: async () => {
+      const concorrente = conexoes++ === 0;
+      const anotar = (passo) => { if (concorrente) log.push(passo); };
+      return {
+        query: async (sql) => {
+          anotar(sql.split(' ').slice(0, 2).join(' '));
+          if (sql.includes('pg_backend_pid')) return { rows: [{ pid: 7 }] };
+          return { rows: [{ n: esperando }] };
+        },
+        release: () => anotar('release'),
+      };
+    },
+  };
+  return { pool, log };
+}
+
+test('corridaSobTravaDoTablet: segura a trava, aplica a mudança só com a operação esperando, confirma e devolve a resposta', async () => {
+  const { pool, log } = poolDaCorrida();
+  let liberar;
+  const resposta = await corridaSobTravaDoTablet({
+    pool,
+    tabletId: 'tab-1',
+    disparar: () => new Promise((resolver) => { liberar = resolver; }),
+    mudanca: async () => { log.push('mudanca'); liberar('resposta'); },
+    limiteMs: 1000,
+    naoEsperou: 'deveria esperar',
+  });
+  assert.equal(resposta, 'resposta');
+  assert.deepEqual(log, ['BEGIN', 'SELECT id', 'SELECT pg_backend_pid()', 'mudanca', 'COMMIT', 'release']);
+});
+
+test('corridaSobTravaDoTablet: operação que termina sem esperar falha com a mensagem, sem aplicar a mudança, e desfaz a trava', async () => {
+  const { pool, log } = poolDaCorrida({ esperando: 0 });
+  await assert.rejects(
+    corridaSobTravaDoTablet({
+      pool, tabletId: 'tab-1', disparar: async () => 'cedo', mudanca: async () => log.push('mudanca'), limiteMs: 1000, naoEsperou: 'deveria esperar',
+    }),
+    { code: 'ERR_ASSERTION', message: /^deveria esperar/ },
+  );
+  assert.ok(!log.includes('mudanca'));
+  assert.deepEqual(log.slice(-2), ['ROLLBACK', 'release']);
+});
+
+test('corridaSobTravaDoTablet: erro da mudança propaga, desfaz a trava e devolve a conexão', async () => {
+  const { pool, log } = poolDaCorrida();
+  const falha = new Error('mudança falhou');
+  const operacao = nunca();
+  await assert.rejects(
+    corridaSobTravaDoTablet({
+      pool, tabletId: 'tab-1', disparar: () => operacao, mudanca: async () => { throw falha; }, limiteMs: 1000, naoEsperou: 'x',
+    }),
+    (erro) => erro === falha,
+  );
+  assert.deepEqual(log.slice(-2), ['ROLLBACK', 'release']);
+  assert.ok(!log.includes('COMMIT'));
 });
 
 test('não deixa timer ativo depois de detectar a espera', async () => {

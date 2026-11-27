@@ -4,7 +4,7 @@ const { describe, test, before, beforeEach, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { ATENDIMENTO_INVALIDO, cookieDoAtendimentoNaResposta, abrirAmbienteAtendimento } = require('./helpers/token-atendimento');
 const { cookieDoTabletNaResposta } = require('./helpers/token-tablet');
-const { aguardarEsperaDaTrava, contarBloqueadosPor } = require('./helpers/aguardar-espera-trava');
+const { corridaSobTravaDoTablet } = require('./helpers/aguardar-espera-trava');
 const { hashTokenSessao, gerarTokenSessao } = require('../../src/security/token');
 const credencialRepo = require('../../src/repositories/token-credencial.repository');
 const eventoRepo = require('../../src/repositories/token-dispositivo-evento.repository');
@@ -48,33 +48,10 @@ describe('Atendimento Token — D: corridas entre a reativação do tablet e o a
     return { f, t, token: cookieDoAtendimentoNaResposta(r).valor, id: linha.id };
   }
   const forcarRestante = (id, segundos) => a.q(`UPDATE token_atendimentos SET iniciado_em = LEAST(iniciado_em, now() - interval '200 seconds'), expira_em = now() + make_interval(secs => $2::int) WHERE id = $1`, [id, segundos]);
-  const esperando = (pid) => contarBloqueadosPor(a.ctx.pool, pid);
-
   /** `disparar()` espera a trava do tablet segurada por uma transação que, então, grava `mudanca` e confirma. */
-  async function corrida(tabletId, disparar, mudanca) {
-    const concorrente = await a.ctx.pool.connect();
-    let confirmou = false;
-    try {
-      await concorrente.query('BEGIN');
-      await concorrente.query('SELECT id FROM token_dispositivos WHERE id = $1 FOR UPDATE', [tabletId]);
-      const pid = (await concorrente.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
-      const resposta = disparar();
-      const encerrada = await aguardarEsperaDaTrava({
-        operacao: resposta,
-        contarEsperando: () => esperando(pid),
-        limiteMs: LIMITE_DE_SEGURANCA_MS,
-        mensagem: 'a requisição não chegou a esperar a trava nem terminou (limite de segurança do teste)',
-      });
-      assert.equal(encerrada, false, 'a operação deveria ESPERAR a trava do tablet');
-      await mudanca(concorrente);
-      await concorrente.query('COMMIT');
-      confirmou = true;
-      return await resposta;
-    } finally {
-      if (!confirmou) await concorrente.query('ROLLBACK').catch(() => {});
-      concorrente.release();
-    }
-  }
+  const corrida = (tabletId, disparar, mudanca) => corridaSobTravaDoTablet({
+    pool: a.ctx.pool, tabletId, disparar, mudanca, limiteMs: LIMITE_DE_SEGURANCA_MS, naoEsperou: 'a operação deveria ESPERAR a trava do tablet',
+  });
 
   /** A recuperação da Etapa C, com os escritores reais: credencial substituída, sem anterior, e evento ATIVACAO. */
   function recuperar(t) {

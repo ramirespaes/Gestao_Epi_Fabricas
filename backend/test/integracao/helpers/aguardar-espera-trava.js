@@ -65,4 +65,36 @@ async function aguardarEsperaDaTrava({ operacao, contarEsperando, limiteMs, mens
   return assert.fail(mensagem);
 }
 
-module.exports = { aguardarEsperaDaTrava, contarBloqueadosPor };
+const MENSAGEM_SEM_ESPERA = 'a requisição não chegou a esperar a trava nem terminou (limite de segurança do teste)';
+
+/**
+ * Executa `disparar()` enquanto uma transação concorrente SEGURA a trava da linha do tablet; quando a
+ * requisição estiver esperando essa trava, aplica `mudanca(concorrente)` e confirma. Devolve a resposta.
+ * Se a requisição terminar sem esperar, falha com `naoEsperou`; em qualquer falha, desfaz a trava.
+ */
+async function corridaSobTravaDoTablet({ pool, tabletId, disparar, mudanca, limiteMs, naoEsperou }) {
+  const concorrente = await pool.connect();
+  let confirmou = false;
+  try {
+    await concorrente.query('BEGIN');
+    await concorrente.query('SELECT id FROM token_dispositivos WHERE id = $1 FOR UPDATE', [tabletId]);
+    const pid = (await concorrente.query('SELECT pg_backend_pid() AS pid')).rows[0].pid;
+    const resposta = disparar();
+    const encerrada = await aguardarEsperaDaTrava({
+      operacao: resposta,
+      contarEsperando: () => contarBloqueadosPor(pool, pid),
+      limiteMs,
+      mensagem: MENSAGEM_SEM_ESPERA,
+    });
+    assert.equal(encerrada, false, naoEsperou);
+    await mudanca(concorrente);
+    await concorrente.query('COMMIT');
+    confirmou = true;
+    return await resposta;
+  } finally {
+    if (!confirmou) await concorrente.query('ROLLBACK').catch(() => {});
+    concorrente.release();
+  }
+}
+
+module.exports = { aguardarEsperaDaTrava, contarBloqueadosPor, corridaSobTravaDoTablet };
