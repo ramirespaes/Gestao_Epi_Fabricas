@@ -109,6 +109,7 @@ congelamentos, exceções e requisitos não são removidos.
 
 ## S63-040
 
+- **Encerrada em 26/11/2026 (limpeza do frontend legado):** os protótipos `purchases`, `eligibility-rules`, `emails-gestao` e `self-service`, com `js/main.js`, `js/db-api.js` e `js/inspecao-visual.js`, foram removidos. `INSPECAO_PROTOTIPOS`, `hrefDeInspecao` e `liberarInspecao` saíram de `js/permissoes-efetivas.js`; `ocultarPendentes` mantém só a ocultação de "Compras / Entradas" e "Regras Função / Setor". Os itens "Em integração" restantes ficam sem link para todos os perfis, inclusive o MASTER. O registro abaixo é histórico.
 - Liberação visual controlada (TEMPORÁRIA;
 - não é implementação funcional): o MASTER abre os seis protótipos ainda "Em integração" (`reports`, `delivered-items`, `self-service`, `support`, `emails-gestao`, `lgpd`;
 - `config` saiu da lista ao virar a tela integrada de Configurações;

@@ -11,8 +11,8 @@ const P = require('../js/permissoes-efetivas');
 /**
  * Privacidade e LGPD no ponto central da navegação (permissoes-efetivas.js): PAGINAS.lgpd exige lgpd.visualizar; o item
  * "Privacidade / LGPD" que as páginas integradas trazem como "Em integração" passa a abrir lgpd.html SÓ para quem tem a permissão
- * (ajustarMenuLgpd), sem editar as páginas homologadas; a LGPD sai da liberação visual do MASTER (?inspecao=1). Gestão de E-mails
- * e o Totem continuam exatamente como estavam.
+ * (ajustarMenuLgpd), sem editar as páginas homologadas. Gestão de E-mails e o Totem continuam "Em integração", sem link para
+ * nenhum perfil (a inspeção visual do MASTER saiu com os protótipos).
  */
 
 const RAIZ = path.join(__dirname, '..');
@@ -62,14 +62,16 @@ describe('PAGINAS.lgpd e a saída da inspeção', () => {
     assert.equal(P.podeAlterar(corpo({ lgpd: true }), 'lgpd'), false);
   });
 
-  test('INSPECAO_PROTOTIPOS fica só com o Totem e a Gestão de E-mails; o MASTER não recebe mais link de inspeção para a LGPD', () => {
-    assert.deepEqual(P.INSPECAO_PROTOTIPOS, { 'Autoatendimento (Totem)': 'self-service.html', 'Gestão de E-mails': 'emails-gestao.html' });
+  test('sem inspeção de protótipos: os pendentes da LGPD e da Gestão de E-mails não ganham link', () => {
+    assert.equal('INSPECAO_PROTOTIPOS' in P, false);
     const lgpd = pendente('Privacidade / LGPD');
     const emails = pendente('Gestão de E-mails');
-    P.liberarInspecao({ perfil: 'MASTER' }, raizCom([lgpd, emails]));
-    assert.equal(lgpd.atributos.href, undefined, 'LGPD: sem link de inspeção');
-    assert.equal(lgpd.atributos['aria-disabled'], 'true');
-    assert.equal(emails.atributos.href, 'emails-gestao.html?inspecao=1', 'Gestão de E-mails continua em inspeção para o MASTER');
+    P.ocultarPendentes(raizCom([lgpd, emails]));
+    for (const a of [lgpd, emails]) {
+      assert.equal(a.atributos.href, undefined, rotuloDe(a));
+      assert.equal(a.atributos['aria-disabled'], 'true', rotuloDe(a));
+      assert.notEqual(a.style.display, 'none', rotuloDe(a));
+    }
   });
 });
 
@@ -152,11 +154,12 @@ describe('páginas integradas reais', () => {
     assert.equal(itemLgpd(sem).getAttribute('href'), null);
   });
 
-  test('MASTER sem a permissão: nenhum link para a LGPD (nem de inspeção); Gestão de E-mails segue em inspeção para ele', async () => {
+  test('MASTER sem a permissão: nenhum link para a LGPD; Gestão de E-mails segue "Em integração", sem link', async () => {
     const pg = await abrir({ lgpd: false, perfil: 'MASTER' });
     assert.equal(pg.visivelNo(itemLgpd(pg)), false);
     assert.equal(itemLgpd(pg).getAttribute('href'), null);
-    assert.equal(itemEmails(pg).getAttribute('href'), 'emails-gestao.html?inspecao=1');
+    assert.equal(itemEmails(pg).getAttribute('href'), null);
+    assert.equal(itemEmails(pg).getAttribute('aria-disabled'), 'true');
     assert.equal(itemEmails(pg).classList.contains('nav-pendente'), true);
   });
 

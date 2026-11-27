@@ -77,12 +77,6 @@ describe('menu lateral: entrada Funcionários', () => {
     }
     assert.equal(P.NAVEGACAO_OCULTA === undefined || !P.NAVEGACAO_OCULTA.includes('funcionarios'), true);
   });
-
-  test('os protótipos com barra própria não foram tocados', () => {
-    for (const arquivo of ['purchases.html', 'eligibility-rules.html', 'self-service.html', 'emails-gestao.html']) {
-      assert.doesNotMatch(ler(`pages/${arquivo}`), /funcionarios\.html|data-pagina="funcionarios"/, arquivo);
-    }
-  });
 });
 
 // ═══════════════════════════════════════════════════════════════════

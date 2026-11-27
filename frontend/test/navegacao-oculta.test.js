@@ -26,7 +26,7 @@ const OCULTOS = ['stockValidity', 'grupos-acesso', 'grupo-permissoes', 'grupo-us
 const OCULTOS_PENDENTES = ['Compras / Entradas', 'Regras Função / Setor'];
 const VISIVEIS = { gestaoUsuarios: 'Gestão de Usuários', employeeGroups: 'Gestão de GHE', request: 'Pedido de EPI' };
 const PRESERVADOS = [
-  'pages/stock-validity.html', 'pages/purchases.html', 'pages/eligibility-rules.html', 'pages/grupos-acesso.html', 'pages/grupo-permissoes.html',
+  'pages/stock-validity.html', 'pages/grupos-acesso.html', 'pages/grupo-permissoes.html',
   'pages/grupo-usuarios.html', 'pages/autorizacoes-individuais.html', 'pages/new-user.html', 'pages/user-admin.html',
   'js/validade-estoque.js', 'js/grupos-acesso.js', 'js/grupo-permissoes.js', 'js/grupo-usuarios.js', 'js/autorizacoes-individuais.js', 'js/usuarios.js',
   'test/validade-estoque.test.js', 'test/grupos-acesso.test.js', 'test/grupo-permissoes.test.js', 'test/grupo-usuarios.test.js', 'test/autorizacoes-individuais.test.js', 'test/usuarios-paginas.test.js',
@@ -102,17 +102,15 @@ describe('navegação oculta — regra central (permissoes-efetivas.js)', () => 
     assert.ok(links.every((l) => l.style.display === 'none'));
   });
 
-  test('liberarInspecao esconde "Compras / Entradas" e "Regras Função / Setor" (sem link, sem etiqueta visível) e não toca os outros pendentes', () => {
+  test('ocultarPendentes esconde "Compras / Entradas" e "Regras Função / Setor" (sem link, sem etiqueta visível) e não toca os outros pendentes', () => {
     const pendente = (rotulo) => {
       const atributos = { class: 'nav-pendente', 'aria-disabled': 'true', title: 'Em integração' };
       return { atributos, style: {}, childNodes: [{ nodeType: 1, textContent: 'x' }, { nodeType: 3, textContent: rotulo }], getAttribute: (n) => (Object.hasOwn(atributos, n) ? atributos[n] : null), setAttribute: (n, v) => { atributos[n] = String(v); }, removeAttribute: (n) => { delete atributos[n]; } };
     };
     const itens = [pendente('Compras / Entradas'), pendente('Regras Função / Setor'), pendente('Relatórios'), pendente('Suporte')];
-    for (const perfil of ['MASTER', 'USUARIO']) {
-      P.liberarInspecao({ perfil }, { querySelectorAll: (sel) => (sel === 'a.nav-pendente' ? itens : []) });
-      assert.deepEqual(itens.slice(0, 2).map((i) => [i.style.display, i.atributos.href]), [['none', undefined], ['none', undefined]], perfil);
-      assert.deepEqual(itens.slice(2).map((i) => i.style.display), [undefined, undefined], `${perfil}: os demais pendentes não são escondidos por esta regra`);
-    }
+    P.ocultarPendentes({ querySelectorAll: (sel) => (sel === 'a.nav-pendente' ? itens : []) });
+    assert.deepEqual(itens.slice(0, 2).map((i) => [i.style.display, i.atributos.href]), [['none', undefined], ['none', undefined]]);
+    assert.deepEqual(itens.slice(2).map((i) => [i.style.display, i.atributos.href, i.atributos['aria-disabled']]), [[undefined, undefined, 'true'], [undefined, undefined, 'true']], 'os demais pendentes ficam como estão');
   });
 });
 

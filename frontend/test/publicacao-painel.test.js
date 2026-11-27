@@ -52,10 +52,10 @@ const SHA256_QRCODE = '79ec86f82856005b1c887905cfccfcfbec3821ca61c7fd5a952faa5f7
 
 const PROIBIDOS_EXISTENTES = [
   'index.html', 'package.json', 'POPUPS-VISUAL.md', 'SWITCHES-VISUAL.md',
-  'js/main.js', 'js/db-api.js', 'js/auth-session.js', 'js/inspecao-visual.js',
+  'js/auth-session.js',
   'js/pagina-base.js', 'js/tema.js', 'js/portal-cliente.js', 'js/sessao-empresarial.js',
   'css/main.css', 'css/support.css',
-  'pages/dashboard.html', 'pages/support.html', 'pages/emails-gestao.html',
+  'pages/dashboard.html', 'pages/support.html',
   'portal/index.html', 'portal/login.js', 'portal/portal.css', 'portal/config.js',
   'totem/index.html', 'totem/totem.js', 'totem/boot.js',
   'institucional/safework_engenharia_pagina_inicial.html',

@@ -69,8 +69,8 @@ function secoesDoMenu(html) {
 const secao = (html, nome) => secoesDoMenu(html).find((s) => s.nome === nome);
 
 describe('menu: Operações de estoque em ESTOQUE, na mesma ordem em todas as páginas', () => {
-  test('as 25 páginas com menu completo: Visão geral só com Dashboard e Relatórios; Estoque na ordem aprovada', () => {
-    assert.equal(COM_MENU_COMPLETO.length, 25); // + atendimento-token.html (Etapa H) + company-data.html (Dados da Empresa, F2)
+  test('as 21 páginas com menu completo: Visão geral só com Dashboard e Relatórios; Estoque na ordem aprovada', () => {
+    assert.equal(COM_MENU_COMPLETO.length, 21); // + atendimento-token.html (Etapa H) + company-data.html (F2); − os 4 protótipos removidos
     for (const arquivo of COM_MENU_COMPLETO) {
       const html = ler(`pages/${arquivo}`);
       assert.deepEqual(secao(html, 'Visão geral').itens.map((i) => i.rotulo), VISAO_GERAL, arquivo);
