@@ -414,36 +414,6 @@
     });
   }
 
-  // Liberação visual controlada (05/10/2026, TEMPORÁRIA): o MASTER abre os
-  // protótipos ainda "Em integração" só para inspeção. É a única decisão do
-  // frontend pelo NOME do perfil, de propósito e provisória: não é
-  // autorização (os protótipos não têm backend nem gravam nada) e a matriz
-  // definitiva é da 12J. O rótulo do item escolhe o arquivo; a classe
-  // nav-pendente e a etiqueta "Em integração" ficam. O ?inspecao=1 é lido
-  // por js/inspecao-visual.js no protótipo (nunca publicado).
-  // Compras / Entradas (purchases.html) e Regras Função / Setor
-  // (eligibility-rules.html) são MÓDULOS TEMPORARIAMENTE DESATIVADOS / ADIADOS
-  // (05/10/2026): saíram da inspeção, sem link mesmo para o MASTER; os
-  // arquivos ficam preservados para retomada futura.
-  // Privacidade / LGPD saiu daqui: é página integrada (ajustarMenuLgpd) e ?inspecao=1 não a abre.
-  var INSPECAO_PROTOTIPOS = {
-    'Autoatendimento (Totem)': 'self-service.html',
-    'Gestão de E-mails': 'emails-gestao.html',
-  };
-  var MARCADOR_INSPECAO = 'inspecao=1';
-  var TITULO_INSPECAO = 'Em integração — aberta só para inspeção visual (MASTER)';
-
-  // Acrescenta o marcador uma vez só, preservando parâmetros e fragmento já presentes.
-  function hrefDeInspecao(url) {
-    var partes = String(url).split('#');
-    var fragmento = partes.length > 1 ? '#' + partes.slice(1).join('#') : '';
-    var semFragmento = partes[0].split('?');
-    var pares = semFragmento.length > 1 ? semFragmento.slice(1).join('?').split('&') : [];
-    pares = pares.filter(function (p) { return p !== '' && p.indexOf('inspecao=') !== 0; });
-    pares.push(MARCADOR_INSPECAO);
-    return semFragmento[0] + '?' + pares.join('&') + fragmento;
-  }
-
   function rotuloDoItem(a) {
     var nos = a.childNodes || [];
     var partes = [];
@@ -453,28 +423,11 @@
     return partes.join('').trim();
   }
 
-  function liberarInspecao(permissoes, raiz) {
+  // Itens "Em integração": os módulos adiados somem do menu; os demais ficam como o HTML os traz, sem link.
+  function ocultarPendentes(raiz) {
     if (!raiz || typeof raiz.querySelectorAll !== 'function') return;
-    var master = !!(permissoes && permissoes.perfil === 'MASTER');
     Array.prototype.forEach.call(raiz.querySelectorAll('a.nav-pendente'), function (a) {
-      var rotulo = rotuloDoItem(a);
-      // Fora do foco atual: some do menu, sem link, sem etiqueta visível.
-      if (NAVEGACAO_OCULTA_PENDENTES.indexOf(rotulo) !== -1) {
-        a.style.display = 'none';
-        return;
-      }
-      if (!Object.prototype.hasOwnProperty.call(INSPECAO_PROTOTIPOS, rotulo)) return;
-      if (master) {
-        a.setAttribute('href', hrefDeInspecao(INSPECAO_PROTOTIPOS[rotulo]));
-        a.removeAttribute('aria-disabled');
-        a.setAttribute('title', TITULO_INSPECAO);
-        a.style.cursor = 'pointer';
-      } else {
-        a.removeAttribute('href');
-        a.setAttribute('aria-disabled', 'true');
-        a.setAttribute('title', 'Em integração');
-        a.style.cursor = '';
-      }
+      if (NAVEGACAO_OCULTA_PENDENTES.indexOf(rotuloDoItem(a)) !== -1) a.style.display = 'none';
     });
   }
 
@@ -482,7 +435,7 @@
   // integração" passa a se chamar "Atendimento Token" e a abrir a Central, SÓ para quem pode abri-la pelas permissões
   // efetivas (PAGINAS.atendimentoToken). É o ponto central da navegação: nenhuma das páginas homologadas foi editada. Sem
   // permissão (ou com a consulta falha), o item continua exatamente como está; se já tinha sido ajustado e a permissão
-  // some, ele é escondido. O protótipo self-service.html e a liberação visual do MASTER não mudam.
+  // some, ele é escondido.
   var ROTULO_TOTEM_ANTIGO = 'Autoatendimento (Totem)';
   var ROTULO_ATENDIMENTO_TOKEN = 'Atendimento Token';
   var HREF_ATENDIMENTO_TOKEN = 'atendimento-token.html';
@@ -667,7 +620,7 @@
     var r = await carregar(esperadoDoContexto(o.contexto));
     if (!r.ok) {
       aplicarMenu(null, o.links);
-      liberarInspecao(null, documento);
+      ocultarPendentes(documento);
       ajustarMenuAtendimentoToken(null, documento);
       ajustarMenuDadosEmpresa(null, documento);
       ajustarMenuSuporte(null, documento);
@@ -681,7 +634,7 @@
     }
 
     aplicarMenu(r.permissoes, o.links);
-    liberarInspecao(r.permissoes, documento);
+    ocultarPendentes(documento);
     ajustarMenuAtendimentoToken(r.permissoes, documento);
     ajustarMenuDadosEmpresa(r.permissoes, documento);
     ajustarMenuSuporte(r.permissoes, documento);
@@ -710,7 +663,7 @@
       var r = await carregar(esperadoDoContexto(contexto));
       if (!r.ok) {
         aplicarMenu(null, links);
-        liberarInspecao(null, documento);
+        ocultarPendentes(documento);
         ajustarMenuAtendimentoToken(null, documento);
         ajustarMenuDadosEmpresa(null, documento);
         ajustarMenuSuporte(null, documento);
@@ -722,7 +675,7 @@
         return { acao: 'bloquear', mensagem: r.motivo === 'CONTEXTO_DIVERGENTE' ? MENSAGENS.CONTEXTO_DIVERGENTE : MENSAGENS.FALHA };
       }
       aplicarMenu(r.permissoes, links);
-      liberarInspecao(r.permissoes, documento);
+      ocultarPendentes(documento);
       ajustarMenuAtendimentoToken(r.permissoes, documento);
       ajustarMenuDadosEmpresa(r.permissoes, documento);
       ajustarMenuSuporte(r.permissoes, documento);
@@ -756,13 +709,11 @@
     navegacaoOculta: navegacaoOculta,
     NAVEGACAO_OCULTA: NAVEGACAO_OCULTA,
     NAVEGACAO_OCULTA_PENDENTES: NAVEGACAO_OCULTA_PENDENTES,
-    liberarInspecao: liberarInspecao,
+    ocultarPendentes: ocultarPendentes,
     ajustarMenuAtendimentoToken: ajustarMenuAtendimentoToken,
     ajustarMenuDadosEmpresa: ajustarMenuDadosEmpresa,
     ajustarMenuSuporte: ajustarMenuSuporte,
     ajustarMenuLgpd: ajustarMenuLgpd,
-    hrefDeInspecao: hrefDeInspecao,
-    INSPECAO_PROTOTIPOS: INSPECAO_PROTOTIPOS,
     podeAbrir: podeAbrir,
     podeAlterar: podeAlterar,
     administra: administra,

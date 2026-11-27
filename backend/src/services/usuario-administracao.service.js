@@ -22,6 +22,9 @@ const passwordPolicy = require('../security/password-policy');
 const senhaProvisoriaUtil = require('../utils/senha-provisoria');
 const { mascararCpf } = require('../utils/normalizacao');
 
+// Mesma ordem do sort() padrão (S2871); localeCompare mudaria a comparação das listas.
+const compararComoTexto = (a, b) => { const x = String(a); const y = String(b); if (x < y) return -1; return x > y ? 1 : 0; };
+
 /**
  * Administração de usuários da empresa (Bloco 9, parte F): listar,
  * consultar, alterar nome e perfil, inativar e reativar.
@@ -440,8 +443,8 @@ async function alterar(pool, {
     const mudaSetor = setor !== undefined && setor !== dados.setor;
     const mudaHorario = horarioTrabalho !== undefined
       && JSON.stringify(horarioTrabalho) !== JSON.stringify(dados.horarioTrabalho);
-    const ipsAtuais = (await usuarioIpRepo.listar(client, empresaId, alvo.id)).sort();
-    const ipsNovos = ipsPermitidos === undefined ? null : [...new Set(ipsPermitidos)].sort();
+    const ipsAtuais = (await usuarioIpRepo.listar(client, empresaId, alvo.id)).sort(compararComoTexto);
+    const ipsNovos = ipsPermitidos === undefined ? null : [...new Set(ipsPermitidos)].sort(compararComoTexto);
     const mudaIps = ipsNovos !== null && JSON.stringify(ipsNovos) !== JSON.stringify(ipsAtuais);
     if (mudaIps && alvo.id === ator.id && ipsNovos.length > 0 && !ipsNovos.includes(normalizarIp(ip))) {
       throw HttpError.conflict(...ERRO.IP_TRANCARIA);

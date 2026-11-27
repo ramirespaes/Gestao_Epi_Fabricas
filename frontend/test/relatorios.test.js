@@ -356,7 +356,7 @@ describe('Relatórios — página (DOM simulado, sessão e permissões reais)', 
     assert.deepEqual(arquivos, [...arquivos].sort());
     const P = require('../js/permissoes-efetivas'); // eslint-disable-line global-require
     assert.deepEqual(P.PAGINAS.reports, { abrir: [{ recurso: 'materials', operacao: 'visualizar' }, { recurso: 'epiFicha', operacao: 'visualizar' }, { recurso: 'reportsAudit', operacao: 'visualizar' }, { recurso: 'reportsFiscal', operacao: 'visualizar' }], abrirComQualquer: true, alterar: [] });
-    assert.equal('Relatórios' in P.INSPECAO_PROTOTIPOS, false);
+    assert.equal('INSPECAO_PROTOTIPOS' in P, false, 'sem inspeção de protótipos');
   });
 });
 

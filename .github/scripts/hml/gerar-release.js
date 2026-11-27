@@ -34,9 +34,11 @@ class RecusaRelease extends Error {
 }
 
 const sha256 = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex');
+// Mesma ordem do sort() padrão (S2871); localeCompare mudaria o manifesto.
+const compararComoTexto = (a, b) => { const x = String(a); const y = String(b); if (x < y) return -1; return x > y ? 1 : 0; };
 
 function linhasDoManifesto(manifesto) {
-  return `${Object.keys(manifesto).sort().map((rel) => `${manifesto[rel]}  ${rel}`).join('\n')}\n`;
+  return `${Object.keys(manifesto).sort(compararComoTexto).map((rel) => `${manifesto[rel]}  ${rel}`).join('\n')}\n`;
 }
 
 function validarSaida(saida) {

@@ -139,6 +139,52 @@ Em estado crítico: identificar processo e ponteiros, preservar evidência, conf
 diários individuais e registro do par, decidir recuperação manual com autorização,
 verificar as duas origens e só então liberar trava/registro. Não usar `rm` automático.
 
+Correção B do backend: depois da confirmação da recuperação no instalador (B1), o encerramento auditável de um
+`CRITICO` é `lancador-credenciais-backend.js --config <oficial> --resolver-critico <id>` (B2), executado como o
+usuário do agente: o lançador obtém as credenciais temporárias, como no `--pendentes`, e repassa os argumentos ao
+`agente-backend.js` sem alteração; o agente não tem outra origem de credencial. Comando oficial, só com autorização
+explícita e com o timer desativado:
+`sudo -u <usuário do agente> -H env -i PATH=/usr/bin:/bin /usr/bin/node /usr/local/lib/safework-cd/cd/lancador-credenciais-backend.js --config /etc/safework/cd/agente-backend.json --resolver-critico <id>`.
+O `env -i` impede herdar variáveis do operador: o lançador recusa qualquer `AWS_` no próprio ambiente
+(`AMBIENTE_COM_CREDENCIAL`) e monta o do agente do zero. Não usar `sudo -E` nem executar como root (a chave é do
+usuário do agente e o agente recusa root). Só o `CRITICO` da reversão
+automática é resolvível (`RESULTADO_INCERTO` com diagnóstico `REINICIO_FALHOU`, `VERSAO_NAO_COMPROVADA` ou
+`SAUDE_FALHOU`); qualquer outro é `CRITICO_FORA_DO_ESCOPO`. Sob uma trava própria (`.trava-resolucao-cd-backend`;
+outra execução recebe `RESOLUCAO_EM_CURSO`, e uma deixada por queda exige conferência manual), ele confere:
+a trava do agente, que guarda o id do pedido que a criou (`pedido.json`; com outro id ou outro conteúdo é
+`TRAVA_DE_OUTRO_PEDIDO`; vazia é legada, de antes desta correção, e sua propriedade não se prova); o registro
+`TERMINAL` `CRITICO` original; a liberação do guardião registrada (encerramento
+comprovado, soltura dos cadeados conferida e sem força; senão `GUARDIAO_NAO_LIBERADO`); a ausência de outro registro
+pendente ou de outro `CRITICO` sem resolução íntegra; o pedido do S3; a baseline em uso igual à registrada antes da
+operação; e a confirmação do instalador presa a este incidente (reversão da release deste pedido, depois de o pedido
+ser criado e dentro do prazo da operação, recuperação `REINICIO`, `VERSAO` ou `SAUDE`, crítico resolvido
+`RECUPERACAO_NAO_CONFIRMADA` da baseline). Publica o recibo original se faltar; grava a resolução
+(`resolucao-<id>.json` local e `hml-backend/recibos/<id>.resolucao.json` com gravação única), presa por hash e
+identidade ao pedido, à reversão, ao recibo, ao registro e ao guardião; relê o publicado e só então remove a trava
+conferida, se ela tiver o id deste pedido. Nenhuma trava sai, por caminho algum, enquanto houver outro registro
+pendente ou outro `CRITICO` sem resolução íntegra (`OUTRA_OPERACAO_PENDENTE`). Repetir é seguro: uma resolução gravada
+é reaproveitada; com a resolução completa, só resta a trava; sem a trava, só a resolução completa é reconhecida
+(`JA_RESOLVIDA`). Nada original é reescrito.
+
+Trava legada vazia: o agente nunca a remove. O B2 ainda conclui o que é seguro (recibo original, resolução íntegra
+local e no S3, releitura), devolve `RESOLVIDA_COM_TRAVA_PRESERVADA` (motivo `TRAVA_SEM_DONO`) e mantém a trava; repetir
+não grava nada. A linha de comando `--resolver-critico` sai com falha `TRAVA_LEGADA_PRESERVADA`: a resolução fica
+registrada, mas a recuperação operacional não está concluída e o agente continua bloqueado. A remoção da trava legada
+é procedimento manual separado, fora do agente, que só ocorre com autorização explícita do responsável, depois de
+comprovar e registrar: timer desativado, serviço do agente inativo e nenhum processo dele; B1 executado; trava
+existente e vazia, com inode e mtime registrados (o mtime de um diretório vazio é o da criação, e deve cair entre o
+`criadoEm` do pedido e a reversão; é indício para a decisão humana, não prova automática); todos os registros do
+`estadoDir` `TERMINAL`, com o único `CRITICO` sendo o do pedido e a resolução local idêntica à do S3; SHA-256 do
+registro, do recibo e das resoluções. A remoção é `rmdir` (falha se o diretório não estiver vazio), como o usuário do
+agente, com o `stat` antes e depois; em seguida o B2 é repetido e tem de devolver `JA_RESOLVIDA`. Nenhum recibo,
+registro, pedido ou resolução é editado ou removido nesse procedimento, e as validações do guardião não são
+dispensadas. Um `--pedido` sobre
+o `CRITICO` já resolvido recusa com `CRITICO_JA_RESOLVIDO` e solta a trava que acabou de criar. A fila (B3) só pula um
+recibo `CRITICO` com essa resolução íntegra no S3 e com as cópias locais, se existirem, coincidindo; sem ela continua
+`RECIBO_INVALIDO_OU_CRITICO`. Sem registro local, um pedido com recibo já publicado recusa antes de qualquer registro
+(B3b): `RECIBO_PREEXISTENTE`, sem ler o pedido, baixar, instalar ou publicar, e com a trava solta; sem saber se o
+recibo existe (falha do S3), também nada começa.
+
 ## Autenticação e configurações futuras
 
 Modelos JSON são inertes, com `CONTA` e `BUCKET` a substituir e revisar; não aplicar
@@ -273,3 +319,233 @@ seguro e não mantêm a fila bloqueada por mera expiração do pedido.
 Referências técnicas consultadas para a implementação: [OIDC GitHub](https://docs.github.com/en/actions/reference/security/oidc),
 [criação condicional S3](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html)
 e [ação oficial de credenciais fixada](https://github.com/aws-actions/configure-aws-credentials/tree/b47578312673ae6fa5b5096b330d9fbac3d116df).
+
+## Backend: agente, identidade e pré-condição de migrations (Etapa 2B)
+
+Estado: **Não ativado.** Esta etapa entrega só código, modelos e testes locais.
+Nada foi executado, instalado ou configurado na AWS nem no GitHub: o environment `homologacao-backend`, a role, as variáveis, o agente no servidor e a
+publicação do backend continuam inexistentes ou desabilitados. O `agente.js` do frontend, o instalador, a coordenação e
+os workflows não foram alterados (hashes conferidos por `frontend-inalterado.test.js`).
+
+**Identidade e prefixo.** Os modelos `iam-confianca-backend.modelo.json`, `iam-publicador-backend.modelo.json`,
+`iam-agente-backend.modelo.json` e `s3-politica-backend.modelo.json` são inertes (só marcadores `CONTA` e `BUCKET`) e usam o
+prefixo `hml-backend/` do bucket existente. A confiança aceita só o `sub` do environment `homologacao-backend`; o publicador
+escreve só blobs e pedidos e lê só recibos; o agente lê pedidos e blobs e escreve só recibos. Nenhum modelo do backend
+alcança `hml/`, e nenhum do frontend alcança `hml-backend/` (`iam-backend-modelos.test.js`).
+
+**Agente do backend.** `agente-backend.js` é um módulo separado, com `agente.config.backend.exemplo.json` nascendo
+`habilitado: false`. Ele só entrega o pedido ao instalador, que recusa o backend com `COORDENACAO_NAO_HOMOLOGADA` enquanto
+não houver provedor homologado com o D-ORF-6. O agente não declara coordenação, não aceita atestado e não pula a prova de
+versão (que é a do processo efetivamente executado, configurada em `processo`).
+
+**Classificação do resultado (conservadora).** Só é `RECUSADO` com `mutacao=NENHUMA`, e libera a trava, a recusa que sai das guardas iniciais do instalador, antes de abrir contexto, trava ou diário: `COORDENACAO_NAO_HOMOLOGADA`, `SAUDE_NAO_CONFIGURADA`, `REINICIO_NAO_CONFIGURADO` e `VERSAO_NAO_COMPROVAVEL` (cada um tem um único ponto de lançamento, fixado por teste), além das recusas do próprio agente antes de chamar o instalador (pedido, escopo, blob, expiração). `OPERACAO_EM_CURSO` e `COORDENACAO_NAO_CONFIRMADA` também são lançadas depois de preparar a release e depois de trocar o link; por isso, depois de iniciada a instalação, resultam em `CRITICO` com `motivo=RESULTADO_INCERTO`. Falha que o instalador declara crítica (`FALHA_POS_TROCA`, `FALHA_POS_REINICIO`, `ESTADO_CRITICO` ou `detalhes.critico`) resulta em `CRITICO` com `motivo=FALHA_CRITICA_APOS_ALTERACAO`. O recibo leva só o código no campo `diagnostico`. Em todo `CRITICO` a trava é preservada, novos processamentos ficam bloqueados e nenhuma reversão automática é executada: o operador recebe o diagnóstico e decide.
+
+**Sucesso exige o resultado do instalador.** `SUCESSO` só com resultado `INSTALADA`, `JA_INSTALADA` ou `CONFIRMADA`, sem aviso `ESTADO_NAO_ATUALIZADO` ou `DURABILIDADE_NAO_GARANTIDA` e com a identidade instalada igual à da release aprovada. Resultado não reconhecido vira `CRITICO` com `motivo=RESULTADO_NAO_RECONHECIDO`; aviso de registro não durável vira `CRITICO` com `motivo=SUCESSO_SEM_REGISTRO_DURAVEL`. `RETENCAO_FALHOU` é só aviso, porque a release já foi comprovada.
+
+**Recuperação interna do instalador.** O instalador possui mecanismo interno de recuperação: depois de falha pós-troca ou pós-reinício ele tenta voltar à release anterior, com reinício e prova, ou fica crítico. O agente não pode desligá-lo e não executa nenhuma reversão adicional nem restauração. Esse mecanismo só passa a atuar depois de uma coordenação homologada com o D-ORF-6, que hoje não existe, e deve entrar na decisão de homologação.
+
+**Dependências entregues ao instalador e estado observado do banco.** O agente entrega ao instalador o que o próprio `depsDoConfig` monta da configuração (instalação de dependências, reinício, health e prova de processo) e a leitura do estado das migrations aplicadas (`lerObservado`). Esse estado vem de `backend/scripts/sonda-estado-observado.js`, executado da release já instalada pelo comando `sonda` da configuração local do agente; nunca vem do pedido nem do pacote. A sonda reutiliza `inspecionarMigrations` com conexão própria: credencial dedicada de leitura lida de um arquivo local (`sonda.credencial`, passado como `--credencial <caminho>`; arquivo regular, do próprio usuário, sem acesso de grupo ou outros, sem link no caminho), nunca de variável de ambiente nem do `.env` da aplicação, de modo que a senha não é herdada por `npm ci`, reinício, PID ou health nem passa pelo agente; limites de conexão, de consulta e de execução; sessão somente leitura; só `SELECT`. A identidade é consultada na mesma sessão: nome do banco, identificador único do cluster (`pg_control_system`, sem privilégio administrativo e independente de TCP, TLS ou socket) e a confirmação de que o servidor não é réplica em recuperação. O agente confronta banco e cluster com `sonda.banco` e `sonda.sistema` da configuração local. Antes de executar a sonda, o agente exige a release instalada íntegra, pela identificação do instalador, e prende a sonda a essa baseline física (`.releases/<nome>/<rótulo>`, nunca pelo link corrente): todas as coletas da operação executam o roteiro dessa baseline, mesmo depois de o instalador trocar o link, de modo que a sonda da release candidata nunca decide a própria compatibilidade; não há substituta se a baseline ficar indisponível, e o vínculo não é reaproveitado entre operações. Formato exigido de `sonda.comando`: o executável (caminho absoluto, fora da árvore de releases) na primeira posição e o roteiro da sonda na segunda, imediatamente depois dele, relativo à baseline ou absoluto dentro dela; o que vier depois só pode ser opção simples, sem caminho. Configuração fora desse formato (opção antes do roteiro, roteiro pelo link corrente ou fora da baseline, argumento com caminho) é recusada com `ESTADO_OBSERVADO_INDISPONIVEL`. Falha fechada: erro, timeout, banco ou cluster diferente do configurado, tabela de controle ausente ou vazia e saída fora do contrato são recusa, e em erro só o código é escrito. O agente coleta antes de baixar o pacote (falha aqui é `RECUSADO` com `mutacao=NENHUMA`, sem trava e sem diretório de entrada) e o instalador coleta de novo em cada pré-condição, com a validade de 15 minutos inalterada; origem e horário são carimbados pelo agente. Limite da identidade: um clone físico do cluster promovido a primário mantém o mesmo identificador. Não ativado: o papel de leitura no PostgreSQL e o arquivo de credencial não foram criados, e a sonda não foi executada contra banco real. Ela não fornece hash das migrations aplicadas (o banco não o guarda), então não alimenta o `estado.json` do verificador de migrations.
+
+**Migrations continuam separadas do CD.** O CD do backend não aplica migrations. O caminho oficial segue sendo
+`npm run db:migrate` com `DB_NAME` explícito, e o executor não foi alterado (transação única, trava consultiva em modo
+`fail`, ordem verificada, sem `down`).
+
+**Pré-condição obrigatória antes de qualquer migration futura.** `precondicao-migrations.js` é um verificador puro: lê o
+`release.json` (com o hash aprovado), o estado do banco, o recibo de backup, o recibo de restauração e o SQL das
+migrations pendentes, e emite um laudo selado por SHA-256, vinculado a commit, release e dump.
+Ele não aceita um recibo de backup isolado: exige, juntos, (1) backup do banco atual com no máximo 24 horas, (2) restauração do mesmo dump em
+instância nova, nunca sobre o banco de origem, com no máximo 72 horas, integridade do dump e sentinelas aprovadas, e
+reproduzindo a última migration e a contagem do banco, (3) migrations pendentes iguais às do release, em ordem e com o SQL
+conferido por hash e aprovado pelo classificador de SQL descrito abaixo, e (4) estado do banco com carimbo `estado.coletadoEm` de no máximo 30 minutos, sem data futura
+(ausente ou inválido: `ESTADO_INVALIDO`; vencido: `ESTADO_VENCIDO`). O laudo vale no máximo 4 horas e nunca além do vencimento do backup, da
+restauração ou de 30 minutos da coleta do estado.
+
+Nesta etapa a obrigatoriedade é **procedimental**: `db:migrate` só roda com laudo `APROVADO` e válido, e isso não é
+controle técnico, porque o executor não consulta o laudo. Um gate técnico (no workflow, no agente ou no executor) exige
+etapa e autorização próprias.
+
+**Falha.** O verificador sai com código 2, escreve o diagnóstico legível e para. Ele não executa restauração, não
+reverte nada e não altera o banco; só lê arquivos. Backup real, restauração real e ensaio de recuperação seguem
+dependendo do D-ORF-6 e de autorização própria.
+
+**Limites conhecidos do verificador.** O SHA-256 sem autenticação comprova integridade, mas não origem: quem altera o laudo recalcula o hash, e os recibos de backup e de restauração, o `estado.json` e o `coletadoEm` são autodeclarados, porque o verificador não lê o banco nem o dump; o carimbo evita erro por arquivo antigo, não fraude.
+
+**Classificador de SQL das migrations pendentes.** O executor aplica o lote numa única transação, então cada migration pendente é classificada antes, pelo texto do arquivo, em `OK` ou numa de três reprovações:
+
+- `SQL_RECORTAVEL`: o arquivo contém um marcador de seção. O node-pg-migrate 9.0.0 (`sqlMigration.js`) procura, com a expressão `^\s*--[\s-]*(up|down)\s+migration` (por linha, sem distinguir maiúsculas), os marcadores `-- up migration` e `-- down migration`, sem saber se estão dentro de literal, corpo ou comentário de bloco, e executa só o trecho recortado. Como o texto executado não seria o analisado, o arquivo é reprovado com a mesma expressão do executor. Comentários comuns não são afetados: só reprova a linha que começa pelo marcador.
+- `SQL_MALFORMADO`: literal, identificador entre aspas, comentário de bloco ou corpo `$tag$` sem fechamento. O texto não pôde ser varrido com segurança.
+- `SQL_NAO_TRANSACIONAL`, em dois grupos de regras:
+  - palavras procuradas com os comentários removidos, com literais e corpos visíveis e também em branco: `CONCURRENTLY`, `VACUUM`, `CREATE|DROP DATABASE`, `CREATE|DROP TABLESPACE`, `ALTER SYSTEM`, `CREATE|ALTER|DROP SUBSCRIPTION` e `REINDEX` de `DATABASE`, `SYSTEM` ou `SCHEMA` (inclusive com lista de opções entre parênteses);
+  - comandos reprovados pelo início, com literais, identificadores e corpos em branco e o texto separado por ponto e vírgula: `BEGIN`, `START`, `COMMIT`, `END`, `ROLLBACK`, `ABORT`, `PREPARE TRANSACTION`, `SAVEPOINT`, `RELEASE` e `CALL`, em qualquer variante, com argumentos ou sem ponto e vírgula final.
+
+A varredura segue o lexer do PostgreSQL 16: o comentário de linha termina em `\n` ou em `\r`; o comentário de bloco aninha; a continuação de literal em outra linha (quebra de linha, espaços e comentários de linha, e nova aspa) pertence ao mesmo literal e mantém o modo, de forma que um `E'…'` continua com escapes de barra invertida; a marca `$tag$` é reconhecida sem limite de comprimento; e todo caractere não ASCII vale como letra de identificador e de marca. O END de um bloco procedural fica dentro do corpo e não conta como fim de transação.
+
+Falsos positivos conservadores aceitos, que exigem reescrever a migration nova: palavra proibida dentro de literal ou corpo (um `COMMENT ON` que contenha `concurrently`, por exemplo); função ou procedimento com corpo SQL padrão sem aspas (`BEGIN ATOMIC … END`), cujo `END` fica no nível dos comandos; todo `CALL`, `SAVEPOINT` ou `RELEASE`, mesmo legítimo; `PREPARE` de um comando preparado chamado `transaction`; e qualquer arquivo com marcador de seção, mesmo no uso normal do node-pg-migrate.
+
+Limitações remanescentes do classificador: ele não interpreta o SQL nem consulta o banco, e o comportamento do PostgreSQL foi tomado das regras do lexer e da documentação, ou seja, não foi verificado em PostgreSQL real; assume `standard_conforming_strings` ligado (o padrão); não reconhece comandos que só falham dentro da transação e não estão na lista (formas de `CLUSTER`, `DISCARD ALL`, `ALTER DATABASE … SET TABLESPACE` e outros), que geram erro em tempo de execução e desfazem o lote inteiro (falha segura); um corpo de `DO` ou de função que tente controlar a transação passa pelo classificador e falha do mesmo modo; um cifrão logo depois de um número é tratado como parte de identificador, o que só ocorre em SQL sintaticamente inválido; e efeitos que um `ROLLBACK` não desfaz (sequences, `NOTIFY`, funções com efeito externo) não são avaliados. As 97 migrations atuais são classificadas `OK` (testado).
+
+**B4, pendente para a etapa de IAM.** A confiança OIDC do backend se limita ao `sub` do environment `homologacao-backend`; a restrição à `main` depende da política de branch desse environment, que ainda não existe. Avaliar na etapa de IAM uma condição em `job_workflow_ref` e `repository_id`, somente depois de comprovar a compatibilidade com a AWS em execução real. Nada disso foi aplicado nesta etapa.
+
+## Conjunto do mesmo commit: backend preparado, não publicado (Etapas 3B-3 e 3B-4)
+
+O `deploy-hml.yml` ganhou um quarto job, `conjunto`, depois de `publicar`. Os gatilhos, os jobs `validar`, `empacotar` e `publicar`, o environment `homologacao` e os controles de autorização não mudaram: o texto do arquivo anterior ao job novo é o mesmo de antes, byte a byte (provado em `workflow-unificado.test.js`).
+
+O job `conjunto` roda só para a cabeça atual da main (`atual == 'true'`); release retroativa, que é rollback do frontend, não prepara backend. O `if` dele repete, literalmente, a guarda de origem do job `validar` (disparo manual, ou `workflow_run` de push na `main` do próprio repositório com CI verde), além de depender do sucesso do `validar`: a redundância é deliberada, porque a análise estática do SonarCloud (regra S7631) avalia cada job isoladamente. Ele:
+
+1. faz o checkout da `main` do próprio repositório (nunca de um ref vindo do evento, regra S7631 do SonarCloud) e confere que o `HEAD` é exatamente o commit validado, com a árvore limpa; se a `main` avançou depois da validação, o job falha nesse passo, antes de executar qualquer script, e registra `PREPARACAO_CONJUNTO_FALHOU`;
+2. gera a release do backend com `deploy/hml/empacotar-backend.js`, com o mesmo commit e o mesmo rótulo do frontend;
+3. baixa, pelo identificador, o artefato do frontend desta execução;
+4. roda `.github/scripts/hml/conferir-conjunto.js`, que valida cada release com o validador oficial do seu escopo e exige o mesmo commit, o mesmo rótulo, nenhuma retroativa e a lista de migrations do `release.json` do backend igual à do pacote;
+5. guarda a release do backend e o `conjunto.json` como artefato de 14 dias.
+
+O identificador do conjunto é o SHA-256 de `safework-hml-conjunto-v1`, commit, rótulo e os SHA-256 dos dois `release.json`, um por linha. O hash do frontend usado é o fixado pelo job `empacotar` antes da aprovação.
+
+Limites desta etapa:
+
+- **O backend não é publicado.** O job não tem environment, OIDC, variáveis de repositório nem credenciais, e não chama `publicar.js`; nenhum pedido chega a `hml-backend/`.
+- **O `conjunto.json` identifica releases preparadas, e só isso.** Traz `tipo: RELEASES_PREPARADAS`, `comprovaPublicacao: false` e `comprovaInstalacao: false`, válidos para os três componentes. Publicação e instalação só são comprovadas pelo recibo de cada publicação; o resumo da execução diz o mesmo.
+- **O frontend não depende do job novo, e o job novo não reprova a execução.** `publicar` continua com `needs: [validar, empacotar]`, sem alteração. O job `conjunto` é o único do arquivo com `continue-on-error: true`, no nível do job: se a preparação ou a conferência do backend falhar, o job aparece como falho, o log e o resumo trazem `PREPARACAO_CONJUNTO_FALHOU`, e a conclusão da execução continua sendo a de `validar`, `empacotar` e `publicar`. Nenhum passo, de nenhum job, tolera falha; uma falha no próprio `publicar` continua reprovando a execução. `PREPARACAO_CONJUNTO_CONFERIDA` no resumo significa só que a conferência terminou; o armazenamento do artefato é o passo seguinte e, se falhar, o resumo traz também `PREPARACAO_CONJUNTO_FALHOU`, que prevalece.
+- **A aprovação não espera o job `conjunto`.** Ele costuma terminar antes, mas quem aprova deve olhar o resultado dele; uma divergência entre as releases não impede a publicação de Portal e Painel.
+- **Migrations seguem no gate existente.** O CI não enxerga o banco. A compatibilidade com o estado observado continua decidida no servidor, pelo instalador, e nenhuma migration é executada pelo CD.
+- **Nada foi ativado.** O agente do backend, o provedor de coordenação e o instalador seguem como estavam, com `COORDENACAO_NAO_HOMOLOGADA`. A entrega do backend pelo fluxo unificado, a aprovação única dos três componentes e a confiança OIDC correspondente ficam para etapa própria, depois da 3B-2B.
+
+## Guardião de coordenação no agente do backend (Etapa 3B-2B-1)
+
+O agente do backend (`agente-backend.js`) passa a usar o provedor `coordenacao-por-guardiao.js`, que inicia o guardião `backend/scripts/guardiao-de-coordenacao.js` e mantém, numa sessão PostgreSQL dedicada, a exclusão `MIGRACAO` do D-ORF-6 (as quatro chaves de backup, restauração, limpeza e migração).
+
+Configuração (`agente.config.backend.exemplo.json`): seção `guardiao` com `comando` de exatamente dois itens (executável absoluto, fora da árvore de releases, e o roteiro relativo à release) e `credencial` com caminho absoluto, diferente da credencial da sonda. O cluster esperado é o `sistema` da sonda. Sem essa seção, a configuração é recusada com `GUARDIAO_NAO_CONFIGURADO`.
+
+Ciclo de uma operação:
+
+1. Na pré-checagem, o roteiro do guardião é vinculado à mesma baseline física da sonda (`.releases/<nome>/<rótulo>`), pelas mesmas regras; vínculo impossível recusa antes de baixar o pacote (`GUARDIAO_NAO_VINCULADO`).
+2. Depois de o pacote ser extraído e antes de `INSTALACAO_INICIADA`, o agente cria o provedor e adquire a exclusão. Outra operação do D-ORF-6 em curso recusa sem mutação com `COORDENACAO_OCUPADA`; qualquer aquisição sem garantia (indisponível, identidade divergente, resposta fora do formato, exceção) recusa com `COORDENACAO_NAO_ADQUIRIDA`.
+3. O instalador recebe como `consultarCoordenacao` somente o `consultar` desse provedor; nenhuma dependência extra o substitui. Ele continua consultando antes do preparo, antes da troca e antes do reinício. Se a coordenação deixa de ser confirmada antes do reinício, nada é reiniciado, o link volta e o resultado é `CRITICO`, com a trava preservada.
+4. O guardião é liberado antes do registro final, em qualquer resultado (sucesso, recusa ou `CRITICO`), e de novo no `finally` se algo lançar antes. O resultado da liberação fica no registro local (`liberacaoDaCoordenacao`), sempre com `comprovadaNoBanco: false`; o recibo publicado não muda de formato. Só `LIBERACAO_INFORMADA`, `PROCESSO_ENCERRADO` ou `SEM_PROCESSO`, com `processoEncerrado: true`, comprovam o encerramento do guardião. Sem essa comprovação (liberação `INDETERMINADA`, exceção em `liberar()` ou resposta fora do contrato), nenhum resultado seguro se mantém: sucesso ou recusa viram `CRITICO` com motivo `LIBERACAO_DA_COORDENACAO_INCERTA`, sem recibo de sucesso e com a trava local preservada; o resultado anterior fica no registro (`resultadoAntesDaLiberacao`). Um `CRITICO` anterior mantém o próprio motivo. A liberação é pedida uma única vez por operação.
+
+O que continua bloqueado:
+
+- O provedor do guardião **não é homologado**: em produção, o instalador recusa a troca do backend com `COORDENACAO_NAO_HOMOLOGADA`, mesmo com o guardião adquirido. A linha de comando do instalador segue bloqueada para o backend.
+- O agente do backend segue desabilitado no modelo de configuração.
+- Nenhum teste desta etapa usa PostgreSQL real: o guardião é exercitado como processo Node real, com o protocolo do canal de controle e sem banco. A prova em PostgreSQL 16 é a Etapa 3B-2B-2, e a homologação, a 3B-2B-3.
+
+## Garantia contínua da coordenação (Etapa 3B-2B-3A)
+
+A 3B-2B-3A corrige dois pontos antes de qualquer homologação: a identidade da instância de coordenação e a perda da garantia no meio da instalação. O provedor continua **não homologado** e o agente continua desabilitado; o instalador, o D-ORF-6, os workflows e as migrations não mudam.
+
+**Mesma sessão e os quatro cadeados.** O guardião lê, numa única consulta, `pg_backend_pid()`, o início da sessão (`backend_start`, em segundos desde a época) e as chaves de advisory lock concedidas a ela.
+- A aquisição só vale se a sessão mostrar exatamente as quatro chaves de `MIGRACAO`.
+- A **impressão da sessão** é o SHA-256 de sistema, pid, início e chaves. Ela sai na aquisição e em cada confirmação, e o provedor exige que seja sempre a mesma.
+- Cada confirmação também exige quatro cadeados. O **contador de comandos** (comandos SQL da sessão desde a aquisição, inclusive os do D-ORF-6) tem de bater com as perguntas feitas.
+- Divergência em qualquer um desses itens é perda. O contador é só controle complementar: correto, ele não prova continuidade sozinho.
+
+Por que isso demonstra a continuidade:
+- **Mesma sessão.** Locks de sessão só somem quando a sessão termina ou quando ela mesma os solta. Pid e início iguais nas duas pontas de um intervalo mostram que a sessão não terminou.
+- **Nenhuma soltura antes da hora.** O guardião só solta os cadeados em `liberar`. Isso é coberto pela sequência de SQL fixada em teste e pela guarda estática, que é só léxica.
+- **Limite.** Em produção, a continuidade é demonstrada por mesma sessão mais código conferido, e não por histórico do banco, que o PostgreSQL não guarda.
+
+**Reconhecimento da instância.** Cada instância do provedor guarda, numa ficha interna do módulo, se foi iniciada pelo iniciador real, a baseline (`rótulo`, `commit`), o hash esperado do roteiro, a impressão e a **primeira** causa de perda.
+- O agente tira o hash esperado do manifesto que o instalador gravou para a release da baseline (`meta/<rótulo>.json`). O provedor confere esse hash no arquivo imediatamente antes de iniciar o processo; se for diferente, nada é iniciado (`ROTEIRO_DIVERGENTE`).
+- `garantiaVigente(consultar, { baseline, sha256DoRoteiro })` só é verdadeiro para uma instância real, com roteiro conferido, adquirida, sem perda e criada para essa baseline e esse roteiro.
+- Uma função qualquer ou uma fábrica com `iniciarProcesso` injetado nunca são reconhecidas.
+- Reconhecer não libera nada: o instalador continua recusando com `COORDENACAO_NAO_HOMOLOGADA`.
+
+**Ações protegidas.** Durante a instalação, cada ação que o agente entrega ao instalador passa por uma guarda antes de começar. As ações são `executar` (npm ci), `reiniciar`, `identificarProcesso` e `verificarSaude`. A guarda exige, nesta ordem:
+- operação ainda não encerrada;
+- nenhuma perda registrada;
+- o prazo da ação cabendo no que resta;
+- garantia local do provedor (`garantiaVigente()`, que cai no instante de um aviso de perda, expiração ou saída do processo);
+- uma confirmação nova ao guardião (`confirmar()`).
+
+Uma ação já iniciada não é interrompida: um reinício pela metade não tem desfazer seguro. A perda é vista na próxima conferência, e a partir dela nada mais começa, nem o reinício de recuperação. A volta para a release anterior também exige coordenação, então o instalador registra `ROLLBACK_BLOQUEADO`. O resultado é `CRITICO` com motivo `COORDENACAO_PERDIDA_DURANTE_INSTALACAO`. O registro local guarda a primeira causa, a última ação iniciada (e se terminou) e o número de confirmações.
+
+**Prazos efetivos.**
+- Da aquisição à confirmação final, a instalação cabe em **30 min**, com **5 min** de margem de encerramento e **10 min** de reserva.
+- O guardião precisa informar na aquisição uma vida máxima de pelo menos 45 min. Senão, a operação é recusada sem mutação (`PRAZO_DA_COORDENACAO_INSUFICIENTE`) e o guardião é liberado.
+- Cada ação tem prazo próprio: dependências 15 min, reinício 2 min, PID 30 s, saúde 30 s. Ela só começa se o prazo couber no que resta; senão, ou se o limite tiver passado, o resultado é `CRITICO` (`PRAZO_DA_INSTALACAO_EXCEDIDO`).
+- O tempo é medido por relógio monotônico.
+- As ações com processo usam `deploy/hml/cd/executor-com-prazo.js`, que roda cada comando sem shell, num grupo de processos próprio. No prazo, encerra o grupo inteiro (SIGTERM, depois SIGKILL) e **confere** o fim.
+- Fim que não pode ser conferido (`ENCERRAMENTO_DA_ACAO_INCERTO`), prazo vencido ou descendentes deixados para trás impedem as ações seguintes e dão `CRITICO` com esse motivo.
+- Só o grupo do próprio filho é sinalizado.
+
+**Janela final.** Depois da última ação, o agente segue esta ordem:
+1. confirmação final;
+2. operação encerrada (nenhuma ação começa daqui em diante);
+3. pedido de liberação;
+4. registro `TERMINAL`;
+5. recibo.
+
+O tempo entre a confirmação final e o pedido de liberação fica registrado (`janelaFinalMs`). O resultado depende do que sai dessa sequência:
+- **`SUCESSO`** exige a confirmação final aprovada e a liberação `LIBERACAO_INFORMADA` com a soltura dos quatro cadeados conferida pelo guardião na mesma sessão. Conferida quer dizer: impressão igual à da aquisição, quatro soltos e nenhum restante, sem perda antes do pedido.
+- **Encerramento comprovado sem essa conferência** (`PROCESSO_ENCERRADO`, `SEM_PROCESSO` ou aviso incompleto) mostra que nada ficou preso, mas não a continuidade: o resultado vira `CRITICO` com motivo `CONTINUIDADE_NAO_DEMONSTRADA`.
+- **`JA_INSTALADA` com perda** também é `CRITICO`.
+- **Sessão encerrada** é só declaração do guardião (`sessaoEncerradaDeclarada`). O agente nunca afirma comprovação no banco (`comprovadaNoBanco: false`).
+
+**Ensaio com PostgreSQL 16.** O ensaio provedor → instalador real → resultado do agente está preparado em `backend/test/integracao/cd-guardiao-coordenacao.integration.js` e roda só na CI efêmera. Ele cobre:
+- **posse contínua:** dá `SUCESSO`, e no meio do reinício a mesma sessão aparece com as quatro chaves de `MIGRACAO`, bloqueadas para outra sessão, e com a impressão calculada por fora;
+- **sessão do guardião derrubada no reinício:** dá `CRITICO`, sem ação nova e sem reversão.
+
+A mesma montagem roda localmente com uma coordenação simulada. O resultado com o guardião real fica **não verificado** até a execução na CI.
+
+## Homologação do provedor do guardião (Etapa 3B-2B-3B)
+
+Na biblioteca do instalador, e só para `instalar` do backend, o provedor do guardião passa a ser aceito. Para isso, três condições têm de valer juntas, e todas são conferidas antes de qualquer mudança. Qualquer falha recusa com `COORDENACAO_NAO_HOMOLOGADA`, pelo mesmo ponto único de lançamento que o agente trata como recusa sem mutação.
+
+1. **Ativação oficial (C1).** A configuração do agente do backend é lida só de `/etc/safework/cd/agente-backend.json`, com estas conferências:
+   - em todo o caminho, diretórios reais (sem link simbólico) de dono root e sem escrita por grupo ou outros;
+   - o arquivo é aberto sem seguir link e conferido no próprio descritor: arquivo regular, dono root, sem escrita por grupo ou outros e um único link físico;
+   - o arquivo precisa declarar `habilitado: true` e `isolamentoRevisado`.
+
+   O modo previsto é `0640 root:<grupo do agente>`, sem credenciais. A linha de comando do agente (`principal`) só aceita esse caminho e passa a mesma origem ao instalador, que lê o arquivo de novo. O provisionamento real é verificado na ativação HML.
+2. **Guardião reconhecido.** A instância tem de ser a real (iniciada pelo próprio provedor), adquirida e sem perda, do roteiro fixo `scripts/guardiao-de-coordenacao.js` da **baseline que o próprio instalador lê**: rótulo e commit do metadado, caminho real e hash do manifesto. O reconhecimento é reconferido em cada ponto protegido; perda, expiração ou liberação revogam (`COORDENACAO_NAO_CONFIRMADA`). Sob a trava, a release em uso precisa ser essa baseline (`COORDENACAO_BASELINE_DIVERGENTE`, que o agente trata como `CRITICO`).
+3. **Autorização da operação (C2).**
+   - Fica num registro privado do provedor. O emissor é entregue uma única vez por processo, e o agente o pega ao ser carregado.
+   - O agente só emite no fluxo oficial (C3): pedido lido de um cliente S3 criado por `principal` a partir da configuração oficial, validado e com o blob conferido. A autorização fica presa ao pedido (commit, rótulo, SHA-256 da release, validade) e à instância do guardião desta operação.
+   - O instalador a consome uma única vez, numa transição síncrona: de chamadas concorrentes, só uma passa. Qualquer tentativa que não confira a revoga.
+   - O agente revoga a autorização no fim, em qualquer resultado.
+   - `processar` com um S3 injetado roda, mas não emite autorização.
+
+**Continuam bloqueados:** a linha de comando do instalador para o backend, `reverter` do backend e a primeira instalação sem baseline. O agente continua desabilitado (`habilitado: false` no exemplo).
+
+**Exceção nominal da pasta `instalador/`.** `coordenacao.js` carrega o provedor só no momento da conferência, dentro de `try/catch`. Com o provedor ausente ou com falha ao carregar, o frontend instala e o backend recusa ([publicacao-homologacao-componentes.md](publicacao-homologacao-componentes.md)). Não há ciclo de importação entre agente, instalador e provedor.
+
+**Mecanismos de teste (não são barreira).** Existem três, todos dependentes de `NODE_ENV=test`:
+- `homologarProvedorParaTeste`, que já existia;
+- a origem da configuração oficial por parâmetro (`deps.configuracaoOficial` ou o argumento de `principal`), com as mesmas conferências do leitor e o dono esperado igual ao usuário do teste;
+- o emissor obtido por um processo de teste que não carrega o agente.
+
+**Limite de segurança (D9).** Estes controles organizam as interfaces oficiais e impedem configuração não provisionada. Eles não impedem código arbitrário executado com a identidade e as permissões do agente: esse código pode ativar os mecanismos de teste, reproduzir a lógica ou usar a credencial IAM do agente. A proteção operacional vem da separação de usuários Linux (configuração e cópia do código do agente e do instalador com dono root; releases gravadas pelo usuário próprio do agente como somente leitura, arquivos 0444 e diretórios 0555; serviço do backend com outro usuário, que lê a release mas não a altera) e do IAM, pelo qual o agente não grava pedidos. As duas coisas são validadas na ativação HML.
+
+**Provas.**
+- Locais: instalador no fluxo de produção, com o guardião real simulado em processo e sem `homologarProvedorParaTeste` na operação; cópia isolada de `instalador/`; ausência de ciclo; registro e consumo concorrente de autorizações.
+- Só no Linux da CI (pendentes até execução real):
+  - o caminho completo pelo `principal`, com cliente S3 real diante de um `aws` simulado e reinício, PID e saúde reais da configuração;
+  - o ensaio de produção do instalador com o guardião real e PostgreSQL 16.
+
+## Preparação operacional: adoção, identidade do serviço e credenciais (Etapa 4C)
+
+O inventário da HML mostrou três bloqueios: a release em uso (`dcb114a`) não tem o guardião nem a sonda e não está no layout do instalador; o agente, com usuário próprio, não pode ler o `/proc/<pid>/cwd` de um serviço de outro usuário; e o Lightsail não tem papel de instância. A 4C resolve os três só em código e modelos inertes. Nada foi instalado, provisionado ou ativado; o agente segue `habilitado: false` no exemplo.
+
+**D-H1, adoção da primeira release.** `adotar-backend.js` cria a primeira release do backend numa base nova e vazia, pelo preparo do instalador, com `comprovada: false` e o evento `ADOCAO` (contrato em [publicacao-homologacao-componentes.md](publicacao-homologacao-componentes.md)). A release adotada vira a baseline do guardião e o destino de reversão da instalação seguinte. A release em uso hoje e o *drop-in* atual não são tocados: a transição é um *drop-in* novo (`91-cd-backend.conf`), e voltar é removê-lo e reiniciar.
+- `comprovada: false` mantém a release não íntegra para `identificar`, e o agente recusa os pedidos com `BASELINE_NAO_COMPROVADA` até ela ser comprovada.
+- **Confirmação (opção 1):** depois de o operador apontar a unidade para o link e reiniciar o serviço uma vez, fora do CD, `adotar-backend.js confirmar --config <oficial>` comprova a release adotada pela identidade do serviço (`MainPID`, pid e uid do processo, caminho real da release) e pela saúde, sem reiniciar, e só então grava `comprovada: true`. A partir daí o agente processa os pedidos normalmente, com C1, C2, C3 e o guardião. O leitor da identidade fica no instalador e é o mesmo usado pelo agente.
+
+**D-H2, reinício restrito e identidade do serviço.**
+- O reinício passa por uma regra polkit que só permite `restart` de `safework-hml.service` ao usuário do agente (`polkit-safework-cd-backend.rules.modelo`). Funciona com `NoNewPrivileges=yes`, porque o pedido vai ao systemd pelo D-Bus.
+- O *drop-in* (`safework-hml-91-cd-backend.conf.modelo`) aponta o diretório de trabalho para o link estável do instalador e grava, no `ExecStartPost`, com o usuário do serviço, a identidade `"<pid> <caminho real>"` em `/run/safework-hml/identidade` (`gravar-identidade-do-servico.modelo`). O `RuntimeDirectory` some quando o serviço para.
+- Com a seção `identidadeDoServico` (`arquivo`, `uid`) na configuração, o agente confere: diretório sem link no caminho, de root ou do uid do serviço e sem escrita por grupo ou outros; arquivo regular, aberto sem seguir link, do uid do serviço, sem escrita por grupo ou outros, com um único link físico e no máximo 4096 bytes; formato exato; pid igual ao `MainPID` do systemd; e o `Uid` de `/proc/<pid>/status` igual ao do serviço. Qualquer divergência impede a prova de versão: a instalação vira `CRITICO` e nada é confirmado.
+- O agente nunca lê `environ`, `.env` nem o `cwd` de outro processo e não usa `CAP_SYS_PTRACE`. Sem a seção, vale o comportamento anterior (`/proc/<pid>/cwd`, mesmo usuário).
+- **Limite (modelo de confiança):** a identidade é declarada pelo próprio serviço (usuário do serviço ou root). Isso é evidência condicionada, não atestação independente: um serviço comprometido poderia declarar outro caminho, mas já controla o backend; o agente não consegue escrevê-la.
+
+**D-H3, credenciais temporárias.**
+- O lançador `lancador-credenciais-backend.js` lê a seção `credenciais` da configuração oficial e executa `aws_signing_helper credential-process`, com ambiente mínimo (`PATH`) e prazo de 30 s. A identidade é própria do CD backend: certificado, chave, âncora, perfil e papel; o papel precisa ser da conta do bucket, conter `cd-backend` e não citar D-ORF-6, frontend nem publicador.
+- Arquivos: o helper e o certificado têm o dono da configuração (root em produção); a chave é do usuário do agente, sem acesso de grupo ou outros.
+- A saída precisa ter exatamente os cinco campos, `Version` 1, chave temporária (`ASIA`), segredo e token. Recusas: `CREDENCIAL_PERMANENTE` (`AKIA`), `CREDENCIAL_EXPIRADA`, `VALIDADE_INSUFICIENTE` (menos de 60 min, porque a operação cabe em 45 min) e `EXPIRACAO_FORA_DA_FAIXA` (mais de 12 h 05 min).
+- Só então o agente é iniciado, com ambiente montado do zero (`PATH`, `HOME` e as três variáveis do contrato do `s3.js`). O lançador recusa se houver qualquer variável `AWS_` no próprio ambiente, não grava arquivos e só escreve o código da recusa. Falha antes do agente não publica recibo.
+- **Exceção nominal aprovada:** a credencial temporária fica no ambiente do processo do agente durante a execução, como o `s3.js` exige. As ações do agente (`npm ci`, sonda, reinício, PID) recebem um ambiente fixo (`PATH`, `HOME`), sem nenhuma variável `AWS_`; o guardião já recebia ambiente vazio.
+- Credencial vencida no meio de uma fila longa deixa o recibo pendente, e o próximo processamento só reenvia o recibo (comportamento existente).
+
+**Modelos inertes:** `safework-cd-backend.service.modelo` (usuário próprio, `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`, `UMask=0077`, sem credencial no ambiente e sem esconder `/proc`; o `npm ci` grava cache e logs em `$HOME/.npm`, e o home do usuário do agente é o `CacheDirectory` dedicado `/var/cache/safework-cd-backend`, `0700`, único caminho gravável além da base e do estado), `safework-cd-backend.timer.modelo`, `iam-confianca-rolesanywhere-backend.modelo.json` (só `rolesanywhere.amazonaws.com`, a âncora do backend e o CN do certificado do backend) e `rolesanywhere-perfil-backend.modelo.json` (só o papel do backend, 2 h, desabilitado).
+
+**Provas.**
+- Locais (macOS): os três mecanismos com RED, GREEN e REFACTOR; identidade válida, ausente, antiga, adulterada, com link, de outro dono, gravável e com dois links; a regra polkit avaliada; o lançador com credencial válida, expirada, incompleta, permanente, com validade insuficiente e com helper indisponível, sem vazamento na saída; a adoção com recusas, falhas parciais e o encadeamento com C1, C2 e o guardião real.
+- Só no Linux da CI (pendentes até execução real): o D8-B com a identidade (válida, ausente, antiga e de outra release); UIDs distintos com usuário temporário criado no runner efêmero do GitHub Actions (o `cwd` e o `environ` do serviço ficam inacessíveis, e só a identidade do dono do serviço é aceita); a linha de comando da adoção com a âncora real; a linha de comando da confirmação com um processo real (aceita o PID certo, recusa outro PID).

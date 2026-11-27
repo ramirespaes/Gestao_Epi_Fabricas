@@ -4,8 +4,12 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { exigir, MAX } = require('./protocolo');
-function criarS3({ bucket, conta, regiao, executavel = '/usr/local/bin/aws' }) {
-  exigir(/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket || '') && !bucket.includes('..') && /^[0-9]{12}$/.test(conta || '') && /^[a-z]{2}-[a-z]+-[1-9]$/.test(regiao || '') && path.isAbsolute(executavel), 'S3_CONFIG');
+// Um prefixo por escopo (hml = frontend, hml-backend = backend): cada cliente só toca as chaves do próprio prefixo.
+const PREFIXO_POR_ESCOPO = Object.freeze({ frontend: 'hml', backend: 'hml-backend' });
+const PREFIXOS = Object.values(PREFIXO_POR_ESCOPO);
+function criarS3({ bucket, conta, regiao, executavel = '/usr/local/bin/aws', prefixo = 'hml' }) {
+  exigir(/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket || '') && !bucket.includes('..') && /^[0-9]{12}$/.test(conta || '') && /^[a-z]{2}-[a-z]+-[1-9]$/.test(regiao || '') && path.isAbsolute(executavel) && PREFIXOS.includes(prefixo), 'S3_CONFIG');
+  const chaveValida = new RegExp(`^${prefixo}/(blobs|pedidos|recibos)/[a-zA-Z0-9.-]+\\.json$`);
   exigir(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY && process.env.AWS_SESSION_TOKEN, 'CREDENCIAL_TEMPORARIA_OBRIGATORIA');
   const env = { PATH: process.env.PATH, HOME: os.tmpdir(), AWS_DEFAULT_REGION: regiao, AWS_REGION: regiao, AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN: process.env.AWS_SESSION_TOKEN, AWS_CONFIG_FILE: '/dev/null', AWS_SHARED_CREDENTIALS_FILE: '/dev/null', AWS_EC2_METADATA_DISABLED: 'true', AWS_PAGER: '', AWS_MAX_ATTEMPTS: '2' };
   function executar(args) {
@@ -18,7 +22,7 @@ function criarS3({ bucket, conta, regiao, executavel = '/usr/local/bin/aws' }) {
   const identidade = JSON.parse(executar(['sts', 'get-caller-identity']));
   exigir(identidade.Account === conta, 'CONTA_DIVERGENTE');
   function operar(tipo, key, b) {
-    exigir(/^hml\/(blobs|pedidos|recibos)\/[a-zA-Z0-9.-]+\.json$/.test(key), 'CHAVE_INVALIDA');
+    exigir(chaveValida.test(key), 'CHAVE_INVALIDA');
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hml-s3-'));
     const arquivo = path.join(dir, 'objeto');
     try {
@@ -30,7 +34,7 @@ function criarS3({ bucket, conta, regiao, executavel = '/usr/local/bin/aws' }) {
         exigir(resultado !== null, 'S3_PUT_FALHOU');
         return;
       }
-      if (key.startsWith('hml/recibos/')) {
+      if (key.startsWith(`${prefixo}/recibos/`)) {
         const lista = JSON.parse(executar(['s3api', 'list-objects-v2', '--bucket', bucket, '--prefix', key, '--expected-bucket-owner', conta, '--max-keys', '2', '--no-paginate']));
         if (!(lista.Contents || []).some(o => o.Key === key)) return null;
       }
@@ -43,14 +47,14 @@ function criarS3({ bucket, conta, regiao, executavel = '/usr/local/bin/aws' }) {
   return {
     get: key => operar('get-object', key), put: (key, b) => operar('put-object', key, b),
     listarPedidos: () => {
-      const r = JSON.parse(executar(['s3api', 'list-objects-v2', '--bucket', bucket, '--prefix', 'hml/pedidos/', '--expected-bucket-owner', conta, '--max-keys', '1000', '--no-paginate']));
+      const r = JSON.parse(executar(['s3api', 'list-objects-v2', '--bucket', bucket, '--prefix', `${prefixo}/pedidos/`, '--expected-bucket-owner', conta, '--max-keys', '1000', '--no-paginate']));
       exigir(!r.IsTruncated, 'FILA_EXCEDE_LIMITE');
       return (r.Contents || []).map(o => {
-        const m = /^hml\/pedidos\/([1-9][0-9]{0,19}-[1-9][0-9]{0,5})\.json$/.exec(o.Key);
+        const m = new RegExp(`^${prefixo}/pedidos/([1-9][0-9]{0,19}-[1-9][0-9]{0,5})\\.json$`).exec(o.Key);
         exigir(m, 'FILA_INVALIDA');
         return { id: m[1], em: Date.parse(o.LastModified) };
       }).sort((a, b) => a.em - b.em).map(o => o.id);
     },
   };
 }
-module.exports = { criarS3 };
+module.exports = { criarS3, PREFIXO_POR_ESCOPO };

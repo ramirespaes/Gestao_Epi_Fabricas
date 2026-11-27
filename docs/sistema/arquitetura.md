@@ -102,8 +102,6 @@ frontend/
 ├── css/
 │   └── main.css
 ├── js/
-│   ├── db-api.js
-│   └── main.js
 ├── pages/
 └── index.html
 ```

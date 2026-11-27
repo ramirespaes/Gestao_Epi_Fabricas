@@ -26,6 +26,8 @@ planejamento recebida do responsável, não autorização para operar neles.
 | `verificacao/verificar-publicacao.js` | confere commit, hashes, cabeçalhos, isolamento e saúde | `verificar-publicacao.test.js` |
 | `csp/gerar-csp.js` | gera a CSP do pacote por perfil | `gerar-csp.test.js` |
 | `nginx/` | modelos de Portal e Painel e renderizador validado | `nginx-modelos.test.js` |
+| `cd/protocolo.js`, `cd/publicar.js`, `cd/s3.js` | protocolo do pedido (v1 de frontend, v2 com escopo explícito), contexto de autorização por escopo e prefixo S3 por escopo | `protocolo-v2.test.js`, `publicar-backend.test.js`, `s3-prefixo.test.js` |
+| `.github/workflows/deploy-hml-backend.yml` | workflow manual que entrega o PEDIDO de publicação do backend (Etapa 1; nada o executa) | `workflow-backend.test.js`, `backend-bloqueado-etapa1.test.js`, `documentacao-backend-cd.test.js` |
 
 Os testes ficam em `.github/scripts/hml/test/` de propósito: o passo que o `ci.yml` já
 executa os roda em pull requests e na `main`, sem alterar o CI. Os arquivos
@@ -90,7 +92,7 @@ Garantias, todas cobertas por teste:
 - **Árvore operacional ancorada por descritor, sem `chdir` e sem depender de revalidar caminhos.** Em `instalador/ancora.js`, cada operação abre a base uma vez e mantém cada diretório preso por descritor (`O_DIRECTORY` e `O_NOFOLLOW`, dono e permissões conferidos no próprio descritor). Toda chamada usa `/proc/self/fd/<fd>/<nome>`, com um nome simples de um componente, e o `npm ci` recebe `/proc/<pid>/fd/<n>` como diretório de trabalho. Nenhuma operação usa `process.chdir`. Fora do Linux a âncora padrão recusa (`PLATAFORMA_SEM_ANCORA`) e `instalar`, `reverter` e `reconciliar` ficam bloqueados; `identificar` ainda lê, com uma âncora de leitura que recusa qualquer escrita e informa `garantiaContraCorrida: false`. A âncora por caminho e qualquer `fsImpl` injetado (emulação) só existem em testes (`NODE_ENV=test`): a biblioteca recusa uma âncora injetada fora de teste (`ANCORA_DE_TESTE_FORA_DE_TESTE`) e a linha de comando nunca injeta nenhuma. O que cada defesa cobre, e onde ela termina, está na seção "Modelo de ameaça" abaixo.
 - **Base e ancestrais atravessados por descritor.** O caminho da base é canonicalizado uma vez e atravessado componente a componente a partir da raiz, cada um aberto sem seguir link a partir do descritor do anterior, e cada ancestral é validado no descritor realmente atravessado: de root ou do usuário de implantação, sem escrita para grupo ou outros (ou com bit sticky e dono root, como `/tmp`). Um ancestral trocado por link depois da canonicalização faz a abertura falhar; um ancestral gravável por terceiros é recusado (`ANCESTRAL_NAO_CONFIAVEL`).
 - **Nenhum arquivo com mais de um link é lido, gravado ou alterado.** O mesmo inode pode ser de outro caminho, por exemplo um dado persistente: identidade de inode não é isolamento. Todo arquivo aberto é conferido por `fstat` (regular e `nlink` 1, `ARQUIVO_COMPARTILHADO`); o diário é aberto sem criar, conferido (regular, do usuário de execução, um único link) antes da primeira gravação e só é criado, de forma exclusiva, quando não existe.
-- **`node_modules` nunca existe antes do `npm ci` e depois é uma árvore própria.** O `npm ci` apaga o que encontrar nesse nome, inclusive o conteúdo do destino de um link (reproduzido com o npm real em dados sintéticos). Por isso o preparo é criado em 0700, `node_modules` ausente é exigido antes do processo (`NODE_MODULES_PREEXISTENTE`), e depois dele a árvore é inspecionada sem seguir links: precisa ser diretório real e nenhum link pode ser absoluto ou sair da própria árvore (`DEPENDENCIAS_INSEGURAS`). A mesma inspeção vale em `identificar` e na verificação de cada release.
+- **`node_modules` nunca existe antes do `npm ci` e depois é uma árvore própria.** O `npm ci` apaga o que encontrar nesse nome, inclusive o conteúdo do destino de um link (reproduzido com o npm real em dados sintéticos). Por isso o preparo é criado em 0700, `node_modules` ausente é exigido antes do processo (`NODE_MODULES_PREEXISTENTE`), e depois dele a árvore é inspecionada sem seguir links: precisa ser diretório real e nenhum link pode ser absoluto ou sair da própria árvore (`DEPENDENCIAS_INSEGURAS`). A mesma inspeção vale em `identificar` e na verificação de cada release. Depois da inspeção, na instalação e na adoção, a árvore é selada como o pacote, porque o `npm ci` herda o `UMask=0077` do agente e o serviço roda com outro usuário (pedido `45240585273-1`): diretórios `0555`, arquivos `0444` e executáveis `0555`, sem setuid nem escrita; links não são seguidos, e um arquivo cujo inode tem outro link é recusado sem alteração (`DEPENDENCIAS_INSEGURAS`). A selagem não é reconferida em `identificar`: uma release preparada antes dela continua com o `node_modules` como o processo deixou.
 - **Remoção só do que foi conferido.** Cada diretório é aberto sem seguir link e só é esvaziado se o descritor aberto for a entrada esperada (a identidade informada ou, sem ela, a vista imediatamente antes da abertura); o `rmdir` final só remove diretório vazio. Uma entrada trocada na janela entre a conferência e a abertura nunca é esvaziada. A limpeza do preparo e da release publicada é presa à identidade do preparo criado pela operação.
 - **A árvore publicada é a árvore verificada.** Os descritores provam o conteúdo dos inodes copiados; antes de publicar, a árvore do preparo é percorrida por nome e cada diretório e arquivo precisa ser o mesmo inode registrado na cópia, sem entradas a mais nem a menos (`INTEGRIDADE_DIVERGENTE`). Depois do `rename`, a release publicada é verificada de novo por nome, com hash, antes de qualquer ponteiro.
 - **O destino efetivo do ponteiro é conferido.** O link de release é um nome relativo, resolvido no momento do uso. Depois de apontá-lo, o inode que ele alcança é comparado com o da release aberta pelo descritor de `.releases/<nome>` que se manteve aberto; divergência (por exemplo, `.releases` trocado por outra árvore) desfaz o link e a operação falha (`PONTEIRO_DIVERGENTE`). É uma conferência do resultado, não uma garantia contra troca posterior.
@@ -98,7 +100,7 @@ Garantias, todas cobertas por teste:
 - **Links persistentes verificados.** O que cada release instalada tem como link persistente (nome e destino) fica registrado no `meta`. `identificar` e as verificações de instalação e de reversão exigem que cada link continue sendo link, aponte para o mesmo destino e resolva para dentro das raízes persistentes; link removido, trocado por arquivo ou redirecionado reprova a release como íntegra e bloqueia a instalação seguinte (`ATUAL_CORROMPIDA`). Na instalação, o destino que resolve para fora das raízes é recusado.
 - **Recuperação entre as trocas.** As duas trocas de link e os registros ficam sob a mesma proteção: qualquer falha depois da primeira troca desfaz o que foi feito, de forma idempotente (só troca o que ainda difere). Se o desfazer também falhar, o diário **não** é fechado (`FALHA_SEM_DESFAZER`) e a próxima operação reconcilia pelo link em uso. Isso vale para `instalar` e `reverter`.
 - **Rollback seguro.** O rollback automático aplica as mesmas travas da reversão manual: a release anterior precisa estar íntegra e compatível com as migrations e contratos observados **naquele momento**, e a coordenação precisa permitir (consulta nova). Sem destino comprovadamente seguro, nada é alterado, o `estado.json` recebe `critico` (motivo, release em uso, destino tentado, falha original e bloqueio), o diário fecha como `FALHOU` com `ROLLBACK_BLOQUEADO` e a identificação passa a relatar o estado crítico. Se o rollback ocorre mas a recuperação não é confirmada, o estado crítico também fica registrado.
-- **Estado crítico bloqueia novas operações.** Com `critico` registrado, `instalar` (de outra release) e `reverter` são recusados (`ESTADO_CRITICO`). Só duas saídas existem: confirmar a release em uso (instalar a mesma release, com reinício, prova de processo e saúde) ou a exceção explícita `resolverEstadoCritico` (`--resolver-estado-critico`), que passa por todas as verificações e provas e fica registrada. Uma instalação ou confirmação comprovada limpa o estado crítico.
+- **Estado crítico bloqueia novas operações.** Com `critico` registrado, `instalar` (de outra release) e `reverter` são recusados (`ESTADO_CRITICO`). Só duas saídas existem: confirmar a release em uso (instalar a mesma release, com reinício, prova de processo e saúde) ou a exceção explícita `resolverEstadoCritico` (`--resolver-estado-critico`), que passa por todas as verificações e provas e fica registrada. Uma instalação ou confirmação comprovada limpa o estado crítico. Para o backend existe ainda a confirmação da recuperação (Correção B, B1: `adotar-backend.js confirmar-recuperacao`), válida só para o crítico `RECUPERACAO_NAO_CONFIRMADA` da última `REVERSAO_AUTOMATICA` cuja recuperação foi `REINICIO`, `VERSAO` ou `SAUDE` (não `COORDENACAO`, em que a compatibilidade da release anterior não foi reavaliada), com a release em uso íntegra, consistente e sem operação aberta: prova o processo pela identidade do serviço e a saúde, sem reinício, sem troca de link e sem coordenação, e grava uma única vez o evento `CONFIRMACAO_RECUPERACAO` com o crítico resolvido copiado; o histórico anterior não muda.
 - **Falha depois do reinício nunca restaura uma prova antiga.** Antes de cada reinício o diário grava `REINICIANDO`. Se qualquer erro ocorre depois disso, voltar só os links deixaria o processo numa release e o link em outra; por isso a recuperação volta à release de antes da operação **com reinício e prova** (mesmas travas do rollback), e o estado só é declarado comprovado depois disso. Se a própria recuperação falha de forma encadeada (por exemplo, o estado não pode ser gravado), o diário fica aberto (`CRITICO`), o estado crítico é registrado quando possível e a identidade pública (`versao.json`) é escrita antes do estado, para que, se o estado falhar, ela já coincida com link e processo. A reconciliação de qualquer operação interrompida depois de `REINICIANDO` marca a release em uso como não comprovada **e** crítica, estando o link na release nova ou na antiga.
 - **Nada concluído sem prova.** `INSTALADA`, `REVERTIDA` e `JA_INSTALADA` exigem processo (diretório e PID) e saúde comprovados. `reconciliar` não comprova nada: uma instalação interrompida cuja release nova está em uso fica registrada com `comprovada: false` (`NOVA_EM_USO_SEM_CONFIRMACAO`), `identificar` a reporta como não íntegra, e reinstalar a **mesma** release a confirma (resultado `CONFIRMADA`) com reinício, prova e saúde; se não provar, volta para a anterior com as travas do rollback. A idempotência de uma release já comprovada também confere processo e saúde, sem reiniciar; se divergir, cai na confirmação. Em componente estático não há processo: a comprovação é a integridade, e a prova HTTP é da verificação pós-publicação.
 - **Coordenação e compatibilidade no instante da operação.** Depois do preparo (que inclui `npm ci` e pode demorar) e imediatamente antes de cada reinício, o instalador consulta de novo a coordenação e reavalia a compatibilidade. Se ficou ocupada, obsoleta ou incompatível, nada é reiniciado e, quando o link já havia sido trocado, ele volta. Na linha de comando, o arquivo de `--coordenacao` é relido (com as mesmas verificações de segurança) a cada consulta.
@@ -109,13 +111,47 @@ Garantias, todas cobertas por teste:
 - **Rastreabilidade.** Cada evento de instalação, confirmação, reversão e rollback do histórico registra usuário, a coordenação (situação, origem, consulta), o estado observado (banco, origem, coleta) e a fonte dos arquivos informados (caminho e SHA-256 do conteúdo efetivamente relido na última consulta, com a contagem de leituras, sempre a da consulta que de fato decidiu: a que autorizou a operação ou o reinício final, ou a que bloqueou; a evidência acompanha o objeto devolvido por aquela consulta e nada fica guardado no provedor, então operações concorrentes que o compartilham não trocam evidências); instalação e confirmação registram também autenticidade e hash do `release.json`. Os eventos de recuperação por reconciliação registram só o rótulo, a situação, o horário e se houve reinício.
 - **Overrides efetivamente usados.** O evento e o `INICIO` do diário trazem `excecoes` com os overrides que de fato alteraram a decisão, não os que apenas foram permitidos: `permitirAnterior` (com rótulos de origem e destino) só quando houve downgrade, `permitirRetroativo` só para release retroativa, `permitirAtualDivergente` (com a contagem de problemas) só quando a release em uso estava divergente, `semAutenticacao`, `semComprovacaoDeVersao`, `permitirRoot` (só quando o processo realmente roda como root) e `resolverEstadoCritico`. Só nomes, rótulos e contagens: nenhum valor de configuração, caminho do servidor, conteúdo de arquivo ou o hash informado pelo operador é registrado.
 - **Execução segura.** A linha de comando recusa rodar como root, recusa configuração que seja link, de outro dono ou gravável por grupo ou outros, exige caminho absoluto para o `npm` e para o reinício, e `identificar` aponta `versao.json` ou `estado.json` divergentes do link.
-- **Política de operações por componente, igual em todas as interfaces.** A tabela `POLITICA_DE_COMPONENTES` (congelada, em `nucleo.js`) define o que cada tipo pode fazer. Componente estático (frontend e portal) instala, reverte, identifica e reconcilia, e nunca reinicia, consulta processo ou saúde, nem instala dependências: configuração com `reinicio`, `processo`, `saude`, `dependencias` ou `linksPersistentes` é recusada (`CONFIG_INVALIDA`), e a biblioteca descarta as dependências injetadas desse tipo. O backend, na linha de comando, só `identificar` e `reconciliar`; `instalar` e `reverter` são recusados com `COORDENACAO_NAO_HOMOLOGADA` antes de qualquer leitura. Na biblioteca a mesma recusa vale antes de qualquer leitura, preparo ou reinício, a menos que `deps.consultarCoordenacao` seja um provedor registrado como homologado (registro em `coordenacao.js`, vazio em produção, e que só aceita registros em `NODE_ENV=test`): uma função injetada, um arquivo ou um atestado não excluem um backup concorrente. Mesmo com provedor homologado, a coordenação é revalidada antes da troca e de cada reinício. O backend segue bloqueado para deploy, reinício e rollback enquanto não houver coordenação homologada com o D-ORF-6.
+- **Política de operações por componente, igual em todas as interfaces.** A tabela `POLITICA_DE_COMPONENTES` (congelada, em `nucleo.js`) define o que cada tipo pode fazer. Componente estático (frontend e portal) instala, reverte, identifica e reconcilia, e nunca reinicia, consulta processo ou saúde, nem instala dependências: configuração com `reinicio`, `processo`, `saude`, `dependencias` ou `linksPersistentes` é recusada (`CONFIG_INVALIDA`), e a biblioteca descarta as dependências injetadas desse tipo. O backend, na linha de comando, só `identificar` e `reconciliar`; `instalar` e `reverter` são recusados com `COORDENACAO_NAO_HOMOLOGADA` antes de qualquer leitura. Na biblioteca a mesma recusa vale antes de qualquer leitura, preparo ou reinício, a menos que `deps.consultarCoordenacao` seja um provedor registrado como homologado (registro em `coordenacao.js`, vazio em produção, e que só aceita registros em `NODE_ENV=test`): uma função injetada, um arquivo ou um atestado não excluem um backup concorrente. Mesmo com provedor homologado, a coordenação é revalidada antes da troca e de cada reinício. O backend segue bloqueado para deploy, reinício e rollback enquanto não houver coordenação homologada com o D-ORF-6. Etapa 3B-2B-3B: na biblioteca, e só para `instalar`, o provedor do guardião passa a ser aceito quando três condições valem juntas, todas conferidas antes de qualquer mudança: a configuração oficial do agente do backend (`/etc/safework/cd/agente-backend.json`, dono root, sem escrita por grupo ou outros em todo o caminho) está habilitada; a instância é a real, adquirida e sem perda, do roteiro da baseline que o próprio instalador lê (rótulo, commit, caminho e hash do manifesto); e há uma autorização desta operação, consumida uma única vez. A linha de comando, `reverter` e a primeira instalação sem baseline continuam recusados com `COORDENACAO_NAO_HOMOLOGADA` (detalhes em [publicacao-homologacao-automacao.md](publicacao-homologacao-automacao.md)).
 
 O instalador roda **no servidor**, com Node 22 e só o núcleo do Node. A pasta
-`instalador/` é copiável sozinha. Ela deve ser instalada por uma etapa de operação
+`instalador/` é copiável sozinha, com uma única exceção nominal (Etapa 3B-2B-3B):
+`coordenacao.js` carrega `../cd/coordenacao-por-guardiao.js`, o provedor do guardião, só no
+momento da conferência do backend e dentro de `try/catch`. Se o provedor faltar ou falhar ao
+carregar, nada é reconhecido nem autorizado: o frontend instala normalmente e o backend é
+recusado com `COORDENACAO_NAO_HOMOLOGADA`, antes de qualquer mudança. Ela deve ser instalada por uma etapa de operação
 própria, fora do fluxo de release, porque é a âncora de confiança da verificação, e o
 arquivo de configuração é uma superfície de execução de comandos: deve pertencer ao
 usuário de implantação, com modo 0600 ou 0640.
+
+**Adoção da primeira release do backend (Etapa 4C, D-H1).** `adotarBaselineDoBackend`
+(biblioteca) e `adotar-backend.js` (linha de comando própria, só com `--config` oficial,
+`--release` e `--release-sha256`) criam a primeira release do backend numa base vazia, pelo
+mesmo preparo do instalador (cópia ancorada, dependências, links persistentes, verificação e
+metadado), e gravam link, `versao.json` e estado com `comprovada: false` e o evento `ADOCAO`.
+Exigem o hash aprovado do `release.json` (sem opt-out), release não retroativa e o guardião e a
+sonda no manifesto. Nunca reiniciam, nunca consultam processo, saúde ou coordenação e nunca
+substituem nada: link, diretório no lugar do link, release, metadado, estado ou operação aberta
+na base recusam com `ADOCAO_RECUSADA`, sem mudança. Falha depois de publicar desfaz release,
+metadado, link, `versao.json` e estado; o esqueleto de uma adoção desfeita aceita nova
+tentativa. A linha de comando do instalador continua recusando `instalar` e `reverter` do
+backend. `comprovada: false` não é comprovação: `identificar` não dá a release como íntegra e o
+agente recusa os pedidos com `BASELINE_NAO_COMPROVADA` até a release ser comprovada.
+
+**Confirmação da release adotada (Etapa 4C, D-H1, opção 1).** `confirmarBaselineAdotada` e
+`adotar-backend.js confirmar --config <oficial>` comprovam a release adotada pela prova do próprio
+instalador (`comprovarExecucao`): o caminho real do processo em execução, obtido pelo `MainPID` e
+pela identidade do serviço em `/run` (o mesmo leitor do agente, que confere arquivo, diretório,
+formato, pid e o `Uid` de `/proc/<pid>/status`), tem de ser o da release, e a saúde tem de passar.
+Vale só para a release do último evento `ADOCAO`, ainda não comprovada, sem estado crítico nem
+anterior, íntegra, consistente e sem operação aberta; qualquer outra (instalada pelo caminho normal,
+já comprovada, alterada, com metadado divergente do evento) é recusada com `CONFIRMACAO_RECUSADA`
+antes de consultar o processo. Processo em outra release, identidade ausente ou de outro PID dão
+`VERSAO_NAO_COMPROVADA`; saúde reprovada, `SAUDE_FALHOU`. Não reinicia, não instala, não executa
+comandos além do que lê o `MainPID`, não consulta coordenação nem migrations. O estado só muda
+depois de todas as provas, numa única escrita atômica (`comprovada: true` e o evento
+`CONFIRMACAO_DA_ADOCAO`); se a escrita falhar, nada muda e a confirmação pode ser repetida. Uma
+confirmação repetida é recusada sem mudança. A linha de comando exige a seção `identidadeDoServico`
+na configuração oficial.
 
 Limites conhecidos: a autenticidade depende de quem entrega o hash aprovado (pendência
 A-3); a prova de versão e as âncoras por descritor usam `/proc` e só valem em Linux, e fora dele o instalador fica bloqueado; uma trava deixada por queda
@@ -332,6 +368,49 @@ com a origem "nenhuma trava do D-ORF-6 homologada". Decisões que cabem ao D-ORF
 este CD: onde fica a trava, quem a escreve, como expira e como é provada a ausência de
 escrita durante backup. Esta interface não implementa, presume nem substitui nada disso,
 e o backup consistente continua regido por [Operação](operacao.md).
+
+## Protocolo v2 e pedido do backend (Etapa 1 do CD do backend)
+
+Preparado em 18/11/2026. Objetivo: o fluxo GitHub Actions → aprovação humana → **pedido** de publicação do
+backend, sem executar nada. Esta etapa não toca o agente, o instalador, a coordenação, a AWS nem a HML.
+
+**Protocolo.** O pedido v1 (Portal e Painel) continua idêntico e vale **somente** para frontend. O pedido v2
+acrescenta o campo `escopo` (`frontend` ou `backend`) e é a única forma de pedir o backend. Quem valida declara o
+escopo que espera (`validarPedido(pedido, agora, { escopo })` em `cd/protocolo.js`, padrão `frontend`): pedido sem escopo, com escopo
+desconhecido ou de outro escopo é recusado (`PEDIDO_INVALIDO`, `ESCOPO_INVALIDO`, `ESCOPO_DIVERGENTE`). O agente
+atual valida sem declarar escopo, então um pedido de backend seria recusado por `ESCOPO_DIVERGENTE`; uma aprovação de
+frontend nunca autoriza o backend e vice-versa (autorização cruzada). O recibo de um pedido v2 repete o escopo
+(`RECIBO_INVALIDO` se divergir). O backend nunca é retroativo nem aceita commit anterior (`RETROATIVO_BLOQUEADO`).
+
+**Artefato.** A release do backend é a do `empacotar-backend.js` (allowlist, proteção contra segredos, manifesto,
+`release.json` com a seção `backend`). `conferirRelease({ ..., escopo: 'backend' })` exige o diretório exato
+(`backend`, `manifesto-backend.sha256`, `release.json`), o hash externo do `release.json`, as chaves exatas, commit e
+rótulo coerentes, `atual: true` e a integridade de cada arquivo pelo próprio `verificarReleaseBackend`. Frontend e
+backend não se substituem: a release de um escopo conferida como o outro dá `ESCOPO_INVALIDO`.
+
+**Workflow `deploy-hml-backend.yml`.** Só `workflow_dispatch`, a partir da `main`, com confirmação literal
+`HOMOLOGACAO-BACKEND` (a do frontend não vale), SHA completo, CI verde, nunca retroativo, release gerada e selada
+(SHA-256 do `release.json`) **antes** da aprovação. O job `publicar` roda atrás do environment `homologacao-backend`
+e do interruptor próprio `HML_BACKEND_PUBLICACAO_HABILITADA`, com a role própria `HML_BACKEND_AWS_ROLE_ARN`; o
+interruptor e a role do frontend não valem aqui. O pedido é entregue por `cd/publicar.js`, que só aceita o contexto do
+backend (`decidirContexto`) quando o workflow em execução é este, em disparo manual e na tentativa 1. Serializa com o deploy do
+frontend (`concurrency: deploy-hml`).
+
+**Chaves no bucket.** O pedido do backend é gravado em `hml-backend/{blobs,pedidos,recibos}/`, prefixo em que
+**nenhum agente lê**: o cliente S3 do frontend só aceita `hml/` e o do backend só `hml-backend/`. Os modelos de IAM do
+agente e do publicador do frontend não alcançam esse prefixo, e a confiança OIDC do frontend segue restrita ao
+environment `homologacao`.
+
+**O que continua bloqueado (não removido).** O instalador recusa instalar e reverter o backend com
+`COORDENACAO_NAO_HOMOLOGADA`; nenhum provedor de coordenação está homologado; o agente continua só com `portal` e
+`painel` estáticos. Como nenhum agente lê o prefixo do backend, um pedido registrado não é executado e o job termina
+sem recibo (`SEM_RECIBO_CONCLUSIVO`).
+
+**O que NÃO foi feito e depende de autorização (Etapa 2 em diante).**
+- Environment `homologacao-backend` e seus revisores: não foi criado nem validado no GitHub.
+- Variáveis `HML_BACKEND_PUBLICACAO_HABILITADA` e `HML_BACKEND_AWS_ROLE_ARN`: não existem; sem o interruptor o job `publicar` nem começa.
+- Role AWS do backend (confiança restrita ao environment e à `main`), permissão de escrita só em `hml-backend/` e política do bucket: não configuradas.
+- Agente com caminho de backend (instalação, saúde, versão do processo, rollback), provedor de coordenação homologado com o D-ORF-6, sonda do estado observado do banco, gate de migrations e release de compatibilidade para rollback: Etapa 2 e seguintes.
 
 ## Histórico do desenho do job `publicar` — superado pela Etapa 52
 

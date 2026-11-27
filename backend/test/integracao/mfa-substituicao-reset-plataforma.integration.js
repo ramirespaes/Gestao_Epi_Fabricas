@@ -30,6 +30,7 @@ const { hashTokenSessao } = require('../../src/security/token');
 const { gerarHashSenha } = require('../../src/security/password');
 const { authConfig } = require('../../src/config/auth');
 const scriptRedefinir = require('../../scripts/mfa-redefinir');
+const { segredosEmLinhas, colunaDoDigestHex64 } = require('../helpers/segredos-em-linhas');
 
 const MIGRATIONS = ['000', '001', '002', '005', '012', '014', '027', '028', '029', '030', '031', '048', '049', '050', '051', '052', '053', '054', '055', '056'];
 const SENHA = 'planeta-nebulosa-ozonio-42';
@@ -1154,6 +1155,24 @@ describe('substituição do TOTP, regeneração de recovery codes e reset por CL
   });
 
   describe('nenhum segredo fora do lugar', () => {
+    // Tipos de coluna tirados do catálogo desta base, nunca do formato do valor: timestamptz pelo information_schema e
+    // digest de 64 hex pela coluna character(64) com o CHECK do formato. Só nessas colunas um segredo curto (código TOTP)
+    // que coincida com um trecho do valor deixa de ser acusado (CI #204); segredos longos e as demais colunas seguem
+    // inspecionados por inteiro.
+    async function colunasGeradas(tabela) {
+      const colunas = (await q('SELECT column_name, data_type, character_maximum_length FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1', [tabela])).rows;
+      assert.ok(colunas.length > 0, `colunas de ${tabela}`);
+      const tipos = {};
+      for (const c of colunas) if (c.data_type === 'timestamp with time zone') tipos[c.column_name] = 'timestamptz';
+      const restricoes = (await q("SELECT pg_get_constraintdef(oid) AS d FROM pg_constraint WHERE conrelid = $1::regclass AND contype = 'c'", [tabela])).rows;
+      for (const { d } of restricoes) {
+        const nome = colunaDoDigestHex64(d);
+        const coluna = nome && colunas.find((c) => c.column_name === nome);
+        if (coluna && coluna.data_type === 'character' && coluna.character_maximum_length === 64) tipos[coluna.column_name] = 'digest_hex64';
+      }
+      return tipos;
+    }
+
     test('senha, TOTPs, secrets, recovery codes, liberação, tokens, ciphertext, nonce, chave e URI não aparecem em log, auditoria, tentativas ou outras tabelas', async (t) => {
       const logs = [];
       for (const metodo of ['log', 'error', 'warn', 'info']) t.mock.method(console, metodo, (...args) => logs.push(args));
@@ -1181,9 +1200,16 @@ describe('substituição do TOTP, regeneração de recovery codes e reset por CL
         resposta.body.cadastro.uri, fatorAntigo.totp_nonce.toString('hex'), fatorAntigo.totp_segredo_cifrado.toString('hex'),
         pendente.totp_nonce.toString('hex'), pendente.totp_segredo_cifrado.toString('hex'), process.env.MFA_TOTP_KEY_V1, 'otpauth://',
       ];
+      const tiposDosDesafios = await colunasGeradas('desafios_mfa_plataforma');
+      assert.deepEqual(
+        [tiposDosDesafios.token_hash, tiposDosDesafios.criado_em, tiposDosDesafios.expira_em, tiposDosDesafios.encerrado_em],
+        ['digest_hex64', 'timestamptz', 'timestamptz', 'timestamptz'],
+        'os tipos das colunas isentas vêm do schema',
+      );
       for (const tabela of ['logs_auditoria_plataforma', 'login_tentativas_plataforma', 'desafios_mfa_plataforma', 'sessoes_plataforma', 'lotes_recuperacao_mfa_plataforma', 'liberacoes_cadastro_mfa_plataforma']) {
-        const texto = (await q(`SELECT row_to_json(t)::text AS l FROM ${tabela} t`)).rows.map((r) => r.l).join('\n');
-        for (const valor of segredos) assert.equal(texto.includes(valor), false, `${tabela} contém segredo`);
+        // Texto da linha, interpretado pelo detector com os dígitos originais de cada número (bigint, numeric, JSONB).
+        const linhas = (await q(`SELECT row_to_json(t)::text AS l FROM ${tabela} t`)).rows.map((r) => r.l);
+        assert.deepEqual(segredosEmLinhas({ linhas, segredos, colunasGeradas: await colunasGeradas(tabela) }), [], `${tabela} contém segredo`);
       }
       const textoLogs = JSON.stringify(logs);
       for (const valor of segredos) assert.equal(textoLogs.includes(valor), false, 'log técnico com segredo');

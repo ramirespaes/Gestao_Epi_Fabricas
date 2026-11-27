@@ -5,7 +5,15 @@ const fs = require('node:fs');
 const path = require('node:path');
 const raiz = path.resolve(__dirname, '../../../..');
 const yaml = fs.readFileSync(path.join(raiz, '.github/workflows/deploy-hml.yml'), 'utf8');
-const job = yaml.split('\n  publicar:\n')[1];
+// Só o job publicar: do cabeçalho dele até o próximo job (ou o fim do arquivo), sem as linhas em branco e os comentários
+// que antecedem esse próximo job.
+const job = yaml.split('\n  publicar:\n')[1].split(/\n {2}\w+:\n/)[0].replace(/(?:\n(?:[ \t]*#[^\n]*|[ \t]*))+$/, '\n');
+test('o recorte examinado é exclusivamente o job publicar: termina no último passo dele, sem nada do job seguinte', () => {
+  assert.ok(job.endsWith('        run: node deploy/hml/cd/publicar.js\n'), 'o recorte termina no último passo do publicar');
+  assert.doesNotMatch(job, /^ {2}\w+:$/m, 'nenhum outro job dentro do recorte');
+  assert.doesNotMatch(job, /conjunto|release-backend|empacotar-backend|continue-on-error|failure\(/);
+  assert.equal((job.match(/^ {6}- name: /gm) || []).length, 7, 'os sete passos do publicar, e só eles');
+});
 test('só publicar recebe OIDC e permanece atrás do environment e dos dois interruptores', () => {
   assert.equal((yaml.match(/id-token: write/g) || []).length, 1);
   assert.doesNotMatch(yaml.split('\n  publicar:\n')[0], /id-token|aws-actions/);
@@ -13,7 +21,12 @@ test('só publicar recebe OIDC e permanece atrás do environment e dos dois inte
   assert.match(job, /environment: homologacao/);
   for (const requisito of ["inputs.publicar == true", "vars.HML_PUBLICACAO_HABILITADA == 'true'", "github.ref == 'refs/heads/main'", "github.repository == 'ramirespaes/Gestao_Epi_Fabricas'", "github.event_name == 'workflow_dispatch'"]) assert.ok(job.includes(requisito));
   assert.match(yaml, /publicar:\n\s+description:[^\n]*\n\s+required: false\n\s+type: boolean\n\s+default: false/);
-  assert.doesNotMatch(yaml, /continue-on-error|if:.*always\(|\bsecrets\.|self-hosted/);
+  // Única exceção, autorizada na correção das Etapas 3B-3/3B-4: o job final "conjunto" (prepara o backend, sem
+  // credenciais e sem publicar) não reprova a execução. Validar, empacotar e publicar seguem sem continue-on-error.
+  const [ateOPublicar, conjunto = ''] = yaml.split('\n  conjunto:\n');
+  assert.doesNotMatch(ateOPublicar, /continue-on-error/);
+  assert.deepEqual(conjunto.match(/^.*continue-on-error.*$/gm), ['    continue-on-error: true'], 'só no nível do job conjunto, uma vez');
+  assert.doesNotMatch(yaml, /if:.*always\(|\bsecrets\.|self-hosted/);
 });
 test('controlador e artefato são imutáveis e release conferida antes das credenciais', () => {
   assert.match(job, /ref: \$\{\{ github.workflow_sha \}\}/);

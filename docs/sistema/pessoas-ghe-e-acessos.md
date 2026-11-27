@@ -240,10 +240,10 @@ privacidade constam de estado-atual.md. Não inferir aplicação em banco.
 - **Navegação oculta (;
 - só ocultação;
 - validação manual APROVADA ):** `NAVEGACAO_OCULTA` em `js/permissoes-efetivas.js` (`stockValidity`, `grupos-acesso`, `grupo-permissoes`, `grupo-usuarios`, `autorizacoes-individuais`, `newUser`, `userAdmin`) nunca aparece em `aplicarMenu`, com ou sem permissão — vale para o menu lateral de todas as páginas integradas e para o Início do Portal, que usam a mesma função;
-- `NAVEGACAO_OCULTA_PENDENTES` ("Compras / Entradas", "Regras Função / Setor") recebe `display:none` em `liberarInspecao`;
-- na barra legada dos protótipos em inspeção, `js/inspecao-visual.js` injeta a regra `!important` para `NAVEGACAO_OCULTA_LEGADA` (o `main.js` reexibe os itens com `display:flex`).
+- `NAVEGACAO_OCULTA_PENDENTES` ("Compras / Entradas", "Regras Função / Setor") recebe `display:none` em `ocultarPendentes` (antes `liberarInspecao`);
+- a barra legada dos protótipos e `js/inspecao-visual.js` foram removidos na limpeza do frontend legado (26/11/2026), junto com as páginas `purchases` e `eligibility-rules`.
 - Sem item cinza, placeholder ou etiqueta: os itens somem.
-- Nada foi apagado: páginas, módulos, rotas, permissões, testes e o acesso direto legado continuam (`podeAbrir` não muda).
+- Nas telas integradas ocultas, nada foi apagado: páginas, módulos, rotas, permissões, testes e o acesso direto continuam (`podeAbrir` não muda).
 - **Pendência obrigatória:** quando a Gestão de Usuários estiver 100% funcional, testada e validada, revisar e DESATIVAR DEFINITIVAMENTE as seis telas legadas que ela substitui (Grupos de Acesso, Permissões do Grupo, Integrantes do Grupo, Autorizações Individuais, Novo Usuário, Administração de Usuários), antes do Git consolidado da Gestão de Usuários.
 - Validade de estoque, Compras / Entradas e Regras Função / Setor ficam só adiados, preservados para retomada.
 - **Próximas subetapas (não iniciar sem autorização;

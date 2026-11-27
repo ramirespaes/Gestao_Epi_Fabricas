@@ -1,0 +1,34 @@
+{
+  "habilitado": false,
+  "isolamentoRevisado": "PENDENTE",
+  "estadoDir": "/CAMINHO_EXCLUSIVO_ESTADO_HML_BACKEND",
+  "raizesProtegidas": ["/RAIZ_REAL_INSTITUCIONAL", "/RAIZ_REAL_PORTAL_PAINEL", "/RAIZ_REAL_DADOS"],
+  "s3": { "bucket": "SUBSTITUIR", "conta": "SUBSTITUIR", "regiao": "SUBSTITUIR", "executavel": "/usr/local/bin/aws", "prefixo": "hml-backend" },
+  "sonda": { "comando": ["/CAMINHO_ABSOLUTO/node", "scripts/sonda-estado-observado.js"], "credencial": "/CAMINHO_ABSOLUTO/credencial-da-sonda.json", "banco": "SUBSTITUIR", "sistema": "SUBSTITUIR", "timeoutMs": 20000 },
+  "guardiao": { "comando": ["/CAMINHO_ABSOLUTO/node", "scripts/guardiao-de-coordenacao.js"], "credencial": "/CAMINHO_ABSOLUTO/credencial-do-guardiao.json" },
+  "identidadeDoServico": { "arquivo": "/run/safework-hml/identidade", "uid": "UID_DO_SERVICO_BACKEND" },
+  "credenciais": {
+    "executavel": "/usr/local/bin/aws_signing_helper",
+    "certificado": "/CAMINHO_ABSOLUTO/agente-backend.crt",
+    "chave": "/CAMINHO_ABSOLUTO_PRIVADO_DO_AGENTE/agente-backend.chave",
+    "ancora": "arn:aws:rolesanywhere:REGIAO:CONTA:trust-anchor/ANCORA_DO_CD_BACKEND",
+    "perfil": "arn:aws:rolesanywhere:REGIAO:CONTA:profile/PERFIL_DO_CD_BACKEND",
+    "papel": "arn:aws:iam::CONTA:role/safework-hml-cd-backend-agente",
+    "duracaoSegundos": 7200
+  },
+  "instalador": {
+    "retencao": 5,
+    "raizesPersistentes": [],
+    "componentes": {
+      "backend": {
+        "tipo": "backend",
+        "base": "/RAIZ_EXCLUSIVA_BACKEND_HML",
+        "nome": "backend",
+        "dependencias": { "comando": ["/CAMINHO_ABSOLUTO/npm", "ci", "--omit=dev", "--ignore-scripts"] },
+        "saude": { "url": "http://127.0.0.1:PORTA_BACKEND_HML/api/health", "servicoEsperado": "gestao-epi-api" },
+        "reinicio": { "comando": ["/usr/bin/systemctl", "restart", "safework-hml.service"] },
+        "processo": { "pidComando": ["/usr/bin/systemctl", "show", "--property=MainPID", "--value", "safework-hml.service"] }
+      }
+    }
+  }
+}

@@ -304,15 +304,8 @@ describe('menu, página e somente leitura', () => {
   });
 });
 
-describe('liberação visual controlada (temporária, 05/10/2026): o MASTER abre os protótipos "Em integração" só para inspeção', () => {
-  // 05/10/2026: Compras / Entradas (purchases.html) e Regras Função / Setor (eligibility-rules.html)
-  // são MÓDULOS TEMPORARIAMENTE DESATIVADOS / ADIADOS: fora da inspeção, sem link mesmo para o MASTER.
-  // Privacidade / LGPD (lgpd.html) virou página integrada (PAGINAS.lgpd + ajustarMenuLgpd; ver lgpd-menu.test.js): saiu da inspeção.
-  const LEGADAS = {
-    'Autoatendimento (Totem)': 'self-service.html', 'Gestão de E-mails': 'emails-gestao.html',
-  };
-  // Suporte (support.html) é página integrada: sai da inspeção; seu menu é tratado por ajustarMenuSuporte (describe próprio abaixo).
-  const DESATIVADAS = { 'Compras / Entradas': 'purchases.html', 'Regras Função / Setor': 'eligibility-rules.html' };
+describe('itens "Em integração": sem inspeção de protótipos; os dois módulos adiados somem do menu', () => {
+  const ADIADOS = ['Compras / Entradas', 'Regras Função / Setor'];
   // <a class="nav-pendente" aria-disabled="true" title="Em integração"><div class="nav-icon">ícone</div>Rótulo<span class="nav-etiqueta">Em integração</span></a>
   function pendente(rotulo) {
     const atributos = { class: 'nav-pendente', 'aria-disabled': 'true', title: 'Em integração' };
@@ -327,94 +320,36 @@ describe('liberação visual controlada (temporária, 05/10/2026): o MASTER abre
   }
   const raizCom = (itens) => ({ querySelectorAll: (sel) => (sel === 'a.nav-pendente' ? itens : []) });
 
-  test('mapa: os três itens apontam para páginas legadas existentes, com script externo (protótipos) e fora da allowlist de publicação; Configurações saiu (página integrada); os dois módulos adiados ficam fora, com os arquivos preservados', () => {
-    assert.deepEqual(P.INSPECAO_PROTOTIPOS, LEGADAS);
-    assert.equal('Configurações' in P.INSPECAO_PROTOTIPOS, false);
-    for (const [rotulo, arquivo] of Object.entries(DESATIVADAS)) {
-      assert.equal(rotulo in P.INSPECAO_PROTOTIPOS, false, rotulo);
-      assert.equal(Object.values(P.INSPECAO_PROTOTIPOS).includes(arquivo), false, arquivo);
-      assert.ok(fs.existsSync(path.join(RAIZ, 'pages', arquivo)), `${arquivo} preservado`);
-    }
-    const allowlist = JSON.parse(fs.readFileSync(path.join(RAIZ, 'publicacao', 'allowlist.json'), 'utf8')).arquivos;
-    for (const arquivo of Object.values(LEGADAS)) {
-      const html = fs.readFileSync(path.join(RAIZ, 'pages', arquivo), 'utf8');
-      assert.ok(/<script[^>]+src=["']https?:/i.test(html), `${arquivo} é protótipo`);
-      assert.ok(!allowlist.includes(`pages/${arquivo}`), `${arquivo} não é publicada`);
-    }
+  test('a inspeção visual saiu com os protótipos: nenhuma exportação dela resta; a regra dos adiados continua', () => {
+    for (const nome of ['INSPECAO_PROTOTIPOS', 'hrefDeInspecao', 'liberarInspecao']) assert.equal(nome in P, false, nome);
+    assert.equal(typeof P.ocultarPendentes, 'function');
+    assert.deepEqual(P.NAVEGACAO_OCULTA_PENDENTES, ADIADOS);
   });
 
-  test('MASTER: os dois itens pendentes (2/2) ganham href com o marcador de inspeção, perdem aria-disabled e mantêm classe e etiqueta; rótulo desconhecido, "Configurações" e os dois módulos adiados não mudam', () => {
-    const rotulos = Object.keys(LEGADAS);
-    const adiados = Object.keys(DESATIVADAS).map(pendente);
-    const itens = rotulos.map(pendente).concat([pendente('Módulo Inexistente'), pendente('Configurações')], adiados);
-    P.liberarInspecao({ perfil: 'MASTER' }, raizCom(itens));
+  test('ocultarPendentes: os dois adiados somem sem link; os demais pendentes (inclusive Totem e Gestão de E-mails) ficam como o HTML os traz', () => {
+    const adiados = ADIADOS.map(pendente);
+    const outros = ['Autoatendimento (Totem)', 'Gestão de E-mails', 'Módulo Inexistente', 'Configurações'].map(pendente);
+    P.ocultarPendentes(raizCom(outros.concat(adiados)));
     for (const a of adiados) {
-      assert.equal(a.atributos.href, undefined, 'módulo adiado: sem link mesmo para o MASTER');
-      assert.equal(a.atributos['aria-disabled'], 'true');
-      assert.equal(a.atributos.title, 'Em integração');
+      assert.equal(a.style.display, 'none');
+      assert.equal(a.atributos.href, undefined);
     }
-    rotulos.forEach((rotulo, n) => {
-      const i = itens[n];
-      assert.equal(i.atributos.href, `${LEGADAS[rotulo]}?inspecao=1`, rotulo);
-      assert.equal(i.atributos['aria-disabled'], undefined, rotulo);
-      assert.match(i.atributos.title, /Em integração/);
-      assert.match(i.atributos.title, /inspeção/i);
-      assert.equal(i.atributos.class, 'nav-pendente');
+    for (const i of outros) {
+      assert.deepEqual([i.atributos.href, i.atributos['aria-disabled'], i.atributos.title, i.atributos.class, i.style.display, i.style.cursor], [undefined, 'true', 'Em integração', 'nav-pendente', undefined, undefined], i.childNodes[1].textContent);
       assert.equal(i.childNodes[2].textContent, 'Em integração', 'etiqueta preservada');
-      assert.equal(i.style.cursor, 'pointer');
-    });
-    for (const i of itens.slice(rotulos.length)) {
-      assert.equal(i.atributos.href, undefined);
-      assert.equal(i.atributos['aria-disabled'], 'true');
     }
+    assert.doesNotThrow(() => P.ocultarPendentes(null), 'sem documento (testes de módulo), não falha');
   });
 
-  test('hrefDeInspecao: acrescenta o marcador uma vez só e preserva parâmetros e fragmento já presentes', () => {
-    assert.equal(P.hrefDeInspecao('reports.html'), 'reports.html?inspecao=1');
-    assert.equal(P.hrefDeInspecao('reports.html?_s=abc'), 'reports.html?_s=abc&inspecao=1');
-    assert.equal(P.hrefDeInspecao('reports.html?inspecao=1'), 'reports.html?inspecao=1');
-    assert.equal(P.hrefDeInspecao('reports.html?_s=abc&inspecao=1'), 'reports.html?_s=abc&inspecao=1');
-    assert.equal(P.hrefDeInspecao('reports.html?inspecao=0'), 'reports.html?inspecao=1');
-    assert.equal(P.hrefDeInspecao('reports.html#topo'), 'reports.html?inspecao=1#topo');
-    for (const arquivo of Object.values(LEGADAS)) {
-      assert.equal((P.hrefDeInspecao(P.hrefDeInspecao(arquivo)).match(/inspecao=1/g) || []).length, 1, arquivo);
-    }
-  });
-
-  test('não MASTER, perfil em outra caixa ou sem permissões: nada ganha link; o que tinha sido liberado volta a ficar sem link (revalidação com outro perfil)', () => {
-    const itens = [pendente('Gestão de E-mails')];
-    P.liberarInspecao({ perfil: 'ADMINISTRADOR' }, raizCom(itens));
-    assert.equal(itens[0].atributos.href, undefined);
-    P.liberarInspecao({ perfil: 'master' }, raizCom(itens));
-    assert.equal(itens[0].atributos.href, undefined, 'comparação exata do perfil');
-    P.liberarInspecao({ perfil: 'MASTER' }, raizCom(itens));
-    assert.equal(itens[0].atributos.href, 'emails-gestao.html?inspecao=1');
-    P.liberarInspecao({ perfil: 'SUPERVISOR' }, raizCom(itens));
-    assert.deepEqual([itens[0].atributos.href, itens[0].atributos['aria-disabled'], itens[0].atributos.title, itens[0].style.cursor], [undefined, 'true', 'Em integração', '']);
-    P.liberarInspecao({ perfil: 'MASTER' }, raizCom(itens));
-    P.liberarInspecao(null, raizCom(itens));
-    assert.equal(itens[0].atributos.href, undefined);
-    assert.doesNotThrow(() => P.liberarInspecao({ perfil: 'MASTER' }, null), 'sem documento (testes de módulo), não falha');
-  });
-
-  test('prepararPagina: só o perfil MASTER confirmado pelo servidor libera os pendentes do documento; falha na consulta recolhe; podeAbrir dos protótipos continua falso', async () => {
-    const itens = [pendente('Gestão de E-mails')];
-    servidor(resposta(200, corpo({ perfil: 'MASTER' })));
+  test('prepararPagina: nem o MASTER confirmado pelo servidor recebe link nos pendentes; falha na consulta mantém tudo sem link', async () => {
     const contextoMaster = { ...CONTEXTO, usuario: { ...CONTEXTO.usuario, perfil: 'MASTER' } };
-    const r = await P.prepararPagina({ pagina: 'grupos-acesso', contexto: contextoMaster, links: [], aviso: () => {}, documento: raizCom(itens) });
-    assert.equal(itens[0].atributos.href, 'emails-gestao.html?inspecao=1');
-    assert.equal(r.podeAlterar, true);
-
-    const outros = [pendente('Gestão de E-mails')];
-    servidor(resposta(200, corpo()));
-    await P.prepararPagina({ pagina: 'grupos-acesso', contexto: CONTEXTO, links: [], aviso: () => {}, documento: raizCom(outros) });
-    assert.equal(outros[0].atributos.href, undefined);
-
-    servidor(resposta(500, {}));
-    assert.equal(await P.prepararPagina({ pagina: 'grupos-acesso', contexto: contextoMaster, links: [], aviso: () => {}, documento: raizCom(itens) }), null);
-    assert.equal(itens[0].atributos.href, undefined, 'sem permissões confirmadas, o link some');
-
-    for (const arquivo of Object.values(P.INSPECAO_PROTOTIPOS)) assert.equal(P.podeAbrir(corpo({ perfil: 'MASTER' }), arquivo.replace('.html', '')), false, arquivo);
+    for (const [resp, contexto] of [[resposta(200, corpo({ perfil: 'MASTER' })), contextoMaster], [resposta(200, corpo()), CONTEXTO], [resposta(500, {}), contextoMaster]]) {
+      const itens = [pendente('Gestão de E-mails'), pendente('Autoatendimento (Totem)'), pendente('Compras / Entradas')];
+      servidor(resp);
+      await P.prepararPagina({ pagina: 'grupos-acesso', contexto, links: [], aviso: () => {}, documento: raizCom(itens) });
+      assert.deepEqual(itens.map((i) => i.atributos.href), [undefined, undefined, undefined]);
+      assert.equal(itens[2].style.display, 'none');
+    }
   });
 });
 

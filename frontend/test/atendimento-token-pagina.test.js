@@ -2567,3 +2567,96 @@ describe('IMG-PRÉVIA — fotografias na Consulta Real da Central', () => {
     assert.equal(ctx.filha.enviadas[0].m.primeiroNome, 'Dora');
   });
 });
+
+describe('S9383 (lote 04) — rejeição inesperada de uma tarefa iniciada por evento', () => {
+  const { FALHA, rejeitar, rejeicoesEscapadas } = require('./helpers/rejeicoes');
+  const acoesDe = (pg) => pg.janela.EpiAtendimentoToken.acoes;
+  const inesperada = (pg) => pg.janela.EpiAtendimentoTokenTela.TEXTOS.RESPOSTA_INESPERADA;
+
+  test('S9383-T01 — atualizar dispositivos: o painel mostra o erro conhecido e nada escapa', async () => {
+    const { pg } = await abrir();
+    await aba(pg, 'dispositivos');
+    acoesDe(pg).listarDispositivos = rejeitar;
+    const consolesAntes = pg.consoleChamadas.length;
+    const escapadas = await rejeicoesEscapadas(pg, () => pg.clicar('botaoAtualizarDispositivos'));
+    assert.deepEqual(escapadas, []);
+    assert.equal(pg.texto('estado-dispositivos').includes(inesperada(pg)), true);
+    assert.equal(pg.textoDoDom().includes(FALHA), false, 'o texto da falha não chega à tela');
+    assert.equal(pg.consoleChamadas.length, consolesAntes, 'a falha não vai ao console');
+  });
+
+  test('S9383-T02 — paginação e troca de aba: rejeição vira o erro do painel da aba', async () => {
+    const { pg } = await abrir();
+    acoesDe(pg).listarDispositivos = rejeitar;
+    let escapadas = await rejeicoesEscapadas(pg, () => aba(pg, 'dispositivos'));
+    assert.deepEqual(escapadas, []);
+    assert.equal(pg.texto('estado-dispositivos').includes(inesperada(pg)), true);
+    escapadas = await rejeicoesEscapadas(pg, () => pg.el('dispositivosProxima').disparar('click'));
+    assert.deepEqual(escapadas, []);
+  });
+
+  test('S9383-T03 — atualizar a visão geral', async () => {
+    const { pg } = await abrir();
+    acoesDe(pg).visaoGeral = rejeitar;
+    const escapadas = await rejeicoesEscapadas(pg, () => pg.clicar('botaoAtualizarVisaoGeral'));
+    assert.deepEqual(escapadas, []);
+    assert.equal(pg.texto('estado-visaoGeral').includes(inesperada(pg)), true);
+  });
+
+  test('S9383-T04 — abrir detalhes de um dispositivo: o aviso da lista mostra o erro', async () => {
+    const { pg } = await abrir();
+    await aba(pg, 'dispositivos');
+    acoesDe(pg).consultarDispositivo = rejeitar;
+    const escapadas = await rejeicoesEscapadas(pg, () => botoes(pg, '#corpoDispositivos tr[data-dispositivo-id="1"] [data-acao="editar"]')[0].disparar('click'));
+    assert.deepEqual(escapadas, []);
+    assert.equal(aviso(pg, 'avisoDispositivos').includes(inesperada(pg)), true);
+  });
+
+  test('S9383-T05 — salvar o dispositivo: o aviso do formulário mostra o erro', async () => {
+    const { pg } = await abrir();
+    await aba(pg, 'dispositivos');
+    await botoes(pg, '#corpoDispositivos tr[data-dispositivo-id="1"] [data-acao="editar"]')[0].disparar('click');
+    await pg.esperar();
+    pg.el('nd-nome').value = 'Tablet Portaria Principal';
+    acoesDe(pg).editarDispositivo = rejeitar;
+    const escapadas = await rejeicoesEscapadas(pg, () => pg.enviar('formDispositivo'));
+    assert.deepEqual(escapadas, []);
+    assert.equal(aviso(pg, 'avisoDispositivo').includes(inesperada(pg)), true);
+  });
+
+  test('S9383-T06 — redes: atualizar e cadastrar', async () => {
+    const { pg } = await abrir();
+    await aba(pg, 'ativacao');
+    acoesDe(pg).listarRedes = rejeitar;
+    let escapadas = await rejeicoesEscapadas(pg, () => pg.clicar('botaoAtualizarRedes'));
+    assert.deepEqual(escapadas, []);
+    assert.equal(pg.texto('estado-redes').includes(inesperada(pg)), true);
+    acoesDe(pg).cadastrarRede = rejeitar;
+    pg.el('redeEndereco').value = '203.0.113.50';
+    escapadas = await rejeicoesEscapadas(pg, () => pg.enviar('formRede'));
+    assert.deepEqual(escapadas, []);
+    assert.equal(aviso(pg, 'avisoRedes').includes(inesperada(pg)), true);
+  });
+
+  test('S9383-T07 — prévia: buscar funcionários', async () => {
+    const { pg } = await abrir();
+    await aba(pg, 'previa');
+    acoesDe(pg).buscarFuncionarios = rejeitar;
+    pg.el('previaBusca').value = 'Ana';
+    const escapadas = await rejeicoesEscapadas(pg, () => pg.enviar('previaBuscaForm'));
+    assert.deepEqual(escapadas, []);
+    assert.equal(pg.texto('estado-previaBusca').includes(inesperada(pg)), true);
+  });
+
+  test('S9383-T08 — ativação: "nova ativação" do QR com falha na geração mostra o erro da ativação', async () => {
+    const { pg } = await abrir();
+    await aba(pg, 'ativacao');
+    pg.el('ativacaoDispositivo').value = '2';
+    await pg.el('ativacaoDispositivo').disparar('change');
+    await pg.esperar();
+    acoesDe(pg).gerarAtivacao = rejeitar;
+    const escapadas = await rejeicoesEscapadas(pg, () => pg.clicar('botaoNovaAtivacaoQr'));
+    assert.deepEqual(escapadas, []);
+    assert.equal(aviso(pg, 'avisoAtivacao').includes(inesperada(pg)), true);
+  });
+});

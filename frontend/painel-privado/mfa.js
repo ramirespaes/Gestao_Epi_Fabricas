@@ -217,7 +217,7 @@
     opcoes.botaoCopiar.addEventListener('click', function () {
       copiar(opcoes.chave.textContent).then(function (copiou) {
         opcoes.avisar(copiou ? MENSAGENS.CHAVE_COPIADA : MENSAGENS.COPIA_FALHOU, copiou ? 'info' : 'erro');
-      });
+      }, function () { opcoes.avisar(MENSAGENS.COPIA_FALHOU, 'erro'); });
     });
 
     return { mostrar: mostrar, limpar: limpar };
@@ -258,7 +258,7 @@
       var texto = opcoes.lista.children ? Array.prototype.map.call(opcoes.lista.children, function (item) { return item.textContent; }).join('\n') : '';
       copiar(texto).then(function (copiou) {
         opcoes.avisar(copiou ? MENSAGENS.CODIGOS_COPIADOS : MENSAGENS.COPIA_FALHOU, copiou ? 'info' : 'erro');
-      });
+      }, function () { opcoes.avisar(MENSAGENS.COPIA_FALHOU, 'erro'); });
     });
 
     opcoes.botaoSalvos.addEventListener('click', function () {

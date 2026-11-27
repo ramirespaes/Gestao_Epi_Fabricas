@@ -238,7 +238,7 @@ describe('página Configurações (inspeção estática)', () => {
     assert.doesNotMatch(codigo, /Resumo de Permissões|Usuários ativos|Perfis Master|Desativados/);
   });
 
-  test('menu: Configurações ativa aqui e link real por data-pagina nas demais páginas integradas e no Portal; saiu dos protótipos em inspeção; publicada', () => {
+  test('menu: Configurações ativa aqui e link real por data-pagina nas demais páginas integradas e no Portal; sem inspeção de protótipos; publicada', () => {
     assert.match(html, /<a class="active" role="link" tabindex="0" aria-current="page" data-pagina="config" style="display:none"><div class="nav-icon gray">settings<\/div>Configurações<\/a>/);
     const integradas = fs.readdirSync(path.join(RAIZ, 'pages')).filter((f) => f.endsWith('.html') && /data-pagina="importEmployees"/.test(ler(`pages/${f}`)) && f !== 'config.html');
     assert.ok(integradas.length >= 12,`${integradas.length} páginas integradas com menu completo`);
@@ -248,7 +248,7 @@ describe('página Configurações (inspeção estática)', () => {
       assert.doesNotMatch(h, /settings<\/div>Configurações<span class="nav-etiqueta">/, arquivo);
     }
     assert.match(ler('portal/inicio.html'), /<a href="\.\.\/pages\/config\.html" data-pagina="config" style="display:none">Configurações<\/a>/);
-    assert.equal('Configurações' in P.INSPECAO_PROTOTIPOS, false);
+    assert.equal('INSPECAO_PROTOTIPOS' in P, false, 'a inspeção dos protótipos saiu com eles');
     const allowlist = lerAllowlist();
     for (const entrada of ['pages/config.html', 'js/configuracoes.js']) assert.ok(allowlist.includes(entrada), entrada);
     assert.doesNotMatch(html, /<script[^>]+src=["']https?:/i, 'nenhum script externo (critério de publicação)');
@@ -501,7 +501,7 @@ describe('página Configurações como no navegador: itens "Em integração" e a
 
   const suporteDe = (pg) => pg.consulta('.nav a').find((a) => /^\s*support_agent\s*Suporte\s*$/.test(a.textContent.replace(/\s+/g, ' ')) || a.textContent.trim().endsWith('Suporte'));
 
-  test('MASTER em Configurações: os três itens "Em integração" abrem o protótipo com ?inspecao=1, sem aria-disabled e com a etiqueta; os dois adiados ficam sem link; Configurações e Suporte (integradas) nunca recebem o marcador', async () => {
+  test('MASTER em Configurações: os itens "Em integração" ficam sem link, com aria-disabled e a etiqueta; os dois adiados ficam sem link; Configurações e Suporte (integradas) abrem normalmente', async () => {
     const pg = abrirPagina('pages/config.html', { rotas: rotas('MASTER') });
     await pg.esperar();
     assert.equal(pg.visivel('conteudoProtegido'), true);
@@ -520,13 +520,12 @@ describe('página Configurações como no navegador: itens "Em integração" e a
       assert.equal(a.getAttribute('href'), null, a.textContent.trim());
       assert.equal(a.getAttribute('aria-disabled'), 'true', a.textContent.trim());
     }
-    // Privacidade / LGPD virou página integrada (ajustarMenuLgpd): sem a permissão, o item some e não entra entre os pendentes de inspeção.
+    // Privacidade / LGPD virou página integrada (ajustarMenuLgpd): sem a permissão, o item some e não entra entre os pendentes.
     const pendentes = todosPendentes.filter((a) => !adiados.includes(a) && !/Privacidade \/ LGPD/.test(a.textContent));
     assert.equal(pendentes.length, 2);
-    assert.deepEqual(pendentes.map((a) => a.getAttribute('href')).sort(), Object.values(P.INSPECAO_PROTOTIPOS).map((f) => `${f}?inspecao=1`).sort());
     for (const a of pendentes) {
-      assert.equal(a.getAttribute('aria-disabled'), null, a.textContent.trim());
-      assert.equal((a.getAttribute('href').match(/inspecao=1/g) || []).length, 1, 'marcador uma vez só');
+      assert.equal(a.getAttribute('href'), null, `${a.textContent.trim()}: sem link, nem para o MASTER`);
+      assert.equal(a.getAttribute('aria-disabled'), 'true', a.textContent.trim());
       assert.deepEqual(etiqueta(a), ['Em integração'], a.textContent.trim());
       assert.match(a.getAttribute('class'), /nav-pendente/);
     }
@@ -534,10 +533,10 @@ describe('página Configurações como no navegador: itens "Em integração" e a
     assert.equal(pg.visivelNo(config), true, 'o próprio item aparece no menu');
     assert.doesNotMatch(String(config.getAttribute('href')), /inspecao/, 'Configurações é página integrada: nunca abre em inspeção');
     assert.doesNotMatch(ler('pages/config.html').replace(/<!--[\s\S]*?-->/g, ''), /inspecao-visual|db-api\.js|\.\.\/js\/main\.js|loginScreen|Cobresul/);
-    assert.equal(pg.chamadas.map((c) => c.chave).includes('GET /auth/permissoes'), true, 'a liberação vem do perfil confirmado pelo servidor');
+    assert.equal(pg.chamadas.map((c) => c.chave).includes('GET /auth/permissoes'), true, 'o menu vem das permissões confirmadas pelo servidor');
   });
 
-  test('ADMINISTRADOR, SUPERVISOR e USUARIO em Configurações: nenhum item "Em integração" ganha link (a liberação temporária é só do MASTER; a matriz é da 12J); o Suporte, integrado, abre para todos', async () => {
+  test('ADMINISTRADOR, SUPERVISOR e USUARIO em Configurações: nenhum item "Em integração" ganha link (a matriz é da 12J); o Suporte, integrado, abre para todos', async () => {
     for (const perfil of ['ADMINISTRADOR', 'SUPERVISOR', 'USUARIO']) {
       const pg = abrirPagina('pages/config.html', { rotas: rotas(perfil) });
       await pg.esperar();

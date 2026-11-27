@@ -41,7 +41,7 @@ describe('nomes: Gestão de estoque e Análise de estoque', () => {
       assert.ok(estoque.length >= 1 && estoque.every((r) => r === 'Gestão de estoque'), `${arquivo}: ${JSON.stringify(estoque)}`);
       assert.ok(analise.length >= 1 && analise.every((r) => r === 'Análise de estoque'), `${arquivo}: ${JSON.stringify(analise)}`);
     }
-    assert.equal(PAGINAS.length - MENU_ADMINISTRATIVO.length, 25); // + atendimento-token.html (Etapa H) + company-data.html (F2)
+    assert.equal(PAGINAS.length - MENU_ADMINISTRATIVO.length, 21); // + atendimento-token.html (Etapa H) + company-data.html (F2); − os 4 protótipos removidos
   });
 
   test('título e cabeçalho das duas páginas', () => {
@@ -79,12 +79,6 @@ describe('nomes: Gestão de estoque e Análise de estoque', () => {
     assert.match(inicio, /<a href="\.\.\/pages\/available-items\.html" data-pagina="availableItems" style="display:none">Análise de estoque<\/a>/);
     const nomes = Object.fromEntries(require('../js/grupo-permissoes').RECURSOS.map((r) => [r.id, r.nome])); // eslint-disable-line global-require
     assert.deepEqual([nomes.materials, nomes.availableItems], ['Gestão de estoque', 'Análise de estoque']);
-  });
-
-  test('protótipo: main.js acha o item do menu pelo nome novo', () => {
-    const main = ler('js/main.js');
-    assert.match(main, /textContent\.includes\('Análise de estoque'\)/);
-    assert.equal(/textContent\.includes\('Itens Disponíveis'\)/.test(main), false);
   });
 });
 

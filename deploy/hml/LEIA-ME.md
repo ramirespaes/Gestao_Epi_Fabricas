@@ -18,8 +18,14 @@ release; não é um comando de inspeção somente de leitura.
 | Pasta ou arquivo | Função |
 |---|---|
 | `empacotar-backend.js`, `allowlist-backend.json` | pacote e release do backend |
+| `cd/agente-backend.js`, `cd/agente.config.backend.exemplo.json` | agente do escopo backend, separado e inerte (`habilitado: false`); o instalador segue recusando o backend (`COORDENACAO_NAO_HOMOLOGADA`) |
+| `cd/iam-confianca-backend.modelo.json`, `cd/iam-publicador-backend.modelo.json`, `cd/iam-agente-backend.modelo.json`, `cd/s3-politica-backend.modelo.json` | modelos inertes de IAM e S3 só para `hml-backend/`, com marcadores `CONTA` e `BUCKET` |
+| `cd/precondicao-migrations.js` | verificador puro de pré-condições de migrations (laudo selado; nunca opera o banco nem restaura) |
+| `cd/lancador-credenciais-backend.js` | Etapa 4C (D-H3): lançador do agente do backend com credenciais temporárias do IAM Roles Anywhere (`aws_signing_helper credential-process`), sem gravar nem exibir credenciais |
+| `cd/safework-cd-backend.service.modelo`, `cd/safework-cd-backend.timer.modelo`, `cd/iam-confianca-rolesanywhere-backend.modelo.json`, `cd/rolesanywhere-perfil-backend.modelo.json` | Etapa 4C (D-H3): modelos inertes da unidade, do timer, da confiança do papel e do perfil do Roles Anywhere do agente do backend |
+| `cd/safework-hml-91-cd-backend.conf.modelo`, `cd/gravar-identidade-do-servico.modelo`, `cd/polkit-safework-cd-backend.rules.modelo` | Etapa 4C (D-H2): modelos inertes do drop-in do serviço (link estável e identidade em `/run`), do gravador da identidade e da regra polkit restrita a `restart` de `safework-hml.service` |
 | `contratos-persistentes.json` | versões de contratos de dados (vazio: nenhum homologado) |
-| `instalador/` | instalador de releases (`instalar-release.js`, `nucleo.js`, `ancora.js`, `erros.js`, `compatibilidade.js`, `coordenacao.js`); copiável sozinho para o servidor |
+| `instalador/` | instalador de releases (`instalar-release.js`, `nucleo.js`, `ancora.js`, `erros.js`, `compatibilidade.js`, `coordenacao.js`) e a adoção da primeira release do backend (`adotar-backend.js`, Etapa 4C D-H1); copiável sozinho para o servidor |
 | `verificacao/` | verificação pós-publicação por GET |
 | `csp/` | gerador de CSP por perfil |
 | `nginx/` | modelos Nginx e renderizador validado |

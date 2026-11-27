@@ -689,3 +689,29 @@ describe('acessibilidade da marcação', () => {
     assert.equal(/desativar/i.test(html), false, 'não existe desativação de MFA');
   });
 });
+
+// S9383 (lote 04): caracterização. copiar() já converte a recusa da área de transferência em "não copiou"; a correção só fecha a cadeia
+// com o tratador de rejeição do próprio then, para a mesma mensagem. Estes testes passam antes e depois da mudança.
+describe('S9383 (lote 04) — cópia recusada pela área de transferência', () => {
+  const { rejeicoesEscapadas } = require('./helpers/rejeicoes');
+  const recusar = (pg) => { pg.janela.navigator.clipboard.writeText = () => Promise.reject(new Error('NotAllowedError')); };
+  const COPIA_FALHOU = 'Não foi possível copiar. Copie manualmente.';
+
+  test('S9383-M01 — copiar chave recusada: avisa que não copiou, sem segredo e sem rejeição escapada', async () => {
+    const pg = await emCadastro();
+    recusar(pg);
+    const escapadas = await rejeicoesEscapadas(pg, () => pg.clicar('botao-copiar-chave'));
+    assert.deepEqual(escapadas, []);
+    assert.equal(pg.el('mensagem').textContent, COPIA_FALHOU);
+    semSegredos(pg.el('mensagem').textContent, 'a mensagem');
+  });
+
+  test('S9383-M02 — copiar códigos recusada: avisa que não copiou e os códigos continuam na tela', async () => {
+    const pg = await comCodigos();
+    recusar(pg);
+    const escapadas = await rejeicoesEscapadas(pg, () => pg.clicar('botao-copiar-codigos'));
+    assert.deepEqual(escapadas, []);
+    assert.equal(pg.el('mensagem').textContent, COPIA_FALHOU);
+    assert.deepEqual(pg.el('lista-codigos').children.map((li) => li.textContent), CODIGOS);
+  });
+});

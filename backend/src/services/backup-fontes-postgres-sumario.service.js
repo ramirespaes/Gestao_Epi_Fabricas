@@ -48,6 +48,8 @@ const RE_VERSAO_PGDUMP = /^;\s+Dumped by pg_dump version:\s+(\d{1,3}(?:\.\d{1,3}
 
 const ehObjeto = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const inteiroPositivo = (v) => Number.isSafeInteger(v) && v > 0;
+// Mesma ordem da ordenação padrão (unidades UTF-16).
+const compararTexto = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
 function normalizarLimites(limites) {
   if (limites === undefined) return LIMITES_PADRAO;
@@ -191,7 +193,7 @@ function criarLeitorDeSumario(opcoes) {
       truncado,
       bytesLidos,
       sha256,
-      motivos: Object.freeze([...motivos].sort()),
+      motivos: Object.freeze([...motivos].sort(compararTexto)),
     });
   }
 

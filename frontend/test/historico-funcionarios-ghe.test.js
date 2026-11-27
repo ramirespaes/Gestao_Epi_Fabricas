@@ -433,3 +433,55 @@ describe('G6 — limites', () => {
     assert.equal(pg.chamadas.some((c) => !['GET', 'POST'].includes(c.metodo) || (c.metodo === 'POST' && c.caminho !== '/funcionarios/consulta-cpf')), false);
   });
 });
+
+// Sonar S9383 (lote 04): cargas iniciadas sem espera (seleção, seções de eventos, EPIs, busca pelo Enter). Uma rejeição inesperada não
+// escapa: vira a falha conhecida da área ("Tentar novamente" nas seções) ou o aviso da página.
+describe('S9383 (lote 04) — Histórico de Funcionários', () => {
+  const { FALHA, rejeitar, rejeicoesEscapadas } = require('./helpers/rejeicoes');
+  const HF = (pg) => pg.janela.EpiHistoricoFuncionarios;
+  const DOIS = { lista: [funcionario(11), funcionario(12)] };
+
+  test('S9383-H01 — selecionar: rejeição da consulta vira o aviso da página e nada escapa', async () => {
+    const pg = await abrirCom(DOIS);
+    HF(pg).acoes.detalhar = rejeitar;
+    const escapadas = await rejeicoesEscapadas(pg, () => clicarSelecionar(pg, 11));
+    assert.deepEqual(escapadas, []);
+    assert.match(limpo(pg.el('aviso').textContent), new RegExp(HF(pg).TEXTOS.RESPOSTA_INVALIDA));
+    assert.equal(pg.textoDoDom().includes(FALHA), false);
+  });
+
+  test('S9383-H02 — seções de eventos e EPIs: rejeição vira a falha conhecida de cada área, com "Tentar novamente"', async () => {
+    const pg = await abrirCom(DOIS);
+    HF(pg).acoes.eventos = rejeitar;
+    HF(pg).acoes.fichaDoFuncionario = rejeitar;
+    const escapadas = await rejeicoesEscapadas(pg, () => clicarSelecionar(pg, 11));
+    assert.deepEqual(escapadas, []);
+    assert.match(areaGhe(pg), new RegExp(HF(pg).TEXTOS.GHE_FALHA));
+    assert.equal(existe(pg, 'historyGheTentar'), true);
+    assert.match(limpo(pg.el('historyTimeline').textContent), new RegExp(HF(pg).TEXTOS.EPIS_FALHA));
+    assert.equal(existe(pg, 'historyEpisTentar'), true);
+  });
+
+  test('S9383-H03 — busca pelo Enter: rejeição vira o aviso da página', async () => {
+    const pg = await abrir(DOIS);
+    pg.janela.EpiFuncionarios.acoes.listar = rejeitar;
+    pg.el('historySearchValue').value = 'Pessoa';
+    const escapadas = await rejeicoesEscapadas(pg, () => pg.el('historySearchValue').disparar('keydown', { key: 'Enter' }));
+    assert.deepEqual(escapadas, []);
+    assert.match(limpo(pg.el('aviso').textContent), new RegExp(HF(pg).TEXTOS.RESPOSTA_INVALIDA));
+  });
+
+  test('S9383-H04 — falha de uma carga já obsoleta não pinta a área do funcionário atual', async () => {
+    const pg = await abrirCom(DOIS);
+    const pendentes = [];
+    HF(pg).acoes.eventos = () => new Promise((_, rej) => { pendentes.push(rej); });
+    await clicarSelecionar(pg, 11);
+    await pg.esperar();
+    HF(pg).acoes.eventos = () => Promise.resolve({ ok: true, status: 200, dados: { funcionarioId: 12, tipo: 'GHE', eventos: [], total: 0, pagina: 1, limite: 20 } });
+    await clicarSelecionar(pg, 12);
+    await pg.esperar();
+    const escapadas = await rejeicoesEscapadas(pg, async () => { pendentes.forEach((rej) => rej(new Error(FALHA))); });
+    assert.deepEqual(escapadas, []);
+    assert.doesNotMatch(areaGhe(pg), new RegExp(HF(pg).TEXTOS.GHE_FALHA));
+  });
+});

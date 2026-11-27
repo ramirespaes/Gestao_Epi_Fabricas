@@ -275,7 +275,7 @@
     function pedirRecarga() {
       if (salvando || encerrada || base === null) return;
       var n = Object.keys(formulario.diff(base.valores, valoresDaTela())).length;
-      if (n === 0) { recarregar(); return; }
+      if (n === 0) { recarregar().catch(aoFalharRecarga); return; }
       $('empConfirmarTexto').textContent = TEXTOS.CONFIRMAR_DESCARTE(n);
       $('empConfirmarRecarga').style.display = '';
       $('empConfirmarCancelar').focus();
@@ -351,6 +351,9 @@
       atualizarBotao();
       return true;
     }
+
+    // Rejeição inesperada da recarga (a API não rejeita): a mesma falha conhecida; o formulário e o conflito ficam como estavam.
+    function aoFalharRecarga() { if (!encerrada) aviso(TEXTOS.FALHA_RECARGA); }
 
     async function recarregar() {
       if (salvando || encerrada) return;

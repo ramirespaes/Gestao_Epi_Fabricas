@@ -34,6 +34,9 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
+// Mesma ordem do sort() padrão (S2871); localeCompare mudaria o manifesto.
+const compararComoTexto = (a, b) => { const x = String(a); const y = String(b); if (x < y) return -1; return x > y ? 1 : 0; };
+
 const RAIZ = path.resolve(__dirname, '..');
 const ARQUIVO_ALLOWLIST = path.join(__dirname, 'allowlist-painel.json');
 const PREFIXO_PROPRIO = 'painel-privado/';
@@ -191,7 +194,7 @@ function validarConteudo(arquivos, raiz) {
 
 function gerarManifesto(arquivos, raiz) {
   const manifesto = {};
-  for (const entrada of [...arquivos].sort()) {
+  for (const entrada of [...arquivos].sort(compararComoTexto)) {
     const hash = sha256(absoluto(raiz, entrada));
     if (HASHES_FIXOS[entrada] && HASHES_FIXOS[entrada] !== hash) {
       throw new ErroPublicacao('INTEGRIDADE_DIVERGENTE', `${entrada} tem SHA-256 diferente do fixado`);
@@ -234,8 +237,8 @@ function listarPacote(dir, base = dir) {
 function verificarPacote(dir, { arquivos = lerAllowlist(), manifesto = null } = {}) {
   const presentes = new Set(listarPacote(dir));
   const esperados = new Set(arquivos);
-  const aMais = [...presentes].filter((f) => !esperados.has(f)).sort();
-  const aMenos = [...esperados].filter((f) => !presentes.has(f)).sort();
+  const aMais = [...presentes].filter((f) => !esperados.has(f)).sort(compararComoTexto);
+  const aMenos = [...esperados].filter((f) => !presentes.has(f)).sort(compararComoTexto);
   if (aMais.length || aMenos.length) {
     throw new ErroPublicacao('PACOTE_DIVERGENTE',
       `pacote diferente da allowlist — a mais: [${aMais.join(', ')}]; a menos: [${aMenos.join(', ')}]`);
@@ -276,7 +279,7 @@ function empacotar({ saida, arquivos = lerAllowlist(), raiz = RAIZ } = {}) {
     desfazer(destino, criouDestino);
     throw erro;
   }
-  return { saida: destino, arquivos: [...arquivos].sort(), manifesto };
+  return { saida: destino, arquivos: [...arquivos].sort(compararComoTexto), manifesto };
 }
 
 if (require.main === module) {

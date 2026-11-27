@@ -54,7 +54,7 @@ jobs:
 
   integracao-postgresql:
     name: Integração com PostgreSQL 16 efêmero
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     # Banco criado dentro do runner e descartado ao fim do job. Credenciais
     # sintéticas, sem secrets; os testes isolam cada execução em schema

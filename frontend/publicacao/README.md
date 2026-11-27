@@ -11,9 +11,9 @@ O comando termina com código 0 quando gera o pacote e com código 1 quando o re
 
 ## Por que existe
 
-As páginas legadas do protótipo continuam no repositório: são 13 em `pages/` desde o fechamento do Bloco 9, mais `js/main.js` e `js/db-api.js`. Elas carregam SheetJS 0.18.5 por CDN, sem SRI e com CVE-2023-30533 e CVE-2024-22363, e simulam login e sessão, inclusive pela URL (`?_s=`).
+As páginas legadas do protótipo carregavam SheetJS 0.18.5 por CDN, sem SRI e com CVE-2023-30533 e CVE-2024-22363, e simulavam login e sessão, inclusive pela URL (`?_s=`). As últimas quatro (`purchases`, `eligibility-rules`, `emails-gestao`, `self-service`), com `js/main.js`, `js/db-api.js` e `js/inspecao-visual.js`, foram removidas na limpeza do frontend legado (26/11/2026).
 
-A origem do frontend está na allowlist de CORS da API com credenciais. Por isso, qualquer script que rode nessa origem age na API com a sessão real de quem estiver logado. Essas páginas não podem ser publicadas.
+A origem do frontend está na allowlist de CORS da API com credenciais. Por isso, qualquer script que rode nessa origem age na API com a sessão real de quem estiver logado. Nada fora da allowlist pode ser publicado, e o `NUNCA_PUBLICAR` continua recusando os três scripts do protótipo caso voltem a ser listados.
 
 ## Como a allowlist é garantida
 
@@ -29,7 +29,7 @@ O que não estiver listado fica fora.
 O empacotador (`empacotar.js`) recusa o pacote inteiro, **antes de escrever qualquer arquivo**, nestes casos:
 
 1. uma entrada não é um caminho relativo canônico, está duplicada, aponta para fora de `frontend/`, é diretório, é link simbólico ou não existe;
-2. uma entrada está em `NUNCA_PUBLICAR` — `js/main.js`, `js/db-api.js` ou o Painel Privado — mesmo que alguém a acrescente à allowlist;
+2. uma entrada está em `NUNCA_PUBLICAR` — `js/main.js`, `js/db-api.js`, `js/inspecao-visual.js` (removidos do repositório, recusados mesmo assim) ou o Painel Privado — mesmo que alguém a acrescente à allowlist;
 3. uma página publicada carrega script de fora do pacote (CDN ou qualquer URL com esquema). A única exceção é o script oficial do Turnstile, pela URL literal `https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit`, e só em `portal/index.html` (login) e `portal/recuperar-senha.html` (recuperação de senha); qualquer outra página, URL, domínio parecido ou prefixo é recusado;
 4. uma página ou folha de estilo publicada carrega recurso local (script, link, imagem ou `url()`) que não está na allowlist;
 5. a saída já existe com conteúdo ou fica dentro do código-fonte do frontend.
@@ -79,9 +79,8 @@ Depois da cópia, o pacote é conferido contra a allowlist e o manifesto SHA-256
 
 | Item | Motivo |
 |---|---|
-| 13 páginas legadas, `js/main.js`, `js/db-api.js` | protótipo (ver acima) |
 | `js/auth-session.js` | nenhuma página publicada o carrega |
-| `index.html` da raiz | redirecionamento do protótipo, usado só em desenvolvimento |
+| `index.html` da raiz | redirecionamento local, usado só em desenvolvimento |
 | `painel-privado/` | tem origem própria, com allowlist de CORS disjunta da do cliente; é publicado por alvo separado, com empacotador e allowlist próprios (seção "Pacote do Painel Privado") |
 | `IMAGEN/`, `test/`, `publicacao/`, `package.json`, `vendor/README.md` | material de desenvolvimento e documentação |
 
