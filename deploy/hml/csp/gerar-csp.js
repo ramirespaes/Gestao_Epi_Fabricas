@@ -17,6 +17,9 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
+// Mesma ordem do sort() padrão (S2871); localeCompare mudaria a política gerada.
+const compararComoTexto = (a, b) => { const x = String(a); const y = String(b); if (x < y) return -1; return x > y ? 1 : 0; };
+
 // Origens externas que cada perfil aceita, por tipo de uso. Painel: nenhuma.
 const PERFIS = {
   painel: { origens: [] },
@@ -51,7 +54,7 @@ function listarPor(raiz, extensao, rel = '') {
     if (e.isSymbolicLink()) return [];
     if (e.isDirectory()) return listarPor(raiz, extensao, relFilho);
     return e.name.endsWith(extensao) ? [relFilho] : [];
-  }).sort();
+  }).sort(compararComoTexto);
 }
 
 function origemDe(url) {
@@ -139,7 +142,7 @@ function gerarCsp({ raiz, perfil, arquivos } = {}) {
     if (MANIPULADOR_EM_JS.test(fs.readFileSync(path.join(real, ...js.split('/')), 'utf8'))) avisos.push({ codigo: 'MANIPULADOR_EM_JS', mensagem: `${js} monta manipulador on*= em texto; a CSP o bloquearia` });
   }
 
-  const lista = (conjunto) => [...conjunto].sort();
+  const lista = (conjunto) => [...conjunto].sort(compararComoTexto);
   const fonte = (...partes) => partes.filter((p) => p.length > 0).join(' ');
   const diretivas = [
     "default-src 'none'",

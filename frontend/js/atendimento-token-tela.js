@@ -1,6 +1,9 @@
 (function (global) {
   'use strict';
 
+  // Mesma ordem do sort() padrão (S2871).
+  function compararComoTexto(a, b) { var x = String(a); var y = String(b); if (x < y) return -1; return x > y ? 1 : 0; }
+
   /**
    * EpiAtendimentoTokenTela — a Central Administrativa do Atendimento Token (Etapa H, bloco frontend): seis abas numa só
    * página (Visão Geral, Dispositivos, Ativação, Monitoramento, Prévia e Testes, Histórico), sobre as rotas reais das Etapas
@@ -139,6 +142,28 @@
       painelEstado(nome, negado ? E.TIPOS.ACESSO_NEGADO : E.TIPOS.ERRO, negado ? T.POR_CODIGO.PERMISSAO_NEGADA : T.mensagens.deErro(r));
     }
 
+    // Tarefa iniciada por evento que rejeita: falha interna (a API não rejeita; a rede vira envelope). Vira o erro conhecido do painel
+    // ou do aviso de destino, sem texto da falha na tela nem no console, e a aba pode ser relida.
+    function aoFalharPainel(painel, aba) {
+      return function () {
+        if (estado.encerrada) return;
+        if (aba) estado.carregado[aba] = false;
+        painelEstado(painel, E.TIPOS.ERRO, TEXTOS.RESPOSTA_INESPERADA);
+      };
+    }
+    function aoFalharAviso(idAviso, painel) {
+      return function () {
+        if (estado.encerrada) return;
+        if (painel) painelEstado(painel, null);
+        aviso(idAviso, 'erro', TEXTOS.RESPOSTA_INESPERADA);
+      };
+    }
+    function aoFalharEstadoAtivacao() {
+      if (estado.encerrada) return;
+      estado.ativacaoEstado = null;
+      desenharEstadoAtivacao(null, TEXTOS.RESPOSTA_INESPERADA);
+    }
+
     function sessaoExpirou() {
       if (estado.encerrada) return;
       aoSessaoEncerrada();
@@ -217,7 +242,7 @@
         define($('painel-' + a), ativa && cap.abas[a] === true);
       });
       if (comFoco) $('aba-' + nome).focus();
-      carregarAba(nome, false);
+      carregarAba(nome, false).catch(aoFalharPainel(nome, nome));
     }
 
     // ─── Visualizar Totem (K7) ────────────────────────────────────────
@@ -229,7 +254,7 @@
     function consultaRealPermitida() { return cap.previa === true && cap.buscarFuncionario === true; }
     function objetoSimples(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
     function mesmasChaves(objeto, esperadas) {
-      var chaves = Object.keys(objeto).sort();
+      var chaves = Object.keys(objeto).sort(compararComoTexto);
       return chaves.length === esperadas.length && chaves.every(function (c, i) { return c === esperadas[i]; });
     }
 
@@ -708,7 +733,7 @@
       var d = r.ok && r.dados ? T.modelo.dispositivo(r.dados.dispositivo) : null;
       if (!r.ok || d === null) {
         aviso('avisoDispositivos', 'erro', r.ok ? TEXTOS.RESPOSTA_INESPERADA : T.mensagens.deErro(r));
-        if (!r.ok && r.status === 404) carregarDispositivos();
+        if (!r.ok && r.status === 404) carregarDispositivos().catch(aoFalharPainel('dispositivos', 'dispositivos'));
         return;
       }
       abrirFormulario(preferirEdicao && cap.editar && d.situacao !== 'REVOGADO' ? 'editar' : 'detalhes', d);
@@ -746,7 +771,7 @@
         invalidar();
         aviso('avisoDispositivos', 'sucesso', criando ? 'Dispositivo cadastrado. Gere a ativação na aba Ativação.' : 'Dispositivo atualizado.');
         if (criando) estado.dispositivos.pagina = 1;
-        carregarDispositivos();
+        carregarDispositivos().catch(aoFalharPainel('dispositivos', 'dispositivos'));
         return;
       }
       $('botaoSalvarDispositivo').disabled = false;
@@ -757,7 +782,7 @@
         return;
       }
       aviso('avisoDispositivo', 'erro', T.mensagens.deErro(r));
-      if (r.status === 404 || r.codigo === 'DISPOSITIVO_REVOGADO') carregarDispositivos();
+      if (r.status === 404 || r.codigo === 'DISPOSITIVO_REVOGADO') carregarDispositivos().catch(aoFalharPainel('dispositivos', 'dispositivos'));
     }
 
     // ─── Confirmação genérica (revogar, desativar rede, nova ativação) ─
@@ -810,12 +835,12 @@
           if (estado.encerrada) return { ok: false, sessao: true };
           if (T.mensagens.exigeNovoLogin(r)) { sessaoExpirou(); return { ok: false, sessao: true }; }
           if (!r.ok) {
-            if (r.status === 404) carregarDispositivos();
+            if (r.status === 404) carregarDispositivos().catch(aoFalharPainel('dispositivos', 'dispositivos'));
             return { ok: false, mensagem: T.mensagens.deErro(r) };
           }
           invalidar();
           aviso('avisoDispositivos', 'sucesso', r.dados && r.dados.alterado === false ? 'O dispositivo já estava revogado.' : 'Dispositivo "' + d.nome + '" revogado.');
-          carregarDispositivos();
+          carregarDispositivos().catch(aoFalharPainel('dispositivos', 'dispositivos'));
           return { ok: true };
         },
       });
@@ -888,7 +913,7 @@
       if (!r.ok || a === null) {
         estado.ativacaoEstado = null;
         desenharEstadoAtivacao(null, r.ok ? TEXTOS.RESPOSTA_INESPERADA : T.mensagens.deErro(r));
-        if (!r.ok && r.status === 404) { estado.carregado.ativacao = false; carregarAtivacao(); }
+        if (!r.ok && r.status === 404) { estado.carregado.ativacao = false; carregarAtivacao().catch(aoFalharPainel('ativacao', 'ativacao')); }
         return;
       }
       estado.ativacaoEstado = a;
@@ -967,7 +992,7 @@
         desenharEstadoAtivacao(estado.ativacaoEstado);
         var texto = T.mensagens.deErro(r);
         aviso('avisoAtivacao', 'erro', texto);
-        if (r.status === 404 || r.codigo === 'DISPOSITIVO_REVOGADO') { estado.carregado.ativacao = false; carregarAtivacao(); }
+        if (r.status === 404 || r.codigo === 'DISPOSITIVO_REVOGADO') { estado.carregado.ativacao = false; carregarAtivacao().catch(aoFalharPainel('ativacao', 'ativacao')); }
         return { ok: false, mensagem: texto };
       }
       var geracao = T.ativacao.daGeracao(r.dados, agora());
@@ -980,7 +1005,7 @@
       invalidar();
       exibirQr(geracao, d);
       geracao = null;
-      carregarEstadoAtivacao();
+      carregarEstadoAtivacao().catch(aoFalharEstadoAtivacao);
       return { ok: true };
     }
 
@@ -1079,7 +1104,7 @@
       $('qrMensagem').textContent = TEXTOS.QR_EXPIRADO;
       mostrar($('qrMensagem'));
       define($('botaoNovaAtivacaoQr'), cap.gerarAtivacao);
-      carregarEstadoAtivacao();
+      carregarEstadoAtivacao().catch(aoFalharEstadoAtivacao);
     }
 
     // ─── Redes autorizadas ────────────────────────────────────────────
@@ -1155,7 +1180,7 @@
         $('redeEndereco').value = '';
         $('redeDescricao').value = '';
         aviso('avisoRedes', 'sucesso', 'IP autorizado.');
-        carregarRedes();
+        carregarRedes().catch(aoFalharPainel('redes'));
         return;
       }
       var porCampo = T.mensagens.deCampos(r, ['rede', 'descricao']);
@@ -1185,11 +1210,11 @@
           if (estado.encerrada) return { ok: false, sessao: true };
           if (T.mensagens.exigeNovoLogin(res)) { sessaoExpirou(); return { ok: false, sessao: true }; }
           if (!res.ok) {
-            if (res.status === 404) carregarRedes();
+            if (res.status === 404) carregarRedes().catch(aoFalharPainel('redes'));
             return { ok: false, mensagem: T.mensagens.deErro(res) };
           }
           aviso('avisoRedes', 'sucesso', res.dados && res.dados.alterado === false ? 'Este IP já estava desativado.' : 'IP ' + r.endereco + ' desativado.');
-          carregarRedes();
+          carregarRedes().catch(aoFalharPainel('redes'));
           return { ok: true };
         },
       });
@@ -1369,8 +1394,8 @@
       var acao = alvo.getAttribute('data-acao');
       var id = Number(alvo.getAttribute('data-dispositivo-id'));
       if (!Number.isInteger(id) || id <= 0) return;
-      if (acao === 'detalhes') abrirDispositivo(id, false);
-      else if (acao === 'editar') abrirDispositivo(id, true);
+      if (acao === 'detalhes') abrirDispositivo(id, false).catch(aoFalharAviso('avisoDispositivos'));
+      else if (acao === 'editar') abrirDispositivo(id, true).catch(aoFalharAviso('avisoDispositivos'));
       else if (acao === 'revogar') pedirRevogacao(id);
     }
 
@@ -1389,7 +1414,7 @@
       if (!Number.isInteger(id) || id <= 0) return;
       // O único botão do funcionário alterna: aberto → fecha (sem consultar, com o foco de volta nele); qualquer outro abre a dele e fecha a anterior.
       if (id === estado.previaAberta) fecharPrevia(true);
-      else carregarPrevia(id);
+      else carregarPrevia(id).catch(aoFalharAviso('avisoPrevia', 'previaResultado'));
     }
 
     function aoSairDaPagina() { apagarQr(); descartarPreviaTotem(); }
@@ -1408,7 +1433,7 @@
       ouvir($('abas'), 'keydown', aoTeclarNasAbas);
       ouvir(doc, 'keydown', aoTeclar);
 
-      ouvir($('botaoAtualizarVisaoGeral'), 'click', function () { carregarVisaoGeral(); });
+      ouvir($('botaoAtualizarVisaoGeral'), 'click', function () { carregarVisaoGeral().catch(aoFalharPainel('visaoGeral', 'visaoGeral')); });
       define($('opcaoModoReal'), consultaRealPermitida());
       ouvir($('modoPreviaDemo'), 'change', function () { trocarModoPrevia('demo'); });
       ouvir($('modoPreviaReal'), 'change', function () { trocarModoPrevia('real'); });
@@ -1418,11 +1443,11 @@
       // Dispositivos.
       define($('botaoNovoDispositivo'), cap.criar);
       ouvir($('botaoNovoDispositivo'), 'click', function () { abrirFormulario('criar', null); });
-      ouvir($('botaoAtualizarDispositivos'), 'click', function () { aviso('avisoDispositivos', null, ''); carregarDispositivos(); });
-      ouvir($('dispositivosAnterior'), 'click', function () { mudarPaginaDispositivos(-1); });
-      ouvir($('dispositivosProxima'), 'click', function () { mudarPaginaDispositivos(1); });
+      ouvir($('botaoAtualizarDispositivos'), 'click', function () { aviso('avisoDispositivos', null, ''); carregarDispositivos().catch(aoFalharPainel('dispositivos', 'dispositivos')); });
+      ouvir($('dispositivosAnterior'), 'click', function () { mudarPaginaDispositivos(-1).catch(aoFalharPainel('dispositivos', 'dispositivos')); });
+      ouvir($('dispositivosProxima'), 'click', function () { mudarPaginaDispositivos(1).catch(aoFalharPainel('dispositivos', 'dispositivos')); });
       ouvir($('corpoDispositivos'), 'click', aoClicarTabela);
-      ouvir($('formDispositivo'), 'submit', function (e) { e.preventDefault(); salvarDispositivo(); });
+      ouvir($('formDispositivo'), 'submit', function (e) { e.preventDefault(); salvarDispositivo().catch(aoFalharAviso('avisoDispositivo')); });
       ouvir($('botaoCancelarDispositivo'), 'click', function () { fecharModal('modalDispositivo'); });
       ouvir($('botaoFecharModalDispositivo'), 'click', function () { fecharModal('modalDispositivo'); });
 
@@ -1439,17 +1464,17 @@
       ouvir($('botaoNovaAtivacaoQr'), 'click', function () {
         var d = dispositivoSelecionado();
         fecharModal('modalQr');
-        if (d) pedirGeracao();
+        if (d) pedirGeracao().catch(aoFalharAviso('avisoAtivacao'));
       });
       $('ativacaoOrientacaoGeral').textContent = TEXTOS.ATIVACAO_ORIENTACAO;
       define($('blocoRedes'), cap.redes);
       $('redesOrientacao').textContent = TEXTOS.REDES_ORIENTACAO;
-      ouvir($('botaoAtualizarRedes'), 'click', function () { aviso('avisoRedes', null, ''); carregarRedes(); });
-      ouvir($('formRede'), 'submit', function (e) { e.preventDefault(); cadastrarRede(); });
+      ouvir($('botaoAtualizarRedes'), 'click', function () { aviso('avisoRedes', null, ''); carregarRedes().catch(aoFalharPainel('redes')); });
+      ouvir($('formRede'), 'submit', function (e) { e.preventDefault(); cadastrarRede().catch(aoFalharAviso('avisoRedes')); });
       ouvir($('corpoRedes'), 'click', aoClicarRedes);
 
       // Prévia.
-      ouvir($('previaBuscaForm'), 'submit', function (e) { e.preventDefault(); buscarFuncionarios(); });
+      ouvir($('previaBuscaForm'), 'submit', function (e) { e.preventDefault(); buscarFuncionarios().catch(aoFalharPainel('previaBusca')); });
       ouvir($('previaFuncionarios'), 'click', aoClicarFuncionarios);
 
       // O código sai da memória quando a página é recarregada, encerrada ou escondida pelo histórico.

@@ -30,6 +30,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+// Mesma ordem do sort() padrão (S2871); localeCompare mudaria a lista publicada.
+const compararComoTexto = (a, b) => { const x = String(a); const y = String(b); if (x < y) return -1; return x > y ? 1 : 0; };
+
 const RAIZ = path.resolve(__dirname, '..');
 const ARQUIVO_ALLOWLIST = path.join(__dirname, 'allowlist.json');
 const NUNCA_PUBLICAR = ['js/main.js', 'js/db-api.js', 'js/inspecao-visual.js', 'painel-privado/'];
@@ -189,8 +192,8 @@ function listarPacote(dir, base = dir) {
 function verificarPacote(dir, arquivos = lerAllowlist()) {
   const presentes = new Set(listarPacote(dir));
   const esperados = new Set(arquivos);
-  const aMais = [...presentes].filter((f) => !esperados.has(f)).sort();
-  const aMenos = [...esperados].filter((f) => !presentes.has(f)).sort();
+  const aMais = [...presentes].filter((f) => !esperados.has(f)).sort(compararComoTexto);
+  const aMenos = [...esperados].filter((f) => !presentes.has(f)).sort(compararComoTexto);
   if (aMais.length || aMenos.length) {
     throw new ErroPublicacao('PACOTE_DIVERGENTE',
       `pacote diferente da allowlist — a mais: [${aMais.join(', ')}]; a menos: [${aMenos.join(', ')}]`);
@@ -209,7 +212,7 @@ function empacotar({ saida, arquivos = lerAllowlist(), raiz = RAIZ } = {}) {
     fs.copyFileSync(absoluto(raiz, entrada), alvo, fs.constants.COPYFILE_EXCL);
   }
   verificarPacote(destino, arquivos);
-  return { saida: destino, arquivos: [...arquivos].sort() };
+  return { saida: destino, arquivos: [...arquivos].sort(compararComoTexto) };
 }
 
 if (require.main === module) {

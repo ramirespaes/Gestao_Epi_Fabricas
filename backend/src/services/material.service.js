@@ -13,6 +13,9 @@ const imagemPadraoRepo = require('../repositories/imagem-padrao.repository');
 const materialImagemRepo = require('../repositories/material-imagem.repository');
 const { normalizarIdGrande } = require('../utils/identificador-grande');
 
+// Mesma ordem do sort() padrão (S2871); localeCompare mudaria a ordem canônica.
+const compararComoTexto = (a, b) => { const x = String(a); const y = String(b); if (x < y) return -1; return x > y ? 1 : 0; };
+
 /**
  * Serviço de cadastro de materiais (Bloco 9, Etapa A).
  *
@@ -101,7 +104,7 @@ function normalizarImagem(imagem) {
   if (imagem === undefined || imagem === null) return imagem;
   const invalida = () => recusarClassificacao('body.imagem', 'IMAGEM_INVALIDA', MSG_IMAGEM_INVALIDA);
   if (typeof imagem !== 'object' || Array.isArray(imagem)) throw invalida();
-  const chaves = Object.keys(imagem).sort();
+  const chaves = Object.keys(imagem).sort(compararComoTexto);
   if (chaves.length !== 2 || chaves[0] !== 'id' || chaves[1] !== 'origem' || !ORIGENS_DE_IMAGEM.includes(imagem.origem)) throw invalida();
   const id = normalizarIdGrande(imagem.id);
   if (id === null) throw invalida();

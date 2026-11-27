@@ -12,7 +12,11 @@ const { executar } = require('../src/db/guarda-inicializacao');
  */
 
 if (require.main === module) {
-  executar().then((codigo) => { process.exitCode = codigo; });
+  // Rejeição inesperada: erro técnico (1), com código fixo; nunca a mensagem nem a pilha, que podem trazer a configuração do banco.
+  executar().then((codigo) => { process.exitCode = codigo; }, () => {
+    console.error('[guarda] GUARDA_FALHA_INESPERADA: o backend NÃO foi iniciado');
+    process.exitCode = 1;
+  });
 }
 
 module.exports = { executar };

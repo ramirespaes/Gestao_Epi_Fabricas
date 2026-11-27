@@ -167,6 +167,7 @@ async function principal() {
   }
 }
 
-if (require.main === module) principal();
+// A mesma saída do ouvinte de unhandledRejection instalado em principal(), também antes de ele existir.
+if (require.main === module) principal().catch(() => process.exit(SAIDA_FALHA));
 
 module.exports = { processarImagem, configurarSharp, abrirEntrada, classificarFalhaDoSharp, verificarSaida, lerParametros };

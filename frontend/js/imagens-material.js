@@ -1417,7 +1417,7 @@
         if (daEscolhaPendente(imagem)) painel.appendChild(criar(doc, 'p', { class: 'bi-gestao-dica' }, [TEXTOS.AVISO_NO_FORMULARIO]));
         var excluirImagem = criar(doc, 'button', { type: 'button', class: 'filled-btn bi-perigo', 'data-acao': 'CONFIRMAR_EXCLUSAO' }, [TEXTOS.EXCLUIR_IMAGEM]);
         excluirImagem.disabled = travado;
-        excluirImagem.addEventListener('click', function () { executarGestao('EXCLUIR', imagem); });
+        excluirImagem.addEventListener('click', function () { executarGestao('EXCLUIR', imagem).catch(aoFalharOperacao()); });
         var cancelarExclusao = criar(doc, 'button', { type: 'button', class: 'outlined-btn', 'data-acao': 'CANCELAR_EXCLUSAO' }, [TEXTOS.CANCELAR]);
         cancelarExclusao.disabled = travado;
         cancelarExclusao.addEventListener('click', cancelarEdicaoGestao);
@@ -1435,8 +1435,8 @@
         corpo.appendChild(criar(doc, 'div', { class: 'bi-gestao-acoes' }, [
           criarBotaoGestao(imagem, 'RENOMEAR', TEXTOS.RENOMEAR, 'outlined-btn', function () { iniciarRenomear(imagem); }, ''),
           inativa
-            ? criarBotaoGestao(imagem, 'REATIVAR', TEXTOS.REATIVAR, 'outlined-btn', function () { executarGestao('REATIVAR', imagem); }, '')
-            : criarBotaoGestao(imagem, 'INATIVAR', TEXTOS.INATIVAR, 'outlined-btn', function () { executarGestao('INATIVAR', imagem); }, motivoDeUso && motivoDeUso + 'inativar.'),
+            ? criarBotaoGestao(imagem, 'REATIVAR', TEXTOS.REATIVAR, 'outlined-btn', function () { executarGestao('REATIVAR', imagem).catch(aoFalharOperacao()); }, '')
+            : criarBotaoGestao(imagem, 'INATIVAR', TEXTOS.INATIVAR, 'outlined-btn', function () { executarGestao('INATIVAR', imagem).catch(aoFalharOperacao()); }, motivoDeUso && motivoDeUso + 'inativar.'),
           criarBotaoGestao(imagem, 'EXCLUIR', TEXTOS.EXCLUIR, 'outlined-btn bi-perigo-texto', function () { pedirExclusao(imagem); }, motivoDeUso && motivoDeUso + 'excluir.'),
         ]));
       }
@@ -1502,6 +1502,31 @@
       gestaoIncompleta = r.dados.completa === false;
       renderGestao();
       if (gestaoIncompleta && r.dados.falha && r.dados.falha.status === 401) aoSessaoEncerrada();
+    }
+
+    // Tarefas iniciadas sem espera: a rejeição inesperada da tarefa recém-iniciada vira a falha conhecida da área (lista do seletor, lista
+    // da gestão ou aviso da operação, com a trava liberada); a de uma tarefa já superada é descartada como as respostas antigas.
+    function aoFalharLista() {
+      var minha = sequencia;
+      return function () { if (minha !== sequencia || !aberto) return; m.estado.textContent = TEXTOS.GENERICO; };
+    }
+    function aoFalharLeituraGestao() {
+      var minha = gestaoLeitura;
+      return function () {
+        if (minha !== gestaoLeitura || !aberto || vista !== 'GESTAO') return;
+        gestaoCarregando = false;
+        gestaoFalha = TEXTOS.GENERICO;
+        renderGestao();
+      };
+    }
+    function aoFalharOperacao() {
+      var geracao = gestaoGeracao;
+      return function () {
+        if (geracao !== gestaoGeracao) return;
+        gestaoOcupada = null;
+        mostrarAvisoGestao(TEXTOS.GESTAO_GENERICO, 'erro');
+        renderGestao();
+      };
     }
 
     /** Volta ao estado de partida da vista: nada de uma visita anterior (lista, edição, confirmação, operação) sobra, e respostas antigas deixam de valer. */
@@ -1602,7 +1627,7 @@
         renderGestao([{ id: id, acao: 'RENOMEAR' }]);
         return;
       }
-      executarGestao('RENOMEAR', imagem, texto);
+      executarGestao('RENOMEAR', imagem, texto).catch(aoFalharOperacao());
     }
 
     /** Posição certa de uma imagem renomeada na lista (mesma ordem da API), sem mexer na ordem das outras. */
@@ -1636,7 +1661,7 @@
       }
       if (tipo === 'RENOMEAR' && !sumiu && status === 400) gestaoErroNome = TEXTOS.NOME_DA_GESTAO;
       mostrarAvisoGestao(texto, 'erro');
-      if (reler) carregarGestao(); // a releitura trava a tela primeiro: o foco pendente espera ela destravar, em vez de se perder no redesenho
+      if (reler) carregarGestao().catch(aoFalharLeituraGestao()); // a releitura trava a tela primeiro: o foco pendente espera ela destravar, em vez de se perder no redesenho
       renderGestao(foco);
     }
 
@@ -1715,8 +1740,8 @@
       if (!habilitado) fechar(false, true);
       atualizarAdicionar();
       atualizarGerenciar();
-      if (aberto && vista === 'ENVIO' && !podeEnviar && !enviando) voltarBiblioteca();
-      if (aberto && vista === 'GESTAO' && !podeGerenciar && gestaoOcupada === null) voltarDaGestao();
+      if (aberto && vista === 'ENVIO' && !podeEnviar && !enviando) Promise.resolve(voltarBiblioteca()).catch(aoFalharLista());
+      if (aberto && vista === 'GESTAO' && !podeGerenciar && gestaoOcupada === null) Promise.resolve(voltarDaGestao()).catch(aoFalharLista());
     }
 
     /** Desfaz a escolha e esquece a imagem gravada (formulário limpo, edição aberta ou fechada) sem mexer no foco. */

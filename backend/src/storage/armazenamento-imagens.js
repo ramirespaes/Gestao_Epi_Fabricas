@@ -7,6 +7,9 @@ const path = require('node:path');
 const { promisify } = require('node:util');
 const { TIPOS, adquirirJanela, ehPosseDeJanela } = require('../utils/janela-escrita-imagens');
 
+// Mesma ordem do sort() padrão (S2871); localeCompare mudaria a ordem canônica.
+const compararComoTexto = (a, b) => { const x = String(a); const y = String(b); if (x < y) return -1; return x > y ? 1 : 0; };
+
 // Leitura entregue como fluxo por descritor numérico: um fluxo aberto e nunca lido não vira erro ao ser coletado.
 const abrirDescritor = promisify(fs.open);
 const fstat = promisify(fs.fstat);
@@ -288,7 +291,7 @@ function criarArmazenamentoImagens({ diretorio, janelaDeRemocao } = {}) {
         }
         for (const arquivo of arquivos) if (arquivo.isFile() && NOME_VARIANTE.test(arquivo.name)) chaves.push(`${prefixo}/${imagem.name}/${arquivo.name}`);
       }
-      return chaves.sort();
+      return chaves.sort(compararComoTexto);
     } catch (falha) { throw traduzir(falha); }
   }
 

@@ -33,4 +33,7 @@ const res = { status() { return this; }, json() { return this; } };
     resultado = { desfecho: 'recusou', status: erro.status ?? null, codigo: erro.codigo ?? null };
   }
   process.stdout.write(`${JSON.stringify({ ...resultado, spawns })}\n`, () => process.exit(0));
-})();
+})().catch(() => {
+  // Falha do próprio auxiliar (não do envio): saída 1 com código fixo, para o teste reprovar com motivo legível.
+  process.stderr.write('ENVIO_SINGLETON_FALHA_DO_AUXILIAR\n', () => process.exit(1));
+});

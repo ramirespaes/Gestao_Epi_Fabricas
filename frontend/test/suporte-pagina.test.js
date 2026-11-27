@@ -490,3 +490,29 @@ describe('Almoxarifado e SST', () => {
     assert.equal(pg.el('supContatoMensagem').value, 'texto preservado');
   });
 });
+
+describe('S9383 (lote 04) — rejeição inesperada ao abrir o chamado e ao reler a lista', () => {
+  const { FALHA, rejeitar, rejeicoesEscapadas } = require('./helpers/rejeicoes');
+  const S = (pg) => pg.janela.EpiSuporte;
+  const detalhe = { status: 200, corpo: { status: 'ok', chamado: chamado(), mensagens: [], historico: [] } };
+
+  test('S9383-S01 — abrir o chamado: o aviso da página mostra a falha do detalhe e nada escapa', async () => {
+    const pg = await pronta({ itens: [chamado()] });
+    S(pg).acoes.detalharChamado = rejeitar;
+    const escapadas = await rejeicoesEscapadas(pg, () => pg.el('supChamados').querySelector('[data-chamado="11"]').disparar('click'));
+    assert.deepEqual(escapadas, []);
+    assert.equal(pg.texto('supAviso').includes(S(pg).TEXTOS.FALHA_DETALHE), true);
+    assert.equal(pg.textoDoDom().includes(FALHA), false);
+  });
+
+  test('S9383-S02 — fechar a conversa relê a lista: a rejeição vira a falha da lista', async () => {
+    const pg = await pronta({ itens: [chamado()], rotas: { 'GET /suporte/chamados/11': detalhe } });
+    await pg.el('supChamados').querySelector('[data-chamado="11"]').disparar('click');
+    await pg.esperar();
+    assert.equal(pg.el('supDetalheModal').classList.contains('open'), true);
+    S(pg).acoes.listarChamados = rejeitar;
+    const escapadas = await rejeicoesEscapadas(pg, () => pg.el('supDetalheModal').querySelector('[data-fechar-modal]').disparar('click'));
+    assert.deepEqual(escapadas, []);
+    assert.equal(pg.texto('supChamadosEstado').includes(S(pg).TEXTOS.FALHA_LISTA), true);
+  });
+});

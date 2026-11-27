@@ -527,12 +527,12 @@
         colaboradorId = f.id;
         exibirColaborador(true);
         // employeeHistory.visualizar basta; independentes da área de EPIs
-        secaoGhe.carregar(f.id);
-        secaoSituacao.carregar(f.id);
-        secaoCadastral.carregar(f.id);
+        secaoGhe.carregar(f.id).catch(secaoGhe.aoFalhar());
+        secaoSituacao.carregar(f.id).catch(secaoSituacao.aoFalhar());
+        secaoCadastral.carregar(f.id).catch(secaoCadastral.aoFalhar());
         if (!podeVerEpis) { linhaDoTempo(TEXTOS.EPIS_SEM_PERMISSAO); return; }
         // Sem await: a seleção termina com a ficha cadastral; a área de EPIs carrega por conta própria.
-        carregarEpis(f.id);
+        carregarEpis(f.id).catch(aoFalharEpis());
         return;
       }
       limparColaborador();
@@ -543,6 +543,17 @@
     // ── C: histórico de EPIs. Toda carga recebe um número; a que não é mais a atual (outro funcionário, outra página,
     //    Limpar, nova busca, sessão encerrada) é descartada sem tocar em nada.
     function episObsoleta(minha) { return encerrada || minha !== episAtual; }
+    // Cargas iniciadas sem espera: a rejeição inesperada da carga recém-iniciada vira a falha conhecida da área ou o aviso da
+    // página; a de uma carga já obsoleta é descartada como as respostas antigas.
+    function aoFalharEpis() { var minha = episAtual; return function () { if (!episObsoleta(minha)) falhaEpis(null); }; }
+    function aoFalharSelecao() {
+      var minha = selecaoAtual;
+      return function () { if (encerrada || minha !== selecaoAtual) return; limparColaborador(); aviso(TEXTOS.RESPOSTA_INVALIDA, 'erro'); };
+    }
+    function aoFalharBusca() {
+      var minha = buscaAtual;
+      return function () { if (encerrada || minha !== buscaAtual) return; aviso(TEXTOS.RESPOSTA_INVALIDA, 'erro'); };
+    }
 
     async function carregarEpis(funcionarioId) {
       var minha = ++episAtual;
@@ -725,6 +736,8 @@
 
       return {
         carregar: function (funcionarioId) { return carregar(funcionarioId, 1, periodoAplicado); },
+        // Para a carga recém-iniciada: rejeição inesperada vira a falha conhecida (com "Tentar novamente"); se já obsoleta, nada muda.
+        aoFalhar: function () { var minha = atual; return function () { if (!obsoleta(minha)) falha(null); }; },
         invalidar: function () { atual += 1; estado = null; },
         limpar: function () { atual += 1; estado = null; area([]); },
       };
@@ -771,7 +784,7 @@
 
     function linhaResultado(f) {
       var botao = no('button', { class: 'outlined-btn', type: 'button', 'data-id': texto(f.id) }, ['Selecionar']);
-      botao.addEventListener('click', function () { selecionar(f.id); });
+      botao.addEventListener('click', function () { selecionar(f.id).catch(aoFalharSelecao()); });
       return no('tr', {}, [
         no('td', {}, [no('strong', {}, [texto(f.nome)])]),
         no('td', {}, [ouVazio(f.matricula)]),
@@ -832,14 +845,14 @@
     }
     /** Página 1 das quatro seções do colaborador exibido, com o período aplicado (cada carga anterior fica obsoleta). */
     function recarregarHistoricos() {
-      secaoGhe.carregar(colaboradorId);
-      secaoSituacao.carregar(colaboradorId);
-      secaoCadastral.carregar(colaboradorId);
+      secaoGhe.carregar(colaboradorId).catch(secaoGhe.aoFalhar());
+      secaoSituacao.carregar(colaboradorId).catch(secaoSituacao.aoFalhar());
+      secaoCadastral.carregar(colaboradorId).catch(secaoCadastral.aoFalhar());
       if (!podeVerEpis || !epi || String(epi.funcionarioId) !== String(colaboradorId)) return;
       epi.periodo = periodoAplicado;
       // Ficha conhecida: só as entregas. Ficha ainda chegando: a carga em curso já usa o novo período. Sem ficha ou
       // falha da ficha: nada a refazer aqui (a nova tentativa usa o período aplicado).
-      if (epi.fichaId !== null) carregarPagina(1, ++episAtual);
+      if (epi.fichaId !== null) carregarPagina(1, ++episAtual).catch(aoFalharEpis());
     }
     function aplicarPeriodo() {
       if (encerrada || colaboradorId === null) return;
@@ -935,7 +948,7 @@
       iniciar: function () {
         $('botaoConsultar').addEventListener('click', consultar);
         $('botaoLimparHistorico').addEventListener('click', limpar);
-        $('historySearchValue').addEventListener('keydown', function (e) { if (e && e.key === 'Enter') consultar(); });
+        $('historySearchValue').addEventListener('keydown', function (e) { if (e && e.key === 'Enter') consultar().catch(aoFalharBusca()); });
         var aplicarBotao = $('botaoAplicarPeriodo');
         var todoBotao = $('botaoTodoHistorico');
         if (aplicarBotao) aplicarBotao.addEventListener('click', aplicarPeriodo);

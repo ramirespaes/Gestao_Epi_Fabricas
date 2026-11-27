@@ -496,7 +496,12 @@
       if (m.estado === 'vazio') { estado(o.vazio); return; }
       o.desenhar(m);
     }
-    o.select.addEventListener('change', function () { carregar(); });
+    // Rejeição inesperada ao desenhar (a consulta já tem try/catch): o gráfico da carga atual fica "indisponível".
+    function aoFalharCarga() {
+      var minha = atual;
+      return function () { if (encerrado || minha !== atual) return; estado(mensagens.INDISPONIVEL); resumo(''); };
+    }
+    o.select.addEventListener('change', function () { carregar().catch(aoFalharCarga()); });
     return {
       carregar: carregar,
       encerrar: function () { encerrado = true; atual += 1; estado(''); resumo(''); o.select.disabled = false; },

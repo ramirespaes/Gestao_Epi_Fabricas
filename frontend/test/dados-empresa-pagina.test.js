@@ -479,3 +479,22 @@ describe('navegação da própria página', () => {
     assert.match(html, /<a href="\.\.\/portal\/inicio\.html"/);
   });
 });
+
+describe('S9383 (lote 04) — rejeição inesperada ao carregar os dados atualizados', () => {
+  const { FALHA, rejeitar, rejeicoesEscapadas } = require('./helpers/rejeicoes');
+  const conflito = { status: 409, corpo: { status: 'error', codigo: 'EMPRESA_DADOS_DESATUALIZADOS', message: 'x' } };
+
+  test('S9383-D01 — recarga sem alterações pendentes: o aviso mostra a falha de recarga e nada escapa', async () => {
+    const pg = await pronta({ rotas: { 'PATCH /empresa/dados': conflito } });
+    const original = val(pg, 'telefone');
+    await digitar(pg, 'telefone', '1199');
+    await pg.clicar('empSalvar');
+    assert.equal(pg.visivel('empRecarregar'), true);
+    await digitar(pg, 'telefone', original);
+    pg.janela.EpiDadosEmpresa.acoes.consultar = rejeitar;
+    const escapadas = await rejeicoesEscapadas(pg, () => pg.clicar('empRecarregar'));
+    assert.deepEqual(escapadas, []);
+    assert.equal(pg.texto('empAviso').includes(pg.janela.EpiDadosEmpresa.TEXTOS.FALHA_RECARGA), true);
+    assert.equal(pg.textoDoDom().includes(FALHA), false);
+  });
+});

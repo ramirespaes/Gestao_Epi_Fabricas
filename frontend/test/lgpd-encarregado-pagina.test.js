@@ -728,3 +728,25 @@ describe('datas: digitação, colagem e calendário nativo (correção de 28/10/
     assert.equal(pg.location.hash, '');
   });
 });
+
+describe('S9383 (lote 04) — rejeição inesperada ao salvar o encarregado', () => {
+  const { FALHA, rejeitar, rejeicoesEscapadas } = require('./helpers/rejeicoes');
+  const L = (pg) => pg.janela.EpiLgpd;
+
+  test('S9383-L01 — salvar: o modal mostra o genérico, o botão volta a responder e nada escapa', async () => {
+    const pg = await pronta();
+    await pg.clicar('dpoEditar');
+    await preencher(pg, { funcao: 'PRINCIPAL', acao: 'DESIGNAR', tipoPessoa: 'PF', vinculo: 'INTERNO', conflito: 'SEM_CONFLITO' });
+    pg.el('dpo-nome').value = 'Ana Encarregada Teste';
+    pg.el('dpo-email').value = 'dpo.ana@example.invalid';
+    pg.el('dpo-inicioEm').value = '2026-10-01';
+    pg.el('dpo-atoReferencia').value = 'Portaria 7/2026';
+    L(pg).acoes.designar = rejeitar;
+    const escapadas = await rejeicoesEscapadas(pg, () => pg.clicar('dpoModalSalvar'));
+    assert.deepEqual(escapadas, []);
+    assert.equal(pg.el('dpoModal').classList.contains('open'), true);
+    assert.equal(pg.texto('dpoModalMsg'), L(pg).TEXTOS.DPO_GENERICO);
+    assert.equal(pg.el('dpoModalSalvar').disabled, false);
+    assert.equal(pg.textoDoDom().includes(FALHA), false);
+  });
+});
