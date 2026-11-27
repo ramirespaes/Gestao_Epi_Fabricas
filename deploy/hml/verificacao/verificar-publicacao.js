@@ -18,6 +18,9 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
+// Mesma ordem do sort() padrão (S2871); localeCompare mudaria o manifesto conferido.
+const compararComoTexto = (a, b) => { const x = String(a); const y = String(b); if (x < y) return -1; return x > y ? 1 : 0; };
+
 const CAMINHOS_SENSIVEIS = ['/.env', '/.git/config', '/.releases/', '/estado.json'];
 const STATUS_DE_NEGACAO = new Set([403, 404, 410]);
 const MAX_DETALHES = 5;
@@ -174,7 +177,7 @@ async function verificarPublicacao({ baseUrl, tipo, versaoEsperada, manifesto = 
     if (corpo !== undefined) {
       if (corpo === null || typeof corpo !== 'object' || Array.isArray(corpo)) idFalhas.push('/versao.json não é um objeto');
       else {
-        const chaves = Object.keys(corpo).sort();
+        const chaves = Object.keys(corpo).sort(compararComoTexto);
         if (chaves.join(',') !== CAMPOS_DA_VERSAO.join(',')) idFalhas.push(`/versao.json precisa ter exatamente os campos ${CAMPOS_DA_VERSAO.join(', ')}`);
         for (const campo of CAMPOS_DA_VERSAO) if (typeof corpo[campo] !== 'string' || corpo[campo] !== versaoEsperada[campo]) idFalhas.push(`${campo} publicado difere do esperado`);
       }
@@ -182,7 +185,7 @@ async function verificarPublicacao({ baseUrl, tipo, versaoEsperada, manifesto = 
   }
   registrar('IDENTIFICACAO', idFalhas, `${versaoEsperada.rotulo} (${String(versaoEsperada.commit).slice(0, 7)})`);
 
-  const arquivos = Object.keys(manifesto).sort();
+  const arquivos = Object.keys(manifesto).sort(compararComoTexto);
   const respostas = await pool(arquivos, concorrencia, async (rel) => ({ rel, r: await pedir(`/${rel.split('/').map(encodeURIComponent).join('/')}`) }));
   const arqFalhas = [];
   for (const { rel, r } of respostas) {
@@ -273,7 +276,7 @@ async function principal(argv) {
     validarVersaoEsperada(opcoes.versaoEsperada);
     opcoes.manifesto = lerManifestoDoRelease(path.join(v.release, `manifesto-${v.componente}.sha256`), secao);
     const proprios = new Set(Object.keys(opcoes.manifesto));
-    opcoes.ausentes = [...new Set(v.isolamentoDe.flatMap((m) => Object.keys(lerManifestoSoFormato(m))))].filter((rel) => !proprios.has(rel)).sort();
+    opcoes.ausentes = [...new Set(v.isolamentoDe.flatMap((m) => Object.keys(lerManifestoSoFormato(m))))].filter((rel) => !proprios.has(rel)).sort(compararComoTexto);
   }
   return verificarPublicacao(opcoes);
 }

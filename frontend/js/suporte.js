@@ -481,8 +481,11 @@
       var estavaAberta = conversa.id !== null;
       conversa = { id: null, ultimoId: 0, timer: null, emVoo: false, situacao: null, vazio: null };
       // Ao fechar, a lista é relida: o servidor é quem diz o que ainda está por ler.
-      if (estavaAberta && !encerrada) carregarChamados();
+      if (estavaAberta && !encerrada) carregarChamados().catch(aoFalharLista);
     }
+    // Rejeição inesperada (a API não rejeita: a rede vira resposta): a mesma falha conhecida da lista ou do detalhe.
+    function aoFalharLista() { if (!encerrada) definir('supChamadosEstado', TEXTOS.FALHA_LISTA); }
+    function aoFalharDetalhe() { if (!encerrada) aviso(TEXTOS.FALHA_DETALHE); }
 
     async function verChamado(id) {
       var r = await acoes.detalharChamado(id);
@@ -671,7 +674,7 @@
       if (lista) {
         lista.addEventListener('click', function (ev) {
           var alvo = ev.target && ev.target.closest ? ev.target.closest('[data-chamado]') : null;
-          if (alvo) verChamado(Number(alvo.getAttribute('data-chamado')));
+          if (alvo) verChamado(Number(alvo.getAttribute('data-chamado'))).catch(aoFalharDetalhe);
         });
       }
       doc.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') fecharModal(); });

@@ -1,6 +1,9 @@
 (function (global) {
   'use strict';
 
+  // Mesma ordem do sort() padrão (S2871); localeCompare mudaria a ordem das sugestões.
+  function compararComoTexto(a, b) { var x = String(a); var y = String(b); if (x < y) return -1; return x > y ? 1 : 0; }
+
   /**
    * EpiGestaoFuncionarios — Gestão de Funcionários (frontend operacional).
    *
@@ -662,7 +665,7 @@
         var vistos = {};
         var saida = [];
         lista.forEach(function (f) { var v = f[chave]; if (v && !vistos[v]) { vistos[v] = 1; saida.push(v); } });
-        return saida.sort();
+        return saida.sort(compararComoTexto);
       }
       [['dlSetor', 'setor'], ['dlCargo', 'funcao']].forEach(function (par) {
         var dl = $(par[0]);

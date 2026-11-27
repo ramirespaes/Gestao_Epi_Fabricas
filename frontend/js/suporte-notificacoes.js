@@ -121,7 +121,12 @@
     cancelarTimer();
     if (estado.identidade === null || !visivel(estado.doc)) return;
     // Função nomeada: o harness de testes identifica este temporizador de fundo pelo nome (dom-pagina: `nome`).
-    estado.timer = global.setTimeout(function sondagemNotificacoesSuporte() { estado.timer = null; consultar(); }, INTERVALO_MS);
+    estado.timer = global.setTimeout(function sondagemNotificacoesSuporte() { estado.timer = null; consultarEmFundo(); }, INTERVALO_MS);
+  }
+  // Toda consulta é disparada sem espera. Uma falha inesperada segue o contrato da falha de rede: o contador mantém o último
+  // valor e a próxima consulta continua agendada (o ciclo não para em silêncio).
+  function consultarEmFundo() {
+    consultar().catch(function () { estado.emVoo = false; agendar(); });
   }
   function limpar(doc) {
     estado.contagem = null;
@@ -144,7 +149,7 @@
     }
     estado.emVoo = false;
     if (geracao !== estado.geracao) { // identidade ou ciclo mudou enquanto a consulta voava: resposta descartada
-      if (estado.identidade !== null) consultar(); // a identidade atual ainda não foi consultada
+      if (estado.identidade !== null) consultarEmFundo(); // a identidade atual ainda não foi consultada
       return;
     }
     if (r && (r.status === 401 || r.status === 403)) { parar(); limpar(); return; }
@@ -159,7 +164,7 @@
     estado.ouvindo = doc;
     doc.addEventListener('visibilitychange', function () {
       if (estado.identidade === null) return;
-      if (visivel(doc)) consultar(); else cancelarTimer();
+      if (visivel(doc)) consultarEmFundo(); else cancelarTimer();
     });
   }
 
@@ -175,12 +180,12 @@
     if (identidade !== estado.identidade) { parar(); limpar(d); estado.identidade = identidade; }
     ouvirVisibilidade(d);
     cancelarTimer();
-    consultar();
+    consultarEmFundo();
   }
   function atualizarAgora() {
     if (estado.identidade === null) return;
     cancelarTimer();
-    consultar();
+    consultarEmFundo();
   }
 
   global.EpiSuporteNotificacoes = {

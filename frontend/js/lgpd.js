@@ -697,6 +697,16 @@
       definir('dpoStatus', TEXTOS.DPO_SALVO[operacao]);
       await recarregarGestao();
     }
+    // Rejeição inesperada do salvar (a API não rejeita): com o modal aberto, libera o botão e mostra o genérico; já fechado
+    // (a escrita foi aceita e a releitura falhou), avisa que a gestão não foi recarregada.
+    function aoFalharSalvar() {
+      if (encerrada) return;
+      salvando = false;
+      var botao = $('dpoModalSalvar');
+      if (botao) botao.disabled = false;
+      if (modalAberto()) mensagemModal(TEXTOS.DPO_GENERICO);
+      else definir('dpoStatus', TEXTOS.DPO_FALHA_GESTAO);
+    }
     /** Relê vigentes (ids e versões) e o resumo (apresentação), depois de qualquer escrita ou conflito. */
     async function recarregarGestao() {
       var r = await acoes.resumo();
@@ -746,7 +756,7 @@
       liga('dpoEditar', 'click', function () { abrirModal(); });
       liga('dpoModalFechar', 'click', fecharModal);
       liga('dpoModalCancelar', 'click', fecharModal);
-      liga('dpoModalSalvar', 'click', function () { salvar(); });
+      liga('dpoModalSalvar', 'click', function () { salvar().catch(aoFalharSalvar); });
       liga('dpoModal', 'keydown', teclaNoModal);
       liga('dpo-funcao', 'change', function () { ajustarCampos(); gravarFragmento(); });
       liga('dpo-acao', 'change', function () { ajustarCampos(); gravarFragmento(); });

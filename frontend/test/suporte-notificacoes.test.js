@@ -276,3 +276,28 @@ describe('em outra página integrada (Dashboard): o item "Suporte" ajustado cent
     assert.equal(consultas(pg).length, 1);
   });
 });
+
+describe('S9383 (lote 04) — falha inesperada numa consulta de fundo', () => {
+  const { FALHA, rejeicoesEscapadas } = require('./helpers/rejeicoes');
+  const sondagens = (pg) => pg.temporizadoresPendentes().filter((t) => t.nome === 'sondagemNotificacoesSuporte');
+  const quebrarModelo = (pg) => { pg.janela.EpiSuporteNotificacoes.modelo.contagem = () => { throw new Error(FALHA); }; };
+
+  test('S9383-N01 — sondagem: a rejeição não escapa, o contador mantém o último valor e a próxima consulta continua agendada', async () => {
+    const pg = await pronta('pages/dashboard.html', { naoLidos: 2 });
+    quebrarModelo(pg);
+    const escapadas = await rejeicoesEscapadas(pg, () => pg.avancar(30000));
+    assert.deepEqual(escapadas, []);
+    assert.equal(contador(pg).textContent, '2');
+    assert.equal(sondagens(pg).length, 1, 'o ciclo não para');
+  });
+
+  test('S9383-N02 — visibilidade e "atualizar agora": a rejeição não escapa', async () => {
+    const pg = await pronta('pages/dashboard.html', { naoLidos: 1 });
+    quebrarModelo(pg);
+    let escapadas = await rejeicoesEscapadas(pg, () => disparar(pg, 'visibilitychange'));
+    assert.deepEqual(escapadas, []);
+    escapadas = await rejeicoesEscapadas(pg, async () => { pg.janela.EpiSuporteNotificacoes.atualizarAgora(); });
+    assert.deepEqual(escapadas, []);
+    assert.equal(sondagens(pg).length, 1);
+  });
+});

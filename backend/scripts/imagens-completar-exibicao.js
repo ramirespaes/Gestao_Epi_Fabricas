@@ -8,6 +8,9 @@ const { lerConfiguracao } = require('../src/config/imagens');
 const { inspecionarContainer, ErroDeImagem, PEDACOS_DE_METADADOS } = require('../src/utils/imagem-container');
 const { nomeSeguro } = require('../src/utils/pacote-padrao-erros');
 
+// Mesma ordem do sort() padrão (S2871); localeCompare mudaria a ordem canônica.
+const compararComoTexto = (a, b) => { const x = String(a); const y = String(b); if (x < y) return -1; return x > y ? 1 : 0; };
+
 /**
  * Script administrativo: completa a variante de EXIBIÇÃO (WebP 640x640) de UMA imagem padrão da Biblioteca de Imagens que ainda não a tem.
  * O importador histórico gravou só o mestre (PNG padronizado) e a miniatura; sem `exibicao.webp` e sem `sha256_exibicao`/`bytes_exibicao`, a rota de
@@ -350,7 +353,7 @@ function lerInventario(texto) {
 function lerProva(texto, dumpSha256, agoraMs) {
   let prova;
   try { prova = JSON.parse(texto); } catch { throw invalido('prova de restauração', 'JSON inválido'); }
-  const chaves = prova !== null && typeof prova === 'object' && !Array.isArray(prova) ? Object.keys(prova).sort().join(',') : '';
+  const chaves = prova !== null && typeof prova === 'object' && !Array.isArray(prova) ? Object.keys(prova).sort(compararComoTexto).join(',') : '';
   if (chaves !== 'dumpSha256,impressao,restauradoEm,versao' || prova.versao !== 1) throw invalido('prova de restauração', 'estrutura inesperada');
   if (prova.dumpSha256 !== dumpSha256) throw invalido('prova de restauração', 'a prova pertence a outro backup');
   const itens = Array.isArray(prova.impressao) && prova.impressao.length === 4

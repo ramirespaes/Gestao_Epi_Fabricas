@@ -20,10 +20,13 @@ const RAIZ = Object.freeze({
 const SECOES = Object.freeze(['mestre', 'exibicao', 'miniatura']);
 const SECAO = Object.freeze({ lado: FAIXA_INTEIRO(1, 8192), bytesMax: FAIXA_INTEIRO(1, 256 * MIB) });
 
+// Mesma ordem do sort() padrão (S2871).
+const compararComoTexto = (a, b) => { const x = String(a); const y = String(b); if (x < y) return -1; return x > y ? 1 : 0; };
+
 function verificarObjeto(valor, nome, chaves) {
   if (valor === null || typeof valor !== 'object' || Array.isArray(valor)) throw new TypeError(`parâmetros de imagem: ${nome} deve ser um objeto`);
-  const reais = Object.keys(valor).sort();
-  const esperadas = [...chaves].sort();
+  const reais = Object.keys(valor).sort(compararComoTexto);
+  const esperadas = [...chaves].sort(compararComoTexto);
   if (reais.length !== esperadas.length || reais.some((c, i) => c !== esperadas[i])) throw new TypeError(`parâmetros de imagem: chaves de ${nome} diferentes das combinadas`);
 }
 

@@ -22,9 +22,11 @@ const CODIGOS_DE_RECUSA = Object.freeze(Object.values(CODIGOS));
 
 const respostaInvalida = () => Object.assign(new Error('resposta inválida do processo filho de imagens'), { codigo: 'IMAGEM_FILHO_RESPOSTA_INVALIDA' });
 const inteiroPositivo = (v) => Number.isSafeInteger(v) && v > 0;
+// Mesma ordem do sort() padrão (S2871).
+const compararComoTexto = (a, b) => { const x = String(a); const y = String(b); if (x < y) return -1; return x > y ? 1 : 0; };
 const mesmasChaves = (objeto, chaves) => {
-  const reais = Object.keys(objeto).sort();
-  return reais.length === chaves.length && reais.every((c, i) => c === [...chaves].sort()[i]);
+  const reais = Object.keys(objeto).sort(compararComoTexto);
+  return reais.length === chaves.length && reais.every((c, i) => c === [...chaves].sort(compararComoTexto)[i]);
 };
 
 function montar(objeto, ...cargas) {

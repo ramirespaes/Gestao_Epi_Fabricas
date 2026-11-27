@@ -240,3 +240,22 @@ describe('página: os dois gráficos carregam com Mês e cada seletor só recarr
     assert.deepEqual(pg.storage.filter((s) => s.storage !== 'cookie' && !/aparencia|epi-session-user/.test(String(s.chave))), []); // (a limpeza da chave legada é da sessão)
   });
 });
+
+describe('S9383 (lote 04) — falha inesperada ao redesenhar pelo seletor de período', () => {
+  const { FALHA, rejeicoesEscapadas } = require('./helpers/rejeicoes');
+
+  test('S9383-G01 — trocar o período: o gráfico mostra "indisponível", o outro gráfico não muda e nada escapa', async () => {
+    const pg = await abrir();
+    const GR = pg.janela.EpiDashboardGraficos;
+    const original = GR.renderizar.setores;
+    let vezes = 0;
+    GR.renderizar.setores = function () { vezes += 1; if (vezes === 1) throw new Error(FALHA); return original.apply(this, arguments); };
+    const entregasAntes = pg.el('graficoEntregas').textContent;
+    pg.el('periodoSetores').value = 'ANO';
+    const escapadas = await rejeicoesEscapadas(pg, () => pg.el('periodoSetores').disparar('change'));
+    assert.deepEqual(escapadas, []);
+    assert.equal(pg.texto('graficoSetores').includes(GR.mensagens.INDISPONIVEL), true);
+    assert.equal(pg.el('graficoEntregas').textContent, entregasAntes);
+    assert.equal(pg.textoDoDom().includes(FALHA), false);
+  });
+});
