@@ -108,6 +108,7 @@ describe('S7631: em que situações o job conjunto roda (condições avaliadas, 
     return Boolean(resultado);
   }
   const ifDoValidar = yaml.match(/^ {2}validar:\n[\s\S]*?^ {4}if: (.+)$/m)[1];
+  const ifDoPublicar = yaml.match(/^ {2}publicar:\n[\s\S]*?^ {4}if: (.+)$/m)[1];
   // O job roda se o validar rodou e teve sucesso (success() implícito) e se o if dele próprio for verdadeiro.
   const rodaConjunto = (ctx, { validarComSucesso = true } = {}) => avaliar(ifDoValidar, ctx) && validarComSucesso && avaliar(ifDoConjunto, ctx);
   const REPO = 'ramirespaes/Gestao_Epi_Fabricas';
@@ -148,6 +149,61 @@ describe('S7631: em que situações o job conjunto roda (condições avaliadas, 
 
   test('evento não previsto: não roda', () => {
     for (const evento of ['pull_request_target', 'push', 'schedule', 'issue_comment']) assert.equal(avaliar(ifDoConjunto, contexto({ evento })), false, evento);
+  });
+
+  test('G0: matriz de 19 cenários para a entrada do job publicar', () => {
+    const COMMIT = 'a'.repeat(40);
+    const base = (evento = 'workflow_run') => {
+      const ctx = contexto({ evento, run: execucao({ head_sha: COMMIT }) });
+      ctx.github.ref = 'refs/heads/main';
+      ctx.vars = { HML_PUBLICACAO_HABILITADA: 'true' };
+      ctx.inputs = { publicar: true };
+      ctx.needs.validar.outputs.commit = COMMIT;
+      return ctx;
+    };
+    // O if de publicar depende do sucesso implícito dos dois jobs anteriores.
+    // A origem do CI é barrada em validar, antes de publicar ser avaliado.
+    const autorizado = (ctx, { validarOk = true, empacotarOk = true } = {}) =>
+      avaliar(ifDoValidar, ctx) && validarOk && empacotarOk && avaliar(ifDoPublicar, ctx);
+    const casos = [
+      ['CI de push verde na main', 'workflow_run', () => {}, {}, true],
+      ['manual com publicação solicitada', 'workflow_dispatch', () => {}, {}, true],
+      ['fork', 'workflow_run', (c) => { c.github.event.workflow_run.head_repository.full_name = 'outro/Gestao_Epi_Fabricas'; }, {}, false],
+      ['CI de pull request', 'workflow_run', (c) => { c.github.event.workflow_run.event = 'pull_request'; }, {}, false],
+      ['CI reprovado', 'workflow_run', (c) => { c.github.event.workflow_run.conclusion = 'failure'; }, {}, false],
+      ['CI cancelado', 'workflow_run', (c) => { c.github.event.workflow_run.conclusion = 'cancelled'; }, {}, false],
+      ['CI de outra branch', 'workflow_run', (c) => { c.github.event.workflow_run.head_branch = 'feature/x'; }, {}, false],
+      ['repositório executor divergente', 'workflow_run', (c) => { c.github.repository = 'outro/Gestao_Epi_Fabricas'; }, {}, false],
+      ['ref do workflow divergente', 'workflow_run', (c) => { c.github.ref = 'refs/heads/feature/x'; }, {}, false],
+      ['SHA do evento divergente do validado', 'workflow_run', (c) => { c.github.event.workflow_run.head_sha = 'b'.repeat(40); }, {}, false],
+      ['SHA do evento ausente', 'workflow_run', (c) => { delete c.github.event.workflow_run.head_sha; }, {}, false],
+      ['origem do CI ausente', 'workflow_run', (c) => { delete c.github.event.workflow_run.head_repository.full_name; }, {}, false],
+      ['flag de publicação desligada', 'workflow_run', (c) => { c.vars.HML_PUBLICACAO_HABILITADA = 'false'; }, {}, false],
+      ['flag de publicação ausente', 'workflow_run', (c) => { delete c.vars.HML_PUBLICACAO_HABILITADA; }, {}, false],
+      ['manual sem solicitar publicação', 'workflow_dispatch', (c) => { c.inputs.publicar = false; }, {}, false],
+      ['manual sem entrada de publicação', 'workflow_dispatch', (c) => { delete c.inputs.publicar; }, {}, false],
+      ['validação falhou', 'workflow_run', () => {}, { validarOk: false }, false],
+      ['empacotamento falhou', 'workflow_run', () => {}, { empacotarOk: false }, false],
+      ['evento inesperado', 'schedule', () => {}, {}, false],
+    ];
+    assert.equal(casos.length, 19);
+    for (const [nome, evento, alterar, resultados, esperado] of casos) {
+      const ctx = base(evento);
+      alterar(ctx);
+      assert.equal(autorizado(ctx, resultados), esperado, nome);
+    }
+  });
+
+  test('G0: SHA inválido é recusado pelo validador real antes de gerar a saída commit', () => {
+    const { validarCommit, CI_CAMINHO } = require('../validar-commit');
+    const COMMIT = 'a'.repeat(40);
+    const fatos = { commit: COMMIT, cabecaMain: COMMIT, ancestral: true, permitirAnterior: false,
+      execucoesCi: [{ head_sha: COMMIT, path: CI_CAMINHO, event: 'push', head_branch: 'main', status: 'completed', conclusion: 'success' }],
+      agora: Date.parse('2026-11-27T12:00:00Z') };
+    assert.equal(validarCommit(fatos).commit, COMMIT);
+    for (const invalido of ['', 'main', COMMIT.slice(0, 7), COMMIT.toUpperCase(), 'z'.repeat(40)]) {
+      assert.throws(() => validarCommit({ ...fatos, commit: invalido }), (erro) => erro.codigo === 'COMMIT_INVALIDO', invalido);
+    }
   });
 
   test('o avaliador do teste recusa expressão fora do subconjunto, em vez de responder falso', () => {
@@ -396,6 +452,20 @@ describe('job conjunto: demais invariantes', () => {
 });
 
 describe('controles de autorização e segurança não mudaram', () => {
+  test('G0 S7631 empacotar: checkout usa apenas o SHA validado e confere HEAD antes do código', () => {
+    const empacotar = yaml.match(/^ {2}empacotar:\n([\s\S]*?)^ {2}publicar:/m)[1];
+    assert.match(empacotar, /- name: Checkout exato do commit validado\n\s+uses: actions\/checkout@[0-9a-f]{40}[^\n]*\n\s+with:\n\s+ref: \$\{\{ needs\.validar\.outputs\.commit \}\}\n\s+persist-credentials: false/);
+    assert.ok(empacotar.indexOf('git rev-parse HEAD') < empacotar.indexOf('run: node .github/scripts/hml/gerar-release.js'));
+    assert.match(empacotar, /\[ "\$\(git rev-parse HEAD\)" = "\$COMMIT" \] \|\| \{[^}]*exit 1; \}/);
+  });
+
+  test('G0 S7631 publicar: controlador usa workflow_sha e confere a main antes de credenciais', () => {
+    const publicar = yaml.split('\n  publicar:\n')[1].split(MARCA)[0];
+    assert.match(publicar, /- name: Checkout do controlador imutável desta execução\n\s+uses: actions\/checkout@[0-9a-f]{40}[^\n]*\n\s+with:\n\s+ref: \$\{\{ github\.workflow_sha \}\}\n\s+persist-credentials: false/);
+    assert.ok(publicar.indexOf('validar-automatico.js --atualidade') < publicar.indexOf('uses: aws-actions/'));
+    assert.match(publicar, /^ {4}environment: homologacao$/m);
+  });
+
   test('CI inválido e commit fora da main continuam decididos pelos mesmos scripts, antes de qualquer pacote', () => {
     const validar = yaml.match(/^ {2}validar:\n([\s\S]*?)^ {2}empacotar:/m)[1];
     assert.match(validar, /node \.github\/scripts\/hml\/validar-automatico\.js --fatos/);
