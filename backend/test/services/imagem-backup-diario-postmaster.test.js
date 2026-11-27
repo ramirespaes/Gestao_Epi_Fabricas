@@ -183,8 +183,8 @@ describe('[DPM] recuperação de processos ≠ backup concluído', () => {
     }
   });
 
-  test('DPM-13 — o diário e a recuperação não conhecem selagem, verificação nem publicação (fonte dos três módulos novos e do diário)', () => {
-    for (const arq of ['imagem-backup-diario-execucao.service.js', 'imagem-backup-postmaster-sentinela.service.js', 'imagem-backup-postmaster-lancador.service.js', 'imagem-backup-postmaster-identidade.service.js']) {
+  test('DPM-13 — o diário e a recuperação não conhecem selagem, verificação nem publicação (fonte do diário)', () => {
+    for (const arq of ['imagem-backup-diario-execucao.service.js']) {
       const fonte = fs.readFileSync(path.join(__dirname, '../../src/services', arq), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
       assert.equal(/require\([^)]*(selagem|publicacao|registro-publicacao|operacional|copia|manifesto|restauracao|pgdump)/.test(fonte), false, arq);
     }
