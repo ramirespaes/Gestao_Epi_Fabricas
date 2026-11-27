@@ -61,6 +61,8 @@ const TETO_DE_LISTAS = 50;
 
 const ehObjeto = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const sha256 = (texto) => crypto.createHash('sha256').update(texto).digest('hex');
+// Mesma ordem da ordenação padrão (unidades UTF-16), da qual dependem listas e hashes do manifesto.
+const compararTexto = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 function invalido(codigo) {
   const e = new Error('entrada de cobertura inválida');
   e.code = codigo;
@@ -134,14 +136,14 @@ function compararInventarioComSumario(entrada) {
     relacoes: Object.freeze({
       inventariadas: inventario.relacoes.length,
       correspondidas,
-      ausentes: limitar(ausentes.sort()),
-      categoriasNaoMapeadas: limitar(naoMapeadas.sort()),
+      ausentes: limitar(ausentes.sort(compararTexto)),
+      categoriasNaoMapeadas: limitar(naoMapeadas.sort(compararTexto)),
       entradasSemInventario: semInventario,
       opcionaisAusentes: Object.freeze(opcionaisAusentes),
       sha256: sha256(JSON.stringify(tuplas)),
     }),
     sumario: Object.freeze({ sha256: sumario.sha256, entradas: sumario.contagem.total, naoInterpretadas: sumario.contagem.naoInterpretadas }),
-    motivos: Object.freeze([...motivos].sort()),
+    motivos: Object.freeze([...motivos].sort(compararTexto)),
   });
 }
 
@@ -223,7 +225,7 @@ function avaliarCoberturaPostgres(entrada) {
     relacoes: Object.freeze({ ...comparacao.relacoes, mapa: comparacao.mapa, sumario: comparacao.sumario }),
     esquema: Object.freeze({ ...impressao, compatibilidade }),
     dependenciasExternas: dependencias,
-    motivos: Object.freeze([...motivos].sort()),
+    motivos: Object.freeze([...motivos].sort(compararTexto)),
   });
 }
 

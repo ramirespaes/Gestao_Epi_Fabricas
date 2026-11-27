@@ -21,6 +21,8 @@ const { TIPOS_RELACIONAIS } = require('../../src/services/backup-fontes-postgres
 const RELACIONAIS = new Set([...TIPOS_RELACIONAIS, 'CONSTRAINT']);
 const TETO = 50;
 const ehObjeto = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+// Mesma ordem da ordenação padrão (unidades UTF-16).
+const compararTexto = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 const IDENTIFICADOR = /^[a-z_][a-z0-9_]{0,62}$/;
 const categoriaDe = (r) => (r.relkind === 'i' && r.sustentaRestricao ? 'i:restricao' : r.relkind);
 
@@ -67,7 +69,7 @@ function caracterizarObservacao(entrada) {
     relacoesDoEsquema: relacoes.length,
     porCategoria: Object.freeze(Object.fromEntries(Object.entries(porCategoria).map(([k, v]) => [k, Object.freeze({ ...v, tipos: Object.freeze(v.tipos), semEntrada: Object.freeze(v.semEntrada) })]))),
     opcionais: Object.freeze(opcionais),
-    contradicoes: Object.freeze(contradicoes.sort()),
+    contradicoes: Object.freeze(contradicoes.sort(compararTexto)),
     sumario: Object.freeze({
       formato: sumario.cabecalho?.formato ?? null,
       versaoServidor: sumario.cabecalho?.versaoServidor ?? null,
@@ -92,8 +94,8 @@ function compararRestauracao(entrada) {
   if (!IDENTIFICADOR.test(esquema)) throw new TypeError('entrada inválida');
   const a = new Set(origem.relacoes.filter((r) => r.esquema === esquema).map(tupla));
   const b = new Set(restaurado.relacoes.filter((r) => r.esquema === esquema).map(tupla));
-  const faltamNoRestaurado = [...a].filter((t) => !b.has(t)).sort().slice(0, TETO);
-  const sobramNoRestaurado = [...b].filter((t) => !a.has(t)).sort().slice(0, TETO);
+  const faltamNoRestaurado = [...a].filter((t) => !b.has(t)).sort(compararTexto).slice(0, TETO);
+  const sobramNoRestaurado = [...b].filter((t) => !a.has(t)).sort(compararTexto).slice(0, TETO);
   const migrations = compatibilidadeDeEsquema({ migrationsDoBanco: restaurado.migrations, migrationsDoCodigo: origem.migrations });
   const divergencias = [];
   if (faltamNoRestaurado.length > 0) divergencias.push('RELACOES_FALTAM_NO_RESTAURADO');
