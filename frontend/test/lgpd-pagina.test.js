@@ -265,14 +265,6 @@ describe('?inspecao=1 não é caminho alternativo', () => {
     assert.equal(pg.visivel('conteudoProtegido'), false);
     assert.ok(pg.navegacoes.some((n) => /portal\/index\.html/.test(n)));
   });
-
-  test('a lista de protótipos em inspeção não contém mais a LGPD, e o marcador nunca é acrescentado a lgpd.html', () => {
-    const I = require('../js/inspecao-visual'); // eslint-disable-line global-require
-    assert.equal(I.PROTOTIPOS.includes('lgpd.html'), false);
-    assert.equal(I.comMarcador('lgpd.html'), 'lgpd.html');
-    assert.equal(I.comMarcador('lgpd.html?_s=abc'), 'lgpd.html?_s=abc');
-    assert.ok(I.PROTOTIPOS.includes('emails-gestao.html') && I.PROTOTIPOS.includes('self-service.html'), 'os demais protótipos continuam');
-  });
 });
 
 describe('mudança de contexto e respostas antigas', () => {

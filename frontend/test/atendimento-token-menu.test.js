@@ -94,11 +94,12 @@ describe('o item "Solicitações → Atendimento Token" nas páginas integradas'
     }
   });
 
-  test('o perfil MASTER não decide nada por si: sem as linhas de permissão mantém a liberação visual antiga; com elas, abre a Central', async () => {
+  test('o perfil MASTER não decide nada por si: sem as linhas de permissão o item fica "Em integração", sem link; com elas, abre a Central', async () => {
     const semLinhas = await abrir('dashboard.html', permissoes({ perfil: 'MASTER' }));
     const antigo = itemDoToken(semLinhas);
     assert.equal(rotulo(antigo), 'Autoatendimento (Totem)');
-    assert.equal(antigo.getAttribute('href'), 'self-service.html?inspecao=1', 'a liberação visual provisória do MASTER não mudou');
+    assert.equal(antigo.getAttribute('href'), null, 'sem link de inspeção: o protótipo foi removido');
+    assert.equal(antigo.getAttribute('aria-disabled'), 'true');
     const comLinhas = await abrir('dashboard.html', permissoes({ perfil: 'MASTER', recurso: { visualizar: true } }));
     const novo = itemDoToken(comLinhas);
     assert.equal(rotulo(novo), 'Atendimento Token');
@@ -121,7 +122,7 @@ describe('o item "Solicitações → Atendimento Token" nas páginas integradas'
   test('o ajuste acompanha TODOS os pontos em que o menu é calculado (carga, falha, revalidação)', () => {
     const codigo = ler('js/permissoes-efetivas.js');
     assert.equal((codigo.match(/ajustarMenuAtendimentoToken\(/g) || []).length, 1 + 4, 'a definição e os quatro pontos de uso');
-    assert.equal((codigo.match(/liberarInspecao\(/g) || []).length, 1 + 4);
+    assert.equal((codigo.match(/ocultarPendentes\(/g) || []).length, 1 + 4);
     assert.equal(typeof P.ajustarMenuAtendimentoToken, 'function');
   });
 });
@@ -132,15 +133,11 @@ describe('páginas homologadas e protótipos: nenhuma alteração em massa', () 
       assert.equal(/atendimento-token/.test(ler(`pages/${f}`)), false, f);
     }
     assert.equal(/atendimento-token/.test(ler('portal/inicio.html')), false);
-    assert.equal(/atendimento-token/.test(ler('pages/self-service.html')), false);
   });
 
-  test('os protótipos mantêm o item "Autoatendimento (Totem)" e o self-service.html segue intacto e sem link novo', () => {
+  test('não restam protótipos com o item "Autoatendimento (Totem)": só as páginas integradas o trazem', () => {
     const prototipos = PAGINAS.filter((f) => f !== CENTRAL && !INTEGRADAS.includes(f) && /Autoatendimento \(Totem\)/.test(ler(`pages/${f}`)));
-    // Suporte e, depois, Privacidade e LGPD deixaram de ser protótipos (páginas integradas): restam exatamente estes.
-    assert.deepEqual(prototipos, ['eligibility-rules.html', 'emails-gestao.html', 'purchases.html', 'self-service.html']);
-    for (const f of prototipos) assert.equal(/Atendimento Token/.test(ler(`pages/${f}`)), false, f);
-    assert.match(ler('pages/self-service.html'), /<title>Gestão de EPI<\/title>/);
+    assert.deepEqual(prototipos, []);
   });
 
   test('o menu da Central é igual ao das páginas integradas, exceto o item de Solicitações que é a própria Central', () => {
