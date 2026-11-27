@@ -156,3 +156,14 @@ No código novo/editado, comentar somente motivo ou restrição não óbvia, em 
 curta e objetiva. Sem narrar linha a linha, histórico de auditoria, referência a
 prompt/agente, justificativa longa ou documentação redundante. Não reescrever
 comentários antigos por estética. Esta revisão não autoriza mudança de código.
+
+### Retirada autorizada de evidências da main — D-ORF-6 DEP-3/CONS-03
+
+Em 26/11/2026, autorizei a retirada da `main` dos nove arquivos de
+`backend/ops/dep3/` e `backend/ops/cons03/` (origem `1a4192b`), responsáveis por
+320 issues `shell:S7688` no SonarCloud. Antes da retirada, mantenho os arquivos sob
+custódia local fora do repositório, com `SHA256SUMS` conferido e pacote `.tar.gz`
+de SHA-256 `bc5eec923eb55dc22ab7f0d24a37b39ec65557b487301e17215637c5f5e6011a`. O
+histórico Git os preserva nos commits `65aeb6d` e `4130b5b`. É exceção pontual à
+regra de não apagar evidência: não autoriza outras retiradas, inclusive dos demais
+arquivos do D-ORF-6.
