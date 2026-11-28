@@ -1,6 +1,7 @@
 'use strict';
 
-const { SEM, DIAS, DE, SELECIONAR, mapear } = require('./entrega-epi-historico.repository');
+const { SEM, HOJE, DIAS, DE, SELECIONAR, mapear } = require('./entrega-epi-historico.repository');
+const { exigirDataOperacional } = require('../utils/data-operacional');
 
 // $1 empresa, $2 item/tipo, $3 funcionário, $4 de, $5 até, $6 setor, $7 dias mínimos, $8 dias máximos.
 const FILTRO = `
@@ -33,16 +34,30 @@ function ordenar(ordem, direcao) {
 
 const parametros = (empresaId, f) => [empresaId, f.padraoItem, f.padraoFuncionario, f.de, f.ate, f.padraoSetor, f.diasMin, f.diasMax];
 
-async function listar(executor, empresaId, filtros, { ordem, direcao, pagina, limite }) {
-  const { rows } = await executor.query(
+/**
+ * Sem `hoje`, a consulta é a original, com o "hoje" do PostgreSQL. Com `hoje` (relógio injetado no controller), os dias
+ * passam a contar a partir do parâmetro acrescentado no fim, na posição `posicao`; os parâmetros existentes não mudam.
+ */
+function comHoje(sql, params, hoje, posicao) {
+  if (hoje === undefined || hoje === null) return [sql, params];
+  exigirDataOperacional(hoje);
+  return [sql.replaceAll(DIAS, DIAS.replace(HOJE, `$${posicao}::date`)), [...params, hoje]];
+}
+
+async function listar(executor, empresaId, filtros, { ordem, direcao, pagina, limite }, hoje = null) {
+  const [sql, params] = comHoje(
     `${SELECIONAR} ${DE} ${FILTRO} ${ordenar(ordem, direcao)} LIMIT $9 OFFSET $10`,
     [...parametros(empresaId, filtros), limite, (pagina - 1) * limite],
+    hoje,
+    11,
   );
+  const { rows } = await executor.query(sql, params);
   return rows.map(mapear);
 }
 
-async function contar(executor, empresaId, filtros) {
-  const { rows } = await executor.query(`SELECT count(*)::int AS total ${DE} ${FILTRO}`, parametros(empresaId, filtros));
+async function contar(executor, empresaId, filtros, hoje = null) {
+  const [sql, params] = comHoje(`SELECT count(*)::int AS total ${DE} ${FILTRO}`, parametros(empresaId, filtros), hoje, 9);
+  const { rows } = await executor.query(sql, params);
   return rows[0].total;
 }
 

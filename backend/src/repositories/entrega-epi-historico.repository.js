@@ -8,7 +8,8 @@
  * Validade de uso = dia operacional da entrega + prazo de uso congelado do item. Dias restantes = validade - hoje. No
  * histórico, "hoje" chega como parâmetro ($8): o dia operacional de São Paulo calculado pelo controller com relógio
  * injetável, e não o now() do banco, para o resultado não depender do instante da consulta. Os relatórios que reutilizam
- * DIAS/SELECIONAR continuam com o "hoje" do banco. A faixa "próximo do vencimento" vem como parâmetro.
+ * DIAS/SELECIONAR continuam, por padrão, com o "hoje" do banco; só quando o controller recebe um relógio injetado
+ * (testes) relatorio-entregas troca esse "hoje" por um parâmetro. A faixa "próximo do vencimento" vem como parâmetro.
  *
  * Busca de texto sem diferenciar maiúsculas nem acentos (translate, sem extensão nova) e com correspondência parcial; os
  * curingas do usuário são escapados no serviço. O índice de (empresa, entregue_em DESC, id DESC) da 058 atende a ordem.

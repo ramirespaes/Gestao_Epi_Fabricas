@@ -8,6 +8,7 @@ const {
   SOLICITACOES, CHAVES_DA_RESPOSTA, CHAVES_DO_ITEM, SITUACOES, abrirAmbienteSolicitacoes,
 } = require('./helpers/token-solicitacoes');
 const { lerSetCookie, cookieDoTabletNaResposta } = require('./helpers/token-tablet');
+const { aguardarEsperaDaTrava, contarBloqueadosPor } = require('./helpers/aguardar-espera-trava');
 const solicitacaoSvc = require('../../src/services/solicitacao-epi.service');
 const consultaSvc = require('../../src/services/solicitacao-epi-consulta.service');
 const itemRepo = require('../../src/repositories/solicitacao-epi-item.repository');
@@ -51,7 +52,7 @@ describe('Atendimento Token — G: consulta das solicitações existentes do fun
   const A = () => a.d.empresaA;
   const forcarRestante = (id, segundos) => a.q(`UPDATE token_atendimentos SET iniciado_em = LEAST(iniciado_em, now() - interval '200 seconds'), expira_em = now() + make_interval(secs => $2::int) WHERE id = $1`, [id, segundos]);
   const gerarCodigo = async (tabletId) => (await a.comoAdmin(app, gestor).post(`/api/atendimento-token/dispositivos/${tabletId}/ativacao`)).body.ativacao.codigo;
-  const esperando = async (pid) => (await a.q('SELECT count(*)::int AS n FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))', [pid])).rows[0].n;
+  const esperando = (pid) => contarBloqueadosPor(a.ctx.pool, pid);
   const L = (materialId, nome, tamanho, situacao, quantidade, retiradaParcial = false) => ({ materialId, nome, tamanho, situacao, quantidade, retiradaParcial });
 
   /** Cenário padrão: GHE com botina (grade P/M/G), protetor e capacete (sem tamanho), funcionário do GHE e atendimento aberto. */
@@ -603,13 +604,12 @@ describe('Atendimento Token — G: consulta das solicitações existentes do fun
       try {
         await Promise.race([instr.pausado('gravando'), primeira.then((x) => assert.fail(`a primeira terminou sem gravar: ${aviso(x)}`)), new Promise((_, rej) => setTimeout(() => rej(new Error('a primeira não chegou a gravar')), LIMITE_DE_SEGURANCA_MS))]);
         segunda = a.finalizar(app, t2, token2, a.corpo([a.item(c.protetor)])).then((x) => x);
-        const prazo = Date.now() + LIMITE_DE_SEGURANCA_MS;
-        let terminou = false;
-        segunda.then(() => { terminou = true; });
-        while (!terminou && (await esperando(instr.pid('gravando'))) === 0) {
-          if (Date.now() > prazo) assert.fail('a segunda finalização não chegou a esperar a primeira');
-          await new Promise((resolver) => setImmediate(resolver));
-        }
+        const terminou = await aguardarEsperaDaTrava({
+          operacao: segunda,
+          contarEsperando: () => esperando(instr.pid('gravando')),
+          limiteMs: LIMITE_DE_SEGURANCA_MS,
+          mensagem: 'a segunda finalização não chegou a esperar a primeira',
+        });
         assert.equal(terminou, false, 'a segunda deveria ESPERAR a primeira terminar');
       } finally { instr.liberar('gravando'); }
       const [p1, p2] = [await primeira, await segunda];
@@ -654,13 +654,12 @@ describe('Atendimento Token — G: consulta das solicitações existentes do fun
       try {
         await Promise.race([instr.pausado('gravando'), interna.then(() => assert.fail('a criação interna terminou sem gravar')), new Promise((_, rej) => setTimeout(() => rej(new Error('a criação interna não chegou a gravar')), LIMITE_DE_SEGURANCA_MS))]);
         totem = a.finalizar(app, c.t, c.token, a.corpo([a.item(c.protetor, { quantidade: 3 })])).then((x) => x);
-        const prazo = Date.now() + LIMITE_DE_SEGURANCA_MS;
-        let terminou = false;
-        totem.then(() => { terminou = true; });
-        while (!terminou && (await esperando(instr.pid('gravando'))) === 0) {
-          if (Date.now() > prazo) assert.fail('o pedido do Totem não chegou a esperar a trava do trabalhador');
-          await new Promise((resolver) => setImmediate(resolver));
-        }
+        const terminou = await aguardarEsperaDaTrava({
+          operacao: totem,
+          contarEsperando: () => esperando(instr.pid('gravando')),
+          limiteMs: LIMITE_DE_SEGURANCA_MS,
+          mensagem: 'o pedido do Totem não chegou a esperar a trava do trabalhador',
+        });
         assert.equal(terminou, false, 'o Totem deveria ESPERAR a criação interna (mesma trava do trabalhador)');
       } finally { instr.liberar('gravando'); }
       await interna;
@@ -678,13 +677,12 @@ describe('Atendimento Token — G: consulta das solicitações existentes do fun
       try {
         await Promise.race([instr.pausado('gravando'), totem.then((x) => assert.fail(`o Totem terminou sem gravar: ${aviso(x)}`)), new Promise((_, rej) => setTimeout(() => rej(new Error('o Totem não chegou a gravar')), LIMITE_DE_SEGURANCA_MS))]);
         interna = a.criarInterna(c.f.id, [{ materialId: c.protetor, quantidade: 1 }]).then((x) => x);
-        const prazo = Date.now() + LIMITE_DE_SEGURANCA_MS;
-        let terminou = false;
-        interna.then(() => { terminou = true; });
-        while (!terminou && (await esperando(instr.pid('gravando'))) === 0) {
-          if (Date.now() > prazo) assert.fail('a criação interna não chegou a esperar a trava do trabalhador');
-          await new Promise((resolver) => setImmediate(resolver));
-        }
+        const terminou = await aguardarEsperaDaTrava({
+          operacao: interna,
+          contarEsperando: () => esperando(instr.pid('gravando')),
+          limiteMs: LIMITE_DE_SEGURANCA_MS,
+          mensagem: 'a criação interna não chegou a esperar a trava do trabalhador',
+        });
         assert.equal(terminou, false, 'a criação interna deveria ESPERAR o Totem (mesma trava do trabalhador)');
       } finally { instr.liberar('gravando'); }
       assert.equal((await totem).status, 201);

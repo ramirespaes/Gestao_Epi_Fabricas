@@ -159,7 +159,7 @@
     return textos.length > 0 ? textos.join(' ') : DADOS_INVALIDOS;
   }
 
-  [campoAtual, campoCadastro, campoTrocaCodigo].forEach(mfa.prepararCampoTotp);
+  [campoAtual, campoCadastro, campoTrocaCodigo].forEach(function (campo) { mfa.prepararCampoTotp(campo); });
 
   aoClicar('botao-trocar-autenticador', function () { abrirReautenticacao('SUBSTITUICAO'); });
   aoClicar('botao-gerar-codigos', function () { abrirReautenticacao('REGENERACAO'); });

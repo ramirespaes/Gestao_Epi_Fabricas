@@ -46,29 +46,31 @@ function filtrosDeEntregas(f, faixa) {
   };
 }
 
-async function listarEntregas(pool, empresaId, f, faixa, padrao, mapear) {
+// Sem `agora`, as abas de entregas contam os dias pelo "hoje" do PostgreSQL; com `agora`, pelo dia operacional dele.
+async function listarEntregas(pool, empresaId, f, faixa, padrao, mapear, agora) {
   const filtros = filtrosDeEntregas(f, faixa);
   const pagina = { ordem: f.ordem ?? padrao.ordem, direcao: f.direcao ?? padrao.direcao, pagina: f.pagina, limite: f.limite };
+  const hoje = agora === undefined ? null : dataOperacional(agora);
   const [itens, total] = await Promise.all([
-    entregasRepo.listar(pool, empresaId, filtros, pagina),
-    entregasRepo.contar(pool, empresaId, filtros),
+    entregasRepo.listar(pool, empresaId, filtros, pagina, hoje),
+    entregasRepo.contar(pool, empresaId, filtros, hoje),
   ]);
   return { itens: itens.map(mapear), total, pagina: f.pagina, limite: f.limite };
 }
 
-const proximoVencimento = (pool, { empresaId, faixa = null, ...f }) => {
+const proximoVencimento = (pool, { empresaId, faixa = null, ...f }, agora) => {
   const [min, max] = faixa ? FAIXAS[faixa] : [0, consulta.DIAS_PROXIMO_VENCIMENTO];
   return listarEntregas(pool, empresaId, f, { min, max }, { ordem: 'dias', direcao: 'asc' },
-    (i) => ({ ...i, status: statusProximo(i.diasRestantes) }));
+    (i) => ({ ...i, status: statusProximo(i.diasRestantes) }), agora);
 };
 
 // Itens já substituídos não são excluídos: o modelo não tem vínculo autoritativo de substituição.
-const vencidos = (pool, { empresaId, ...f }) => listarEntregas(pool, empresaId, f, { min: null, max: -1 },
+const vencidos = (pool, { empresaId, ...f }, agora) => listarEntregas(pool, empresaId, f, { min: null, max: -1 },
   { ordem: 'dias', direcao: 'asc' },
-  (i) => ({ ...i, diasVencidos: -i.diasRestantes, status: 'TROCA_URGENTE' }));
+  (i) => ({ ...i, diasVencidos: -i.diasRestantes, status: 'TROCA_URGENTE' }), agora);
 
-const entregues = (pool, { empresaId, ...f }) => listarEntregas(pool, empresaId, f, { min: null, max: null },
-  { ordem: 'dataEntrega', direcao: 'desc' }, (i) => i);
+const entregues = (pool, { empresaId, ...f }, agora) => listarEntregas(pool, empresaId, f, { min: null, max: null },
+  { ordem: 'dataEntrega', direcao: 'desc' }, (i) => i, agora);
 
 // Contagens do Dashboard (12I): pelos MESMOS repositório e filtros dos relatórios, sem regra paralela.
 /** Soma das unidades entregues no período (data operacional de São Paulo): a aba "EPIs entregues". */

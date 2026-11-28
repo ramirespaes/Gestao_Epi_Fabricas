@@ -119,7 +119,7 @@
   function quantidadeDe(texto) {
     var q = String(texto === undefined || texto === null ? '' : texto).trim();
     if (q === '') return 0;
-    return /^\d+$/.test(q) ? Number(q) : NaN;
+    return /^\d+$/.test(q) ? Number(q) : Number.NaN;
   }
 
   /**
