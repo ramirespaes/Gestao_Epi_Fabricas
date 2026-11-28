@@ -45,7 +45,7 @@ const verificar = (raiz, pool, extra = {}) => M().verificarArmazenamento(pool, {
 const doAchado = (relatorio, imagemId, escopo = null) => relatorio.imagens.find((i) => i.imagemId === String(imagemId) && (escopo === null || i.escopo === escopo));
 const tipos = (imagem) => imagem.achados.map((a) => `${a.variante}:${a.tipo}`);
 const doArmazenamento = (relatorio, tipo) => relatorio.armazenamento.filter((a) => a.tipo === tipo);
-const PROIBIDOS = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f‪-‮⁦-⁩]/;
+const PROIBIDOS = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u{202a}-\u{202e}\u{2066}-\u{2069}]/u;
 
 /** Cenário básico íntegro: 2 padrões, 3 imagens de duas empresas. */
 function cenarioIntegro(raiz) {
@@ -491,7 +491,7 @@ describe('[VER] caminhos impróprios, links simbólicos e entradas estranhas', (
   test('VER-31 — nomes hostis (escape de terminal, quebra de linha, bidirecional, enormes, traversal) viram ENTRADA_INESPERADA com nome ESCAPADO e nunca entram num caminho', SO_POSIX, async () => {
     const raiz = novaRaiz();
     const imagem = h.criarImagemEmpresa(raiz, { id: 84, empresaId: 7, agora: AGORA });
-    const nomes = ['\u001b[31mVERMELHO\u001b[0m', 'linha1\nlinha2', `gpj.‮txt`, 'a'.repeat(250), '%2e%2e', '-rf', '...', 'a b'];
+    const nomes = ['\u001b[31mVERMELHO\u001b[0m', 'linha1\nlinha2', `gpj.\u{202e}txt`, 'a'.repeat(250), '%2e%2e', '-rf', '...', 'a b'];
     for (const nome of nomes) {
       fs.writeFileSync(path.join(raiz, nome), 'x');
       fs.writeFileSync(path.join(raiz, '7', nome), 'x');
