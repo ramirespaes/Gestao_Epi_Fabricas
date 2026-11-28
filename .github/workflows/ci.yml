@@ -32,7 +32,7 @@ jobs:
 
       - name: Backend - instalar dependências
         working-directory: backend
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Backend - testes unitários com cobertura mínima
         working-directory: backend
@@ -90,7 +90,7 @@ jobs:
 
       - name: Backend - instalar dependências
         working-directory: backend
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       # Prova de que o banco é o serviço efêmero DESTA execução, exigida pelas suítes J2a no lugar da guarda D1 (que é do cluster dedicado
       # do Mac e não se aplica aqui). Gera um nonce aleatório, recusa banco que já tenha comentário e grava o marcador

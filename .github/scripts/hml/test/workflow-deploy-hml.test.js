@@ -33,10 +33,15 @@ describe('deploy-hml.yml — validar e empacotar continuam sem capacidade de pub
 
   test('permissões mínimas e globais: só leitura, sem escrita, sem id-token', () => {
     const bloco = semComentarios.match(/^permissions:\n((?: {2}.*\n)+)/m)[1];
-    assert.deepEqual(bloco.trim().split('\n').map((l) => l.trim()), ['contents: read', 'actions: read']);
+    // S8264: actions: read só no job validar, o único que lista as execuções do CI.
+    assert.deepEqual(bloco.trim().split('\n').map((l) => l.trim()), ['contents: read']);
     assert.doesNotMatch(semComentarios, /:\s*write\b/);
     assert.doesNotMatch(semComentarios, /id-token/);
-    assert.equal((semComentarios.match(/^\s*permissions:/gm) || []).length, 1, 'nenhum job amplia as permissões');
+    const empacotar = semComentarios.split('\n  empacotar:\n')[1];
+    const validar = semComentarios.split('\n  validar:\n')[1].split('\n  empacotar:\n')[0];
+    assert.match(validar, /\n    permissions:\n      contents: read\n      actions: read\n(?!      )/);
+    assert.doesNotMatch(empacotar, /^\s*permissions:/m, 'empacotar herda só contents: read');
+    assert.equal((semComentarios.match(/^\s*permissions:/gm) || []).length, 2, 'só o topo e o job validar declaram permissões');
   });
 
   test('não usa segredos, environments, variáveis de nuvem nem credenciais', () => {
