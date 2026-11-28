@@ -286,7 +286,7 @@ pacotes atuais:
 | Pacote | Páginas | Resultado |
 |---|---|---|
 | Painel Privado | 8 | **viável**: 1 hash de script, 8 de estilo, 13 atributos `style` cobertos só em `style-src-attr`, nenhum host externo, nenhum manipulador inline |
-| Portal | 37 | **viável** desde a P-HML-02 (07/11/2026): 24 hashes de script, 26 de estilo, 2 manipuladores inline cobertos por hash em `script-src-attr 'unsafe-hashes'`, 1.267 atributos `style` cobertos só em `style-src-attr`, hosts externos `challenges.cloudflare.com` (script, frame, connect), `fonts.googleapis.com` (style) e `fonts.gstatic.com` (font); 0 problemas |
+| Portal | 37 | **viável** desde a P-HML-02 (07/11/2026): 24 hashes de script, 26 de estilo, 2 manipuladores inline cobertos por hash em `script-src-attr 'unsafe-hashes'`, 1.255 atributos `style` cobertos só em `style-src-attr`, hosts externos `challenges.cloudflare.com` (script, frame, connect), `fonts.googleapis.com` (style) e `fonts.gstatic.com` (font); 0 problemas |
 
 Histórico: até a P-HML-02 o Portal estava **bloqueado**, porque em 21 páginas o item de menu da
 própria página era `<a class="active" href="javascript:void(0)" …>`, que a CSP bloquearia. A

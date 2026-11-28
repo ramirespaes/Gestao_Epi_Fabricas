@@ -425,8 +425,10 @@ describe('[K4-E] regras de implementação e HTML aprovado intacto', () => {
     // index.html: Etapa I mais o favicon e o título do refinamento visual de 18/10/2026 (pino atualizado na consolidação de 19/10/2026).
     // VISUAL-03A (20/10/2026): identidade verde aprovada por Ramires. Pinos ANTERIORES (histórico): index.html e41495afa9e0e7f5b1d0b104080180821c42a7c909b5f5d7667ca213cf7ee181;
     // totem.css 9c6b3665fe47ad88543e8f59053b082544816943d5753c41980625f4b379e3ac.
-    assert.equal(sha('index.html'), '6ec5236ec6673c581332468b2cb2f7b64df8467f260030b9a47b5387a78bd286');
-    assert.equal(sha('totem.css'), '3caa1760e92f1c5feddcb211ab09c082f16db2dc4a0eb182f3f02e609d4ebe50');
+    // S7039 opção B (28/11/2026): estilos inline viram classes. Pinos ANTERIORES (histórico): index.html 6ec5236ec6673c581332468b2cb2f7b64df8467f260030b9a47b5387a78bd286;
+    // totem.css 3caa1760e92f1c5feddcb211ab09c082f16db2dc4a0eb182f3f02e609d4ebe50.
+    assert.equal(sha('index.html'), '8057ee67fdf7cc4eafcf59348353b9adff3b378180374d12571cd29d0033d076');
+    assert.equal(sha('totem.css'), '011d660662d2b952d5522dba7be89dfdda5cfbf812b456007e9d76ce1f7d2476');
     assert.equal(sha('boot.js'), '583454fe94c2ed73776fd77b4560eb70c59dd708ad582b2a61ff4878104d6899');
   });
 });

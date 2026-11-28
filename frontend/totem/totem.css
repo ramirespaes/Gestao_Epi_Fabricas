@@ -72,6 +72,13 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--primary);outlin
 .acesso{max-width:480px;margin:2vh auto 0;border-radius:32px;padding:28px;text-align:center}
 .acesso .ico{width:60px;height:60px;border-radius:19px;background:var(--primary-soft);color:var(--primary);
      display:flex;align-items:center;justify-content:center;margin:0 auto 14px}
+/* Antes inline no HTML/JS (CSP sem estilo inline): a especificidade vence as regras gerais e as de media, como o atributo vencia. */
+.acesso .ico.ico-erro{background:var(--error-soft);color:var(--error)}
+.acesso .ico.ico-aviso{background:var(--warn-soft);color:var(--warn)}
+.acesso .ico.ico-ok{background:var(--ok-soft);color:var(--ok)}
+.acesso.acesso-espaco{margin-top:4vh}
+#subtituloProdutos{font-size:14px;color:var(--on-var);margin-top:18px}
+.resumo .resumo-ok{color:var(--ok)}
 .acesso h1{font-size:28px;font-weight:730;letter-spacing:-.035em;line-height:1.2}
 .acesso p{font-size:14px;color:var(--on-var);margin-top:10px;line-height:1.6}
 .campo{text-align:left;margin-top:22px}
