@@ -35,7 +35,6 @@ on:
 
 permissions:
   contents: read
-  actions: read
 
 # Uma preparação por vez; a que está em andamento nunca é cancelada por outra.
 concurrency:
@@ -52,6 +51,10 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.full_name == github.repository) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # S8264: actions: read só aqui, onde a API lista as execuções do CI.
+    permissions:
+      contents: read
+      actions: read
     env:
       EVENTO: ${{ github.event_name }}
       COMMIT: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.commit }}

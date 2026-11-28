@@ -29,11 +29,13 @@ const PROTEGIDOS = {
   'deploy/hml/instalador/instalar-release.js': 'a6ea30d55d8a858303fa93a4502b101f05c94de9e01f753ba960a97a47d3fff3',
   'deploy/hml/instalador/nucleo.js': '144a1194d9a7e2fc4b8c0b73dfc7afae3b4a5a267efe122736788b3e2f28d716',
   'deploy/hml/empacotar-backend.js': 'cc1a008648508df30d91f326facdffc3b18651dcbddb5bd33d875fb05f2fee75',
-  '.github/workflows/ci.yml': '1a977e2aaf68e06d9f212ed8fc573bb3d2ed852c7c219e0b976b63dc5beb5a68',
+  // S6505: ci.yml mudou só pelo --ignore-scripts nas duas instalações (ci-ignore-scripts.test.js).
+  '.github/workflows/ci.yml': '719c1b3e39c41860fae89c43276ce4a4e0a6575be57a0b98132725f2880cc345',
   '.github/workflows/deploy-hml-backend.yml': 'f1f3afb14770541fa86dfb7f1797fdf15ab30ee257f87a8afabade93ed52b0e1',
   // Etapas 3B-3/3B-4: ganhou só o job final "conjunto" (prepara e confere o backend, sem publicar). Todo o texto
   // anterior a ele continua com o hash 1e4a6bf8…, provado em workflow-unificado.test.js.
-  '.github/workflows/deploy-hml.yml': '0c63a0cf22a1399bb2ce50cae9eb632f00a8ddec6175b13235dcb8bbdb1aad5a',
+  // S8264: actions: read saiu do topo e foi para o job validar; desfeita essa mudança, o hash 1e4a6bf8… se mantém.
+  '.github/workflows/deploy-hml.yml': '41fad287387070e2f446700ce680998d510d790c8cdc97e207d112b025bfaddf',
 };
 const sha = (rel) => crypto.createHash('sha256').update(fs.readFileSync(path.join(RAIZ, rel))).digest('hex');
 

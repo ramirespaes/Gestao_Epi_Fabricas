@@ -34,7 +34,12 @@ describe('preservação do frontend e dos controles existentes', () => {
   test('tudo o que vem antes do job novo é o arquivo original, byte a byte (gatilhos, validar, empacotar e publicar)', () => {
     const anterior = yaml.slice(0, yaml.indexOf(MARCA) + 1);
     const semComentarioFinal = anterior.replace(/(\n {2}#[^\n]*)+\n$/, '\n').replace(/\n\n$/, '\n');
-    assert.equal(sha(semComentarioFinal), HASH_ORIGINAL);
+    // S8264 é a única diferença admitida: desfeita, o texto volta ao hash original.
+    const DO_VALIDAR = '    # S8264: actions: read só aqui, onde a API lista as execuções do CI.\n    permissions:\n      contents: read\n      actions: read\n';
+    assert.equal(semComentarioFinal.split(DO_VALIDAR).length, 2, 'bloco de permissões do validar, uma única vez');
+    assert.equal(semComentarioFinal.split('\npermissions:\n  contents: read\n\n').length, 2, 'topo só com contents: read');
+    const semS8264 = semComentarioFinal.replace(DO_VALIDAR, '').replace('\npermissions:\n  contents: read\n\n', '\npermissions:\n  contents: read\n  actions: read\n\n');
+    assert.equal(sha(semS8264), HASH_ORIGINAL);
   });
 
   test('os jobs são exatamente os três de antes mais o novo, nesta ordem', () => {
@@ -53,7 +58,8 @@ describe('preservação do frontend e dos controles existentes', () => {
     assert.equal((yaml.match(/^\s*environment:/gm) || []).length, 1);
     assert.equal((yaml.match(/id-token: write/g) || []).length, 1);
     assert.deepEqual(semComentarios(yaml).match(/^\s*[\w-]+:\s*write\b/gm).map((l) => l.trim()), ['id-token: write']);
-    assert.equal((semComentarios(yaml).match(/^\s*permissions:/gm) || []).length, 2, 'só o topo e o job publicar declaram permissões');
+    assert.equal((semComentarios(yaml).match(/^\s*permissions:/gm) || []).length, 3, 'só o topo, o job validar e o job publicar declaram permissões');
+    assert.match(yaml.split('\n  publicar:\n')[1].split(MARCA)[0], /\n    permissions:\n      contents: read\n      actions: read\n      id-token: write\n/, 'permissões do publicar preservadas');
   });
 });
 

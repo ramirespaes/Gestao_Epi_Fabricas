@@ -114,7 +114,7 @@ describe('deploy-hml.yml — disparo automático após o CI', () => {
     assert.match(publicar, /unset-current-credentials: true/);
     assert.deepEqual(SEM_COMENTARIO(yaml).match(/^\s*[\w-]+:\s*write\b/gm).map((l) => l.trim()), ['id-token: write'], 'única escrita: o token OIDC do job publicar');
     assert.doesNotMatch(SEM_COMENTARIO(yaml), /\bsecrets\.|self-hosted|pull_request_target/);
-    assert.match(yaml, /^permissions:\n {2}contents: read\n {2}actions: read\n/m);
+    assert.match(yaml, /^permissions:\n {2}contents: read\n(?! )/m);
   });
 
   test('o fluxo automático não reaproveita o CI para PR: o CI continua sem referências ao CD', () => {
