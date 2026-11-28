@@ -16,6 +16,10 @@ server {
     }
 }
 
+# S2819 (defesa adicional): o segredo da ponte vai no name do iframe e nao trafega; mesmo assim o log de acesso da previa usa este formato,
+# com $uri (caminho normalizado, sem query) no lugar de $request; nao ha $request_uri, $args nem $query_string. Contexto http.
+log_format safework_sem_query '$remote_addr - $remote_user [$time_local] "$request_method $uri $server_protocol" $status $body_bytes_sent "$http_referer" "$http_user_agent"';
+
 server {
     listen 443 ssl;
     server_name {{DOMINIO_PORTAL}};
@@ -77,9 +81,11 @@ server {
         try_files $uri =404;
     }
 
+    # S2819 (defesa adicional): no-store para o navegador nao gravar a pagina em cache de disco; log sem query.
     location = /totem/previa.html {
         include {{ARQUIVO_SEGURANCA_PORTAL_PREVIA}};
-        add_header Cache-Control "no-cache" always;
+        add_header Cache-Control "no-store" always;
+        access_log {{ARQUIVO_LOG_ACESSO_PORTAL}} safework_sem_query;
         try_files $uri =404;
     }
 

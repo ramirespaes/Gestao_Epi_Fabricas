@@ -24,6 +24,8 @@
   var CAMINHO_PREVIA_TOTEM = '../totem/previa.html';
   var CANAL_PREVIA = 'safework-previa-totem';
   var ID_CONSULTA = /^[A-Za-z0-9-]{8,64}$/;
+  var SEGREDO_PONTE = /^[0-9a-f]{32}$/;
+  var PRAZO_HANDSHAKE_MS = 10000;
   var CONTROLE_TEXTO = /[\u0000-\u001f\u007f-\u009f]/;
   // Fotografias da Consulta Real (ponte autenticada). Limites provisórios de carregamento: política da Central, não requisito do backend.
   var ID_IMAGEM = /^[1-9][0-9]{0,18}$/;
@@ -92,7 +94,7 @@
       previaAberta: null,
       busca: [],
       modoPrevia: 'demo',
-      ponte: { gen: 0, frame: null, ouvinte: null, emAndamento: false },
+      ponte: { gen: 0, frame: null, ouvinte: null, emAndamento: false, porta: null, morta: false, cargas: 0, aoCarregar: null, segredo: null, relogioSegredo: null },
       imagens: imagensVazias(),
     };
     // A caixa da prévia é uma só: vai para dentro do item do funcionário escolhido e volta ao seu lugar de origem (`caixaPai`) ao fechar.
@@ -166,6 +168,7 @@
 
     function sessaoExpirou() {
       if (estado.encerrada) return;
+      desligarPonte();
       aoSessaoEncerrada();
     }
 
@@ -248,7 +251,7 @@
     // ─── Visualizar Totem (K7) ────────────────────────────────────────
     // O iframe só existe com a aba aberta. Sandbox só com scripts, sem mesma origem: a prévia roda em origem opaca, sem acesso a
     // cookies, armazenamento nem a esta página. A prévia não chama a API (previa-adaptador.js responde tudo em memória).
-    // Consulta real: o iframe não tem credencial nem rede. Ele pede a identificação por postMessage; ESTA tela, que tem a sessão
+    // Consulta real: o iframe não tem credencial nem rede. Ele pede a identificação pela porta da ponte (S2819); ESTA tela, que tem a sessão
     // administrativa, consulta o servidor e devolve só o primeiro nome e o catálogo. O identificador digitado vive numa variável local
     // até a chamada terminar: nunca vai a armazenamento, URL, console, cartão nem resposta.
     function consultaRealPermitida() { return cap.previa === true && cap.buscarFuncionario === true; }
@@ -256,6 +259,29 @@
     function mesmasChaves(objeto, esperadas) {
       var chaves = Object.keys(objeto).sort(compararComoTexto);
       return chaves.length === esperadas.length && chaves.every(function (c, i) { return c === esperadas[i]; });
+    }
+
+    // S2819: 128 bits de crypto.getRandomValues, só em memória, para o iframe que está sendo criado. Sem gerador criptográfico não há
+    // segredo e, portanto, não há ponte (a consulta real fica indisponível); nunca há alternativa não criptográfica.
+    function gerarSegredoPonte() {
+      try {
+        var c = janela.crypto;
+        if (!c || typeof c.getRandomValues !== 'function') return null;
+        var b = new Uint8Array(16);
+        c.getRandomValues(b);
+        var s = '';
+        for (var i = 0; i < b.length; i += 1) s += (b[i] < 16 ? '0' : '') + b[i].toString(16);
+        return SEGREDO_PONTE.test(s) ? s : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function mesmoSegredo(a, b) {
+      if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+      var d = 0;
+      for (var i = 0; i < a.length; i += 1) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
+      return d === 0;
     }
 
     function enderecoDaPrevia() {
@@ -266,13 +292,17 @@
     function montarPreviaTotem() {
       var quadro = $('totemPreviaQuadro');
       if (!quadro || quadro.firstChild) return;
+      var segredo = estado.modoPrevia === 'real' ? gerarSegredoPonte() : null;
       var f = doc.createElement('iframe');
+      // S2819: o segredo vai no nome do iframe (window.name do documento), que não trafega na rede nem fica em URL, log ou cache.
+      if (segredo !== null) f.setAttribute('name', segredo);
       f.setAttribute('src', enderecoDaPrevia());
       f.setAttribute('sandbox', 'allow-scripts');
       f.setAttribute('referrerpolicy', 'no-referrer');
       f.setAttribute('title', estado.modoPrevia === 'real' ? 'Prévia visual do Totem, consulta real' : 'Prévia visual do Totem, com dados fictícios');
       quadro.appendChild(f);
-      if (estado.modoPrevia === 'real') ligarPonte(f);
+      if (estado.modoPrevia === 'real' && segredo !== null) ligarPonte(f, segredo);
+      segredo = null;
     }
 
     function descartarPreviaTotem() {
@@ -282,21 +312,91 @@
       limparCartao();
     }
 
-    function ligarPonte(f) {
+    // S2819: a origem opaca do iframe não serve de destino para postMessage. O iframe transfere uma porta de MessageChannel no handshake
+    // (PONTE_ABRIR, pela janela); a Central confirma com PONTE_PRONTA e, dali em diante, pedidos e respostas trafegam só por essa porta.
+    // Uma porta por iframe: segundo handshake ou segundo `load` indicam outro documento no mesmo iframe e matam a ponte até recriá-lo.
+    function ligarPonte(f, segredo) {
       desligarPonte();
       var gen = estado.ponte.gen;
       estado.ponte.frame = f;
-      estado.ponte.ouvinte = function (ev) { return aoMensagemDoQuadro(ev, gen); };
+      estado.ponte.morta = false;
+      estado.ponte.cargas = 0;
+      estado.ponte.segredo = segredo;
+      estado.ponte.relogioSegredo = janela.setTimeout(function () {
+        if (gen === estado.ponte.gen) descartarSegredo();
+      }, PRAZO_HANDSHAKE_MS);
+      estado.ponte.ouvinte = function (ev) { return aoHandshakeDoQuadro(ev, gen); };
+      estado.ponte.aoCarregar = function () {
+        if (gen !== estado.ponte.gen) return;
+        estado.ponte.cargas += 1;
+        // O documento legítimo já leu o nome ao rodar; tirá-lo aqui impede que um documento seguinte no mesmo iframe o herde.
+        f.removeAttribute('name');
+        if (estado.ponte.cargas > 1) matarPonte();
+      };
       janela.addEventListener('message', estado.ponte.ouvinte);
+      f.addEventListener('load', estado.ponte.aoCarregar);
+    }
+
+    function fecharPorta() {
+      var p = estado.ponte.porta;
+      estado.ponte.porta = null;
+      if (p === null) return;
+      p.onmessage = null;
+      try { p.close(); } catch (e) { /* porta já desligada pelo navegador */ }
+    }
+
+    function descartarSegredo() {
+      estado.ponte.segredo = null;
+      if (estado.ponte.frame) estado.ponte.frame.removeAttribute('name');
+      if (estado.ponte.relogioSegredo !== null) janela.clearTimeout(estado.ponte.relogioSegredo);
+      estado.ponte.relogioSegredo = null;
     }
 
     function desligarPonte() {
       descartarImagens();
+      descartarSegredo();
+      fecharPorta();
       if (estado.ponte.ouvinte) janela.removeEventListener('message', estado.ponte.ouvinte);
+      if (estado.ponte.frame && estado.ponte.aoCarregar) estado.ponte.frame.removeEventListener('load', estado.ponte.aoCarregar);
       estado.ponte.ouvinte = null;
+      estado.ponte.aoCarregar = null;
       estado.ponte.frame = null;
       estado.ponte.emAndamento = false;
       estado.ponte.gen += 1; // respostas de consultas de um iframe descartado nunca são entregues
+    }
+
+    // Mantém o iframe, mas nenhum documento dele volta a receber resposta: só "Reiniciar prévia" (novo iframe) religa a ponte.
+    function matarPonte() {
+      var f = estado.ponte.frame;
+      desligarPonte();
+      estado.ponte.frame = f;
+      estado.ponte.morta = true;
+    }
+
+    function portaValida(p) {
+      return p !== null && typeof p === 'object' && typeof p.postMessage === 'function' && typeof p.close === 'function';
+    }
+
+    function aoHandshakeDoQuadro(ev, gen) {
+      if (estado.encerrada || gen !== estado.ponte.gen || estado.ponte.morta) return;
+      var f = estado.ponte.frame;
+      if (!f || !f.contentWindow || !ev || ev.source !== f.contentWindow || ev.origin !== 'null') return;
+      var m = ev.data;
+      if (!objetoSimples(m) || m.canal !== CANAL_PREVIA || m.versao !== 1 || m.tipo !== 'PONTE_ABRIR' || typeof m.id !== 'string' || !ID_CONSULTA.test(m.id)) return;
+      var semSegredo = mesmasChaves(m, ['canal', 'id', 'tipo', 'versao']);
+      if (!semSegredo && !mesmasChaves(m, ['canal', 'id', 'segredo', 'tipo', 'versao'])) return;
+      // Origem opaca e janela certa não autenticam o documento: só o segredo deste iframe, no prazo e uma vez. Ausente, errado,
+      // expirado ou já usado indica outro documento no iframe: a ponte morre até recriar o iframe.
+      if (semSegredo || estado.ponte.segredo === null || !SEGREDO_PONTE.test(String(m.segredo)) || !mesmoSegredo(m.segredo, estado.ponte.segredo)) { matarPonte(); return; }
+      if (estado.ponte.porta !== null) { matarPonte(); return; }
+      var portas = ev.ports;
+      if (!portas || portas.length !== 1 || !portaValida(portas[0])) return;
+      descartarSegredo();
+      var porta = portas[0];
+      estado.ponte.porta = porta;
+      porta.onmessage = function (e) { return aoMensagemDoQuadro(e, gen, porta); };
+      if (typeof porta.start === 'function') porta.start();
+      porta.postMessage({ canal: CANAL_PREVIA, versao: 1, tipo: 'PONTE_PRONTA', id: m.id });
     }
 
     function mensagemDeIdentificacaoValida(m) {
@@ -308,11 +408,11 @@
     }
 
     function responderAoQuadro(f, id, extra, tipo) {
-      if (estado.ponte.frame !== f || !f.contentWindow) return;
+      var porta = estado.ponte.porta;
+      if (estado.ponte.frame !== f || porta === null) return;
       var m = { canal: CANAL_PREVIA, versao: 1, tipo: tipo || 'RESULTADO', id: id };
       Object.keys(extra).forEach(function (k) { m[k] = extra[k]; });
-      // A origem do iframe é opaca: o destino é a janela exata deste iframe, não uma origem.
-      f.contentWindow.postMessage(m, '*');
+      porta.postMessage(m);
     }
 
     // ─── Fotografias da Consulta Real ─────────────────────────────────
@@ -467,10 +567,10 @@
       if (m) m.textContent = mensagem || '';
     }
 
-    async function aoMensagemDoQuadro(ev, gen) {
-      if (estado.encerrada || gen !== estado.ponte.gen) return;
+    async function aoMensagemDoQuadro(ev, gen, porta) {
+      if (estado.encerrada || gen !== estado.ponte.gen || porta !== estado.ponte.porta) return;
       var f = estado.ponte.frame;
-      if (!f || !f.contentWindow || !ev || ev.source !== f.contentWindow || ev.origin !== 'null') return;
+      if (!f || !ev) return;
       var m = ev.data;
       if (mensagemDeImagemValida(m)) { atenderImagem(f, gen, m); return; }
       if (mensagemDeCancelamentoValida(m)) { cancelarImagem(m.id); return; }

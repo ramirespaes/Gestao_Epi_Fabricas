@@ -1572,9 +1572,13 @@ describe('K7 — consulta real na Central', () => {
   });
   const exigirRecurso = (pg) => assert.ok(pg.consulta('#modoPreviaReal').length === 1, 'RED K7: o seletor de modo ainda não existe (comportamento ausente)');
 
-  const janelaFalsa = () => { const enviadas = []; return { enviadas, postMessage: (m, alvo) => enviadas.push({ m: JSON.parse(JSON.stringify(m)), alvo }) }; };
+  // S2819: o iframe fala pela porta transferida no handshake. Com fonte/origem forjadas (`extra`), a mensagem chega pela janela, que a ignora.
+  const PP = require('./helpers/ponte-previa');
+  const janelaFalsa = () => PP.filhaComPorta();
   const identificarMsg = (extra = {}) => ({ canal: CANAL, versao: 1, tipo: 'IDENTIFICAR', id: 'consulta-0001', tipoId: 'MATRICULA', valor: 'MX-4242', ...extra });
-  const doQuadro = (pg, janela, data, extra = {}) => pg.eventoDaJanela('message', { data, source: janela, origin: 'null', ...extra });
+  const doQuadro = (pg, janela, data, extra = {}) => (Object.keys(extra).length > 0
+    ? pg.eventoDaJanela('message', { data, source: janela, origin: 'null', ...extra })
+    : PP.doPorta(pg, janela.porta, data));
   const chamadasIdentificar = (pg) => pg.chamadas.filter((c) => c.chave === ROTA);
 
   async function abrirReal({ perm = TUDO, resposta = () => ({ status: 200, corpo: RESPOSTA_OK() }) } = {}) {
@@ -1583,8 +1587,9 @@ describe('K7 — consulta real na Central', () => {
     exigirRecurso(r.pg);
     await r.pg.marcar('modoPreviaReal');
     const quadro = quadroDaPrevia(r.pg)[0];
-    const filha = janelaFalsa();
+    const filha = PP.filhaComPorta(PP.segredoDe(quadro));
     quadro.contentWindow = filha;
+    assert.notEqual(await PP.abrirPonte(r.pg, filha), null, 'handshake da ponte');
     return { ...r, quadro, filha };
   }
 
@@ -1604,7 +1609,10 @@ describe('K7 — consulta real na Central', () => {
     const q = quadroDaPrevia(pg);
     assert.equal(q.length, 1);
     assert.equal(quadro, q[0]);
+    // S2819: o segredo de uso único do handshake vai no nome do iframe, nunca no src; abrirReal já fez o handshake, que retira
+    // o atributo (formato e prazo: S2819-K1 e K8).
     assert.equal(q[0].getAttribute('src'), `../totem/previa.html?modo=real&pai=${encodeURIComponent(pg.janela.location.origin)}`);
+    assert.equal(q[0].getAttribute('name'), null);
     assert.equal(q[0].getAttribute('sandbox'), 'allow-scripts');
     assert.ok(q[0].getAttribute('allow') == null);
     assert.equal(pg.visivel('avisoPreviaReal'), true);
@@ -1626,7 +1634,8 @@ describe('K7 — consulta real na Central', () => {
     for (const esperado of ['Dora', 'GHE-102', 'Soldagem', 'Ativo', 'Botina Teste', 'Capacete Teste']) assert.match(cartao, new RegExp(esperado));
     assert.equal(pg.el('crTotal').textContent.trim(), '2');
     assert.equal(filha.enviadas.length, 1);
-    assert.equal(filha.enviadas[0].alvo, '*', 'a origem do iframe é opaca: o destino é a janela exata, não uma origem');
+    assert.equal(filha.enviadas[0].alvo, 'porta', 'S2819: a resposta vai só pela porta confirmada no handshake');
+    assert.deepEqual(filha.diretas, [], 'nunca por contentWindow.postMessage');
     const msg = filha.enviadas[0].m;
     assert.deepEqual(Object.keys(msg).sort(), ['canal', 'catalogo', 'id', 'primeiroNome', 'resultado', 'tipo', 'versao']);
     assert.deepEqual([msg.canal, msg.versao, msg.tipo, msg.id, msg.resultado, msg.primeiroNome], [CANAL, 1, 'RESULTADO', 'consulta-0001', 'OK', 'Dora']);
@@ -2016,15 +2025,16 @@ describe('K7 melhorias — 5. produtos com tamanhos', () => {
       MATERIAL(33, 'Calça de Segurança', { categoria: 'Vestimenta', tipo: { id: 21, nome: 'Calça de Segurança' }, tamanhos: ['38', '40', '42'] }),
       MATERIAL(34, 'Capacete de Segurança', { tipo: { id: 4, nome: 'Capacete de Segurança' }, exigeTamanho: false, tamanhos: [] }),
     ] } } });
-  const janelaFalsa = () => { const enviadas = []; return { enviadas, postMessage: (m, alvo) => enviadas.push({ m: JSON.parse(JSON.stringify(m)), alvo }) }; };
+  const PP = require('./helpers/ponte-previa');
 
   async function abrirComResultado() {
     const r = await abrir({ base: { forcar: { [ROTA]: () => ({ status: 200, corpo: RESPOSTA() }) } } });
     await aba(r.pg, 'visualizarTotem');
     await r.pg.marcar('modoPreviaReal');
-    const filha = janelaFalsa();
+    const filha = PP.filhaComPorta(PP.segredoDe(quadroDaPrevia(r.pg)[0]));
     quadroDaPrevia(r.pg)[0].contentWindow = filha;
-    await r.pg.eventoDaJanela('message', { data: { canal: CANAL, versao: 1, tipo: 'IDENTIFICAR', id: 'consulta-0001', tipoId: 'MATRICULA', valor: 'MX-4242' }, source: filha, origin: 'null' });
+    await PP.abrirPonte(r.pg, filha);
+    await PP.doPorta(r.pg, filha.porta, { canal: CANAL, versao: 1, tipo: 'IDENTIFICAR', id: 'consulta-0001', tipoId: 'MATRICULA', valor: 'MX-4242' });
     return { ...r, filha };
   }
 
@@ -2235,8 +2245,12 @@ describe('IMG-PRÉVIA — fotografias na Consulta Real da Central', () => {
   const identificarMsg = (extra = {}) => ({ canal: CANAL, versao: 1, tipo: 'IDENTIFICAR', id: 'consulta-0001', tipoId: 'MATRICULA', valor: 'MX-4242', ...extra });
   const pedidoImg = (extra = {}) => ({ canal: CANAL, versao: 1, tipo: 'IMAGEM', id: 'img-00000001', origem: 'PADRAO', imagemId: '9007199254740993', versaoImagem: 3, variante: 'miniatura', ...extra });
   const cancelarImg = (id) => ({ canal: CANAL, versao: 1, tipo: 'IMAGEM_CANCELAR', id });
-  const filhaBruta = () => { const enviadas = []; return { enviadas, postMessage(m, alvo) { enviadas.push({ m, alvo }); } }; };
-  const doQuadro = (pg, filha, data, extra = {}) => pg.eventoDaJanela('message', { data, source: filha, origin: 'null', ...extra });
+  // S2819: pedidos e respostas pela porta do handshake; fonte/origem forjadas (`extra`) chegam pela janela, que as ignora.
+  const PP = require('./helpers/ponte-previa');
+  const filhaBruta = () => PP.filhaComPorta();
+  const doQuadro = (pg, filha, data, extra = {}) => (Object.keys(extra).length > 0
+    ? pg.eventoDaJanela('message', { data, source: filha, origin: 'null', ...extra })
+    : PP.doPorta(pg, filha.porta, data));
   const resultados = (filha) => filha.enviadas.map((e) => e.m).filter((m) => m.tipo === 'IMAGEM_RESULTADO');
   const ultimo = (filha) => resultados(filha).at(-1);
   const CHAVES_BASE = ['canal', 'id', 'resultado', 'tipo', 'versao'];
@@ -2286,8 +2300,9 @@ describe('IMG-PRÉVIA — fotografias na Consulta Real da Central', () => {
     const E = instalarFetch(r.pg);
     await aba(r.pg, 'visualizarTotem');
     await r.pg.marcar('modoPreviaReal');
-    const filha = filhaBruta();
+    const filha = PP.filhaComPorta(PP.segredoDe(quadroDaPrevia(r.pg)[0]));
     quadroDaPrevia(r.pg)[0].contentWindow = filha;
+    await PP.abrirPonte(r.pg, filha);
     return { ...r, E, filha };
   }
   async function consultar(ctx, extra = {}) { await doQuadro(ctx.pg, ctx.filha, identificarMsg(extra)); await ctx.pg.esperar(); }
@@ -2315,7 +2330,8 @@ describe('IMG-PRÉVIA — fotografias na Consulta Real da Central', () => {
     const r = ultimo(ctx.filha);
     assert.deepEqual(Object.keys(r).sort(), ['blob', ...CHAVES_BASE]);
     assert.deepEqual([r.canal, r.versao, r.tipo, r.id, r.resultado, r.blob.size], [CANAL, 1, 'IMAGEM_RESULTADO', 'img-00000001', 'OK', 8]);
-    assert.equal(ctx.filha.enviadas.at(-1).alvo, '*');
+    assert.equal(ctx.filha.enviadas.at(-1).alvo, 'porta');
+    assert.deepEqual(ctx.filha.diretas, []);
     await pedir(ctx, { id: 'img-00000002', origem: 'EMPRESA', imagemId: '7', versaoImagem: 1, variante: 'exibicao' });
     assert.ok(ctx.E.chamadas[1].url.endsWith('/imagens-material/empresa/7/exibicao?v=1'), ctx.E.chamadas[1].url);
     assert.equal(ultimo(ctx.filha).resultado, 'OK');
@@ -2430,6 +2446,26 @@ describe('IMG-PRÉVIA — fotografias na Consulta Real da Central', () => {
       assert.equal(resultados(ctx.filha).length, 0, `${acao}: nada entregue ao iframe descartado`);
       await pedir(ctx, { id: 'img-30000001' });
       assert.equal(ctx.E.chamadas.length, 1, `${acao}: mensagem de iframe descartado é ignorada`);
+    }
+  });
+
+  test('S2819-C8 — navegação do iframe (segundo load) ou segundo handshake abortam a foto em voo, fecham a porta e descartam a resposta atrasada', async () => {
+    for (const acao of ['navegou', 'segundoHandshake']) {
+      const ctx = await abrirImg();
+      ctx.E.modo = () => ({ segurar: true });
+      const q = quadroDaPrevia(ctx.pg)[0];
+      await q.disparar('load');
+      await consultar(ctx);
+      await pedir(ctx);
+      assert.equal(ctx.E.emVoo, 1, acao);
+      if (acao === 'navegou') await q.disparar('load');
+      if (acao === 'segundoHandshake') await PP.abrirPonte(ctx.pg, ctx.filha, { ports: [PP.portaFalsa()] });
+      assert.equal(ctx.E.chamadas[0].abortada, true, `${acao}: abortada`);
+      assert.equal(ctx.filha.porta.fechada, true, `${acao}: porta fechada`);
+      ctx.E.liberarTodos(); await ctx.pg.esperar();
+      assert.equal(resultados(ctx.filha).length, 0, `${acao}: nada entregue`);
+      await pedir(ctx, { id: 'img-30000002' });
+      assert.equal(ctx.E.chamadas.length, 1, `${acao}: pedido depois da invalidação é ignorado`);
     }
   });
 
@@ -2658,5 +2694,280 @@ describe('S9383 (lote 04) — rejeição inesperada de uma tarefa iniciada por e
     const escapadas = await rejeicoesEscapadas(pg, () => pg.clicar('botaoNovaAtivacaoQr'));
     assert.deepEqual(escapadas, []);
     assert.equal(aviso(pg, 'avisoAtivacao').includes(inesperada(pg)), true);
+  });
+});
+
+// ───────────────────────── S2819 — ponte da prévia por MessageChannel (lado da Central) ─────────────────────────
+// A resposta ao iframe (origem opaca) não sai mais por postMessage(m, '*'): vai só pela porta transferida no handshake. A Central confirma
+// a porta (PONTE_PRONTA) antes de atender qualquer pedido; pedido pela janela é ignorado. Navegação, troca de iframe, logout e 401 invalidam
+// a porta, cancelam o que estiver pendente e descartam respostas tardias.
+describe('S2819 — ponte da prévia por MessageChannel na Central', () => {
+  const P = require('./helpers/ponte-previa');
+  const ROTA = 'POST /atendimento-token/previa/identificar';
+  const MAT = (id, nome) => ({ id, nome, unidade: 'UN', categoria: 'EPI', grupoProtecao: null, tipo: { id: 1, nome: 'Tipo' }, exigeTamanho: false, tamanhos: [], imagem: { disponivel: false } });
+  const RESPOSTA = () => ({ status: 'ok', previa: { funcionario: { primeiroNome: 'Dora' }, ghe: null, catalogo: { estado: 'OK', total: 1, materiais: [MAT(31, 'Botina Teste')] } } });
+  const identificar = (id = 'consulta-0001') => ({ canal: P.CANAL, versao: 1, tipo: 'IDENTIFICAR', id, tipoId: 'MATRICULA', valor: 'MX-4242' });
+  const chamadas = (pg) => pg.chamadas.filter((c) => c.chave === ROTA).length;
+
+  async function abrirReal({ resposta = () => ({ status: 200, corpo: RESPOSTA() }), conectar = true } = {}) {
+    const r = await abrir({ base: { forcar: { [ROTA]: resposta } } });
+    await aba(r.pg, 'visualizarTotem');
+    await r.pg.marcar('modoPreviaReal');
+    const quadro = quadroDaPrevia(r.pg)[0];
+    const filha = P.filhaComPorta(P.segredoDe(quadro));
+    quadro.contentWindow = filha;
+    const pronta = conectar ? await P.abrirPonte(r.pg, filha) : null;
+    return { ...r, quadro, filha, pronta };
+  }
+  const pendurada = () => { const c = {}; c.resposta = () => new Promise((ok) => { c.liberar = () => ok({ status: 200, corpo: RESPOSTA() }); }); return c; };
+
+  test('S2819-C1 — handshake: a Central confirma a porta com PONTE_PRONTA (mesmo id) e o resultado vai SÓ pela porta; a janela do iframe nunca recebe postMessage', async () => {
+    const { pg, filha, pronta } = await abrirReal();
+    assert.deepEqual(pronta, { canal: P.CANAL, versao: 1, tipo: 'PONTE_PRONTA', id: P.ID_PONTE });
+    await P.doPorta(pg, filha.porta, identificar());
+    assert.equal(chamadas(pg), 1);
+    assert.equal(filha.enviadas.length, 1);
+    assert.deepEqual([filha.enviadas[0].m.tipo, filha.enviadas[0].m.id, filha.enviadas[0].m.resultado], ['RESULTADO', 'consulta-0001', 'OK']);
+    assert.deepEqual(filha.diretas, [], 'nada por contentWindow.postMessage');
+  });
+
+  test('S2819-C2 — antes do handshake nada é atendido, e pedido pela janela (mesmo da fonte e origem certas) é sempre ignorado', async () => {
+    const { pg, filha } = await abrirReal({ conectar: false });
+    await pg.eventoDaJanela('message', { data: identificar(), source: filha, origin: 'null' });
+    assert.equal(chamadas(pg), 0);
+    assert.notEqual(await P.abrirPonte(pg, filha), null);
+    await pg.eventoDaJanela('message', { data: identificar('consulta-0002'), source: filha, origin: 'null' });
+    assert.equal(chamadas(pg), 0, 'pela janela, nem depois do handshake');
+    assert.deepEqual(filha.diretas, []);
+  });
+
+  test('S2819-C3 — handshake inválido não entrega porta nem confirmação: fonte, origem, formato, id e porta transferida são conferidos', async () => {
+    const outra = P.filhaComPorta();
+    const casos = [
+      ['outra fonte', { source: outra }],
+      ['sem fonte', { source: undefined }],
+      ['origem não nula', { origin: 'http://central.teste:5800' }],
+      ['sem porta', { ports: [] }],
+      ['ports ausente', { ports: undefined }],
+      ['duas portas', { ports: [P.portaFalsa(), P.portaFalsa()] }],
+      ['porta sem postMessage', { ports: [{ close() {}, start() {} }] }],
+      ['campo extra', { data: P.abertura({ valor: 'x' }) }],
+      ['canal errado', { data: P.abertura({ canal: 'outro' }) }],
+      ['versão errada', { data: P.abertura({ versao: 2 }) }],
+      ['id inválido', { data: P.abertura({ id: 'x' }) }],
+      ['tipo errado', { data: P.abertura({ tipo: 'PONTE_PRONTA' }) }],
+    ];
+    for (const [nome, extra] of casos) {
+      const { pg, filha } = await abrirReal({ conectar: false });
+      const pronta = await P.abrirPonte(pg, filha, extra);
+      assert.equal(pronta, null, `${nome}: sem confirmação`);
+      assert.equal(filha.porta.onmessage, null, `${nome}: a porta não é adotada`);
+      await P.doPorta(pg, filha.porta, identificar());
+      assert.equal(chamadas(pg), 0, nome);
+      assert.notEqual(await P.abrirPonte(pg, filha), null, `${nome}: um handshake válido depois ainda é aceito`);
+    }
+  });
+
+  test('S2819-C4 — segundo handshake no mesmo iframe (navegação ou documento trocado): a porta antiga é fechada, a nova é recusada e nada mais é atendido', async () => {
+    const c = pendurada();
+    const { pg, filha } = await abrirReal({ resposta: c.resposta });
+    const andamento = P.doPorta(pg, filha.porta, identificar());
+    await pg.esperar();
+    const intrusa = P.filhaComPorta();
+    intrusa.porta.enviadas = filha.enviadas;
+    const segunda = await P.abrirPonte(pg, filha, { ports: [intrusa.porta] });
+    assert.equal(segunda, null, 'sem PONTE_PRONTA para o novo documento');
+    assert.equal(filha.porta.fechada, true, 'a porta antiga é fechada');
+    c.liberar();
+    await andamento;
+    await pg.esperar();
+    assert.equal(filha.enviadas.length, 0, 'a resposta tardia é descartada');
+    await P.doPorta(pg, filha.porta, identificar('consulta-0002'));
+    await P.doPorta(pg, intrusa.porta, identificar('consulta-0003'));
+    assert.equal(chamadas(pg), 1);
+    assert.equal(pg.el('crColaborador').textContent.includes('Dora'), false);
+  });
+
+  test('S2819-C5 — o iframe navegou (segundo load): a porta é invalidada, a consulta em andamento é descartada e o novo documento não ganha ponte', async () => {
+    const c = pendurada();
+    const { pg, quadro, filha } = await abrirReal({ resposta: c.resposta });
+    await quadro.disparar('load');
+    const andamento = P.doPorta(pg, filha.porta, identificar());
+    await pg.esperar();
+    await quadro.disparar('load');
+    assert.equal(filha.porta.fechada, true);
+    c.liberar();
+    await andamento;
+    await pg.esperar();
+    assert.equal(filha.enviadas.length, 0);
+    assert.equal(await P.abrirPonte(pg, filha, { ports: [P.portaFalsa()] }), null, 'o documento novo não ganha ponte');
+  });
+
+  test('S2819-C6 — substituir o iframe (reiniciar, demonstração, sair da aba), logout e 401 fecham a porta', async () => {
+    for (const acao of ['reiniciar', 'demonstracao', 'sair', 'encerrar', '401']) {
+      const resposta = acao === '401' ? () => ({ status: 401, corpo: { status: 'error', codigo: 'NAO_AUTENTICADO', message: 'x' } }) : undefined;
+      const { pg, filha } = await abrirReal(resposta ? { resposta } : {});
+      if (acao === 'reiniciar') await pg.clicar('botaoReiniciarPrevia');
+      if (acao === 'demonstracao') await pg.marcar('modoPreviaDemo');
+      if (acao === 'sair') await aba(pg, 'historico');
+      if (acao === 'encerrar') pg.janela.__tela.encerrar();
+      if (acao === '401') await P.doPorta(pg, filha.porta, identificar());
+      assert.equal(filha.porta.fechada, true, `${acao}: porta fechada`);
+      assert.equal(filha.porta.onmessage, null, `${acao}: ouvinte da porta removido`);
+      assert.equal(filha.enviadas.length, 0, `${acao}: nada entregue`);
+    }
+  });
+
+  test('S2819-C7 — o código da tela não tem postMessage com destino "*" e responde pela porta da ponte', () => {
+    const codigo = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'js', 'atendimento-token-tela.js'), 'utf8');
+    assert.doesNotMatch(codigo, /postMessage\s*\([^)]*['"]\*['"]/);
+    assert.doesNotMatch(codigo, /contentWindow\.postMessage/);
+    assert.match(codigo, /porta\.postMessage\s*\(/);
+  });
+});
+
+// ───────────────────────── S2819 — segredo de uso único do handshake (lado da Central) ─────────────────────────
+// Origem opaca e janela certa não autenticam o documento: o iframe só ganha a ponte se apresentar o segredo de 128 bits que a Central pôs
+// no src DESTE iframe (crypto.getRandomValues), dentro do prazo e uma única vez. Segredo ausente, errado, expirado ou reusado mata a ponte.
+describe('S2819 — segredo do handshake na Central', () => {
+  const P = require('./helpers/ponte-previa');
+  const ROTA = 'POST /atendimento-token/previa/identificar';
+  const MAT = (id, nome) => ({ id, nome, unidade: 'UN', categoria: 'EPI', grupoProtecao: null, tipo: { id: 1, nome: 'Tipo' }, exigeTamanho: false, tamanhos: [], imagem: { disponivel: false } });
+  const RESPOSTA = () => ({ status: 'ok', previa: { funcionario: { primeiroNome: 'Dora' }, ghe: null, catalogo: { estado: 'OK', total: 1, materiais: [MAT(31, 'Botina Teste')] } } });
+  const identificar = (id = 'consulta-0001') => ({ canal: P.CANAL, versao: 1, tipo: 'IDENTIFICAR', id, tipoId: 'MATRICULA', valor: 'MX-4242' });
+  const chamadas = (pg) => pg.chamadas.filter((c) => c.chave === ROTA).length;
+  const PRAZO_MS = 10000;
+
+  async function abrirReal({ antes = null } = {}) {
+    const r = await abrir({ base: { forcar: { [ROTA]: () => ({ status: 200, corpo: RESPOSTA() }) } } });
+    if (antes) antes(r.pg);
+    await aba(r.pg, 'visualizarTotem');
+    await r.pg.marcar('modoPreviaReal');
+    const quadro = quadroDaPrevia(r.pg)[0];
+    const segredo = P.segredoDe(quadro);
+    const filha = P.filhaComPorta(segredo);
+    quadro.contentWindow = filha;
+    return { ...r, quadro, filha, segredo };
+  }
+  // Tenta o handshake com uma porta nova e diz se ela recebeu PONTE_PRONTA.
+  async function tentar(pg, filha, segredo, extraData = {}) {
+    const porta = P.portaFalsa();
+    const data = P.abertura(segredo === undefined ? extraData : { segredo, ...extraData });
+    await pg.eventoDaJanela('message', { data, source: filha, origin: 'null', ports: [porta] });
+    return { aceita: porta.enviadas.some((e) => e.m.tipo === 'PONTE_PRONTA'), porta };
+  }
+
+  test('S2819-K1 — o nome do iframe real leva um segredo de 128 bits (32 hex) por iframe; cada iframe novo tem outro; nada vai a armazenamento, histórico ou console', async () => {
+    const { pg, segredo } = await abrirReal();
+    assert.match(segredo || '', /^[0-9a-f]{32}$/);
+    await pg.clicar('botaoReiniciarPrevia');
+    const outro = P.segredoDe(quadroDaPrevia(pg)[0]);
+    assert.match(outro || '', /^[0-9a-f]{32}$/);
+    assert.notEqual(outro, segredo);
+    const rastros = JSON.stringify([pg.storage, pg.cookiesEscritos, pg.historico, pg.consoleChamadas, pg.navegacoes]);
+    for (const s of [segredo, outro]) assert.equal(rastros.includes(s), false, 'o segredo não fica em armazenamento, cookie, histórico, console nem navegação');
+  });
+
+  test('S2819-K2 — handshake com o segredo certo é aceito; ausente ou errado é recusado e mata a ponte (nem o certo vale depois)', async () => {
+    const ok = await abrirReal();
+    assert.equal((await tentar(ok.pg, ok.filha, ok.segredo)).aceita, true);
+    for (const [nome, valor] of [['ausente', undefined], ['errado', '0'.repeat(32)], ['formato inválido', 'XYZ'], ['vazio', '']]) {
+      const c = await abrirReal();
+      const t = await tentar(c.pg, c.filha, valor);
+      assert.equal(t.aceita, false, `${nome}: recusado`);
+      assert.equal((await tentar(c.pg, c.filha, c.segredo)).aceita, false, `${nome}: a ponte morreu, nem o segredo certo vale`);
+      await P.doPorta(c.pg, t.porta, identificar());
+      assert.equal(chamadas(c.pg), 0, nome);
+    }
+  });
+
+  test('S2819-K3 — reutilização: o segredo vale uma vez; o segundo handshake com o MESMO segredo é recusado e fecha a porta aceita', async () => {
+    const c = await abrirReal();
+    const primeira = await tentar(c.pg, c.filha, c.segredo);
+    assert.equal(primeira.aceita, true);
+    const segunda = await tentar(c.pg, c.filha, c.segredo);
+    assert.equal(segunda.aceita, false);
+    assert.equal(primeira.porta.fechada, true);
+    await P.doPorta(c.pg, primeira.porta, identificar());
+    await P.doPorta(c.pg, segunda.porta, identificar('consulta-0002'));
+    assert.equal(chamadas(c.pg), 0);
+  });
+
+  test('S2819-K4 — expiração: depois do prazo do handshake o segredo não vale mais', async () => {
+    const c = await abrirReal();
+    await c.pg.avancar(PRAZO_MS + 1);
+    assert.equal((await tentar(c.pg, c.filha, c.segredo)).aceita, false);
+    const d = await abrirReal();
+    await d.pg.avancar(PRAZO_MS - 1000);
+    assert.equal((await tentar(d.pg, d.filha, d.segredo)).aceita, true, 'dentro do prazo ainda vale');
+  });
+
+  test('S2819-K5 — documento não autorizado: o segredo de outro iframe (reiniciado, ou da sessão anterior) não serve para o iframe atual', async () => {
+    const c = await abrirReal();
+    const antigo = c.segredo;
+    await c.pg.clicar('botaoReiniciarPrevia');
+    const novo = quadroDaPrevia(c.pg)[0];
+    const filhaNova = P.filhaComPorta(P.segredoDe(novo));
+    novo.contentWindow = filhaNova;
+    assert.equal((await tentar(c.pg, filhaNova, antigo)).aceita, false, 'segredo do iframe anterior');
+    assert.equal((await tentar(c.pg, filhaNova, filhaNova.segredo)).aceita, false, 'a tentativa com segredo alheio matou a ponte');
+  });
+
+  test('S2819-K6 — logout, troca de modo e saída da aba invalidam o segredo vigente (401: S2819-C6)', async () => {
+    for (const acao of ['encerrar', 'demonstracao', 'sair']) {
+      const c = await abrirReal();
+      if (acao === 'encerrar') c.pg.janela.__tela.encerrar();
+      if (acao === 'demonstracao') await c.pg.marcar('modoPreviaDemo');
+      if (acao === 'sair') await aba(c.pg, 'historico');
+      assert.equal((await tentar(c.pg, c.filha, c.segredo)).aceita, false, acao);
+    }
+  });
+
+  test('S2819-K7 — sem crypto.getRandomValues (ausente ou com falha) não há ponte nem alternativa insegura', async () => {
+    for (const [nome, crypto] of [['ausente', undefined], ['falha', { getRandomValues() { throw new Error('sem entropia'); }, randomUUID: () => 'x' }]]) {
+      const c = await abrirReal({ antes: (pg) => { pg.janela.crypto = crypto; } });
+      assert.equal(c.segredo, undefined, `${nome}: o iframe não leva segredo`);
+      for (const s of [undefined, '0'.repeat(32)]) assert.equal((await tentar(c.pg, c.filha, s)).aceita, false, `${nome}: nenhum handshake é aceito`);
+    }
+    const codigo = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'js', 'atendimento-token-tela.js'), 'utf8');
+    assert.doesNotMatch(codigo, /Math\.random/);
+    assert.match(codigo, /getRandomValues\s*\(/);
+  });
+
+  test('S2819-K8 — o segredo nunca vai no src; o atributo name sai do iframe no handshake aceito, no recusado e no fim do prazo', async () => {
+    const aceito = await abrirReal();
+    assert.equal(/ponte=/.test(aceito.quadro.getAttribute('src')), false);
+    assert.equal((await tentar(aceito.pg, aceito.filha, aceito.segredo)).aceita, true);
+    assert.equal(aceito.quadro.getAttribute('name'), null, 'depois do handshake aceito');
+    const recusado = await abrirReal();
+    await tentar(recusado.pg, recusado.filha, '0'.repeat(32));
+    assert.equal(recusado.quadro.getAttribute('name'), null, 'depois do handshake recusado');
+    const expirado = await abrirReal();
+    await expirado.pg.avancar(PRAZO_MS + 1);
+    assert.equal(expirado.quadro.getAttribute('name'), null, 'depois do prazo');
+    const dentro = await abrirReal();
+    await dentro.pg.avancar(PRAZO_MS - 1000);
+    assert.match(dentro.quadro.getAttribute('name') || '', /^[0-9a-f]{32}$/, 'dentro do prazo o nome continua para o documento ler');
+  });
+
+  test('S2819-K10 — o nome sai do iframe já no primeiro load: um documento seguinte no mesmo iframe nunca herda o segredo', async () => {
+    const c = await abrirReal();
+    assert.match(c.quadro.getAttribute('name') || '', /^[0-9a-f]{32}$/);
+    await c.quadro.disparar('load');
+    assert.equal(c.quadro.getAttribute('name'), null, 'primeiro load');
+    assert.equal((await tentar(c.pg, c.filha, c.segredo)).aceita, true, 'o documento legítimo, que já leu o nome, ainda abre a ponte no prazo');
+  });
+
+  test('S2819-K9 — isolamento: na demonstração o iframe não tem nome; reiniciar troca o iframe e o nome; o iframe antigo sai do DOM', async () => {
+    const c = await abrirReal();
+    const antigo = c.quadro;
+    await c.pg.clicar('botaoReiniciarPrevia');
+    const novo = quadroDaPrevia(c.pg)[0];
+    assert.notEqual(novo, antigo);
+    assert.equal(quadroDaPrevia(c.pg).length, 1);
+    assert.match(novo.getAttribute('name') || '', /^[0-9a-f]{32}$/);
+    assert.notEqual(novo.getAttribute('name'), c.segredo);
+    await c.pg.marcar('modoPreviaDemo');
+    assert.equal(quadroDaPrevia(c.pg)[0].getAttribute('name'), null, 'demonstração sem nome');
   });
 });

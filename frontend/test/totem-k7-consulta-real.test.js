@@ -22,12 +22,15 @@ const ADAPTADOR = 'totem/previa-adaptador.js';
 const API = 'https://previa.invalid/api/atendimento-token/tablet';
 const CANAL = 'safework-previa-totem';
 const PAI = 'http://central.teste:5800';
+// S2819: o segredo de uso único do handshake chega no nome do iframe (window.name), nunca na URL (fictício aqui).
+const SEGREDO_TESTE = 'fedcba9876543210fedcba9876543210';
 const BUSCA_REAL = `?modo=real&pai=${encodeURIComponent(PAI)}`;
+// `null`: iframe sem nome (undefined acionaria o padrão dos parâmetros).
+const NOME_DO_QUADRO = (nome) => (nome === null ? '' : `<script>window.name = ${JSON.stringify(nome)};</script>`);
 const CPF_FICTICIO = '12345678901';
 const lerArquivo = (rel) => fs.readFileSync(path.join(RAIZ, rel), 'utf8');
 const exigir = (rel) => assert.ok(fs.existsSync(path.join(RAIZ, rel)), `${rel} não existe`);
 
-const STUB_DO_PAI = '<script>(function () { var enviadas = []; window.__paraPai = enviadas; window.parent = { postMessage: function (m, alvo) { enviadas.push({ m: JSON.parse(JSON.stringify(m)), alvo: alvo }); } }; })();</script>';
 
 const CATALOGO = Object.freeze({
   estado: 'OK',
@@ -38,9 +41,10 @@ const CATALOGO = Object.freeze({
   ],
 });
 
-function abrir({ search = BUSCA_REAL, transformar = null } = {}) {
+function abrir({ search = BUSCA_REAL, transformar = null, nome = SEGREDO_TESTE } = {}) {
   exigir(PREVIA);
-  const html = injetarShim(lerArquivo(PREVIA)).replace('<script src="previa-adaptador.js"></script>', `${STUB_DO_PAI}<script src="previa-adaptador.js"></script>`);
+  // S2819: a ponte é o MessageChannel com handshake confirmado automaticamente (STUB_PONTE, no fim do arquivo).
+  const html = injetarShim(lerArquivo(PREVIA)).replace('<script src="previa-adaptador.js"></script>', `${NOME_DO_QUADRO(nome)}${STUB_PONTE(true)}<script src="previa-adaptador.js"></script>`);
   return abrirPagina(PREVIA, { html, search, transformar });
 }
 
@@ -56,10 +60,17 @@ async function identificar(p, tipo, valor) {
   await p.esperar();
 }
 const textoDaPagina = (p) => p.consulta('.tela').filter(p.visivelNo).map((e) => e.textContent).join(' ').replace(/\s+/g, ' ');
-const enviadas = (p) => JSON.parse(JSON.stringify(p.janela.__paraPai));
+// Pedidos ao pai: o que saiu pela porta (S2819). `alvo` 'porta' substitui a origem do pai como destino.
+const enviadas = (p) => (p.janela.__canais && p.janela.__canais[0] ? JSON.parse(JSON.stringify(p.janela.__canais[0].port1.enviadas)).map((m) => ({ m, alvo: 'porta' })) : []);
 const resultado = (id, extra = {}) => ({ canal: CANAL, versao: 1, tipo: 'RESULTADO', id, ...extra });
 const ok = (id) => resultado(id, { resultado: 'OK', primeiroNome: 'Dora', catalogo: JSON.parse(JSON.stringify(CATALOGO)) });
-const doPai = (p, data, extra = {}) => p.eventoDaJanela('message', { data, source: p.janela.parent, origin: PAI, ...extra });
+// Sem `extra`, a resposta chega pela porta. Com fonte/origem forjadas, chega pela janela, caminho que o adaptador não escuta mais.
+const doPai = async (p, data, extra = {}) => {
+  if (Object.keys(extra).length > 0) return p.eventoDaJanela('message', { data, source: p.janela.parent, origin: PAI, ...extra });
+  const c = p.janela.__canais && p.janela.__canais[0];
+  if (c && typeof c.port1.onmessage === 'function') await c.port1.onmessage({ data });
+  await p.esperar();
+};
 
 function semEscapes(p) {
   assert.deepEqual(p.chamadas.map((c) => c.chave), [], 'a rede real nunca é chamada');
@@ -67,7 +78,8 @@ function semEscapes(p) {
   assert.deepEqual(p.storage, [], 'nenhum armazenamento');
   assert.deepEqual(p.cookiesEscritos, []);
   assert.deepEqual(p.navegacoes, []);
-  assert.deepEqual(p.historico, []);
+  // S2819: o segredo não passa pela URL, então nada é reescrito no histórico.
+  assert.deepEqual(JSON.parse(JSON.stringify(p.historico)), [], 'nenhum registro de histórico');
   assert.deepEqual(p.consoleChamadas, []);
 }
 const vazou = (p, valor) => JSON.stringify({ s: p.storage, c: p.cookiesEscritos, h: p.historico, n: p.navegacoes, k: p.consoleChamadas, r: p.janela.TotemPrevia.chamadas(), u: p.janela.location.href ?? '' }).includes(valor);
@@ -79,7 +91,9 @@ describe('K7 — consulta real: o adaptador identifica pela janela pai', () => {
     await identificar(p, 'MATRICULA', '2001');
     const m = enviadas(p);
     assert.equal(m.length, 1, 'uma única mensagem');
-    assert.equal(m[0].alvo, PAI, 'destino exato: a origem do pai, nunca *');
+    assert.equal(m[0].alvo, 'porta', 'S2819: pela porta do MessageChannel confirmada pela Central');
+    assert.equal(p.janela.__paraPai.length, 1, 'pela janela do pai só o PONTE_ABRIR, com destino exato');
+    assert.equal(p.janela.__paraPai[0].alvo, PAI);
     assert.deepEqual(Object.keys(m[0].m).sort(), ['canal', 'id', 'tipo', 'tipoId', 'valor', 'versao']);
     assert.equal(m[0].m.canal, CANAL);
     assert.equal(m[0].m.versao, 1);
@@ -277,12 +291,15 @@ describe('K7 — consulta real: o modo é travado na carga e a demonstração n�
 });
 
 describe('K7 — consulta real: estático', () => {
-  test('K7-E1 — o adaptador tem UM postMessage, para o pai e com destino explícito; UM ouvinte de message; nunca "*", nunca fetch real', () => {
+  // S2819 (27/11/2026): antes eram UM postMessage ao pai e UM ouvinte de message na janela. Agora: UM postMessage ao pai (o handshake,
+  // com destino explícito), UM pela porta e NENHUM ouvinte de message na janela.
+  test('K7-E1 — o adaptador tem UM postMessage ao pai, com destino explícito, e UM pela porta; nenhum ouvinte de message; nunca "*", nunca fetch real', () => {
     exigir(ADAPTADOR);
     const codigo = semComentarios(lerArquivo(ADAPTADOR));
-    assert.equal((codigo.match(/\.postMessage\s*\(/g) || []).length, 1);
-    assert.match(codigo, /window\.parent\.postMessage\s*\(/);
-    assert.equal((codigo.match(/addEventListener\s*\(\s*'message'/g) || []).length, 1);
+    assert.equal((codigo.match(/\.postMessage\s*\(/g) || []).length, 2);
+    assert.equal((codigo.match(/window\.parent\.postMessage\s*\(/g) || []).length, 1);
+    assert.equal((codigo.match(/porta\.postMessage\s*\(/g) || []).length, 1);
+    assert.equal((codigo.match(/addEventListener\s*\(\s*'message'/g) || []).length, 0);
     assert.doesNotMatch(codigo, /postMessage\s*\([^)]*['"]\*['"]/, 'o destino nunca é *');
     assert.doesNotMatch(codigo, /(?<![.\w])fetch\s*\(|\.fetch\s*\(|=\s*(window\.|self\.|globalThis\.)?fetch\b/);
     assert.doesNotMatch(codigo, /\b(localStorage|sessionStorage|indexedDB|XMLHttpRequest|sendBeacon|WebSocket|EventSource|importScripts|Worker)\b|document\.cookie|\beval\s*\(|new\s+Function/);
@@ -317,7 +334,7 @@ describe('IMG-PRÉVIA — fotografias no iframe da Consulta Real (adaptador)', (
 
   function abrirImg(search = BUSCA_REAL) {
     exigir(PREVIA);
-    const html = injetarShim(lerArquivo(PREVIA)).replace('<script src="previa-adaptador.js"></script>', `${STUB_DO_PAI}${STUB_IMAGENS}<script>${STUB_LEITOR}</script><script src="previa-adaptador.js"></script>`);
+    const html = injetarShim(lerArquivo(PREVIA)).replace('<script src="previa-adaptador.js"></script>', `${NOME_DO_QUADRO(SEGREDO_TESTE)}${STUB_PONTE(true)}${STUB_IMAGENS}<script>${STUB_LEITOR}</script><script src="previa-adaptador.js"></script>`);
     return abrirPagina(PREVIA, { html, search });
   }
   const passar = async (p, ms, passo = 300) => { let resto = ms; while (resto > 0) { const d = Math.min(passo, resto); p.janela.__relogio.avancar(d); await p.esperar(); resto -= d; } };
@@ -347,7 +364,8 @@ describe('IMG-PRÉVIA — fotografias no iframe da Consulta Real (adaptador)', (
     }
     assert.deepEqual(m.map((x) => [x.origem, x.imagemId, x.versaoImagem]).sort(), [['EMPRESA', '7', 1], ['PADRAO', '9007199254740993', 3]]);
     assert.equal(new Set(m.map((x) => x.id)).size, 2, 'um identificador por pedido');
-    assert.ok(enviadas(p).filter((e) => e.m.tipo === 'IMAGEM').every((e) => e.alvo === PAI), 'destino exato: a origem do pai, nunca *');
+    assert.ok(enviadas(p).filter((e) => e.m.tipo === 'IMAGEM').every((e) => e.alvo === 'porta'), 'S2819: só pela porta confirmada, nunca pela janela');
+    assert.equal(p.janela.__paraPai.length, 1, 'pela janela do pai só o PONTE_ABRIR');
     semEscapes(p);
   });
 
@@ -486,5 +504,155 @@ describe('IMG-PRÉVIA — fotografias no iframe da Consulta Real (adaptador)', (
     semEscapes(p);
     const texto = JSON.stringify(enviadas(p));
     assert.doesNotMatch(texto, /cookie|authorization|token|gepi_|senha|cpf/i);
+  });
+});
+
+// ───────────────────────── S2819 — ponte por MessageChannel (lado do iframe) ─────────────────────────
+// O adaptador cria o MessageChannel, transfere port2 ao pai num ÚNICO postMessage com destino explícito (PONTE_ABRIR) e só faz pedidos
+// depois da confirmação PONTE_PRONTA na porta. Respostas só valem pela porta; mensagem pela janela, mesmo do pai e da origem certa, é ignorada.
+const STUB_PONTE = (auto) => `<script>(function () {
+  var paraPai = []; var canais = [];
+  window.__paraPai = paraPai; window.__canais = canais;
+  window.MessageChannel = function () {
+    var p1 = { onmessage: null, enviadas: [], fechada: false, postMessage: function (m) { if (!p1.fechada) p1.enviadas.push(m && m.blob ? m : JSON.parse(JSON.stringify(m))); }, start: function () {}, close: function () { p1.fechada = true; } };
+    var p2 = { marca: 'port2-' + canais.length };
+    canais.push({ port1: p1, port2: p2 });
+    this.port1 = p1; this.port2 = p2;
+  };
+  window.parent = { postMessage: function (m, alvo, transfer) {
+    paraPai.push({ m: JSON.parse(JSON.stringify(m)), alvo: alvo, transfer: (transfer || []).map(function (t) { return t && t.marca; }) });
+    if (${auto ? 'true' : 'false'} && m && m.tipo === 'PONTE_ABRIR') {
+      var c = canais[canais.length - 1];
+      Promise.resolve().then(function () { if (c.port1.onmessage) c.port1.onmessage({ data: { canal: m.canal, versao: 1, tipo: 'PONTE_PRONTA', id: m.id } }); });
+    }
+  } };
+})();</script>`;
+
+function abrirPonte({ search = BUSCA_REAL, auto = true, nome = SEGREDO_TESTE } = {}) {
+  exigir(PREVIA);
+  const html = injetarShim(lerArquivo(PREVIA)).replace('<script src="previa-adaptador.js"></script>', `${NOME_DO_QUADRO(nome)}${STUB_PONTE(auto)}<script src="previa-adaptador.js"></script>`);
+  return abrirPagina(PREVIA, { html, search });
+}
+const porta1 = (p) => p.janela.__canais[0] && p.janela.__canais[0].port1;
+const pelaPorta = async (p, data) => { await porta1(p).onmessage({ data }); await p.esperar(); };
+const pedidos = (p) => (porta1(p) ? JSON.parse(JSON.stringify(porta1(p).enviadas)) : []);
+
+describe('S2819 — o adaptador fala com a Central só pela porta do MessageChannel', () => {
+  test('S2819-A1 — na carga sai UM PONTE_ABRIR ao pai, com destino exato e port2 transferida; não há ouvinte de message na janela', async () => {
+    const p = abrirPonte({ auto: false });
+    await p.esperar();
+    assert.equal(p.janela.__canais.length, 1, 'um canal');
+    const m = JSON.parse(JSON.stringify(p.janela.__paraPai));
+    assert.equal(m.length, 1);
+    assert.equal(m[0].alvo, PAI);
+    assert.deepEqual(m[0].transfer, ['port2-0']);
+    assert.deepEqual(Object.keys(m[0].m).sort(), ['canal', 'id', 'segredo', 'tipo', 'versao']);
+    assert.deepEqual([m[0].m.canal, m[0].m.versao, m[0].m.tipo, m[0].m.segredo], [CANAL, 1, 'PONTE_ABRIR', SEGREDO_TESTE]);
+    assert.match(m[0].m.id, /^[A-Za-z0-9-]{8,64}$/);
+    assert.equal(typeof porta1(p).onmessage, 'function');
+    assert.equal(p.ouvintesDaJanela('message'), 0);
+  });
+
+  test('S2819-A2 — sem PONTE_PRONTA nenhum pedido sai; confirmação com id errado é ignorada; com o id certo a identificação sai pela porta', async () => {
+    const p = abrirPonte({ auto: false });
+    await p.esperar();
+    const id = p.janela.__paraPai[0].m.id;
+    await identificar(p, 'MATRICULA', '2001');
+    assert.deepEqual(pedidos(p), []);
+    await pelaPorta(p, { canal: CANAL, versao: 1, tipo: 'PONTE_PRONTA', id: 'outro-id-0001' });
+    assert.deepEqual(pedidos(p), []);
+    await pelaPorta(p, { canal: CANAL, versao: 1, tipo: 'PONTE_PRONTA', id });
+    const ped = pedidos(p);
+    assert.equal(ped.length, 1);
+    assert.deepEqual([ped[0].tipo, ped[0].tipoId, ped[0].valor], ['IDENTIFICAR', 'MATRICULA', '2001']);
+    assert.equal(p.janela.__paraPai.length, 1, 'nada mais pela janela do pai');
+  });
+
+  test('S2819-A3 — sem confirmação a identificação vira indisponibilidade no tempo-limite, sem nada enviado', async () => {
+    const p = abrirPonte({ auto: false });
+    await p.esperar();
+    await identificar(p, 'MATRICULA', '2001');
+    for (let i = 0; i < 9; i += 1) { p.janela.__relogio.avancar(1000); await p.esperar(); }
+    assert.match(textoDaPagina(p), /Não foi possível se comunicar com o sistema\./);
+    assert.deepEqual(pedidos(p), []);
+    assert.deepEqual(JSON.parse(JSON.stringify(p.janela.__paraPai)).map((e) => e.m.tipo), ['PONTE_ABRIR'], 'o identificador nunca sai pela janela');
+  });
+
+  test('S2819-A4 — o resultado só vale pela porta: pela janela (fonte e origem do pai) é ignorado', async () => {
+    const p = abrirPonte();
+    await p.esperar();
+    await identificar(p, 'MATRICULA', '2001');
+    const id = pedidos(p)[0].id;
+    await p.eventoDaJanela('message', { data: ok(id), source: p.janela.parent, origin: PAI });
+    assert.notDeepEqual(telaAtual(p), ['telaProdutos']);
+    await pelaPorta(p, ok(id));
+    assert.deepEqual(telaAtual(p), ['telaProdutos']);
+    assert.match(textoDaPagina(p), /Olá, Dora/);
+  });
+
+  test('S2819-A5 — na demonstração não há canal nem mensagem ao pai', async () => {
+    for (const busca of ['', '?modo=demo', `?pai=${encodeURIComponent(PAI)}`]) {
+      const p = abrirPonte({ search: busca });
+      await p.esperar();
+      assert.equal(p.janela.__canais.length, 0, busca);
+      assert.equal(p.janela.__paraPai.length, 0, busca);
+    }
+  });
+
+  test('S2819-A6 — estático: um único postMessage ao pai (com transferência) e os pedidos pela porta; nenhum ouvinte de message na janela', () => {
+    const codigo = semComentarios(lerArquivo(ADAPTADOR));
+    assert.equal((codigo.match(/window\.parent\.postMessage\s*\(/g) || []).length, 1);
+    assert.match(codigo, /new\s+(window\.)?MessageChannel\s*\(/);
+    assert.match(codigo, /porta\.postMessage\s*\(/);
+    assert.doesNotMatch(codigo, /addEventListener\s*\(\s*'message'/);
+    assert.doesNotMatch(codigo, /postMessage\s*\([^)]*['"]\*['"]/);
+  });
+});
+
+// ───────────────────────── S2819 — segredo do handshake (lado do iframe) ─────────────────────────
+describe('S2819 — o adaptador apresenta o segredo do nome do iframe e o apaga', () => {
+  const SEGREDO = '0123456789abcdef0123456789abcdef';
+
+  test('S2819-A7 — o PONTE_ABRIR leva o segredo de window.name; sem segredo válido não há canal nem mensagem ao pai', async () => {
+    const p = abrirPonte({ nome: SEGREDO, auto: false });
+    await p.esperar();
+    const m = JSON.parse(JSON.stringify(p.janela.__paraPai));
+    assert.equal(m.length, 1);
+    assert.deepEqual(Object.keys(m[0].m).sort(), ['canal', 'id', 'segredo', 'tipo', 'versao']);
+    assert.equal(m[0].m.segredo, SEGREDO);
+    for (const nome of [null, '', 'XYZ', SEGREDO.slice(1), SEGREDO.toUpperCase(), `${SEGREDO} `, `${SEGREDO}0`]) {
+      const q = abrirPonte({ nome, auto: false });
+      await q.esperar();
+      assert.equal(q.janela.__canais.length, 0, String(nome));
+      assert.equal(q.janela.__paraPai.length, 0, String(nome));
+    }
+  });
+
+  test('S2819-A8 — window.name é apagado na leitura (válido ou não); a URL não é tocada e o segredo não fica em armazenamento nem console', async () => {
+    for (const nome of [SEGREDO, 'XYZ']) {
+      const p = abrirPonte({ nome, auto: false });
+      await p.esperar();
+      assert.equal(p.janela.name, '', `nome apagado (${nome})`);
+      assert.deepEqual(JSON.parse(JSON.stringify(p.historico)), [], 'nenhum replaceState');
+      assert.equal(JSON.stringify([p.storage, p.cookiesEscritos, p.consoleChamadas, p.janela.location.href]).includes(nome), false);
+    }
+  });
+
+  test('S2819-A9 — compatibilidade: segredo na query (Central antiga) é ignorado e falha fechado; nome do iframe com query antiga continua valendo só pelo nome', async () => {
+    const antiga = `?modo=real&pai=${encodeURIComponent(PAI)}&ponte=${SEGREDO}`;
+    const q = abrirPonte({ search: antiga, nome: null, auto: false });
+    await q.esperar();
+    assert.equal(q.janela.__canais.length, 0, 'sem nome, a query não abre a ponte');
+    assert.equal(q.janela.__paraPai.length, 0);
+    const r = abrirPonte({ search: antiga, nome: SEGREDO_TESTE, auto: false });
+    await r.esperar();
+    assert.equal(JSON.parse(JSON.stringify(r.janela.__paraPai))[0].m.segredo, SEGREDO_TESTE, 'o valor vem do nome, nunca da query');
+  });
+
+  test('S2819-A10 — estático: o adaptador não lê o segredo da URL nem reescreve o histórico', () => {
+    const codigo = semComentarios(lerArquivo(ADAPTADOR));
+    assert.doesNotMatch(codigo, /get\(\s*'ponte'\s*\)/);
+    assert.doesNotMatch(codigo, /replaceState/);
+    assert.match(codigo, /window\.name\s*=\s*''/);
   });
 });
