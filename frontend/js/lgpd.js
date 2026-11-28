@@ -91,10 +91,10 @@
     return global.EpiHttp;
   }
   function ehObjeto(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
-  function contagem(v) { return typeof v === 'number' && isFinite(v) && Math.floor(v) === v && v >= 0; }
+  function contagem(v) { return typeof v === 'number' && Number.isFinite(v) && Math.floor(v) === v && v >= 0; }
   function texto(v) { return typeof v === 'string' && v.length > 0; }
   function textoOuNulo(v) { return v === null || typeof v === 'string'; }
-  function inteiroPositivo(v) { return typeof v === 'number' && isFinite(v) && Math.floor(v) === v && v > 0; }
+  function inteiroPositivo(v) { return typeof v === 'number' && Number.isFinite(v) && Math.floor(v) === v && v > 0; }
   function exigirId(id) { if (!inteiroPositivo(id)) throw new TypeError('identificador inválido'); }
 
   var acoes = {

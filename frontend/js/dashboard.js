@@ -32,7 +32,7 @@
     consultar: function () { return http().requisitar('GET', '/dashboard/indicadores'); },
   };
 
-  function inteiroNaoNegativo(v) { return typeof v === 'number' && isFinite(v) && Math.floor(v) === v && v >= 0; }
+  function inteiroNaoNegativo(v) { return typeof v === 'number' && Number.isFinite(v) && Math.floor(v) === v && v >= 0; }
   function milhar(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
 
   var TRACO = '—';

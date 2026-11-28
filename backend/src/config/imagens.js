@@ -44,7 +44,7 @@ function lerInteiro(origem, { variavel, piso, teto }) {
   if (bruto === undefined || bruto === null) return undefined;
   const texto = String(bruto).trim();
   if (texto === '') return undefined;
-  const numero = DECIMAL.test(texto) && texto.length <= 6 ? Number(texto) : NaN;
+  const numero = DECIMAL.test(texto) && texto.length <= 6 ? Number(texto) : Number.NaN;
   if (!Number.isSafeInteger(numero) || numero < piso || numero > teto) {
     throw erro('IMAGENS_CONFIGURACAO_INVALIDA', `${variavel}: deve ser um inteiro decimal entre ${piso} e ${teto}`);
   }

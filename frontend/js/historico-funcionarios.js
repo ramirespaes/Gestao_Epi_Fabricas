@@ -276,7 +276,7 @@
     /** Dia e hora de um instante em São Paulo (o fuso da data operacional). */
     instante: function (valor) {
       var d = new Date(texto(valor));
-      if (texto(valor) === '' || isNaN(d.getTime())) return { data: '', hora: '' };
+      if (texto(valor) === '' || Number.isNaN(d.getTime())) return { data: '', hora: '' };
       try {
         var partes = {};
         new Intl.DateTimeFormat('pt-BR', {

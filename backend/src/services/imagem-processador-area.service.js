@@ -69,7 +69,8 @@ function inventariar(raiz) {
   return { sobras: Object.freeze(sobras), truncado };
 }
 
-const resultado = (removida, motivo, inventario = { sobras: Object.freeze([]), truncado: false }) => Object.freeze({ removida, motivo, ...inventario });
+const INVENTARIO_VAZIO = Object.freeze({ sobras: Object.freeze([]), truncado: false });
+const resultado = (removida, motivo, inventario = INVENTARIO_VAZIO) => Object.freeze({ removida, motivo, ...inventario });
 
 /**
  * Prova de identidade pelo descritor guardado: só vale se ele ainda estiver aberto e apontar para o objeto registrado. Descritor fechado,

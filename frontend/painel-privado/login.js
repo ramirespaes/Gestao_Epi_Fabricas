@@ -177,7 +177,7 @@
     return false;
   }
 
-  [campoVerificacao, campoCadastro].forEach(mfa.prepararCampoTotp);
+  [campoVerificacao, campoCadastro].forEach(function (campo) { mfa.prepararCampoTotp(campo); });
 
   aoEnviar('form-login', function () {
     tela.avisar('');

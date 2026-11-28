@@ -108,7 +108,7 @@
     : null;
   function dataHoraBr(valor) {
     var d = valor ? new Date(valor) : null;
-    if (!d || isNaN(d.getTime()) || !FORMATO_DATA_HORA) return TRACO;
+    if (!d || Number.isNaN(d.getTime()) || !FORMATO_DATA_HORA) return TRACO;
     var p = {};
     FORMATO_DATA_HORA.formatToParts(d).forEach(function (x) { p[x.type] = x.value; });
     return p.day + '/' + p.month + '/' + p.year + ' ' + p.hour + ':' + p.minute;
@@ -440,10 +440,10 @@
   });
   function diaFiscal(v) {
     var m = typeof v === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(v) : null;
-    if (!m) return NaN;
+    if (!m) return Number.NaN;
     var t = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
     var d = new Date(t);
-    return d.getUTCFullYear() === Number(m[1]) && d.getUTCMonth() === Number(m[2]) - 1 && d.getUTCDate() === Number(m[3]) ? t : NaN;
+    return d.getUTCFullYear() === Number(m[1]) && d.getUTCMonth() === Number(m[2]) - 1 && d.getUTCDate() === Number(m[3]) ? t : Number.NaN;
   }
   function escoposDoForm(lista) {
     var pedidos = Array.isArray(lista) ? lista : [];
@@ -461,7 +461,7 @@
     diasInclusivos: function (inicio, fim) {
       var a = diaFiscal(inicio);
       var b = diaFiscal(fim);
-      return Number.isNaN(a) || Number.isNaN(b) ? NaN : Math.round((b - a) / DIA_MS) + 1;
+      return Number.isNaN(a) || Number.isNaN(b) ? Number.NaN : Math.round((b - a) / DIA_MS) + 1;
     },
     /** As mesmas regras do servidor, só para avisar antes da rede: o servidor continua a autoridade. */
     validar: function (form) {

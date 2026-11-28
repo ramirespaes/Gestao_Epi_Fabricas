@@ -30,7 +30,7 @@
     contagem: function (resposta) {
       if (!resposta || typeof resposta !== 'object') return null;
       var n = resposta.chamadosNaoLidos;
-      if (typeof n !== 'number' || !isFinite(n) || Math.floor(n) !== n || n < 0) return null;
+      if (typeof n !== 'number' || !Number.isFinite(n) || Math.floor(n) !== n || n < 0) return null;
       return n;
     },
   };
