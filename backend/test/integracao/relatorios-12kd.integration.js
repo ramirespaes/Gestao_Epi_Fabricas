@@ -15,7 +15,9 @@ const { dataOperacional } = require('../../src/utils/data-operacional');
  * Relatórios da 12K-D (Estoque, Próximo do vencimento, Itens vencidos e EPIs entregues), contra PostgreSQL real e as
  * rotas reais de produção (autorização por recurso antes de validar e consultar).
  */
-const HOJE = dataOperacional();
+// Uma só referência: a massa (HOJE) e as rotas (relógio do controller) usam o mesmo instante, inclusive na meia-noite.
+const INSTANTE = new Date();
+const HOJE = dataOperacional(INSTANTE);
 const deslocar = (dias) => {
   const d = new Date(`${HOJE}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + dias);
@@ -34,7 +36,7 @@ describe('Relatórios 12K-D (PostgreSQL real)', () => {
 
   before(async () => {
     g = await montar({ extras: ({ pool, exigirEmpresarial }) => [
-      criarRelatorioRoutes({ controller: criarRelatorioController({ pool }), exigirSessao: exigirEmpresarial, pool }),
+      criarRelatorioRoutes({ controller: criarRelatorioController({ pool, agora: () => INSTANTE }), exigirSessao: exigirEmpresarial, pool }),
     ] });
     master = await g.contaDaEmpresa(g.empresas.A);
     const A = g.empresas.A;
@@ -313,6 +315,62 @@ describe('Relatórios 12K-D (PostgreSQL real)', () => {
       assert.equal((await entregues('?de=2026-02-30')).status, 400);
       assert.equal((await entregues('?de=2026-03-02&ate=2026-03-01')).status, 400);
       assert.equal((await estoque('?status=QUALQUER')).status, 400);
+    });
+  });
+
+  // A massa é montada a partir de HOJE; a consulta usa o relógio do controller. Sem a mesma referência, uma execução
+  // que cruza a meia-noite de São Paulo desloca todos os dias em um (CI 46099657212).
+  describe('virada do dia operacional (relógio injetado, PostgreSQL real)', () => {
+    const chamar = async (agora, rota, query = {}) => {
+      const controller = criarRelatorioController(agora ? { pool: g.pool, agora: () => agora } : { pool: g.pool });
+      let corpo;
+      const res = { status() { return this; }, json(c) { corpo = c; return this; } };
+      await controller[rota]({ empresa: { id: g.empresas.A }, validado: { query: { pagina: 1, limite: 100, ...query } } }, res);
+      return corpo;
+    };
+    const ultimoInstante = new Date(`${HOJE}T23:59:59-03:00`);
+    const primeiroDoSeguinte = new Date(`${deslocar(1)}T00:00:01-03:00`);
+    const dias = (c) => c.itens.map((i) => i.diasRestantes);
+    const idsDe = (c) => c.itens.map((i) => i.itemId);
+
+    test('23:59:59 de HOJE em São Paulo: ainda é HOJE (mesmo resultado das rotas)', async () => {
+      const proximoFim = await chamar(ultimoInstante, 'proximoVencimento');
+      assert.deepEqual(idsDe(proximoFim), [e.d0, e.d10, e.d11, e.d20, e.d21, e.d30]);
+      assert.deepEqual(dias(proximoFim), [0, 10, 11, 20, 21, 30]);
+      assert.deepEqual(idsDe(await chamar(ultimoInstante, 'vencidos')), [e.dNeg20, e.dNeg1]);
+    });
+
+    test('00:00:01 do dia seguinte: todos os dias andam exatamente um; o de 0 dias vence e o de 31 entra', async () => {
+      const proximoInicio = await chamar(primeiroDoSeguinte, 'proximoVencimento');
+      assert.deepEqual(idsDe(proximoInicio), [e.d10, e.d11, e.d20, e.d21, e.d30, e.d31]);
+      assert.deepEqual(dias(proximoInicio), [9, 10, 19, 20, 29, 30]);
+      const vencidosInicio = await chamar(primeiroDoSeguinte, 'vencidos');
+      assert.deepEqual(idsDe(vencidosInicio), [e.dNeg20, e.dNeg1, e.d0]);
+      assert.deepEqual(vencidosInicio.itens.map((i) => i.diasVencidos), [21, 2, 1]);
+      const entreguesInicio = await chamar(primeiroDoSeguinte, 'entregues');
+      assert.equal(entreguesInicio.total, 10, 'a população de EPIs entregues não depende do dia');
+      assert.equal(entreguesInicio.itens.find((i) => i.itemId === e.d30).diasRestantes, 29);
+    });
+
+    test('estoque: o instante injetado decide o CA vencido (respirador vence em HOJE + 10)', async () => {
+      const ca = (c, tipo) => c.alertas.filter((a) => a.tipo === tipo).map((a) => a.material);
+      const antes = await chamar(new Date(`${deslocar(10)}T12:00:00-03:00`), 'estoque');
+      assert.ok(ca(antes, 'CA_PROXIMO').includes('Respirador PFF2'));
+      const depois = await chamar(new Date(`${deslocar(11)}T12:00:00-03:00`), 'estoque');
+      assert.ok(ca(depois, 'CA_VENCIDO').includes('Respirador PFF2'));
+    });
+
+    test('sem relógio injetado: os relatórios de entregas usam o dia do PostgreSQL', async (t) => {
+      const diaDoBanco = async () => (await g.pool.query("SELECT to_char((now() AT TIME ZONE 'America/Sao_Paulo')::date, 'YYYY-MM-DD') AS d")).rows[0].d;
+      const antes = await diaDoBanco();
+      const corpo = await chamar(null, 'entregues');
+      const depois = await diaDoBanco();
+      if (antes !== depois) {
+        t.skip('a consulta cruzou a meia-noite do banco: não há um dia único para comparar');
+        return;
+      }
+      const passaram = Math.round((Date.parse(`${antes}T00:00:00Z`) - Date.parse(`${HOJE}T00:00:00Z`)) / 86_400_000);
+      assert.equal(corpo.itens.find((i) => i.itemId === e.d30).diasRestantes, 30 - passaram);
     });
   });
 });

@@ -20,7 +20,7 @@ const ACESSO_PARCIAL_LEGADO = 'ACESSO_PARCIAL_LEGADO';
 const RECURSO_FUNCIONARIOS = 'employeeHistory';
 const EXPORTAR = TOGGLES.find((t) => t.regra.tipo === 'ACAO' && t.regra.codigo === 'EXPORTAR_HISTORICO_FUNCIONARIOS').id;
 
-const idDa = (cond) => TOGGLES.find(cond).id;
+const idDa = (cond) => TOGGLES.find((t) => cond(t)).id;
 const TOKEN_SEM_CONSULTAR = 'TOKEN_SEM_CONSULTAR';
 const PREVIA_SEM_HISTORICO_FUNCIONARIOS = 'PREVIA_SEM_HISTORICO_FUNCIONARIOS';
 const TOKEN_LEITURA = idDa((t) => t.regra.tipo === 'RECURSO' && t.regra.recurso === 'atendimentoToken' && t.regra.operacoes.join() === 'visualizar');

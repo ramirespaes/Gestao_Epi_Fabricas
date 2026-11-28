@@ -110,7 +110,7 @@
   }
 
   function ehArquivo(arquivo) {
-    return arquivo !== null && typeof arquivo === 'object' && typeof arquivo.size === 'number' && isFinite(arquivo.size) && typeof arquivo.type === 'string';
+    return arquivo !== null && typeof arquivo === 'object' && typeof arquivo.size === 'number' && Number.isFinite(arquivo.size) && typeof arquivo.type === 'string';
   }
 
   /** O tipo informado decide (não a extensão); o que não é arquivo é erro de programação (TypeError), não recusa de quem usa a tela. */
@@ -123,7 +123,7 @@
   }
 
   function inteiroPositivo(n) {
-    return typeof n === 'number' && isFinite(n) && Math.floor(n) === n && n > 0;
+    return typeof n === 'number' && Number.isFinite(n) && Math.floor(n) === n && n > 0;
   }
 
   /** Dimensões já conhecidas: menor lado, maior lado e total de pixels dentro do que o servidor aceita. */

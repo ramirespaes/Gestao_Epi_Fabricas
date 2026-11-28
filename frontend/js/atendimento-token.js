@@ -120,7 +120,7 @@
   function hasOwn(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
   function ehObjeto(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
   function texto(v) { return typeof v === 'string' ? v : ''; }
-  function inteiro(v) { return typeof v === 'number' && isFinite(v) && Math.floor(v) === v; }
+  function inteiro(v) { return typeof v === 'number' && Number.isFinite(v) && Math.floor(v) === v; }
   function inteiroNaoNegativo(v) { return inteiro(v) && v >= 0; }
   function inteiroPositivo(v) { return inteiro(v) && v > 0; }
   function tamanhoEmPontos(s) { return Array.from(s).length; }
@@ -237,7 +237,7 @@
     instante: function (valor) {
       var s = texto(valor);
       var d = new Date(s);
-      if (s === '' || isNaN(d.getTime())) return '—';
+      if (s === '' || Number.isNaN(d.getTime())) return '—';
       try {
         var p = {};
         new Intl.DateTimeFormat('pt-BR', {
@@ -499,7 +499,7 @@
       var a = ehObjeto(dados) ? dados.ativacao : null;
       if (!ehObjeto(a) || typeof a.codigo !== 'string' || a.codigo.length === 0 || !inteiroPositivo(a.dispositivoId)) return null;
       var fim = new Date(texto(a.expiraEm)).getTime();
-      if (isNaN(fim)) return null;
+      if (Number.isNaN(fim)) return null;
       var teto = agora + VALIDADE_MAXIMA_MS;
       return { dispositivoId: a.dispositivoId, codigo: a.codigo, expiraEm: a.expiraEm, fimMs: Math.min(fim, teto) };
     },

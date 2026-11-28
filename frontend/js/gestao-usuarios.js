@@ -99,7 +99,7 @@
 
   function hasOwn(obj, chave) { return Object.prototype.hasOwnProperty.call(obj, chave); }
   function texto(v) { return String(v === undefined || v === null ? '' : v).trim(); }
-  function inteiroPositivo(v) { return typeof v === 'number' && isFinite(v) && Math.floor(v) === v && v > 0; }
+  function inteiroPositivo(v) { return typeof v === 'number' && Number.isFinite(v) && Math.floor(v) === v && v > 0; }
 
   function http() {
     var cliente = global.EpiHttp;

@@ -7,7 +7,8 @@ const { pipeline } = require('node:stream/promises');
 const { HttpError } = require('../errors/HttpError');
 const { criarServicoDoAmbiente } = require('../services/fiscalizacao-pacote.ambiente');
 
-function criarRelatorioController({ pool: poolInjetado, fiscalizacao = null }) {
+function criarRelatorioController({ pool: poolInjetado, fiscalizacao = null, agora = null }) {
+  if (agora !== null && typeof agora !== 'function') throw new TypeError('relógio do relatório inválido');
   // 12K-D6: sem o serviço (diretório de armazenamento não configurado) as rotas da Fiscalização respondem 503.
   const servico = () => {
     if (!fiscalizacao) throw new HttpError(503, 'FISCALIZACAO_INDISPONIVEL', 'A Fiscalização não está disponível neste ambiente.');
@@ -20,11 +21,17 @@ function criarRelatorioController({ pool: poolInjetado, fiscalizacao = null }) {
     const resultado = await funcao(poolInjetado, { empresaId: req.empresa.id, ...req.validado.query });
     res.status(200).json({ status: 'ok', ...resultado });
   };
+  // Relógio opcional (testes): sem ele, cada serviço usa a sua referência padrão (estoque: o relógio do app; entregas: o PostgreSQL).
+  const comRelogio = (funcao) => async (req, res) => {
+    const filtros = { empresaId: req.empresa.id, ...req.validado.query };
+    const resultado = agora ? await funcao(poolInjetado, filtros, agora()) : await funcao(poolInjetado, filtros);
+    res.status(200).json({ status: 'ok', ...resultado });
+  };
   return {
-    estoque: rota(service.estoque),
-    proximoVencimento: rota(service.proximoVencimento),
-    vencidos: rota(service.vencidos),
-    entregues: rota(service.entregues),
+    estoque: comRelogio(service.estoque),
+    proximoVencimento: comRelogio(service.proximoVencimento),
+    vencidos: comRelogio(service.vencidos),
+    entregues: comRelogio(service.entregues),
     // 12K-D5: Relatório — Auditoria. A trilha também leva o ator, o IP e o dispositivo (só para auditar a própria consulta).
     auditoriaIndicadores: rota(auditoria.indicadores),
     auditoriaSolicitacoes: rota(auditoria.solicitacoesNaoAtendidas),

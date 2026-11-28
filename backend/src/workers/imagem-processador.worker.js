@@ -56,7 +56,7 @@ function abrirEntrada(sharp, bytes, p) {
 function classificarFalhaDoSharp(erro) {
   if (erro instanceof ErroDeImagem) return erro;
   const mensagem = String(erro && erro.message);
-  if (/^timeout\b|timeout:/i.test(mensagem)) return new ErroDeImagem(CODIGOS.TEMPO);
+  if (/(?:^timeout\b)|(?:timeout:)/i.test(mensagem)) return new ErroDeImagem(CODIGOS.TEMPO);
   if (/pixel limit/i.test(mensagem)) return new ErroDeImagem(CODIGOS.DIMENSOES);
   return new ErroDeImagem(CODIGOS.INVALIDA);
 }

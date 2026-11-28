@@ -60,7 +60,7 @@
   function avisarSaida(texto) { el('erro').textContent = texto || ''; el('erro').style.display = texto ? 'block' : 'none'; }
   function data(iso) {
     var d = new Date(iso);
-    if (isNaN(d.getTime())) return '';
+    if (Number.isNaN(d.getTime())) return '';
     try { return new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }).format(d); } catch (e) { return d.toISOString(); }
   }
   function no(tag, props, filhos) {

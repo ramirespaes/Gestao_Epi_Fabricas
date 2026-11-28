@@ -283,7 +283,7 @@
           imagens.push(imagem);
           novas += 1;
         });
-        if (typeof r.dados.total === 'number' && isFinite(r.dados.total)) total = r.dados.total;
+        if (typeof r.dados.total === 'number' && Number.isFinite(r.dados.total)) total = r.dados.total;
         if (total !== null ? imagens.length >= total : lote.length < LIMITE_LISTA) {
           completa = true;
           break;

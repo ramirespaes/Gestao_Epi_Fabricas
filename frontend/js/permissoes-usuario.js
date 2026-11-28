@@ -86,7 +86,7 @@
     return global.EpiHttp;
   }
   function exigirId(id) {
-    if (typeof id !== 'number' || !isFinite(id) || Math.floor(id) !== id || id <= 0) throw new TypeError('identificador de usuário inválido');
+    if (typeof id !== 'number' || !Number.isFinite(id) || Math.floor(id) !== id || id <= 0) throw new TypeError('identificador de usuário inválido');
     return id;
   }
   // 404 só é "usuário não encontrado" quando o servidor diz isso; rota inexistente nunca é apresentada assim.

@@ -32,7 +32,7 @@
     episEntregues: function (periodo) { return http().requisitar('GET', '/dashboard/graficos/epis-entregues?periodo=' + exigirPeriodo(periodo)); },
   };
 
-  function inteiro(v, minimo) { return typeof v === 'number' && isFinite(v) && Math.floor(v) === v && v >= minimo; }
+  function inteiro(v, minimo) { return typeof v === 'number' && Number.isFinite(v) && Math.floor(v) === v && v >= minimo; }
   function texto(v) { return typeof v === 'string' && v.length > 0; }
   function proporcao(parte, todo) { return todo > 0 ? Math.round((parte / todo) * 100) : 0; }
   function dois(n) { return String(n).length < 2 ? '0' + n : String(n); }
