@@ -683,6 +683,7 @@ describe('datas: digitação, colagem e calendário nativo (correção de 28/10/
     // Página: vigente com início futuro (o caso real da homologação).
     const futuro = principal({ inicioEm: '2026-11-28' });
     const pg = await pronta({ enc: { principal: futuro, substituto: null } });
+    pg.janela.EpiLgpd.formulario.hojeSaoPaulo = () => '2026-10-28';
     await pg.clicar('dpoEditar');
     await preencher(pg, { funcao: 'PRINCIPAL', acao: 'SUBSTITUIR' });
     assert.match(pg.texto('dpo-fimEm-rotulo'), /início registrado do vigente: 28\/11\/2026/);
