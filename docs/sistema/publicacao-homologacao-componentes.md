@@ -250,7 +250,8 @@ banco de homologação (pendência A-5). Contratos de dados persistentes são de
 
 `verificar-publicacao.js` só faz GET. No frontend confere `/versao.json` (commit, rótulo
 e hash do manifesto), o SHA-256 de cada arquivo servido, CSP mínima, `no-cache` em
-html/js/css, `nosniff` e que arquivos de outro componente, dotfiles e `.releases` não
+html/js/css (exceto `totem/previa.html`, que exige `no-store` como defesa adicional da
+ponte S2819), `nosniff` e que arquivos de outro componente, dotfiles e `.releases` não
 são servidos. Na API confere `/api/health`. Esse endpoint só prova que o processo está
 vivo: não verifica banco nem identifica a versão do backend. Um endpoint de prontidão
 exigiria alterar o backend e fica como decisão (D-3 no relatório da rodada). Enquanto

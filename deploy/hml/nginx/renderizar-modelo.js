@@ -91,6 +91,8 @@ const PLACEHOLDERS = {
   ARQUIVO_SEGURANCA_PORTAL_PREVIA: terminaEm('.conf'),
   CSP_PORTAL_ATENDIMENTO: cspAtendimento,
   CSP_PORTAL_PREVIA: cspPrevia,
+  // S2819: arquivo do log de acesso da prévia do Totem (formato sem query); a operação informa o caminho real.
+  ARQUIVO_LOG_ACESSO_PORTAL: terminaEm('.log'),
 };
 
 function renderizarModelo(texto, valores = {}) {

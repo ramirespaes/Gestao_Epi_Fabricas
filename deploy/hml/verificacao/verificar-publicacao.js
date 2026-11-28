@@ -200,7 +200,10 @@ async function verificarPublicacao({ baseUrl, tipo, versaoEsperada, manifesto = 
   if (comResposta.length === 0) cabFalhas.push('nenhuma resposta válida para conferir os cabeçalhos');
   for (const { rel, r } of comResposta) {
     if (String(r.headers.get('x-content-type-options') || '').toLowerCase() !== 'nosniff') cabFalhas.push(`${rel}: sem X-Content-Type-Options nosniff`);
-    if (/\.(html|js|css)$/.test(rel) && !/no-cache/i.test(r.headers.get('cache-control') || '')) cabFalhas.push(`${rel}: sem Cache-Control no-cache`);
+    // S2819: a prévia do Totem recebe na query o segredo de uso único da ponte e exige no-store; o resto segue em no-cache.
+    if (rel === PAGINA_ENQUADRAVEL) {
+      if (!/(?:^|,)\s*no-store\s*(?:,|$)/i.test(r.headers.get('cache-control') || '')) cabFalhas.push(`${rel}: sem Cache-Control no-store`);
+    } else if (/\.(html|js|css)$/.test(rel) && !/no-cache/i.test(r.headers.get('cache-control') || '')) cabFalhas.push(`${rel}: sem Cache-Control no-cache`);
     if (/\.html$/.test(rel)) {
       const problemas = avaliarCsp(r.headers.get('content-security-policy'), { frameAncestorsAceitos: rel === PAGINA_ENQUADRAVEL ? ["'none'", "'self'"] : ["'none'"] });
       if (problemas.length) cabFalhas.push(`${rel}: CSP ${problemas[0]}`);

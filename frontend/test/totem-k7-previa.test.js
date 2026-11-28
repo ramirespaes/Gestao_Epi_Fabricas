@@ -180,8 +180,10 @@ describe('K7 — arquivos, ordem dos scripts e isolamento declarado', () => {
     exigir(ADAPTADOR);
     const codigo = semComentarios(lerArquivo(ADAPTADOR));
     assert.doesNotMatch(codigo, /\b(localStorage|sessionStorage|indexedDB|XMLHttpRequest|sendBeacon|WebSocket|EventSource|importScripts|Worker)\b/);
-    // Consulta real (K7): a única saída é UM postMessage para a janela pai, com destino explícito (provas em totem-k7-consulta-real.test.js).
-    assert.equal((codigo.match(/\.postMessage\s*\(/g) || []).length <= 1, true, 'no máximo um postMessage');
+    // Consulta real (K7, S2819 em 27/11/2026): UM postMessage à janela pai (handshake com destino explícito) e UM pela porta do
+    // MessageChannel confirmada (provas em totem-k7-consulta-real.test.js). Antes: no máximo um postMessage.
+    assert.equal((codigo.match(/\.postMessage\s*\(/g) || []).length <= 2, true, 'no máximo dois postMessage');
+    assert.equal((codigo.match(/window\.parent\.postMessage\s*\(/g) || []).length <= 1, true, 'no máximo um à janela pai');
     assert.doesNotMatch(codigo, /document\.cookie|\beval\s*\(|new\s+Function|\bimport\s*\(|\brequire\s*\(|\bXMLHttp/);
     assert.doesNotMatch(codigo, /(?<![.\w])fetch\s*\(|\.fetch\s*\(|=\s*(window\.|self\.|globalThis\.)?fetch\b/, 'nunca chama nem copia o fetch original');
     assert.equal((codigo.match(/window\.fetch\s*=/g) || []).length, 1, 'define o fetch da página uma única vez');

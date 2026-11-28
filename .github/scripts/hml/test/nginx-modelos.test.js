@@ -42,6 +42,7 @@ const VALORES = {
   ARQUIVO_SEGURANCA_PORTAL_ATENDIMENTO: '/etc/nginx/safework/seguranca-portal-atendimento.conf',
   ARQUIVO_SEGURANCA_PORTAL_PREVIA: '/etc/nginx/safework/seguranca-portal-previa.conf',
   CSP_PORTAL_ATENDIMENTO: derivarCspTotem(CSP).atendimento, CSP_PORTAL_PREVIA: derivarCspTotem(CSP).previa,
+  ARQUIVO_LOG_ACESSO_PORTAL: '/var/log/nginx/safework-portal-acesso.log',
 };
 
 // Extrai blocos "location ... { ... }" e "server { ... }" por contagem de chaves.
@@ -142,7 +143,8 @@ describe('modelos Nginx — decisões de segurança', () => {
       assert.ok(loc('location = /pages/atendimento-token.html').corpo.includes(`include ${VALORES.ARQUIVO_SEGURANCA_PORTAL_ATENDIMENTO};`));
       assert.ok(loc('location = /totem/previa.html').corpo.includes(`include ${VALORES.ARQUIVO_SEGURANCA_PORTAL_PREVIA};`));
       for (const c of ['location = /pages/atendimento-token.html', 'location = /totem/previa.html']) {
-        assert.match(loc(c).corpo, /add_header Cache-Control "no-cache" always;/, c);
+        // S2819 (27/11/2026): a prévia passou a no-store (antes: no-cache nas duas); a página de atendimento segue em no-cache.
+        assert.match(loc(c).corpo, c === 'location = /totem/previa.html' ? /add_header Cache-Control "no-store" always;/ : /add_header Cache-Control "no-cache" always;/, c);
         assert.match(loc(c).corpo, /try_files \$uri =404;/, c);
         assert.doesNotMatch(loc(c).corpo, /\b(?:proxy_pass|alias|return|autoindex)\b/, c);
       }
@@ -296,5 +298,56 @@ describe('modelos Nginx — decisões de segurança', () => {
     assert.match(readme, /TLS/);
     assert.match(readme, /TRUST_PROXY_HOPS/);
     assert.match(readme, /PLATAFORMA_HOST/);
+  });
+});
+
+// S2819 (27/11/2026): o src da prévia do Totem leva na query o segredo de uso único da ponte. A prévia sai com Cache-Control no-store
+// (o navegador não grava a página nem o URL em cache de disco) e o log de acesso desse caminho usa um formato sem query ($uri),
+// sem desligar o log. O resto do Portal não muda.
+describe('S2819 — /totem/previa.html: no-store e log de acesso sem query', () => {
+  const LOG = '/var/log/nginx/safework-portal-acesso.log';
+  const V = { ...VALORES, ARQUIVO_LOG_ACESSO_PORTAL: LOG };
+  const portal = () => carregar().renderizarModelo(ler('portal.conf.modelo'), V);
+  const loc = (cab) => blocos(portal(), 'location').find((l) => l.cabecalho === cab);
+  const formato = () => { const m = /^log_format\s+safework_sem_query\s+([^;]+);/m.exec(portal()); return m ? m[1] : null; };
+
+  test('S2819-N1 — a prévia tem exatamente um Cache-Control, "no-store" always, e nenhum no-cache', () => {
+    const corpo = loc('location = /totem/previa.html').corpo;
+    assert.deepEqual(corpo.match(/add_header Cache-Control [^;]+;/g), ['add_header Cache-Control "no-store" always;']);
+    assert.doesNotMatch(corpo, /no-cache/);
+  });
+
+  test('S2819-N2 — fora da prévia nada muda: atendimento-token.html e o site seguem em no-cache, sem log próprio', () => {
+    for (const c of ['location = /pages/atendimento-token.html', 'location /']) {
+      const corpos = blocos(portal(), 'location').filter((l) => l.cabecalho === c);
+      assert.ok(corpos.length >= 1, c);
+      for (const l of corpos) {
+        assert.doesNotMatch(l.corpo, /no-store/, c);
+        assert.doesNotMatch(l.corpo, /access_log/, c);
+      }
+    }
+    assert.match(loc('location = /pages/atendimento-token.html').corpo, /add_header Cache-Control "no-cache" always;/);
+    const comLog = blocos(portal(), 'location').filter((l) => /access_log/.test(l.corpo)).map((l) => l.cabecalho);
+    assert.deepEqual(comLog, ['location = /totem/previa.html']);
+  });
+
+  test('S2819-N3 — o log da prévia continua ligado, num formato que registra método, caminho sem query e status, nunca a query', () => {
+    assert.match(loc('location = /totem/previa.html').corpo, new RegExp(`access_log ${LOG.replace(/[/.]/g, '\\$&')} safework_sem_query;`));
+    const f = formato();
+    assert.ok(f, 'log_format safework_sem_query definido no nível http, fora dos server');
+    assert.equal((portal().match(/^log_format\s/gm) || []).length, 1);
+    for (const campo of ['$remote_addr', '$time_local', '$request_method', '$uri', '$status', '$body_bytes_sent']) assert.ok(f.includes(campo), campo);
+    assert.doesNotMatch(f, /\$request(?!_method)\b|\$request_uri|\$args|\$query_string|\$arg_|\$is_args/, 'nada que carregue a query');
+    for (const m of ['portal.conf.modelo', 'painel.conf.modelo']) assert.doesNotMatch(ler(m), /access_log\s+off/, `${m}: log nunca desligado`);
+  });
+
+  test('S2819-N4 — o caminho do log é placeholder validado: absoluto, termina em .log e sem injeção', () => {
+    const { renderizarModelo } = carregar();
+    const { ARQUIVO_LOG_ACESSO_PORTAL: _omitido, ...semLog } = VALORES;
+    assert.throws(() => renderizarModelo(ler('portal.conf.modelo'), semLog), /ARQUIVO_LOG_ACESSO_PORTAL/);
+    for (const ruim of ['relativo.log', '/var/log/nginx/acesso.txt', '/var/log/nginx/a.log; access_log off', '/var/log/../etc/a.log', '']) {
+      assert.throws(() => renderizarModelo(ler('portal.conf.modelo'), { ...VALORES, ARQUIVO_LOG_ACESSO_PORTAL: ruim }), /ARQUIVO_LOG_ACESSO_PORTAL|inválido/, ruim);
+    }
+    assert.doesNotMatch(ler('painel.conf.modelo'), /ARQUIVO_LOG_ACESSO_PORTAL|safework_sem_query/, 'o Painel não muda');
   });
 });

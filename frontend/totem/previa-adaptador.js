@@ -9,9 +9,10 @@
  *
  * Dois modos, travados UMA vez na carga (pela query da página; nunca por fragmento, que o boot.js apaga):
  *  - demonstração (padrão): matrículas fictícias, tudo em memória;
- *  - consulta real (`?modo=real&pai=<origem da Central>`): a identificação sai por UM postMessage para a janela pai (a Central, que tem a
- *    sessão administrativa e consulta o servidor); o destino é a origem exata do pai, nunca '*'. A resposta só vale se vier da janela pai,
- *    dessa origem, no formato estrito e com o id da consulta pendente. Catálogo, carrinho, revisão e pedido seguem simulados em memória.
+ *  - consulta real (`?modo=real&pai=<origem da Central>`): na carga, UM postMessage à janela pai (a Central, que tem a sessão
+ *    administrativa e consulta o servidor), com destino na origem exata do pai, entrega a porta de um MessageChannel (S2819). Depois da
+ *    confirmação PONTE_PRONTA, identificação e fotografias trafegam só por essa porta; a resposta só vale por ela, no formato estrito e com
+ *    o id do pedido pendente. Catálogo, carrinho, revisão e pedido seguem simulados em memória.
  */
 (function () {
   'use strict';
@@ -63,7 +64,13 @@
   var parametros = new URLSearchParams(window.location.search);
   var pai = parametros.get('pai');
   var MODO_REAL = parametros.get('modo') === 'real';
-  var PAI_VALIDO = MODO_REAL && typeof pai === 'string' && ORIGEM_VALIDA.test(pai) && window.parent && window.parent !== window;
+  // S2819: segredo de uso único que a Central pôs no nome deste iframe (fora da URL: sem rede, log, cache nem histórico; o fragmento
+  // não serve porque o boot.js o apaga antes). Lido uma vez e apagado na hora, válido ou não; sem ele não há ponte.
+  var SEGREDO = typeof window.name === 'string' ? window.name : '';
+  window.name = '';
+  var SEGREDO_VALIDO = /^[0-9a-f]{32}$/.test(SEGREDO);
+  var PAI_VALIDO = MODO_REAL && SEGREDO_VALIDO && typeof pai === 'string' && ORIGEM_VALIDA.test(pai) && window.parent && window.parent !== window;
+  if (!SEGREDO_VALIDO) SEGREDO = null;
   var pendente = null;
 
   // Fotografias (consulta real): o Totem pede a foto pelo fetch desta página; o pedido vira UMA mensagem à janela pai, que tem a sessão da Central
@@ -76,8 +83,54 @@
   var ROTA_IMAGEM = /^\/atendimento\/imagens\/(empresa|padrao)\/([1-9][0-9]{0,18})\/(miniatura|exibicao)$/;
   var imagensPendentes = {};
 
+  // S2819: a origem deste iframe é opaca, então o pai não pode endereçar a resposta por origem. Este documento cria o canal e entrega port2
+  // ao pai no ÚNICO postMessage para a janela (destino exato). Pedidos só saem pela porta depois da confirmação PONTE_PRONTA; se este
+  // documento navegar, a porta morre com ele e nada chega ao documento seguinte.
+  var porta = null;
+  var ponte = { estado: 'FECHADA', id: null, esperas: [] };
+
+  function abrirPonte() {
+    var canal = new MessageChannel();
+    porta = canal.port1;
+    ponte = { estado: 'ABRINDO', id: window.crypto.randomUUID(), esperas: [] };
+    porta.onmessage = aoMensagemDaPorta;
+    window.parent.postMessage({ canal: CANAL, versao: 1, tipo: 'PONTE_ABRIR', id: ponte.id, segredo: SEGREDO }, pai, [canal.port2]);
+    SEGREDO = null;
+  }
+
+  function prontidaoValida(d) {
+    return ehObjeto(d) && chavesIguais(d, ['canal', 'id', 'tipo', 'versao']) && d.canal === CANAL && d.versao === 1 && d.tipo === 'PONTE_PRONTA'
+      && ponte.estado === 'ABRINDO' && d.id === ponte.id;
+  }
+
+  function aoMensagemDaPorta(ev) {
+    var d = ev && ev.data;
+    if (prontidaoValida(d)) {
+      ponte.estado = 'PRONTA';
+      var esperas = ponte.esperas;
+      ponte.esperas = [];
+      esperas.forEach(function (fn) { fn(true); });
+      return;
+    }
+    if (ponte.estado !== 'PRONTA') return;
+    if (mensagemDoPaiValida(d)) responderDoPai(d);
+    else if (imagemDoPaiValida(d)) responderImagem(d);
+  }
+
+  // Resolve true quando a ponte está confirmada; false se não estiver (ou não for confirmada) dentro do prazo.
+  function quandoPronta(prazoMs) {
+    if (ponte.estado === 'PRONTA') return Promise.resolve(true);
+    if (ponte.estado !== 'ABRINDO') return Promise.resolve(false);
+    return new Promise(function (resolver) {
+      var feito = false;
+      var fim = function (v) { if (!feito) { feito = true; clearTimeout(relogio); resolver(v); } };
+      var relogio = setTimeout(function () { fim(false); }, prazoMs);
+      ponte.esperas.push(fim);
+    });
+  }
+
   function enviarAoPai(mensagem) {
-    window.parent.postMessage(mensagem, pai);
+    if (ponte.estado === 'PRONTA' && porta !== null) porta.postMessage(mensagem);
   }
 
   function chavesIguais(objeto, esperadas) {
@@ -89,9 +142,8 @@
     return ehObjeto(c) && typeof c.estado === 'string' && Number.isInteger(c.total) && c.total >= 0 && Array.isArray(c.materiais) && c.materiais.length <= 200;
   }
 
-  function mensagemDoPaiValida(ev) {
-    if (!ev || ev.source !== window.parent || ev.origin !== pai || !ehObjeto(ev.data) || pendente === null) return false;
-    var d = ev.data;
+  function mensagemDoPaiValida(d) {
+    if (!ehObjeto(d) || pendente === null) return false;
     if (d.canal !== CANAL || d.versao !== 1 || d.tipo !== 'RESULTADO' || d.id !== pendente.id || RESULTADOS.indexOf(d.resultado) === -1) return false;
     if (d.resultado !== 'OK') return chavesIguais(d, ['canal', 'id', 'resultado', 'tipo', 'versao']);
     return chavesIguais(d, ['canal', 'catalogo', 'id', 'primeiroNome', 'resultado', 'tipo', 'versao'])
@@ -130,7 +182,9 @@
           if (pendente !== null && pendente.id === id) { pendente = null; resolver(erro(503, 'INDISPONIVEL')); }
         }, ESPERA_DO_PAI_MS),
       };
-      enviarAoPai({ canal: CANAL, versao: 1, tipo: 'IDENTIFICAR', id: id, tipoId: corpo.tipo, valor: corpo.valor });
+      quandoPronta(ESPERA_DO_PAI_MS).then(function (pronta) {
+        if (pronta && pendente !== null && pendente.id === id) enviarAoPai({ canal: CANAL, versao: 1, tipo: 'IDENTIFICAR', id: id, tipoId: corpo.tipo, valor: corpo.valor });
+      });
     });
   }
 
@@ -139,9 +193,8 @@
       && (typeof Blob !== 'function' || b instanceof Blob);
   }
 
-  function imagemDoPaiValida(ev) {
-    if (!ev || ev.source !== window.parent || ev.origin !== pai || !ehObjeto(ev.data)) return false;
-    var d = ev.data;
+  function imagemDoPaiValida(d) {
+    if (!ehObjeto(d)) return false;
     if (d.canal !== CANAL || d.versao !== 1 || d.tipo !== 'IMAGEM_RESULTADO' || typeof d.id !== 'string'
       || !Object.prototype.hasOwnProperty.call(imagensPendentes, d.id) || RESULTADOS_IMAGEM.indexOf(d.resultado) === -1) return false;
     var base = ['canal', 'id', 'resultado', 'tipo', 'versao'];
@@ -212,16 +265,14 @@
         };
         sinal.addEventListener('abort', p.aoAbortar);
       }
-      enviarAoPai({ canal: CANAL, versao: 1, tipo: 'IMAGEM', id: id, origem: rota[1] === 'empresa' ? 'EMPRESA' : 'PADRAO', imagemId: rota[2], versaoImagem: versaoImagem, variante: rota[3] });
+      var pedido = { canal: CANAL, versao: 1, tipo: 'IMAGEM', id: id, origem: rota[1] === 'empresa' ? 'EMPRESA' : 'PADRAO', imagemId: rota[2], versaoImagem: versaoImagem, variante: rota[3] };
+      quandoPronta(ESPERA_IMAGEM_DO_PAI_MS).then(function (pronta) {
+        if (pronta && Object.prototype.hasOwnProperty.call(imagensPendentes, id)) enviarAoPai(pedido);
+      });
     });
   }
 
-  if (PAI_VALIDO) {
-    window.addEventListener('message', function (ev) {
-      if (mensagemDoPaiValida(ev)) responderDoPai(ev.data);
-      else if (imagemDoPaiValida(ev)) responderImagem(ev.data);
-    });
-  }
+  if (PAI_VALIDO) abrirPonte();
 
   function resposta(status, corpo) {
     var texto = JSON.stringify(corpo);

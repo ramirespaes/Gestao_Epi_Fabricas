@@ -147,6 +147,7 @@ describe('M-6 e M-7 — modelos Nginx: ACME, HTTP/2, redirecionamento e exposiç
     CSP_PORTAL: CSP, CSP_PAINEL: CSP, RAIZ_ACME: '/var/www/acme', REDE_VERIFICACAO: '203.0.113.0/24',
     ARQUIVO_SEGURANCA_PORTAL_ATENDIMENTO: '/etc/nginx/safework/seguranca-portal-atendimento.conf',
     ARQUIVO_SEGURANCA_PORTAL_PREVIA: '/etc/nginx/safework/seguranca-portal-previa.conf',
+    ARQUIVO_LOG_ACESSO_PORTAL: '/var/log/nginx/safework-portal-acesso.log', // S2819
     ...(({ atendimento, previa }) => ({ CSP_PORTAL_ATENDIMENTO: atendimento, CSP_PORTAL_PREVIA: previa }))(require(path.join(REPO, 'deploy/hml/csp/gerar-csp.js')).derivarCspTotem(CSP)),
   };
   const { renderizarModelo, PLACEHOLDERS } = require(path.join(DIR, 'renderizar-modelo.js'));

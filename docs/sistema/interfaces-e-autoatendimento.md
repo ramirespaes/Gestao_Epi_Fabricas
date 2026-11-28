@@ -449,3 +449,41 @@ seleção provisória do formulário até salvar, nunca associação implícita 
 Grupo ou GHE. A posição/visual é baseline: alteração futura só no escopo aprovado.
 Não sobrescrever campo digitado ao sugerir nome. Testes de caracterização protegem
 o comportamento existente; não reabrir a baseline por reorganização documental.
+
+## Ponte da prévia do Totem (consulta real, S2819)
+
+O iframe da prévia (`frontend/totem/previa.html`, `sandbox="allow-scripts"`, origem
+opaca) e a Central (`frontend/js/atendimento-token-tela.js`) se falam por um
+`MessageChannel`. Na carga, `previa-adaptador.js` envia ao pai UM `PONTE_ABRIR`
+(`canal`, `versao`, `tipo`, `id`) com destino na origem exata do pai e `port2`
+transferida. A Central só adota a porta se a fonte for o `contentWindow` do iframe
+atual, a origem for `'null'`, a geração estiver vigente, o formato for estrito e
+houver exatamente uma porta. Origem e janela não autenticam o documento: o
+`PONTE_ABRIR` precisa trazer o `segredo` de 128 bits (`crypto.getRandomValues`,
+32 hex) que a Central pôs no atributo `name` deste iframe (o `window.name` do
+documento), dentro de 10 s e uma única vez, com comparação em tempo constante.
+Segredo ausente, errado, expirado ou reutilizado mata a ponte. Sem gerador
+criptográfico não há segredo nem ponte. O segredo vive só em memória. O adaptador
+lê `window.name` uma vez e o apaga na hora, válido ou não; a Central retira o
+atributo `name` no primeiro `load`, no handshake e no fim do prazo, e assim um
+documento seguinte no mesmo iframe nunca herda o segredo. O segredo não vai no
+`src`: a query faria o Nginx gravá-lo no `error_log` em erros de servidor (achado
+ACH-S2819-01, 28/11/2026), e o fragmento não serve porque o `boot.js` o apaga. A
+Central responde `PONTE_PRONTA` com o mesmo `id`.
+Exposição medida em Chrome real e Nginx real (28/11/2026): o segredo não trafega
+na rede, então não aparece em linha de requisição, `Referer`, logs de acesso ou de
+erro (também em 403, 404 e 502), cache de disco, histórico, `localStorage` ou
+`sessionStorage`, mesmo sem `Cache-Control`. Como defesa adicional, o modelo
+`deploy/hml/nginx/portal.conf.modelo` continua servindo `/totem/previa.html` com
+`no-store` e registrando o acesso no formato `safework_sem_query`, com `$uri` e
+sem query, no arquivo `{{ARQUIVO_LOG_ACESSO_PORTAL}}`. O log não é desligado. O
+verificador de publicação exige `no-store` nesse caminho. Versões desencontradas
+de Central e adaptador falham fechadas: a consulta fica indisponível, sem dados.
+Antes dessa confirmação, nenhum pedido sai do iframe. Pedidos (`IDENTIFICAR`,
+`IMAGEM`, `IMAGEM_CANCELAR`) e respostas (`RESULTADO`, `IMAGEM_RESULTADO`)
+trafegam só pela porta. Mensagem pela janela é ignorada e `postMessage` com
+destino `'*'` é proibido. Um segundo handshake ou um segundo `load` do mesmo
+iframe matam a ponte: a porta é fechada, as fotos em voo são abortadas e as
+respostas tardias são descartadas até "Reiniciar prévia". Trocar ou remover o
+iframe, sair da aba, encerrar a tela e o 401 também fecham a porta. A CSP não
+participa desse contrato.

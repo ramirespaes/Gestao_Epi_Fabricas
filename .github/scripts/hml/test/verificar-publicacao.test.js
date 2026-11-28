@@ -168,8 +168,10 @@ describe('verificarPublicacao — frontend estático', () => {
       const s = await subir({ arquivos, ...opcoes });
       return verificarPublicacao({ baseUrl: s.url, tipo: 'estatico', versaoEsperada: VERSAO, manifesto: manifestoDe(arquivos), ausentes: [] });
     };
-    const so = (caminho, csp) => ({ sobrescrever: { [caminho]: { status: 200, corpo: arquivos[caminho.slice(1)], cabecalhos: { 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': csp } } } });
-    assert.deepEqual(falhas(await rodar({})), [], "prévia ainda em 'none' (antes da correção no Nginx) continua aceita: a ordem de implantação não quebra a verificação");
+    // S2819 (27/11/2026): a prévia exige no-store; as demais páginas seguem em no-cache. Este teste trata só do frame-ancestors.
+    const cacheDe = (caminho) => (caminho === '/totem/previa.html' ? 'no-store' : 'no-cache');
+    const so = (caminho, csp) => ({ sobrescrever: { [caminho]: { status: 200, corpo: arquivos[caminho.slice(1)], cabecalhos: { 'Cache-Control': cacheDe(caminho), 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': csp } } } });
+    assert.deepEqual(falhas(await rodar(so('/totem/previa.html', CSP_BOA))), [], "prévia ainda em 'none' (antes da correção no Nginx) continua aceita: a ordem de implantação não quebra a verificação");
     assert.deepEqual(falhas(await rodar(so('/totem/previa.html', CSP_SELF))), [], 'prévia com self passa');
     assert.deepEqual(falhas(await rodar(so('/index.html', CSP_SELF))), ['CABECALHOS'], 'outra página com self falha');
     assert.deepEqual(falhas(await rodar(so('/totem/previa.html', CSP_BOA.replace("frame-ancestors 'none'", 'frame-ancestors *')))), ['CABECALHOS'], 'prévia com curinga falha');
@@ -252,5 +254,32 @@ describe('verificar-publicacao — linha de comando', () => {
     assert.equal(rodar().status, 1);
     assert.equal(spawnSync(process.execPath, [MODULO], { encoding: 'utf8' }).status, 1);
     assert.equal(spawnSync(process.execPath, [MODULO, '--base-url', 'http://127.0.0.1:1', '--tipo', 'estatico', '--lixo'], { encoding: 'utf8' }).status, 1);
+  });
+});
+
+// S2819 (27/11/2026): totem/previa.html exige Cache-Control no-store (o src leva o segredo de uso único da ponte); o resto continua
+// exigindo no-cache.
+describe('S2819 — verificador: no-store obrigatório só na prévia do Totem', () => {
+  const CSP_SELF = CSP_BOA.replace("frame-ancestors 'none'", "frame-ancestors 'self'");
+  const arquivos = { ...ARQUIVOS, 'totem/previa.html': '<p>previa</p>' };
+  const previaCom = (cache) => ({ '/totem/previa.html': { status: 200, corpo: arquivos['totem/previa.html'], cabecalhos: { ...(cache ? { 'Cache-Control': cache } : {}), 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': CSP_SELF } } });
+  const rodar = async (sobrescrever) => {
+    const { verificarPublicacao } = carregar();
+    const s = await subir({ arquivos, sobrescrever });
+    return verificarPublicacao({ baseUrl: s.url, tipo: 'estatico', versaoEsperada: VERSAO, manifesto: manifestoDe(arquivos), ausentes: [] });
+  };
+
+  test('S2819-V1 — prévia com no-store passa; com no-cache, max-age, sem cabeçalho ou "no-storex" falha em CABECALHOS com detalhe', async () => {
+    assert.deepEqual(falhas(await rodar(previaCom('no-store'))), []);
+    for (const ruim of ['no-cache', 'max-age=3600', null, 'no-storex']) {
+      const r = await rodar(previaCom(ruim));
+      assert.deepEqual(falhas(r), ['CABECALHOS'], String(ruim));
+      assert.match(r.verificacoes.find((v) => v.nome === 'CABECALHOS').detalhe, /totem\/previa\.html: sem Cache-Control no-store/, String(ruim));
+    }
+  });
+
+  test('S2819-V2 — as demais páginas continuam exigindo no-cache (no-store sozinho não substitui fora da prévia)', async () => {
+    const outra = { '/index.html': { status: 200, corpo: arquivos['index.html'], cabecalhos: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': CSP_BOA } } };
+    assert.deepEqual(falhas(await rodar({ ...previaCom('no-store'), ...outra })), ['CABECALHOS']);
   });
 });

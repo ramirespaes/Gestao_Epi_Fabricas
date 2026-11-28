@@ -933,6 +933,7 @@ const VALORES_NGINX = {
   Object.assign(VALORES_NGINX, {
     ARQUIVO_SEGURANCA_PORTAL_ATENDIMENTO: '/etc/nginx/hml/seguranca-portal-atendimento.conf',
     ARQUIVO_SEGURANCA_PORTAL_PREVIA: '/etc/nginx/hml/seguranca-portal-previa.conf',
+    ARQUIVO_LOG_ACESSO_PORTAL: '/var/log/nginx/hml/portal-acesso.log', // S2819
     CSP_PORTAL_ATENDIMENTO: atendimento, CSP_PORTAL_PREVIA: previa,
   });
 }
