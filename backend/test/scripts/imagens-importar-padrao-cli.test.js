@@ -186,7 +186,7 @@ describe('[CLI-PAD] --verificar: confere o pacote sem tocar banco nem armazename
       { nome: '02_PNG_PADRONIZADOS/linha\rsobrescrita.png', dados: Buffer.from('x') },
       { nome: Buffer.concat([Buffer.from('02_PNG_PADRONIZADOS/nulo'), Buffer.from([0]), Buffer.from('.png')]), dados: Buffer.from('x') },
       { nome: '02_PNG_PADRONIZADOS/quebra\nfalsa: tudo certo.png', dados: Buffer.from('x') },
-      { nome: '02_PNG_PADRONIZADOS/‮bidi.png', dados: Buffer.from('x') },
+      { nome: '02_PNG_PADRONIZADOS/\u{202e}bidi.png', dados: Buffer.from('x') },
     ];
     for (const entrada of hostis) {
       const c = caso(h.zipDoPacote(pacote, { adicionar: [entrada] }));
@@ -194,7 +194,7 @@ describe('[CLI-PAD] --verificar: confere o pacote sem tocar banco nem armazename
       const r = await t.chamada;
       assert.equal(r.saida, 3);
       limpa(t.capturada.texto(), c);
-      assert.doesNotMatch(t.capturada.texto(), /‮/, 'o controle bidirecional também não passa');
+      assert.doesNotMatch(t.capturada.texto(), /\u{202e}/u, 'o controle bidirecional também não passa');
       assert.doesNotMatch(t.capturada.texto(), /^falsa:/m, 'o texto escondido no nome não vira uma linha da saída');
     }
   });
