@@ -2,9 +2,10 @@
 
 /**
  * S7039 — a CSP da prévia do Totem num navegador REAL, por HTTP. Um único servidor em 127.0.0.1 (porta efêmera) serve o frontend;
- * na previa.html servida entra só uma sonda (<script src> da mesma origem, sem tocar na CSP). A sonda mede os estilos legítimos
- * (atributos do corpo e um setAttribute('style', 'color:var(--ok)') igual ao do totem.js), tenta estilos NÃO autorizados (atributo,
- * <style> e innerHTML) e devolve o resultado navegando para /__s7039/resultado (connect-src 'none' impede fetch).
+ * na previa.html servida entra só uma sonda (<script src> da mesma origem, sem tocar na CSP). Opção B: o corpo não tem atributo style
+ * e nenhum estilo inline é aceito. A sonda confere que o corpo não tem [style] além do #teclado (CSSOM do totem.js, fora do alcance da
+ * CSP), que o antigo setAttribute('style', 'color:var(--ok)') agora é BLOQUEADO, tenta estilos não autorizados (atributo, <style> e
+ * innerHTML) e devolve o resultado navegando para /__s7039/resultado (connect-src 'none' impede fetch).
  *
  * Chrome headless, temas claro e escuro. Safari: S7039_SAFARI=1 abre o Safari do usuário (tema do sistema). Sem Chrome: pulada.
  * S7039_PREVIA=<arquivo> serve outra previa.html (ex.: a original, para o RED). Fora do `npm test`.
@@ -101,11 +102,10 @@ async function noChrome(chrome, escuro, extra = [], url) {
 
 function conferir(r, rotulo) {
   if (SAIDA) fs.writeFileSync(path.join(SAIDA, `resultado-${rotulo}.json`), JSON.stringify(r, null, 2));
-  // #teclado recebe .style.display do totem.js (CSSOM, fora do alcance da CSP); os seis restantes são os atributos do HTML.
+  // #teclado recebe .style.display do totem.js (CSSOM, fora do alcance da CSP); nenhum outro elemento do corpo tem atributo style.
   const doHtml = r.legitimos.filter((l) => l.id !== 'teclado');
-  assert.equal(doHtml.length, 6, 'seis atributos legítimos medidos');
-  for (const l of doHtml) assert.ok(l.aplicado, `estilo legítimo bloqueado: ${l.estilo}`);
-  assert.ok(r.js.aplicado, 'setAttribute legítimo (color:var(--ok)) bloqueado');
+  assert.deepEqual(doHtml, [], 'o corpo não tem atributo style');
+  assert.equal(r.js.aplicado, false, "setAttribute('style') precisa ser bloqueado");
   assert.deepEqual(r.intrusos, { atributo: false, blocoStyle: false, innerHTML: false }, 'estilo não autorizado aplicado');
   const diretivas = new Set(r.violacoes.map((v) => v.diretiva));
   assert.ok(diretivas.has('style-src-attr'), 'violação de atributo registrada');

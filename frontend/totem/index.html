@@ -57,7 +57,7 @@
   <!-- TABLET NÃO AUTORIZADO -->
   <section class="tela" id="telaNaoAutorizado">
     <div class="acesso">
-      <div class="ico" style="background:var(--error-soft);color:var(--error)"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-bloqueio"/></svg></div>
+      <div class="ico ico-erro"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-bloqueio"/></svg></div>
       <p class="msg-grande">Este tablet não está autorizado. Procure a administração do sistema.</p>
     </div>
   </section>
@@ -65,7 +65,7 @@
   <!-- TABLET FORA DA REDE AUTORIZADA -->
   <section class="tela" id="telaRede">
     <div class="acesso">
-      <div class="ico" style="background:var(--error-soft);color:var(--error)"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-bloqueio"/></svg></div>
+      <div class="ico ico-erro"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-bloqueio"/></svg></div>
       <p class="msg-grande">Este tablet está fora da rede autorizada. Procure a administração do sistema.</p>
     </div>
   </section>
@@ -139,7 +139,7 @@
     </div>
     <div id="resumo"></div>
     <p class="msg" id="estadoCatalogo" hidden></p>
-    <p id="subtituloProdutos" hidden style="font-size:14px;color:var(--on-var);margin-top:18px">Toque em um produto para ver os tamanhos disponíveis.</p>
+    <p id="subtituloProdutos" hidden>Toque em um produto para ver os tamanhos disponíveis.</p>
     <div class="grade" id="grade"></div>
     <div class="acao" id="blocoRevisar" hidden>
       <button type="button" class="btn btn-filled" id="btnRevisar"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-sacola"/></svg>Revisar e enviar pedido</button>
@@ -186,7 +186,7 @@
   <!-- ENVIO INCERTO — o resultado do envio não foi confirmado -->
   <section class="tela" id="telaIncerto">
     <div class="acesso">
-      <div class="ico" style="background:var(--warn-soft);color:var(--warn)"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-relogio"/></svg></div>
+      <div class="ico ico-aviso"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-relogio"/></svg></div>
       <h1>Não conseguimos confirmar o envio do seu pedido.</h1>
       <p class="msg" id="msgProcessando" hidden></p>
       <button type="button" class="btn btn-filled" id="btnVerificar">Verificar</button>
@@ -196,8 +196,8 @@
 
   <!-- TELA 4 — confirmação (neutra: só o que o servidor confirmou) -->
   <section class="tela" id="telaConfirma">
-    <div class="acesso" style="margin-top:4vh">
-      <div class="ico" style="background:var(--ok-soft);color:var(--ok)"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-ok"/></svg></div>
+    <div class="acesso acesso-espaco">
+      <div class="ico ico-ok"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-ok"/></svg></div>
       <h1>Solicitação enviada com sucesso.</h1>
       <p>Seu pedido foi registrado e será analisado pela Segurança do Trabalho.</p>
       <button type="button" class="btn btn-filled" id="btnConcluir"><svg class="mi" aria-hidden="true" focusable="false"><use href="#i-sair"/></svg>Concluir e sair</button>

@@ -860,7 +860,7 @@
     var caixa = document.createElement('div');
     caixa.className = 'resumo';
     var ok = svgIcone('i-ok');
-    ok.setAttribute('style', 'color:var(--ok)');
+    ok.classList.add('resumo-ok');
     caixa.appendChild(ok);
     var titulo = document.createElement('b');
     titulo.textContent = TEXTOS.nestaRetirada;

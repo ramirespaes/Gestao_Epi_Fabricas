@@ -1,13 +1,13 @@
 'use strict';
 
 /**
- * S7039 — CSP da prévia do Totem sem 'unsafe-inline'. Os atributos style do corpo (idêntico ao index.html, K7-A4) e o único
- * setAttribute('style') do totem.js (fixado, K7-A5) entram por hash em style-src-attr com 'unsafe-hashes'; style-src fica 'self'.
+ * S7039 (opção B) — o Totem não tem estilo inline: nenhum atributo style no index.html e na previa.html (corpos idênticos, K7-A4),
+ * nenhum setAttribute('style') no totem.js, e as declarações que eram inline viraram regras do totem.css. A CSP da prévia fica com
+ * style-src 'self', sem style-src-attr, sem 'unsafe-inline' e sem 'unsafe-hashes'.
  */
 
 const { describe, test } = require('node:test');
 const assert = require('node:assert/strict');
-const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -16,7 +16,7 @@ const { avaliarCsp } = require('../../deploy/hml/verificacao/verificar-publicaca
 
 const ler = (rel) => fs.readFileSync(path.join(RAIZ, rel), 'utf8');
 const semComentariosHtml = (html) => html.replace(/<!--[\s\S]*?-->/g, '');
-const hash = (valor) => `'sha256-${crypto.createHash('sha256').update(valor, 'utf8').digest('base64')}'`;
+const semComentariosCss = (css) => css.replace(/\/\*[\s\S]*?\*\//g, '');
 
 function cspDaPrevia() {
   const html = semComentariosHtml(ler('totem/previa.html'));
@@ -32,48 +32,64 @@ function diretivas(csp) {
   }));
 }
 
-// Valores legítimos: os atributos style do HTML e as chamadas setAttribute('style', '...') do totem.js.
-function estilosLegitimos() {
-  const html = semComentariosHtml(ler('totem/previa.html'));
-  const doHtml = [...html.matchAll(/\sstyle="([^"]*)"/g)].map((m) => m[1]);
-  const doJs = [...ler('totem/totem.js').matchAll(/setAttribute\(\s*'style'\s*,\s*'([^']*)'\s*\)/g)].map((m) => m[1]);
-  return { doHtml, doJs, todos: new Set([...doHtml, ...doJs]) };
-}
+// As declarações que eram inline (opção B, 28/11/2026), com a regra que as substitui.
+const SUBSTITUICOES = [
+  { seletor: '.acesso .ico.ico-erro', declaracoes: 'background:var(--error-soft);color:var(--error)' },
+  { seletor: '.acesso .ico.ico-aviso', declaracoes: 'background:var(--warn-soft);color:var(--warn)' },
+  { seletor: '.acesso .ico.ico-ok', declaracoes: 'background:var(--ok-soft);color:var(--ok)' },
+  { seletor: '.acesso.acesso-espaco', declaracoes: 'margin-top:4vh' },
+  { seletor: '#subtituloProdutos', declaracoes: 'font-size:14px;color:var(--on-var);margin-top:18px' },
+  { seletor: '.resumo .resumo-ok', declaracoes: 'color:var(--ok)' },
+];
+
+describe('S7039 — Totem sem estilo inline', () => {
+  for (const rel of ['totem/index.html', 'totem/previa.html']) {
+    test(`${rel}: nenhum atributo style e nenhum bloco <style>`, () => {
+      const html = semComentariosHtml(ler(rel));
+      assert.deepEqual([...html.matchAll(/\sstyle\s*=/gi)].map((m) => m.index), []);
+      assert.doesNotMatch(html, /<style\b/i);
+    });
+  }
+
+  test('totem.js não grava estilo por atributo, cssText nem marcação', () => {
+    const js = ler('totem/totem.js');
+    assert.doesNotMatch(js, /setAttribute\(\s*['"]style['"]/);
+    assert.doesNotMatch(js, /cssText/);
+    assert.doesNotMatch(js, /style\s*=\s*\\?["']/);
+  });
+
+  test('os ícones e a tela final usam as classes novas nos dois HTMLs', () => {
+    for (const rel of ['totem/index.html', 'totem/previa.html']) {
+      const html = semComentariosHtml(ler(rel));
+      assert.equal([...html.matchAll(/class="ico ico-erro"/g)].length, 2, `${rel}: ico-erro`);
+      assert.equal([...html.matchAll(/class="ico ico-aviso"/g)].length, 1, `${rel}: ico-aviso`);
+      assert.equal([...html.matchAll(/class="ico ico-ok"/g)].length, 1, `${rel}: ico-ok`);
+      assert.equal([...html.matchAll(/class="acesso acesso-espaco"/g)].length, 1, `${rel}: acesso-espaco`);
+    }
+    assert.match(ler('totem/totem.js'), /ok\.classList\.add\('resumo-ok'\)/);
+  });
+
+  test('totem.css tem cada declaração que era inline, uma vez, no seletor que a substitui', () => {
+    const css = semComentariosCss(ler('totem/totem.css'));
+    for (const { seletor, declaracoes } of SUBSTITUICOES) {
+      const regra = `${seletor}{${declaracoes}}`;
+      assert.equal(css.split(regra).length - 1, 1, `regra ausente ou repetida: ${regra}`);
+    }
+  });
+});
 
 describe('S7039 — CSP da prévia do Totem', () => {
-  test('nenhuma diretiva usa unsafe-inline, e style-src é só self', () => {
+  test("style-src é só 'self'; nenhuma diretiva usa 'unsafe-inline' ou 'unsafe-hashes'; não há style-src-attr", () => {
     const csp = cspDaPrevia();
-    assert.doesNotMatch(csp, /unsafe-inline/);
-    assert.deepEqual(diretivas(csp).get('style-src'), ["'self'"]);
-  });
-
-  test('style-src-attr libera exatamente os estilos legítimos, por hash, e nada além', () => {
-    const { doHtml, doJs, todos } = estilosLegitimos();
-    assert.equal(doHtml.length, 6, 'seis atributos style no corpo');
-    assert.deepEqual(doJs, ['color:var(--ok)'], 'um setAttribute(style) no totem.js');
-    assert.equal(todos.size, 6, 'seis valores distintos');
-    const attr = diretivas(cspDaPrevia()).get('style-src-attr');
-    assert.ok(attr, 'style-src-attr ausente');
-    assert.equal(attr[0], "'unsafe-hashes'");
-    assert.deepEqual(new Set(attr.slice(1)), new Set([...todos].map(hash)));
-    assert.equal(attr.length, 7, 'sem hash repetido ou sobrando');
-  });
-
-  test('os seis hashes aprovados no diagnóstico', () => {
-    const attr = diretivas(cspDaPrevia()).get('style-src-attr') ?? [];
-    assert.deepEqual(new Set(attr.slice(1)), new Set([
-      "'sha256-WL7MlD/wMXx8MRDRvHfde4djiRTttvJ1ZyRo8zqJk9s='",
-      "'sha256-ZByJOzfW2xGYPJW5i7tw972NNGyD7bTKtW3x7ossrHQ='",
-      "'sha256-iTrtcWgGiLeUtPwj8yvZuGS8ThSKzhHGh0GAawlivvY='",
-      "'sha256-jvCQSPZHTbxE8YTQQ8HXOMfbQlNpDSIM+GPfatmqKCY='",
-      "'sha256-itQGpmtJZ0+msnGqhFwenEgYMKqYST0TDaHA659DCnc='",
-      "'sha256-sPNDXPb9g4m+wSc75WDX/7Rnk7apMe20uV1aEHstIAE='",
-    ]));
+    assert.doesNotMatch(csp, /unsafe-inline|unsafe-hashes|unsafe-eval|sha256-/);
+    const d = diretivas(csp);
+    assert.deepEqual(d.get('style-src'), ["'self'"]);
+    assert.equal(d.has('style-src-attr'), false);
   });
 
   test('as demais diretivas não mudam', () => {
     const d = diretivas(cspDaPrevia());
-    assert.deepEqual([...d.keys()], ['default-src', 'script-src', 'style-src', 'style-src-attr', 'img-src', 'connect-src', 'base-uri', 'form-action', 'object-src']);
+    assert.deepEqual([...d.keys()], ['default-src', 'script-src', 'style-src', 'img-src', 'connect-src', 'base-uri', 'form-action', 'object-src']);
     for (const [nome, valor] of [['default-src', "'none'"], ['script-src', "'self'"], ['img-src', 'data:'], ['connect-src', "'none'"],
       ['base-uri', "'none'"], ['form-action', "'none'"], ['object-src', "'none'"]]) assert.deepEqual(d.get(nome), [valor], nome);
   });

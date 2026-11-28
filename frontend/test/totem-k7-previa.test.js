@@ -33,12 +33,15 @@ const exigir = (rel) => assert.ok(existe(rel), `RED K7: ${rel} ainda não existe
 const PINOS = Object.freeze({
   // VISUAL-03A (20/10/2026): identidade verde aprovada por Ramires. Pinos ANTERIORES (histórico): index.html e41495afa9e0e7f5b1d0b104080180821c42a7c909b5f5d7667ca213cf7ee181;
   // totem.css 9c6b3665fe47ad88543e8f59053b082544816943d5753c41980625f4b379e3ac.
-  'totem/index.html': '6ec5236ec6673c581332468b2cb2f7b64df8467f260030b9a47b5387a78bd286',
+  // S7039 opção B (28/11/2026): estilos inline viram classes do totem.css, autorizado por Ramires. Pinos ANTERIORES (histórico): index.html
+  // 6ec5236ec6673c581332468b2cb2f7b64df8467f260030b9a47b5387a78bd286; totem.js e44dd02a4c413b8f563c83b3e366146c862eb33af3948db34762ffb76ab1b87e;
+  // totem.css 3caa1760e92f1c5feddcb211ab09c082f16db2dc4a0eb182f3f02e609d4ebe50.
+  'totem/index.html': '8057ee67fdf7cc4eafcf59348353b9adff3b378180374d12571cd29d0033d076',
   // GREEN-2A/2C (20/10/2026): fotografias integradas. Pino ANTERIOR (histórico): 9ee5d2f8d66e154c067c0f7a35c5214a1341fcd42899f92ac3c16cdf5a60c33e.
   // FIX-TOTEM-NUMERO (31/10/2026): confirmação do pedido com o número inteiro do backend, autorizada por Ramires. Pino ANTERIOR (histórico): c6728858e0d185cb0331c78099d47f9688ea22d7fdcbca4600bd9ba1478b6afc.
   // FIX-TOTEM-IMAGENS-DATA (11/2026): a CSP da HML bloqueia blob:; a fotografia passa a ser data:image/webp (FileReader), autorizado por Ramires. Pino ANTERIOR (histórico): caa89895eec5660db5cb9b4ca746c6590b7a15575f38a215d4a2b19c61807fc5.
-  'totem/totem.js': 'e44dd02a4c413b8f563c83b3e366146c862eb33af3948db34762ffb76ab1b87e',
-  'totem/totem.css': '3caa1760e92f1c5feddcb211ab09c082f16db2dc4a0eb182f3f02e609d4ebe50',
+  'totem/totem.js': '19c4d1299795dde70a95fa21ac5067fb60df7367cb1733bcf83f202ecd80a099',
+  'totem/totem.css': '011d660662d2b952d5522dba7be89dfdda5cfbf812b456007e9d76ce1f7d2476',
   'totem/boot.js': '583454fe94c2ed73776fd77b4560eb70c59dd708ad582b2a61ff4878104d6899',
 });
 
