@@ -332,10 +332,10 @@ describe('biblioteca OBRIGATÓRIA: banco, pacotes e arquivos', () => {
   });
 
   test('o nome vindo da divergência é escapado e as divergências do relatório são limitadas', async () => {
-    const muitas = Array.from({ length: 60 }, (_, k) => ({ nome: k === 0 ? 'Luva‮evil\n' : `Item ${k}`, alvo: 'REGISTRO', campo: 'nome' }));
+    const muitas = Array.from({ length: 60 }, (_, k) => ({ nome: k === 0 ? 'Luva\u{202e}evil\n' : `Item ${k}`, alvo: 'REGISTRO', campo: 'nome' }));
     const { deps } = dependencias({ porPacote: { 'Pacote_A.zip': () => { throw new ErroImportacaoPadrao('ESTADO_DIVERGENTE', muitas); } } });
     const relatorio = await servico.verificarProntidao(obrigatoria(novoDiretorio()), deps);
-    assert.doesNotMatch(JSON.stringify(relatorio.pacotes[0]), /[‮\n]/);
+    assert.doesNotMatch(JSON.stringify(relatorio.pacotes[0]), /[\u{202e}\n]/u);
     assert.equal(relatorio.pacotes[0].divergencias.length, 40);
     assert.equal(relatorio.pacotes[0].divergenciasTotal, 60);
   });
