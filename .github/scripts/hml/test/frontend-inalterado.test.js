@@ -17,7 +17,7 @@ const PROTEGIDOS = {
   'deploy/hml/cd/iam-publicador.modelo.json': '7116581dd561f30e2e2bf9d57e9f46fd31407c0d52e7f3f1a4737025e84bb298',
   'deploy/hml/cd/s3-politica.modelo.json': 'ce87a8822db428c15db1ba2029b76c2824423f19e444620a34900245881a609d',
   'deploy/hml/cd/agente.config.exemplo.json': '2fdfb589a3b8f6d844979f1687272b63852ce5c803dbe66f7b9afee613e64c1c',
-  'deploy/hml/instalador/ancora.js': 'a70287a8c5de2ba8e898b7b6c4f31345471ed1f121665db7d093431f6adf8d3b',
+  'deploy/hml/instalador/ancora.js': '8aef3e40d69dc38b1ad0e59dd4819f071e4ad307f878888ea4b1d6d611ff8b30',
   'deploy/hml/instalador/compatibilidade.js': 'ec9e0888aa9f065cb1aa34606efc64b7c8a97e41f29ea06cc9cc2f39d31c2857',
   // 3B-2B-3B (D1): coordenacao.js e instalar-release.js mudaram só pela homologação do provedor do guardião.
   // 4C (D-H1 e D-H2): instalar-release.js mudou só pela adoção da primeira release do backend, pela confirmação dela e
@@ -28,7 +28,7 @@ const PROTEGIDOS = {
   // Correção B (B1): mudou só pela confirmação da recuperação sem reinício e pela leitura dessa confirmação.
   'deploy/hml/instalador/instalar-release.js': 'a6ea30d55d8a858303fa93a4502b101f05c94de9e01f753ba960a97a47d3fff3',
   'deploy/hml/instalador/nucleo.js': '144a1194d9a7e2fc4b8c0b73dfc7afae3b4a5a267efe122736788b3e2f28d716',
-  'deploy/hml/empacotar-backend.js': 'cf040b49a11401a9fd854e83f36ab51090d18b76cb1b9898a9cfd0ad250ad336',
+  'deploy/hml/empacotar-backend.js': 'cc1a008648508df30d91f326facdffc3b18651dcbddb5bd33d875fb05f2fee75',
   '.github/workflows/ci.yml': '1a977e2aaf68e06d9f212ed8fc573bb3d2ed852c7c219e0b976b63dc5beb5a68',
   '.github/workflows/deploy-hml-backend.yml': 'f1f3afb14770541fa86dfb7f1797fdf15ab30ee257f87a8afabade93ed52b0e1',
   // Etapas 3B-3/3B-4: ganhou só o job final "conjunto" (prepara e confere o backend, sem publicar). Todo o texto

@@ -396,7 +396,8 @@ function criarAncora(opcoes = {}) {
     const filho = abrirPorNome(alvoAbs, path.join(pai.caminho, nome), false);
     try {
       if (filho.dev !== visto.dev || filho.ino !== visto.ino) throw invalido(`${nome} foi substituído; não será removido`);
-      f.fchmodSync(filho.fd, 0o755);
+      // Só o dono ganha o que precisa para esvaziar; grupo e outros ficam como estavam.
+      f.fchmodSync(filho.fd, (f.fstatSync(filho.fd).mode & 0o777) | 0o700);
       for (const e of listar(filho)) removerInterno(filho, e.nome);
     } finally { fechar(filho); }
     f.rmdirSync(alvoAbs);

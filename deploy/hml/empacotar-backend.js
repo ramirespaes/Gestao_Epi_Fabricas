@@ -338,7 +338,7 @@ function empacotarBackend({ saida, raiz = RAIZ_BACKEND, allowlist = lerAllowlist
       const alvo = absoluto(destino, rel);
       fs.mkdirSync(path.dirname(alvo), { recursive: true });
       copiarArquivo(absoluto(raizReal, rel), alvo, fs.constants.COPYFILE_EXCL);
-      fs.chmodSync(alvo, 0o644);
+      fs.chmodSync(alvo, 0o600);
     }
     conferir(destino, inspecao.manifesto);
   } catch (falha) {
