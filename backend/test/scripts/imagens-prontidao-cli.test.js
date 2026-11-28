@@ -177,8 +177,8 @@ describe('estado → código de saída', () => {
 
   test('o texto lista motivos e pacotes sem hash de arquivo nem caractere de controle', async () => {
     const r = await rodar('INCONSISTENTE', {
-      motivos: [{ classe: 'INCONSISTENTE', codigo: 'PACOTE_DIVERGE_DO_BANCO_OU_DOS_ARQUIVOS', arquivo: 'Pacote‮A.zip', divergencias: 2 }],
-      pacotes: [{ arquivo: 'Pacote‮A.zip', imagens: 30, situacao: 'DIVERGENTE', divergencias: [{ nome: 'Luva', alvo: 'ARQUIVO', motivo: 'AUSENTE' }], divergenciasTotal: 2 }],
+      motivos: [{ classe: 'INCONSISTENTE', codigo: 'PACOTE_DIVERGE_DO_BANCO_OU_DOS_ARQUIVOS', arquivo: 'Pacote\u{202e}A.zip', divergencias: 2 }],
+      pacotes: [{ arquivo: 'Pacote\u{202e}A.zip', imagens: 30, situacao: 'DIVERGENTE', divergencias: [{ nome: 'Luva', alvo: 'ARQUIVO', motivo: 'AUSENTE' }], divergenciasTotal: 2 }],
       plano: { sha256: HASH, pacotes: 1 },
       banco: { nome: 'gestao_epi_hml', oid: '16401' },
     });
@@ -187,7 +187,7 @@ describe('estado → código de saída', () => {
     assert.match(texto, /nome=Luva alvo=ARQUIVO motivo=AUSENTE/);
     assert.match(texto, /gestao_epi_hml \(oid 16401\)/);
     assert.doesNotMatch(texto, /[0-9a-f]{64}/);
-    assert.doesNotMatch(texto, /[‮]/);
+    assert.doesNotMatch(texto, /[\u{202e}]/u);
   });
 
   test('--json imprime um único documento com o estado', async () => {

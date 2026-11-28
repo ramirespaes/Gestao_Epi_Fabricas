@@ -26,7 +26,7 @@ describe('escaparHtml', () => {
 
 describe('textoSimples', () => {
   test('troca quebras de linha e caracteres de controle por espaço e apara as pontas', () => {
-    assert.equal(escapar().textoSimples('  Ana\r\nBcc: x@y.test\tSilva\u0000‮  '), 'Ana Bcc: x@y.test Silva');
+    assert.equal(escapar().textoSimples('  Ana\r\nBcc: x@y.test\tSilva\u0000\u{202e}  '), 'Ana Bcc: x@y.test Silva');
   });
 
   test('limita o tamanho e só aceita texto', () => {
